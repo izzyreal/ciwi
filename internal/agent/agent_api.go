@@ -1,0 +1,132 @@
+package agent
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"runtime"
+	"time"
+
+	"github.com/izzyreal/ciwi/internal/protocol"
+)
+
+func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string) error {
+	payload := protocol.HeartbeatRequest{
+		AgentID:      agentID,
+		Hostname:     hostname,
+		OS:           runtime.GOOS,
+		Arch:         runtime.GOARCH,
+		Capabilities: map[string]string{"executor": "shell"},
+		TimestampUTC: time.Now().UTC(),
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal heartbeat: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/v1/heartbeat", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create heartbeat request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send heartbeat: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
+		return fmt.Errorf("heartbeat rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+
+	log.Printf("heartbeat sent: id=%s os=%s arch=%s", agentID, runtime.GOOS, runtime.GOARCH)
+	return nil
+}
+
+func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID string) (*protocol.Job, error) {
+	payload := protocol.LeaseJobRequest{
+		AgentID: agentID,
+		Capabilities: map[string]string{
+			"os":       runtime.GOOS,
+			"arch":     runtime.GOARCH,
+			"executor": "shell",
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal lease request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/v1/agent/lease", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create lease request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send lease request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
+		return nil, fmt.Errorf("lease rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+
+	var leaseResp protocol.LeaseJobResponse
+	if err := json.NewDecoder(resp.Body).Decode(&leaseResp); err != nil {
+		return nil, fmt.Errorf("decode lease response: %w", err)
+	}
+	if !leaseResp.Assigned || leaseResp.Job == nil {
+		return nil, nil
+	}
+
+	log.Printf("job leased: id=%s", leaseResp.Job.ID)
+	return leaseResp.Job, nil
+}
+
+func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID string, job protocol.Job, exitCode *int, failMsg, output string) error {
+	return reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+		AgentID:      agentID,
+		Status:       "failed",
+		ExitCode:     exitCode,
+		Error:        failMsg,
+		Output:       output,
+		TimestampUTC: time.Now().UTC(),
+	})
+}
+
+func reportJobStatus(ctx context.Context, client *http.Client, serverURL, jobID string, reqBody protocol.JobStatusUpdateRequest) error {
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshal job status: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/v1/jobs/"+jobID+"/status", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create job status request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send job status request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
+		return fmt.Errorf("status rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+
+	return nil
+}
