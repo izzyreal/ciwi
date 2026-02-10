@@ -245,18 +245,32 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	parts := strings.Split(rel, "/")
+	projectID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || projectID <= 0 {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return
+	}
+
+	if len(parts) == 1 {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		detail, err := s.db.GetProjectDetail(projectID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"project": detail})
+		return
+	}
+
 	if len(parts) != 2 || parts[1] != "reload" {
 		http.NotFound(w, r)
 		return
 	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	projectID, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || projectID <= 0 {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
 		return
 	}
 
@@ -551,7 +565,7 @@ func (s *stateStore) runPipelineFromConfigHandler(w http.ResponseWriter, r *http
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	resp, err := s.enqueuePersistedPipeline(p)
+	resp, err := s.enqueuePersistedPipeline(p, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -566,7 +580,7 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || parts[1] != "run" {
+	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "run-selection") {
 		http.NotFound(w, r)
 		return
 	}
@@ -584,7 +598,22 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	resp, err := s.enqueuePersistedPipeline(p)
+	if parts[1] == "run" {
+		resp, err := s.enqueuePersistedPipeline(p, nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusCreated, resp)
+		return
+	}
+
+	var req protocol.RunPipelineSelectionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	resp, err := s.enqueuePersistedPipeline(p, &req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -592,13 +621,16 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline) (protocol.RunPipelineResponse, error) {
+func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest) (protocol.RunPipelineResponse, error) {
 	if strings.TrimSpace(p.SourceRepo) == "" {
 		return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline source.repo is required")
 	}
 
 	jobIDs := make([]string, 0)
 	for _, pj := range p.SortedJobs() {
+		if selection != nil && strings.TrimSpace(selection.PipelineJobID) != "" && selection.PipelineJobID != pj.ID {
+			continue
+		}
 		if len(pj.Steps) == 0 {
 			return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q has no steps", pj.ID)
 		}
@@ -608,6 +640,14 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline) (protoc
 		}
 
 		for index, vars := range matrixEntries {
+			if selection != nil {
+				if selection.MatrixIndex != nil && *selection.MatrixIndex != index {
+					continue
+				}
+				if strings.TrimSpace(selection.MatrixName) != "" && vars["name"] != selection.MatrixName {
+					continue
+				}
+			}
 			rendered := make([]string, 0, len(pj.Steps))
 			for _, step := range pj.Steps {
 				line := renderTemplate(step, vars)
@@ -643,6 +683,10 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline) (protoc
 			}
 			jobIDs = append(jobIDs, job.ID)
 		}
+	}
+
+	if selection != nil && len(jobIDs) == 0 {
+		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
 
 	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobIDs: jobIDs}, nil

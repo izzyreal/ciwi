@@ -321,6 +321,68 @@ func (s *Store) GetProjectByID(id int64) (protocol.ProjectSummary, error) {
 	return p, nil
 }
 
+func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
+	project, err := s.GetProjectByID(id)
+	if err != nil {
+		return protocol.ProjectDetail{}, err
+	}
+
+	rows, err := s.db.Query(`
+		SELECT id, pipeline_id, trigger_mode, source_repo, source_ref
+		FROM pipelines
+		WHERE project_id = ?
+		ORDER BY pipeline_id
+	`, id)
+	if err != nil {
+		return protocol.ProjectDetail{}, fmt.Errorf("list pipelines: %w", err)
+	}
+	defer rows.Close()
+
+	detail := protocol.ProjectDetail{
+		ID:         project.ID,
+		Name:       project.Name,
+		RepoURL:    project.RepoURL,
+		RepoRef:    project.RepoRef,
+		ConfigFile: project.ConfigFile,
+	}
+
+	for rows.Next() {
+		var p protocol.PipelineDetail
+		if err := rows.Scan(&p.ID, &p.PipelineID, &p.Trigger, &p.SourceRepo, &p.SourceRef); err != nil {
+			return protocol.ProjectDetail{}, fmt.Errorf("scan pipeline: %w", err)
+		}
+		persistedJobs, err := s.listPipelineJobs(p.ID)
+		if err != nil {
+			return protocol.ProjectDetail{}, err
+		}
+		p.Jobs = make([]protocol.PipelineJobDetail, 0, len(persistedJobs))
+		for _, j := range persistedJobs {
+			d := protocol.PipelineJobDetail{
+				ID:             j.ID,
+				TimeoutSeconds: j.TimeoutSeconds,
+				RunsOn:         cloneMap(j.RunsOn),
+				Artifacts:      append([]string(nil), j.Artifacts...),
+				Steps:          append([]string(nil), j.Steps...),
+			}
+			for idx, vars := range j.MatrixInclude {
+				v := cloneMap(vars)
+				d.MatrixIncludes = append(d.MatrixIncludes, protocol.MatrixInclude{
+					Index: idx,
+					Name:  v["name"],
+					Vars:  v,
+				})
+			}
+			p.Jobs = append(p.Jobs, d)
+		}
+		detail.Pipelines = append(detail.Pipelines, p)
+	}
+	if err := rows.Err(); err != nil {
+		return protocol.ProjectDetail{}, fmt.Errorf("iterate pipelines: %w", err)
+	}
+
+	return detail, nil
+}
+
 func (s *Store) GetPipelineByDBID(id int64) (PersistedPipeline, error) {
 	var p PersistedPipeline
 	row := s.db.QueryRow(`

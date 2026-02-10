@@ -99,6 +99,39 @@ type PipelineSummary struct {
 	SourceRef  string `json:"source_ref,omitempty"`
 }
 
+type MatrixInclude struct {
+	Index int               `json:"index"`
+	Name  string            `json:"name,omitempty"`
+	Vars  map[string]string `json:"vars"`
+}
+
+type PipelineJobDetail struct {
+	ID             string            `json:"id"`
+	TimeoutSeconds int               `json:"timeout_seconds"`
+	RunsOn         map[string]string `json:"runs_on,omitempty"`
+	Artifacts      []string          `json:"artifacts,omitempty"`
+	Steps          []string          `json:"steps,omitempty"`
+	MatrixIncludes []MatrixInclude   `json:"matrix_includes,omitempty"`
+}
+
+type PipelineDetail struct {
+	ID         int64               `json:"id"`
+	PipelineID string              `json:"pipeline_id"`
+	Trigger    string              `json:"trigger,omitempty"`
+	SourceRepo string              `json:"source_repo,omitempty"`
+	SourceRef  string              `json:"source_ref,omitempty"`
+	Jobs       []PipelineJobDetail `json:"jobs,omitempty"`
+}
+
+type ProjectDetail struct {
+	ID         int64            `json:"id"`
+	Name       string           `json:"name"`
+	RepoURL    string           `json:"repo_url,omitempty"`
+	RepoRef    string           `json:"repo_ref,omitempty"`
+	ConfigFile string           `json:"config_file,omitempty"`
+	Pipelines  []PipelineDetail `json:"pipelines,omitempty"`
+}
+
 type RunPersistedPipelineRequest struct {
 	PipelineDBID int64 `json:"pipeline_db_id"`
 }
@@ -115,6 +148,12 @@ type ImportProjectResponse struct {
 	RepoRef     string `json:"repo_ref,omitempty"`
 	ConfigFile  string `json:"config_file"`
 	Pipelines   int    `json:"pipelines"`
+}
+
+type RunPipelineSelectionRequest struct {
+	PipelineJobID string `json:"pipeline_job_id,omitempty"`
+	MatrixName    string `json:"matrix_name,omitempty"`
+	MatrixIndex   *int   `json:"matrix_index,omitempty"`
 }
 
 type JobArtifact struct {

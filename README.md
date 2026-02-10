@@ -33,6 +33,7 @@ go run ./cmd/ciwi all-in-one
 ## First functional API slice
 
 - `GET /` minimal web UI (projects/pipelines/jobs)
+- `GET /projects/{projectId}` project page with structure, per-matrix run buttons and execution history
 - `GET /healthz` returns `{"status":"ok"}`
 - `POST /api/v1/heartbeat` accepts agent heartbeats in JSON
 - `GET /api/v1/agents` returns known agents
@@ -49,8 +50,10 @@ go run ./cmd/ciwi all-in-one
 - `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job (agent use)
 - `POST /api/v1/agent/lease` leases a matching queued job to an agent
 - `GET /api/v1/projects` returns persisted projects with pipelines
+- `GET /api/v1/projects/{projectId}` returns full project structure (pipelines/jobs/matrix)
 - `POST /api/v1/pipelines/run` loads `ciwi.yaml` and enqueues pipeline jobs
 - `POST /api/v1/pipelines/{pipelineDbId}/run` runs a persisted pipeline from sqlite
+- `POST /api/v1/pipelines/{pipelineDbId}/run-selection` runs a selected job/matrix include
 
 Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps
