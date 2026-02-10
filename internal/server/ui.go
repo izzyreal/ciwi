@@ -132,6 +132,8 @@ const indexHTML = `<!doctype html>
   </main>
 
   <script>
+    const projectReloadState = new Map();
+
     async function api(path, opts = {}) {
       const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
       if (!res.ok) {
@@ -143,6 +145,10 @@ const indexHTML = `<!doctype html>
 
     function statusClass(status) {
       return 'status-' + (status || '').toLowerCase();
+    }
+
+    function setProjectReloadState(projectId, text, color) {
+      projectReloadState.set(String(projectId), { text, color });
     }
 
     async function refreshProjects() {
@@ -161,22 +167,44 @@ const indexHTML = `<!doctype html>
         top.className = 'project-head';
         const topInfo = document.createElement('div');
         topInfo.innerHTML = '<strong>' + project.name + '</strong> <span class="pill">' + (project.repo_url || '') + '</span> <span class="pill">' + (project.config_file || project.config_path || '') + '</span>';
+        const reloadStatus = document.createElement('span');
+        reloadStatus.style.fontSize = '12px';
+        const state = projectReloadState.get(String(project.id));
+        if (state) {
+          reloadStatus.textContent = state.text;
+          reloadStatus.style.color = state.color;
+        } else {
+          reloadStatus.style.color = '#5f6f67';
+        }
         const reloadBtn = document.createElement('button');
         reloadBtn.className = 'secondary';
         reloadBtn.textContent = 'Reload project definition from VCS';
         reloadBtn.onclick = async () => {
+          setProjectReloadState(project.id, 'Reloading...', '#5f6f67');
+          reloadStatus.textContent = 'Reloading...';
+          reloadStatus.style.color = '#5f6f67';
           reloadBtn.disabled = true;
           try {
             await api('/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
             await Promise.all([refreshProjects(), refreshJobs()]);
+            setProjectReloadState(project.id, 'Reloaded successfully', '#1f8a4c');
+            reloadStatus.textContent = 'Reloaded successfully';
+            reloadStatus.style.color = '#1f8a4c';
           } catch (e) {
-            alert('Reload failed: ' + e.message);
+            const msg = 'Reload failed: ' + e.message;
+            setProjectReloadState(project.id, msg, '#b23a48');
+            reloadStatus.textContent = msg;
+            reloadStatus.style.color = '#b23a48';
           } finally {
             reloadBtn.disabled = false;
           }
         };
         top.appendChild(topInfo);
-        top.appendChild(reloadBtn);
+        const controls = document.createElement('div');
+        controls.className = 'row';
+        controls.appendChild(reloadBtn);
+        controls.appendChild(reloadStatus);
+        top.appendChild(controls);
         wrap.appendChild(top);
 
         (project.pipelines || []).forEach(p => {
@@ -393,6 +421,11 @@ const jobHTML = `<!doctype html>
       <h3 style="margin:0 0 10px;">Output / Error</h3>
       <textarea id="logBox" class="log" readonly spellcheck="false"></textarea>
     </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 10px;">Artifacts</h3>
+      <div id="artifactsBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
+    </div>
   </main>
 
   <script>
@@ -443,6 +476,25 @@ const jobHTML = `<!doctype html>
 
       const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
       document.getElementById('logBox').value = output || '<no output yet>';
+
+      try {
+        const ares = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts');
+        if (!ares.ok) {
+          throw new Error('artifact request failed');
+        }
+        const adata = await ares.json();
+        const box = document.getElementById('artifactsBox');
+        const items = adata.artifacts || [];
+        if (items.length === 0) {
+          box.textContent = 'No artifacts';
+        } else {
+          box.innerHTML = items.map(a =>
+            '<div><a href=\"' + a.url + '\" target=\"_blank\" rel=\"noopener\">' + escapeHtml(a.path) + '</a> (' + a.size_bytes + ' bytes)</div>'
+          ).join('');
+        }
+      } catch (_) {
+        document.getElementById('artifactsBox').textContent = 'Could not load artifacts';
+      }
     }
 
     loadJob();

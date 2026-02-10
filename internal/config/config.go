@@ -33,6 +33,7 @@ type Job struct {
 	ID             string            `yaml:"id"`
 	RunsOn         map[string]string `yaml:"runs_on"`
 	TimeoutSeconds int               `yaml:"timeout_seconds"`
+	Artifacts      []string          `yaml:"artifacts"`
 	Matrix         Matrix            `yaml:"matrix"`
 	Steps          []Step            `yaml:"steps"`
 }

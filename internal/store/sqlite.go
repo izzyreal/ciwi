@@ -34,6 +34,7 @@ type PersistedPipelineJob struct {
 	ID             string
 	RunsOn         map[string]string
 	TimeoutSeconds int
+	Artifacts      []string
 	MatrixInclude  []map[string]string
 	Steps          []string
 	Position       int
@@ -89,6 +90,7 @@ func (s *Store) migrate() error {
 			position INTEGER NOT NULL,
 			runs_on_json TEXT NOT NULL,
 			timeout_seconds INTEGER NOT NULL,
+			artifacts_json TEXT NOT NULL DEFAULT '[]',
 			matrix_json TEXT NOT NULL,
 			steps_json TEXT NOT NULL,
 			FOREIGN KEY(pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
@@ -98,6 +100,7 @@ func (s *Store) migrate() error {
 			script TEXT NOT NULL,
 			required_capabilities_json TEXT NOT NULL,
 			timeout_seconds INTEGER NOT NULL,
+			artifact_globs_json TEXT NOT NULL DEFAULT '[]',
 			source_repo TEXT,
 			source_ref TEXT,
 			metadata_json TEXT NOT NULL,
@@ -110,6 +113,15 @@ func (s *Store) migrate() error {
 			exit_code INTEGER,
 			error_text TEXT,
 			output_text TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS job_artifacts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			job_id TEXT NOT NULL,
+			path TEXT NOT NULL,
+			stored_rel TEXT NOT NULL,
+			size_bytes INTEGER NOT NULL,
+			created_utc TEXT NOT NULL,
+			FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_utc);`,
 	}
@@ -126,6 +138,12 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("projects", "config_file", "TEXT"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("pipeline_jobs", "artifacts_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("jobs", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	return nil
@@ -165,6 +183,7 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 
 		for i, j := range p.Jobs {
 			runsOnJSON, _ := json.Marshal(j.RunsOn)
+			artifactsJSON, _ := json.Marshal(j.Artifacts)
 			matrixJSON, _ := json.Marshal(j.Matrix.Include)
 			steps := make([]string, 0, len(j.Steps))
 			for _, step := range j.Steps {
@@ -173,9 +192,9 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 			stepsJSON, _ := json.Marshal(steps)
 
 			if _, err := tx.Exec(`
-				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, runs_on_json, timeout_seconds, matrix_json, steps_json)
-				VALUES (?, ?, ?, ?, ?, ?, ?)
-			`, pipelineDBID, j.ID, i, string(runsOnJSON), j.TimeoutSeconds, string(matrixJSON), string(stepsJSON)); err != nil {
+				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, runs_on_json, timeout_seconds, artifacts_json, matrix_json, steps_json)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`, pipelineDBID, j.ID, i, string(runsOnJSON), j.TimeoutSeconds, string(artifactsJSON), string(matrixJSON), string(stepsJSON)); err != nil {
 				return fmt.Errorf("insert pipeline job: %w", err)
 			}
 		}
@@ -344,7 +363,7 @@ func (s *Store) GetPipelineByProjectAndID(projectName, pipelineID string) (Persi
 
 func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, error) {
 	rows, err := s.db.Query(`
-		SELECT job_id, position, runs_on_json, timeout_seconds, matrix_json, steps_json
+		SELECT job_id, position, runs_on_json, timeout_seconds, artifacts_json, matrix_json, steps_json
 		FROM pipeline_jobs
 		WHERE pipeline_id = ?
 		ORDER BY position
@@ -357,11 +376,12 @@ func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, er
 	jobs := []PersistedPipelineJob{}
 	for rows.Next() {
 		var j PersistedPipelineJob
-		var runsOnJSON, matrixJSON, stepsJSON string
-		if err := rows.Scan(&j.ID, &j.Position, &runsOnJSON, &j.TimeoutSeconds, &matrixJSON, &stepsJSON); err != nil {
+		var runsOnJSON, artifactsJSON, matrixJSON, stepsJSON string
+		if err := rows.Scan(&j.ID, &j.Position, &runsOnJSON, &j.TimeoutSeconds, &artifactsJSON, &matrixJSON, &stepsJSON); err != nil {
 			return nil, fmt.Errorf("scan pipeline job: %w", err)
 		}
 		_ = json.Unmarshal([]byte(runsOnJSON), &j.RunsOn)
+		_ = json.Unmarshal([]byte(artifactsJSON), &j.Artifacts)
 		_ = json.Unmarshal([]byte(matrixJSON), &j.MatrixInclude)
 		_ = json.Unmarshal([]byte(stepsJSON), &j.Steps)
 		jobs = append(jobs, j)
@@ -384,6 +404,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	jobID := fmt.Sprintf("job-%d", now.UnixNano())
 
 	requiredJSON, _ := json.Marshal(req.RequiredCapabilities)
+	artifactGlobsJSON, _ := json.Marshal(req.ArtifactGlobs)
 	metadataJSON, _ := json.Marshal(req.Metadata)
 
 	var sourceRepo, sourceRef string
@@ -393,9 +414,9 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	}
 
 	if _, err := s.db.Exec(`
-		INSERT INTO jobs (id, script, required_capabilities_json, timeout_seconds, source_repo, source_ref, metadata_json, status, created_utc)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, jobID, req.Script, string(requiredJSON), req.TimeoutSeconds, sourceRepo, sourceRef, string(metadataJSON), "queued", now.Format(time.RFC3339Nano)); err != nil {
+		INSERT INTO jobs (id, script, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json, status, created_utc)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, jobID, req.Script, string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), sourceRepo, sourceRef, string(metadataJSON), "queued", now.Format(time.RFC3339Nano)); err != nil {
 		return protocol.Job{}, fmt.Errorf("insert job: %w", err)
 	}
 
@@ -404,6 +425,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 		Script:               req.Script,
 		RequiredCapabilities: cloneMap(req.RequiredCapabilities),
 		TimeoutSeconds:       req.TimeoutSeconds,
+		ArtifactGlobs:        append([]string(nil), req.ArtifactGlobs...),
 		Source:               cloneSource(req.Source),
 		Metadata:             cloneMap(req.Metadata),
 		Status:               "queued",
@@ -413,7 +435,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 
 func (s *Store) ListJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, required_capabilities_json, timeout_seconds, source_repo, source_ref, metadata_json,
+		SELECT id, script, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM jobs
 		ORDER BY created_utc DESC
@@ -439,7 +461,7 @@ func (s *Store) ListJobs() ([]protocol.Job, error) {
 
 func (s *Store) GetJob(id string) (protocol.Job, error) {
 	row := s.db.QueryRow(`
-		SELECT id, script, required_capabilities_json, timeout_seconds, source_repo, source_ref, metadata_json,
+		SELECT id, script, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM jobs WHERE id = ?
 	`, id)
@@ -489,7 +511,7 @@ func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol
 
 func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, required_capabilities_json, timeout_seconds, source_repo, source_ref, metadata_json,
+		SELECT id, script, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM jobs WHERE status = 'queued'
 		ORDER BY created_utc ASC
@@ -588,26 +610,80 @@ func (s *Store) ClearQueuedJobs() (int64, error) {
 	return affected, nil
 }
 
+func (s *Store) SaveJobArtifacts(jobID string, artifacts []protocol.JobArtifact) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`DELETE FROM job_artifacts WHERE job_id = ?`, jobID); err != nil {
+		return fmt.Errorf("clear job artifacts: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, a := range artifacts {
+		if _, err := tx.Exec(`
+			INSERT INTO job_artifacts (job_id, path, stored_rel, size_bytes, created_utc)
+			VALUES (?, ?, ?, ?, ?)
+		`, jobID, a.Path, a.URL, a.SizeBytes, now); err != nil {
+			return fmt.Errorf("insert artifact: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListJobArtifacts(jobID string) ([]protocol.JobArtifact, error) {
+	rows, err := s.db.Query(`
+		SELECT id, job_id, path, stored_rel, size_bytes
+		FROM job_artifacts
+		WHERE job_id = ?
+		ORDER BY id
+	`, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("list artifacts: %w", err)
+	}
+	defer rows.Close()
+
+	artifacts := []protocol.JobArtifact{}
+	for rows.Next() {
+		var a protocol.JobArtifact
+		if err := rows.Scan(&a.ID, &a.JobID, &a.Path, &a.URL, &a.SizeBytes); err != nil {
+			return nil, fmt.Errorf("scan artifact: %w", err)
+		}
+		artifacts = append(artifacts, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate artifacts: %w", err)
+	}
+	return artifacts, nil
+}
+
 func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error) {
 	var (
-		job                        protocol.Job
-		requiredJSON, metadataJSON string
-		sourceRepo, sourceRef      sql.NullString
-		createdUTC                 string
-		startedUTC, finishedUTC    sql.NullString
-		leasedByAgentID, leasedUTC sql.NullString
-		exitCode                   sql.NullInt64
-		errorText, outputText      sql.NullString
+		job                                           protocol.Job
+		requiredJSON, artifactGlobsJSON, metadataJSON string
+		sourceRepo, sourceRef                         sql.NullString
+		createdUTC                                    string
+		startedUTC, finishedUTC                       sql.NullString
+		leasedByAgentID, leasedUTC                    sql.NullString
+		exitCode                                      sql.NullInt64
+		errorText, outputText                         sql.NullString
 	)
 
 	if err := scanner.Scan(
-		&job.ID, &job.Script, &requiredJSON, &job.TimeoutSeconds, &sourceRepo, &sourceRef, &metadataJSON,
+		&job.ID, &job.Script, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &sourceRepo, &sourceRef, &metadataJSON,
 		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText,
 	); err != nil {
 		return protocol.Job{}, err
 	}
 
 	_ = json.Unmarshal([]byte(requiredJSON), &job.RequiredCapabilities)
+	_ = json.Unmarshal([]byte(artifactGlobsJSON), &job.ArtifactGlobs)
 	_ = json.Unmarshal([]byte(metadataJSON), &job.Metadata)
 
 	if sourceRepo.Valid && sourceRepo.String != "" {

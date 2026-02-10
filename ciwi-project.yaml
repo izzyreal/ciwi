@@ -12,6 +12,8 @@ pipelines:
         runs_on:
           executor: shell
         timeout_seconds: 600
+        artifacts:
+          - dist/**
         matrix:
           include:
             - name: linux-amd64
@@ -28,4 +30,4 @@ pipelines:
               ext: ""
         steps:
           - run: mkdir -p dist
-          - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
+          - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi

@@ -20,6 +20,7 @@ type CreateJobRequest struct {
 	Script               string            `json:"script"`
 	RequiredCapabilities map[string]string `json:"required_capabilities"`
 	TimeoutSeconds       int               `json:"timeout_seconds"`
+	ArtifactGlobs        []string          `json:"artifact_globs,omitempty"`
 	Source               *SourceSpec       `json:"source,omitempty"`
 	Metadata             map[string]string `json:"metadata,omitempty"`
 }
@@ -29,6 +30,7 @@ type Job struct {
 	Script               string            `json:"script"`
 	RequiredCapabilities map[string]string `json:"required_capabilities"`
 	TimeoutSeconds       int               `json:"timeout_seconds"`
+	ArtifactGlobs        []string          `json:"artifact_globs,omitempty"`
 	Source               *SourceSpec       `json:"source,omitempty"`
 	Metadata             map[string]string `json:"metadata,omitempty"`
 	Status               string            `json:"status"`
@@ -113,6 +115,28 @@ type ImportProjectResponse struct {
 	RepoRef     string `json:"repo_ref,omitempty"`
 	ConfigFile  string `json:"config_file"`
 	Pipelines   int    `json:"pipelines"`
+}
+
+type JobArtifact struct {
+	ID        int64  `json:"id"`
+	JobID     string `json:"job_id"`
+	Path      string `json:"path"`
+	URL       string `json:"url"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+type JobArtifactsResponse struct {
+	Artifacts []JobArtifact `json:"artifacts"`
+}
+
+type UploadArtifact struct {
+	Path       string `json:"path"`
+	DataBase64 string `json:"data_base64"`
+}
+
+type UploadArtifactsRequest struct {
+	AgentID   string           `json:"agent_id"`
+	Artifacts []UploadArtifact `json:"artifacts"`
 }
 
 type JobStatusUpdateRequest struct {

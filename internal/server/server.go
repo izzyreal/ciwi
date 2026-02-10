@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,14 +36,16 @@ type agentState struct {
 }
 
 type stateStore struct {
-	mu     sync.Mutex
-	agents map[string]agentState
-	db     *store.Store
+	mu           sync.Mutex
+	agents       map[string]agentState
+	db           *store.Store
+	artifactsDir string
 }
 
 func Run(ctx context.Context) error {
 	addr := envOrDefault("CIWI_SERVER_ADDR", ":8080")
 	dbPath := envOrDefault("CIWI_DB_PATH", "ciwi.db")
+	artifactsDir := envOrDefault("CIWI_ARTIFACTS_DIR", "ciwi-artifacts")
 
 	db, err := store.Open(dbPath)
 	if err != nil {
@@ -50,7 +53,11 @@ func Run(ctx context.Context) error {
 	}
 	defer db.Close()
 
-	s := &stateStore{agents: make(map[string]agentState), db: db}
+	if err := os.MkdirAll(artifactsDir, 0o755); err != nil {
+		return fmt.Errorf("create artifacts dir: %w", err)
+	}
+
+	s := &stateStore{agents: make(map[string]agentState), db: db, artifactsDir: artifactsDir}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.uiHandler)
@@ -67,6 +74,7 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("/api/v1/agent/lease", s.leaseJobHandler)
 	mux.HandleFunc("/api/v1/pipelines/run", s.runPipelineFromConfigHandler)
 	mux.HandleFunc("/api/v1/pipelines/", s.pipelineByIDHandler)
+	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))
 
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
@@ -424,6 +432,57 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "artifacts" {
+		switch r.Method {
+		case http.MethodGet:
+			artifacts, err := s.db.ListJobArtifacts(jobID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			for i := range artifacts {
+				artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
+			}
+			writeJSON(w, http.StatusOK, protocol.JobArtifactsResponse{Artifacts: artifacts})
+		case http.MethodPost:
+			var req protocol.UploadArtifactsRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			if req.AgentID == "" {
+				http.Error(w, "agent_id is required", http.StatusBadRequest)
+				return
+			}
+			job, err := s.db.GetJob(jobID)
+			if err != nil {
+				http.Error(w, "job not found", http.StatusNotFound)
+				return
+			}
+			if job.LeasedByAgentID != "" && job.LeasedByAgentID != req.AgentID {
+				http.Error(w, "job is leased by another agent", http.StatusConflict)
+				return
+			}
+
+			artifacts, err := s.persistArtifacts(jobID, req.Artifacts)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := s.db.SaveJobArtifacts(jobID, artifacts); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			for i := range artifacts {
+				artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
+			}
+			writeJSON(w, http.StatusOK, protocol.JobArtifactsResponse{Artifacts: artifacts})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
 	http.NotFound(w, r)
 }
 
@@ -561,6 +620,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline) (protoc
 				Script:               strings.Join(rendered, "\n"),
 				RequiredCapabilities: cloneMap(pj.RunsOn),
 				TimeoutSeconds:       pj.TimeoutSeconds,
+				ArtifactGlobs:        append([]string(nil), pj.Artifacts...),
 				Source:               &protocol.SourceSpec{Repo: p.SourceRepo, Ref: p.SourceRef},
 				Metadata:             metadata,
 			})
@@ -693,6 +753,46 @@ func runCmd(ctx context.Context, dir, name string, args ...string) (string, erro
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func (s *stateStore) persistArtifacts(jobID string, incoming []protocol.UploadArtifact) ([]protocol.JobArtifact, error) {
+	if len(incoming) == 0 {
+		return nil, nil
+	}
+	base := filepath.Join(s.artifactsDir, jobID)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return nil, fmt.Errorf("create artifact dir: %w", err)
+	}
+
+	artifacts := make([]protocol.JobArtifact, 0, len(incoming))
+	for _, in := range incoming {
+		rel := filepath.ToSlash(filepath.Clean(in.Path))
+		if rel == "." || rel == "" || strings.HasPrefix(rel, "/") || strings.Contains(rel, "..") {
+			return nil, fmt.Errorf("invalid artifact path: %q", in.Path)
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(in.DataBase64)
+		if err != nil {
+			return nil, fmt.Errorf("decode artifact %q: %w", in.Path, err)
+		}
+
+		dst := filepath.Join(base, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return nil, fmt.Errorf("mkdir artifact parent: %w", err)
+		}
+		if err := os.WriteFile(dst, decoded, 0o644); err != nil {
+			return nil, fmt.Errorf("write artifact %q: %w", in.Path, err)
+		}
+
+		storedRel := filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(rel)))
+		artifacts = append(artifacts, protocol.JobArtifact{
+			JobID:     jobID,
+			Path:      rel,
+			URL:       storedRel,
+			SizeBytes: int64(len(decoded)),
+		})
+	}
+	return artifacts, nil
 }
 
 func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent string) (protocol.ImportProjectResponse, error) {

@@ -14,9 +14,12 @@ go run ./cmd/ciwi all-in-one
 
 - `CIWI_SERVER_ADDR`: server bind address (default `:8080`)
 - `CIWI_DB_PATH`: sqlite database path (default `ciwi.db`)
+- `CIWI_ARTIFACTS_DIR`: server artifact storage directory (default `ciwi-artifacts`)
 - `CIWI_SERVER_URL`: agent target base URL (default `http://127.0.0.1:8080`)
 - `CIWI_AGENT_ID`: override agent ID (default `agent-<hostname>`)
 - `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent`)
+- `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` / `Set-PSDebug`) (default `true`)
+- `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
 
 ## Server prerequisites
 
@@ -41,6 +44,8 @@ go run ./cmd/ciwi all-in-one
 - `DELETE /api/v1/jobs/{id}` removes a queued job
 - `POST /api/v1/jobs/clear-queue` removes all queued jobs
 - `POST /api/v1/jobs/{id}/status` updates job status (`running`, `succeeded`, `failed`)
+- `GET /api/v1/jobs/{id}/artifacts` lists uploaded artifacts for a job
+- `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job (agent use)
 - `POST /api/v1/agent/lease` leases a matching queued job to an agent
 - `GET /api/v1/projects` returns persisted projects with pipelines
 - `POST /api/v1/pipelines/run` loads `ciwi.yaml` and enqueues pipeline jobs
