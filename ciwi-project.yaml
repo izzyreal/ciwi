@@ -10,8 +10,6 @@ pipelines:
     jobs:
       - id: build-cross-platform
         runs_on:
-          os: linux
-          arch: amd64
           executor: shell
         timeout_seconds: 600
         matrix:
