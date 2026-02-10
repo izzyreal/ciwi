@@ -35,3 +35,6 @@ go.work.sum
 ciwi.db
 ciwi.db-shm
 ciwi.db-wal
+
+# Agent
+.ciwi-agent

@@ -34,9 +34,12 @@ go run ./cmd/ciwi all-in-one
 - `POST /api/v1/heartbeat` accepts agent heartbeats in JSON
 - `GET /api/v1/agents` returns known agents
 - `POST /api/v1/projects/import` imports a project from git (`ciwi-project.yaml` by default)
+- `POST /api/v1/projects/{projectId}/reload` reloads project definition from saved VCS settings
 - `POST /api/v1/jobs` enqueues a job
 - `GET /api/v1/jobs` returns all jobs
 - `GET /api/v1/jobs/{id}` returns one job
+- `DELETE /api/v1/jobs/{id}` removes a queued job
+- `POST /api/v1/jobs/clear-queue` removes all queued jobs
 - `POST /api/v1/jobs/{id}/status` updates job status (`running`, `succeeded`, `failed`)
 - `POST /api/v1/agent/lease` leases a matching queued job to an agent
 - `GET /api/v1/projects` returns persisted projects with pipelines
@@ -64,6 +67,9 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/projects/import \
 
 # 4) Find pipeline DB IDs.
 curl -s http://127.0.0.1:8080/api/v1/projects
+
+# Optional: reload an imported project definition from VCS.
+curl -s -X POST http://127.0.0.1:8080/api/v1/projects/1/reload -d '{}'
 
 # 5) Run a persisted pipeline by DB ID.
 curl -s -X POST http://127.0.0.1:8080/api/v1/pipelines/1/run -d '{}'

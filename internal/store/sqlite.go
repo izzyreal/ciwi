@@ -286,6 +286,22 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 	return projects, nil
 }
 
+func (s *Store) GetProjectByID(id int64) (protocol.ProjectSummary, error) {
+	var p protocol.ProjectSummary
+	row := s.db.QueryRow(`
+		SELECT id, name, config_path, repo_url, repo_ref, config_file
+		FROM projects
+		WHERE id = ?
+	`, id)
+	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile); err != nil {
+		if err == sql.ErrNoRows {
+			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
+		}
+		return protocol.ProjectSummary{}, fmt.Errorf("get project: %w", err)
+	}
+	return p, nil
+}
+
 func (s *Store) GetPipelineByDBID(id int64) (PersistedPipeline, error) {
 	var p PersistedPipeline
 	row := s.db.QueryRow(`
@@ -545,6 +561,31 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 	}
 
 	return s.GetJob(jobID)
+}
+
+func (s *Store) DeleteQueuedJob(jobID string) error {
+	res, err := s.db.Exec(`DELETE FROM jobs WHERE id = ? AND status = 'queued'`, jobID)
+	if err != nil {
+		return fmt.Errorf("delete queued job: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		_, getErr := s.GetJob(jobID)
+		if getErr != nil {
+			return fmt.Errorf("job not found")
+		}
+		return fmt.Errorf("job is not queued")
+	}
+	return nil
+}
+
+func (s *Store) ClearQueuedJobs() (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM jobs WHERE status = 'queued'`)
+	if err != nil {
+		return 0, fmt.Errorf("clear queued jobs: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	return affected, nil
 }
 
 func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error) {
