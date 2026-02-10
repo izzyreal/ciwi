@@ -38,3 +38,6 @@ ciwi.db-wal
 
 # Agent
 .ciwi-agent
+
+# Server
+ciwi-artifacts

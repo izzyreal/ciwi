@@ -114,7 +114,7 @@ const indexHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>ID</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Output/Error</th><th>Actions</th></tr>
+          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Output/Error</th><th>Actions</th></tr>
         </thead>
         <tbody id="queuedJobsBody"></tbody>
       </table>
@@ -122,9 +122,12 @@ const indexHTML = `<!doctype html>
 
     <div class="card">
       <h2>Job History</h2>
+      <div class="row" style="margin-bottom:10px;">
+        <button id="flushHistoryBtn" class="secondary">Flush History</button>
+      </div>
       <table>
         <thead>
-          <tr><th>ID</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Output/Error</th></tr>
+          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Output/Error</th></tr>
         </thead>
         <tbody id="historyJobsBody"></tbody>
       </table>
@@ -145,6 +148,19 @@ const indexHTML = `<!doctype html>
 
     function statusClass(status) {
       return 'status-' + (status || '').toLowerCase();
+    }
+
+    function jobDescription(job) {
+      const m = job.metadata || {};
+      const matrix = (m.matrix_name || '').trim();
+      const pipelineJob = (m.pipeline_job_id || '').trim();
+      const pipeline = (m.pipeline_id || '').trim();
+      if (matrix && pipelineJob) return pipelineJob + ' / ' + matrix;
+      if (matrix) return matrix;
+      if (pipelineJob && pipeline) return pipeline + ' / ' + pipelineJob;
+      if (pipelineJob) return pipelineJob;
+      if (pipeline) return pipeline;
+      return 'Job';
     }
 
     function setProjectReloadState(projectId, text, color) {
@@ -255,9 +271,10 @@ const indexHTML = `<!doctype html>
       const tr = document.createElement('tr');
       const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
       const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
+      const description = jobDescription(job);
 
       tr.innerHTML =
-        '<td><a class="job-link" href="/jobs/' + encodeURIComponent(job.id) + '"><code>' + job.id + '</code></a></td>' +
+        '<td><a class="job-link" href="/jobs/' + encodeURIComponent(job.id) + '">' + escapeHtml(description) + '</a></td>' +
         '<td class="' + statusClass(job.status) + '">' + (job.status || '') + '</td>' +
         '<td>' + pipeline + '</td>' +
         '<td>' + (job.leased_by_agent_id || '') + '</td>' +
@@ -324,6 +341,18 @@ const indexHTML = `<!doctype html>
         await refreshJobs();
       } catch (e) {
         alert('Clear queue failed: ' + e.message);
+      }
+    };
+
+    document.getElementById('flushHistoryBtn').onclick = async () => {
+      if (!confirm('Flush all finished jobs from history?')) {
+        return;
+      }
+      try {
+        await api('/api/v1/jobs/flush-history', { method: 'POST', body: '{}' });
+        await refreshJobs();
+      } catch (e) {
+        alert('Flush history failed: ' + e.message);
       }
     };
 
@@ -437,6 +466,19 @@ const jobHTML = `<!doctype html>
       return 'status-' + (status || '').toLowerCase();
     }
 
+    function jobDescription(job) {
+      const m = job.metadata || {};
+      const matrix = (m.matrix_name || '').trim();
+      const pipelineJob = (m.pipeline_job_id || '').trim();
+      const pipeline = (m.pipeline_id || '').trim();
+      if (matrix && pipelineJob) return pipelineJob + ' / ' + matrix;
+      if (matrix) return matrix;
+      if (pipelineJob && pipeline) return pipeline + ' / ' + pipelineJob;
+      if (pipelineJob) return pipelineJob;
+      if (pipeline) return pipeline;
+      return 'Job';
+    }
+
     function jobIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
       return parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
@@ -457,11 +499,13 @@ const jobHTML = `<!doctype html>
       const data = await res.json();
       const job = data.job;
 
-      document.getElementById('jobTitle').textContent = job.id;
+      const desc = jobDescription(job);
+      document.getElementById('jobTitle').textContent = desc;
       document.getElementById('subtitle').innerHTML = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(job.status || '') + '</span>';
 
       const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
       const rows = [
+        ['Job ID', escapeHtml(job.id || '')],
         ['Status', '<span class="' + statusClass(job.status) + '">' + escapeHtml(job.status || '') + '</span>'],
         ['Pipeline', escapeHtml(pipeline)],
         ['Agent', escapeHtml(job.leased_by_agent_id || '')],

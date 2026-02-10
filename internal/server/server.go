@@ -71,6 +71,7 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("/api/v1/jobs", s.jobsHandler)
 	mux.HandleFunc("/api/v1/jobs/", s.jobByIDHandler)
 	mux.HandleFunc("/api/v1/jobs/clear-queue", s.clearQueueHandler)
+	mux.HandleFunc("/api/v1/jobs/flush-history", s.flushHistoryHandler)
 	mux.HandleFunc("/api/v1/agent/lease", s.leaseJobHandler)
 	mux.HandleFunc("/api/v1/pipelines/run", s.runPipelineFromConfigHandler)
 	mux.HandleFunc("/api/v1/pipelines/", s.pipelineByIDHandler)
@@ -497,6 +498,19 @@ func (s *stateStore) clearQueueHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"cleared": n})
+}
+
+func (s *stateStore) flushHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	n, err := s.db.FlushJobHistory()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"flushed": n})
 }
 
 func (s *stateStore) runPipelineFromConfigHandler(w http.ResponseWriter, r *http.Request) {

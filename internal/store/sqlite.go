@@ -610,6 +610,18 @@ func (s *Store) ClearQueuedJobs() (int64, error) {
 	return affected, nil
 }
 
+func (s *Store) FlushJobHistory() (int64, error) {
+	res, err := s.db.Exec(`
+		DELETE FROM jobs
+		WHERE status NOT IN ('queued', 'leased', 'running')
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("flush job history: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	return affected, nil
+}
+
 func (s *Store) SaveJobArtifacts(jobID string, artifacts []protocol.JobArtifact) error {
 	tx, err := s.db.Begin()
 	if err != nil {

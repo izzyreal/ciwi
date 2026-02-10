@@ -43,6 +43,7 @@ go run ./cmd/ciwi all-in-one
 - `GET /api/v1/jobs/{id}` returns one job
 - `DELETE /api/v1/jobs/{id}` removes a queued job
 - `POST /api/v1/jobs/clear-queue` removes all queued jobs
+- `POST /api/v1/jobs/flush-history` removes all finished jobs from history
 - `POST /api/v1/jobs/{id}/status` updates job status (`running`, `succeeded`, `failed`)
 - `GET /api/v1/jobs/{id}/artifacts` lists uploaded artifacts for a job
 - `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job (agent use)
