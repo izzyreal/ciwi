@@ -30,6 +30,37 @@ pipelines:
 	}
 }
 
+func TestParseTestStep(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: test
+    jobs:
+      - id: unit
+        timeout_seconds: 60
+        steps:
+          - test:
+              name: go-unit
+              command: go test -json ./...
+              format: go-test-json
+`), "test-step")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if len(cfg.Pipelines) != 1 || len(cfg.Pipelines[0].Jobs) != 1 || len(cfg.Pipelines[0].Jobs[0].Steps) != 1 {
+		t.Fatalf("unexpected parsed structure")
+	}
+	step := cfg.Pipelines[0].Jobs[0].Steps[0]
+	if step.Test == nil {
+		t.Fatal("expected test step to be parsed")
+	}
+	if step.Test.Name != "go-unit" || step.Test.Command != "go test -json ./..." || step.Test.Format != "go-test-json" {
+		t.Fatalf("unexpected test step: %+v", step.Test)
+	}
+}
+
 func TestParseRejectsUnsupportedVersion(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 2

@@ -134,9 +134,29 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					continue
 				}
 			}
-			rendered := make([]string, 0, len(pj.Steps))
-			for _, step := range pj.Steps {
-				line := renderTemplate(step, vars)
+			rendered := make([]string, 0, len(pj.Steps)*3)
+			for idx, step := range pj.Steps {
+				if step.Test != nil {
+					command := renderTemplate(step.Test.Command, vars)
+					if strings.TrimSpace(command) == "" {
+						continue
+					}
+					name := strings.TrimSpace(step.Test.Name)
+					if name == "" {
+						name = fmt.Sprintf("%s-test-%d", pj.ID, idx+1)
+					}
+					format := strings.TrimSpace(step.Test.Format)
+					if format == "" {
+						format = "go-test-json"
+					}
+					rendered = append(rendered,
+						fmt.Sprintf("echo \"__CIWI_TEST_BEGIN__ name=%s format=%s\"", sanitizeMarkerToken(name), sanitizeMarkerToken(format)),
+						command,
+						`echo "__CIWI_TEST_END__"`,
+					)
+					continue
+				}
+				line := renderTemplate(step.Run, vars)
 				if strings.TrimSpace(line) == "" {
 					continue
 				}

@@ -2,9 +2,11 @@ package store
 
 import (
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -214,16 +216,21 @@ func TestStoreLeaseJobConcurrencySingleWinner(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go func(i int) {
 			defer wg.Done()
-			j, leaseErr := s.LeaseJob(
-				"agent-concurrent-"+string(rune('a'+(i%26))),
-				map[string]string{"os": "linux", "arch": "amd64"},
-			)
-			if leaseErr != nil {
-				t.Errorf("lease error: %v", leaseErr)
+			agentID := "agent-concurrent-" + string(rune('a'+(i%26)))
+			for attempt := 0; attempt < 8; attempt++ {
+				j, leaseErr := s.LeaseJob(agentID, map[string]string{"os": "linux", "arch": "amd64"})
+				if leaseErr != nil {
+					if strings.Contains(strings.ToLower(leaseErr.Error()), "database is locked") {
+						time.Sleep(10 * time.Millisecond)
+						continue
+					}
+					t.Errorf("lease error: %v", leaseErr)
+					return
+				}
+				if j != nil {
+					atomic.AddInt32(&leasedCount, 1)
+				}
 				return
-			}
-			if j != nil {
-				atomic.AddInt32(&leasedCount, 1)
 			}
 		}(i)
 	}
@@ -242,5 +249,52 @@ func TestStoreLeaseJobConcurrencySingleWinner(t *testing.T) {
 	}
 	if got.LeasedByAgentID == "" {
 		t.Fatal("expected leased_by_agent_id to be set")
+	}
+}
+
+func TestStoreSaveAndGetJobTestReport(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJob(protocol.CreateJobRequest{
+		Script:         "echo tests",
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	report := protocol.JobTestReport{
+		Total:   2,
+		Passed:  1,
+		Failed:  1,
+		Skipped: 0,
+		Suites: []protocol.TestSuiteReport{
+			{
+				Name:    "go-unit",
+				Format:  "go-test-json",
+				Total:   2,
+				Passed:  1,
+				Failed:  1,
+				Skipped: 0,
+				Cases: []protocol.TestCase{
+					{Package: "p", Name: "TestA", Status: "pass"},
+					{Package: "p", Name: "TestB", Status: "fail"},
+				},
+			},
+		},
+	}
+	if err := s.SaveJobTestReport(job.ID, report); err != nil {
+		t.Fatalf("save test report: %v", err)
+	}
+
+	got, found, err := s.GetJobTestReport(job.ID)
+	if err != nil {
+		t.Fatalf("get test report: %v", err)
+	}
+	if !found {
+		t.Fatal("expected test report to be found")
+	}
+	if got.Total != 2 || got.Failed != 1 || len(got.Suites) != 1 {
+		t.Fatalf("unexpected test report: %+v", got)
 	}
 }

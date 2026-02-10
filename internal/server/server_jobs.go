@@ -155,6 +155,49 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "tests" {
+		switch r.Method {
+		case http.MethodGet:
+			report, found, err := s.db.GetJobTestReport(jobID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !found {
+				writeJSON(w, http.StatusOK, protocol.JobTestReportResponse{})
+				return
+			}
+			writeJSON(w, http.StatusOK, protocol.JobTestReportResponse{Report: report})
+		case http.MethodPost:
+			var req protocol.UploadTestReportRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			if strings.TrimSpace(req.AgentID) == "" {
+				http.Error(w, "agent_id is required", http.StatusBadRequest)
+				return
+			}
+			job, err := s.db.GetJob(jobID)
+			if err != nil {
+				http.Error(w, "job not found", http.StatusNotFound)
+				return
+			}
+			if job.LeasedByAgentID != "" && job.LeasedByAgentID != req.AgentID {
+				http.Error(w, "job is leased by another agent", http.StatusConflict)
+				return
+			}
+			if err := s.db.SaveJobTestReport(jobID, req.Report); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, http.StatusOK, protocol.JobTestReportResponse{Report: req.Report})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
 	http.NotFound(w, r)
 }
 

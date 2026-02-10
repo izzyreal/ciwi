@@ -33,7 +33,7 @@ type PersistedPipelineJob struct {
 	TimeoutSeconds int
 	Artifacts      []string
 	MatrixInclude  []map[string]string
-	Steps          []string
+	Steps          []config.Step
 	Position       int
 }
 
@@ -58,6 +58,7 @@ func (s *Store) Close() error {
 func (s *Store) migrate() error {
 	stmts := []string{
 		`PRAGMA journal_mode=WAL;`,
+		`PRAGMA busy_timeout=5000;`,
 		`CREATE TABLE IF NOT EXISTS projects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
@@ -117,6 +118,12 @@ func (s *Store) migrate() error {
 			path TEXT NOT NULL,
 			stored_rel TEXT NOT NULL,
 			size_bytes INTEGER NOT NULL,
+			created_utc TEXT NOT NULL,
+			FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+		);`,
+		`CREATE TABLE IF NOT EXISTS job_test_reports (
+			job_id TEXT PRIMARY KEY,
+			report_json TEXT NOT NULL,
 			created_utc TEXT NOT NULL,
 			FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
 		);`,
@@ -182,11 +189,7 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 			runsOnJSON, _ := json.Marshal(j.RunsOn)
 			artifactsJSON, _ := json.Marshal(j.Artifacts)
 			matrixJSON, _ := json.Marshal(j.Matrix.Include)
-			steps := make([]string, 0, len(j.Steps))
-			for _, step := range j.Steps {
-				steps = append(steps, step.Run)
-			}
-			stepsJSON, _ := json.Marshal(steps)
+			stepsJSON, _ := json.Marshal(j.Steps)
 
 			if _, err := tx.Exec(`
 				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, runs_on_json, timeout_seconds, artifacts_json, matrix_json, steps_json)

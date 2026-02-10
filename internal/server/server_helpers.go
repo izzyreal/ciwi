@@ -98,3 +98,11 @@ func runCmd(ctx context.Context, dir, name string, args ...string) (string, erro
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
+
+func sanitizeMarkerToken(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.ReplaceAll(v, " ", "_")
+	v = strings.ReplaceAll(v, "\t", "_")
+	v = strings.ReplaceAll(v, "\"", "")
+	return v
+}

@@ -48,6 +48,8 @@ go run ./cmd/ciwi all-in-one
 - `POST /api/v1/jobs/{id}/status` updates job status (`running`, `succeeded`, `failed`)
 - `GET /api/v1/jobs/{id}/artifacts` lists uploaded artifacts for a job
 - `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job (agent use)
+- `GET /api/v1/jobs/{id}/tests` returns parsed test report for a job
+- `POST /api/v1/jobs/{id}/tests` uploads parsed test report for a job (agent use)
 - `POST /api/v1/agent/lease` leases a matching queued job to an agent
 - `GET /api/v1/projects` returns persisted projects with pipelines
 - `GET /api/v1/projects/{projectId}` returns full project structure (pipelines/jobs/matrix)
@@ -58,6 +60,11 @@ go run ./cmd/ciwi all-in-one
 Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps
 - `pipelines[].source.ref` (optional): branch/tag/ref to checkout
+
+`steps` supports two step types:
+- `run`: executes a shell command line.
+- `test`: executes a dedicated test command and enables parsed test reports in job UI/API.
+  - fields: `name` (optional), `command` (required), `format` (optional, currently `go-test-json`).
 
 ## Quick API test
 

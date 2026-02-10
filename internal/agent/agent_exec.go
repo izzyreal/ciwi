@@ -112,6 +112,15 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 
 	trimmedOutput := trimOutput(output.String())
+	testReport := parseJobTestReport(output.String())
+	if testReport.Total > 0 {
+		if err := uploadTestReport(ctx, client, serverURL, agentID, job.ID, testReport); err != nil {
+			fmt.Fprintf(&output, "[tests] upload_failed=%v\n", err)
+		} else {
+			fmt.Fprintf(&output, "%s\n", testReportSummary(testReport))
+		}
+		trimmedOutput = trimOutput(output.String())
+	}
 
 	if err == nil {
 		exitCode := 0

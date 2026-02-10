@@ -135,4 +135,12 @@ func TestServerStatusAndRunSelectionValidation(t *testing.T) {
 		t.Fatalf("expected 400 for unmatched run-selection, got %d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 	_ = readBody(t, resp)
+
+	resp = mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/tests", map[string]any{
+		"report": map[string]any{"total": 1},
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing agent_id in tests upload, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	_ = readBody(t, resp)
 }

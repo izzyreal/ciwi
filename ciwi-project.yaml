@@ -8,6 +8,15 @@ pipelines:
     source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
+      - id: unit-tests
+        runs_on:
+          executor: shell
+        timeout_seconds: 600
+        steps:
+          - test:
+              name: go-unit
+              command: go test -json ./...
+              format: go-test-json
       - id: build-cross-platform
         runs_on:
           executor: shell

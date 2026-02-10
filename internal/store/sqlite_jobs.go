@@ -292,3 +292,36 @@ func (s *Store) ListJobArtifacts(jobID string) ([]protocol.JobArtifact, error) {
 	}
 	return artifacts, nil
 }
+
+func (s *Store) SaveJobTestReport(jobID string, report protocol.JobTestReport) error {
+	reportJSON, err := json.Marshal(report)
+	if err != nil {
+		return fmt.Errorf("marshal test report: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := s.db.Exec(`
+		INSERT INTO job_test_reports (job_id, report_json, created_utc)
+		VALUES (?, ?, ?)
+		ON CONFLICT(job_id) DO UPDATE SET report_json=excluded.report_json, created_utc=excluded.created_utc
+	`, jobID, string(reportJSON), now); err != nil {
+		return fmt.Errorf("save test report: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetJobTestReport(jobID string) (protocol.JobTestReport, bool, error) {
+	var reportJSON string
+	row := s.db.QueryRow(`SELECT report_json FROM job_test_reports WHERE job_id = ?`, jobID)
+	if err := row.Scan(&reportJSON); err != nil {
+		if err == sql.ErrNoRows {
+			return protocol.JobTestReport{}, false, nil
+		}
+		return protocol.JobTestReport{}, false, fmt.Errorf("get test report: %w", err)
+	}
+
+	var report protocol.JobTestReport
+	if err := json.Unmarshal([]byte(reportJSON), &report); err != nil {
+		return protocol.JobTestReport{}, false, fmt.Errorf("decode test report: %w", err)
+	}
+	return report, true, nil
+}

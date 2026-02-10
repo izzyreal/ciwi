@@ -110,8 +110,16 @@ type PipelineJobDetail struct {
 	TimeoutSeconds int               `json:"timeout_seconds"`
 	RunsOn         map[string]string `json:"runs_on,omitempty"`
 	Artifacts      []string          `json:"artifacts,omitempty"`
-	Steps          []string          `json:"steps,omitempty"`
+	Steps          []PipelineStep    `json:"steps,omitempty"`
 	MatrixIncludes []MatrixInclude   `json:"matrix_includes,omitempty"`
+}
+
+type PipelineStep struct {
+	Type        string `json:"type"`
+	Run         string `json:"run,omitempty"`
+	TestName    string `json:"test_name,omitempty"`
+	TestCommand string `json:"test_command,omitempty"`
+	TestFormat  string `json:"test_format,omitempty"`
 }
 
 type PipelineDetail struct {
@@ -185,4 +193,39 @@ type JobStatusUpdateRequest struct {
 	Error        string    `json:"error,omitempty"`
 	Output       string    `json:"output,omitempty"`
 	TimestampUTC time.Time `json:"timestamp_utc,omitempty"`
+}
+
+type TestCase struct {
+	Package         string  `json:"package,omitempty"`
+	Name            string  `json:"name,omitempty"`
+	Status          string  `json:"status"`
+	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	Output          string  `json:"output,omitempty"`
+}
+
+type TestSuiteReport struct {
+	Name    string     `json:"name,omitempty"`
+	Format  string     `json:"format"`
+	Total   int        `json:"total"`
+	Passed  int        `json:"passed"`
+	Failed  int        `json:"failed"`
+	Skipped int        `json:"skipped"`
+	Cases   []TestCase `json:"cases,omitempty"`
+}
+
+type JobTestReport struct {
+	Total   int               `json:"total"`
+	Passed  int               `json:"passed"`
+	Failed  int               `json:"failed"`
+	Skipped int               `json:"skipped"`
+	Suites  []TestSuiteReport `json:"suites,omitempty"`
+}
+
+type UploadTestReportRequest struct {
+	AgentID string        `json:"agent_id"`
+	Report  JobTestReport `json:"report"`
+}
+
+type JobTestReportResponse struct {
+	Report JobTestReport `json:"report"`
 }

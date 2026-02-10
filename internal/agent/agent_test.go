@@ -166,3 +166,30 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 		t.Fatalf("expected uploaded marker in summary, got: %s", summary)
 	}
 }
+
+func TestParseJobTestReport(t *testing.T) {
+	output := strings.Join([]string{
+		"random line",
+		"__CIWI_TEST_BEGIN__ name=go-unit format=go-test-json",
+		`{"Time":"2026-01-01T00:00:00Z","Action":"run","Package":"p","Test":"TestA"}`,
+		`{"Time":"2026-01-01T00:00:00Z","Action":"pass","Package":"p","Test":"TestA","Elapsed":0.01}`,
+		`{"Time":"2026-01-01T00:00:00Z","Action":"run","Package":"p","Test":"TestB"}`,
+		`{"Time":"2026-01-01T00:00:00Z","Action":"fail","Package":"p","Test":"TestB","Elapsed":0.02}`,
+		"__CIWI_TEST_END__",
+	}, "\n")
+
+	report := parseJobTestReport(output)
+	if report.Total != 2 || report.Passed != 1 || report.Failed != 1 || report.Skipped != 0 {
+		t.Fatalf("unexpected aggregate report: %+v", report)
+	}
+	if len(report.Suites) != 1 {
+		t.Fatalf("expected 1 suite, got %d", len(report.Suites))
+	}
+	s := report.Suites[0]
+	if s.Name != "go-unit" || s.Format != "go-test-json" {
+		t.Fatalf("unexpected suite metadata: %+v", s)
+	}
+	if len(s.Cases) != 2 {
+		t.Fatalf("expected 2 cases, got %d", len(s.Cases))
+	}
+}

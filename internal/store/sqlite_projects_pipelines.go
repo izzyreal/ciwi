@@ -165,7 +165,22 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 				TimeoutSeconds: j.TimeoutSeconds,
 				RunsOn:         cloneMap(j.RunsOn),
 				Artifacts:      append([]string(nil), j.Artifacts...),
-				Steps:          append([]string(nil), j.Steps...),
+			}
+			d.Steps = make([]protocol.PipelineStep, 0, len(j.Steps))
+			for _, step := range j.Steps {
+				if step.Test != nil {
+					d.Steps = append(d.Steps, protocol.PipelineStep{
+						Type:        "test",
+						TestName:    step.Test.Name,
+						TestCommand: step.Test.Command,
+						TestFormat:  step.Test.Format,
+					})
+					continue
+				}
+				d.Steps = append(d.Steps, protocol.PipelineStep{
+					Type: "run",
+					Run:  step.Run,
+				})
 			}
 			for idx, vars := range j.MatrixInclude {
 				v := cloneMap(vars)
@@ -248,7 +263,16 @@ func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, er
 		_ = json.Unmarshal([]byte(runsOnJSON), &j.RunsOn)
 		_ = json.Unmarshal([]byte(artifactsJSON), &j.Artifacts)
 		_ = json.Unmarshal([]byte(matrixJSON), &j.MatrixInclude)
-		_ = json.Unmarshal([]byte(stepsJSON), &j.Steps)
+		if err := json.Unmarshal([]byte(stepsJSON), &j.Steps); err != nil {
+			// Backward compatibility for existing rows where steps_json is []string.
+			var legacy []string
+			if legacyErr := json.Unmarshal([]byte(stepsJSON), &legacy); legacyErr == nil {
+				j.Steps = make([]config.Step, 0, len(legacy))
+				for _, run := range legacy {
+					j.Steps = append(j.Steps, config.Step{Run: run})
+				}
+			}
+		}
 		jobs = append(jobs, j)
 	}
 	if err := rows.Err(); err != nil {

@@ -84,6 +84,10 @@ const jobHTML = `<!doctype html>
       <h3 style="margin:0 0 10px;">Artifacts</h3>
       <div id="artifactsBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
     </div>
+    <div class="card">
+      <h3 style="margin:0 0 10px;">Test Report</h3>
+      <div id="testReportBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
+    </div>
   </main>
 
   <script src="/ui/shared.js"></script>
@@ -148,6 +152,42 @@ const jobHTML = `<!doctype html>
         }
       } catch (_) {
         document.getElementById('artifactsBox').textContent = 'Could not load artifacts';
+      }
+
+      try {
+        const tres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/tests');
+        if (!tres.ok) throw new Error('test report request failed');
+        const tdata = await tres.json();
+        const report = tdata.report || {};
+        const box = document.getElementById('testReportBox');
+        const suites = report.suites || [];
+        if (!suites.length) {
+          box.textContent = 'No parsed test report';
+        } else {
+          const header = '<div><strong>Total:</strong> ' + (report.total || 0) +
+            ' | <strong>Passed:</strong> ' + (report.passed || 0) +
+            ' | <strong>Failed:</strong> ' + (report.failed || 0) +
+            ' | <strong>Skipped:</strong> ' + (report.skipped || 0) + '</div>';
+          const suiteHtml = suites.map(s => {
+            const cases = (s.cases || []).map(c =>
+              '<tr>' +
+              '<td>' + escapeHtml(c.package || '') + '</td>' +
+              '<td>' + escapeHtml(c.name || '') + '</td>' +
+              '<td>' + escapeHtml(c.status || '') + '</td>' +
+              '<td>' + (c.duration_seconds || 0).toFixed(3) + 's</td>' +
+              '</tr>'
+            ).join('');
+            return '<div style="margin-top:10px;">' +
+              '<div><strong>' + escapeHtml(s.name || 'suite') + '</strong> (' + escapeHtml(s.format || '') + ')</div>' +
+              '<div style="font-size:13px;color:#5f6f67;">total=' + (s.total || 0) + ', passed=' + (s.passed || 0) + ', failed=' + (s.failed || 0) + ', skipped=' + (s.skipped || 0) + '</div>' +
+              '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
+              '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Package</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Test</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Status</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Duration</th></tr></thead>' +
+              '<tbody>' + cases + '</tbody></table></div>';
+          }).join('');
+          box.innerHTML = header + suiteHtml;
+        }
+      } catch (_) {
+        document.getElementById('testReportBox').textContent = 'Could not load test report';
       }
     }
 

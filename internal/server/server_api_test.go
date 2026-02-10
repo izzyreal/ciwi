@@ -243,6 +243,38 @@ func TestServerLoadListRunAndQueueHistoryEndpoints(t *testing.T) {
 	}
 	_ = readBody(t, statusResp)
 
+	testsPostResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/tests", map[string]any{
+		"agent_id": "agent-test",
+		"report": map[string]any{
+			"total":   2,
+			"passed":  1,
+			"failed":  1,
+			"skipped": 0,
+			"suites": []map[string]any{
+				{"name": "go-unit", "format": "go-test-json", "total": 2, "passed": 1, "failed": 1, "skipped": 0},
+			},
+		},
+	})
+	if testsPostResp.StatusCode != http.StatusOK {
+		t.Fatalf("upload tests status=%d body=%s", testsPostResp.StatusCode, readBody(t, testsPostResp))
+	}
+	_ = readBody(t, testsPostResp)
+
+	testsGetResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/tests", nil)
+	if testsGetResp.StatusCode != http.StatusOK {
+		t.Fatalf("get tests status=%d body=%s", testsGetResp.StatusCode, readBody(t, testsGetResp))
+	}
+	var testsPayload struct {
+		Report struct {
+			Total  int `json:"total"`
+			Failed int `json:"failed"`
+		} `json:"report"`
+	}
+	decodeJSONBody(t, testsGetResp, &testsPayload)
+	if testsPayload.Report.Total != 2 || testsPayload.Report.Failed != 1 {
+		t.Fatalf("unexpected tests report: %+v", testsPayload.Report)
+	}
+
 	flushResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/flush-history", map[string]any{})
 	if flushResp.StatusCode != http.StatusOK {
 		t.Fatalf("flush history status=%d body=%s", flushResp.StatusCode, readBody(t, flushResp))

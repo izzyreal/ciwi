@@ -8,42 +8,49 @@ import (
 )
 
 type File struct {
-	Version   int        `yaml:"version"`
-	Project   Project    `yaml:"project"`
-	Pipelines []Pipeline `yaml:"pipelines"`
+	Version   int        `yaml:"version" json:"version"`
+	Project   Project    `yaml:"project" json:"project"`
+	Pipelines []Pipeline `yaml:"pipelines" json:"pipelines"`
 }
 
 type Project struct {
-	Name string `yaml:"name"`
+	Name string `yaml:"name" json:"name"`
 }
 
 type Pipeline struct {
-	ID      string `yaml:"id"`
-	Trigger string `yaml:"trigger"`
-	Source  Source `yaml:"source"`
-	Jobs    []Job  `yaml:"jobs"`
+	ID      string `yaml:"id" json:"id"`
+	Trigger string `yaml:"trigger" json:"trigger"`
+	Source  Source `yaml:"source" json:"source"`
+	Jobs    []Job  `yaml:"jobs" json:"jobs"`
 }
 
 type Source struct {
-	Repo string `yaml:"repo"`
-	Ref  string `yaml:"ref"`
+	Repo string `yaml:"repo" json:"repo"`
+	Ref  string `yaml:"ref" json:"ref"`
 }
 
 type Job struct {
-	ID             string            `yaml:"id"`
-	RunsOn         map[string]string `yaml:"runs_on"`
-	TimeoutSeconds int               `yaml:"timeout_seconds"`
-	Artifacts      []string          `yaml:"artifacts"`
-	Matrix         Matrix            `yaml:"matrix"`
-	Steps          []Step            `yaml:"steps"`
+	ID             string            `yaml:"id" json:"id"`
+	RunsOn         map[string]string `yaml:"runs_on" json:"runs_on"`
+	TimeoutSeconds int               `yaml:"timeout_seconds" json:"timeout_seconds"`
+	Artifacts      []string          `yaml:"artifacts" json:"artifacts"`
+	Matrix         Matrix            `yaml:"matrix" json:"matrix"`
+	Steps          []Step            `yaml:"steps" json:"steps"`
 }
 
 type Matrix struct {
-	Include []map[string]string `yaml:"include"`
+	Include []map[string]string `yaml:"include" json:"include"`
 }
 
 type Step struct {
-	Run string `yaml:"run"`
+	Run  string    `yaml:"run,omitempty" json:"run,omitempty"`
+	Test *TestStep `yaml:"test,omitempty" json:"test,omitempty"`
+}
+
+type TestStep struct {
+	Name    string `yaml:"name,omitempty" json:"name,omitempty"`
+	Command string `yaml:"command" json:"command"`
+	Format  string `yaml:"format,omitempty" json:"format,omitempty"`
 }
 
 func Load(path string) (File, error) {
