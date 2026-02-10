@@ -1,0 +1,33 @@
+version: 1
+project:
+  name: ciwi
+
+pipelines:
+  - id: build
+    trigger: manual
+    source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: build-cross-platform
+        runs_on:
+          os: linux
+          arch: amd64
+          executor: shell
+        timeout_seconds: 600
+        matrix:
+          include:
+            - name: linux-amd64
+              goos: linux
+              goarch: amd64
+              ext: ""
+            - name: windows-amd64
+              goos: windows
+              goarch: amd64
+              ext: ".exe"
+            - name: darwin-amd64
+              goos: darwin
+              goarch: amd64
+              ext: ""
+        steps:
+          - run: mkdir -p dist
+          - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi

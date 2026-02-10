@@ -1,0 +1,125 @@
+package protocol
+
+import "time"
+
+type AgentInfo struct {
+	AgentID      string            `json:"agent_id"`
+	Hostname     string            `json:"hostname"`
+	OS           string            `json:"os"`
+	Arch         string            `json:"arch"`
+	Capabilities map[string]string `json:"capabilities"`
+	LastSeenUTC  time.Time         `json:"last_seen_utc"`
+}
+
+type SourceSpec struct {
+	Repo string `json:"repo"`
+	Ref  string `json:"ref,omitempty"`
+}
+
+type CreateJobRequest struct {
+	Script               string            `json:"script"`
+	RequiredCapabilities map[string]string `json:"required_capabilities"`
+	TimeoutSeconds       int               `json:"timeout_seconds"`
+	Source               *SourceSpec       `json:"source,omitempty"`
+	Metadata             map[string]string `json:"metadata,omitempty"`
+}
+
+type Job struct {
+	ID                   string            `json:"id"`
+	Script               string            `json:"script"`
+	RequiredCapabilities map[string]string `json:"required_capabilities"`
+	TimeoutSeconds       int               `json:"timeout_seconds"`
+	Source               *SourceSpec       `json:"source,omitempty"`
+	Metadata             map[string]string `json:"metadata,omitempty"`
+	Status               string            `json:"status"`
+	CreatedUTC           time.Time         `json:"created_utc"`
+	StartedUTC           time.Time         `json:"started_utc,omitempty"`
+	FinishedUTC          time.Time         `json:"finished_utc,omitempty"`
+	LeasedByAgentID      string            `json:"leased_by_agent_id,omitempty"`
+	LeasedUTC            time.Time         `json:"leased_utc,omitempty"`
+	ExitCode             *int              `json:"exit_code,omitempty"`
+	Error                string            `json:"error,omitempty"`
+	Output               string            `json:"output,omitempty"`
+}
+
+type CreateJobResponse struct {
+	Job Job `json:"job"`
+}
+
+type LeaseJobRequest struct {
+	AgentID      string            `json:"agent_id"`
+	Capabilities map[string]string `json:"capabilities"`
+}
+
+type LeaseJobResponse struct {
+	Assigned bool   `json:"assigned"`
+	Job      *Job   `json:"job,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
+type RunPipelineRequest struct {
+	ConfigPath string `json:"config_path"`
+	PipelineID string `json:"pipeline_id"`
+}
+
+type RunPipelineResponse struct {
+	ProjectName string   `json:"project_name"`
+	PipelineID  string   `json:"pipeline_id"`
+	Enqueued    int      `json:"enqueued"`
+	JobIDs      []string `json:"job_ids"`
+}
+
+type LoadConfigRequest struct {
+	ConfigPath string `json:"config_path"`
+}
+
+type LoadConfigResponse struct {
+	ProjectName string `json:"project_name"`
+	ConfigPath  string `json:"config_path"`
+	Pipelines   int    `json:"pipelines"`
+}
+
+type ProjectSummary struct {
+	ID         int64             `json:"id"`
+	Name       string            `json:"name"`
+	ConfigPath string            `json:"config_path,omitempty"`
+	RepoURL    string            `json:"repo_url,omitempty"`
+	RepoRef    string            `json:"repo_ref,omitempty"`
+	ConfigFile string            `json:"config_file,omitempty"`
+	Pipelines  []PipelineSummary `json:"pipelines"`
+}
+
+type PipelineSummary struct {
+	ID         int64  `json:"id"`
+	PipelineID string `json:"pipeline_id"`
+	Trigger    string `json:"trigger,omitempty"`
+	SourceRepo string `json:"source_repo,omitempty"`
+	SourceRef  string `json:"source_ref,omitempty"`
+}
+
+type RunPersistedPipelineRequest struct {
+	PipelineDBID int64 `json:"pipeline_db_id"`
+}
+
+type ImportProjectRequest struct {
+	RepoURL    string `json:"repo_url"`
+	RepoRef    string `json:"repo_ref,omitempty"`
+	ConfigFile string `json:"config_file,omitempty"`
+}
+
+type ImportProjectResponse struct {
+	ProjectName string `json:"project_name"`
+	RepoURL     string `json:"repo_url"`
+	RepoRef     string `json:"repo_ref,omitempty"`
+	ConfigFile  string `json:"config_file"`
+	Pipelines   int    `json:"pipelines"`
+}
+
+type JobStatusUpdateRequest struct {
+	AgentID      string    `json:"agent_id"`
+	Status       string    `json:"status"`
+	ExitCode     *int      `json:"exit_code,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	Output       string    `json:"output,omitempty"`
+	TimestampUTC time.Time `json:"timestamp_utc,omitempty"`
+}
