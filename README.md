@@ -95,6 +95,7 @@ Installer behavior:
 - If multiple servers are found, prompts you to choose one.
 - If none are found, prompts for server URL.
 - Installs agent binary into `~/.local/bin/ciwi` (user-writable) so self-update can swap binaries in place.
+- Applies ad-hoc code signing to the installed binary (`codesign --force --sign -`) so launchd can execute updated binaries without a full signing/notarization setup.
 - Stores `CIWI_GITHUB_TOKEN` in the agent LaunchAgent env when provided, and preserves existing token on reinstall if not provided.
 - Installs two LaunchAgents:
   - `nl.izmar.ciwi.agent` (main agent)

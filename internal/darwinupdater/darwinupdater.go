@@ -123,9 +123,16 @@ func RunApplyStagedAgent(args []string) error {
 		_ = os.Rename(backupPath, manifest.TargetBinary)
 		return fmt.Errorf("chmod target binary: %w", err)
 	}
+	if strings.TrimSpace(envOrDefault("CIWI_DARWIN_ADHOC_SIGN", "true")) != "false" {
+		if err := adHocSignBinary(manifest.TargetBinary); err != nil {
+			_ = os.Rename(manifest.TargetBinary, manifest.StagedBinary)
+			_ = os.Rename(backupPath, manifest.TargetBinary)
+			return fmt.Errorf("ad-hoc sign target binary: %w", err)
+		}
+	}
 	_ = os.Remove(*manifestPath)
 
-	if err := runCmd(launchctlPath, "bootstrap", domain, manifest.AgentPlist); err != nil {
+	if err := runCmd(launchctlPath, "bootstrap", domain, manifest.AgentPlist); err != nil && !isAlreadyLoadedErr(err) {
 		return fmt.Errorf("bootstrap agent launchd plist: %w", err)
 	}
 	if err := runCmd(launchctlPath, "kickstart", "-k", service); err != nil {
@@ -190,4 +197,24 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func isAlreadyLoadedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already loaded")
+}
+
+func adHocSignBinary(path string) error {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return fmt.Errorf("empty path")
+	}
+	codesignPath := strings.TrimSpace(envOrDefault("CIWI_CODESIGN_PATH", "/usr/bin/codesign"))
+	if codesignPath == "" {
+		codesignPath = "/usr/bin/codesign"
+	}
+	return runCmd(codesignPath, "--force", "--sign", "-", p)
 }

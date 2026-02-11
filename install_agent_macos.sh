@@ -329,7 +329,11 @@ install_binary() {
   target_dir="$HOME/.local/bin"
   # Keep agent binary user-writable so ciwi self-update can replace it in-place.
   mkdir -p "$target_dir"
-  install -m 0755 "$src" "${target_dir}/ciwi"
+  target_path="${target_dir}/ciwi"
+  install -m 0755 "$src" "$target_path"
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - "$target_path" >/dev/null
+  fi
   printf '%s\n' "$target_dir"
 }
 
