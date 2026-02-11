@@ -68,7 +68,7 @@ const vaultHTML = `<!doctype html>
     </div>
     <div class="card">
       <h3 style="margin:0 0 10px;">Connections</h3>
-      <table><thead><tr><th>Name</th><th>URL</th><th>Mount</th><th>Auth</th><th>Secret Source</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table>
+      <table><thead><tr><th>Name</th><th>URL</th><th>Mount</th><th>Auth</th><th>Role ID</th><th>Secret Source</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table>
     </div>
   </main>
   <script>
@@ -87,6 +87,7 @@ const vaultHTML = `<!doctype html>
           '<td>' + (c.url || '') + '</td>' +
           '<td>' + (c.approle_mount || '') + '</td>' +
           '<td>' + (c.auth_method || '') + '</td>' +
+          '<td><code>' + (c.role_id || '') + '</code></td>' +
           '<td>' + ((c.secret_id_env || '') ? ('env:' + c.secret_id_env) : '') + '</td>' +
           '<td></td>';
         const td = tr.lastChild;
