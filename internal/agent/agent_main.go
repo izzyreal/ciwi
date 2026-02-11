@@ -22,7 +22,7 @@ func Run(ctx context.Context) error {
 	slog.Info("ciwi agent started", "agent_id", agentID, "server_url", serverURL)
 	defer slog.Info("ciwi agent stopped", "agent_id", agentID)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Minute}
 	heartbeatTicker := time.NewTicker(10 * time.Second)
 	defer heartbeatTicker.Stop()
 	leaseTicker := time.NewTicker(3 * time.Second)
