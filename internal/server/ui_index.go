@@ -137,6 +137,7 @@ const indexHTML = `<!doctype html>
   <script src="/ui/pages.js"></script>
   <script>
     const projectReloadState = new Map();
+    let updateRestartWatchActive = false;
     function setProjectReloadState(projectId, text, color) {
       projectReloadState.set(String(projectId), { text, color });
     }
@@ -336,11 +337,43 @@ const indexHTML = `<!doctype html>
       try {
         const r = await apiJSON('/api/v1/update/apply', { method: 'POST', body: '{}' });
         result.textContent = (r.message || 'Update started. Refresh in a moment.');
+        if (r.updated) {
+          waitForServerRestartAndReload();
+        }
       } catch (e) {
         result.textContent = 'Update failed: ' + e.message;
       }
       await refreshUpdateStatus();
     };
+    async function waitForServerRestartAndReload() {
+      if (updateRestartWatchActive) return;
+      updateRestartWatchActive = true;
+      const result = document.getElementById('updateResult');
+      const started = Date.now();
+      let seenDown = false;
+      while (Date.now() - started < 120000) {
+        try {
+          const res = await fetch('/healthz', { cache: 'no-store' });
+          if (res.ok) {
+            if (seenDown) {
+              result.textContent = 'Server is back. Reloading...';
+              window.location.reload();
+              return;
+            }
+            result.textContent = 'Waiting for restart...';
+          } else {
+            seenDown = true;
+            result.textContent = 'Server restarting...';
+          }
+        } catch (_) {
+          seenDown = true;
+          result.textContent = 'Server restarting...';
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+      updateRestartWatchActive = false;
+      result.textContent = 'Update applied; reload the page if needed.';
+    }
     async function refreshUpdateStatus() {
       const box = document.getElementById('updateStatus');
       try {
