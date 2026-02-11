@@ -236,8 +236,9 @@ const indexHTML = `<!doctype html>
       const tr = document.createElement('tr');
       const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
       const description = jobDescription(job);
+      const backTo = encodeURIComponent(window.location.pathname || '/');
       tr.innerHTML =
-        '<td><a class="job-link" href="/jobs/' + encodeURIComponent(job.id) + '">' + escapeHtml(description) + '</a></td>' +
+        '<td><a class="job-link" href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + escapeHtml(description) + '</a></td>' +
         '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
         '<td>' + pipeline + '</td>' +
         '<td>' + (job.leased_by_agent_id || '') + '</td>' +

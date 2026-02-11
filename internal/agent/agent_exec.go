@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -41,7 +42,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	defer cancel()
 
-	var output bytes.Buffer
+	var output syncBuffer
 	fmt.Fprintf(&output, "[meta] agent=%s os=%s arch=%s\n", agentID, runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&output, "[meta] job_id=%s timeout_seconds=%d\n", job.ID, job.TimeoutSeconds)
 
@@ -92,6 +93,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	cmd.Env = withGoVerbose(os.Environ(), verboseGo)
+
+	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output)
+	defer stopStreaming()
 
 	runStart := time.Now()
 	err := cmd.Run()
@@ -156,6 +160,68 @@ func commandForScript(script string) (string, []string) {
 	return "sh", []string{"-c", script}
 }
 
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) WriteString(str string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.WriteString(str)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer) func() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	done := make(chan struct{})
+	stopCh := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		lastSent := ""
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				snapshot := trimOutput(output.String())
+				if snapshot == lastSent {
+					continue
+				}
+				lastSent = snapshot
+				if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobStatusUpdateRequest{
+					AgentID:      agentID,
+					Status:       "running",
+					Output:       snapshot,
+					TimestampUTC: time.Now().UTC(),
+				}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+					log.Printf("stream running update failed: job=%s err=%v", jobID, err)
+				}
+			}
+		}
+	}()
+
+	return func() {
+		ticker.Stop()
+		close(stopCh)
+		<-done
+	}
+}
+
 func checkoutSource(ctx context.Context, sourceDir string, source protocol.SourceSpec) (string, error) {
 	var output strings.Builder
 
@@ -195,8 +261,11 @@ func checkoutSource(ctx context.Context, sourceDir string, source protocol.Sourc
 func runCommandCapture(ctx context.Context, dir, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
-	return string(output), err
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	return out.String(), err
 }
 
 func withGoVerbose(env []string, enabled bool) []string {

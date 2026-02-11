@@ -206,8 +206,9 @@ const projectHTML = `<!doctype html>
       rows.forEach(job => {
         const tr = document.createElement('tr');
         const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
+        const backTo = encodeURIComponent(window.location.pathname || '/');
         tr.innerHTML =
-          '<td><a href="/jobs/' + encodeURIComponent(job.id) + '">' + escapeHtml(jobDescription(job)) + '</a></td>' +
+          '<td><a href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + escapeHtml(jobDescription(job)) + '</a></td>' +
           '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
           '<td>' + escapeHtml(pipeline) + '</td>' +
           '<td>' + escapeHtml(job.leased_by_agent_id || '') + '</td>' +

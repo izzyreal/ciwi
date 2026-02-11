@@ -81,7 +81,7 @@ const jobHTML = `<!doctype html>
           <div style="color:#5f6f67;" id="subtitle">Loading...</div>
         </div>
       </div>
-      <div><a href="/">Back to Queue</a></div>
+      <div><a id="backLink" href="/">Back to Jobs</a></div>
     </div>
 
     <div class="card">
@@ -109,6 +109,20 @@ const jobHTML = `<!doctype html>
     function jobIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
       return parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
+    }
+
+    function setBackLink() {
+      const link = document.getElementById('backLink');
+      if (!link) return;
+      const params = new URLSearchParams(window.location.search || '');
+      const back = params.get('back') || '';
+      if (back && back.startsWith('/')) {
+        link.href = back;
+        link.textContent = back.startsWith('/projects/') ? 'Back to Project' : 'Back to Jobs';
+        return;
+      }
+      link.href = '/';
+      link.textContent = 'Back to Jobs';
     }
 
     async function loadJob() {
@@ -203,8 +217,9 @@ const jobHTML = `<!doctype html>
       }
     }
 
+    setBackLink();
     loadJob();
-    setInterval(loadJob, 2000);
+    setInterval(loadJob, 500);
   </script>
 </body>
 </html>`
