@@ -12,10 +12,10 @@ go run ./cmd/ciwi all-in-one
 
 ## Environment variables
 
-- `CIWI_SERVER_ADDR`: server bind address (default `:8080`)
+- `CIWI_SERVER_ADDR`: server bind address (default `:8112`)
 - `CIWI_DB_PATH`: sqlite database path (default `ciwi.db`)
 - `CIWI_ARTIFACTS_DIR`: server artifact storage directory (default `ciwi-artifacts`)
-- `CIWI_SERVER_URL`: agent target base URL (default `http://127.0.0.1:8080`)
+- `CIWI_SERVER_URL`: agent target base URL (default `http://127.0.0.1:8112`)
 - `CIWI_AGENT_ID`: override agent ID (default `agent-<hostname>`)
 - `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent`)
 - `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` / `Set-PSDebug`) (default `true`)
@@ -74,22 +74,22 @@ go run ./cmd/ciwi server
 go run ./cmd/ciwi agent
 
 # 2) Open browser UI.
-open http://127.0.0.1:8080/
+open http://127.0.0.1:8112/
 
 # 3) Import a project from git (loads ciwi-project.yaml by default).
-curl -s -X POST http://127.0.0.1:8080/api/v1/projects/import \
+curl -s -X POST http://127.0.0.1:8112/api/v1/projects/import \
   -H 'Content-Type: application/json' \
   -d '{"repo_url":"https://github.com/izzyreal/ciwi.git","repo_ref":"main"}'
 
 # 4) Find pipeline DB IDs.
-curl -s http://127.0.0.1:8080/api/v1/projects
+curl -s http://127.0.0.1:8112/api/v1/projects
 
 # Optional: reload an imported project definition from VCS.
-curl -s -X POST http://127.0.0.1:8080/api/v1/projects/1/reload -d '{}'
+curl -s -X POST http://127.0.0.1:8112/api/v1/projects/1/reload -d '{}'
 
 # 5) Run a persisted pipeline by DB ID.
-curl -s -X POST http://127.0.0.1:8080/api/v1/pipelines/1/run -d '{}'
+curl -s -X POST http://127.0.0.1:8112/api/v1/pipelines/1/run -d '{}'
 
 # 6) Check jobs:
-curl -s http://127.0.0.1:8080/api/v1/jobs
+curl -s http://127.0.0.1:8112/api/v1/jobs
 ```

@@ -10,7 +10,7 @@ import (
 )
 
 func Run(ctx context.Context) error {
-	serverURL := envOrDefault("CIWI_SERVER_URL", "http://127.0.0.1:8080")
+	serverURL := envOrDefault("CIWI_SERVER_URL", "http://127.0.0.1:8112")
 	agentID := envOrDefault("CIWI_AGENT_ID", defaultAgentID())
 	hostname, _ := os.Hostname()
 	workDir := envOrDefault("CIWI_AGENT_WORKDIR", ".ciwi-agent")

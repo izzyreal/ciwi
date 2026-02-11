@@ -35,7 +35,7 @@ type stateStore struct {
 }
 
 func Run(ctx context.Context) error {
-	addr := envOrDefault("CIWI_SERVER_ADDR", ":8080")
+	addr := envOrDefault("CIWI_SERVER_ADDR", ":8112")
 	dbPath := envOrDefault("CIWI_DB_PATH", "ciwi.db")
 	artifactsDir := envOrDefault("CIWI_ARTIFACTS_DIR", "ciwi-artifacts")
 
