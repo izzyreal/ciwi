@@ -69,6 +69,9 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(rootHTML, `<script src="/ui/shared.js"></script>`) {
 		t.Fatalf("root page missing shared js include")
 	}
+	if !strings.Contains(rootHTML, `href="/agents"`) {
+		t.Fatalf("root page missing agents link")
+	}
 	if !strings.Contains(rootHTML, `<img src="/ciwi-logo.png"`) {
 		t.Fatalf("root page missing header logo")
 	}
@@ -111,6 +114,18 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 		t.Fatalf("GET /ciwi-logo.png status=%d body=%s", logoResp.StatusCode, readBody(t, logoResp))
 	}
 	_ = readBody(t, logoResp)
+
+	agentsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/agents", nil)
+	if agentsResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /agents status=%d body=%s", agentsResp.StatusCode, readBody(t, agentsResp))
+	}
+	agentsHTML := readBody(t, agentsResp)
+	if !strings.Contains(agentsHTML, "<title>ciwi agents</title>") {
+		t.Fatalf("agents page missing title")
+	}
+	if !strings.Contains(agentsHTML, "/api/v1/agents") {
+		t.Fatalf("agents page missing agents API wiring")
+	}
 }
 
 func TestUIProjectAndJobPagesServed(t *testing.T) {

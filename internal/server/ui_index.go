@@ -94,6 +94,7 @@ const indexHTML = `<!doctype html>
         <input id="configFile" value="ciwi-project.yaml" />
         <button id="importProjectBtn">Add Project</button>
         <a class="job-link" href="/vault">Vault Connections</a>
+        <a class="job-link" href="/agents">Agents</a>
         <span id="importResult"></span>
       </div>
       <div class="row" style="margin-top:10px;">
