@@ -13,6 +13,21 @@ require_cmd() {
   fi
 }
 
+fetch_latest_tag() {
+  api_url="https://api.github.com/repos/${REPO}/releases/latest"
+  auth_header=""
+  if [ -n "${CIWI_GITHUB_TOKEN:-}" ]; then
+    auth_header="Authorization: Bearer ${CIWI_GITHUB_TOKEN}"
+  fi
+  if [ -n "$auth_header" ]; then
+    curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ciwi-installer" -H "$auth_header" "$api_url" \
+      | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '1p'
+  else
+    curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ciwi-installer" "$api_url" \
+      | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '1p'
+  fi
+}
+
 if [ "$(uname -s)" != "Linux" ]; then
   echo "this installer is for Linux only" >&2
   exit 1
@@ -27,6 +42,7 @@ require_cmd curl
 require_cmd sha256sum
 require_cmd install
 require_cmd awk
+require_cmd sed
 
 if ! command -v sudo >/dev/null 2>&1; then
   echo "sudo is required for agent installation" >&2
@@ -69,6 +85,13 @@ cleanup() {
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT INT TERM
+
+TARGET_VERSION="$(fetch_latest_tag 2>/dev/null || true)"
+if [ -n "$TARGET_VERSION" ]; then
+  echo "[info] Preparing to install ciwi agent version: ${TARGET_VERSION}"
+else
+  echo "[info] Preparing to install ciwi agent version: unknown (GitHub tag query failed)"
+fi
 
 echo "[1/6] Downloading ${ASSET}..."
 curl -fsSL "${RELEASE_BASE}/${ASSET}" -o "${TMP_DIR}/${ASSET}"
