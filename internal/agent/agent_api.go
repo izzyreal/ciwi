@@ -14,40 +14,46 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string) error {
+func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string) (protocol.HeartbeatResponse, error) {
 	payload := protocol.HeartbeatRequest{
 		AgentID:      agentID,
 		Hostname:     hostname,
 		OS:           runtime.GOOS,
 		Arch:         runtime.GOARCH,
+		Version:      currentVersion(),
 		Capabilities: map[string]string{"executor": "shell"},
 		TimestampUTC: time.Now().UTC(),
 	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal heartbeat: %w", err)
+		return protocol.HeartbeatResponse{}, fmt.Errorf("marshal heartbeat: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/v1/heartbeat", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create heartbeat request: %w", err)
+		return protocol.HeartbeatResponse{}, fmt.Errorf("create heartbeat request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("send heartbeat: %w", err)
+		return protocol.HeartbeatResponse{}, fmt.Errorf("send heartbeat: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
-		return fmt.Errorf("heartbeat rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+		return protocol.HeartbeatResponse{}, fmt.Errorf("heartbeat rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+
+	var hbResp protocol.HeartbeatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&hbResp); err != nil {
+		return protocol.HeartbeatResponse{}, fmt.Errorf("decode heartbeat response: %w", err)
 	}
 
 	log.Printf("heartbeat sent: id=%s os=%s arch=%s", agentID, runtime.GOOS, runtime.GOARCH)
-	return nil
+	return hbResp, nil
 }
 
 func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID string) (*protocol.Job, error) {

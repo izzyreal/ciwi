@@ -9,6 +9,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/agent"
 	"github.com/izzyreal/ciwi/internal/server"
+	"github.com/izzyreal/ciwi/internal/updatehelper"
 )
 
 func main() {
@@ -28,6 +29,8 @@ func main() {
 		err = agent.Run(ctx)
 	case "all-in-one":
 		err = runAllInOne(ctx)
+	case "update-helper":
+		err = updatehelper.Run(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -66,6 +69,7 @@ Commands:
   server      Run the scheduler/API server
   agent       Run an execution agent
   all-in-one  Run server and agent in one process (dev mode)
+  update-helper  Internal mode used by self-update
   help        Show this help
 `)
 }

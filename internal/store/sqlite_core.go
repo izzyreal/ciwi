@@ -150,6 +150,11 @@ func (s *Store) migrate() error {
 			FOREIGN KEY(job_execution_id) REFERENCES job_executions(id) ON DELETE CASCADE
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_job_executions_status_created ON job_executions(status, created_utc);`,
+		`CREATE TABLE IF NOT EXISTS app_state (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_utc TEXT NOT NULL
+		);`,
 	}
 
 	for _, stmt := range stmts {

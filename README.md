@@ -20,6 +20,9 @@ go run ./cmd/ciwi all-in-one
 - `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent`)
 - `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` / `Set-PSDebug`) (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
+- `CIWI_VERSION`: current running version string used by update checks (default `dev`)
+- `CIWI_UPDATE_REPO`: GitHub repo for update checks (default `izzyreal/ciwi`)
+- `CIWI_UPDATE_API_BASE`: GitHub API base URL (default `https://api.github.com`)
 
 ## Server prerequisites
 
@@ -62,6 +65,8 @@ go run ./cmd/ciwi all-in-one
 - `POST /api/v1/pipelines/run` loads `ciwi.yaml` and enqueues pipeline jobs
 - `POST /api/v1/pipelines/{pipelineDbId}/run` runs a persisted pipeline from sqlite (optional `{ "dry_run": true }`)
 - `POST /api/v1/pipelines/{pipelineDbId}/run-selection` runs a selected job/matrix include (optional `{ "dry_run": true }`)
+- `POST /api/v1/update/check` checks latest GitHub release compatibility/version
+- `POST /api/v1/update/apply` downloads latest compatible binary, starts helper, and restarts process
 
 Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps

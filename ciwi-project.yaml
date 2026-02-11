@@ -45,6 +45,10 @@ pipelines:
               goos: darwin
               goarch: amd64
               ext: ""
+            - name: darwin-arm64
+              goos: darwin
+              goarch: arm64
+              ext: ""
         steps:
           - run: mkdir -p dist
           - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
@@ -78,6 +82,7 @@ pipelines:
           - run: mkdir -p dist
           - run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o dist/ciwi-linux-amd64 ./cmd/ciwi
           - run: GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -o dist/ciwi-darwin-amd64 ./cmd/ciwi
+          - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -o dist/ciwi-darwin-arm64 ./cmd/ciwi
           - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
           - run: |
               VERSION="$(cat VERSION)"
@@ -100,8 +105,17 @@ pipelines:
           - run: |
               test -f dist/ciwi-linux-amd64
               test -f dist/ciwi-darwin-amd64
+              test -f dist/ciwi-darwin-arm64
               test -f dist/ciwi-windows-amd64.exe
-              echo "__CIWI_RELEASE_SUMMARY__ artifacts=ciwi-linux-amd64,ciwi-darwin-amd64,ciwi-windows-amd64.exe"
+              for f in \
+                dist/ciwi-linux-amd64 \
+                dist/ciwi-darwin-amd64 \
+                dist/ciwi-darwin-arm64 \
+                dist/ciwi-windows-amd64.exe; do
+                shasum -a 256 "$f"
+              done > dist/ciwi-checksums.txt
+              test -f dist/ciwi-checksums.txt
+              echo "__CIWI_RELEASE_SUMMARY__ artifacts=ciwi-linux-amd64,ciwi-darwin-amd64,ciwi-darwin-arm64,ciwi-windows-amd64.exe,ciwi-checksums.txt"
           - run: |
               VERSION="$(cat VERSION)"
               TAG="v$VERSION"
@@ -123,7 +137,9 @@ pipelines:
                 gh release create "$TAG" \
                   dist/ciwi-linux-amd64 \
                   dist/ciwi-darwin-amd64 \
+                  dist/ciwi-darwin-arm64 \
                   dist/ciwi-windows-amd64.exe \
+                  dist/ciwi-checksums.txt \
                   --repo izzyreal/ciwi \
                   --title "ciwi $TAG" \
                   --notes "Release $TAG"

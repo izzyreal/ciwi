@@ -96,6 +96,12 @@ const indexHTML = `<!doctype html>
         <a class="job-link" href="/vault">Vault Connections</a>
         <span id="importResult"></span>
       </div>
+      <div class="row" style="margin-top:10px;">
+        <button id="checkUpdatesBtn" class="secondary">Check for updates</button>
+        <button id="applyUpdateBtn" class="secondary">Update now</button>
+        <span id="updateResult" style="color:#5f6f67;"></span>
+      </div>
+      <div id="updateStatus" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
     </div>
     <div class="card">
       <h2>Projects</h2>
@@ -330,9 +336,56 @@ const indexHTML = `<!doctype html>
         alert('Flush history failed: ' + e.message);
       }
     };
+    document.getElementById('checkUpdatesBtn').onclick = async () => {
+      const result = document.getElementById('updateResult');
+      result.textContent = 'Checking...';
+      try {
+        const r = await api('/api/v1/update/check', { method: 'POST', body: '{}' });
+        const latest = r.latest_version || '';
+        const current = r.current_version || '';
+        if (r.update_available) {
+          result.textContent = 'Update available: ' + current + ' -> ' + latest + (r.asset_name ? (' (' + r.asset_name + ')') : '');
+        } else {
+          result.textContent = r.message || ('Up to date (' + current + ')');
+        }
+      } catch (e) {
+        result.textContent = 'Update check failed: ' + e.message;
+      }
+      await refreshUpdateStatus();
+    };
+    document.getElementById('applyUpdateBtn').onclick = async () => {
+      const result = document.getElementById('updateResult');
+      if (!confirm('Apply update now and restart ciwi?')) return;
+      result.textContent = 'Starting update...';
+      try {
+        const r = await api('/api/v1/update/apply', { method: 'POST', body: '{}' });
+        result.textContent = (r.message || 'Update started. Refresh in a moment.');
+      } catch (e) {
+        result.textContent = 'Update failed: ' + e.message;
+      }
+      await refreshUpdateStatus();
+    };
+    async function refreshUpdateStatus() {
+      const box = document.getElementById('updateStatus');
+      try {
+        const r = await api('/api/v1/update/status');
+        const s = r.status || {};
+        const parts = [];
+        if (s.update_current_version) parts.push('Current: ' + s.update_current_version);
+        if (s.update_latest_version) parts.push('Latest: ' + s.update_latest_version);
+        if (s.update_available === '1') parts.push('Update available');
+        if (s.update_last_checked_utc) parts.push('Checked: ' + formatTimestamp(s.update_last_checked_utc));
+        if (s.update_last_apply_status) parts.push('Apply: ' + s.update_last_apply_status);
+        if (s.update_last_apply_utc) parts.push('Apply time: ' + formatTimestamp(s.update_last_apply_utc));
+        if (s.update_message) parts.push('Message: ' + s.update_message);
+        box.textContent = parts.join(' | ');
+      } catch (e) {
+        box.textContent = 'Update status unavailable';
+      }
+    }
     async function tick() {
       try {
-        await Promise.all([refreshProjects(), refreshJobs()]);
+        await Promise.all([refreshProjects(), refreshJobs(), refreshUpdateStatus()]);
       } catch (e) {
         console.error(e);
       }
@@ -340,6 +393,7 @@ const indexHTML = `<!doctype html>
     tick();
     setInterval(refreshJobs, 3000);
     setInterval(refreshProjects, 7000);
+    setInterval(refreshUpdateStatus, 3000);
   </script>
 </body>
 </html>`

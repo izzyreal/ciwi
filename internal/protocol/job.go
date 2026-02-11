@@ -7,6 +7,7 @@ type AgentInfo struct {
 	Hostname     string            `json:"hostname"`
 	OS           string            `json:"os"`
 	Arch         string            `json:"arch"`
+	Version      string            `json:"version,omitempty"`
 	Capabilities map[string]string `json:"capabilities"`
 	LastSeenUTC  time.Time         `json:"last_seen_utc"`
 }

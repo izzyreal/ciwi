@@ -23,6 +23,7 @@ type agentState struct {
 	Hostname     string            `json:"hostname"`
 	OS           string            `json:"os"`
 	Arch         string            `json:"arch"`
+	Version      string            `json:"version,omitempty"`
 	Capabilities map[string]string `json:"capabilities"`
 	LastSeenUTC  time.Time         `json:"last_seen_utc"`
 }
@@ -33,6 +34,7 @@ type stateStore struct {
 	db           *store.Store
 	artifactsDir string
 	vaultTokens  *vaultTokenCache
+	update       updateState
 }
 
 func Run(ctx context.Context) error {
@@ -70,6 +72,9 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("/api/v1/agent/lease", s.leaseJobHandler)
 	mux.HandleFunc("/api/v1/pipelines/run", s.runPipelineFromConfigHandler)
 	mux.HandleFunc("/api/v1/pipelines/", s.pipelineByIDHandler)
+	mux.HandleFunc("/api/v1/update/check", s.updateCheckHandler)
+	mux.HandleFunc("/api/v1/update/apply", s.updateApplyHandler)
+	mux.HandleFunc("/api/v1/update/status", s.updateStatusHandler)
 	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))
 
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}

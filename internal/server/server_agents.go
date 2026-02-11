@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -29,16 +30,28 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
+	updateRequested := shouldRequestAgentUpdate(hb.Version, currentVersion())
 	s.agents[hb.AgentID] = agentState{
 		Hostname:     hb.Hostname,
 		OS:           hb.OS,
 		Arch:         hb.Arch,
+		Version:      hb.Version,
 		Capabilities: hb.Capabilities,
 		LastSeenUTC:  hb.TimestampUTC,
 	}
 	s.mu.Unlock()
 
-	writeJSON(w, http.StatusOK, protocol.HeartbeatResponse{Accepted: true})
+	resp := protocol.HeartbeatResponse{
+		Accepted: true,
+	}
+	if updateRequested {
+		resp.UpdateRequested = true
+		resp.UpdateTarget = currentVersion()
+		resp.UpdateRepository = strings.TrimSpace(envOrDefault("CIWI_UPDATE_REPO", "izzyreal/ciwi"))
+		resp.UpdateAPIBase = strings.TrimRight(strings.TrimSpace(envOrDefault("CIWI_UPDATE_API_BASE", "https://api.github.com")), "/")
+		resp.Message = "server requested agent update"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +62,7 @@ func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	agents := make([]protocol.AgentInfo, 0, len(s.agents))
 	for id, a := range s.agents {
-		agents = append(agents, protocol.AgentInfo{AgentID: id, Hostname: a.Hostname, OS: a.OS, Arch: a.Arch, Capabilities: a.Capabilities, LastSeenUTC: a.LastSeenUTC})
+		agents = append(agents, protocol.AgentInfo{AgentID: id, Hostname: a.Hostname, OS: a.OS, Arch: a.Arch, Version: a.Version, Capabilities: a.Capabilities, LastSeenUTC: a.LastSeenUTC})
 	}
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})

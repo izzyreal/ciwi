@@ -28,8 +28,15 @@ func Run(ctx context.Context) error {
 	leaseTicker := time.NewTicker(3 * time.Second)
 	defer leaseTicker.Stop()
 
-	if err := sendHeartbeat(ctx, client, serverURL, agentID, hostname); err != nil {
+	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname); err != nil {
 		log.Printf("initial heartbeat failed: %v", err)
+	} else {
+		if hb.UpdateRequested {
+			log.Printf("server requested agent update to %s", hb.UpdateTarget)
+			if err := selfUpdateAndRestart(ctx, hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase, os.Args[1:]); err != nil {
+				log.Printf("agent self-update failed: %v", err)
+			}
+		}
 	}
 
 	for {
@@ -37,8 +44,14 @@ func Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-heartbeatTicker.C:
-			if err := sendHeartbeat(ctx, client, serverURL, agentID, hostname); err != nil {
+			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname)
+			if err != nil {
 				log.Printf("heartbeat failed: %v", err)
+			} else if hb.UpdateRequested {
+				log.Printf("server requested agent update to %s", hb.UpdateTarget)
+				if err := selfUpdateAndRestart(ctx, hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase, os.Args[1:]); err != nil {
+					log.Printf("agent self-update failed: %v", err)
+				}
 			}
 		case <-leaseTicker.C:
 			job, err := leaseJob(ctx, client, serverURL, agentID)
