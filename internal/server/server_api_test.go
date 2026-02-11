@@ -65,6 +65,7 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 
 	s := &stateStore{
 		agents:       make(map[string]agentState),
+		agentUpdates: make(map[string]string),
 		db:           db,
 		artifactsDir: artifactsDir,
 	}
@@ -76,6 +77,7 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)
 	mux.HandleFunc("/api/v1/heartbeat", s.heartbeatHandler)
 	mux.HandleFunc("/api/v1/agents", s.listAgentsHandler)
+	mux.HandleFunc("/api/v1/agents/", s.agentByIDHandler)
 	mux.HandleFunc("/api/v1/jobs", s.jobsHandler)
 	mux.HandleFunc("/api/v1/jobs/", s.jobByIDHandler)
 	mux.HandleFunc("/api/v1/jobs/clear-queue", s.clearQueueHandler)
@@ -778,7 +780,7 @@ func TestServerUpdateStatusEndpoint(t *testing.T) {
 	}
 }
 
-func TestHeartbeatRequestsAgentUpdateOnVersionMismatch(t *testing.T) {
+func TestHeartbeatDoesNotRequestAgentUpdate(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"
 	t.Cleanup(func() { version.Version = oldVersion })
@@ -807,10 +809,10 @@ func TestHeartbeatRequestsAgentUpdateOnVersionMismatch(t *testing.T) {
 	if !hbPayload.Accepted {
 		t.Fatalf("expected accepted=true")
 	}
-	if !hbPayload.UpdateRequested {
-		t.Fatalf("expected update_requested=true")
+	if hbPayload.UpdateRequested {
+		t.Fatalf("expected update_requested=false")
 	}
-	if hbPayload.UpdateTarget != "v1.2.0" {
+	if hbPayload.UpdateTarget != "" {
 		t.Fatalf("unexpected update_target: %q", hbPayload.UpdateTarget)
 	}
 
@@ -830,6 +832,82 @@ func TestHeartbeatRequestsAgentUpdateOnVersionMismatch(t *testing.T) {
 	}
 	if agentsPayload.Agents[0].AgentID != "agent-a" || agentsPayload.Agents[0].Version != "v1.1.0" {
 		t.Fatalf("unexpected agent payload: %+v", agentsPayload.Agents[0])
+	}
+}
+
+func TestManualAgentUpdateRequestTriggersHeartbeatUpdate(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	firstHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-a",
+		"hostname":      "host-a",
+		"os":            "darwin",
+		"arch":          "arm64",
+		"version":       "v1.1.0",
+		"capabilities":  map[string]string{"executor": "shell"},
+		"timestamp_utc": "2026-02-11T00:00:00Z",
+	})
+	if firstHB.StatusCode != http.StatusOK {
+		t.Fatalf("first heartbeat status=%d body=%s", firstHB.StatusCode, readBody(t, firstHB))
+	}
+	_ = readBody(t, firstHB)
+
+	manualResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-a/update", map[string]any{})
+	if manualResp.StatusCode != http.StatusOK {
+		t.Fatalf("manual update status=%d body=%s", manualResp.StatusCode, readBody(t, manualResp))
+	}
+	_ = readBody(t, manualResp)
+
+	agentsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents", nil)
+	if agentsResp.StatusCode != http.StatusOK {
+		t.Fatalf("agents status=%d body=%s", agentsResp.StatusCode, readBody(t, agentsResp))
+	}
+	var agentsPayload struct {
+		Agents []struct {
+			AgentID         string `json:"agent_id"`
+			UpdateRequested bool   `json:"update_requested"`
+			UpdateTarget    string `json:"update_target"`
+		} `json:"agents"`
+	}
+	decodeJSONBody(t, agentsResp, &agentsPayload)
+	if len(agentsPayload.Agents) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(agentsPayload.Agents))
+	}
+	if !agentsPayload.Agents[0].UpdateRequested {
+		t.Fatalf("expected update_requested=true on agents list")
+	}
+	if agentsPayload.Agents[0].UpdateTarget != "v1.2.0" {
+		t.Fatalf("unexpected update_target in agents list: %q", agentsPayload.Agents[0].UpdateTarget)
+	}
+
+	secondHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-a",
+		"hostname":      "host-a",
+		"os":            "darwin",
+		"arch":          "arm64",
+		"version":       "v1.1.0",
+		"capabilities":  map[string]string{"executor": "shell"},
+		"timestamp_utc": "2026-02-11T00:00:10Z",
+	})
+	if secondHB.StatusCode != http.StatusOK {
+		t.Fatalf("second heartbeat status=%d body=%s", secondHB.StatusCode, readBody(t, secondHB))
+	}
+	var hbPayload struct {
+		UpdateRequested bool   `json:"update_requested"`
+		UpdateTarget    string `json:"update_target"`
+	}
+	decodeJSONBody(t, secondHB, &hbPayload)
+	if !hbPayload.UpdateRequested {
+		t.Fatalf("expected update_requested=true")
+	}
+	if hbPayload.UpdateTarget != "v1.2.0" {
+		t.Fatalf("unexpected update_target: %q", hbPayload.UpdateTarget)
 	}
 }
 

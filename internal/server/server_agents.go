@@ -29,21 +29,56 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		hb.TimestampUTC = time.Now().UTC()
 	}
 
+	now := time.Now().UTC()
 	s.mu.Lock()
-	updateRequested := shouldRequestAgentUpdate(hb.Version, currentVersion())
 	prev := s.agents[hb.AgentID]
+	target := strings.TrimSpace(s.getAgentUpdateTarget())
+	manualTarget := strings.TrimSpace(s.agentUpdates[hb.AgentID])
+	if manualTarget != "" {
+		target = manualTarget
+	}
+
+	updateRequested := false
+	needsUpdate := target != "" && isVersionNewer(target, strings.TrimSpace(hb.Version))
+	if needsUpdate {
+		if strings.TrimSpace(prev.UpdateTarget) != target {
+			prev.UpdateTarget = target
+			prev.UpdateAttempts = 0
+			prev.UpdateLastRequestUTC = time.Time{}
+			prev.UpdateNextRetryUTC = time.Time{}
+		}
+		if prev.UpdateNextRetryUTC.IsZero() || !now.Before(prev.UpdateNextRetryUTC) {
+			updateRequested = true
+			prev.UpdateAttempts++
+			prev.UpdateLastRequestUTC = now
+			prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
+		}
+	} else {
+		if manualTarget != "" {
+			delete(s.agentUpdates, hb.AgentID)
+		}
+		prev.UpdateTarget = ""
+		prev.UpdateAttempts = 0
+		prev.UpdateLastRequestUTC = time.Time{}
+		prev.UpdateNextRetryUTC = time.Time{}
+	}
+
 	state := agentState{
-		Hostname:     hb.Hostname,
-		OS:           hb.OS,
-		Arch:         hb.Arch,
-		Version:      hb.Version,
-		Capabilities: hb.Capabilities,
-		LastSeenUTC:  hb.TimestampUTC,
-		RecentLog:    append([]string(nil), prev.RecentLog...),
+		Hostname:             hb.Hostname,
+		OS:                   hb.OS,
+		Arch:                 hb.Arch,
+		Version:              hb.Version,
+		Capabilities:         hb.Capabilities,
+		LastSeenUTC:          hb.TimestampUTC,
+		RecentLog:            append([]string(nil), prev.RecentLog...),
+		UpdateTarget:         prev.UpdateTarget,
+		UpdateAttempts:       prev.UpdateAttempts,
+		UpdateLastRequestUTC: prev.UpdateLastRequestUTC,
+		UpdateNextRetryUTC:   prev.UpdateNextRetryUTC,
 	}
 	state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("heartbeat version=%s platform=%s/%s", strings.TrimSpace(hb.Version), strings.TrimSpace(hb.OS), strings.TrimSpace(hb.Arch)))
 	if updateRequested {
-		state.RecentLog = appendAgentLog(state.RecentLog, "server requested update to "+currentVersion())
+		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("server requested update to %s (attempt=%d, next_retry=%s)", target, state.UpdateAttempts, state.UpdateNextRetryUTC.Local().Format("15:04:05")))
 	}
 	s.agents[hb.AgentID] = state
 	s.mu.Unlock()
@@ -53,7 +88,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if updateRequested {
 		resp.UpdateRequested = true
-		resp.UpdateTarget = currentVersion()
+		resp.UpdateTarget = target
 		resp.UpdateRepository = strings.TrimSpace(envOrDefault("CIWI_UPDATE_REPO", "izzyreal/ciwi"))
 		resp.UpdateAPIBase = strings.TrimRight(strings.TrimSpace(envOrDefault("CIWI_UPDATE_API_BASE", "https://api.github.com")), "/")
 		resp.Message = "server requested agent update"
@@ -68,16 +103,30 @@ func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	agents := make([]protocol.AgentInfo, 0, len(s.agents))
+	serverVersion := currentVersion()
 	for id, a := range s.agents {
+		pendingTarget := strings.TrimSpace(s.agentUpdates[id])
+		needsUpdate := serverVersion != "" && isVersionNewer(serverVersion, strings.TrimSpace(a.Version))
+		updateTarget := serverVersion
+		if pendingTarget != "" {
+			updateTarget = pendingTarget
+		}
+		updateRequested := pendingTarget != "" || (a.UpdateTarget != "" && isVersionNewer(a.UpdateTarget, strings.TrimSpace(a.Version)))
 		agents = append(agents, protocol.AgentInfo{
-			AgentID:      id,
-			Hostname:     a.Hostname,
-			OS:           a.OS,
-			Arch:         a.Arch,
-			Version:      a.Version,
-			Capabilities: a.Capabilities,
-			LastSeenUTC:  a.LastSeenUTC,
-			RecentLog:    append([]string(nil), a.RecentLog...),
+			AgentID:              id,
+			Hostname:             a.Hostname,
+			OS:                   a.OS,
+			Arch:                 a.Arch,
+			Version:              a.Version,
+			Capabilities:         a.Capabilities,
+			LastSeenUTC:          a.LastSeenUTC,
+			RecentLog:            append([]string(nil), a.RecentLog...),
+			NeedsUpdate:          needsUpdate,
+			UpdateTarget:         updateTarget,
+			UpdateRequested:      updateRequested,
+			UpdateAttempts:       a.UpdateAttempts,
+			UpdateLastRequestUTC: a.UpdateLastRequestUTC,
+			UpdateNextRetryUTC:   a.UpdateNextRetryUTC,
 		})
 	}
 	s.mu.Unlock()

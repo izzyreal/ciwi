@@ -80,12 +80,3 @@ func isVersionNewer(latest, current string) bool {
 func currentVersion() string {
 	return updateutil.CurrentVersion()
 }
-
-func shouldRequestAgentUpdate(agentVersion, targetVersion string) bool {
-	agentVersion = strings.TrimSpace(agentVersion)
-	targetVersion = strings.TrimSpace(targetVersion)
-	if agentVersion == "" || targetVersion == "" {
-		return false
-	}
-	return isVersionNewer(targetVersion, agentVersion)
-}

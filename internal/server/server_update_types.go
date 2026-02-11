@@ -6,6 +6,7 @@ type updateState struct {
 	mu          sync.Mutex
 	inProgress  bool
 	lastMessage string
+	agentTarget string
 }
 
 type updateCheckResponse struct {

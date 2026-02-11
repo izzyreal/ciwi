@@ -3,14 +3,20 @@ package protocol
 import "time"
 
 type AgentInfo struct {
-	AgentID      string            `json:"agent_id"`
-	Hostname     string            `json:"hostname"`
-	OS           string            `json:"os"`
-	Arch         string            `json:"arch"`
-	Version      string            `json:"version,omitempty"`
-	Capabilities map[string]string `json:"capabilities"`
-	LastSeenUTC  time.Time         `json:"last_seen_utc"`
-	RecentLog    []string          `json:"recent_log,omitempty"`
+	AgentID              string            `json:"agent_id"`
+	Hostname             string            `json:"hostname"`
+	OS                   string            `json:"os"`
+	Arch                 string            `json:"arch"`
+	Version              string            `json:"version,omitempty"`
+	Capabilities         map[string]string `json:"capabilities"`
+	LastSeenUTC          time.Time         `json:"last_seen_utc"`
+	RecentLog            []string          `json:"recent_log,omitempty"`
+	NeedsUpdate          bool              `json:"needs_update,omitempty"`
+	UpdateTarget         string            `json:"update_target,omitempty"`
+	UpdateRequested      bool              `json:"update_requested,omitempty"`
+	UpdateAttempts       int               `json:"update_attempts,omitempty"`
+	UpdateLastRequestUTC time.Time         `json:"update_last_request_utc,omitempty"`
+	UpdateNextRetryUTC   time.Time         `json:"update_next_retry_utc,omitempty"`
 }
 
 type SourceSpec struct {

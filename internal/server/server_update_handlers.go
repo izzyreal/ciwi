@@ -108,6 +108,7 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 			"update_last_apply_status": "noop",
 			"update_message":           "already up to date",
 		})
+		_ = s.setAgentUpdateTarget(currentVersion())
 		writeJSON(w, http.StatusOK, map[string]any{
 			"updated": false,
 			"message": "already up to date",
@@ -166,6 +167,7 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 			"update_message":           "staged update and triggered linux updater",
 			"update_latest_version":    info.TagName,
 		})
+		_ = s.setAgentUpdateTarget(info.TagName)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"updated":         true,
 			"message":         "staged update; linux updater triggered",
@@ -199,6 +201,7 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 		"update_message":           "update helper started, restarting",
 		"update_latest_version":    info.TagName,
 	})
+	_ = s.setAgentUpdateTarget(info.TagName)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"updated":         true,

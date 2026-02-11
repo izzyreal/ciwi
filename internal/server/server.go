@@ -20,18 +20,23 @@ const (
 )
 
 type agentState struct {
-	Hostname     string            `json:"hostname"`
-	OS           string            `json:"os"`
-	Arch         string            `json:"arch"`
-	Version      string            `json:"version,omitempty"`
-	Capabilities map[string]string `json:"capabilities"`
-	LastSeenUTC  time.Time         `json:"last_seen_utc"`
-	RecentLog    []string          `json:"recent_log,omitempty"`
+	Hostname             string            `json:"hostname"`
+	OS                   string            `json:"os"`
+	Arch                 string            `json:"arch"`
+	Version              string            `json:"version,omitempty"`
+	Capabilities         map[string]string `json:"capabilities"`
+	LastSeenUTC          time.Time         `json:"last_seen_utc"`
+	RecentLog            []string          `json:"recent_log,omitempty"`
+	UpdateTarget         string            `json:"update_target,omitempty"`
+	UpdateAttempts       int               `json:"update_attempts,omitempty"`
+	UpdateLastRequestUTC time.Time         `json:"update_last_request_utc,omitempty"`
+	UpdateNextRetryUTC   time.Time         `json:"update_next_retry_utc,omitempty"`
 }
 
 type stateStore struct {
 	mu           sync.Mutex
 	agents       map[string]agentState
+	agentUpdates map[string]string
 	db           *store.Store
 	artifactsDir string
 	vaultTokens  *vaultTokenCache
@@ -53,7 +58,18 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("create artifacts dir: %w", err)
 	}
 
-	s := &stateStore{agents: make(map[string]agentState), db: db, artifactsDir: artifactsDir, vaultTokens: newVaultTokenCache()}
+	s := &stateStore{
+		agents:       make(map[string]agentState),
+		agentUpdates: make(map[string]string),
+		db:           db,
+		artifactsDir: artifactsDir,
+		vaultTokens:  newVaultTokenCache(),
+	}
+	if target, ok, err := db.GetAppState("agent_update_target"); err == nil && ok {
+		s.update.mu.Lock()
+		s.update.agentTarget = target
+		s.update.mu.Unlock()
+	}
 	srv := &http.Server{Addr: addr, Handler: buildRouter(s, artifactsDir), ReadHeaderTimeout: 10 * time.Second}
 	stopMDNS := startMDNSAdvertiser(addr)
 	defer stopMDNS()

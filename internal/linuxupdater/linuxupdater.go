@@ -114,6 +114,7 @@ func RunApplyStaged(args []string) (retErr error) {
 		_ = setUpdateState(state, map[string]string{
 			"update_last_apply_status": "success",
 			"update_latest_version":    strings.TrimSpace(manifest.TargetVersion),
+			"agent_update_target":      strings.TrimSpace(manifest.TargetVersion),
 			"update_message":           msg,
 			"update_last_apply_utc":    time.Now().UTC().Format(time.RFC3339Nano),
 		})

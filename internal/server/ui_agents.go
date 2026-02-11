@@ -37,6 +37,17 @@ const agentsHTML = `<!doctype html>
     .ok { color:var(--ok); font-weight:600; }
     .stale { color:#a56a00; font-weight:600; }
     .offline { color:var(--bad); font-weight:600; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #edf8f2;
+      color: #26644b;
+      margin-top: 4px;
+    }
+    .badge-warn { background:#fff6e6; color:#8a5a00; }
     button { border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; background:#fff; color:var(--accent); }
     a { color: var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
   </style>
@@ -60,7 +71,7 @@ const agentsHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>Agent ID</th><th>Host</th><th>Platform</th><th>Version</th><th>Last Seen</th><th>Health</th><th>Capabilities</th><th>Recent Log</th></tr>
+          <tr><th>Agent ID</th><th>Host</th><th>Platform</th><th>Version</th><th>Last Seen</th><th>Health</th><th>Capabilities</th><th>Actions</th><th>Recent Log</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
@@ -93,7 +104,7 @@ const agentsHTML = `<!doctype html>
         const agents = data.agents || [];
         rows.innerHTML = '';
         if (agents.length === 0) {
-          rows.innerHTML = '<tr><td colspan="8" class="muted">No agents have sent heartbeats yet.</td></tr>';
+          rows.innerHTML = '<tr><td colspan="9" class="muted">No agents have sent heartbeats yet.</td></tr>';
           summary.textContent = '0 agents';
           return;
         }
@@ -101,21 +112,49 @@ const agentsHTML = `<!doctype html>
         for (const a of agents) {
           const s = statusForLastSeen(a.last_seen_utc || '');
           const tr = document.createElement('tr');
+          const updateBtn = (a.update_requested)
+            ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Retry Now</button>'
+            : ((a.needs_update && s.label !== 'offline')
+              ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Update</button>'
+              : '');
+          const retryText = (a.update_requested && a.update_next_retry_utc)
+            ? ('<div class="badge badge-warn">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(a.update_attempts || 0) + ')</div>')
+            : '';
+          const versionCell = escapeHtml(a.version || '') +
+            (a.update_requested ? ('<div class="badge">Update requested → ' + escapeHtml(a.update_target || '') + '</div>') : '') +
+            retryText;
           tr.innerHTML =
             '<td>' + escapeHtml(a.agent_id || '') + '</td>' +
             '<td>' + escapeHtml(a.hostname || '') + '</td>' +
             '<td>' + escapeHtml((a.os || '') + '/' + (a.arch || '')) + '</td>' +
-            '<td>' + escapeHtml(a.version || '') + '</td>' +
+            '<td>' + versionCell + '</td>' +
             '<td>' + escapeHtml(formatTimestamp(a.last_seen_utc)) + '</td>' +
             '<td class="' + s.cls + '">' + s.label + '</td>' +
             '<td>' + escapeHtml(formatCapabilities(a.capabilities || {})) + '</td>' +
+            '<td>' + updateBtn + '</td>' +
             '<td><div class="logbox">' + escapeHtml((a.recent_log || []).join('\n')) + '</div></td>';
           rows.appendChild(tr);
         }
+        rows.querySelectorAll('button[data-action="update"]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.getAttribute('data-agent-id') || '';
+            if (!id) return;
+            btn.disabled = true;
+            try {
+              const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+              if (!res.ok) throw new Error(await res.text());
+              await refreshAgents();
+            } catch (e) {
+              alert('Update request failed: ' + e.message);
+            } finally {
+              btn.disabled = false;
+            }
+          });
+        });
         const online = agents.filter(a => statusForLastSeen(a.last_seen_utc || '').label === 'online').length;
         summary.textContent = online + '/' + agents.length + ' online';
       } catch (e) {
-        rows.innerHTML = '<tr><td colspan="8" class="offline">Could not load agents</td></tr>';
+        rows.innerHTML = '<tr><td colspan="9" class="offline">Could not load agents</td></tr>';
         summary.textContent = 'Failed to load agents';
       }
     }

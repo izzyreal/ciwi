@@ -30,6 +30,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	// Agent API
 	r.Post("/api/v1/heartbeat", s.heartbeatHandler)
 	r.Get("/api/v1/agents", s.listAgentsHandler)
+	r.HandleFunc("/api/v1/agents/*", s.agentByIDHandler)
 	r.Post("/api/v1/agent/lease", s.leaseJobHandler)
 
 	// Project/pipeline APIs
