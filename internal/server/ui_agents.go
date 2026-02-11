@@ -117,6 +117,9 @@ const agentsHTML = `<!doctype html>
             : ((a.needs_update && s.label !== 'offline')
               ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Update</button>'
               : '');
+          const refreshBtn = (s.label !== 'offline')
+            ? '<button data-action="refresh-tools" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Refresh Tools</button>'
+            : '';
           const retryText = (a.update_requested && a.update_next_retry_utc)
             ? ('<div class="badge badge-warn">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(a.update_attempts || 0) + ')</div>')
             : '';
@@ -131,21 +134,23 @@ const agentsHTML = `<!doctype html>
             '<td>' + escapeHtml(formatTimestamp(a.last_seen_utc)) + '</td>' +
             '<td class="' + s.cls + '">' + s.label + '</td>' +
             '<td>' + escapeHtml(formatCapabilities(a.capabilities || {})) + '</td>' +
-            '<td>' + updateBtn + '</td>' +
+            '<td>' + updateBtn + ' ' + refreshBtn + '</td>' +
             '<td><div class="logbox">' + escapeHtml((a.recent_log || []).join('\n')) + '</div></td>';
           rows.appendChild(tr);
         }
-        rows.querySelectorAll('button[data-action="update"]').forEach(btn => {
+        rows.querySelectorAll('button[data-action="update"], button[data-action="refresh-tools"]').forEach(btn => {
           btn.addEventListener('click', async () => {
             const id = btn.getAttribute('data-agent-id') || '';
             if (!id) return;
+            const action = btn.getAttribute('data-action') || '';
             btn.disabled = true;
             try {
-              const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+              const suffix = action === 'refresh-tools' ? 'refresh-tools' : 'update';
+              const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/' + suffix, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
               if (!res.ok) throw new Error(await res.text());
               await refreshAgents();
             } catch (e) {
-              alert('Update request failed: ' + e.message);
+              alert('Request failed: ' + e.message);
             } finally {
               btn.disabled = false;
             }

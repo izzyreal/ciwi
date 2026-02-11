@@ -40,6 +40,33 @@ Build-time version embedding:
 - `git` must be installed on the agent host for pipeline jobs that define `source.repo`.
 - `gh` must be installed on the agent host for GitHub release steps that use GitHub CLI.
 
+## Tool capabilities and requirements
+
+Agents automatically detect common shell tools and report versions in heartbeats:
+- `git`, `go`, `gh`, `cmake`, `gcc`, `clang`, `xcodebuild`, `msvc` (when present)
+
+Use `requires.tools` in pipeline jobs to constrain tool presence/version:
+
+```yaml
+jobs:
+  - id: build
+    runs_on:
+      os: linux
+      arch: amd64
+      executor: shell
+    requires:
+      tools:
+        go: ">=1.24"
+        git: ">=2.30"
+        gh: "*"
+```
+
+Constraint syntax supports:
+- presence only: `*` (or empty)
+- version compare: `>=`, `>`, `<=`, `<`, `=`, `==`
+
+From `/agents`, use **Refresh Tools** to request an on-demand re-scan on an agent.
+
 ## macOS agent installer (LaunchAgent)
 
 For macOS build/signing workflows, run ciwi agent as a **LaunchAgent** (user session), not a LaunchDaemon.
@@ -183,6 +210,8 @@ sudo journalctl -u ciwi-agent -f
 - `GET /healthz` returns `{"status":"ok"}`
 - `POST /api/v1/heartbeat` accepts agent heartbeats in JSON
 - `GET /api/v1/agents` returns known agents
+- `POST /api/v1/agents/{agentId}/refresh-tools` requests agent tool re-scan
+- `POST /api/v1/agents/{agentId}/update` requests agent update to current server version
 - `POST /api/v1/projects/import` imports a project from git (`ciwi-project.yaml` by default)
 - `POST /api/v1/projects/{projectId}/reload` reloads project definition from saved VCS settings
 - `GET/PUT /api/v1/projects/{projectId}/vault` gets/updates project Vault settings

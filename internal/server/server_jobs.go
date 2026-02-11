@@ -24,6 +24,7 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.attachTestSummaries(jobs)
+		s.attachUnmetRequirements(jobs)
 		writeJSON(w, http.StatusOK, map[string]any{"job_executions": jobs, "jobs": jobs})
 	case http.MethodPost:
 		var req protocol.CreateJobRequest
@@ -60,6 +61,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.attachTestSummary(&job)
+			s.attachUnmetRequirementsToJob(&job)
 			writeJSON(w, http.StatusOK, map[string]any{"job_execution": job, "job": job})
 		case http.MethodDelete:
 			err := s.db.DeleteQueuedJob(jobID)
@@ -236,6 +238,37 @@ func (s *stateStore) attachTestSummary(job *protocol.Job) {
 		Failed:  report.Failed,
 		Skipped: report.Skipped,
 	}
+}
+
+func (s *stateStore) attachUnmetRequirements(jobs []protocol.Job) {
+	s.mu.Lock()
+	agents := make(map[string]agentState, len(s.agents))
+	for id, a := range s.agents {
+		agents[id] = a
+	}
+	s.mu.Unlock()
+	for i := range jobs {
+		if strings.ToLower(strings.TrimSpace(jobs[i].Status)) != "queued" {
+			continue
+		}
+		jobs[i].UnmetRequirements = diagnoseUnmetRequirements(jobs[i].RequiredCapabilities, agents)
+	}
+}
+
+func (s *stateStore) attachUnmetRequirementsToJob(job *protocol.Job) {
+	if job == nil {
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(job.Status)) != "queued" {
+		return
+	}
+	s.mu.Lock()
+	agents := make(map[string]agentState, len(s.agents))
+	for id, a := range s.agents {
+		agents[id] = a
+	}
+	s.mu.Unlock()
+	job.UnmetRequirements = diagnoseUnmetRequirements(job.RequiredCapabilities, agents)
 }
 
 func (s *stateStore) clearQueueHandler(w http.ResponseWriter, r *http.Request) {

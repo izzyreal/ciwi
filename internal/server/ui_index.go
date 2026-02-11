@@ -115,7 +115,7 @@ const indexHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Actions</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Reason</th><th>Actions</th></tr>
         </thead>
         <tbody id="queuedJobsBody"></tbody>
       </table>
@@ -127,7 +127,7 @@ const indexHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Reason</th></tr>
         </thead>
         <tbody id="historyJobsBody"></tbody>
       </table>
@@ -253,6 +253,7 @@ const indexHTML = `<!doctype html>
       const historyJobs = jobs.filter(job => !queuedStatuses.has((job.status || '').toLowerCase()));
       queuedJobs.forEach(job => queuedBody.appendChild(buildJobExecutionRow(job, {
         includeActions: true,
+        includeReason: true,
         backPath: window.location.pathname || '/',
         linkClass: 'job-link',
         onRemove: async (j) => {
@@ -266,6 +267,7 @@ const indexHTML = `<!doctype html>
       })));
       historyJobs.forEach(job => historyBody.appendChild(buildJobExecutionRow(job, {
         includeActions: false,
+        includeReason: true,
         backPath: window.location.pathname || '/',
         linkClass: 'job-link'
       })));

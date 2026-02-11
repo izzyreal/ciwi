@@ -50,10 +50,15 @@ type Source struct {
 type Job struct {
 	ID             string            `yaml:"id" json:"id"`
 	RunsOn         map[string]string `yaml:"runs_on" json:"runs_on"`
+	Requires       Requires          `yaml:"requires,omitempty" json:"requires,omitempty"`
 	TimeoutSeconds int               `yaml:"timeout_seconds" json:"timeout_seconds"`
 	Artifacts      []string          `yaml:"artifacts" json:"artifacts"`
 	Matrix         Matrix            `yaml:"matrix" json:"matrix"`
 	Steps          []Step            `yaml:"steps" json:"steps"`
+}
+
+type Requires struct {
+	Tools map[string]string `yaml:"tools,omitempty" json:"tools,omitempty"`
 }
 
 type Matrix struct {
@@ -169,6 +174,17 @@ func (cfg File) Validate() []string {
 			}
 			if len(job.Steps) == 0 {
 				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps must contain at least one step", i, j))
+			}
+			for tool, constraint := range job.Requires.Tools {
+				if strings.TrimSpace(tool) == "" {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].requires.tools contains empty tool name", i, j))
+				}
+				if strings.ContainsAny(tool, " \t\n\r") {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].requires.tools[%q] invalid tool name", i, j, tool))
+				}
+				if strings.TrimSpace(constraint) == "" {
+					continue
+				}
 			}
 			for k, st := range job.Steps {
 				runSet := strings.TrimSpace(st.Run) != ""

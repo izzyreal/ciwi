@@ -99,7 +99,7 @@ const projectHTML = `<!doctype html>
       <h2 style="margin:0 0 10px;">Execution History</h2>
       <table>
         <thead>
-          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Reason</th></tr>
         </thead>
         <tbody id="historyBody"></tbody>
       </table>
@@ -179,9 +179,11 @@ const projectHTML = `<!doctype html>
           const jb = document.createElement('div');
           jb.className = 'jobbox';
           const runsOn = Object.entries(j.runs_on || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
+          const requiresTools = Object.entries(j.requires_tools || {}).map(kv => kv[0] + '=' + (kv[1] || '*')).join(', ');
           jb.innerHTML =
             '<div><strong>Job: ' + escapeHtml(j.id || '') + '</strong> <span class="muted">timeout=' + (j.timeout_seconds || 0) + 's</span></div>' +
-            '<div class="muted">runs_on: ' + escapeHtml(runsOn) + '</div>';
+            '<div class="muted">runs_on: ' + escapeHtml(runsOn) + '</div>' +
+            '<div class="muted">requires.tools: ' + escapeHtml(requiresTools) + '</div>';
 
           const matrixList = document.createElement('div');
           matrixList.className = 'matrix-list';
@@ -325,6 +327,7 @@ const projectHTML = `<!doctype html>
       rows.forEach(job => {
         const tr = buildJobExecutionRow(job, {
           includeActions: false,
+          includeReason: true,
           backPath: window.location.pathname || '/'
         });
         body.appendChild(tr);

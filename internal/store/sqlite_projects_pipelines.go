@@ -186,6 +186,7 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 				ID:             j.ID,
 				TimeoutSeconds: j.TimeoutSeconds,
 				RunsOn:         cloneMap(j.RunsOn),
+				RequiresTools:  cloneMap(j.RequiresTools),
 				Artifacts:      append([]string(nil), j.Artifacts...),
 			}
 			d.Steps = make([]protocol.PipelineStep, 0, len(j.Steps))
@@ -269,7 +270,7 @@ func (s *Store) GetPipelineByProjectAndID(projectName, pipelineID string) (Persi
 
 func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, error) {
 	rows, err := s.db.Query(`
-		SELECT job_id, position, runs_on_json, timeout_seconds, artifacts_json, matrix_json, steps_json
+		SELECT job_id, position, runs_on_json, requires_tools_json, timeout_seconds, artifacts_json, matrix_json, steps_json
 		FROM pipeline_jobs
 		WHERE pipeline_id = ?
 		ORDER BY position
@@ -282,11 +283,12 @@ func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, er
 	jobs := []PersistedPipelineJob{}
 	for rows.Next() {
 		var j PersistedPipelineJob
-		var runsOnJSON, artifactsJSON, matrixJSON, stepsJSON string
-		if err := rows.Scan(&j.ID, &j.Position, &runsOnJSON, &j.TimeoutSeconds, &artifactsJSON, &matrixJSON, &stepsJSON); err != nil {
+		var runsOnJSON, requiresToolsJSON, artifactsJSON, matrixJSON, stepsJSON string
+		if err := rows.Scan(&j.ID, &j.Position, &runsOnJSON, &requiresToolsJSON, &j.TimeoutSeconds, &artifactsJSON, &matrixJSON, &stepsJSON); err != nil {
 			return nil, fmt.Errorf("scan pipeline job: %w", err)
 		}
 		_ = json.Unmarshal([]byte(runsOnJSON), &j.RunsOn)
+		_ = json.Unmarshal([]byte(requiresToolsJSON), &j.RequiresTools)
 		_ = json.Unmarshal([]byte(artifactsJSON), &j.Artifacts)
 		_ = json.Unmarshal([]byte(matrixJSON), &j.MatrixInclude)
 		if err := json.Unmarshal([]byte(stepsJSON), &j.Steps); err != nil {

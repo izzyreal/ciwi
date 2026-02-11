@@ -13,7 +13,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || parts[1] != "update" {
+	if len(parts) != 2 || (parts[1] != "update" && parts[1] != "refresh-tools") {
 		http.NotFound(w, r)
 		return
 	}
@@ -24,6 +24,25 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 	agentID := strings.TrimSpace(parts[0])
 	if agentID == "" {
 		http.Error(w, "agent id is required", http.StatusBadRequest)
+		return
+	}
+	if parts[1] == "refresh-tools" {
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		s.agentToolRefresh[agentID] = true
+		a.RecentLog = appendAgentLog(a.RecentLog, "manual tools refresh requested")
+		s.agents[agentID] = a
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"requested": true,
+			"agent_id":  agentID,
+			"message":   "tools refresh requested",
+		})
 		return
 	}
 

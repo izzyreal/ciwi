@@ -13,10 +13,11 @@ type HeartbeatRequest struct {
 }
 
 type HeartbeatResponse struct {
-	Accepted         bool   `json:"accepted"`
-	Message          string `json:"message,omitempty"`
-	UpdateRequested  bool   `json:"update_requested,omitempty"`
-	UpdateTarget     string `json:"update_target,omitempty"`
-	UpdateRepository string `json:"update_repository,omitempty"`
-	UpdateAPIBase    string `json:"update_api_base,omitempty"`
+	Accepted              bool   `json:"accepted"`
+	Message               string `json:"message,omitempty"`
+	UpdateRequested       bool   `json:"update_requested,omitempty"`
+	UpdateTarget          string `json:"update_target,omitempty"`
+	UpdateRepository      string `json:"update_repository,omitempty"`
+	UpdateAPIBase         string `json:"update_api_base,omitempty"`
+	RefreshToolsRequested bool   `json:"refresh_tools_requested,omitempty"`
 }

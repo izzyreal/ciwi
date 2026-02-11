@@ -64,10 +64,11 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 	}
 
 	s := &stateStore{
-		agents:       make(map[string]agentState),
-		agentUpdates: make(map[string]string),
-		db:           db,
-		artifactsDir: artifactsDir,
+		agents:           make(map[string]agentState),
+		agentUpdates:     make(map[string]string),
+		agentToolRefresh: make(map[string]bool),
+		db:               db,
+		artifactsDir:     artifactsDir,
 	}
 
 	mux := http.NewServeMux()
@@ -908,6 +909,88 @@ func TestManualAgentUpdateRequestTriggersHeartbeatUpdate(t *testing.T) {
 	}
 	if hbPayload.UpdateTarget != "v1.2.0" {
 		t.Fatalf("unexpected update_target: %q", hbPayload.UpdateTarget)
+	}
+}
+
+func TestManualRefreshToolsRequest(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	firstHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-refresh",
+		"hostname":      "host-r",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "shell"},
+		"timestamp_utc": "2026-02-11T00:00:00Z",
+	})
+	if firstHB.StatusCode != http.StatusOK {
+		t.Fatalf("first heartbeat status=%d body=%s", firstHB.StatusCode, readBody(t, firstHB))
+	}
+	_ = readBody(t, firstHB)
+
+	refreshResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-refresh/refresh-tools", map[string]any{})
+	if refreshResp.StatusCode != http.StatusOK {
+		t.Fatalf("refresh-tools status=%d body=%s", refreshResp.StatusCode, readBody(t, refreshResp))
+	}
+	_ = readBody(t, refreshResp)
+
+	secondHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-refresh",
+		"hostname":      "host-r",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "shell"},
+		"timestamp_utc": "2026-02-11T00:00:10Z",
+	})
+	if secondHB.StatusCode != http.StatusOK {
+		t.Fatalf("second heartbeat status=%d body=%s", secondHB.StatusCode, readBody(t, secondHB))
+	}
+	var hbPayload struct {
+		RefreshToolsRequested bool `json:"refresh_tools_requested"`
+	}
+	decodeJSONBody(t, secondHB, &hbPayload)
+	if !hbPayload.RefreshToolsRequested {
+		t.Fatalf("expected refresh_tools_requested=true")
+	}
+}
+
+func TestQueuedJobIncludesUnmetRequirements(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
+		"script": "echo hi",
+		"required_capabilities": map[string]string{
+			"requires.tool.go": ">=9.0",
+		},
+		"timeout_seconds": 30,
+	})
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
+	}
+	_ = readBody(t, createResp)
+
+	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
+	if jobsResp.StatusCode != http.StatusOK {
+		t.Fatalf("jobs status=%d body=%s", jobsResp.StatusCode, readBody(t, jobsResp))
+	}
+	var payload struct {
+		Jobs []struct {
+			ID                string   `json:"id"`
+			UnmetRequirements []string `json:"unmet_requirements"`
+		} `json:"job_executions"`
+	}
+	decodeJSONBody(t, jobsResp, &payload)
+	if len(payload.Jobs) == 0 {
+		t.Fatalf("expected at least one job")
+	}
+	if len(payload.Jobs[0].UnmetRequirements) == 0 {
+		t.Fatalf("expected unmet requirements on queued job")
 	}
 }
 

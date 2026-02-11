@@ -32,6 +32,10 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	s.mu.Lock()
 	prev := s.agents[hb.AgentID]
+	refreshTools := s.agentToolRefresh[hb.AgentID]
+	if refreshTools {
+		delete(s.agentToolRefresh, hb.AgentID)
+	}
 	target := strings.TrimSpace(s.getAgentUpdateTarget())
 	manualTarget := strings.TrimSpace(s.agentUpdates[hb.AgentID])
 	if manualTarget != "" {
@@ -77,6 +81,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		UpdateNextRetryUTC:   prev.UpdateNextRetryUTC,
 	}
 	state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("heartbeat version=%s platform=%s/%s", strings.TrimSpace(hb.Version), strings.TrimSpace(hb.OS), strings.TrimSpace(hb.Arch)))
+	if refreshTools {
+		state.RecentLog = appendAgentLog(state.RecentLog, "server requested tools refresh")
+	}
 	if updateRequested {
 		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("server requested update to %s (attempt=%d, next_retry=%s)", target, state.UpdateAttempts, state.UpdateNextRetryUTC.Local().Format("15:04:05")))
 	}
@@ -85,6 +92,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp := protocol.HeartbeatResponse{
 		Accepted: true,
+	}
+	if refreshTools {
+		resp.RefreshToolsRequested = true
 	}
 	if updateRequested {
 		resp.UpdateRequested = true

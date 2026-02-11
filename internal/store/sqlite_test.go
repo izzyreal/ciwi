@@ -325,6 +325,35 @@ func TestStoreLeaseJobConcurrencySingleWinner(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesMatchToolConstraints(t *testing.T) {
+	agentCaps := map[string]string{
+		"os":         "linux",
+		"arch":       "amd64",
+		"executor":   "shell",
+		"tool.go":    "1.25.7",
+		"tool.git":   "2.44.0",
+		"tool.cmake": "3.28.1",
+	}
+	req := map[string]string{
+		"os":                  "linux",
+		"requires.tool.go":    ">=1.24",
+		"requires.tool.git":   ">=2.30",
+		"requires.tool.cmake": "*",
+		"requires.tool.clang": "",
+	}
+	if capabilitiesMatch(agentCaps, req) {
+		t.Fatalf("expected missing clang tool to fail")
+	}
+	agentCaps["tool.clang"] = "17.0.1"
+	if !capabilitiesMatch(agentCaps, req) {
+		t.Fatalf("expected constraints to match")
+	}
+	req["requires.tool.go"] = ">1.26"
+	if capabilitiesMatch(agentCaps, req) {
+		t.Fatalf("expected go constraint >1.26 to fail")
+	}
+}
+
 func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 	s := openTestStore(t)
 

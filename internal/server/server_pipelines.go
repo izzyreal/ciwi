@@ -194,11 +194,22 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			if selection != nil && selection.DryRun {
 				env["CIWI_DRY_RUN"] = "1"
 			}
+			requiredCaps := cloneMap(pj.RunsOn)
+			for tool, constraint := range pj.RequiresTools {
+				tool = strings.TrimSpace(tool)
+				if tool == "" {
+					continue
+				}
+				if requiredCaps == nil {
+					requiredCaps = map[string]string{}
+				}
+				requiredCaps["requires.tool."+tool] = strings.TrimSpace(constraint)
+			}
 
 			job, err := s.db.CreateJob(protocol.CreateJobRequest{
 				Script:               strings.Join(rendered, "\n"),
 				Env:                  cloneMap(env),
-				RequiredCapabilities: cloneMap(pj.RunsOn),
+				RequiredCapabilities: requiredCaps,
 				TimeoutSeconds:       pj.TimeoutSeconds,
 				ArtifactGlobs:        append([]string(nil), pj.Artifacts...),
 				Source:               &protocol.SourceSpec{Repo: p.SourceRepo, Ref: p.SourceRef},

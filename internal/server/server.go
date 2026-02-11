@@ -34,13 +34,14 @@ type agentState struct {
 }
 
 type stateStore struct {
-	mu           sync.Mutex
-	agents       map[string]agentState
-	agentUpdates map[string]string
-	db           *store.Store
-	artifactsDir string
-	vaultTokens  *vaultTokenCache
-	update       updateState
+	mu               sync.Mutex
+	agents           map[string]agentState
+	agentUpdates     map[string]string
+	agentToolRefresh map[string]bool
+	db               *store.Store
+	artifactsDir     string
+	vaultTokens      *vaultTokenCache
+	update           updateState
 }
 
 func Run(ctx context.Context) error {
@@ -59,11 +60,12 @@ func Run(ctx context.Context) error {
 	}
 
 	s := &stateStore{
-		agents:       make(map[string]agentState),
-		agentUpdates: make(map[string]string),
-		db:           db,
-		artifactsDir: artifactsDir,
-		vaultTokens:  newVaultTokenCache(),
+		agents:           make(map[string]agentState),
+		agentUpdates:     make(map[string]string),
+		agentToolRefresh: make(map[string]bool),
+		db:               db,
+		artifactsDir:     artifactsDir,
+		vaultTokens:      newVaultTokenCache(),
 	}
 	if target, ok, err := db.GetAppState("agent_update_target"); err == nil && ok {
 		s.update.mu.Lock()

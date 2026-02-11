@@ -53,6 +53,7 @@ type Job struct {
 	Error                string            `json:"error,omitempty"`
 	Output               string            `json:"output,omitempty"`
 	TestSummary          *JobTestSummary   `json:"test_summary,omitempty"`
+	UnmetRequirements    []string          `json:"unmet_requirements,omitempty"`
 	SensitiveValues      []string          `json:"sensitive_values,omitempty"`
 }
 
@@ -122,6 +123,7 @@ type PipelineJobDetail struct {
 	ID             string            `json:"id"`
 	TimeoutSeconds int               `json:"timeout_seconds"`
 	RunsOn         map[string]string `json:"runs_on,omitempty"`
+	RequiresTools  map[string]string `json:"requires_tools,omitempty"`
 	Artifacts      []string          `json:"artifacts,omitempty"`
 	Steps          []PipelineStep    `json:"steps,omitempty"`
 	MatrixIncludes []MatrixInclude   `json:"matrix_includes,omitempty"`

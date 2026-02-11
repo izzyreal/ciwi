@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"golang.org/x/mod/semver"
 )
 
 func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error) {
@@ -79,11 +81,84 @@ func capabilitiesMatch(agentCapabilities, requiredCapabilities map[string]string
 		return true
 	}
 	for k, requiredValue := range requiredCapabilities {
+		if strings.HasPrefix(k, "requires.tool.") {
+			tool := strings.TrimPrefix(k, "requires.tool.")
+			agentValue := strings.TrimSpace(agentCapabilities["tool."+tool])
+			if !toolConstraintMatch(agentValue, strings.TrimSpace(requiredValue)) {
+				return false
+			}
+			continue
+		}
 		if agentCapabilities[k] != requiredValue {
 			return false
 		}
 	}
 	return true
+}
+
+func toolConstraintMatch(agentValue, constraint string) bool {
+	agentValue = strings.TrimSpace(agentValue)
+	constraint = strings.TrimSpace(constraint)
+	if agentValue == "" {
+		return false
+	}
+	if constraint == "" || constraint == "*" {
+		return true
+	}
+	op := ""
+	val := constraint
+	for _, candidate := range []string{">=", "<=", ">", "<", "==", "="} {
+		if strings.HasPrefix(constraint, candidate) {
+			op = candidate
+			val = strings.TrimSpace(strings.TrimPrefix(constraint, candidate))
+			break
+		}
+	}
+	if val == "" {
+		return true
+	}
+	if op == "" {
+		return agentValue == val
+	}
+	av, aok := normalizeSemver(agentValue)
+	vv, vok := normalizeSemver(val)
+	if !aok || !vok {
+		switch op {
+		case "=", "==":
+			return agentValue == val
+		default:
+			return false
+		}
+	}
+	cmp := semver.Compare(av, vv)
+	switch op {
+	case ">":
+		return cmp > 0
+	case ">=":
+		return cmp >= 0
+	case "<":
+		return cmp < 0
+	case "<=":
+		return cmp <= 0
+	case "=", "==":
+		return cmp == 0
+	default:
+		return false
+	}
+}
+
+func normalizeSemver(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", false
+	}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	if !semver.IsValid(v) {
+		return "", false
+	}
+	return v, true
 }
 
 func nullableTime(t time.Time) sql.NullString {

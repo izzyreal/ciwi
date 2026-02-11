@@ -19,6 +19,10 @@ pipelines:
       - id: unit-tests
         runs_on:
           executor: shell
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
         timeout_seconds: 600
         steps:
           - test:
@@ -28,6 +32,10 @@ pipelines:
       - id: build-cross-platform
         runs_on:
           executor: shell
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
         timeout_seconds: 600
         artifacts:
           - dist/**
@@ -63,6 +71,11 @@ pipelines:
       - id: github-release
         runs_on:
           executor: shell
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
+            gh: "*"
         timeout_seconds: 1200
         artifacts:
           - dist/**

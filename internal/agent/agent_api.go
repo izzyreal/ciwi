@@ -14,14 +14,14 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string) (protocol.HeartbeatResponse, error) {
+func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string, capabilities map[string]string) (protocol.HeartbeatResponse, error) {
 	payload := protocol.HeartbeatRequest{
 		AgentID:      agentID,
 		Hostname:     hostname,
 		OS:           runtime.GOOS,
 		Arch:         runtime.GOARCH,
 		Version:      currentVersion(),
-		Capabilities: map[string]string{"executor": "shell"},
+		Capabilities: cloneMap(capabilities),
 		TimestampUTC: time.Now().UTC(),
 	}
 
@@ -56,14 +56,23 @@ func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID,
 	return hbResp, nil
 }
 
-func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID string) (*protocol.Job, error) {
+func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID string, capabilities map[string]string) (*protocol.Job, error) {
+	caps := cloneMap(capabilities)
+	if caps == nil {
+		caps = map[string]string{}
+	}
+	if caps["executor"] == "" {
+		caps["executor"] = "shell"
+	}
+	if caps["os"] == "" {
+		caps["os"] = runtime.GOOS
+	}
+	if caps["arch"] == "" {
+		caps["arch"] = runtime.GOARCH
+	}
 	payload := protocol.LeaseJobRequest{
-		AgentID: agentID,
-		Capabilities: map[string]string{
-			"os":       runtime.GOOS,
-			"arch":     runtime.GOARCH,
-			"executor": "shell",
-		},
+		AgentID:      agentID,
+		Capabilities: caps,
 	}
 
 	body, err := json.Marshal(payload)
@@ -135,4 +144,15 @@ func reportJobStatus(ctx context.Context, client *http.Client, serverURL, jobID 
 	}
 
 	return nil
+}
+
+func cloneMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

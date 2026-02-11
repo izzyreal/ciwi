@@ -13,6 +13,7 @@ const uiPagesJS = `function apiJSON(path, opts = {}) {
 
 function buildJobExecutionRow(job, opts = {}) {
   const includeActions = !!opts.includeActions;
+  const includeReason = !!opts.includeReason;
   const backPath = opts.backPath || (window.location.pathname || '/');
   const onRemove = opts.onRemove || null;
   const linkClass = opts.linkClass || '';
@@ -29,6 +30,11 @@ function buildJobExecutionRow(job, opts = {}) {
     '<td>' + escapeHtml(buildVersionLabel(job)) + '</td>' +
     '<td>' + escapeHtml(job.leased_by_agent_id || '') + '</td>' +
     '<td>' + escapeHtml(formatTimestamp(job.created_utc)) + '</td>';
+
+  if (includeReason) {
+    const reasons = (job.unmet_requirements || []);
+    tr.innerHTML += '<td>' + escapeHtml(reasons.join('; ')) + '</td>';
+  }
 
   if (includeActions) {
     const actionTd = document.createElement('td');
