@@ -164,6 +164,18 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		agentCaps = mergeCapabilities(a, req.Capabilities)
 	}
 	s.mu.Unlock()
+	hasActive, err := s.db.AgentHasActiveJob(req.AgentID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if hasActive {
+		writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{
+			Assigned: false,
+			Message:  "agent already has an active job",
+		})
+		return
+	}
 
 	job, err := s.db.LeaseJob(req.AgentID, agentCaps)
 	if err != nil {

@@ -17,13 +17,16 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func collectAndUploadArtifacts(ctx context.Context, client *http.Client, serverURL, agentID, jobID, execDir string, globs []string) (string, error) {
+func collectAndUploadArtifacts(ctx context.Context, client *http.Client, serverURL, agentID, jobID, execDir string, globs []string, progress func(string)) (string, error) {
 	artifacts, summary, err := collectArtifacts(execDir, globs)
 	if err != nil {
 		return summary, err
 	}
 	if len(artifacts) == 0 {
 		return summary, nil
+	}
+	if progress != nil {
+		progress(fmt.Sprintf("[artifacts] uploading=%d", len(artifacts)))
 	}
 
 	reqBody := protocol.UploadArtifactsRequest{AgentID: agentID, Artifacts: artifacts}
@@ -47,6 +50,9 @@ func collectAndUploadArtifacts(ctx context.Context, client *http.Client, serverU
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
 		return summary, fmt.Errorf("artifact upload rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+	if progress != nil {
+		progress("[artifacts] upload complete")
 	}
 
 	return summary + "\n[artifacts] uploaded", nil

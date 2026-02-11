@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
@@ -77,6 +78,47 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "force-fail" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		job, err := s.db.GetJob(jobID)
+		if err != nil {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+		status := strings.ToLower(strings.TrimSpace(job.Status))
+		switch status {
+		case "queued", "leased", "running":
+		default:
+			http.Error(w, "job is not active", http.StatusConflict)
+			return
+		}
+		agentID := strings.TrimSpace(job.LeasedByAgentID)
+		if agentID == "" {
+			agentID = "server-control"
+		}
+		output := strings.TrimSpace(job.Output)
+		if output != "" {
+			output += "\n"
+		}
+		output += "[control] job force-failed from UI"
+		updated, err := s.db.UpdateJobStatus(jobID, protocol.JobStatusUpdateRequest{
+			AgentID:      agentID,
+			Status:       "failed",
+			Error:        "force-failed from UI",
+			Output:       output,
+			TimestampUTC: time.Now().UTC(),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job_execution": updated, "job": updated})
 		return
 	}
 

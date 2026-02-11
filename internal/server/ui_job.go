@@ -111,7 +111,10 @@ const jobHTML = `<!doctype html>
           <div style="color:#5f6f67;" id="subtitle">Loading...</div>
         </div>
       </div>
-      <div><a id="backLink" href="/">Back to Job Executions</a></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button id="forceFailBtn" class="copy-btn" style="display:none;">Force Fail</button>
+        <a id="backLink" href="/">Back to Job Executions</a>
+      </div>
     </div>
 
     <div class="card">
@@ -196,6 +199,34 @@ const jobHTML = `<!doctype html>
 
       const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
       document.getElementById('logBox').value = output || '<no output yet>';
+
+      const forceBtn = document.getElementById('forceFailBtn');
+      const active = ['queued', 'leased', 'running'].includes((job.status || '').toLowerCase());
+      if (active) {
+        forceBtn.style.display = 'inline-block';
+        forceBtn.disabled = false;
+        forceBtn.onclick = async () => {
+          if (!confirm('Force-fail this active job?')) return;
+          forceBtn.disabled = true;
+          try {
+            const fres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/force-fail', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: '{}'
+            });
+            if (!fres.ok) {
+              throw new Error(await fres.text() || ('HTTP ' + fres.status));
+            }
+            await loadJob();
+          } catch (e) {
+            alert('Force fail failed: ' + e.message);
+          } finally {
+            forceBtn.disabled = false;
+          }
+        };
+      } else {
+        forceBtn.style.display = 'none';
+      }
 
       renderReleaseSummary(job, output);
 

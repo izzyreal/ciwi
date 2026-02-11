@@ -106,7 +106,10 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	fmt.Fprintf(&output, "\n[run] duration=%s\n", duration)
 
 	if len(job.ArtifactGlobs) > 0 {
-		note, uploadErr := collectAndUploadArtifacts(ctx, client, serverURL, agentID, job.ID, execDir, job.ArtifactGlobs)
+		fmt.Fprintf(&output, "[artifacts] collecting...\n")
+		note, uploadErr := collectAndUploadArtifacts(ctx, client, serverURL, agentID, job.ID, execDir, job.ArtifactGlobs, func(msg string) {
+			fmt.Fprintf(&output, "%s\n", msg)
+		})
 		if note != "" {
 			output.WriteString(note)
 			if !strings.HasSuffix(note, "\n") {
@@ -138,7 +141,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 
 	if err == nil {
 		exitCode := 0
-		if reportErr := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 			AgentID:      agentID,
 			Status:       "succeeded",
 			ExitCode:     &exitCode,

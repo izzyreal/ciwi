@@ -14,6 +14,11 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
+const (
+	terminalStatusMaxAttempts = 5
+	terminalStatusAttemptTTL  = 30 * time.Second
+)
+
 func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string, capabilities map[string]string) (protocol.HeartbeatResponse, error) {
 	payload := protocol.HeartbeatRequest{
 		AgentID:      agentID,
@@ -110,7 +115,7 @@ func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID strin
 }
 
 func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID string, job protocol.Job, exitCode *int, failMsg, output string) error {
-	return reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+	return reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 		AgentID:      agentID,
 		Status:       "failed",
 		ExitCode:     exitCode,
@@ -118,6 +123,25 @@ func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID 
 		Output:       output,
 		TimestampUTC: time.Now().UTC(),
 	})
+}
+
+func reportTerminalJobStatusWithRetry(client *http.Client, serverURL, jobID string, reqBody protocol.JobStatusUpdateRequest) error {
+	var lastErr error
+	for attempt := 1; attempt <= terminalStatusMaxAttempts; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(context.Background(), terminalStatusAttemptTTL)
+		err := reportJobStatus(attemptCtx, client, serverURL, jobID, reqBody)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if attempt < terminalStatusMaxAttempts {
+			wait := time.Duration(1<<(attempt-1)) * time.Second
+			slog.Warn("terminal status report failed; retrying", "job_execution_id", jobID, "status", reqBody.Status, "attempt", attempt, "next_wait", wait, "error", err)
+			time.Sleep(wait)
+		}
+	}
+	return fmt.Errorf("terminal status report failed after %d attempts: %w", terminalStatusMaxAttempts, lastErr)
 }
 
 func reportJobStatus(ctx context.Context, client *http.Client, serverURL, jobID string, reqBody protocol.JobStatusUpdateRequest) error {

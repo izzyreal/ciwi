@@ -4,17 +4,25 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestWithGoVerbose(t *testing.T) {
 	base := []string{"PATH=/usr/bin"}
@@ -127,29 +135,34 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 	}
 
 	var gotReq protocol.UploadArtifactsRequest
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("unexpected method: %s", r.Method)
-		}
-		if !strings.HasPrefix(r.URL.Path, "/api/v1/jobs/job-123/artifacts") {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
-			t.Fatalf("decode upload request: %v", err)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"artifacts":[]}`))
-	}))
-	defer ts.Close()
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodPost {
+				t.Fatalf("unexpected method: %s", r.Method)
+			}
+			if !strings.HasPrefix(r.URL.Path, "/api/v1/jobs/job-123/artifacts") {
+				t.Fatalf("unexpected path: %s", r.URL.Path)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+				t.Fatalf("decode upload request: %v", err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"artifacts":[]}`)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
 
 	summary, err := collectAndUploadArtifacts(
 		context.Background(),
-		ts.Client(),
-		ts.URL,
+		client,
+		"http://example.local",
 		"agent-1",
 		"job-123",
 		root,
 		[]string{"dist/*"},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("collectAndUploadArtifacts: %v", err)
@@ -204,25 +217,37 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 		mu       sync.Mutex
 		statuses []protocol.JobStatusUpdateRequest
 	)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/status":
-			var req protocol.JobStatusUpdateRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode status: %v", err)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			switch {
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/status":
+				var req protocol.JobStatusUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode status: %v", err)
+				}
+				mu.Lock()
+				statuses = append(statuses, req)
+				mu.Unlock()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/artifacts":
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Body:       io.NopCloser(strings.NewReader("upload failed")),
+					Header:     make(http.Header),
+				}, nil
+			default:
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(strings.NewReader("not found")),
+					Header:     make(http.Header),
+				}, nil
 			}
-			mu.Lock()
-			statuses = append(statuses, req)
-			mu.Unlock()
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"ok":true}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/artifacts":
-			http.Error(w, "upload failed", http.StatusInternalServerError)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer ts.Close()
+		}),
+	}
 
 	workDir := t.TempDir()
 	job := protocol.Job{
@@ -231,7 +256,7 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 		TimeoutSeconds: 30,
 		ArtifactGlobs:  []string{"dist/*"},
 	}
-	err := executeLeasedJob(context.Background(), ts.Client(), ts.URL, "agent-1", workDir, job)
+	err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", workDir, job)
 	if err != nil {
 		t.Fatalf("executeLeasedJob: %v", err)
 	}
@@ -247,5 +272,32 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	}
 	if !strings.Contains(last.Error, "artifact upload failed") {
 		t.Fatalf("expected artifact upload failure in error, got %q", last.Error)
+	}
+}
+
+func TestReportTerminalJobStatusWithRetry(t *testing.T) {
+	var attempts int32
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			n := atomic.AddInt32(&attempts, 1)
+			if n < 3 {
+				return nil, errors.New("temporary network error")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	err := reportTerminalJobStatusWithRetry(client, "http://example.local", "job-xyz", protocol.JobStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  "succeeded",
+	})
+	if err != nil {
+		t.Fatalf("reportTerminalJobStatusWithRetry: %v", err)
+	}
+	if got := atomic.LoadInt32(&attempts); got != 3 {
+		t.Fatalf("expected 3 attempts, got %d", got)
 	}
 }

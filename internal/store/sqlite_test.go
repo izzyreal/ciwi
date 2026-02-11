@@ -439,3 +439,46 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 		t.Fatalf("expected output to remain terminal output, got %q", got.Output)
 	}
 }
+
+func TestStoreAgentHasActiveJob(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJob(protocol.CreateJobRequest{
+		Script:               "echo hi",
+		RequiredCapabilities: map[string]string{"os": "linux"},
+		TimeoutSeconds:       30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	leased, err := s.LeaseJob("agent-a", map[string]string{"os": "linux"})
+	if err != nil {
+		t.Fatalf("lease: %v", err)
+	}
+	if leased == nil || leased.ID != job.ID {
+		t.Fatalf("expected leased job %q", job.ID)
+	}
+
+	active, err := s.AgentHasActiveJob("agent-a")
+	if err != nil {
+		t.Fatalf("AgentHasActiveJob leased: %v", err)
+	}
+	if !active {
+		t.Fatalf("expected active job for agent-a")
+	}
+
+	if _, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+		AgentID: "agent-a",
+		Status:  "succeeded",
+	}); err != nil {
+		t.Fatalf("mark succeeded: %v", err)
+	}
+	active, err = s.AgentHasActiveJob("agent-a")
+	if err != nil {
+		t.Fatalf("AgentHasActiveJob succeeded: %v", err)
+	}
+	if active {
+		t.Fatalf("expected no active job after succeeded")
+	}
+}

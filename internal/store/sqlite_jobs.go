@@ -129,6 +129,23 @@ func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol
 	return nil, nil
 }
 
+func (s *Store) AgentHasActiveJob(agentID string) (bool, error) {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return false, fmt.Errorf("agent id is required")
+	}
+	var count int64
+	if err := s.db.QueryRow(`
+		SELECT COUNT(1)
+		FROM job_executions
+		WHERE leased_by_agent_id = ?
+		  AND status IN ('leased', 'running')
+	`, agentID).Scan(&count); err != nil {
+		return false, fmt.Errorf("check active jobs for agent: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
