@@ -147,7 +147,19 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
 		return fmt.Errorf("write update manifest: %w", err)
 	}
-	if err := runLaunchctl("kickstart", "-k", "gui/"+strconv.Itoa(os.Getuid())+"/"+updaterLabel); err != nil {
+	uidDomain := "gui/" + strconv.Itoa(os.Getuid())
+	updaterService := uidDomain + "/" + updaterLabel
+	_ = runLaunchctl("bootout", updaterService)
+	if updaterPlist != "" {
+		_ = runLaunchctl("bootout", uidDomain, updaterPlist)
+		_ = runLaunchctl("disable", updaterService)
+		_ = runLaunchctl("enable", updaterService)
+		if err := runLaunchctl("bootstrap", uidDomain, updaterPlist); err != nil {
+			_ = os.Remove(manifestPath)
+			return fmt.Errorf("bootstrap updater launchagent: %w", err)
+		}
+	}
+	if err := runLaunchctl("kickstart", "-k", updaterService); err != nil {
 		_ = os.Remove(manifestPath)
 		return fmt.Errorf("trigger updater launchagent: %w", err)
 	}
