@@ -197,8 +197,10 @@ const indexHTML = `<!doctype html>
         (project.pipelines || []).forEach(p => {
           const row = document.createElement('div');
           row.className = 'pipeline';
+          const deps = (p.depends_on || []).join(', ');
           const info = document.createElement('div');
-          info.innerHTML = '<div><code>' + p.pipeline_id + '</code></div><div style="color:#5f6f67;font-size:12px;">' + (p.source_repo || '') + '</div>';
+          info.innerHTML = '<div><code>' + p.pipeline_id + '</code></div><div style="color:#5f6f67;font-size:12px;">' +
+            (p.source_repo || '') + (deps ? (' | depends_on: ' + deps) : '') + '</div>';
           const btn = document.createElement('button');
           btn.className = 'secondary';
           btn.textContent = 'Run';

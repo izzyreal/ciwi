@@ -32,10 +32,11 @@ type ProjectVaultSecret struct {
 }
 
 type Pipeline struct {
-	ID      string `yaml:"id" json:"id"`
-	Trigger string `yaml:"trigger" json:"trigger"`
-	Source  Source `yaml:"source" json:"source"`
-	Jobs    []Job  `yaml:"jobs" json:"jobs"`
+	ID        string   `yaml:"id" json:"id"`
+	Trigger   string   `yaml:"trigger" json:"trigger"`
+	DependsOn []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+	Source    Source   `yaml:"source" json:"source"`
+	Jobs      []Job    `yaml:"jobs" json:"jobs"`
 }
 
 type Source struct {
@@ -97,6 +98,13 @@ func Parse(data []byte, source string) (File, error) {
 		for i, sec := range cfg.Project.Vault.Secrets {
 			if sec.Name == "" || sec.Path == "" || sec.Key == "" {
 				return cfg, fmt.Errorf("project.vault.secrets[%d] requires name, path and key", i)
+			}
+		}
+	}
+	for i, p := range cfg.Pipelines {
+		for j, dep := range p.DependsOn {
+			if dep == "" {
+				return cfg, fmt.Errorf("pipelines[%d].depends_on[%d] must not be empty", i, j)
 			}
 		}
 	}

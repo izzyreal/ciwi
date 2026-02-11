@@ -29,6 +29,7 @@ go run ./cmd/ciwi all-in-one
 ## Agent prerequisites
 
 - `git` must be installed on the agent host for pipeline jobs that define `source.repo`.
+- `gh` must be installed on the agent host for GitHub release steps that use GitHub CLI.
 
 ## First functional API slice
 
@@ -44,8 +45,8 @@ go run ./cmd/ciwi all-in-one
 - `POST /api/v1/jobs` enqueues a job
 - `GET /api/v1/jobs` returns all jobs
 - `GET /api/v1/jobs/{id}` returns one job
-- `DELETE /api/v1/jobs/{id}` removes a queued job
-- `POST /api/v1/jobs/clear-queue` removes all queued jobs
+- `DELETE /api/v1/jobs/{id}` removes a queued/leased job
+- `POST /api/v1/jobs/clear-queue` removes all queued/leased jobs
 - `POST /api/v1/jobs/flush-history` removes all finished jobs from history
 - `POST /api/v1/jobs/{id}/status` updates job status (`running`, `succeeded`, `failed`)
 - `GET /api/v1/jobs/{id}/artifacts` lists uploaded artifacts for a job
@@ -65,6 +66,7 @@ go run ./cmd/ciwi all-in-one
 Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps
 - `pipelines[].source.ref` (optional): branch/tag/ref to checkout
+- `pipelines[].depends_on` (optional): list of pipeline IDs that must have latest successful run before enqueue
 
 `steps` supports two step types:
 - `run`: executes a shell command line.

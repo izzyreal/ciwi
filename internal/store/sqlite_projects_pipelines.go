@@ -31,12 +31,13 @@ func upsertProject(tx *sql.Tx, name, configPath, repoURL, repoRef, configFile, n
 }
 
 func upsertPipeline(tx *sql.Tx, projectID int64, p config.Pipeline, now string) (int64, error) {
+	dependsOnJSON, _ := json.Marshal(p.DependsOn)
 	if _, err := tx.Exec(`
-		INSERT INTO pipelines (project_id, pipeline_id, trigger_mode, source_repo, source_ref, created_utc, updated_utc)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO pipelines (project_id, pipeline_id, trigger_mode, depends_on_json, source_repo, source_ref, created_utc, updated_utc)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(project_id, pipeline_id)
-		DO UPDATE SET trigger_mode=excluded.trigger_mode, source_repo=excluded.source_repo, source_ref=excluded.source_ref, updated_utc=excluded.updated_utc
-	`, projectID, p.ID, p.Trigger, p.Source.Repo, p.Source.Ref, now, now); err != nil {
+		DO UPDATE SET trigger_mode=excluded.trigger_mode, depends_on_json=excluded.depends_on_json, source_repo=excluded.source_repo, source_ref=excluded.source_ref, updated_utc=excluded.updated_utc
+	`, projectID, p.ID, p.Trigger, string(dependsOnJSON), p.Source.Repo, p.Source.Ref, now, now); err != nil {
 		return 0, fmt.Errorf("upsert pipeline: %w", err)
 	}
 
@@ -49,7 +50,7 @@ func upsertPipeline(tx *sql.Tx, projectID int64, p config.Pipeline, now string) 
 
 func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 	rows, err := s.db.Query(`
-		SELECT p.id, p.name, p.config_path, p.repo_url, p.repo_ref, p.config_file, pl.id, pl.pipeline_id, pl.trigger_mode, pl.source_repo, pl.source_ref
+		SELECT p.id, p.name, p.config_path, p.repo_url, p.repo_ref, p.config_file, pl.id, pl.pipeline_id, pl.trigger_mode, pl.depends_on_json, pl.source_repo, pl.source_ref
 		FROM projects p
 		LEFT JOIN pipelines pl ON pl.project_id = p.id
 		ORDER BY p.name, pl.pipeline_id
@@ -67,9 +68,9 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 		var projectName, configPath string
 		var repoURL, repoRef, configFile sql.NullString
 		var pipelineID sql.NullInt64
-		var pipelineName, trigger, sourceRepo, sourceRef sql.NullString
+		var pipelineName, trigger, dependsOnJSON, sourceRepo, sourceRef sql.NullString
 
-		if err := rows.Scan(&projectID, &projectName, &configPath, &repoURL, &repoRef, &configFile, &pipelineID, &pipelineName, &trigger, &sourceRepo, &sourceRef); err != nil {
+		if err := rows.Scan(&projectID, &projectName, &configPath, &repoURL, &repoRef, &configFile, &pipelineID, &pipelineName, &trigger, &dependsOnJSON, &sourceRepo, &sourceRef); err != nil {
 			return nil, fmt.Errorf("scan project row: %w", err)
 		}
 
@@ -88,10 +89,13 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 		}
 
 		if pipelineID.Valid {
+			dependsOn := []string{}
+			_ = json.Unmarshal([]byte(dependsOnJSON.String), &dependsOn)
 			project.Pipelines = append(project.Pipelines, protocol.PipelineSummary{
 				ID:         pipelineID.Int64,
 				PipelineID: pipelineName.String,
 				Trigger:    trigger.String,
+				DependsOn:  dependsOn,
 				SourceRepo: sourceRepo.String,
 				SourceRef:  sourceRef.String,
 			})
@@ -147,7 +151,7 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 	}
 
 	rows, err := s.db.Query(`
-		SELECT id, pipeline_id, trigger_mode, source_repo, source_ref
+		SELECT id, pipeline_id, trigger_mode, depends_on_json, source_repo, source_ref
 		FROM pipelines
 		WHERE project_id = ?
 		ORDER BY pipeline_id
@@ -167,9 +171,11 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 
 	for rows.Next() {
 		var p protocol.PipelineDetail
-		if err := rows.Scan(&p.ID, &p.PipelineID, &p.Trigger, &p.SourceRepo, &p.SourceRef); err != nil {
+		var dependsOnJSON string
+		if err := rows.Scan(&p.ID, &p.PipelineID, &p.Trigger, &dependsOnJSON, &p.SourceRepo, &p.SourceRef); err != nil {
 			return protocol.ProjectDetail{}, fmt.Errorf("scan pipeline: %w", err)
 		}
+		_ = json.Unmarshal([]byte(dependsOnJSON), &p.DependsOn)
 		persistedJobs, err := s.listPipelineJobs(p.ID)
 		if err != nil {
 			return protocol.ProjectDetail{}, err
@@ -222,17 +228,19 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 func (s *Store) GetPipelineByDBID(id int64) (PersistedPipeline, error) {
 	var p PersistedPipeline
 	row := s.db.QueryRow(`
-		SELECT pl.id, pl.project_id, p.name, pl.pipeline_id, pl.trigger_mode, pl.source_repo, pl.source_ref
+		SELECT pl.id, pl.project_id, p.name, pl.pipeline_id, pl.trigger_mode, pl.depends_on_json, pl.source_repo, pl.source_ref
 		FROM pipelines pl
 		JOIN projects p ON p.id = pl.project_id
 		WHERE pl.id = ?
 	`, id)
-	if err := row.Scan(&p.DBID, &p.ProjectID, &p.ProjectName, &p.PipelineID, &p.Trigger, &p.SourceRepo, &p.SourceRef); err != nil {
+	var dependsOnJSON string
+	if err := row.Scan(&p.DBID, &p.ProjectID, &p.ProjectName, &p.PipelineID, &p.Trigger, &dependsOnJSON, &p.SourceRepo, &p.SourceRef); err != nil {
 		if err == sql.ErrNoRows {
 			return p, fmt.Errorf("pipeline not found")
 		}
 		return p, fmt.Errorf("get pipeline: %w", err)
 	}
+	_ = json.Unmarshal([]byte(dependsOnJSON), &p.DependsOn)
 
 	jobs, err := s.listPipelineJobs(p.DBID)
 	if err != nil {

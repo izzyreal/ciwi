@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -111,8 +112,12 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 	if strings.TrimSpace(p.SourceRepo) == "" {
 		return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline source.repo is required")
 	}
+	if err := s.checkPipelineDependencies(p); err != nil {
+		return protocol.RunPipelineResponse{}, err
+	}
 
 	jobIDs := make([]string, 0)
+	runID := fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
 	for _, pj := range p.SortedJobs() {
 		if selection != nil && strings.TrimSpace(selection.PipelineJobID) != "" && selection.PipelineJobID != pj.ID {
 			continue
@@ -173,6 +178,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			metadata := map[string]string{
 				"project":            p.ProjectName,
 				"pipeline_id":        p.PipelineID,
+				"pipeline_run_id":    runID,
 				"pipeline_job_id":    pj.ID,
 				"pipeline_job_index": strconv.Itoa(index),
 			}
@@ -201,4 +207,72 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 	}
 
 	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobIDs: jobIDs}, nil
+}
+
+func (s *stateStore) checkPipelineDependencies(p store.PersistedPipeline) error {
+	if len(p.DependsOn) == 0 {
+		return nil
+	}
+	jobs, err := s.db.ListJobs()
+	if err != nil {
+		return fmt.Errorf("check dependencies: %w", err)
+	}
+	for _, depID := range p.DependsOn {
+		depID = strings.TrimSpace(depID)
+		if depID == "" {
+			continue
+		}
+		if err := verifyDependencyRun(jobs, p.ProjectName, depID); err != nil {
+			return fmt.Errorf("pipeline %q dependency %q not satisfied: %w", p.PipelineID, depID, err)
+		}
+	}
+	return nil
+}
+
+func verifyDependencyRun(jobs []protocol.Job, projectName, pipelineID string) error {
+	type runState struct {
+		lastCreated time.Time
+		statuses    []string
+	}
+	byRun := map[string]runState{}
+	for _, j := range jobs {
+		if strings.TrimSpace(j.Metadata["project"]) != projectName {
+			continue
+		}
+		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
+			continue
+		}
+		runID := strings.TrimSpace(j.Metadata["pipeline_run_id"])
+		if runID == "" {
+			runID = j.ID
+		}
+		st := byRun[runID]
+		if j.CreatedUTC.After(st.lastCreated) {
+			st.lastCreated = j.CreatedUTC
+		}
+		st.statuses = append(st.statuses, strings.ToLower(strings.TrimSpace(j.Status)))
+		byRun[runID] = st
+	}
+	if len(byRun) == 0 {
+		return fmt.Errorf("no previous run found")
+	}
+
+	latestRunID := ""
+	latest := time.Time{}
+	for runID, st := range byRun {
+		if latestRunID == "" || st.lastCreated.After(latest) {
+			latestRunID = runID
+			latest = st.lastCreated
+		}
+	}
+	statuses := byRun[latestRunID].statuses
+	for _, st := range statuses {
+		if st == "queued" || st == "leased" || st == "running" {
+			return fmt.Errorf("latest run is still in progress")
+		}
+		if st == "failed" {
+			return fmt.Errorf("latest run failed")
+		}
+	}
+	return nil
 }

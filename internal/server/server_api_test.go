@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/store"
@@ -428,6 +429,164 @@ func TestServerRunSelectionQueuesSingleMatrixEntry(t *testing.T) {
 	}
 	if got := jobsPayload.Jobs[0].Metadata["matrix_name"]; got != "linux-amd64" {
 		t.Fatalf("expected matrix_name linux-amd64, got %q", got)
+	}
+}
+
+func TestServerPipelineDependsOnGatesRelease(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	cfg := `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: build-job
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 60
+        steps:
+          - run: echo build
+  - id: release
+    depends_on:
+      - build
+    source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: release-job
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 60
+        steps:
+          - run: echo release
+`
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{"config_path": "ciwi.yaml"})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	var projectsPayload struct {
+		Projects []struct {
+			Pipelines []struct {
+				ID         int64    `json:"id"`
+				PipelineID string   `json:"pipeline_id"`
+				DependsOn  []string `json:"depends_on"`
+			} `json:"pipelines"`
+		} `json:"projects"`
+	}
+	projectsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/projects", nil)
+	if projectsResp.StatusCode != http.StatusOK {
+		t.Fatalf("list projects status=%d body=%s", projectsResp.StatusCode, readBody(t, projectsResp))
+	}
+	decodeJSONBody(t, projectsResp, &projectsPayload)
+	if len(projectsPayload.Projects) != 1 || len(projectsPayload.Projects[0].Pipelines) != 2 {
+		t.Fatalf("expected 1 project with 2 pipelines")
+	}
+
+	var buildID, releaseID int64
+	for _, p := range projectsPayload.Projects[0].Pipelines {
+		if p.PipelineID == "build" {
+			buildID = p.ID
+		}
+		if p.PipelineID == "release" {
+			releaseID = p.ID
+			if len(p.DependsOn) != 1 || p.DependsOn[0] != "build" {
+				t.Fatalf("expected release depends_on build, got %+v", p.DependsOn)
+			}
+		}
+	}
+	if buildID <= 0 || releaseID <= 0 {
+		t.Fatalf("expected both build and release pipeline IDs")
+	}
+
+	releaseBeforeResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(releaseID)+"/run", map[string]any{})
+	if releaseBeforeResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("release before build expected 400, got %d body=%s", releaseBeforeResp.StatusCode, readBody(t, releaseBeforeResp))
+	}
+	if body := readBody(t, releaseBeforeResp); !strings.Contains(body, "dependency") {
+		t.Fatalf("expected dependency error, got %q", body)
+	}
+
+	buildRunResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(buildID)+"/run", map[string]any{})
+	if buildRunResp.StatusCode != http.StatusCreated {
+		t.Fatalf("build run status=%d body=%s", buildRunResp.StatusCode, readBody(t, buildRunResp))
+	}
+	var buildRunPayload struct {
+		JobIDs []string `json:"job_ids"`
+	}
+	decodeJSONBody(t, buildRunResp, &buildRunPayload)
+	if len(buildRunPayload.JobIDs) != 1 {
+		t.Fatalf("expected 1 build job id, got %d", len(buildRunPayload.JobIDs))
+	}
+	buildJobID := buildRunPayload.JobIDs[0]
+
+	buildDoneResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+buildJobID+"/status", map[string]any{
+		"agent_id": "agent-test",
+		"status":   "succeeded",
+		"output":   "ok",
+	})
+	if buildDoneResp.StatusCode != http.StatusOK {
+		t.Fatalf("mark build success status=%d body=%s", buildDoneResp.StatusCode, readBody(t, buildDoneResp))
+	}
+	_ = readBody(t, buildDoneResp)
+
+	releaseAfterResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(releaseID)+"/run", map[string]any{})
+	if releaseAfterResp.StatusCode != http.StatusCreated {
+		t.Fatalf("release after build expected 201, got %d body=%s", releaseAfterResp.StatusCode, readBody(t, releaseAfterResp))
+	}
+	var releaseRunPayload struct {
+		JobIDs []string `json:"job_ids"`
+	}
+	decodeJSONBody(t, releaseAfterResp, &releaseRunPayload)
+	if len(releaseRunPayload.JobIDs) != 1 {
+		t.Fatalf("expected 1 release job id, got %d", len(releaseRunPayload.JobIDs))
+	}
+
+	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
+	if jobsResp.StatusCode != http.StatusOK {
+		t.Fatalf("jobs status=%d body=%s", jobsResp.StatusCode, readBody(t, jobsResp))
+	}
+	var jobsPayload struct {
+		Jobs []struct {
+			ID       string            `json:"id"`
+			Metadata map[string]string `json:"metadata"`
+		} `json:"jobs"`
+	}
+	decodeJSONBody(t, jobsResp, &jobsPayload)
+	foundRelease := false
+	for _, j := range jobsPayload.Jobs {
+		if j.ID != releaseRunPayload.JobIDs[0] {
+			continue
+		}
+		if strings.TrimSpace(j.Metadata["pipeline_run_id"]) == "" {
+			t.Fatalf("expected pipeline_run_id metadata on release job")
+		}
+		foundRelease = true
+	}
+	if !foundRelease {
+		t.Fatalf("release job not found in list jobs")
 	}
 }
 

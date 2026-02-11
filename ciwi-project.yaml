@@ -48,3 +48,74 @@ pipelines:
         steps:
           - run: mkdir -p dist
           - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
+  - id: release
+    trigger: manual
+    depends_on:
+      - build
+    source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: github-release
+        runs_on:
+          executor: shell
+        timeout_seconds: 1200
+        artifacts:
+          - dist/**
+        steps:
+          - run: command -v gh >/dev/null 2>&1 || { echo "gh CLI is required"; exit 1; }
+          - run: test -n "$GITHUB_TOKEN"
+            env:
+              GITHUB_TOKEN: "{{ secret.github-secret }}"
+          - run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/izzyreal/ciwi.git"
+            env:
+              GITHUB_TOKEN: "{{ secret.github-secret }}"
+          - run: test -f VERSION
+          - run: git diff --quiet
+          - run: mkdir -p dist
+          - run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o dist/ciwi-linux-amd64 ./cmd/ciwi
+          - run: GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -o dist/ciwi-darwin-amd64 ./cmd/ciwi
+          - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
+          - run: |
+              VERSION="$(cat VERSION)"
+              test -n "$VERSION"
+              echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          - run: |
+              VERSION="$(cat VERSION)"
+              TAG="v$VERSION"
+              if git rev-parse "$TAG" >/dev/null 2>&1; then
+                echo "tag exists: $TAG"
+                exit 1
+              fi
+          - run: |
+              VERSION="$(cat VERSION)"
+              TAG="v$VERSION"
+              git config user.name "ciwi-agent"
+              git config user.email "ciwi-agent@local"
+              git tag -a "$TAG" -m "ciwi $TAG"
+              git push origin "$TAG"
+          - run: |
+              VERSION="$(cat VERSION)"
+              TAG="v$VERSION"
+              gh release create "$TAG" \
+                dist/ciwi-linux-amd64 \
+                dist/ciwi-darwin-amd64 \
+                dist/ciwi-windows-amd64.exe \
+                --repo izzyreal/ciwi \
+                --title "ciwi $TAG" \
+                --notes "Release $TAG"
+            env:
+              GITHUB_TOKEN: "{{ secret.github-secret }}"
+          - run: |
+              VERSION="$(cat VERSION)"
+              IFS='.' read -r MAJOR MINOR PATCH <<EOF
+              $VERSION
+              EOF
+              NEXT_VERSION="${MAJOR}.${MINOR}.$((PATCH+1))"
+              printf '%s\n' "$NEXT_VERSION" > VERSION
+              git add VERSION
+              git commit -m "chore: bump VERSION to ${NEXT_VERSION} [skip ci]"
+              BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+              if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then BRANCH="main"; fi
+              git push origin "HEAD:${BRANCH}"
+            env:
+              GITHUB_TOKEN: "{{ secret.github-secret }}"

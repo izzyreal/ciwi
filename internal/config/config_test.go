@@ -142,3 +142,23 @@ func TestParseRejectsInvalidYAML(t *testing.T) {
 		t.Fatalf("expected parse YAML error, got: %v", err)
 	}
 }
+
+func TestParseRejectsEmptyDependsOnEntry(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    depends_on:
+      - ""
+    jobs:
+      - id: publish
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`), "test-depends-on")
+	if err == nil || !strings.Contains(err.Error(), "depends_on") {
+		t.Fatalf("expected depends_on validation error, got: %v", err)
+	}
+}

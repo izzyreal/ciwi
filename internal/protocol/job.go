@@ -96,11 +96,12 @@ type ProjectSummary struct {
 }
 
 type PipelineSummary struct {
-	ID         int64  `json:"id"`
-	PipelineID string `json:"pipeline_id"`
-	Trigger    string `json:"trigger,omitempty"`
-	SourceRepo string `json:"source_repo,omitempty"`
-	SourceRef  string `json:"source_ref,omitempty"`
+	ID         int64    `json:"id"`
+	PipelineID string   `json:"pipeline_id"`
+	Trigger    string   `json:"trigger,omitempty"`
+	DependsOn  []string `json:"depends_on,omitempty"`
+	SourceRepo string   `json:"source_repo,omitempty"`
+	SourceRef  string   `json:"source_ref,omitempty"`
 }
 
 type MatrixInclude struct {
@@ -131,6 +132,7 @@ type PipelineDetail struct {
 	ID         int64               `json:"id"`
 	PipelineID string              `json:"pipeline_id"`
 	Trigger    string              `json:"trigger,omitempty"`
+	DependsOn  []string            `json:"depends_on,omitempty"`
 	SourceRepo string              `json:"source_repo,omitempty"`
 	SourceRef  string              `json:"source_ref,omitempty"`
 	Jobs       []PipelineJobDetail `json:"jobs,omitempty"`
