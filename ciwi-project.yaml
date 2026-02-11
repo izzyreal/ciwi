@@ -83,8 +83,6 @@ pipelines:
             go: ">=1.24"
             gh: "*"
         timeout_seconds: 1200
-        artifacts:
-          - dist/**
         steps:
           - run: command -v gh >/dev/null 2>&1 || { echo "gh CLI is required"; exit 1; }
           - run: test -n "$GITHUB_TOKEN"
