@@ -54,10 +54,25 @@ canonicalize_url() {
   host="${hostport%%:*}"
   port="${hostport##*:}"
   host="$(normalize_host "$host")"
+  case "$host" in
+    ''|localhost|127.0.0.1) ;;
+    *.*) ;;
+    *)
+      printf 'http://%s.local:%s\n' "$host" "$port"
+      return
+      ;;
+  esac
   if is_ipv4 "$host"; then
     resolved="$(resolve_hostname_for_ip "$host")"
     if [ -n "$resolved" ]; then
       host="$(normalize_host "$resolved")"
+      case "$host" in
+        *.*) ;;
+        *)
+          printf 'http://%s.local:%s\n' "$host" "$port"
+          return
+          ;;
+      esac
     fi
   fi
   printf 'http://%s:%s\n' "$host" "$port"
@@ -74,8 +89,8 @@ normalize_url() {
 
 probe_server() {
   url="$1"
-  health="$(curl -fsS --max-time 1 "${url}/healthz" 2>/dev/null || true)"
-  info="$(curl -fsS --max-time 1 "${url}/api/v1/server-info" 2>/dev/null || true)"
+  health="$(curl -fsS --max-time 2 "${url}/healthz" 2>/dev/null || true)"
+  info="$(curl -fsS --max-time 2 "${url}/api/v1/server-info" 2>/dev/null || true)"
   case "$health" in
     *'"status":"ok"'*|*'"status": "ok"'*) ;;
     *) return 1 ;;
@@ -402,13 +417,27 @@ cat >"$PLIST_PATH" <<EOF
 </dict>
 </plist>
 EOF
+chmod 0644 "$PLIST_PATH"
+chown "$(id -un)":staff "$PLIST_PATH" 2>/dev/null || true
+plutil -lint "$PLIST_PATH" >/dev/null
 
 echo "[5/5] Bootstrapping LaunchAgent..."
 UID_NUM="$(id -u)"
+# Reset stale launchd state for this label before bootstrap.
+launchctl bootout "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 launchctl bootout "gui/${UID_NUM}" "$PLIST_PATH" >/dev/null 2>&1 || true
-launchctl bootstrap "gui/${UID_NUM}" "$PLIST_PATH"
+launchctl disable "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 launchctl enable "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
-launchctl kickstart -k "gui/${UID_NUM}/${LABEL}"
+
+if ! launchctl bootstrap "gui/${UID_NUM}" "$PLIST_PATH"; then
+  echo "LaunchAgent bootstrap failed. Diagnostics:" >&2
+  launchctl print-disabled "gui/${UID_NUM}" | grep "${LABEL}" >&2 || true
+  launchctl print "gui/${UID_NUM}/${LABEL}" >&2 || true
+  log show --style syslog --last 5m --info --debug \
+    --predicate "process == \"launchd\" AND composedMessage CONTAINS \"${LABEL}\"" 2>/dev/null | tail -n 50 >&2 || true
+  exit 1
+fi
+launchctl kickstart -k "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 
 echo
 echo "ciwi agent installed and started."
