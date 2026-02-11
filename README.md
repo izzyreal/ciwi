@@ -1,6 +1,8 @@
 # ciwi
 Simple CI/CD and build automation system
 
+![ciwi logo](internal/server/assets/ciwi-logo.png)
+
 ## Getting started
 
 ```bash
