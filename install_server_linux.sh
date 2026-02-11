@@ -49,6 +49,7 @@ ENV_FILE="/etc/default/ciwi"
 UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 UPDATER_UNIT_FILE="/etc/systemd/system/${UPDATER_SERVICE_NAME}.service"
 POLKIT_RULE_FILE="/etc/polkit-1/rules.d/90-ciwi-updater.rules"
+LOGROTATE_FILE="/etc/logrotate.d/ciwi"
 SYSTEMCTL_PATH="$(command -v systemctl)"
 
 ARCH_RAW="$(uname -m)"
@@ -176,6 +177,20 @@ polkit.addRule(function(action, subject) {
 });
 EOF
 sudo chmod 0644 "${POLKIT_RULE_FILE}"
+
+echo "[6.5/7] Writing logrotate policy..."
+sudo tee "${LOGROTATE_FILE}" >/dev/null <<EOF
+${LOG_DIR}/server.out.log ${LOG_DIR}/server.err.log {
+  size 100M
+  rotate 3
+  missingok
+  notifempty
+  compress
+  delaycompress
+  copytruncate
+}
+EOF
+sudo chmod 0644 "${LOGROTATE_FILE}"
 
 echo "[7/7] Starting service..."
 sudo systemctl daemon-reload

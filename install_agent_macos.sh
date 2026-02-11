@@ -327,6 +327,7 @@ LABEL="nl.izmar.ciwi.agent"
 LOG_DIR="$HOME/Library/Logs/ciwi"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 WORKDIR="$HOME/.ciwi-agent"
+NEWSYSLOG_FILE="/etc/newsyslog.d/ciwi-$(id -un).conf"
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname)"
 AGENT_ID="agent-${HOST_NAME}"
 SERVER_URL="$(choose_server_url)"
@@ -381,6 +382,23 @@ fi
 echo "[3/5] Installing binary..."
 mkdir -p "$WORKDIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
 INSTALL_DIR="$(install_binary "${TMP_DIR}/${ASSET}")"
+
+echo "[3.5/5] Configuring 100MB log caps (newsyslog)..."
+if command -v sudo >/dev/null 2>&1; then
+  if sudo -n true >/dev/null 2>&1 || sudo -v >/dev/null 2>&1; then
+    sudo tee "$NEWSYSLOG_FILE" >/dev/null <<EOF
+${LOG_DIR}/agent.out.log  644  3  102400  *  Z
+${LOG_DIR}/agent.err.log  644  3  102400  *  Z
+${LOG_DIR}/server.out.log  644  3  102400  *  Z
+${LOG_DIR}/server.err.log  644  3  102400  *  Z
+EOF
+    sudo chmod 0644 "$NEWSYSLOG_FILE"
+  else
+    echo "Could not configure newsyslog cap (sudo unavailable)." >&2
+  fi
+else
+  echo "Could not configure newsyslog cap (sudo not found)." >&2
+fi
 
 echo "[4/5] Writing LaunchAgent plist..."
 cat >"$PLIST_PATH" <<EOF
@@ -449,6 +467,8 @@ echo "Agent ID:    ${AGENT_ID}"
 echo "Workdir:     ${WORKDIR}"
 echo "Logs:"
 echo "  tail -f ${LOG_DIR}/agent.out.log ${LOG_DIR}/agent.err.log"
+echo "Log cap:"
+echo "  100MB via ${NEWSYSLOG_FILE} (agent + optional server logs)"
 echo
 echo "To uninstall:"
 echo "  launchctl bootout gui/\$(id -u) ${PLIST_PATH} || true"

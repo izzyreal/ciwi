@@ -20,6 +20,7 @@ LABEL="nl.izmar.ciwi.agent"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 LOG_DIR="$HOME/Library/Logs/ciwi"
 WORKDIR="$HOME/.ciwi-agent"
+NEWSYSLOG_FILE="/etc/newsyslog.d/ciwi-$(id -un).conf"
 UID_NUM="$(id -u)"
 
 # Try both common install locations used by installer versions.
@@ -50,5 +51,13 @@ fi
 echo "[4/4] Optional cleanup..."
 echo "To also remove logs/workdir manually:"
 echo "  rm -rf \"$LOG_DIR\" \"$WORKDIR\""
+if [ -f "$NEWSYSLOG_FILE" ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    sudo rm -f "$NEWSYSLOG_FILE" || true
+    echo "Removed $NEWSYSLOG_FILE"
+  else
+    echo "Could not remove $NEWSYSLOG_FILE (sudo not found)" >&2
+  fi
+fi
 echo
 echo "ciwi macOS agent uninstall complete."

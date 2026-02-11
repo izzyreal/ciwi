@@ -58,6 +58,7 @@ Installer behavior:
 - If multiple servers are found, prompts you to choose one.
 - If none are found, prompts for server URL.
 - Prompts for sudo only if needed to install into `/usr/local/bin`; otherwise falls back to `~/.local/bin`.
+- Installs `/etc/newsyslog.d/ciwi-<user>.conf` to cap ciwi log files at 100MB (agent logs and optional server logs in `~/Library/Logs/ciwi`).
 
 Server identity validation during install checks:
 - `GET /healthz` returns `{"status":"ok"}`
@@ -84,6 +85,7 @@ Uninstaller behavior:
 - Stops/unloads LaunchAgent `nl.izmar.ciwi.agent`
 - Removes `~/Library/LaunchAgents/nl.izmar.ciwi.agent.plist`
 - Removes ciwi binary from `~/.local/bin/ciwi` and `/usr/local/bin/ciwi` (with sudo if needed)
+- Removes `/etc/newsyslog.d/ciwi-<user>.conf` (with sudo when available)
 - Leaves logs/workdir by default (`~/Library/Logs/ciwi`, `~/.ciwi-agent`) and prints cleanup command
 
 ## Linux server installer (systemd)
@@ -112,6 +114,7 @@ Installer behavior:
 - Installs and starts `ciwi.service` via systemd.
 - Installs `ciwi-updater.service` (oneshot, root) for staged self-updates.
 - Installs `/etc/polkit-1/rules.d/90-ciwi-updater.rules` so user `ciwi` can start only the updater unit.
+- Installs `/etc/logrotate.d/ciwi` (rotates server logs at 100MB).
 
 Default paths:
 - Binary: `/usr/local/bin/ciwi`
@@ -127,6 +130,50 @@ After install:
 sudo systemctl status ciwi
 sudo journalctl -u ciwi -f
 curl -s http://127.0.0.1:8112/healthz
+```
+
+## Linux agent installer (systemd)
+
+One-line install (no options):
+
+```bash
+curl -fsSL -o /tmp/install_ciwi_agent_linux.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_linux.sh && \
+sh /tmp/install_ciwi_agent_linux.sh
+```
+
+One-line uninstall (no options):
+
+```bash
+curl -fsSL -o /tmp/uninstall_ciwi_agent_linux.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/uninstall_agent_linux.sh && \
+sh /tmp/uninstall_ciwi_agent_linux.sh
+```
+
+Installer behavior:
+- Downloads latest `ciwi-linux-<arch>` release asset.
+- Verifies SHA256 using `ciwi-checksums.txt`.
+- Installs `/usr/local/bin/ciwi`.
+- Creates system user `ciwi-agent`.
+- Installs and starts `ciwi-agent.service` via systemd.
+- Installs `/etc/logrotate.d/ciwi-agent` (rotates agent logs at 100MB).
+- Writes `/etc/default/ciwi-agent` with:
+  - `CIWI_SERVER_URL` (default `http://127.0.0.1:8112`)
+  - `CIWI_AGENT_ID`
+  - `CIWI_AGENT_WORKDIR`
+
+Default paths:
+- Binary: `/usr/local/bin/ciwi`
+- Env file: `/etc/default/ciwi-agent`
+- Service: `ciwi-agent.service`
+- Work/data: `/var/lib/ciwi-agent`
+- Logs: `/var/log/ciwi-agent/agent.out.log`, `/var/log/ciwi-agent/agent.err.log`
+
+After install:
+
+```bash
+sudo systemctl status ciwi-agent
+sudo journalctl -u ciwi-agent -f
 ```
 
 ## First functional API slice
