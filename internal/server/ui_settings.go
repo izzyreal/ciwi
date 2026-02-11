@@ -251,18 +251,75 @@ const settingsHTML = `<!doctype html>
       await refreshUpdateStatus();
     };
 
+    async function postJSONWithTimeout(path, body, timeoutMs) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: body,
+          signal: ctrl.signal,
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || ('HTTP ' + res.status));
+        }
+        return await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function monitorApplyProgressAfterTimeout() {
+      const result = document.getElementById('updateResult');
+      const started = Date.now();
+      while (Date.now() - started < 120000) {
+        try {
+          const r = await apiJSON('/api/v1/update/status');
+          const s = r.status || {};
+          const apply = (s.update_last_apply_status || '').trim();
+          const msg = (s.update_message || '').trim();
+          if (apply === 'running' || apply === '') {
+            result.textContent = msg ? ('Update still running: ' + msg) : 'Update still running...';
+          } else if (apply === 'failed') {
+            result.textContent = 'Update failed: ' + (msg || 'unknown error');
+            return;
+          } else if (apply === 'staged' || apply === 'success' || apply === 'noop') {
+            result.textContent = msg || ('Update state: ' + apply);
+            if (apply === 'staged' || apply === 'success') {
+              waitForServerRestartAndReload();
+            }
+            return;
+          } else {
+            result.textContent = msg || ('Update state: ' + apply);
+            return;
+          }
+        } catch (_) {
+          // During restart or temporary network churn, keep polling.
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      result.textContent = 'Update request timed out; check update status and try again if needed.';
+    }
+
     document.getElementById('applyUpdateBtn').onclick = async () => {
       const result = document.getElementById('updateResult');
       if (!confirm('Apply update now and restart ciwi?')) return;
       result.textContent = 'Starting update...';
       try {
-        const r = await apiJSON('/api/v1/update/apply', { method: 'POST', body: '{}' });
+        const r = await postJSONWithTimeout('/api/v1/update/apply', '{}', 30000);
         result.textContent = (r.message || 'Update started. Refresh in a moment.');
         if (r.updated) {
           waitForServerRestartAndReload();
         }
       } catch (e) {
-        result.textContent = 'Update failed: ' + e.message;
+        if (e && e.name === 'AbortError') {
+          result.textContent = 'Update request timed out; checking status...';
+          await monitorApplyProgressAfterTimeout();
+        } else {
+          result.textContent = 'Update failed: ' + e.message;
+        }
       }
       await refreshUpdateStatus();
     };
