@@ -102,25 +102,25 @@ const indexHTML = `<!doctype html>
       <div id="projects"></div>
     </div>
     <div class="card">
-      <h2>Queued Jobs</h2>
+      <h2>Queued Job Executions</h2>
       <div class="row" style="margin-bottom:10px;">
         <button id="clearQueueBtn" class="secondary">Clear Queue</button>
       </div>
       <table>
         <thead>
-          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Actions</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Actions</th></tr>
         </thead>
         <tbody id="queuedJobsBody"></tbody>
       </table>
     </div>
     <div class="card">
-      <h2>Job History</h2>
+      <h2>Job Execution History</h2>
       <div class="row" style="margin-bottom:10px;">
         <button id="flushHistoryBtn" class="secondary">Flush History</button>
       </div>
       <table>
         <thead>
-          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th></tr>
         </thead>
         <tbody id="historyJobsBody"></tbody>
       </table>
@@ -154,7 +154,7 @@ const indexHTML = `<!doctype html>
         const top = document.createElement('div');
         top.className = 'project-head';
         const topInfo = document.createElement('div');
-        topInfo.innerHTML = '<strong><a class="job-link" href="/projects/' + project.id + '">' + project.name + '</a></strong> <span class="pill">' + (project.repo_url || '') + '</span> <span class="pill">' + (project.config_file || project.config_path || '') + '</span>';
+        topInfo.innerHTML = '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + project.name + '</a></strong> <span class="pill">' + (project.repo_url || '') + '</span> <span class="pill">' + (project.config_file || project.config_path || '') + '</span>';
         const reloadStatus = document.createElement('span');
         reloadStatus.style.fontSize = '12px';
         const state = projectReloadState.get(String(project.id));
@@ -199,7 +199,7 @@ const indexHTML = `<!doctype html>
           row.className = 'pipeline';
           const deps = (p.depends_on || []).join(', ');
           const info = document.createElement('div');
-          info.innerHTML = '<div><code>' + p.pipeline_id + '</code></div><div style="color:#5f6f67;font-size:12px;">' +
+          info.innerHTML = '<div><span class="muted">Pipeline:</span> <code>' + p.pipeline_id + '</code></div><div style="color:#5f6f67;font-size:12px;">' +
             (p.source_repo || '') + (deps ? (' | depends_on: ' + deps) : '') + '</div>';
           const btn = document.createElement('button');
           btn.className = 'secondary';
@@ -229,7 +229,7 @@ const indexHTML = `<!doctype html>
       queuedBody.innerHTML = '';
       historyBody.innerHTML = '';
       const queuedStatuses = new Set(['queued', 'leased', 'running']);
-      const jobs = (data.jobs || []).slice(0, 150);
+      const jobs = (data.job_executions || data.jobs || []).slice(0, 150);
       const queuedJobs = jobs.filter(job => queuedStatuses.has((job.status || '').toLowerCase()));
       const historyJobs = jobs.filter(job => !queuedStatuses.has((job.status || '').toLowerCase()));
       queuedJobs.forEach(job => queuedBody.appendChild(renderJobRow(job, true)));

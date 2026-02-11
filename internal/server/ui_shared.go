@@ -54,7 +54,7 @@ function jobDescription(job) {
   if (pipelineJob && pipeline) return pipeline + ' / ' + pipelineJob;
   if (pipelineJob) return pipelineJob;
   if (pipeline) return pipeline;
-  return 'Job';
+  return 'Job Execution';
 }
 
 function formatJobStatus(job) {

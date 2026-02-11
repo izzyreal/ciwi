@@ -5,7 +5,7 @@ const jobHTML = `<!doctype html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ciwi job</title>
+  <title>ciwi job execution</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
     :root {
@@ -77,11 +77,11 @@ const jobHTML = `<!doctype html>
       <div class="brand">
         <img src="/ciwi-logo.png" alt="ciwi logo" />
         <div>
-          <div style="font-size:20px;font-weight:700;" id="jobTitle">Job</div>
+          <div style="font-size:20px;font-weight:700;" id="jobTitle">Job Execution</div>
           <div style="color:#5f6f67;" id="subtitle">Loading...</div>
         </div>
       </div>
-      <div><a id="backLink" href="/">Back to Jobs</a></div>
+      <div><a id="backLink" href="/">Back to Job Executions</a></div>
     </div>
 
     <div class="card">
@@ -118,11 +118,11 @@ const jobHTML = `<!doctype html>
       const back = params.get('back') || '';
       if (back && back.startsWith('/')) {
         link.href = back;
-        link.textContent = back.startsWith('/projects/') ? 'Back to Project' : 'Back to Jobs';
+        link.textContent = back.startsWith('/projects/') ? 'Back to Project' : 'Back to Job Executions';
         return;
       }
       link.href = '/';
-      link.textContent = 'Back to Jobs';
+      link.textContent = 'Back to Job Executions';
     }
 
     async function loadJob() {
@@ -138,7 +138,7 @@ const jobHTML = `<!doctype html>
         return;
       }
       const data = await res.json();
-      const job = data.job;
+      const job = data.job_execution || data.job;
 
       const desc = jobDescription(job);
       document.getElementById('jobTitle').textContent = desc;
@@ -146,7 +146,7 @@ const jobHTML = `<!doctype html>
 
       const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
       const rows = [
-        ['Job ID', escapeHtml(job.id || '')],
+        ['Job Execution ID', escapeHtml(job.id || '')],
         ['Pipeline', escapeHtml(pipeline)],
         ['Agent', escapeHtml(job.leased_by_agent_id || '')],
         ['Created', escapeHtml(formatTimestamp(job.created_utc))],

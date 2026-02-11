@@ -24,7 +24,7 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.attachTestSummaries(jobs)
-		writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
+		writeJSON(w, http.StatusOK, map[string]any{"job_executions": jobs, "jobs": jobs})
 	case http.MethodPost:
 		var req protocol.CreateJobRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -60,7 +60,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.attachTestSummary(&job)
-			writeJSON(w, http.StatusOK, map[string]any{"job": job})
+			writeJSON(w, http.StatusOK, map[string]any{"job_execution": job, "job": job})
 		case http.MethodDelete:
 			err := s.db.DeleteQueuedJob(jobID)
 			if err != nil {

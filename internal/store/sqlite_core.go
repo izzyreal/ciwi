@@ -114,7 +114,7 @@ func (s *Store) migrate() error {
 			steps_json TEXT NOT NULL,
 			FOREIGN KEY(pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
 		);`,
-		`CREATE TABLE IF NOT EXISTS jobs (
+		`CREATE TABLE IF NOT EXISTS job_executions (
 			id TEXT PRIMARY KEY,
 			script TEXT NOT NULL,
 			env_json TEXT NOT NULL DEFAULT '{}',
@@ -134,22 +134,22 @@ func (s *Store) migrate() error {
 			error_text TEXT,
 			output_text TEXT
 		);`,
-		`CREATE TABLE IF NOT EXISTS job_artifacts (
+		`CREATE TABLE IF NOT EXISTS job_execution_artifacts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			job_id TEXT NOT NULL,
+			job_execution_id TEXT NOT NULL,
 			path TEXT NOT NULL,
 			stored_rel TEXT NOT NULL,
 			size_bytes INTEGER NOT NULL,
 			created_utc TEXT NOT NULL,
-			FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+			FOREIGN KEY(job_execution_id) REFERENCES job_executions(id) ON DELETE CASCADE
 		);`,
-		`CREATE TABLE IF NOT EXISTS job_test_reports (
-			job_id TEXT PRIMARY KEY,
+		`CREATE TABLE IF NOT EXISTS job_execution_test_reports (
+			job_execution_id TEXT PRIMARY KEY,
 			report_json TEXT NOT NULL,
 			created_utc TEXT NOT NULL,
-			FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+			FOREIGN KEY(job_execution_id) REFERENCES job_executions(id) ON DELETE CASCADE
 		);`,
-		`CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_utc);`,
+		`CREATE INDEX IF NOT EXISTS idx_job_executions_status_created ON job_executions(status, created_utc);`,
 	}
 
 	for _, stmt := range stmts {
@@ -181,10 +181,10 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("pipelines", "depends_on_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
-	if err := s.addColumnIfMissing("jobs", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+	if err := s.addColumnIfMissing("job_executions", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
-	if err := s.addColumnIfMissing("jobs", "env_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+	if err := s.addColumnIfMissing("job_executions", "env_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
 		return err
 	}
 	return nil

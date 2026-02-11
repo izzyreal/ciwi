@@ -33,7 +33,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	}
 
 	if _, err := s.db.Exec(`
-		INSERT INTO jobs (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json, status, created_utc)
+		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json, status, created_utc)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), sourceRepo, sourceRef, string(metadataJSON), "queued", now.Format(time.RFC3339Nano)); err != nil {
 		return protocol.Job{}, fmt.Errorf("insert job: %w", err)
@@ -57,7 +57,7 @@ func (s *Store) ListJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
-		FROM jobs
+		FROM job_executions
 		ORDER BY created_utc DESC
 	`)
 	if err != nil {
@@ -83,7 +83,7 @@ func (s *Store) GetJob(id string) (protocol.Job, error) {
 	row := s.db.QueryRow(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
-		FROM jobs WHERE id = ?
+		FROM job_executions WHERE id = ?
 	`, id)
 	job, err := scanJob(row)
 	if err != nil {
@@ -108,7 +108,7 @@ func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol
 
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		res, err := s.db.Exec(`
-			UPDATE jobs SET status = 'leased', leased_by_agent_id = ?, leased_utc = ?
+			UPDATE job_executions SET status = 'leased', leased_by_agent_id = ?, leased_utc = ?
 			WHERE id = ? AND status = 'queued'
 		`, agentID, now, job.ID)
 		if err != nil {
@@ -133,7 +133,7 @@ func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
-		FROM jobs WHERE status = 'queued'
+		FROM job_executions WHERE status = 'queued'
 		ORDER BY created_utc ASC
 	`)
 	if err != nil {
@@ -195,7 +195,7 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 	}
 
 	if _, err := s.db.Exec(`
-		UPDATE jobs
+		UPDATE job_executions
 		SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?
 		WHERE id = ?
 	`, status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output, jobID); err != nil {
@@ -206,7 +206,7 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 }
 
 func (s *Store) DeleteQueuedJob(jobID string) error {
-	res, err := s.db.Exec(`DELETE FROM jobs WHERE id = ? AND status IN ('queued', 'leased')`, jobID)
+	res, err := s.db.Exec(`DELETE FROM job_executions WHERE id = ? AND status IN ('queued', 'leased')`, jobID)
 	if err != nil {
 		return fmt.Errorf("delete queued job: %w", err)
 	}
@@ -222,7 +222,7 @@ func (s *Store) DeleteQueuedJob(jobID string) error {
 }
 
 func (s *Store) ClearQueuedJobs() (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM jobs WHERE status IN ('queued', 'leased')`)
+	res, err := s.db.Exec(`DELETE FROM job_executions WHERE status IN ('queued', 'leased')`)
 	if err != nil {
 		return 0, fmt.Errorf("clear queued jobs: %w", err)
 	}
@@ -232,7 +232,7 @@ func (s *Store) ClearQueuedJobs() (int64, error) {
 
 func (s *Store) FlushJobHistory() (int64, error) {
 	res, err := s.db.Exec(`
-		DELETE FROM jobs
+		DELETE FROM job_executions
 		WHERE status NOT IN ('queued', 'leased', 'running')
 	`)
 	if err != nil {
@@ -249,14 +249,14 @@ func (s *Store) SaveJobArtifacts(jobID string, artifacts []protocol.JobArtifact)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(`DELETE FROM job_artifacts WHERE job_id = ?`, jobID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM job_execution_artifacts WHERE job_execution_id = ?`, jobID); err != nil {
 		return fmt.Errorf("clear job artifacts: %w", err)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, a := range artifacts {
 		if _, err := tx.Exec(`
-			INSERT INTO job_artifacts (job_id, path, stored_rel, size_bytes, created_utc)
+			INSERT INTO job_execution_artifacts (job_execution_id, path, stored_rel, size_bytes, created_utc)
 			VALUES (?, ?, ?, ?, ?)
 		`, jobID, a.Path, a.URL, a.SizeBytes, now); err != nil {
 			return fmt.Errorf("insert artifact: %w", err)
@@ -271,9 +271,9 @@ func (s *Store) SaveJobArtifacts(jobID string, artifacts []protocol.JobArtifact)
 
 func (s *Store) ListJobArtifacts(jobID string) ([]protocol.JobArtifact, error) {
 	rows, err := s.db.Query(`
-		SELECT id, job_id, path, stored_rel, size_bytes
-		FROM job_artifacts
-		WHERE job_id = ?
+		SELECT id, job_execution_id, path, stored_rel, size_bytes
+		FROM job_execution_artifacts
+		WHERE job_execution_id = ?
 		ORDER BY id
 	`, jobID)
 	if err != nil {
@@ -302,9 +302,9 @@ func (s *Store) SaveJobTestReport(jobID string, report protocol.JobTestReport) e
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := s.db.Exec(`
-		INSERT INTO job_test_reports (job_id, report_json, created_utc)
+		INSERT INTO job_execution_test_reports (job_execution_id, report_json, created_utc)
 		VALUES (?, ?, ?)
-		ON CONFLICT(job_id) DO UPDATE SET report_json=excluded.report_json, created_utc=excluded.created_utc
+		ON CONFLICT(job_execution_id) DO UPDATE SET report_json=excluded.report_json, created_utc=excluded.created_utc
 	`, jobID, string(reportJSON), now); err != nil {
 		return fmt.Errorf("save test report: %w", err)
 	}
@@ -313,7 +313,7 @@ func (s *Store) SaveJobTestReport(jobID string, report protocol.JobTestReport) e
 
 func (s *Store) GetJobTestReport(jobID string) (protocol.JobTestReport, bool, error) {
 	var reportJSON string
-	row := s.db.QueryRow(`SELECT report_json FROM job_test_reports WHERE job_id = ?`, jobID)
+	row := s.db.QueryRow(`SELECT report_json FROM job_execution_test_reports WHERE job_execution_id = ?`, jobID)
 	if err := row.Scan(&reportJSON); err != nil {
 		if err == sql.ErrNoRows {
 			return protocol.JobTestReport{}, false, nil

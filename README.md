@@ -42,17 +42,17 @@ go run ./cmd/ciwi all-in-one
 - `POST /api/v1/projects/{projectId}/reload` reloads project definition from saved VCS settings
 - `GET/PUT /api/v1/projects/{projectId}/vault` gets/updates project Vault settings
 - `POST /api/v1/projects/{projectId}/vault-test` tests project Vault access + mapped secrets
-- `POST /api/v1/jobs` enqueues a job
-- `GET /api/v1/jobs` returns all jobs
-- `GET /api/v1/jobs/{id}` returns one job
-- `DELETE /api/v1/jobs/{id}` removes a queued/leased job
-- `POST /api/v1/jobs/clear-queue` removes all queued/leased jobs
-- `POST /api/v1/jobs/flush-history` removes all finished jobs from history
-- `POST /api/v1/jobs/{id}/status` updates job status (`running`, `succeeded`, `failed`)
-- `GET /api/v1/jobs/{id}/artifacts` lists uploaded artifacts for a job
-- `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job (agent use)
-- `GET /api/v1/jobs/{id}/tests` returns parsed test report for a job
-- `POST /api/v1/jobs/{id}/tests` uploads parsed test report for a job (agent use)
+- `POST /api/v1/jobs` enqueues a job execution
+- `GET /api/v1/jobs` returns all job executions
+- `GET /api/v1/jobs/{id}` returns one job execution
+- `DELETE /api/v1/jobs/{id}` removes a queued/leased job execution
+- `POST /api/v1/jobs/clear-queue` removes all queued/leased job executions
+- `POST /api/v1/jobs/flush-history` removes all finished job executions from history
+- `POST /api/v1/jobs/{id}/status` updates job execution status (`running`, `succeeded`, `failed`)
+- `GET /api/v1/jobs/{id}/artifacts` lists uploaded artifacts for a job execution
+- `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job execution (agent use)
+- `GET /api/v1/jobs/{id}/tests` returns parsed test report for a job execution
+- `POST /api/v1/jobs/{id}/tests` uploads parsed test report for a job execution (agent use)
 - `GET/POST /api/v1/vault/connections` lists/upserts Vault AppRole connections
 - `DELETE /api/v1/vault/connections/{id}` deletes a Vault connection
 - `POST /api/v1/vault/connections/{id}/test` tests Vault connection auth and optional read

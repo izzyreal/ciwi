@@ -99,7 +99,7 @@ const projectHTML = `<!doctype html>
       <h2 style="margin:0 0 10px;">Execution History</h2>
       <table>
         <thead>
-          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th></tr>
         </thead>
         <tbody id="historyBody"></tbody>
       </table>
@@ -149,7 +149,7 @@ const projectHTML = `<!doctype html>
         const head = document.createElement('div');
         head.className = 'row';
         const deps = (pl.depends_on || []).join(', ');
-        head.innerHTML = '<strong><code>' + escapeHtml(pl.pipeline_id) + '</code></strong>' +
+        head.innerHTML = '<strong>Pipeline: <code>' + escapeHtml(pl.pipeline_id) + '</code></strong>' +
           (deps ? ('<span class="muted">depends_on: ' + escapeHtml(deps) + '</span>') : '');
         const runAll = document.createElement('button');
         runAll.textContent = 'Run Pipeline';
@@ -173,7 +173,7 @@ const projectHTML = `<!doctype html>
           jb.className = 'jobbox';
           const runsOn = Object.entries(j.runs_on || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
           jb.innerHTML =
-            '<div><strong>' + escapeHtml(j.id || '') + '</strong> <span class="muted">timeout=' + (j.timeout_seconds || 0) + 's</span></div>' +
+            '<div><strong>Job: ' + escapeHtml(j.id || '') + '</strong> <span class="muted">timeout=' + (j.timeout_seconds || 0) + 's</span></div>' +
             '<div class="muted">runs_on: ' + escapeHtml(runsOn) + '</div>';
 
           const matrixList = document.createElement('div');
@@ -295,7 +295,7 @@ const projectHTML = `<!doctype html>
       const data = await api('/api/v1/jobs');
       const body = document.getElementById('historyBody');
       body.innerHTML = '';
-      const rows = (data.jobs || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
+      const rows = (data.job_executions || data.jobs || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
       rows.forEach(job => {
         const tr = document.createElement('tr');
         const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
