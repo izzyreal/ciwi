@@ -1323,6 +1323,62 @@ func TestHeartbeatDoesNotRequestAgentUpdate(t *testing.T) {
 	}
 }
 
+func TestGetAgentByIDEndpoint(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	hbResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-by-id",
+		"hostname":      "host-z",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.1.0",
+		"capabilities":  map[string]string{"executor": "shell"},
+		"timestamp_utc": "2026-02-11T00:00:00Z",
+	})
+	if hbResp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
+	}
+	_ = readBody(t, hbResp)
+
+	getResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents/agent-by-id", nil)
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("get agent status=%d body=%s", getResp.StatusCode, readBody(t, getResp))
+	}
+	var payload struct {
+		Agent struct {
+			AgentID     string `json:"agent_id"`
+			Hostname    string `json:"hostname"`
+			Version     string `json:"version"`
+			NeedsUpdate bool   `json:"needs_update"`
+		} `json:"agent"`
+	}
+	decodeJSONBody(t, getResp, &payload)
+	if payload.Agent.AgentID != "agent-by-id" {
+		t.Fatalf("unexpected agent id: %q", payload.Agent.AgentID)
+	}
+	if payload.Agent.Hostname != "host-z" {
+		t.Fatalf("unexpected hostname: %q", payload.Agent.Hostname)
+	}
+	if payload.Agent.Version != "v1.1.0" {
+		t.Fatalf("unexpected version: %q", payload.Agent.Version)
+	}
+	if !payload.Agent.NeedsUpdate {
+		t.Fatalf("expected needs_update=true")
+	}
+
+	missingResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents/does-not-exist", nil)
+	if missingResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing agent status=%d body=%s", missingResp.StatusCode, readBody(t, missingResp))
+	}
+	_ = readBody(t, missingResp)
+}
+
 func TestManualAgentUpdateRequestTriggersHeartbeatUpdate(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"

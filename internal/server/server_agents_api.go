@@ -13,6 +13,51 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(rel, "/")
+	if len(parts) == 1 {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		agentID := strings.TrimSpace(parts[0])
+		if agentID == "" {
+			http.Error(w, "agent id is required", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		serverVersion := currentVersion()
+		pendingTarget := strings.TrimSpace(s.agentUpdates[agentID])
+		needsUpdate := serverVersion != "" && isVersionNewer(serverVersion, strings.TrimSpace(a.Version))
+		updateTarget := serverVersion
+		if pendingTarget != "" {
+			updateTarget = pendingTarget
+		}
+		updateRequested := pendingTarget != "" || (a.UpdateTarget != "" && isVersionNewer(a.UpdateTarget, strings.TrimSpace(a.Version)))
+		info := map[string]any{
+			"agent_id":                agentID,
+			"hostname":                a.Hostname,
+			"os":                      a.OS,
+			"arch":                    a.Arch,
+			"version":                 a.Version,
+			"capabilities":            a.Capabilities,
+			"last_seen_utc":           a.LastSeenUTC,
+			"recent_log":              append([]string(nil), a.RecentLog...),
+			"needs_update":            needsUpdate,
+			"update_target":           updateTarget,
+			"update_requested":        updateRequested,
+			"update_attempts":         a.UpdateAttempts,
+			"update_last_request_utc": a.UpdateLastRequestUTC,
+			"update_next_retry_utc":   a.UpdateNextRetryUTC,
+		}
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"agent": info})
+		return
+	}
 	if len(parts) != 2 || (parts[1] != "update" && parts[1] != "refresh-tools") {
 		http.NotFound(w, r)
 		return

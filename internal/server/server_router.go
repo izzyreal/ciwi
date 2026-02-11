@@ -21,6 +21,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.HandleFunc("/settings", s.uiHandler)
 	r.HandleFunc("/vault", s.uiHandler)
 	r.HandleFunc("/agents", s.uiHandler)
+	r.HandleFunc("/agents/*", s.uiHandler)
 	r.HandleFunc("/projects/*", s.uiHandler)
 	r.HandleFunc("/jobs/*", s.uiHandler)
 

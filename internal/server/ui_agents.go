@@ -158,7 +158,7 @@ const agentsHTML = `<!doctype html>
             (a.update_requested ? ('<div class="badge">Update requested → ' + escapeHtml(a.update_target || '') + '</div>') : '') +
             retryText;
           tr.innerHTML =
-            '<td>' + escapeHtml(a.agent_id || '') + '</td>' +
+            '<td><a href="/agents/' + encodeURIComponent(a.agent_id || '') + '">' + escapeHtml(a.agent_id || '') + '</a></td>' +
             '<td>' + escapeHtml(a.hostname || '') + '</td>' +
             '<td>' + escapeHtml((a.os || '') + '/' + (a.arch || '')) + '</td>' +
             '<td>' + versionCell + '</td>' +

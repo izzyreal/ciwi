@@ -168,6 +168,21 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(agentsHTML, "/api/v1/agents") {
 		t.Fatalf("agents page missing agents API wiring")
 	}
+
+	agentDetailResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/agents/agent-test", nil)
+	if agentDetailResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /agents/{id} status=%d body=%s", agentDetailResp.StatusCode, readBody(t, agentDetailResp))
+	}
+	agentDetailHTML := readBody(t, agentDetailResp)
+	if !strings.Contains(agentDetailHTML, "<title>ciwi agent</title>") {
+		t.Fatalf("agent detail page missing title")
+	}
+	if !strings.Contains(agentDetailHTML, "Agent Detail") {
+		t.Fatalf("agent detail page missing header")
+	}
+	if !strings.Contains(agentDetailHTML, "/api/v1/agents/") {
+		t.Fatalf("agent detail page missing agent API wiring")
+	}
 }
 
 func TestUIProjectAndJobPagesServed(t *testing.T) {
