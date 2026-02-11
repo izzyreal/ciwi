@@ -51,7 +51,7 @@ pipelines:
               ext: ""
         steps:
           - run: mkdir -p dist
-          - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
+          - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=dev" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
   - id: release
     trigger: manual
     depends_on:
@@ -80,10 +80,10 @@ pipelines:
                 exit 1
               fi
           - run: mkdir -p dist
-          - run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w" -o dist/ciwi-linux-amd64 ./cmd/ciwi
-          - run: GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w" -o dist/ciwi-darwin-amd64 ./cmd/ciwi
-          - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w" -o dist/ciwi-darwin-arm64 ./cmd/ciwi
-          - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w" -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
+          - run: VERSION="$(cat VERSION)"; GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-linux-amd64 ./cmd/ciwi
+          - run: VERSION="$(cat VERSION)"; GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-darwin-amd64 ./cmd/ciwi
+          - run: VERSION="$(cat VERSION)"; GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-darwin-arm64 ./cmd/ciwi
+          - run: VERSION="$(cat VERSION)"; GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
           - run: |
               VERSION="$(cat VERSION)"
               test -n "$VERSION"

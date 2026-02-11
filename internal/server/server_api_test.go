@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/store"
+	"github.com/izzyreal/ciwi/internal/version"
 )
 
 const testConfigYAML = `
@@ -670,7 +671,9 @@ func TestServerUpdateCheckEndpoint(t *testing.T) {
 
 	t.Setenv("CIWI_UPDATE_API_BASE", gh.URL)
 	t.Setenv("CIWI_UPDATE_REPO", "izzyreal/ciwi")
-	t.Setenv("CIWI_VERSION", "v0.1.0")
+	oldVersion := version.Version
+	version.Version = "v0.1.0"
+	t.Cleanup(func() { version.Version = oldVersion })
 	t.Setenv("CIWI_UPDATE_REQUIRE_CHECKSUM", "false")
 
 	ts := newTestHTTPServer(t)
@@ -698,7 +701,9 @@ func TestServerUpdateCheckEndpoint(t *testing.T) {
 }
 
 func TestServerInfoEndpoint(t *testing.T) {
-	t.Setenv("CIWI_VERSION", "v0.9.1")
+	oldVersion := version.Version
+	version.Version = "v0.9.1"
+	t.Cleanup(func() { version.Version = oldVersion })
 	ts := newTestHTTPServer(t)
 	defer ts.Close()
 
@@ -740,7 +745,9 @@ func TestServerUpdateStatusEndpoint(t *testing.T) {
 
 	t.Setenv("CIWI_UPDATE_API_BASE", gh.URL)
 	t.Setenv("CIWI_UPDATE_REPO", "izzyreal/ciwi")
-	t.Setenv("CIWI_VERSION", "v0.1.0")
+	oldVersion := version.Version
+	version.Version = "v0.1.0"
+	t.Cleanup(func() { version.Version = oldVersion })
 	t.Setenv("CIWI_UPDATE_REQUIRE_CHECKSUM", "false")
 
 	ts := newTestHTTPServer(t)
@@ -772,7 +779,9 @@ func TestServerUpdateStatusEndpoint(t *testing.T) {
 }
 
 func TestHeartbeatRequestsAgentUpdateOnVersionMismatch(t *testing.T) {
-	t.Setenv("CIWI_VERSION", "v1.2.0")
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
 	t.Setenv("CIWI_AGENT_AUTO_UPDATE", "true")
 
 	ts := newTestHTTPServer(t)

@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/version"
 	"golang.org/x/mod/semver"
 )
 
@@ -40,11 +41,7 @@ func IsVersionNewer(latest, current string) bool {
 }
 
 func CurrentVersion() string {
-	v := strings.TrimSpace(envOrDefault("CIWI_VERSION", "dev"))
-	if v == "" {
-		return "dev"
-	}
-	return v
+	return version.Current()
 }
 
 func VerifyFileSHA256(path, assetName, checksumContent string) error {
@@ -125,11 +122,4 @@ func normalizeSemver(v string) (string, bool) {
 		return "", false
 	}
 	return v, true
-}
-
-func envOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

@@ -22,10 +22,13 @@ go run ./cmd/ciwi all-in-one
 - `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent`)
 - `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` / `Set-PSDebug`) (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
-- `CIWI_VERSION`: current running version string used by update checks (default `dev`)
 - `CIWI_UPDATE_REPO`: GitHub repo for update checks (default `izzyreal/ciwi`)
 - `CIWI_UPDATE_API_BASE`: GitHub API base URL (default `https://api.github.com`)
 - `CIWI_LOG_LEVEL`: log verbosity (`debug`, `info`, `warn`, `error`; default `info`)
+
+Build-time version embedding:
+- Version is embedded via linker flag `-X github.com/izzyreal/ciwi/internal/version.Version=<value>`.
+- If not set at build time, ciwi reports `dev`.
 
 ## Server prerequisites
 
