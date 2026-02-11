@@ -161,6 +161,17 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 		return protocol.Job{}, err
 	}
 
+	// Terminal status is sticky. Ignore late running updates (for example
+	// periodic log-stream updates racing with final succeeded/failed update).
+	if isTerminalStatus(job.Status) {
+		if req.Status == "running" {
+			return job, nil
+		}
+		if isTerminalStatus(req.Status) && req.Status != job.Status {
+			return job, nil
+		}
+	}
+
 	if job.LeasedByAgentID != "" && job.LeasedByAgentID != req.AgentID {
 		return protocol.Job{}, fmt.Errorf("job is leased by another agent")
 	}
@@ -203,6 +214,10 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 	}
 
 	return s.GetJob(jobID)
+}
+
+func isTerminalStatus(status string) bool {
+	return status == "succeeded" || status == "failed"
 }
 
 func (s *Store) DeleteQueuedJob(jobID string) error {

@@ -69,6 +69,28 @@ const jobHTML = `<!doctype html>
     }
     a { color: var(--accent); text-decoration:none; }
     a:hover { text-decoration:underline; }
+    .artifact-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .artifact-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      user-select: text;
+      cursor: text;
+      color: #1f2a24;
+    }
+    .copy-btn {
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--accent);
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -178,9 +200,31 @@ const jobHTML = `<!doctype html>
         if (items.length === 0) {
           box.textContent = 'No artifacts';
         } else {
-          box.innerHTML = items.map(a =>
-            '<div><a href=\"' + a.url + '\" target=\"_blank\" rel=\"noopener\">' + escapeHtml(a.path) + '</a> (' + formatBytes(a.size_bytes) + ')</div>'
+          box.innerHTML = items.map((a, idx) =>
+            '<div class="artifact-row">' +
+              '<span class="artifact-path">' + escapeHtml(a.path) + '</span>' +
+              '<span>(' + formatBytes(a.size_bytes) + ')</span>' +
+              '<a href=\"' + a.url + '\" target=\"_blank\" rel=\"noopener\">Download</a>' +
+              '<button class="copy-btn" data-artifact-index="' + String(idx) + '">Copy</button>' +
+            '</div>'
           ).join('');
+          box.querySelectorAll('button.copy-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const idx = Number(btn.getAttribute('data-artifact-index') || '-1');
+              const path = (items[idx] && items[idx].path) || '';
+              if (!path) return;
+              try {
+                await navigator.clipboard.writeText(path);
+                const old = btn.textContent;
+                btn.textContent = 'Copied';
+                setTimeout(() => { btn.textContent = old; }, 1000);
+              } catch (_) {
+                const old = btn.textContent;
+                btn.textContent = 'Copy failed';
+                setTimeout(() => { btn.textContent = old; }, 1200);
+              }
+            });
+          });
         }
       } catch (_) {
         document.getElementById('artifactsBox').textContent = 'Could not load artifacts';

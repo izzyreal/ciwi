@@ -34,6 +34,35 @@ go run ./cmd/ciwi all-in-one
 - `git` must be installed on the agent host for pipeline jobs that define `source.repo`.
 - `gh` must be installed on the agent host for GitHub release steps that use GitHub CLI.
 
+## macOS agent installer (LaunchAgent)
+
+For macOS build/signing workflows, run ciwi agent as a **LaunchAgent** (user session), not a LaunchDaemon.
+
+One-line install (no options, tries auto-discovery first, prompts if needed):
+
+```bash
+curl -fsSL -o /tmp/install_ciwi_agent_macos.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_macos.sh && \
+sh /tmp/install_ciwi_agent_macos.sh
+```
+
+Installer behavior:
+- Tries mDNS/Bonjour discovery first (`_ciwi._tcp`), then falls back to probing `http://<local-ip>:8112`.
+- If multiple servers are found, prompts you to choose one.
+- If none are found, prompts for server URL.
+- Prompts for sudo only if needed to install into `/usr/local/bin`; otherwise falls back to `~/.local/bin`.
+
+Server identity validation during install checks:
+- `GET /healthz` returns `{"status":"ok"}`
+- `GET /api/v1/server-info` returns `{"name":"ciwi","api_version":1,...}`
+
+After install:
+
+```bash
+launchctl print gui/$(id -u)/nl.izmar.ciwi.agent
+tail -f "$HOME/Library/Logs/ciwi/agent.out.log" "$HOME/Library/Logs/ciwi/agent.err.log"
+```
+
 ## First functional API slice
 
 - `GET /` minimal web UI (projects/pipelines/jobs)

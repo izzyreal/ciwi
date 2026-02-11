@@ -206,6 +206,9 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 	if !strings.Contains(jobHTML, "formatBytes(a.size_bytes)") {
 		t.Fatalf("job page should render human-friendly artifact sizes")
 	}
+	if !strings.Contains(jobHTML, "artifact-path") || !strings.Contains(jobHTML, "copy-btn") {
+		t.Fatalf("job page should support artifact text selection/copy")
+	}
 	if strings.Contains(jobHTML, "['Status',") {
 		t.Fatalf("job page should not duplicate status in meta rows")
 	}

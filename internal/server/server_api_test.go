@@ -69,6 +69,7 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/server-info", serverInfoHandler)
 	mux.HandleFunc("/api/v1/config/load", s.loadConfigHandler)
 	mux.HandleFunc("/api/v1/projects", s.listProjectsHandler)
 	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)
@@ -693,6 +694,32 @@ func TestServerUpdateCheckEndpoint(t *testing.T) {
 	}
 	if !payload.UpdateAvailable {
 		t.Fatalf("expected update_available=true")
+	}
+}
+
+func TestServerInfoEndpoint(t *testing.T) {
+	t.Setenv("CIWI_VERSION", "v0.9.1")
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/server-info", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("server info status=%d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		Name       string `json:"name"`
+		APIVersion int    `json:"api_version"`
+		Version    string `json:"version"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.Name != "ciwi" {
+		t.Fatalf("unexpected name: %q", payload.Name)
+	}
+	if payload.APIVersion != 1 {
+		t.Fatalf("unexpected api_version: %d", payload.APIVersion)
+	}
+	if payload.Version != "v0.9.1" {
+		t.Fatalf("unexpected version: %q", payload.Version)
 	}
 }
 

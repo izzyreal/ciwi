@@ -371,3 +371,42 @@ func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 		t.Fatalf("unexpected test report: %+v", got)
 	}
 }
+
+func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJob(protocol.CreateJobRequest{
+		Script:         "echo done",
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	done, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  "succeeded",
+		Output:  "final output",
+	})
+	if err != nil {
+		t.Fatalf("mark succeeded: %v", err)
+	}
+	if done.Status != "succeeded" {
+		t.Fatalf("expected succeeded, got %q", done.Status)
+	}
+
+	got, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  "running",
+		Output:  "late running output",
+	})
+	if err != nil {
+		t.Fatalf("late running update: %v", err)
+	}
+	if got.Status != "succeeded" {
+		t.Fatalf("expected status to remain succeeded, got %q", got.Status)
+	}
+	if got.Output != "final output" {
+		t.Fatalf("expected output to remain terminal output, got %q", got.Output)
+	}
+}

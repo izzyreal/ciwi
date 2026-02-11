@@ -57,6 +57,7 @@ func Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.uiHandler)
 	mux.HandleFunc("/healthz", healthzHandler)
+	mux.HandleFunc("/api/v1/server-info", serverInfoHandler)
 	mux.HandleFunc("/api/v1/heartbeat", s.heartbeatHandler)
 	mux.HandleFunc("/api/v1/agents", s.listAgentsHandler)
 	mux.HandleFunc("/api/v1/config/load", s.loadConfigHandler)
@@ -78,6 +79,8 @@ func Run(ctx context.Context) error {
 	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))
 
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	stopMDNS := startMDNSAdvertiser(addr)
+	defer stopMDNS()
 
 	errCh := make(chan error, 1)
 	go func() {
