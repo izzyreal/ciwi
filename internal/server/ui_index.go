@@ -355,6 +355,22 @@ const indexHTML = `<!doctype html>
         try {
           const res = await fetch('/healthz', { cache: 'no-store' });
           if (res.ok) {
+            let finished = false;
+            try {
+              const st = await apiJSON('/api/v1/update/status');
+              const s = st.status || {};
+              const current = (s.update_current_version || '').trim();
+              const latest = (s.update_latest_version || '').trim();
+              const apply = (s.update_last_apply_status || '').trim();
+              const upToDate = current !== '' && latest !== '' && current === latest;
+              const success = apply === 'success' || apply === 'noop';
+              finished = upToDate || success;
+            } catch (_) {}
+            if (finished && !seenDown) {
+              result.textContent = 'Update successful.';
+              updateRestartWatchActive = false;
+              return;
+            }
             if (seenDown) {
               result.textContent = 'Server is back. Reloading...';
               window.location.reload();
@@ -379,10 +395,18 @@ const indexHTML = `<!doctype html>
       try {
         const r = await apiJSON('/api/v1/update/status');
         const s = r.status || {};
+        const current = (s.update_current_version || '').trim();
+        const latest = (s.update_latest_version || '').trim();
+        let available = '';
+        if (current && latest) {
+          available = current === latest ? '0' : '1';
+        } else {
+          available = (s.update_available || '').trim();
+        }
         const parts = [];
-        if (s.update_current_version) parts.push('Current: ' + s.update_current_version);
-        if (s.update_latest_version) parts.push('Latest: ' + s.update_latest_version);
-        if (s.update_available === '1') parts.push('Update available');
+        if (current) parts.push('Current: ' + current);
+        if (latest) parts.push('Latest: ' + latest);
+        if (available === '1') parts.push('Update available');
         if (s.update_last_checked_utc) parts.push('Checked: ' + formatTimestamp(s.update_last_checked_utc));
         if (s.update_last_apply_status) parts.push('Apply: ' + s.update_last_apply_status);
         if (s.update_last_apply_utc) parts.push('Apply time: ' + formatTimestamp(s.update_last_apply_utc));

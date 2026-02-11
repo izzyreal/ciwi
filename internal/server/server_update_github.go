@@ -87,8 +87,5 @@ func shouldRequestAgentUpdate(agentVersion, targetVersion string) bool {
 	if agentVersion == "" || targetVersion == "" {
 		return false
 	}
-	if !isVersionNewer(targetVersion, agentVersion) {
-		return false
-	}
-	return strings.TrimSpace(envOrDefault("CIWI_AGENT_AUTO_UPDATE", "true")) != "false"
+	return isVersionNewer(targetVersion, agentVersion)
 }

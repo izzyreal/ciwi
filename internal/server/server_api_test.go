@@ -782,7 +782,6 @@ func TestHeartbeatRequestsAgentUpdateOnVersionMismatch(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"
 	t.Cleanup(func() { version.Version = oldVersion })
-	t.Setenv("CIWI_AGENT_AUTO_UPDATE", "true")
 
 	ts := newTestHTTPServer(t)
 	defer ts.Close()
