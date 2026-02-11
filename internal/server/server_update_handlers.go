@@ -223,6 +223,8 @@ func (s *stateStore) updateStatusHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Always expose live runtime version; persisted status can be stale across restarts.
+	state["update_current_version"] = currentVersion()
 	writeJSON(w, http.StatusOK, map[string]any{"status": state})
 }
 
