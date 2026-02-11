@@ -79,7 +79,7 @@ func TestCommandForScript(t *testing.T) {
 		}
 		return
 	}
-	if bin != "sh" || len(args) != 2 || args[0] != "-lc" || args[1] != "echo hi" {
+	if bin != "sh" || len(args) != 2 || args[0] != "-c" || args[1] != "echo hi" {
 		t.Fatalf("unexpected unix command: %s %v", bin, args)
 	}
 }

@@ -153,7 +153,7 @@ func commandForScript(script string) (string, []string) {
 	if runtime.GOOS == "windows" {
 		return "powershell", []string{"-NoProfile", "-NonInteractive", "-Command", script}
 	}
-	return "sh", []string{"-lc", script}
+	return "sh", []string{"-c", script}
 }
 
 func checkoutSource(ctx context.Context, sourceDir string, source protocol.SourceSpec) (string, error) {
