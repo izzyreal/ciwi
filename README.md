@@ -79,6 +79,14 @@ curl -fsSL -o /tmp/install_ciwi_server_linux.sh \
 sh /tmp/install_ciwi_server_linux.sh
 ```
 
+One-line uninstall (no options):
+
+```bash
+curl -fsSL -o /tmp/uninstall_ciwi_server_linux.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/uninstall_server_linux.sh && \
+sh /tmp/uninstall_ciwi_server_linux.sh
+```
+
 Installer behavior:
 - Downloads latest `ciwi-linux-<arch>` release asset.
 - Verifies SHA256 using `ciwi-checksums.txt`.
