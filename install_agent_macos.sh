@@ -90,10 +90,55 @@ probe_server() {
   esac
 }
 
+server_info_json() {
+  url="$1"
+  curl -fsS --max-time 1 "${url}/api/v1/server-info" 2>/dev/null || true
+}
+
+server_hostname_from_info() {
+  info="$1"
+  printf '%s' "$info" | sed -n 's/.*"hostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '1p'
+}
+
+prefer_hostname_url() {
+  url="$(canonicalize_url "$1")"
+  hostport="${url#http://}"
+  host="${hostport%%:*}"
+  port="${hostport##*:}"
+  if ! is_ipv4 "$host"; then
+    printf '%s\n' "$url"
+    return
+  fi
+  info="$(server_info_json "$url")"
+  h="$(normalize_host "$(server_hostname_from_info "$info")")"
+  if [ -n "$h" ]; then
+    if [ "$h" = "localhost" ] || [ "$h" = "127.0.0.1" ]; then
+      printf '%s\n' "$url"
+      return
+    fi
+    candidate="http://${h}:${port}"
+    if probe_server "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+    case "$h" in
+      *.*) ;;
+      *)
+        candidate_local="http://${h}.local:${port}"
+        if probe_server "$candidate_local"; then
+          printf '%s\n' "$candidate_local"
+          return
+        fi
+        ;;
+    esac
+  fi
+  printf '%s\n' "$url"
+}
+
 append_unique() {
   list="$1"
   item="$2"
-  item="$(canonicalize_url "$item")"
+  item="$(prefer_hostname_url "$item")"
   norm_item="$(normalize_url "$item")"
   if [ -z "$list" ]; then
     printf '%s\n' "$item"
@@ -215,7 +260,8 @@ choose_server_url() {
     echo "server URL is required" >&2
     exit 1
   fi
-  printf '%s\n' "$(canonicalize_url "$entered")"
+  entered="$(canonicalize_url "$entered")"
+  printf '%s\n' "$(prefer_hostname_url "$entered")"
 }
 
 install_binary() {

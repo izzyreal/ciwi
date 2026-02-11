@@ -61,7 +61,7 @@ Installer behavior:
 
 Server identity validation during install checks:
 - `GET /healthz` returns `{"status":"ok"}`
-- `GET /api/v1/server-info` returns `{"name":"ciwi","api_version":1,...}`
+- `GET /api/v1/server-info` returns `{"name":"ciwi","api_version":1,"hostname":"<host>",...}`
 
 After install:
 
