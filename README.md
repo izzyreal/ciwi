@@ -66,6 +66,38 @@ launchctl print gui/$(id -u)/nl.izmar.ciwi.agent
 tail -f "$HOME/Library/Logs/ciwi/agent.out.log" "$HOME/Library/Logs/ciwi/agent.err.log"
 ```
 
+## Linux server installer (systemd)
+
+One-line install (no options):
+
+```bash
+curl -fsSL -o /tmp/install_ciwi_server_linux.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/install_server_linux.sh && \
+sh /tmp/install_ciwi_server_linux.sh
+```
+
+Installer behavior:
+- Downloads latest `ciwi-linux-<arch>` release asset.
+- Verifies SHA256 using `ciwi-checksums.txt`.
+- Installs `/usr/local/bin/ciwi`.
+- Creates system user `ciwi` and data/log directories under `/var/lib/ciwi` and `/var/log/ciwi`.
+- Installs and starts `ciwi.service` via systemd.
+
+Default paths:
+- Binary: `/usr/local/bin/ciwi`
+- Env file: `/etc/default/ciwi`
+- SQLite DB: `/var/lib/ciwi/ciwi.db`
+- Artifacts: `/var/lib/ciwi/artifacts`
+- Logs: `/var/log/ciwi/server.out.log`, `/var/log/ciwi/server.err.log`
+
+After install:
+
+```bash
+sudo systemctl status ciwi
+sudo journalctl -u ciwi -f
+curl -s http://127.0.0.1:8112/healthz
+```
+
 ## First functional API slice
 
 - `GET /` minimal web UI (projects/pipelines/jobs)
