@@ -80,12 +80,22 @@ curl -fsSL -o /tmp/install_ciwi_agent_macos.sh \
 sh /tmp/install_ciwi_agent_macos.sh
 ```
 
+Install with GitHub API token (recommended to avoid rate limits):
+
+```bash
+export CIWI_GITHUB_TOKEN="<your-token>"
+curl -fsSL -o /tmp/install_ciwi_agent_macos.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_macos.sh && \
+sh /tmp/install_ciwi_agent_macos.sh
+```
+
 Installer behavior:
 - Tries mDNS/Bonjour discovery first (`_ciwi._tcp`), then falls back to probing `http://<local-ip>:8112`.
 - Prefers hostname-based URLs when resolvable (for example `http://bhakti.local:8112`) and deduplicates same host seen via multiple IPs/adapters.
 - If multiple servers are found, prompts you to choose one.
 - If none are found, prompts for server URL.
 - Installs agent binary into `~/.local/bin/ciwi` (user-writable) so self-update can swap binaries in place.
+- Stores `CIWI_GITHUB_TOKEN` in the agent LaunchAgent env when provided, and preserves existing token on reinstall if not provided.
 - Installs two LaunchAgents:
   - `nl.izmar.ciwi.agent` (main agent)
   - `nl.izmar.ciwi.agent-updater` (oneshot staged updater used for self-update)

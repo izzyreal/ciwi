@@ -13,11 +13,41 @@ require_cmd() {
   fi
 }
 
+trim_single_line() {
+  printf '%s' "$1" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+xml_escape() {
+  printf '%s' "$1" \
+    | sed -e 's/&/\&amp;/g' \
+          -e 's/</\&lt;/g' \
+          -e 's/>/\&gt;/g' \
+          -e 's/"/\&quot;/g' \
+          -e "s/'/\&apos;/g"
+}
+
+read_existing_github_token() {
+  plist_path="$1"
+  if [ ! -f "$plist_path" ]; then
+    printf '%s' ""
+    return
+  fi
+  if [ -x /usr/libexec/PlistBuddy ]; then
+    /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:CIWI_GITHUB_TOKEN" "$plist_path" 2>/dev/null || true
+    return
+  fi
+  printf '%s' ""
+}
+
 fetch_latest_tag() {
   api_url="https://api.github.com/repos/${REPO}/releases/latest"
   auth_header=""
-  if [ -n "${CIWI_GITHUB_TOKEN:-}" ]; then
-    auth_header="Authorization: Bearer ${CIWI_GITHUB_TOKEN}"
+  token="$(trim_single_line "${CIWI_GITHUB_TOKEN:-}")"
+  if [ -z "$token" ]; then
+    token="$(trim_single_line "${INSTALL_GITHUB_TOKEN:-}")"
+  fi
+  if [ -n "$token" ]; then
+    auth_header="Authorization: Bearer ${token}"
   fi
   if [ -n "$auth_header" ]; then
     curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ciwi-installer" -H "$auth_header" "$api_url" \
@@ -330,6 +360,25 @@ NEWSYSLOG_FILE="/etc/newsyslog.d/ciwi-$(id -un).conf"
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname)"
 AGENT_ID="agent-${HOST_NAME}"
 SERVER_URL="$(choose_server_url)"
+INSTALL_GITHUB_TOKEN="$(trim_single_line "${CIWI_GITHUB_TOKEN:-}")"
+TOKEN_SOURCE="none"
+if [ -n "$INSTALL_GITHUB_TOKEN" ]; then
+  TOKEN_SOURCE="env"
+else
+  INSTALL_GITHUB_TOKEN="$(trim_single_line "$(read_existing_github_token "$PLIST_PATH")")"
+  if [ -n "$INSTALL_GITHUB_TOKEN" ]; then
+    TOKEN_SOURCE="existing-plist"
+  fi
+fi
+INSTALL_GITHUB_TOKEN_ESCAPED="$(xml_escape "$INSTALL_GITHUB_TOKEN")"
+GITHUB_TOKEN_ENV_BLOCK=""
+if [ -n "$INSTALL_GITHUB_TOKEN_ESCAPED" ]; then
+  GITHUB_TOKEN_ENV_BLOCK="$(cat <<EOF
+    <key>CIWI_GITHUB_TOKEN</key>
+    <string>${INSTALL_GITHUB_TOKEN_ESCAPED}</string>
+EOF
+)"
+fi
 
 ARCH_RAW="$(uname -m)"
 case "$ARCH_RAW" in
@@ -439,6 +488,7 @@ cat >"$PLIST_PATH" <<EOF
     <string>${UPDATER_LABEL}</string>
     <key>CIWI_AGENT_UPDATER_PLIST</key>
     <string>${UPDATER_PLIST_PATH}</string>
+${GITHUB_TOKEN_ENV_BLOCK}
     <key>PATH</key>
     <string>${INSTALL_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
@@ -537,6 +587,11 @@ echo "Updater plist: ${UPDATER_PLIST_PATH}"
 echo "Server URL:  ${SERVER_URL}"
 echo "Agent ID:    ${AGENT_ID}"
 echo "Workdir:     ${WORKDIR}"
+case "$TOKEN_SOURCE" in
+  env) echo "GitHub token: set from CIWI_GITHUB_TOKEN (persisted in agent plist)" ;;
+  existing-plist) echo "GitHub token: preserved from existing agent plist" ;;
+  *) echo "GitHub token: not set (set CIWI_GITHUB_TOKEN before install to avoid API rate limits)" ;;
+esac
 echo "Logs:"
 echo "  tail -f ${LOG_DIR}/agent.out.log ${LOG_DIR}/agent.err.log"
 echo "Log cap:"
