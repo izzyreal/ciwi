@@ -26,6 +26,7 @@ type agentState struct {
 	Version      string            `json:"version,omitempty"`
 	Capabilities map[string]string `json:"capabilities"`
 	LastSeenUTC  time.Time         `json:"last_seen_utc"`
+	RecentLog    []string          `json:"recent_log,omitempty"`
 }
 
 type stateStore struct {

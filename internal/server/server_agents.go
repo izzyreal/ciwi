@@ -31,14 +31,21 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	updateRequested := shouldRequestAgentUpdate(hb.Version, currentVersion())
-	s.agents[hb.AgentID] = agentState{
+	prev := s.agents[hb.AgentID]
+	state := agentState{
 		Hostname:     hb.Hostname,
 		OS:           hb.OS,
 		Arch:         hb.Arch,
 		Version:      hb.Version,
 		Capabilities: hb.Capabilities,
 		LastSeenUTC:  hb.TimestampUTC,
+		RecentLog:    append([]string(nil), prev.RecentLog...),
 	}
+	state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("heartbeat version=%s platform=%s/%s", strings.TrimSpace(hb.Version), strings.TrimSpace(hb.OS), strings.TrimSpace(hb.Arch)))
+	if updateRequested {
+		state.RecentLog = appendAgentLog(state.RecentLog, "server requested update to "+currentVersion())
+	}
+	s.agents[hb.AgentID] = state
 	s.mu.Unlock()
 
 	resp := protocol.HeartbeatResponse{
@@ -62,7 +69,16 @@ func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	agents := make([]protocol.AgentInfo, 0, len(s.agents))
 	for id, a := range s.agents {
-		agents = append(agents, protocol.AgentInfo{AgentID: id, Hostname: a.Hostname, OS: a.OS, Arch: a.Arch, Version: a.Version, Capabilities: a.Capabilities, LastSeenUTC: a.LastSeenUTC})
+		agents = append(agents, protocol.AgentInfo{
+			AgentID:      id,
+			Hostname:     a.Hostname,
+			OS:           a.OS,
+			Arch:         a.Arch,
+			Version:      a.Version,
+			Capabilities: a.Capabilities,
+			LastSeenUTC:  a.LastSeenUTC,
+			RecentLog:    append([]string(nil), a.RecentLog...),
+		})
 	}
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})

@@ -19,6 +19,21 @@ const agentsHTML = `<!doctype html>
     .muted { color:var(--muted); font-size:13px; }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
     th, td { border-bottom:1px solid var(--line); text-align:left; padding:8px 6px; vertical-align:top; overflow-wrap:anywhere; word-break:break-word; }
+    .logbox {
+      margin: 0;
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      line-height: 1.35;
+      max-height: 120px;
+      overflow: auto;
+      user-select: text;
+      cursor: text;
+      background: #f7fcf9;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px;
+    }
     .ok { color:var(--ok); font-weight:600; }
     .stale { color:#a56a00; font-weight:600; }
     .offline { color:var(--bad); font-weight:600; }
@@ -45,7 +60,7 @@ const agentsHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>Agent ID</th><th>Host</th><th>Platform</th><th>Version</th><th>Last Seen</th><th>Health</th><th>Capabilities</th></tr>
+          <tr><th>Agent ID</th><th>Host</th><th>Platform</th><th>Version</th><th>Last Seen</th><th>Health</th><th>Capabilities</th><th>Recent Log</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
@@ -78,7 +93,7 @@ const agentsHTML = `<!doctype html>
         const agents = data.agents || [];
         rows.innerHTML = '';
         if (agents.length === 0) {
-          rows.innerHTML = '<tr><td colspan="7" class="muted">No agents have sent heartbeats yet.</td></tr>';
+          rows.innerHTML = '<tr><td colspan="8" class="muted">No agents have sent heartbeats yet.</td></tr>';
           summary.textContent = '0 agents';
           return;
         }
@@ -93,13 +108,14 @@ const agentsHTML = `<!doctype html>
             '<td>' + escapeHtml(a.version || '') + '</td>' +
             '<td>' + escapeHtml(formatTimestamp(a.last_seen_utc)) + '</td>' +
             '<td class="' + s.cls + '">' + s.label + '</td>' +
-            '<td>' + escapeHtml(formatCapabilities(a.capabilities || {})) + '</td>';
+            '<td>' + escapeHtml(formatCapabilities(a.capabilities || {})) + '</td>' +
+            '<td><div class="logbox">' + escapeHtml((a.recent_log || []).join('\n')) + '</div></td>';
           rows.appendChild(tr);
         }
         const online = agents.filter(a => statusForLastSeen(a.last_seen_utc || '').label === 'online').length;
         summary.textContent = online + '/' + agents.length + ' online';
       } catch (e) {
-        rows.innerHTML = '<tr><td colspan="7" class="offline">Could not load agents</td></tr>';
+        rows.innerHTML = '<tr><td colspan="8" class="offline">Could not load agents</td></tr>';
         summary.textContent = 'Failed to load agents';
       }
     }
