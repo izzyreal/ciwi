@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/izzyreal/ciwi/internal/store"
 )
 
 type stagedManifest struct {
@@ -23,7 +25,7 @@ type stagedManifest struct {
 	RequestedAtUTC string `json:"requested_at_utc"`
 }
 
-func RunApplyStaged(args []string) error {
+func RunApplyStaged(args []string) (retErr error) {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("apply-staged-update requires root privileges")
 	}
@@ -33,6 +35,23 @@ func RunApplyStaged(args []string) error {
 	serviceName := fs.String("service", envOrDefault("CIWI_SERVER_SERVICE_NAME", "ciwi.service"), "systemd service to restart")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	state := openStateStore()
+	if state != nil {
+		_ = setUpdateState(state, map[string]string{
+			"update_last_apply_status": "running",
+			"update_message":           "linux updater applying staged update",
+			"update_last_apply_utc":    time.Now().UTC().Format(time.RFC3339Nano),
+		})
+		defer state.Close()
+		defer func() {
+			if retErr != nil {
+				_ = setUpdateState(state, map[string]string{
+					"update_last_apply_status": "failed",
+					"update_message":           "linux updater failed: " + retErr.Error(),
+				})
+			}
+		}()
 	}
 
 	targetPath, err := os.Executable()
@@ -87,6 +106,18 @@ func RunApplyStaged(args []string) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("restart service %q: %w (%s)", *serviceName, err, strings.TrimSpace(string(out)))
 	}
+	if state != nil {
+		msg := "update successful"
+		if strings.TrimSpace(manifest.TargetVersion) != "" {
+			msg = "update successful: " + strings.TrimSpace(manifest.TargetVersion)
+		}
+		_ = setUpdateState(state, map[string]string{
+			"update_last_apply_status": "success",
+			"update_latest_version":    strings.TrimSpace(manifest.TargetVersion),
+			"update_message":           msg,
+			"update_last_apply_utc":    time.Now().UTC().Format(time.RFC3339Nano),
+		})
+	}
 	return nil
 }
 
@@ -132,4 +163,28 @@ func BuildManifest(targetVersion, assetName, stagedBinary, stagedSHA256 string) 
 		RequestedAtUTC: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	return json.MarshalIndent(m, "", "  ")
+}
+
+func openStateStore() *store.Store {
+	dbPath := strings.TrimSpace(envOrDefault("CIWI_DB_PATH", "/var/lib/ciwi/ciwi.db"))
+	if dbPath == "" {
+		return nil
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return nil
+	}
+	return st
+}
+
+func setUpdateState(st *store.Store, values map[string]string) error {
+	for k, v := range values {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		if err := st.SetAppState(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
