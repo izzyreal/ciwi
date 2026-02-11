@@ -86,6 +86,9 @@ Installer behavior:
 - If multiple servers are found, prompts you to choose one.
 - If none are found, prompts for server URL.
 - Installs agent binary into `~/.local/bin/ciwi` (user-writable) so self-update can swap binaries in place.
+- Installs two LaunchAgents:
+  - `nl.izmar.ciwi.agent` (main agent)
+  - `nl.izmar.ciwi.agent-updater` (oneshot staged updater used for self-update)
 - Installs `/etc/newsyslog.d/ciwi-<user>.conf` to cap ciwi log files at 100MB (agent logs and optional server logs in `~/Library/Logs/ciwi`).
 
 Server identity validation during install checks:
@@ -96,6 +99,7 @@ After install:
 
 ```bash
 launchctl print gui/$(id -u)/nl.izmar.ciwi.agent
+launchctl print gui/$(id -u)/nl.izmar.ciwi.agent-updater
 tail -f "$HOME/Library/Logs/ciwi/agent.out.log" "$HOME/Library/Logs/ciwi/agent.err.log"
 ```
 
@@ -110,8 +114,8 @@ sh /tmp/uninstall_ciwi_agent_macos.sh
 ```
 
 Uninstaller behavior:
-- Stops/unloads LaunchAgent `nl.izmar.ciwi.agent`
-- Removes `~/Library/LaunchAgents/nl.izmar.ciwi.agent.plist`
+- Stops/unloads LaunchAgents `nl.izmar.ciwi.agent` and `nl.izmar.ciwi.agent-updater`
+- Removes `~/Library/LaunchAgents/nl.izmar.ciwi.agent.plist` and `~/Library/LaunchAgents/nl.izmar.ciwi.agent-updater.plist`
 - Removes ciwi binary from `~/.local/bin/ciwi` and `/usr/local/bin/ciwi` (with sudo if needed)
 - Removes `/etc/newsyslog.d/ciwi-<user>.conf` (with sudo when available)
 - Leaves logs/workdir by default (`~/Library/Logs/ciwi`, `~/.ciwi-agent`) and prints cleanup command

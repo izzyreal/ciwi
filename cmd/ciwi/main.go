@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/izzyreal/ciwi/internal/agent"
+	"github.com/izzyreal/ciwi/internal/darwinupdater"
 	"github.com/izzyreal/ciwi/internal/linuxupdater"
 	"github.com/izzyreal/ciwi/internal/server"
 	"github.com/izzyreal/ciwi/internal/updatehelper"
@@ -38,6 +39,8 @@ func main() {
 		err = updatehelper.Run(os.Args[2:])
 	case "apply-staged-update":
 		err = linuxupdater.RunApplyStaged(os.Args[2:])
+	case "apply-staged-agent-update":
+		err = darwinupdater.RunApplyStagedAgent(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -97,6 +100,7 @@ Commands:
   all-in-one  Run server and agent in one process (dev mode)
   update-helper  Internal mode used by self-update
   apply-staged-update  Internal mode used by Linux server updater
+  apply-staged-agent-update  Internal mode used by macOS agent updater
   help        Show this help
 `)
 }

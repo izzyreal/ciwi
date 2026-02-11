@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/darwinupdater"
 	"github.com/izzyreal/ciwi/internal/updateutil"
 )
 
@@ -80,6 +84,13 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		}
 	}
 
+	if runtime.GOOS == "darwin" && hasDarwinUpdaterConfig() {
+		if err := stageAndTriggerDarwinUpdater(targetVersion, asset.Name, exePath, newBinPath); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
 	if err := copyFile(exePath, helperPath, 0o755); err != nil {
 		return fmt.Errorf("prepare update helper: %w", err)
@@ -92,6 +103,54 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		time.Sleep(250 * time.Millisecond)
 		os.Exit(0)
 	}()
+	return nil
+}
+
+func hasDarwinUpdaterConfig() bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+	return strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_LABEL", "")) != "" &&
+		strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", "")) != "" &&
+		strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATER_LABEL", "")) != ""
+}
+
+func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, stagedBinary string) error {
+	agentLabel := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_LABEL", ""))
+	agentPlist := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", ""))
+	updaterLabel := strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATER_LABEL", ""))
+	updaterPlist := strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATER_PLIST", ""))
+	if agentLabel == "" || agentPlist == "" || updaterLabel == "" {
+		return fmt.Errorf("missing launchd updater configuration")
+	}
+
+	workDir := strings.TrimSpace(envOrDefault("CIWI_AGENT_WORKDIR", ".ciwi-agent"))
+	manifestPath := strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATE_MANIFEST", filepath.Join(workDir, "updates", "pending.json")))
+	if manifestPath == "" {
+		return fmt.Errorf("unable to resolve CIWI_AGENT_UPDATE_MANIFEST path")
+	}
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		return fmt.Errorf("create update manifest directory: %w", err)
+	}
+	stagePath := filepath.Join(filepath.Dir(manifestPath), filepath.Base(stagedBinary))
+	if err := moveOrCopyFile(stagedBinary, stagePath, 0o755); err != nil {
+		return fmt.Errorf("stage update binary: %w", err)
+	}
+	hash, err := fileSHA256(stagePath)
+	if err != nil {
+		return fmt.Errorf("hash staged update binary: %w", err)
+	}
+	manifest, err := darwinupdater.BuildManifest(targetVersion, assetName, targetBinary, stagePath, hash, agentLabel, agentPlist, updaterLabel, updaterPlist, defaultAgentID(), os.Getpid())
+	if err != nil {
+		return fmt.Errorf("build update manifest: %w", err)
+	}
+	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
+		return fmt.Errorf("write update manifest: %w", err)
+	}
+	if err := runLaunchctl("kickstart", "-k", "gui/"+strconv.Itoa(os.Getuid())+"/"+updaterLabel); err != nil {
+		_ = os.Remove(manifestPath)
+		return fmt.Errorf("trigger updater launchagent: %w", err)
+	}
 	return nil
 }
 
@@ -261,6 +320,47 @@ func applyGitHubAuthHeader(req *http.Request) {
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+}
+
+func moveOrCopyFile(src, dst string, mode fs.FileMode) error {
+	if strings.TrimSpace(src) == strings.TrimSpace(dst) {
+		return nil
+	}
+	_ = os.Remove(dst)
+	if err := os.Rename(src, dst); err == nil {
+		return os.Chmod(dst, mode)
+	}
+	if err := copyFile(src, dst, mode); err != nil {
+		return err
+	}
+	_ = os.Remove(src)
+	return nil
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func runLaunchctl(args ...string) error {
+	launchctlPath := strings.TrimSpace(envOrDefault("CIWI_LAUNCHCTL_PATH", "/bin/launchctl"))
+	if launchctlPath == "" {
+		launchctlPath = "/bin/launchctl"
+	}
+	cmd := exec.Command(launchctlPath, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s %s: %w (%s)", launchctlPath, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func processRunning(pid int) (bool, error) {

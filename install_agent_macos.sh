@@ -319,9 +319,13 @@ require_cmd install
 
 REPO="izzyreal/ciwi"
 LABEL="nl.izmar.ciwi.agent"
+UPDATER_LABEL="nl.izmar.ciwi.agent-updater"
 LOG_DIR="$HOME/Library/Logs/ciwi"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
+UPDATER_PLIST_PATH="$HOME/Library/LaunchAgents/${UPDATER_LABEL}.plist"
 WORKDIR="$HOME/.ciwi-agent"
+UPDATES_DIR="$WORKDIR/updates"
+MANIFEST_PATH="$UPDATES_DIR/pending.json"
 NEWSYSLOG_FILE="/etc/newsyslog.d/ciwi-$(id -un).conf"
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname)"
 AGENT_ID="agent-${HOST_NAME}"
@@ -354,11 +358,11 @@ else
   echo "[info] Preparing to install ciwi agent version: unknown (GitHub tag query failed)"
 fi
 
-echo "[1/5] Downloading ${ASSET} from ${REPO}..."
+echo "[1/6] Downloading ${ASSET} from ${REPO}..."
 curl -fsSL "${RELEASE_BASE}/${ASSET}" -o "${TMP_DIR}/${ASSET}"
 curl -fsSL "${RELEASE_BASE}/${CHECKSUM_ASSET}" -o "${TMP_DIR}/${CHECKSUM_ASSET}"
 
-echo "[2/5] Verifying checksum..."
+echo "[2/6] Verifying checksum..."
 EXPECTED_SHA="$(awk -v n="${ASSET}" '
   $0 ~ /^[[:space:]]*#/ { next }
   NF >= 2 {
@@ -381,16 +385,18 @@ if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
   exit 1
 fi
 
-echo "[3/5] Installing binary..."
-mkdir -p "$WORKDIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
+echo "[3/6] Installing binary..."
+mkdir -p "$WORKDIR" "$UPDATES_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
 INSTALL_DIR="$(install_binary "${TMP_DIR}/${ASSET}")"
 
-echo "[3.5/5] Configuring 100MB log caps (newsyslog)..."
+echo "[3.5/6] Configuring 100MB log caps (newsyslog)..."
 if command -v sudo >/dev/null 2>&1; then
   if sudo -n true >/dev/null 2>&1 || sudo -v >/dev/null 2>&1; then
     sudo tee "$NEWSYSLOG_FILE" >/dev/null <<EOF
 ${LOG_DIR}/agent.out.log  644  3  102400  *  Z
 ${LOG_DIR}/agent.err.log  644  3  102400  *  Z
+${LOG_DIR}/agent-updater.out.log  644  3  102400  *  Z
+${LOG_DIR}/agent-updater.err.log  644  3  102400  *  Z
 ${LOG_DIR}/server.out.log  644  3  102400  *  Z
 ${LOG_DIR}/server.err.log  644  3  102400  *  Z
 EOF
@@ -402,7 +408,7 @@ else
   echo "Could not configure newsyslog cap (sudo not found)." >&2
 fi
 
-echo "[4/5] Writing LaunchAgent plist..."
+echo "[4/6] Writing LaunchAgent plists..."
 cat >"$PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -423,6 +429,16 @@ cat >"$PLIST_PATH" <<EOF
     <string>${AGENT_ID}</string>
     <key>CIWI_AGENT_WORKDIR</key>
     <string>${WORKDIR}</string>
+    <key>CIWI_AGENT_UPDATE_MANIFEST</key>
+    <string>${MANIFEST_PATH}</string>
+    <key>CIWI_AGENT_LAUNCHD_LABEL</key>
+    <string>${LABEL}</string>
+    <key>CIWI_AGENT_LAUNCHD_PLIST</key>
+    <string>${PLIST_PATH}</string>
+    <key>CIWI_AGENT_UPDATER_LABEL</key>
+    <string>${UPDATER_LABEL}</string>
+    <key>CIWI_AGENT_UPDATER_PLIST</key>
+    <string>${UPDATER_PLIST_PATH}</string>
     <key>PATH</key>
     <string>${INSTALL_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
@@ -437,20 +453,72 @@ cat >"$PLIST_PATH" <<EOF
 </dict>
 </plist>
 EOF
-chmod 0644 "$PLIST_PATH"
-chown "$(id -un)":staff "$PLIST_PATH" 2>/dev/null || true
-plutil -lint "$PLIST_PATH" >/dev/null
 
-echo "[5/5] Bootstrapping LaunchAgent..."
+cat >"$UPDATER_PLIST_PATH" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${UPDATER_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${INSTALL_DIR}/ciwi</string>
+    <string>apply-staged-agent-update</string>
+    <string>--manifest</string>
+    <string>${MANIFEST_PATH}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CIWI_AGENT_UPDATE_MANIFEST</key>
+    <string>${MANIFEST_PATH}</string>
+    <key>CIWI_LAUNCHCTL_PATH</key>
+    <string>/bin/launchctl</string>
+    <key>PATH</key>
+    <string>${INSTALL_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>KeepAlive</key>
+  <false/>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>${LOG_DIR}/agent-updater.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_DIR}/agent-updater.err.log</string>
+</dict>
+</plist>
+EOF
+chmod 0644 "$PLIST_PATH"
+chmod 0644 "$UPDATER_PLIST_PATH"
+chown "$(id -un)":staff "$PLIST_PATH" 2>/dev/null || true
+chown "$(id -un)":staff "$UPDATER_PLIST_PATH" 2>/dev/null || true
+plutil -lint "$PLIST_PATH" >/dev/null
+plutil -lint "$UPDATER_PLIST_PATH" >/dev/null
+
+echo "[5/6] Bootstrapping updater LaunchAgent..."
 UID_NUM="$(id -u)"
-# Reset stale launchd state for this label before bootstrap.
+launchctl bootout "gui/${UID_NUM}/${UPDATER_LABEL}" >/dev/null 2>&1 || true
+launchctl bootout "gui/${UID_NUM}" "$UPDATER_PLIST_PATH" >/dev/null 2>&1 || true
+launchctl disable "gui/${UID_NUM}/${UPDATER_LABEL}" >/dev/null 2>&1 || true
+launchctl enable "gui/${UID_NUM}/${UPDATER_LABEL}" >/dev/null 2>&1 || true
+
+if ! launchctl bootstrap "gui/${UID_NUM}" "$UPDATER_PLIST_PATH"; then
+  echo "Updater LaunchAgent bootstrap failed. Diagnostics:" >&2
+  launchctl print-disabled "gui/${UID_NUM}" | grep "${UPDATER_LABEL}" >&2 || true
+  launchctl print "gui/${UID_NUM}/${UPDATER_LABEL}" >&2 || true
+  log show --style syslog --last 5m --info --debug \
+    --predicate "process == \"launchd\" AND composedMessage CONTAINS \"${UPDATER_LABEL}\"" 2>/dev/null | tail -n 50 >&2 || true
+  exit 1
+fi
+
+echo "[6/6] Bootstrapping agent LaunchAgent..."
 launchctl bootout "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 launchctl bootout "gui/${UID_NUM}" "$PLIST_PATH" >/dev/null 2>&1 || true
 launchctl disable "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 launchctl enable "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 
 if ! launchctl bootstrap "gui/${UID_NUM}" "$PLIST_PATH"; then
-  echo "LaunchAgent bootstrap failed. Diagnostics:" >&2
+  echo "Agent LaunchAgent bootstrap failed. Diagnostics:" >&2
   launchctl print-disabled "gui/${UID_NUM}" | grep "${LABEL}" >&2 || true
   launchctl print "gui/${UID_NUM}/${LABEL}" >&2 || true
   log show --style syslog --last 5m --info --debug \
@@ -462,8 +530,10 @@ launchctl kickstart -k "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 echo
 echo "ciwi agent installed and started."
 echo "Label:       ${LABEL}"
+echo "Updater:     ${UPDATER_LABEL}"
 echo "Binary:      ${INSTALL_DIR}/ciwi"
 echo "Plist:       ${PLIST_PATH}"
+echo "Updater plist: ${UPDATER_PLIST_PATH}"
 echo "Server URL:  ${SERVER_URL}"
 echo "Agent ID:    ${AGENT_ID}"
 echo "Workdir:     ${WORKDIR}"
@@ -474,4 +544,5 @@ echo "  100MB via ${NEWSYSLOG_FILE} (agent + optional server logs)"
 echo
 echo "To uninstall:"
 echo "  launchctl bootout gui/\$(id -u) ${PLIST_PATH} || true"
-echo "  rm -f ${PLIST_PATH} ${INSTALL_DIR}/ciwi"
+echo "  launchctl bootout gui/\$(id -u) ${UPDATER_PLIST_PATH} || true"
+echo "  rm -f ${PLIST_PATH} ${UPDATER_PLIST_PATH} ${INSTALL_DIR}/ciwi"
