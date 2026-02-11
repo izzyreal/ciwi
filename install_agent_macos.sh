@@ -296,31 +296,11 @@ choose_server_url() {
 
 install_binary() {
   src="$1"
-  default_dir="/usr/local/bin"
-  fallback_dir="$HOME/.local/bin"
-
-  if [ -w "$default_dir" ] || [ ! -e "$default_dir" ] && [ -w "/usr/local" ]; then
-    mkdir -p "$default_dir"
-    install -m 0755 "$src" "${default_dir}/ciwi"
-    printf '%s\n' "$default_dir"
-    return
-  fi
-
-  if command -v sudo >/dev/null 2>&1; then
-    echo "Install to /usr/local/bin requires elevation; requesting sudo..." >&2
-    if sudo -v; then
-      sudo mkdir -p "$default_dir"
-      sudo install -m 0755 "$src" "${default_dir}/ciwi"
-      printf '%s\n' "$default_dir"
-      return
-    fi
-  fi
-
-  echo "Could not install to /usr/local/bin; falling back to $fallback_dir" >&2
-
-  mkdir -p "$fallback_dir"
-  install -m 0755 "$src" "${fallback_dir}/ciwi"
-  printf '%s\n' "$fallback_dir"
+  target_dir="$HOME/.local/bin"
+  # Keep agent binary user-writable so ciwi self-update can replace it in-place.
+  mkdir -p "$target_dir"
+  install -m 0755 "$src" "${target_dir}/ciwi"
+  printf '%s\n' "$target_dir"
 }
 
 if [ "$(uname -s)" != "Darwin" ]; then

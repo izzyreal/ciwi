@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -17,6 +18,9 @@ func Run(ctx context.Context) error {
 
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return fmt.Errorf("create agent workdir: %w", err)
+	}
+	if reason := selfUpdateWritabilityWarning(); reason != "" {
+		slog.Warn("agent self-update preflight warning", "reason", reason)
 	}
 
 	slog.Info("ciwi agent started", "agent_id", agentID, "server_url", serverURL)
@@ -80,4 +84,20 @@ func Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func selfUpdateWritabilityWarning() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "cannot resolve executable path: " + err.Error()
+	}
+	if looksLikeGoRunBinary(exePath) {
+		return "running via go run binary path; self-update is unavailable"
+	}
+	f, err := os.OpenFile(exePath, os.O_WRONLY, 0)
+	if err != nil {
+		return "binary path is not writable by current user (" + strings.TrimSpace(exePath) + "): " + err.Error()
+	}
+	_ = f.Close()
+	return ""
 }

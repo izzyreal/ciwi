@@ -85,7 +85,7 @@ Installer behavior:
 - Prefers hostname-based URLs when resolvable (for example `http://bhakti.local:8112`) and deduplicates same host seen via multiple IPs/adapters.
 - If multiple servers are found, prompts you to choose one.
 - If none are found, prompts for server URL.
-- Prompts for sudo only if needed to install into `/usr/local/bin`; otherwise falls back to `~/.local/bin`.
+- Installs agent binary into `~/.local/bin/ciwi` (user-writable) so self-update can swap binaries in place.
 - Installs `/etc/newsyslog.d/ciwi-<user>.conf` to cap ciwi log files at 100MB (agent logs and optional server logs in `~/Library/Logs/ciwi`).
 
 Server identity validation during install checks:
