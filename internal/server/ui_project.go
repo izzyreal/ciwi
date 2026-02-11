@@ -117,6 +117,24 @@ const projectHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script src="/ui/pages.js"></script>
   <script>
+    let refreshInFlight = false;
+    let refreshPausedUntil = 0;
+
+    function hasActiveTextSelection() {
+      const sel = window.getSelection && window.getSelection();
+      if (!sel) return false;
+      const text = (sel.toString() || '').trim();
+      return text.length > 0;
+    }
+
+    function shouldPauseRefresh() {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+        return true;
+      }
+      return Date.now() < refreshPausedUntil;
+    }
+
     function projectIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
       return parts.length >= 2 ? parts[1] : '';
@@ -338,33 +356,46 @@ const projectHTML = `<!doctype html>
       }
     };
 
-    async function loadHistory() {
-      const data = await apiJSON('/api/v1/jobs');
-      const body = document.getElementById('historyBody');
-      body.innerHTML = '';
-      const rows = (data.job_executions || data.jobs || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
-      rows.forEach(job => {
-        const tr = buildJobExecutionRow(job, {
-          includeActions: false,
-          includeReason: true,
-          backPath: window.location.pathname || '/'
+    async function loadHistory(force) {
+      if (refreshInFlight || (!force && shouldPauseRefresh())) {
+        return;
+      }
+      refreshInFlight = true;
+      try {
+        const data = await apiJSON('/api/v1/jobs');
+        const body = document.getElementById('historyBody');
+        body.innerHTML = '';
+        const rows = (data.job_executions || data.jobs || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
+        rows.forEach(job => {
+          const tr = buildJobExecutionRow(job, {
+            includeActions: false,
+            includeReason: true,
+            backPath: window.location.pathname || '/'
+          });
+          body.appendChild(tr);
         });
-        body.appendChild(tr);
-      });
+      } finally {
+        refreshInFlight = false;
+      }
     }
 
     async function tick() {
       try {
         await loadProject();
         await loadVaultSection();
-        await loadHistory();
+        await loadHistory(true);
       } catch (e) {
         document.getElementById('subtitle').textContent = 'Failed to load project: ' + e.message;
       }
     }
 
+    document.addEventListener('selectionchange', () => {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+      }
+    });
     tick();
-    setInterval(loadHistory, 4000);
+    setInterval(() => loadHistory(false), 4000);
   </script>
 </body>
 </html>`

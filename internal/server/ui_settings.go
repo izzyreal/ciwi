@@ -124,8 +124,25 @@ const settingsHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script src="/ui/pages.js"></script>
   <script>
+    let refreshInFlight = false;
+    let refreshPausedUntil = 0;
     const projectReloadState = new Map();
     let updateRestartWatchActive = false;
+
+    function hasActiveTextSelection() {
+      const sel = window.getSelection && window.getSelection();
+      if (!sel) return false;
+      const text = (sel.toString() || '').trim();
+      return text.length > 0;
+    }
+
+    function shouldPauseRefresh() {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+        return true;
+      }
+      return Date.now() < refreshPausedUntil;
+    }
 
     function setProjectReloadState(projectId, text, color) {
       projectReloadState.set(String(projectId), { text, color });
@@ -324,15 +341,25 @@ const settingsHTML = `<!doctype html>
     }
 
     async function tick() {
+      if (refreshInFlight || shouldPauseRefresh()) {
+        return;
+      }
+      refreshInFlight = true;
       try {
         await Promise.all([refreshSettingsProjects(), refreshUpdateStatus()]);
       } catch (e) {
         console.error(e);
+      } finally {
+        refreshInFlight = false;
       }
     }
+    document.addEventListener('selectionchange', () => {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+      }
+    });
     tick();
-    setInterval(refreshSettingsProjects, 7000);
-    setInterval(refreshUpdateStatus, 3000);
+    setInterval(tick, 3000);
   </script>
 </body>
 </html>`

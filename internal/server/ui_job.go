@@ -142,6 +142,23 @@ const jobHTML = `<!doctype html>
 
   <script src="/ui/shared.js"></script>
   <script>
+    let refreshInFlight = false;
+    let refreshPausedUntil = 0;
+
+    function hasActiveTextSelection() {
+      const sel = window.getSelection && window.getSelection();
+      if (!sel) return false;
+      const text = (sel.toString() || '').trim();
+      return text.length > 0;
+    }
+
+    function shouldPauseRefresh() {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+        return true;
+      }
+      return Date.now() < refreshPausedUntil;
+    }
 
     function jobIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
@@ -162,43 +179,49 @@ const jobHTML = `<!doctype html>
       link.textContent = 'Back to Job Executions';
     }
 
-    async function loadJob() {
+    async function loadJob(force) {
+      if (refreshInFlight || (!force && shouldPauseRefresh())) {
+        return;
+      }
+      refreshInFlight = true;
       const jobId = jobIdFromPath();
       if (!jobId) {
         document.getElementById('subtitle').textContent = 'Missing job id';
+        refreshInFlight = false;
         return;
       }
 
-      const res = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId));
-      if (!res.ok) {
-        document.getElementById('subtitle').textContent = 'Failed to load job';
-        return;
-      }
-      const data = await res.json();
-      const job = data.job_execution || data.job;
+      try {
+        const res = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId));
+        if (!res.ok) {
+          document.getElementById('subtitle').textContent = 'Failed to load job';
+          return;
+        }
+        const data = await res.json();
+        const job = data.job_execution || data.job;
 
-      const desc = jobDescription(job);
-      document.getElementById('jobTitle').textContent = desc;
-      document.getElementById('subtitle').innerHTML = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
+        const desc = jobDescription(job);
+        document.getElementById('jobTitle').textContent = desc;
+        document.getElementById('subtitle').innerHTML = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
 
-      const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
-      const buildVersion = buildVersionLabel(job);
-      const rows = [
-        ['Job Execution ID', escapeHtml(job.id || '')],
-        ['Pipeline', escapeHtml(pipeline)],
-        ['Build', escapeHtml(buildVersion)],
-        ['Agent', escapeHtml(job.leased_by_agent_id || '')],
-        ['Created', escapeHtml(formatTimestamp(job.created_utc))],
-        ['Started', escapeHtml(formatTimestamp(job.started_utc))],
-        ['Duration', escapeHtml(formatDuration(job.started_utc, job.finished_utc, job.status))],
-        ['Exit Code', (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code)],
-      ];
+        const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
+        const buildVersion = buildVersionLabel(job);
+        const rows = [
+          ['Job Execution ID', escapeHtml(job.id || '')],
+          ['Pipeline', escapeHtml(pipeline)],
+          ['Build', escapeHtml(buildVersion)],
+          ['Agent', escapeHtml(job.leased_by_agent_id || '')],
+          ['Created', escapeHtml(formatTimestamp(job.created_utc))],
+          ['Started', escapeHtml(formatTimestamp(job.started_utc))],
+          ['Duration', escapeHtml(formatDuration(job.started_utc, job.finished_utc, job.status))],
+          ['Exit Code', (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code)],
+        ];
 
-      const meta = document.getElementById('metaGrid');
-      meta.innerHTML = rows.map(r => '<div class="label">' + r[0] + '</div><div>' + r[1] + '</div>').join('');
+        const meta = document.getElementById('metaGrid');
+        meta.innerHTML = rows.map(r => '<div class="label">' + r[0] + '</div><div>' + r[1] + '</div>').join('');
 
-      const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
-      document.getElementById('logBox').value = output || '<no output yet>';
+        const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
+        document.getElementById('logBox').value = output || '<no output yet>';
 
       const forceBtn = document.getElementById('forceFailBtn');
       const active = ['queued', 'leased', 'running'].includes((job.status || '').toLowerCase());
@@ -217,7 +240,7 @@ const jobHTML = `<!doctype html>
             if (!fres.ok) {
               throw new Error(await fres.text() || ('HTTP ' + fres.status));
             }
-            await loadJob();
+            await loadJob(true);
           } catch (e) {
             alert('Force fail failed: ' + e.message);
           } finally {
@@ -228,7 +251,7 @@ const jobHTML = `<!doctype html>
         forceBtn.style.display = 'none';
       }
 
-      renderReleaseSummary(job, output);
+        renderReleaseSummary(job, output);
 
       try {
         const ares = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts');
@@ -306,6 +329,9 @@ const jobHTML = `<!doctype html>
       } catch (_) {
         document.getElementById('testReportBox').textContent = 'Could not load test report';
       }
+      } finally {
+        refreshInFlight = false;
+      }
     }
 
     function parseReleaseSummary(output) {
@@ -347,8 +373,13 @@ const jobHTML = `<!doctype html>
     }
 
     setBackLink();
-    loadJob();
-    setInterval(loadJob, 500);
+    document.addEventListener('selectionchange', () => {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+      }
+    });
+    loadJob(true);
+    setInterval(() => loadJob(false), 500);
   </script>
 </body>
 </html>`

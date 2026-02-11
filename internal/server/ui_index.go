@@ -88,7 +88,14 @@ const indexHTML = `<!doctype html>
     .pipeline-actions { display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-    th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px 6px; vertical-align: top; }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 8px 6px;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
     td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .status-succeeded { color: var(--ok); font-weight: 600; }
     .status-failed { color: var(--bad); font-weight: 600; }
@@ -148,6 +155,24 @@ const indexHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script src="/ui/pages.js"></script>
   <script>
+    let refreshInFlight = false;
+    let refreshPausedUntil = 0;
+
+    function hasActiveTextSelection() {
+      const sel = window.getSelection && window.getSelection();
+      if (!sel) return false;
+      const text = (sel.toString() || '').trim();
+      return text.length > 0;
+    }
+
+    function shouldPauseRefresh() {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+        return true;
+      }
+      return Date.now() < refreshPausedUntil;
+    }
+
     async function refreshProjects() {
       const data = await apiJSON('/api/v1/projects');
       const root = document.getElementById('projects');
@@ -273,15 +298,25 @@ const indexHTML = `<!doctype html>
       }
     };
     async function tick() {
+      if (refreshInFlight || shouldPauseRefresh()) {
+        return;
+      }
+      refreshInFlight = true;
       try {
         await Promise.all([refreshProjects(), refreshJobs()]);
       } catch (e) {
         console.error(e);
+      } finally {
+        refreshInFlight = false;
       }
     }
+    document.addEventListener('selectionchange', () => {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+      }
+    });
     tick();
-    setInterval(refreshJobs, 3000);
-    setInterval(refreshProjects, 7000);
+    setInterval(tick, 3000);
   </script>
 </body>
 </html>`
