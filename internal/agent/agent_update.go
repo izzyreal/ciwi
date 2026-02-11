@@ -103,6 +103,7 @@ func fetchReleaseAssetsForTag(ctx context.Context, apiBase, repository, targetVe
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "ciwi-agent-updater")
+	applyGitHubAuthHeader(req)
 
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
 	if err != nil {
@@ -185,6 +186,7 @@ func downloadUpdateAsset(ctx context.Context, assetURL, assetName string) (strin
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("User-Agent", "ciwi-agent-updater")
+	applyGitHubAuthHeader(req)
 	resp, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
 	if err != nil {
 		return "", err
@@ -221,6 +223,7 @@ func downloadTextAsset(ctx context.Context, assetURL string) (string, error) {
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("User-Agent", "ciwi-agent-updater")
+	applyGitHubAuthHeader(req)
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
 		return "", err
@@ -247,6 +250,17 @@ func exeExt() string {
 
 func copyFile(src, dst string, mode os.FileMode) error {
 	return updateutil.CopyFile(src, dst, mode)
+}
+
+func applyGitHubAuthHeader(req *http.Request) {
+	if req == nil {
+		return
+	}
+	token := strings.TrimSpace(envOrDefault("CIWI_GITHUB_TOKEN", ""))
+	if token == "" {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 }
 
 func processRunning(pid int) (bool, error) {

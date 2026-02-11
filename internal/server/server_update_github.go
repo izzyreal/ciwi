@@ -25,6 +25,7 @@ func (s *stateStore) fetchLatestUpdateInfo(ctx context.Context) (latestUpdateInf
 	req = req.WithContext(ctx)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "ciwi-updater")
+	applyGitHubAuthHeader(req)
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
 	if err != nil {
 		return latestUpdateInfo{}, fmt.Errorf("request latest release: %w", err)
@@ -79,4 +80,15 @@ func isVersionNewer(latest, current string) bool {
 
 func currentVersion() string {
 	return updateutil.CurrentVersion()
+}
+
+func applyGitHubAuthHeader(req *http.Request) {
+	if req == nil {
+		return
+	}
+	token := strings.TrimSpace(envOrDefault("CIWI_GITHUB_TOKEN", ""))
+	if token == "" {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 }

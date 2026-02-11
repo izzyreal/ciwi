@@ -26,6 +26,7 @@ func downloadUpdateAsset(ctx context.Context, assetURL, assetName string) (strin
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("User-Agent", "ciwi-updater")
+	applyGitHubAuthHeader(req)
 	req = req.WithContext(ctx)
 	resp, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
 	if err != nil {
@@ -62,6 +63,7 @@ func downloadTextAsset(ctx context.Context, assetURL string) (string, error) {
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("User-Agent", "ciwi-updater")
+	applyGitHubAuthHeader(req)
 	req = req.WithContext(ctx)
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
