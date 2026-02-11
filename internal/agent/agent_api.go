@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -67,7 +68,13 @@ func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID strin
 		caps = map[string]string{}
 	}
 	if caps["executor"] == "" {
-		caps["executor"] = "shell"
+		caps["executor"] = executorScript
+	}
+	if caps["shell"] == "" {
+		caps["shell"] = defaultShellForRuntime()
+	}
+	if caps["shells"] == "" {
+		caps["shells"] = strings.Join(supportedShellsForRuntime(), ",")
 	}
 	if caps["os"] == "" {
 		caps["os"] = runtime.GOOS

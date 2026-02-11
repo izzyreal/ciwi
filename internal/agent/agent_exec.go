@@ -18,6 +18,13 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
+const (
+	executorScript  = "script"
+	shellPosix      = "posix"
+	shellCmd        = "cmd"
+	shellPowerShell = "powershell"
+)
+
 func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, job protocol.Job) error {
 	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 		AgentID:      agentID,
@@ -73,24 +80,19 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		traceShell = false
 	}
 
-	tracedScript := job.Script
-	if runtime.GOOS == "windows" {
-		prefix := "$ErrorActionPreference='Stop'\n"
-		if traceShell {
-			prefix += "Set-PSDebug -Trace 1\n"
-		}
-		tracedScript = prefix + tracedScript
-	} else {
-		prefix := "set -e\n"
-		if traceShell {
-			prefix += "set -x\n"
-		}
-		tracedScript = prefix + tracedScript
+	shell, err := resolveJobShell(job.RequiredCapabilities)
+	if err != nil {
+		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("resolve job shell: %v", err), "")
 	}
+	tracedScript := applyShellTracing(shell, job.Script, traceShell)
 
 	fmt.Fprintf(&output, "[run] shell_trace=%t go_build_verbose=%t\n", traceShell, verboseGo)
+	fmt.Fprintf(&output, "[run] shell=%s\n", shell)
 
-	bin, args := commandForScript(tracedScript)
+	bin, args, err := commandForScript(shell, tracedScript)
+	if err != nil {
+		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("build shell command: %v", err), "")
+	}
 	cmd := exec.CommandContext(runCtx, bin, args...)
 	cmd.Dir = execDir
 	cmd.Stdout = &output
@@ -101,7 +103,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	defer stopStreaming()
 
 	runStart := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	duration := time.Since(runStart).Round(time.Millisecond)
 	fmt.Fprintf(&output, "\n[run] duration=%s\n", duration)
 
@@ -166,11 +168,84 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	return nil
 }
 
-func commandForScript(script string) (string, []string) {
-	if runtime.GOOS == "windows" {
-		return "powershell", []string{"-NoProfile", "-NonInteractive", "-Command", script}
+func commandForScript(shell, script string) (string, []string, error) {
+	switch normalizeShell(shell) {
+	case shellPosix:
+		return "sh", []string{"-c", script}, nil
+	case shellCmd:
+		if runtime.GOOS != "windows" {
+			return "", nil, fmt.Errorf("shell %q is only supported on windows agents", shellCmd)
+		}
+		return "cmd", []string{"/d", "/s", "/c", script}, nil
+	case shellPowerShell:
+		if runtime.GOOS != "windows" {
+			return "", nil, fmt.Errorf("shell %q is only supported on windows agents", shellPowerShell)
+		}
+		return "powershell", []string{"-NoProfile", "-NonInteractive", "-Command", script}, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported shell %q", shell)
 	}
-	return "sh", []string{"-c", script}
+}
+
+func applyShellTracing(shell, script string, trace bool) string {
+	switch normalizeShell(shell) {
+	case shellCmd:
+		prefix := "@echo off\r\n"
+		if trace {
+			prefix = "@echo on\r\n"
+		}
+		return prefix + script
+	case shellPowerShell:
+		prefix := "$ErrorActionPreference='Stop'\n"
+		if trace {
+			prefix += "Set-PSDebug -Trace 1\n"
+		}
+		return prefix + script
+	default:
+		prefix := "set -e\n"
+		if trace {
+			prefix += "set -x\n"
+		}
+		return prefix + script
+	}
+}
+
+func resolveJobShell(requiredCaps map[string]string) (string, error) {
+	raw := strings.TrimSpace(requiredCaps["shell"])
+	if raw == "" {
+		return defaultShellForRuntime(), nil
+	}
+	if v := normalizeShell(raw); v != "" {
+		return v, nil
+	}
+	return "", fmt.Errorf("unsupported shell %q", raw)
+}
+
+func defaultShellForRuntime() string {
+	if runtime.GOOS == "windows" {
+		return shellCmd
+	}
+	return shellPosix
+}
+
+func supportedShellsForRuntime() []string {
+	if runtime.GOOS == "windows" {
+		return []string{shellCmd, shellPowerShell}
+	}
+	return []string{shellPosix}
+}
+
+func normalizeShell(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case shellPosix:
+		return shellPosix
+	case shellCmd:
+		return shellCmd
+	case shellPowerShell:
+		return shellPowerShell
+	default:
+		return ""
+	}
 }
 
 type syncBuffer struct {

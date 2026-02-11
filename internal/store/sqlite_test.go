@@ -329,7 +329,8 @@ func TestCapabilitiesMatchToolConstraints(t *testing.T) {
 	agentCaps := map[string]string{
 		"os":         "linux",
 		"arch":       "amd64",
-		"executor":   "shell",
+		"executor":   "script",
+		"shell":      "posix",
 		"tool.go":    "1.25.7",
 		"tool.git":   "2.44.0",
 		"tool.cmake": "3.28.1",
@@ -351,6 +352,24 @@ func TestCapabilitiesMatchToolConstraints(t *testing.T) {
 	req["requires.tool.go"] = ">1.26"
 	if capabilitiesMatch(agentCaps, req) {
 		t.Fatalf("expected go constraint >1.26 to fail")
+	}
+}
+
+func TestCapabilitiesMatchShellsList(t *testing.T) {
+	agentCaps := map[string]string{
+		"os":       "windows",
+		"arch":     "amd64",
+		"executor": "script",
+		"shell":    "cmd",
+		"shells":   "cmd,powershell",
+	}
+	req := map[string]string{
+		"os":       "windows",
+		"executor": "script",
+		"shell":    "powershell",
+	}
+	if !capabilitiesMatch(agentCaps, req) {
+		t.Fatalf("expected shell requirement to match via shells list")
 	}
 }
 

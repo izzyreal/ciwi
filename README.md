@@ -20,7 +20,7 @@ go run ./cmd/ciwi all-in-one
 - `CIWI_SERVER_URL`: agent target base URL (default `http://127.0.0.1:8112`)
 - `CIWI_AGENT_ID`: override agent ID (default `agent-<hostname>`)
 - `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent`)
-- `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` / `Set-PSDebug`) (default `true`)
+- `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` for `posix`, `@echo on` for `cmd`, `Set-PSDebug -Trace 1` for `powershell`) (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
 - `CIWI_UPDATE_REPO`: GitHub repo for update checks (default `izzyreal/ciwi`)
 - `CIWI_UPDATE_API_BASE`: GitHub API base URL (default `https://api.github.com`)
@@ -54,7 +54,8 @@ jobs:
     runs_on:
       os: linux
       arch: amd64
-      executor: shell
+      executor: script
+      shell: posix
     requires:
       tools:
         go: ">=1.24"
@@ -278,9 +279,13 @@ When versioning is active, ciwi injects env vars into every job in that pipeline
 Config parsing uses strict YAML field validation (`KnownFields`), so unknown keys are rejected.
 
 `steps` supports two step types:
-- `run`: executes a shell command line.
+- `run`: executes a script line in the shell defined by `runs_on.shell`.
 - `test`: executes a dedicated test command and enables parsed test reports in job UI/API.
   - fields: `name` (optional), `command` (required), `format` (optional, currently `go-test-json`).
+
+Executor model:
+- `runs_on.executor` must be `script`.
+- `runs_on.shell` is required when `runs_on.executor=script` and must be `posix`, `cmd`, or `powershell`.
 
 Step-level env vars are supported:
 - `steps[].env` key/value pairs are passed to the job process environment.

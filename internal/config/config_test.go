@@ -277,3 +277,84 @@ pipelines:
 		t.Fatalf("expected auto_bump validation error, got: %v", err)
 	}
 }
+
+func TestParseRejectsInvalidExecutorAndMissingShell(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: shell
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+`), "test-invalid-executor")
+	if err == nil || !strings.Contains(err.Error(), `runs_on.executor must be "script"`) {
+		t.Fatalf("expected runs_on.executor validation error, got: %v", err)
+	}
+}
+
+func TestParseRejectsShellWithoutScriptExecutor(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+`), "test-shell-without-script-executor")
+	if err == nil || !strings.Contains(err.Error(), `runs_on.executor must be "script" when runs_on.shell is set`) {
+		t.Fatalf("expected runs_on shell/executor validation error, got: %v", err)
+	}
+}
+
+func TestParseRejectsScriptExecutorWithoutShell(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: script
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+`), "test-script-executor-without-shell")
+	if err == nil || !strings.Contains(err.Error(), `runs_on.shell is required when runs_on.executor=script`) {
+		t.Fatalf("expected runs_on.shell required validation error, got: %v", err)
+	}
+}
+
+func TestParseAcceptsPowerShellShell(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: win
+    jobs:
+      - id: smoke
+        runs_on:
+          executor: script
+          shell: powershell
+        timeout_seconds: 60
+        steps:
+          - run: Write-Host "ok"
+`), "test-powershell-shell")
+	if err != nil {
+		t.Fatalf("expected powershell shell to validate, got: %v", err)
+	}
+}

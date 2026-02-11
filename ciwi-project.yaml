@@ -21,7 +21,8 @@ pipelines:
     jobs:
       - id: unit-tests
         runs_on:
-          executor: shell
+          executor: script
+          shell: posix
         requires:
           tools:
             git: "*"
@@ -34,7 +35,8 @@ pipelines:
               format: go-test-json
       - id: build-cross-platform
         runs_on:
-          executor: shell
+          executor: script
+          shell: posix
         requires:
           tools:
             git: "*"
@@ -63,6 +65,24 @@ pipelines:
         steps:
           - run: mkdir -p dist
           - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
+      - id: windows-cmd-smoke
+        runs_on:
+          os: windows
+          arch: amd64
+          executor: script
+          shell: cmd
+        timeout_seconds: 120
+        steps:
+          - run: echo ciwi cmd smoke && ver
+      - id: windows-powershell-smoke
+        runs_on:
+          os: windows
+          arch: amd64
+          executor: script
+          shell: powershell
+        timeout_seconds: 120
+        steps:
+          - run: 'Write-Host "ciwi powershell smoke"; $PSVersionTable.PSVersion.ToString()'
   - id: release
     trigger: manual
     depends_on:
@@ -76,7 +96,8 @@ pipelines:
     jobs:
       - id: github-release
         runs_on:
-          executor: shell
+          executor: script
+          shell: posix
         requires:
           tools:
             git: "*"

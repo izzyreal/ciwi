@@ -12,8 +12,11 @@ import (
 var versionPattern = regexp.MustCompile(`([0-9]+(?:\.[0-9]+){1,3})`)
 
 func detectAgentCapabilities() map[string]string {
+	shells := supportedShellsForRuntime()
 	caps := map[string]string{
-		"executor": "shell",
+		"executor": executorScript,
+		"shell":    defaultShellForRuntime(),
+		"shells":   strings.Join(shells, ","),
 		"os":       runtime.GOOS,
 		"arch":     runtime.GOARCH,
 	}

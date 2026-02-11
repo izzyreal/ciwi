@@ -81,15 +81,40 @@ func TestTrimOutput(t *testing.T) {
 }
 
 func TestCommandForScript(t *testing.T) {
-	bin, args := commandForScript("echo hi")
+	bin, args, err := commandForScript(shellPosix, "echo hi")
+	if err != nil {
+		t.Fatalf("commandForScript(posix): %v", err)
+	}
+	if bin != "sh" || len(args) != 2 || args[0] != "-c" || args[1] != "echo hi" {
+		t.Fatalf("unexpected posix command: %s %v", bin, args)
+	}
+
+	bin, args, err = commandForScript(shellCmd, "echo hi")
 	if runtime.GOOS == "windows" {
-		if bin != "powershell" || len(args) == 0 || args[len(args)-1] != "echo hi" {
-			t.Fatalf("unexpected windows command: %s %v", bin, args)
+		if err != nil {
+			t.Fatalf("commandForScript(cmd): %v", err)
+		}
+		if bin != "cmd" || len(args) != 4 || args[0] != "/d" || args[1] != "/s" || args[2] != "/c" || args[3] != "echo hi" {
+			t.Fatalf("unexpected cmd command: %s %v", bin, args)
 		}
 		return
 	}
-	if bin != "sh" || len(args) != 2 || args[0] != "-c" || args[1] != "echo hi" {
-		t.Fatalf("unexpected unix command: %s %v", bin, args)
+	if err == nil {
+		t.Fatalf("expected cmd shell to fail on non-windows, got %s %v", bin, args)
+	}
+
+	bin, args, err = commandForScript(shellPowerShell, "Write-Host hi")
+	if runtime.GOOS == "windows" {
+		if err != nil {
+			t.Fatalf("commandForScript(powershell): %v", err)
+		}
+		if bin != "powershell" || len(args) != 4 || args[0] != "-NoProfile" || args[1] != "-NonInteractive" || args[2] != "-Command" || args[3] != "Write-Host hi" {
+			t.Fatalf("unexpected powershell command: %s %v", bin, args)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatalf("expected powershell shell to fail on non-windows, got %s %v", bin, args)
 	}
 }
 

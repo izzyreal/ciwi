@@ -89,11 +89,33 @@ func capabilitiesMatch(agentCapabilities, requiredCapabilities map[string]string
 			}
 			continue
 		}
+		if k == "shell" {
+			if !shellCapabilityMatch(agentCapabilities, requiredValue) {
+				return false
+			}
+			continue
+		}
 		if agentCapabilities[k] != requiredValue {
 			return false
 		}
 	}
 	return true
+}
+
+func shellCapabilityMatch(agentCapabilities map[string]string, requiredValue string) bool {
+	required := strings.ToLower(strings.TrimSpace(requiredValue))
+	if required == "" {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(agentCapabilities["shell"]), required) {
+		return true
+	}
+	for _, s := range strings.Split(agentCapabilities["shells"], ",") {
+		if strings.EqualFold(strings.TrimSpace(s), required) {
+			return true
+		}
+	}
+	return false
 }
 
 func toolConstraintMatch(agentValue, constraint string) bool {

@@ -191,6 +191,20 @@ func (cfg File) Validate() []string {
 			if job.TimeoutSeconds < 0 {
 				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].timeout_seconds must be >= 0", i, j))
 			}
+			executor := strings.ToLower(strings.TrimSpace(job.RunsOn["executor"]))
+			shell := strings.ToLower(strings.TrimSpace(job.RunsOn["shell"]))
+			if executor != "" && executor != "script" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].runs_on.executor must be \"script\"", i, j))
+			}
+			if shell != "" && shell != "posix" && shell != "cmd" && shell != "powershell" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].runs_on.shell must be one of posix,cmd,powershell", i, j))
+			}
+			if executor == "script" && shell == "" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].runs_on.shell is required when runs_on.executor=script", i, j))
+			}
+			if shell != "" && executor != "script" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].runs_on.executor must be \"script\" when runs_on.shell is set", i, j))
+			}
 			if len(job.Steps) == 0 {
 				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps must contain at least one step", i, j))
 			}

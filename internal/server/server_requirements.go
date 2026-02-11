@@ -42,6 +42,21 @@ func diagnoseUnmetRequirements(required map[string]string, agents map[string]age
 			}
 			continue
 		}
+		if k == "shell" {
+			need := strings.TrimSpace(v)
+			ok := false
+			for _, a := range agents {
+				caps := mergeCapabilities(a, nil)
+				if shellCapabilityMatch(caps, need) {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				reasons = append(reasons, fmt.Sprintf("no agent with %s=%s", k, need))
+			}
+			continue
+		}
 		need := strings.TrimSpace(v)
 		ok := false
 		for _, a := range agents {
@@ -56,6 +71,22 @@ func diagnoseUnmetRequirements(required map[string]string, agents map[string]age
 		}
 	}
 	return reasons
+}
+
+func shellCapabilityMatch(agentCapabilities map[string]string, requiredValue string) bool {
+	required := strings.ToLower(strings.TrimSpace(requiredValue))
+	if required == "" {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(agentCapabilities["shell"]), required) {
+		return true
+	}
+	for _, s := range strings.Split(agentCapabilities["shells"], ",") {
+		if strings.EqualFold(strings.TrimSpace(s), required) {
+			return true
+		}
+	}
+	return false
 }
 
 func toolConstraintMatch(agentValue, constraint string) bool {
