@@ -154,6 +154,8 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				job.Metadata = merged
 			}
 		}
+		// Status updates are a liveness signal while an agent is busy.
+		s.markAgentSeen(req.AgentID, req.TimestampUTC)
 		writeJSON(w, http.StatusOK, map[string]any{"job": job})
 		return
 	}
@@ -203,6 +205,8 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			for i := range artifacts {
 				artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
 			}
+			// Artifact upload traffic confirms the agent is alive.
+			s.markAgentSeen(req.AgentID, time.Now().UTC())
 			writeJSON(w, http.StatusOK, protocol.JobArtifactsResponse{Artifacts: artifacts})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -250,6 +254,8 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			// Test report upload is also a liveness signal.
+			s.markAgentSeen(req.AgentID, time.Now().UTC())
 			writeJSON(w, http.StatusOK, protocol.JobTestReportResponse{Report: req.Report})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -264,6 +270,24 @@ func (s *stateStore) attachTestSummaries(jobs []protocol.Job) {
 	for i := range jobs {
 		s.attachTestSummary(&jobs[i])
 	}
+}
+
+func (s *stateStore) markAgentSeen(agentID string, ts time.Time) {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return
+	}
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.agents[agentID]
+	if !ok {
+		return
+	}
+	a.LastSeenUTC = ts
+	s.agents[agentID] = a
 }
 
 func (s *stateStore) attachTestSummary(job *protocol.Job) {
