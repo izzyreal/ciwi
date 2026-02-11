@@ -25,9 +25,12 @@ echo "Requesting sudo access..."
 sudo -v
 
 SERVICE_NAME="ciwi"
+UPDATER_SERVICE_NAME="ciwi-updater"
 BINARY_PATH="/usr/local/bin/ciwi"
 UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+UPDATER_UNIT_FILE="/etc/systemd/system/${UPDATER_SERVICE_NAME}.service"
 ENV_FILE="/etc/default/ciwi"
+POLKIT_RULE_FILE="/etc/polkit-1/rules.d/90-ciwi-updater.rules"
 DATA_DIR="/var/lib/ciwi"
 LOG_DIR="/var/log/ciwi"
 
@@ -36,6 +39,7 @@ sudo systemctl disable --now "${SERVICE_NAME}" >/dev/null 2>&1 || true
 
 echo "[2/5] Removing systemd unit..."
 sudo rm -f "${UNIT_FILE}"
+sudo rm -f "${UPDATER_UNIT_FILE}"
 sudo systemctl daemon-reload
 
 echo "[3/5] Removing ciwi binary..."
@@ -43,6 +47,7 @@ sudo rm -f "${BINARY_PATH}"
 
 echo "[4/5] Removing default env file..."
 sudo rm -f "${ENV_FILE}"
+sudo rm -f "${POLKIT_RULE_FILE}"
 
 echo "[5/5] Keeping data and logs by default:"
 echo "  ${DATA_DIR}"

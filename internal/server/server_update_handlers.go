@@ -144,6 +144,38 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if isLinuxSystemUpdaterEnabled() {
+		if err := stageLinuxUpdateBinary(info.TagName, info, newBinPath); err != nil {
+			_ = s.persistUpdateStatus(map[string]string{
+				"update_last_apply_status": "failed",
+				"update_message":           "stage update: " + err.Error(),
+			})
+			http.Error(w, fmt.Sprintf("stage update: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if err := triggerLinuxSystemUpdater(); err != nil {
+			_ = s.persistUpdateStatus(map[string]string{
+				"update_last_apply_status": "failed",
+				"update_message":           "trigger updater: " + err.Error(),
+			})
+			http.Error(w, fmt.Sprintf("trigger updater: %v", err), http.StatusInternalServerError)
+			return
+		}
+		_ = s.persistUpdateStatus(map[string]string{
+			"update_last_apply_status": "staged",
+			"update_message":           "staged update and triggered linux updater",
+			"update_latest_version":    info.TagName,
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"updated":         true,
+			"message":         "staged update; linux updater triggered",
+			"target_version":  info.TagName,
+			"current_version": currentVersion(),
+			"staged":          true,
+		})
+		return
+	}
+
 	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
 	if err := copyFile(exePath, helperPath, 0o755); err != nil {
 		_ = s.persistUpdateStatus(map[string]string{

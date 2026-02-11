@@ -39,12 +39,17 @@ sudo -v
 
 REPO="izzyreal/ciwi"
 SERVICE_NAME="ciwi"
+UPDATER_SERVICE_NAME="ciwi-updater"
 BINARY_PATH="/usr/local/bin/ciwi"
 DATA_DIR="/var/lib/ciwi"
 ARTIFACTS_DIR="${DATA_DIR}/artifacts"
+UPDATES_DIR="${DATA_DIR}/updates"
 LOG_DIR="/var/log/ciwi"
 ENV_FILE="/etc/default/ciwi"
 UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+UPDATER_UNIT_FILE="/etc/systemd/system/${UPDATER_SERVICE_NAME}.service"
+POLKIT_RULE_FILE="/etc/polkit-1/rules.d/90-ciwi-updater.rules"
+SYSTEMCTL_PATH="$(command -v systemctl)"
 
 ARCH_RAW="$(uname -m)"
 case "$ARCH_RAW" in
@@ -101,15 +106,19 @@ if ! id ciwi >/dev/null 2>&1; then
   sudo useradd --system --home "${DATA_DIR}" --create-home --shell /usr/sbin/nologin ciwi 2>/dev/null || \
   sudo useradd --system --home "${DATA_DIR}" --create-home --shell /bin/false ciwi
 fi
-sudo mkdir -p "${DATA_DIR}" "${ARTIFACTS_DIR}" "${LOG_DIR}"
+sudo mkdir -p "${DATA_DIR}" "${ARTIFACTS_DIR}" "${UPDATES_DIR}" "${LOG_DIR}"
 sudo chown -R ciwi:ciwi "${DATA_DIR}" "${LOG_DIR}"
 
-echo "[5/6] Writing config and systemd unit..."
+echo "[5/7] Writing config and systemd units..."
 if [ ! -f "${ENV_FILE}" ]; then
   sudo tee "${ENV_FILE}" >/dev/null <<EOF
 CIWI_SERVER_ADDR=0.0.0.0:8112
 CIWI_DB_PATH=${DATA_DIR}/ciwi.db
 CIWI_ARTIFACTS_DIR=${ARTIFACTS_DIR}
+CIWI_UPDATE_STAGING_DIR=${UPDATES_DIR}
+CIWI_UPDATE_STAGED_MANIFEST=${UPDATES_DIR}/pending.json
+CIWI_UPDATER_UNIT=${UPDATER_SERVICE_NAME}.service
+CIWI_SYSTEMCTL_PATH=${SYSTEMCTL_PATH}
 CIWI_LOG_LEVEL=info
 EOF
 else
@@ -133,13 +142,42 @@ RestartSec=2
 WorkingDirectory=${DATA_DIR}
 StandardOutput=append:${LOG_DIR}/server.out.log
 StandardError=append:${LOG_DIR}/server.err.log
-NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-echo "[6/6] Starting service..."
+sudo tee "${UPDATER_UNIT_FILE}" >/dev/null <<EOF
+[Unit]
+Description=ciwi staged updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=-${ENV_FILE}
+ExecStart=${BINARY_PATH} apply-staged-update
+WorkingDirectory=${DATA_DIR}
+NoNewPrivileges=true
+EOF
+
+echo "[6/7] Writing polkit rule for updater trigger..."
+sudo mkdir -p "/etc/polkit-1/rules.d"
+sudo tee "${POLKIT_RULE_FILE}" >/dev/null <<EOF
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" &&
+      action.lookup("unit") == "${UPDATER_SERVICE_NAME}.service" &&
+      action.lookup("verb") == "start" &&
+      subject.user == "ciwi") {
+    return polkit.Result.YES;
+  }
+});
+EOF
+sudo chmod 0644 "${POLKIT_RULE_FILE}"
+
+echo "[7/7] Starting service..."
 sudo systemctl daemon-reload
 sudo systemctl enable --now "${SERVICE_NAME}"
 
@@ -150,6 +188,7 @@ echo "Binary:       ${BINARY_PATH}"
 echo "Config:       ${ENV_FILE}"
 echo "Data:         ${DATA_DIR}"
 echo "Artifacts:    ${ARTIFACTS_DIR}"
+echo "Updates:      ${UPDATES_DIR}"
 echo
 echo "Useful commands:"
 echo "  sudo systemctl status ${SERVICE_NAME}"

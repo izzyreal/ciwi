@@ -93,12 +93,15 @@ Installer behavior:
 - Installs `/usr/local/bin/ciwi`.
 - Creates system user `ciwi` and data/log directories under `/var/lib/ciwi` and `/var/log/ciwi`.
 - Installs and starts `ciwi.service` via systemd.
+- Installs `ciwi-updater.service` (oneshot, root) for staged self-updates.
+- Installs `/etc/polkit-1/rules.d/90-ciwi-updater.rules` so user `ciwi` can start only the updater unit.
 
 Default paths:
 - Binary: `/usr/local/bin/ciwi`
 - Env file: `/etc/default/ciwi`
 - SQLite DB: `/var/lib/ciwi/ciwi.db`
 - Artifacts: `/var/lib/ciwi/artifacts`
+- Update staging: `/var/lib/ciwi/updates`
 - Logs: `/var/log/ciwi/server.out.log`, `/var/log/ciwi/server.err.log`
 
 After install:
