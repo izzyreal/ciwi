@@ -25,6 +25,10 @@ func (s *stateStore) uiHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		_, _ = w.Write([]byte(uiSharedJS))
 		return
+	case r.URL.Path == "/ui/pages.js":
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		_, _ = w.Write([]byte(uiPagesJS))
+		return
 	case strings.HasPrefix(r.URL.Path, "/projects/"):
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(projectHTML))

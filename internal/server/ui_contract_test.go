@@ -69,6 +69,9 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(rootHTML, `<script src="/ui/shared.js"></script>`) {
 		t.Fatalf("root page missing shared js include")
 	}
+	if !strings.Contains(rootHTML, `<script src="/ui/pages.js"></script>`) {
+		t.Fatalf("root page missing pages js include")
+	}
 	if !strings.Contains(rootHTML, `href="/agents"`) {
 		t.Fatalf("root page missing agents link")
 	}
@@ -101,6 +104,18 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	}
 	if !strings.Contains(js, "function formatBytes(") {
 		t.Fatalf("shared js missing formatBytes helper")
+	}
+
+	resp = mustJSONRequest(t, client, http.MethodGet, ts.URL+"/ui/pages.js", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /ui/pages.js status=%d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	pagesJS := readBody(t, resp)
+	if !strings.Contains(pagesJS, "function apiJSON(") {
+		t.Fatalf("pages js missing apiJSON helper")
+	}
+	if !strings.Contains(pagesJS, "function buildJobExecutionRow(") {
+		t.Fatalf("pages js missing job row builder")
 	}
 
 	faviconResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/favicon.ico", nil)
@@ -182,6 +197,9 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 	}
 	if !strings.Contains(projectHTML, "loadProject()") {
 		t.Fatalf("project page missing loadProject call")
+	}
+	if !strings.Contains(projectHTML, `<script src="/ui/pages.js"></script>`) {
+		t.Fatalf("project page missing pages js include")
 	}
 	if !strings.Contains(projectHTML, "table-layout: fixed") || !strings.Contains(projectHTML, "overflow-wrap: anywhere") {
 		t.Fatalf("project page missing log overflow containment CSS")

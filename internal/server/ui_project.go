@@ -107,27 +107,19 @@ const projectHTML = `<!doctype html>
   </main>
 
   <script src="/ui/shared.js"></script>
+  <script src="/ui/pages.js"></script>
   <script>
     function projectIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
       return parts.length >= 2 ? parts[1] : '';
     }
-    async function api(path, opts = {}) {
-      const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || ('HTTP ' + res.status));
-      }
-      return await res.json();
-    }
-
     let currentProjectName = '';
     let currentProjectID = 0;
 
     async function loadProject() {
       const id = projectIdFromPath();
       if (!id) return;
-      const data = await api('/api/v1/projects/' + encodeURIComponent(id));
+      const data = await apiJSON('/api/v1/projects/' + encodeURIComponent(id));
       const p = data.project;
       currentProjectID = p.id;
       currentProjectName = p.name || '';
@@ -157,7 +149,7 @@ const projectHTML = `<!doctype html>
         runAll.onclick = async () => {
           runAll.disabled = true;
           try {
-            await api('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: '{}' });
+            await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: '{}' });
             await loadHistory();
           } catch (e) {
             alert('Run failed: ' + e.message);
@@ -171,7 +163,7 @@ const projectHTML = `<!doctype html>
         dryAll.onclick = async () => {
           dryAll.disabled = true;
           try {
-            await api('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+            await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
             await loadHistory();
           } catch (e) {
             alert('Dry run failed: ' + e.message);
@@ -207,7 +199,7 @@ const projectHTML = `<!doctype html>
             btn.onclick = async () => {
               btn.disabled = true;
               try {
-                await api('/api/v1/pipelines/' + pl.id + '/run-selection', {
+                await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
                   method: 'POST',
                   body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index })
                 });
@@ -225,7 +217,7 @@ const projectHTML = `<!doctype html>
             dryBtn.onclick = async () => {
               dryBtn.disabled = true;
               try {
-                await api('/api/v1/pipelines/' + pl.id + '/run-selection', {
+                await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
                   method: 'POST',
                   body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true })
                 });
@@ -252,7 +244,7 @@ const projectHTML = `<!doctype html>
       const id = projectIdFromPath();
       const select = document.getElementById('vaultConnectionSelect');
       const txt = document.getElementById('vaultSecretsText');
-      const conns = await api('/api/v1/vault/connections');
+      const conns = await apiJSON('/api/v1/vault/connections');
       select.innerHTML = '<option value="0">(none)</option>';
       (conns.connections || []).forEach(c => {
         const opt = document.createElement('option');
@@ -260,7 +252,7 @@ const projectHTML = `<!doctype html>
         opt.textContent = c.name + ' (' + c.url + ')';
         select.appendChild(opt);
       });
-      const settingsResp = await api('/api/v1/projects/' + encodeURIComponent(id) + '/vault');
+      const settingsResp = await apiJSON('/api/v1/projects/' + encodeURIComponent(id) + '/vault');
       const settings = settingsResp.settings || {};
       select.value = String(settings.vault_connection_id || 0);
       const lines = (settings.secrets || []).map(s => {
@@ -301,7 +293,7 @@ const projectHTML = `<!doctype html>
           vault_connection_id: Number(document.getElementById('vaultConnectionSelect').value || '0'),
           secrets: parseSecretLines(document.getElementById('vaultSecretsText').value),
         };
-        await api('/api/v1/projects/' + encodeURIComponent(id) + '/vault', { method: 'PUT', body: JSON.stringify(payload) });
+        await apiJSON('/api/v1/projects/' + encodeURIComponent(id) + '/vault', { method: 'PUT', body: JSON.stringify(payload) });
         msg.textContent = 'Saved';
       } catch (e) {
         msg.textContent = 'Error: ' + e.message;
@@ -313,7 +305,7 @@ const projectHTML = `<!doctype html>
       const msg = document.getElementById('vaultMsg');
       msg.textContent = 'Testing...';
       try {
-        const r = await api('/api/v1/projects/' + encodeURIComponent(id) + '/vault-test', { method: 'POST', body: '{}' });
+        const r = await apiJSON('/api/v1/projects/' + encodeURIComponent(id) + '/vault-test', { method: 'POST', body: '{}' });
         const details = r.details || {};
         const failures = Object.entries(details).filter(([, v]) => v !== 'ok');
         const suffix = failures.length > 0
@@ -326,20 +318,15 @@ const projectHTML = `<!doctype html>
     };
 
     async function loadHistory() {
-      const data = await api('/api/v1/jobs');
+      const data = await apiJSON('/api/v1/jobs');
       const body = document.getElementById('historyBody');
       body.innerHTML = '';
       const rows = (data.job_executions || data.jobs || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
       rows.forEach(job => {
-        const tr = document.createElement('tr');
-        const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
-        const backTo = encodeURIComponent(window.location.pathname || '/');
-        tr.innerHTML =
-          '<td><a href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + escapeHtml(jobDescription(job)) + '</a></td>' +
-          '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
-          '<td>' + escapeHtml(pipeline) + '</td>' +
-          '<td>' + escapeHtml(job.leased_by_agent_id || '') + '</td>' +
-          '<td>' + escapeHtml(formatTimestamp(job.created_utc)) + '</td>';
+        const tr = buildJobExecutionRow(job, {
+          includeActions: false,
+          backPath: window.location.pathname || '/'
+        });
         body.appendChild(tr);
       });
     }

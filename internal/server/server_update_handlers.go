@@ -1,0 +1,214 @@
+package server
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	info, err := s.fetchLatestUpdateInfo(r.Context())
+	if err != nil {
+		_ = s.persistUpdateStatus(map[string]string{
+			"update_last_checked_utc": time.Now().UTC().Format(time.RFC3339Nano),
+			"update_current_version":  currentVersion(),
+			"update_message":          err.Error(),
+			"update_available":        "0",
+		})
+		writeJSON(w, http.StatusOK, updateCheckResponse{
+			CurrentVersion: currentVersion(),
+			Message:        err.Error(),
+		})
+		return
+	}
+
+	resp := updateCheckResponse{
+		CurrentVersion:  currentVersion(),
+		LatestVersion:   info.TagName,
+		UpdateAvailable: isVersionNewer(info.TagName, currentVersion()),
+		ReleaseURL:      info.HTMLURL,
+		AssetName:       info.Asset.Name,
+	}
+	if !resp.UpdateAvailable {
+		resp.Message = "already up to date"
+	}
+	_ = s.persistUpdateStatus(map[string]string{
+		"update_last_checked_utc": time.Now().UTC().Format(time.RFC3339Nano),
+		"update_current_version":  currentVersion(),
+		"update_latest_version":   info.TagName,
+		"update_release_url":      info.HTMLURL,
+		"update_asset_name":       info.Asset.Name,
+		"update_available":        boolString(resp.UpdateAvailable),
+		"update_message":          resp.Message,
+	})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.update.mu.Lock()
+	if s.update.inProgress {
+		s.update.mu.Unlock()
+		http.Error(w, "update already in progress", http.StatusConflict)
+		return
+	}
+	s.update.inProgress = true
+	s.update.lastMessage = "update started"
+	s.update.mu.Unlock()
+	defer func() {
+		s.update.mu.Lock()
+		s.update.inProgress = false
+		s.update.mu.Unlock()
+	}()
+	_ = s.persistUpdateStatus(map[string]string{
+		"update_last_apply_utc":    time.Now().UTC().Format(time.RFC3339Nano),
+		"update_last_apply_status": "running",
+		"update_message":           "update started",
+	})
+
+	exePath, err := os.Executable()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("resolve executable path: %v", err), http.StatusInternalServerError)
+		return
+	}
+	exePath, _ = filepath.Abs(exePath)
+	if looksLikeGoRunBinary(exePath) {
+		msg := "self-update is unavailable for go run binaries; run built ciwi binary instead"
+		_ = s.persistUpdateStatus(map[string]string{
+			"update_last_apply_status": "failed",
+			"update_message":           msg,
+		})
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
+
+	info, err := s.fetchLatestUpdateInfo(r.Context())
+	if err != nil {
+		_ = s.persistUpdateStatus(map[string]string{
+			"update_last_apply_status": "failed",
+			"update_message":           err.Error(),
+		})
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !isVersionNewer(info.TagName, currentVersion()) {
+		_ = s.persistUpdateStatus(map[string]string{
+			"update_last_apply_status": "noop",
+			"update_message":           "already up to date",
+		})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"updated": false,
+			"message": "already up to date",
+		})
+		return
+	}
+
+	newBinPath, err := downloadUpdateAsset(r.Context(), info.Asset.URL, info.Asset.Name)
+	if err != nil {
+		_ = s.persistUpdateStatus(map[string]string{
+			"update_last_apply_status": "failed",
+			"update_message":           "download update asset: " + err.Error(),
+		})
+		http.Error(w, fmt.Sprintf("download update asset: %v", err), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(info.ChecksumAsset.URL) != "" {
+		checksumText, err := downloadTextAsset(r.Context(), info.ChecksumAsset.URL)
+		if err != nil {
+			_ = s.persistUpdateStatus(map[string]string{
+				"update_last_apply_status": "failed",
+				"update_message":           "download checksum asset: " + err.Error(),
+			})
+			http.Error(w, fmt.Sprintf("download checksum asset: %v", err), http.StatusBadRequest)
+			return
+		}
+		if err := verifyFileSHA256(newBinPath, info.Asset.Name, checksumText); err != nil {
+			_ = s.persistUpdateStatus(map[string]string{
+				"update_last_apply_status": "failed",
+				"update_message":           "checksum verification failed: " + err.Error(),
+			})
+			http.Error(w, fmt.Sprintf("checksum verification failed: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+
+	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
+	if err := copyFile(exePath, helperPath, 0o755); err != nil {
+		_ = s.persistUpdateStatus(map[string]string{
+			"update_last_apply_status": "failed",
+			"update_message":           "prepare update helper: " + err.Error(),
+		})
+		http.Error(w, fmt.Sprintf("prepare update helper: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if err := startUpdateHelper(helperPath, exePath, newBinPath, os.Getpid(), os.Args[1:]); err != nil {
+		_ = s.persistUpdateStatus(map[string]string{
+			"update_last_apply_status": "failed",
+			"update_message":           "start update helper: " + err.Error(),
+		})
+		http.Error(w, fmt.Sprintf("start update helper: %v", err), http.StatusInternalServerError)
+		return
+	}
+	_ = s.persistUpdateStatus(map[string]string{
+		"update_last_apply_status": "success",
+		"update_message":           "update helper started, restarting",
+		"update_latest_version":    info.TagName,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"updated":         true,
+		"message":         "update helper started, restarting",
+		"target_version":  info.TagName,
+		"current_version": currentVersion(),
+	})
+
+	go func() {
+		time.Sleep(250 * time.Millisecond)
+		os.Exit(0)
+	}()
+}
+
+func (s *stateStore) updateStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	state, err := s.db.ListAppState()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": state})
+}
+
+func (s *stateStore) persistUpdateStatus(values map[string]string) error {
+	for k, v := range values {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		if err := s.db.SetAppState(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func boolString(v bool) string {
+	if v {
+		return "1"
+	}
+	return "0"
+}

@@ -134,21 +134,14 @@ const indexHTML = `<!doctype html>
     </div>
   </main>
   <script src="/ui/shared.js"></script>
+  <script src="/ui/pages.js"></script>
   <script>
     const projectReloadState = new Map();
-    async function api(path, opts = {}) {
-      const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || ('HTTP ' + res.status));
-      }
-      return await res.json();
-    }
     function setProjectReloadState(projectId, text, color) {
       projectReloadState.set(String(projectId), { text, color });
     }
     async function refreshProjects() {
-      const data = await api('/api/v1/projects');
+      const data = await apiJSON('/api/v1/projects');
       const root = document.getElementById('projects');
       if (!data.projects || data.projects.length === 0) {
         root.innerHTML = '<p>No projects loaded yet.</p>';
@@ -178,9 +171,9 @@ const indexHTML = `<!doctype html>
           setProjectReloadState(project.id, 'Reloading...', '#5f6f67');
           reloadStatus.textContent = 'Reloading...';
           reloadStatus.style.color = '#5f6f67';
-          reloadBtn.disabled = true;
+            reloadBtn.disabled = true;
           try {
-            await api('/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
+            await apiJSON('/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
             await Promise.all([refreshProjects(), refreshJobs()]);
             setProjectReloadState(project.id, 'Reloaded successfully', '#1f8a4c');
             reloadStatus.textContent = 'Reloaded successfully';
@@ -214,7 +207,7 @@ const indexHTML = `<!doctype html>
           btn.onclick = async () => {
             btn.disabled = true;
             try {
-              await api('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: '{}' });
+              await apiJSON('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: '{}' });
               await refreshJobs();
             } catch (e) {
               alert('Run failed: ' + e.message);
@@ -228,7 +221,7 @@ const indexHTML = `<!doctype html>
           dryBtn.onclick = async () => {
             dryBtn.disabled = true;
             try {
-              await api('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+              await apiJSON('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
               await refreshJobs();
             } catch (e) {
               alert('Dry run failed: ' + e.message);
@@ -248,7 +241,7 @@ const indexHTML = `<!doctype html>
       });
     }
     async function refreshJobs() {
-      const data = await api('/api/v1/jobs');
+      const data = await apiJSON('/api/v1/jobs');
       const queuedBody = document.getElementById('queuedJobsBody');
       const historyBody = document.getElementById('historyJobsBody');
       queuedBody.innerHTML = '';
@@ -257,42 +250,24 @@ const indexHTML = `<!doctype html>
       const jobs = (data.job_executions || data.jobs || []).slice(0, 150);
       const queuedJobs = jobs.filter(job => queuedStatuses.has((job.status || '').toLowerCase()));
       const historyJobs = jobs.filter(job => !queuedStatuses.has((job.status || '').toLowerCase()));
-      queuedJobs.forEach(job => queuedBody.appendChild(renderJobRow(job, true)));
-      historyJobs.forEach(job => historyBody.appendChild(renderJobRow(job, false)));
-    }
-    function renderJobRow(job, includeActions) {
-      const tr = document.createElement('tr');
-      const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
-      const description = jobDescription(job);
-      const backTo = encodeURIComponent(window.location.pathname || '/');
-      tr.innerHTML =
-        '<td><a class="job-link" href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + escapeHtml(description) + '</a></td>' +
-        '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
-        '<td>' + pipeline + '</td>' +
-        '<td>' + (job.leased_by_agent_id || '') + '</td>' +
-        '<td>' + formatTimestamp(job.created_utc) + '</td>';
-      if (includeActions) {
-        const actionTd = document.createElement('td');
-        if (['queued', 'leased'].includes((job.status || '').toLowerCase())) {
-          const btn = document.createElement('button');
-          btn.className = 'secondary';
-          btn.textContent = 'Remove';
-          btn.onclick = async () => {
-            btn.disabled = true;
-            try {
-              await api('/api/v1/jobs/' + job.id, { method: 'DELETE' });
-              await refreshJobs();
-            } catch (e) {
-              alert('Remove failed: ' + e.message);
-            } finally {
-              btn.disabled = false;
-            }
-          };
-          actionTd.appendChild(btn);
+      queuedJobs.forEach(job => queuedBody.appendChild(buildJobExecutionRow(job, {
+        includeActions: true,
+        backPath: window.location.pathname || '/',
+        linkClass: 'job-link',
+        onRemove: async (j) => {
+          try {
+            await apiJSON('/api/v1/jobs/' + j.id, { method: 'DELETE' });
+            await refreshJobs();
+          } catch (e) {
+            alert('Remove failed: ' + e.message);
+          }
         }
-        tr.appendChild(actionTd);
-      }
-      return tr;
+      })));
+      historyJobs.forEach(job => historyBody.appendChild(buildJobExecutionRow(job, {
+        includeActions: false,
+        backPath: window.location.pathname || '/',
+        linkClass: 'job-link'
+      })));
     }
     document.getElementById('importProjectBtn').onclick = async () => {
       const repoUrl = (document.getElementById('repoUrl').value || '').trim();
@@ -305,7 +280,7 @@ const indexHTML = `<!doctype html>
       }
       result.textContent = 'Importing...';
       try {
-        await api('/api/v1/projects/import', {
+        await apiJSON('/api/v1/projects/import', {
           method: 'POST',
           body: JSON.stringify({ repo_url: repoUrl, repo_ref: repoRef, config_file: configFile }),
         });
@@ -320,7 +295,7 @@ const indexHTML = `<!doctype html>
         return;
       }
       try {
-        await api('/api/v1/jobs/clear-queue', { method: 'POST', body: '{}' });
+        await apiJSON('/api/v1/jobs/clear-queue', { method: 'POST', body: '{}' });
         await refreshJobs();
       } catch (e) {
         alert('Clear queue failed: ' + e.message);
@@ -331,7 +306,7 @@ const indexHTML = `<!doctype html>
         return;
       }
       try {
-        await api('/api/v1/jobs/flush-history', { method: 'POST', body: '{}' });
+        await apiJSON('/api/v1/jobs/flush-history', { method: 'POST', body: '{}' });
         await refreshJobs();
       } catch (e) {
         alert('Flush history failed: ' + e.message);
@@ -341,7 +316,7 @@ const indexHTML = `<!doctype html>
       const result = document.getElementById('updateResult');
       result.textContent = 'Checking...';
       try {
-        const r = await api('/api/v1/update/check', { method: 'POST', body: '{}' });
+        const r = await apiJSON('/api/v1/update/check', { method: 'POST', body: '{}' });
         const latest = r.latest_version || '';
         const current = r.current_version || '';
         if (r.update_available) {
@@ -359,7 +334,7 @@ const indexHTML = `<!doctype html>
       if (!confirm('Apply update now and restart ciwi?')) return;
       result.textContent = 'Starting update...';
       try {
-        const r = await api('/api/v1/update/apply', { method: 'POST', body: '{}' });
+        const r = await apiJSON('/api/v1/update/apply', { method: 'POST', body: '{}' });
         result.textContent = (r.message || 'Update started. Refresh in a moment.');
       } catch (e) {
         result.textContent = 'Update failed: ' + e.message;
@@ -369,7 +344,7 @@ const indexHTML = `<!doctype html>
     async function refreshUpdateStatus() {
       const box = document.getElementById('updateStatus');
       try {
-        const r = await api('/api/v1/update/status');
+        const r = await apiJSON('/api/v1/update/status');
         const s = r.status || {};
         const parts = [];
         if (s.update_current_version) parts.push('Current: ' + s.update_current_version);
