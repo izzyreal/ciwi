@@ -117,14 +117,14 @@ choose_server_url() {
   fi
 
   if [ "$count" -gt 1 ]; then
-    echo "Multiple ciwi servers discovered:"
+    echo "Multiple ciwi servers discovered:" >&2
     i=0
     printf '%s\n' "$discovered" | while IFS= read -r url; do
       i=$((i + 1))
-      echo "  [$i] $url"
+      echo "  [$i] $url" >&2
     done
-    printf "Choose server number [1]: "
-    read -r choice
+    printf "Choose server number [1]: " >&2
+    read -r choice </dev/tty
     if [ -z "$choice" ]; then
       choice="1"
     fi
@@ -137,8 +137,8 @@ choose_server_url() {
     exit 1
   fi
 
-  printf "No ciwi server auto-discovered. Enter server URL (example http://bhakti.local:8112): "
-  read -r entered
+  printf "No ciwi server auto-discovered. Enter server URL (example http://bhakti.local:8112): " >&2
+  read -r entered </dev/tty
   entered="$(printf '%s' "$entered" | tr -d '[:space:]')"
   if [ -z "$entered" ]; then
     echo "server URL is required" >&2
@@ -159,16 +159,17 @@ install_binary() {
     return
   fi
 
-  printf "Install to /usr/local/bin requires sudo. Continue? [Y/n]: "
-  read -r answer
-  case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
-    ""|y|yes)
+  if command -v sudo >/dev/null 2>&1; then
+    echo "Install to /usr/local/bin requires elevation; requesting sudo..." >&2
+    if sudo -v; then
       sudo mkdir -p "$default_dir"
       sudo install -m 0755 "$src" "${default_dir}/ciwi"
       printf '%s\n' "$default_dir"
       return
-      ;;
-  esac
+    fi
+  fi
+
+  echo "Could not install to /usr/local/bin; falling back to $fallback_dir" >&2
 
   mkdir -p "$fallback_dir"
   install -m 0755 "$src" "${fallback_dir}/ciwi"
