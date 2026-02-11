@@ -20,6 +20,14 @@ const settingsHTML = `<!doctype html>
       --line: #c4ddd0;
     }
     * { box-sizing: border-box; }
+    :where(body, main, .card, p, h1, h2, div, span, table, thead, tbody, tr, th, td, code, pre, input, textarea, select, label, a) {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    :where(button) {
+      -webkit-user-select: none;
+      user-select: none;
+    }
     body {
       margin: 0;
       font-family: "Avenir Next", "Segoe UI", sans-serif;

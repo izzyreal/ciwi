@@ -10,6 +10,14 @@ const vaultHTML = `<!doctype html>
   <style>
     :root { --bg:#f2f7f4; --bg2:#d9efe2; --card:#fff; --ink:#1f2a24; --muted:#5f6f67; --accent:#157f66; --line:#c4ddd0; }
     * { box-sizing:border-box; }
+    :where(body, main, .card, p, h3, div, span, table, thead, tbody, tr, th, td, code, pre, input, textarea, select, label, a) {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    :where(button) {
+      -webkit-user-select: none;
+      user-select: none;
+    }
     body { margin:0; font-family:"Avenir Next","Segoe UI",sans-serif; color:var(--ink); background:radial-gradient(circle at 20% 0%, var(--bg2), var(--bg)); }
     main { max-width:1100px; margin:24px auto; padding:0 16px; }
     .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 8px 24px rgba(21,127,102,.08); }

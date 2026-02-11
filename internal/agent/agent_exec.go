@@ -115,6 +115,13 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		if uploadErr != nil {
 			fmt.Fprintf(&output, "[artifacts] upload_failed=%v\n", uploadErr)
+			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+			failMsg := "artifact upload failed: " + uploadErr.Error()
+			if reportErr := reportFailure(ctx, client, serverURL, agentID, job, nil, failMsg, trimmedOutput); reportErr != nil {
+				return reportErr
+			}
+			slog.Error("job failed", "job_execution_id", job.ID, "error", failMsg)
+			return nil
 		}
 	}
 

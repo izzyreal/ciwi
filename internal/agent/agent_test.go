@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -191,5 +192,60 @@ func TestParseJobTestReport(t *testing.T) {
 	}
 	if len(s.Cases) != 2 {
 		t.Fatalf("expected 2 cases, got %d", len(s.Cases))
+	}
+}
+
+func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script assertion test skipped on windows")
+	}
+
+	var (
+		mu       sync.Mutex
+		statuses []protocol.JobStatusUpdateRequest
+	)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/status":
+			var req protocol.JobStatusUpdateRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode status: %v", err)
+			}
+			mu.Lock()
+			statuses = append(statuses, req)
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/artifacts":
+			http.Error(w, "upload failed", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	workDir := t.TempDir()
+	job := protocol.Job{
+		ID:             "job-1",
+		Script:         "mkdir -p dist && printf 'x' > dist/a.bin",
+		TimeoutSeconds: 30,
+		ArtifactGlobs:  []string{"dist/*"},
+	}
+	err := executeLeasedJob(context.Background(), ts.Client(), ts.URL, "agent-1", workDir, job)
+	if err != nil {
+		t.Fatalf("executeLeasedJob: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) < 2 {
+		t.Fatalf("expected at least running+failed status updates, got %d", len(statuses))
+	}
+	last := statuses[len(statuses)-1]
+	if last.Status != "failed" {
+		t.Fatalf("expected final status failed, got %q", last.Status)
+	}
+	if !strings.Contains(last.Error, "artifact upload failed") {
+		t.Fatalf("expected artifact upload failure in error, got %q", last.Error)
 	}
 }
