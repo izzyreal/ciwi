@@ -147,6 +147,12 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
 		return fmt.Errorf("write update manifest: %w", err)
 	}
+	if strings.TrimSpace(envOrDefault("CIWI_DARWIN_ADHOC_SIGN", "true")) != "false" {
+		if err := adHocSignBinary(targetBinary); err != nil {
+			_ = os.Remove(manifestPath)
+			return fmt.Errorf("ad-hoc sign current binary: %w", err)
+		}
+	}
 	if err := runLaunchctl("kickstart", "-k", "gui/"+strconv.Itoa(os.Getuid())+"/"+updaterLabel); err != nil {
 		_ = os.Remove(manifestPath)
 		return fmt.Errorf("trigger updater launchagent: %w", err)
@@ -359,6 +365,23 @@ func runLaunchctl(args ...string) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s %s: %w (%s)", launchctlPath, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func adHocSignBinary(path string) error {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return fmt.Errorf("empty path")
+	}
+	codesignPath := strings.TrimSpace(envOrDefault("CIWI_CODESIGN_PATH", "/usr/bin/codesign"))
+	if codesignPath == "" {
+		codesignPath = "/usr/bin/codesign"
+	}
+	cmd := exec.Command(codesignPath, "--force", "--sign", "-", p)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s --force --sign - %s: %w (%s)", codesignPath, p, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
