@@ -162,3 +162,68 @@ pipelines:
 		t.Fatalf("expected depends_on validation error, got: %v", err)
 	}
 }
+
+func TestParseRejectsUnknownFields(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+  extra_field: true
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+`), "test-unknown-fields")
+	if err == nil || !strings.Contains(err.Error(), "field extra_field not found") {
+		t.Fatalf("expected unknown field error, got: %v", err)
+	}
+}
+
+func TestParseRejectsInvalidStepShape(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 60
+        steps:
+          - run: echo hi
+            test:
+              command: go test ./...
+`), "test-step-shape")
+	if err == nil || !strings.Contains(err.Error(), "must set exactly one of run or test") {
+		t.Fatalf("expected step shape validation error, got: %v", err)
+	}
+}
+
+func TestParseRejectsDuplicatePipelineAndUnknownDependency(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+  - id: build
+    depends_on:
+      - release
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - run: echo publish
+`), "test-dup-pipeline")
+	if err == nil || !strings.Contains(err.Error(), "duplicate") || !strings.Contains(err.Error(), "unknown pipeline") {
+		t.Fatalf("expected duplicate/unknown dependency errors, got: %v", err)
+	}
+}

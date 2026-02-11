@@ -1,7 +1,7 @@
 package server
 
 import (
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -40,15 +40,15 @@ func startMDNSAdvertiser(serverAddr string) func() {
 	}
 	service, err := mdns.NewMDNSService(instance, "_ciwi._tcp", "", "", portNum, nil, meta)
 	if err != nil {
-		log.Printf("mdns advertise service setup failed: %v", err)
+		slog.Error("mdns advertise service setup failed", "error", err)
 		return func() {}
 	}
 	server, err := mdns.NewServer(&mdns.Config{Zone: service})
 	if err != nil {
-		log.Printf("mdns advertise start failed: %v", err)
+		slog.Error("mdns advertise start failed", "error", err)
 		return func() {}
 	}
-	log.Printf("mdns advertising enabled: service=_ciwi._tcp instance=%q port=%s", instance, port)
+	slog.Info("mdns advertising enabled", "service", "_ciwi._tcp", "instance", instance, "port", port)
 
 	return func() {
 		server.Shutdown()

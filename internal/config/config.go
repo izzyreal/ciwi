@@ -1,8 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -81,33 +84,126 @@ func Load(path string) (File, error) {
 func Parse(data []byte, source string) (File, error) {
 	var cfg File
 
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
 		return cfg, fmt.Errorf("parse YAML in %q: %w", source, err)
 	}
 
-	if cfg.Version != 1 {
-		return cfg, fmt.Errorf("unsupported config version %d", cfg.Version)
+	if errs := cfg.Validate(); len(errs) > 0 {
+		return cfg, fmt.Errorf("invalid config in %q: %s", source, strings.Join(errs, "; "))
 	}
-	if cfg.Project.Name == "" {
-		return cfg, fmt.Errorf("project.name is required")
+	return cfg, nil
+}
+
+func (cfg File) Validate() []string {
+	var errs []string
+
+	if cfg.Version != 1 {
+		errs = append(errs, fmt.Sprintf("unsupported config version %d", cfg.Version))
+	}
+	if strings.TrimSpace(cfg.Project.Name) == "" {
+		errs = append(errs, "project.name is required")
 	}
 	if cfg.Project.Vault != nil {
-		if cfg.Project.Vault.Connection == "" {
-			return cfg, fmt.Errorf("project.vault.connection is required when project.vault is set")
+		if strings.TrimSpace(cfg.Project.Vault.Connection) == "" {
+			errs = append(errs, "project.vault.connection is required when project.vault is set")
 		}
+		seenSecrets := map[string]struct{}{}
 		for i, sec := range cfg.Project.Vault.Secrets {
-			if sec.Name == "" || sec.Path == "" || sec.Key == "" {
-				return cfg, fmt.Errorf("project.vault.secrets[%d] requires name, path and key", i)
+			if strings.TrimSpace(sec.Name) == "" || strings.TrimSpace(sec.Path) == "" || strings.TrimSpace(sec.Key) == "" {
+				errs = append(errs, fmt.Sprintf("project.vault.secrets[%d] requires name, path and key", i))
 			}
-		}
-	}
-	for i, p := range cfg.Pipelines {
-		for j, dep := range p.DependsOn {
-			if dep == "" {
-				return cfg, fmt.Errorf("pipelines[%d].depends_on[%d] must not be empty", i, j)
+			if strings.TrimSpace(sec.Name) != "" {
+				if _, ok := seenSecrets[sec.Name]; ok {
+					errs = append(errs, fmt.Sprintf("project.vault.secrets[%d] duplicate name %q", i, sec.Name))
+				}
+				seenSecrets[sec.Name] = struct{}{}
 			}
 		}
 	}
 
-	return cfg, nil
+	if len(cfg.Pipelines) == 0 {
+		errs = append(errs, "pipelines must contain at least one pipeline")
+		return errs
+	}
+
+	pipelineIDs := map[string]struct{}{}
+	for i, p := range cfg.Pipelines {
+		if strings.TrimSpace(p.ID) == "" {
+			errs = append(errs, fmt.Sprintf("pipelines[%d].id is required", i))
+		} else {
+			if _, exists := pipelineIDs[p.ID]; exists {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].id duplicate %q", i, p.ID))
+			}
+			pipelineIDs[p.ID] = struct{}{}
+		}
+
+		if strings.TrimSpace(p.Trigger) != "" && !slices.Contains([]string{"manual", "vcs"}, p.Trigger) {
+			errs = append(errs, fmt.Sprintf("pipelines[%d].trigger must be one of manual,vcs", i))
+		}
+
+		for j, dep := range p.DependsOn {
+			if strings.TrimSpace(dep) == "" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].depends_on[%d] must not be empty", i, j))
+			}
+		}
+
+		if len(p.Jobs) == 0 {
+			errs = append(errs, fmt.Sprintf("pipelines[%d].jobs must contain at least one job", i))
+		}
+
+		jobIDs := map[string]struct{}{}
+		for j, job := range p.Jobs {
+			if strings.TrimSpace(job.ID) == "" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].id is required", i, j))
+			} else {
+				if _, exists := jobIDs[job.ID]; exists {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].id duplicate %q", i, j, job.ID))
+				}
+				jobIDs[job.ID] = struct{}{}
+			}
+
+			if job.TimeoutSeconds < 0 {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].timeout_seconds must be >= 0", i, j))
+			}
+			if len(job.Steps) == 0 {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps must contain at least one step", i, j))
+			}
+			for k, st := range job.Steps {
+				runSet := strings.TrimSpace(st.Run) != ""
+				testSet := st.Test != nil
+				if runSet == testSet {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d] must set exactly one of run or test", i, j, k))
+				}
+				if st.Test != nil {
+					if strings.TrimSpace(st.Test.Command) == "" {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.command is required", i, j, k))
+					}
+					if strings.TrimSpace(st.Test.Format) != "" && st.Test.Format != "go-test-json" {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.format unsupported %q", i, j, k, st.Test.Format))
+					}
+				}
+				for envK := range st.Env {
+					if strings.TrimSpace(envK) == "" {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].env key must not be empty", i, j, k))
+					}
+				}
+			}
+		}
+	}
+
+	for i, p := range cfg.Pipelines {
+		for j, dep := range p.DependsOn {
+			dep = strings.TrimSpace(dep)
+			if dep == "" {
+				continue
+			}
+			if _, ok := pipelineIDs[dep]; !ok {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].depends_on[%d] references unknown pipeline %q", i, j, dep))
+			}
+		}
+	}
+
+	return errs
 }

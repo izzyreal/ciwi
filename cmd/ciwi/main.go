@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/izzyreal/ciwi/internal/agent"
@@ -13,6 +15,8 @@ import (
 )
 
 func main() {
+	initLogging()
+
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
@@ -44,6 +48,25 @@ func main() {
 		fmt.Fprintf(os.Stderr, "ciwi: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func initLogging() {
+	level := new(slog.LevelVar)
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CIWI_LOG_LEVEL"))) {
+	case "debug":
+		level.Set(slog.LevelDebug)
+	case "warn", "warning":
+		level.Set(slog.LevelWarn)
+	case "error":
+		level.Set(slog.LevelError)
+	default:
+		level.Set(slog.LevelInfo)
+	}
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level:     level,
+		AddSource: false,
+	})
+	slog.SetDefault(slog.New(handler))
 }
 
 func runAllInOne(ctx context.Context) error {

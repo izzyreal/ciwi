@@ -25,6 +25,7 @@ go run ./cmd/ciwi all-in-one
 - `CIWI_VERSION`: current running version string used by update checks (default `dev`)
 - `CIWI_UPDATE_REPO`: GitHub repo for update checks (default `izzyreal/ciwi`)
 - `CIWI_UPDATE_API_BASE`: GitHub API base URL (default `https://api.github.com`)
+- `CIWI_LOG_LEVEL`: log verbosity (`debug`, `info`, `warn`, `error`; default `info`)
 
 ## Server prerequisites
 
@@ -103,6 +104,8 @@ Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps
 - `pipelines[].source.ref` (optional): branch/tag/ref to checkout
 - `pipelines[].depends_on` (optional): list of pipeline IDs that must have latest successful run before enqueue
+
+Config parsing uses strict YAML field validation (`KnownFields`), so unknown keys are rejected.
 
 `steps` supports two step types:
 - `run`: executes a shell command line.

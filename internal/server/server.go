@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"sync"
@@ -53,38 +53,13 @@ func Run(ctx context.Context) error {
 	}
 
 	s := &stateStore{agents: make(map[string]agentState), db: db, artifactsDir: artifactsDir, vaultTokens: newVaultTokenCache()}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.uiHandler)
-	mux.HandleFunc("/healthz", healthzHandler)
-	mux.HandleFunc("/api/v1/server-info", serverInfoHandler)
-	mux.HandleFunc("/api/v1/heartbeat", s.heartbeatHandler)
-	mux.HandleFunc("/api/v1/agents", s.listAgentsHandler)
-	mux.HandleFunc("/api/v1/config/load", s.loadConfigHandler)
-	mux.HandleFunc("/api/v1/projects/import", s.importProjectHandler)
-	mux.HandleFunc("/api/v1/projects", s.listProjectsHandler)
-	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)
-	mux.HandleFunc("/api/v1/vault/connections", s.vaultConnectionsHandler)
-	mux.HandleFunc("/api/v1/vault/connections/", s.vaultConnectionByIDHandler)
-	mux.HandleFunc("/api/v1/jobs", s.jobsHandler)
-	mux.HandleFunc("/api/v1/jobs/", s.jobByIDHandler)
-	mux.HandleFunc("/api/v1/jobs/clear-queue", s.clearQueueHandler)
-	mux.HandleFunc("/api/v1/jobs/flush-history", s.flushHistoryHandler)
-	mux.HandleFunc("/api/v1/agent/lease", s.leaseJobHandler)
-	mux.HandleFunc("/api/v1/pipelines/run", s.runPipelineFromConfigHandler)
-	mux.HandleFunc("/api/v1/pipelines/", s.pipelineByIDHandler)
-	mux.HandleFunc("/api/v1/update/check", s.updateCheckHandler)
-	mux.HandleFunc("/api/v1/update/apply", s.updateApplyHandler)
-	mux.HandleFunc("/api/v1/update/status", s.updateStatusHandler)
-	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))
-
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: buildRouter(s, artifactsDir), ReadHeaderTimeout: 10 * time.Second}
 	stopMDNS := startMDNSAdvertiser(addr)
 	defer stopMDNS()
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("ciwi server started on %s", addr)
+		slog.Info("ciwi server started", "addr", addr)
 		err := srv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("listen and serve: %w", err)
@@ -100,13 +75,13 @@ func Run(ctx context.Context) error {
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown server: %w", err)
 		}
-		log.Println("ciwi server stopped")
+		slog.Info("ciwi server stopped")
 		return nil
 	case err := <-errCh:
 		if err != nil {
 			return err
 		}
-		log.Println("ciwi server stopped")
+		slog.Info("ciwi server stopped")
 		return nil
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -61,7 +61,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			if reportErr := reportFailure(ctx, client, serverURL, agentID, job, exitCode, failMsg, trimmedOutput); reportErr != nil {
 				return reportErr
 			}
-			log.Printf("job failed during checkout: id=%s err=%s", job.ID, failMsg)
+			slog.Error("job failed during checkout", "job_execution_id", job.ID, "error", failMsg)
 			return nil
 		}
 		execDir = sourceDir
@@ -140,7 +140,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}); reportErr != nil {
 			return fmt.Errorf("report succeeded status: %w", reportErr)
 		}
-		log.Printf("job succeeded: id=%s", job.ID)
+		slog.Info("job succeeded", "job_execution_id", job.ID)
 		return nil
 	}
 
@@ -152,7 +152,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	if reportErr := reportFailure(ctx, client, serverURL, agentID, job, exitCode, failMsg, trimmedOutput); reportErr != nil {
 		return reportErr
 	}
-	log.Printf("job failed: id=%s exit=%v err=%s", job.ID, exitCode, failMsg)
+	slog.Error("job failed", "job_execution_id", job.ID, "exit_code", exitCode, "error", failMsg)
 	return nil
 }
 
@@ -212,7 +212,7 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 					Output:       snapshot,
 					TimestampUTC: time.Now().UTC(),
 				}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-					log.Printf("stream running update failed: job=%s err=%v", jobID, err)
+					slog.Error("stream running update failed", "job_execution_id", jobID, "error", err)
 				}
 			}
 		}

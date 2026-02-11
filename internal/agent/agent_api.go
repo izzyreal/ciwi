@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"runtime"
 	"time"
@@ -52,7 +52,7 @@ func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID,
 		return protocol.HeartbeatResponse{}, fmt.Errorf("decode heartbeat response: %w", err)
 	}
 
-	log.Printf("heartbeat sent: id=%s os=%s arch=%s", agentID, runtime.GOOS, runtime.GOARCH)
+	slog.Info("heartbeat sent", "agent_id", agentID, "os", runtime.GOOS, "arch", runtime.GOARCH)
 	return hbResp, nil
 }
 
@@ -96,7 +96,7 @@ func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID strin
 		return nil, nil
 	}
 
-	log.Printf("job leased: id=%s", leaseResp.Job.ID)
+	slog.Info("job leased", "job_execution_id", leaseResp.Job.ID)
 	return leaseResp.Job, nil
 }
 
