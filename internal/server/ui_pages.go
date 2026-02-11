@@ -26,6 +26,7 @@ function buildJobExecutionRow(job, opts = {}) {
     '<td><a class="' + linkClass + '" href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + escapeHtml(description) + '</a></td>' +
     '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
     '<td>' + escapeHtml(pipeline) + '</td>' +
+    '<td>' + escapeHtml(buildVersionLabel(job)) + '</td>' +
     '<td>' + escapeHtml(job.leased_by_agent_id || '') + '</td>' +
     '<td>' + escapeHtml(formatTimestamp(job.created_utc)) + '</td>';
 

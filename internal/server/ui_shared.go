@@ -57,6 +57,14 @@ function jobDescription(job) {
   return 'Job Execution';
 }
 
+function buildVersionLabel(job) {
+  const m = (job && job.metadata) || {};
+  const version = (m.build_version || '').trim();
+  if (!version) return '';
+  const target = (m.build_target || '').trim();
+  return target ? (version + ' (' + target + ')') : version;
+}
+
 function formatJobStatus(job) {
   const status = (job && job.status) || '';
   const summary = job && job.test_summary;

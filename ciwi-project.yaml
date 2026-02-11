@@ -51,7 +51,8 @@ pipelines:
               ext: ""
         steps:
           - run: mkdir -p dist
-          - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=dev" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
+          - run: VERSION="$(cat VERSION 2>/dev/null || echo dev)"; if [ "$VERSION" != "dev" ]; then VERSION="v${VERSION}"; fi; echo "__CIWI_BUILD_SUMMARY__ target={{name}} version=${VERSION} output=dist/ciwi-{{name}}{{ext}}"
+          - run: VERSION="$(cat VERSION 2>/dev/null || echo dev)"; if [ "$VERSION" != "dev" ]; then VERSION="v${VERSION}"; fi; GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
   - id: release
     trigger: manual
     depends_on:
@@ -80,10 +81,10 @@ pipelines:
                 exit 1
               fi
           - run: mkdir -p dist
-          - run: VERSION="$(cat VERSION)"; GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-linux-amd64 ./cmd/ciwi
-          - run: VERSION="$(cat VERSION)"; GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-darwin-amd64 ./cmd/ciwi
-          - run: VERSION="$(cat VERSION)"; GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-darwin-arm64 ./cmd/ciwi
-          - run: VERSION="$(cat VERSION)"; GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
+          - run: VERSION="$(cat VERSION)"; echo "__CIWI_BUILD_SUMMARY__ target=linux-amd64 version=v${VERSION} output=dist/ciwi-linux-amd64"; GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-linux-amd64 ./cmd/ciwi
+          - run: VERSION="$(cat VERSION)"; echo "__CIWI_BUILD_SUMMARY__ target=darwin-amd64 version=v${VERSION} output=dist/ciwi-darwin-amd64"; GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-darwin-amd64 ./cmd/ciwi
+          - run: VERSION="$(cat VERSION)"; echo "__CIWI_BUILD_SUMMARY__ target=darwin-arm64 version=v${VERSION} output=dist/ciwi-darwin-arm64"; GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-darwin-arm64 ./cmd/ciwi
+          - run: VERSION="$(cat VERSION)"; echo "__CIWI_BUILD_SUMMARY__ target=windows-amd64 version=v${VERSION} output=dist/ciwi-windows-amd64.exe"; GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
           - run: |
               VERSION="$(cat VERSION)"
               test -n "$VERSION"

@@ -99,7 +99,7 @@ const projectHTML = `<!doctype html>
       <h2 style="margin:0 0 10px;">Execution History</h2>
       <table>
         <thead>
-          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th></tr>
         </thead>
         <tbody id="historyBody"></tbody>
       </table>

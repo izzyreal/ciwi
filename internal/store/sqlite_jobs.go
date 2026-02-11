@@ -216,6 +216,58 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 	return s.GetJob(jobID)
 }
 
+func (s *Store) MergeJobMetadata(jobID string, patch map[string]string) (map[string]string, error) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, fmt.Errorf("job id is required")
+	}
+	if len(patch) == 0 {
+		job, err := s.GetJob(jobID)
+		if err != nil {
+			return nil, err
+		}
+		return cloneMap(job.Metadata), nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var raw string
+	if err := tx.QueryRow(`SELECT metadata_json FROM job_executions WHERE id = ?`, jobID).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("job not found")
+		}
+		return nil, fmt.Errorf("read metadata: %w", err)
+	}
+
+	meta := map[string]string{}
+	_ = json.Unmarshal([]byte(raw), &meta)
+	if meta == nil {
+		meta = map[string]string{}
+	}
+	for k, v := range patch {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			continue
+		}
+		if strings.TrimSpace(v) == "" {
+			delete(meta, key)
+			continue
+		}
+		meta[key] = v
+	}
+	updated, _ := json.Marshal(meta)
+	if _, err := tx.Exec(`UPDATE job_executions SET metadata_json = ? WHERE id = ?`, string(updated), jobID); err != nil {
+		return nil, fmt.Errorf("update metadata: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+	return cloneMap(meta), nil
+}
+
 func isTerminalStatus(status string) bool {
 	return status == "succeeded" || status == "failed"
 }

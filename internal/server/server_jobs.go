@@ -105,6 +105,11 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if patch := parseBuildMetadataFromOutput(req.Output); len(patch) > 0 {
+			if merged, err := s.db.MergeJobMetadata(jobID, patch); err == nil {
+				job.Metadata = merged
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"job": job})
 		return
 	}

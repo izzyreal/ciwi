@@ -171,9 +171,11 @@ const jobHTML = `<!doctype html>
       document.getElementById('subtitle').innerHTML = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
 
       const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
+      const buildVersion = buildVersionLabel(job);
       const rows = [
         ['Job Execution ID', escapeHtml(job.id || '')],
         ['Pipeline', escapeHtml(pipeline)],
+        ['Build', escapeHtml(buildVersion)],
         ['Agent', escapeHtml(job.leased_by_agent_id || '')],
         ['Created', escapeHtml(formatTimestamp(job.created_utc))],
         ['Started', escapeHtml(formatTimestamp(job.started_utc))],
