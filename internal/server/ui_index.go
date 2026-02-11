@@ -54,6 +54,18 @@ const indexHTML = `<!doctype html>
     button.secondary { background: white; color: var(--accent); }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .brand { display: flex; align-items: center; gap: 12px; }
+    .header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .header-actions { display: flex; align-items: center; gap: 12px; }
+    .gear-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 28px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .gear-link:hover { text-decoration: none; opacity: .85; }
     .brand img {
       width: 110px;
       height: 91px;
@@ -81,28 +93,19 @@ const indexHTML = `<!doctype html>
 <body>
   <main>
     <div class="card">
-      <div class="brand">
-        <img src="/ciwi-logo.png" alt="ciwi logo" />
-        <div>
-          <h1>ciwi</h1>
-          <p>Projects, pipelines and jobs</p>
+      <div class="header">
+        <div class="brand">
+          <img src="/ciwi-logo.png" alt="ciwi logo" />
+          <div>
+            <h1>ciwi</h1>
+            <p>Projects, pipelines and job executions</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <a class="job-link" href="/agents">Agents</a>
+          <a class="gear-link" href="/settings" aria-label="Settings" title="Settings">&#9881;</a>
         </div>
       </div>
-      <div class="row">
-        <input id="repoUrl" placeholder="https://github.com/you/project.git" style="width:380px" />
-        <input id="repoRef" placeholder="ref (optional: main, tag, sha)" />
-        <input id="configFile" value="ciwi-project.yaml" />
-        <button id="importProjectBtn">Add Project</button>
-        <a class="job-link" href="/vault">Vault Connections</a>
-        <a class="job-link" href="/agents">Agents</a>
-        <span id="importResult"></span>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <button id="checkUpdatesBtn" class="secondary">Check for updates</button>
-        <button id="applyUpdateBtn" class="secondary">Update now</button>
-        <span id="updateResult" style="color:#5f6f67;"></span>
-      </div>
-      <div id="updateStatus" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
     </div>
     <div class="card">
       <h2>Projects</h2>
@@ -136,11 +139,6 @@ const indexHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script src="/ui/pages.js"></script>
   <script>
-    const projectReloadState = new Map();
-    let updateRestartWatchActive = false;
-    function setProjectReloadState(projectId, text, color) {
-      projectReloadState.set(String(projectId), { text, color });
-    }
     async function refreshProjects() {
       const data = await apiJSON('/api/v1/projects');
       const root = document.getElementById('projects');
@@ -156,44 +154,7 @@ const indexHTML = `<!doctype html>
         top.className = 'project-head';
         const topInfo = document.createElement('div');
         topInfo.innerHTML = '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + project.name + '</a></strong> <span class="pill">' + (project.repo_url || '') + '</span> <span class="pill">' + (project.config_file || project.config_path || '') + '</span>';
-        const reloadStatus = document.createElement('span');
-        reloadStatus.style.fontSize = '12px';
-        const state = projectReloadState.get(String(project.id));
-        if (state) {
-          reloadStatus.textContent = state.text;
-          reloadStatus.style.color = state.color;
-        } else {
-          reloadStatus.style.color = '#5f6f67';
-        }
-        const reloadBtn = document.createElement('button');
-        reloadBtn.className = 'secondary';
-        reloadBtn.textContent = 'Reload project definition from VCS';
-        reloadBtn.onclick = async () => {
-          setProjectReloadState(project.id, 'Reloading...', '#5f6f67');
-          reloadStatus.textContent = 'Reloading...';
-          reloadStatus.style.color = '#5f6f67';
-            reloadBtn.disabled = true;
-          try {
-            await apiJSON('/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
-            await Promise.all([refreshProjects(), refreshJobs()]);
-            setProjectReloadState(project.id, 'Reloaded successfully', '#1f8a4c');
-            reloadStatus.textContent = 'Reloaded successfully';
-            reloadStatus.style.color = '#1f8a4c';
-          } catch (e) {
-            const msg = 'Reload failed: ' + e.message;
-            setProjectReloadState(project.id, msg, '#b23a48');
-            reloadStatus.textContent = msg;
-            reloadStatus.style.color = '#b23a48';
-          } finally {
-            reloadBtn.disabled = false;
-          }
-        };
         top.appendChild(topInfo);
-        const controls = document.createElement('div');
-        controls.className = 'row';
-        controls.appendChild(reloadBtn);
-        controls.appendChild(reloadStatus);
-        top.appendChild(controls);
         wrap.appendChild(top);
         (project.pipelines || []).forEach(p => {
           const row = document.createElement('div');
@@ -272,27 +233,6 @@ const indexHTML = `<!doctype html>
         linkClass: 'job-link'
       })));
     }
-    document.getElementById('importProjectBtn').onclick = async () => {
-      const repoUrl = (document.getElementById('repoUrl').value || '').trim();
-      const repoRef = (document.getElementById('repoRef').value || '').trim();
-      const configFile = (document.getElementById('configFile').value || 'ciwi-project.yaml').trim();
-      const result = document.getElementById('importResult');
-      if (!repoUrl) {
-        result.textContent = 'Repo URL required';
-        return;
-      }
-      result.textContent = 'Importing...';
-      try {
-        await apiJSON('/api/v1/projects/import', {
-          method: 'POST',
-          body: JSON.stringify({ repo_url: repoUrl, repo_ref: repoRef, config_file: configFile }),
-        });
-        result.textContent = 'Imported';
-        await Promise.all([refreshProjects(), refreshJobs()]);
-      } catch (e) {
-        result.textContent = 'Error: ' + e.message;
-      }
-    };
     document.getElementById('clearQueueBtn').onclick = async () => {
       if (!confirm('Clear all queued/leased jobs?')) {
         return;
@@ -315,112 +255,9 @@ const indexHTML = `<!doctype html>
         alert('Flush history failed: ' + e.message);
       }
     };
-    document.getElementById('checkUpdatesBtn').onclick = async () => {
-      const result = document.getElementById('updateResult');
-      result.textContent = 'Checking...';
-      try {
-        const r = await apiJSON('/api/v1/update/check', { method: 'POST', body: '{}' });
-        const latest = r.latest_version || '';
-        const current = r.current_version || '';
-        if (r.update_available) {
-          result.textContent = 'Update available: ' + current + ' -> ' + latest + (r.asset_name ? (' (' + r.asset_name + ')') : '');
-        } else {
-          result.textContent = r.message || ('Up to date (' + current + ')');
-        }
-      } catch (e) {
-        result.textContent = 'Update check failed: ' + e.message;
-      }
-      await refreshUpdateStatus();
-    };
-    document.getElementById('applyUpdateBtn').onclick = async () => {
-      const result = document.getElementById('updateResult');
-      if (!confirm('Apply update now and restart ciwi?')) return;
-      result.textContent = 'Starting update...';
-      try {
-        const r = await apiJSON('/api/v1/update/apply', { method: 'POST', body: '{}' });
-        result.textContent = (r.message || 'Update started. Refresh in a moment.');
-        if (r.updated) {
-          waitForServerRestartAndReload();
-        }
-      } catch (e) {
-        result.textContent = 'Update failed: ' + e.message;
-      }
-      await refreshUpdateStatus();
-    };
-    async function waitForServerRestartAndReload() {
-      if (updateRestartWatchActive) return;
-      updateRestartWatchActive = true;
-      const result = document.getElementById('updateResult');
-      const started = Date.now();
-      let seenDown = false;
-      while (Date.now() - started < 120000) {
-        try {
-          const res = await fetch('/healthz', { cache: 'no-store' });
-          if (res.ok) {
-            let finished = false;
-            try {
-              const st = await apiJSON('/api/v1/update/status');
-              const s = st.status || {};
-              const current = (s.update_current_version || '').trim();
-              const latest = (s.update_latest_version || '').trim();
-              const apply = (s.update_last_apply_status || '').trim();
-              const upToDate = current !== '' && latest !== '' && current === latest;
-              const success = apply === 'success' || apply === 'noop';
-              finished = upToDate || success;
-            } catch (_) {}
-            if (finished && !seenDown) {
-              result.textContent = 'Update successful.';
-              updateRestartWatchActive = false;
-              return;
-            }
-            if (seenDown) {
-              result.textContent = 'Server is back. Reloading...';
-              window.location.reload();
-              return;
-            }
-            result.textContent = 'Waiting for restart...';
-          } else {
-            seenDown = true;
-            result.textContent = 'Server restarting...';
-          }
-        } catch (_) {
-          seenDown = true;
-          result.textContent = 'Server restarting...';
-        }
-        await new Promise(r => setTimeout(r, 500));
-      }
-      updateRestartWatchActive = false;
-      result.textContent = 'Update applied; reload the page if needed.';
-    }
-    async function refreshUpdateStatus() {
-      const box = document.getElementById('updateStatus');
-      try {
-        const r = await apiJSON('/api/v1/update/status');
-        const s = r.status || {};
-        const current = (s.update_current_version || '').trim();
-        const latest = (s.update_latest_version || '').trim();
-        let available = '';
-        if (current && latest) {
-          available = current === latest ? '0' : '1';
-        } else {
-          available = (s.update_available || '').trim();
-        }
-        const parts = [];
-        if (current) parts.push('Current: ' + current);
-        if (latest) parts.push('Latest: ' + latest);
-        if (available === '1') parts.push('Update available');
-        if (s.update_last_checked_utc) parts.push('Checked: ' + formatTimestamp(s.update_last_checked_utc));
-        if (s.update_last_apply_status) parts.push('Apply: ' + s.update_last_apply_status);
-        if (s.update_last_apply_utc) parts.push('Apply time: ' + formatTimestamp(s.update_last_apply_utc));
-        if (s.update_message) parts.push('Message: ' + s.update_message);
-        box.textContent = parts.join(' | ');
-      } catch (e) {
-        box.textContent = 'Update status unavailable';
-      }
-    }
     async function tick() {
       try {
-        await Promise.all([refreshProjects(), refreshJobs(), refreshUpdateStatus()]);
+        await Promise.all([refreshProjects(), refreshJobs()]);
       } catch (e) {
         console.error(e);
       }
@@ -428,7 +265,6 @@ const indexHTML = `<!doctype html>
     tick();
     setInterval(refreshJobs, 3000);
     setInterval(refreshProjects, 7000);
-    setInterval(refreshUpdateStatus, 3000);
   </script>
 </body>
 </html>`

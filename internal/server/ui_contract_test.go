@@ -63,9 +63,6 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(rootHTML, "<h1>ciwi</h1>") {
 		t.Fatalf("root page missing title")
 	}
-	if !strings.Contains(rootHTML, `id="importProjectBtn"`) {
-		t.Fatalf("root page missing import button")
-	}
 	if !strings.Contains(rootHTML, `<script src="/ui/shared.js"></script>`) {
 		t.Fatalf("root page missing shared js include")
 	}
@@ -74,6 +71,9 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	}
 	if !strings.Contains(rootHTML, `href="/agents"`) {
 		t.Fatalf("root page missing agents link")
+	}
+	if !strings.Contains(rootHTML, `href="/settings"`) {
+		t.Fatalf("root page missing settings link")
 	}
 	if !strings.Contains(rootHTML, `<img src="/ciwi-logo.png"`) {
 		t.Fatalf("root page missing header logo")
@@ -86,6 +86,30 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	}
 	if !strings.Contains(rootHTML, "table-layout: fixed") || !strings.Contains(rootHTML, "overflow-wrap: anywhere") {
 		t.Fatalf("root page missing log overflow containment CSS")
+	}
+	if strings.Contains(rootHTML, `id="importProjectBtn"`) {
+		t.Fatalf("root page should not include project import controls")
+	}
+	if strings.Contains(rootHTML, `id="checkUpdatesBtn"`) {
+		t.Fatalf("root page should not include update controls")
+	}
+
+	settingsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/settings", nil)
+	if settingsResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /settings status=%d body=%s", settingsResp.StatusCode, readBody(t, settingsResp))
+	}
+	settingsHTML := readBody(t, settingsResp)
+	if !strings.Contains(settingsHTML, "<h1>ciwi settings</h1>") {
+		t.Fatalf("settings page missing title")
+	}
+	if !strings.Contains(settingsHTML, `id="importProjectBtn"`) {
+		t.Fatalf("settings page missing import button")
+	}
+	if !strings.Contains(settingsHTML, `id="checkUpdatesBtn"`) || !strings.Contains(settingsHTML, `id="applyUpdateBtn"`) {
+		t.Fatalf("settings page missing update controls")
+	}
+	if !strings.Contains(settingsHTML, `href="/vault"`) {
+		t.Fatalf("settings page missing vault link")
 	}
 
 	resp = mustJSONRequest(t, client, http.MethodGet, ts.URL+"/ui/shared.js", nil)
