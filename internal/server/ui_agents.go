@@ -87,6 +87,25 @@ const agentsHTML = `<!doctype html>
   </main>
   <script src="/ui/shared.js"></script>
   <script>
+    let refreshInFlight = false;
+    let refreshPausedUntil = 0;
+
+    function hasActiveTextSelection() {
+      const sel = window.getSelection && window.getSelection();
+      if (!sel) return false;
+      const text = (sel.toString() || '').trim();
+      return text.length > 0;
+    }
+
+    function shouldPauseRefresh() {
+      if (hasActiveTextSelection()) {
+        // Keep the table stable while user is selecting/copying text.
+        refreshPausedUntil = Date.now() + 5000;
+        return true;
+      }
+      return Date.now() < refreshPausedUntil;
+    }
+
     function statusForLastSeen(ts) {
       if (!ts) return { label: 'unknown', cls: 'offline' };
       const d = new Date(ts);
@@ -103,6 +122,10 @@ const agentsHTML = `<!doctype html>
       return entries.map(([k,v]) => k + '=' + v).join(', ');
     }
     async function refreshAgents() {
+      if (refreshInFlight || shouldPauseRefresh()) {
+        return;
+      }
+      refreshInFlight = true;
       const rows = document.getElementById('rows');
       const summary = document.getElementById('summary');
       try {
@@ -169,9 +192,16 @@ const agentsHTML = `<!doctype html>
       } catch (e) {
         rows.innerHTML = '<tr><td colspan="9" class="offline">Could not load agents</td></tr>';
         summary.textContent = 'Failed to load agents';
+      } finally {
+        refreshInFlight = false;
       }
     }
     document.getElementById('refreshBtn').onclick = refreshAgents;
+    document.addEventListener('selectionchange', () => {
+      if (hasActiveTextSelection()) {
+        refreshPausedUntil = Date.now() + 5000;
+      }
+    });
     refreshAgents();
     setInterval(refreshAgents, 3000);
   </script>
