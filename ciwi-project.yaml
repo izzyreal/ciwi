@@ -15,6 +15,9 @@ pipelines:
     trigger: manual
     source:
       repo: https://github.com/izzyreal/ciwi.git
+    versioning:
+      file: VERSION
+      tag_prefix: v
     jobs:
       - id: unit-tests
         runs_on:
@@ -59,14 +62,17 @@ pipelines:
               ext: ""
         steps:
           - run: mkdir -p dist
-          - run: VERSION="$(cat VERSION 2>/dev/null || echo dev)"; if [ "$VERSION" != "dev" ]; then VERSION="v${VERSION}"; fi; echo "__CIWI_BUILD_SUMMARY__ target={{name}} version=${VERSION} output=dist/ciwi-{{name}}{{ext}}"
-          - run: VERSION="$(cat VERSION 2>/dev/null || echo dev)"; if [ "$VERSION" != "dev" ]; then VERSION="v${VERSION}"; fi; GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
+          - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
   - id: release
     trigger: manual
     depends_on:
       - build
     source:
       repo: https://github.com/izzyreal/ciwi.git
+    versioning:
+      file: VERSION
+      tag_prefix: v
+      auto_bump: patch
     jobs:
       - id: github-release
         runs_on:
@@ -94,20 +100,17 @@ pipelines:
                 exit 1
               fi
           - run: mkdir -p dist
-          - run: VERSION="$(cat VERSION)"; echo "__CIWI_BUILD_SUMMARY__ target=linux-amd64 version=v${VERSION} output=dist/ciwi-linux-amd64"; GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-linux-amd64 ./cmd/ciwi
-          - run: VERSION="$(cat VERSION)"; echo "__CIWI_BUILD_SUMMARY__ target=darwin-amd64 version=v${VERSION} output=dist/ciwi-darwin-amd64"; GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-darwin-amd64 ./cmd/ciwi
-          - run: VERSION="$(cat VERSION)"; echo "__CIWI_BUILD_SUMMARY__ target=darwin-arm64 version=v${VERSION} output=dist/ciwi-darwin-arm64"; GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-darwin-arm64 ./cmd/ciwi
-          - run: VERSION="$(cat VERSION)"; echo "__CIWI_BUILD_SUMMARY__ target=windows-amd64 version=v${VERSION} output=dist/ciwi-windows-amd64.exe"; GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
+          - run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-linux-amd64 ./cmd/ciwi
+          - run: GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-darwin-amd64 ./cmd/ciwi
+          - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-darwin-arm64 ./cmd/ciwi
+          - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
           - run: |
-              VERSION="$(cat VERSION)"
-              test -n "$VERSION"
-              echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
-              TAG="v$VERSION"
-              echo "__CIWI_RELEASE_SUMMARY__ version=$VERSION"
+              VERSION="${CIWI_PIPELINE_VERSION_RAW}"
+              TAG="${CIWI_PIPELINE_TAG}"
+              echo "__CIWI_RELEASE_SUMMARY__ version=${VERSION}"
               echo "__CIWI_RELEASE_SUMMARY__ tag=$TAG"
           - run: |
-              VERSION="$(cat VERSION)"
-              TAG="v$VERSION"
+              TAG="${CIWI_PIPELINE_TAG}"
               if git rev-parse "$TAG" >/dev/null 2>&1; then
                 echo "tag exists: $TAG"
                 exit 1
@@ -131,8 +134,7 @@ pipelines:
               test -f dist/ciwi-checksums.txt
               echo "__CIWI_RELEASE_SUMMARY__ artifacts=ciwi-linux-amd64,ciwi-darwin-amd64,ciwi-darwin-arm64,ciwi-windows-amd64.exe,ciwi-checksums.txt"
           - run: |
-              VERSION="$(cat VERSION)"
-              TAG="v$VERSION"
+              TAG="${CIWI_PIPELINE_TAG}"
               git config user.name "ciwi-agent"
               git config user.email "ciwi-agent@local"
               if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
@@ -142,8 +144,7 @@ pipelines:
                 git push origin "$TAG"
               fi
           - run: |
-              VERSION="$(cat VERSION)"
-              TAG="v$VERSION"
+              TAG="${CIWI_PIPELINE_TAG}"
               if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
                 echo "[dry-run] skipping gh release create"
                 echo "__CIWI_RELEASE_SUMMARY__ release_created=no (dry-run)"
@@ -172,24 +173,5 @@ pipelines:
                 done
                 echo "__CIWI_RELEASE_SUMMARY__ release_created=yes"
               fi
-            env:
-              GITHUB_TOKEN: "{{ secret.github-secret }}"
-          - run: |
-              VERSION="$(cat VERSION)"
-              IFS='.' read -r MAJOR MINOR PATCH <<EOF
-              $VERSION
-              EOF
-              NEXT_VERSION="${MAJOR}.${MINOR}.$((PATCH+1))"
-              if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
-                echo "[dry-run] skipping VERSION bump commit/push"
-              else
-                printf '%s\n' "$NEXT_VERSION" > VERSION
-                git add VERSION
-                git commit -m "chore: bump VERSION to ${NEXT_VERSION} [skip ci]"
-                BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-                if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then BRANCH="main"; fi
-                git push origin "HEAD:${BRANCH}"
-              fi
-              echo "__CIWI_RELEASE_SUMMARY__ next_version=$NEXT_VERSION"
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"

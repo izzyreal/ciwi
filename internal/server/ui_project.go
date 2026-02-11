@@ -141,8 +141,14 @@ const projectHTML = `<!doctype html>
         const head = document.createElement('div');
         head.className = 'row';
         const deps = (pl.depends_on || []).join(', ');
+        const versioning = pl.versioning || {};
+        const vparts = [];
+        if (versioning.file) vparts.push('file=' + versioning.file);
+        if (versioning.tag_prefix) vparts.push('tag_prefix=' + versioning.tag_prefix);
+        if (versioning.auto_bump) vparts.push('auto_bump=' + versioning.auto_bump);
         head.innerHTML = '<strong>Pipeline: <code>' + escapeHtml(pl.pipeline_id) + '</code></strong>' +
-          (deps ? ('<span class="muted">depends_on: ' + escapeHtml(deps) + '</span>') : '');
+          (deps ? ('<span class="muted">depends_on: ' + escapeHtml(deps) + '</span>') : '') +
+          (vparts.length > 0 ? ('<span class="muted">versioning: ' + escapeHtml(vparts.join(', ')) + '</span>') : '');
         const runAll = document.createElement('button');
         runAll.textContent = 'Run Pipeline';
         runAll.className = 'secondary';
@@ -171,8 +177,13 @@ const projectHTML = `<!doctype html>
             dryAll.disabled = false;
           }
         };
+        const resolveBtn = document.createElement('button');
+        resolveBtn.textContent = 'Resolve Upcoming Build Version';
+        resolveBtn.className = 'secondary';
+        resolveBtn.onclick = () => openVersionResolveModal(pl.id, pl.pipeline_id);
         head.appendChild(runAll);
         head.appendChild(dryAll);
+        head.appendChild(resolveBtn);
         container.appendChild(head);
 
         (pl.jobs || []).forEach(j => {

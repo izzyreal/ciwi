@@ -77,6 +77,7 @@ const indexHTML = `<!doctype html>
     .project { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
     .pipeline { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; }
+    .pipeline-actions { display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
     th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px 6px; vertical-align: top; }
@@ -191,11 +192,19 @@ const indexHTML = `<!doctype html>
               dryBtn.disabled = false;
             }
           };
+          const resolveBtn = document.createElement('button');
+          resolveBtn.className = 'secondary';
+          resolveBtn.textContent = 'Resolve Upcoming Build Version';
+          resolveBtn.onclick = () => openVersionResolveModal(p.id, p.pipeline_id);
           row.appendChild(info);
           const actions = document.createElement('div');
-          actions.className = 'row';
-          actions.appendChild(btn);
-          actions.appendChild(dryBtn);
+          actions.className = 'pipeline-actions';
+          const btnRow = document.createElement('div');
+          btnRow.className = 'row';
+          btnRow.appendChild(btn);
+          btnRow.appendChild(dryBtn);
+          btnRow.appendChild(resolveBtn);
+          actions.appendChild(btnRow);
           row.appendChild(actions);
           wrap.appendChild(row);
         });

@@ -26,6 +26,7 @@ type PersistedPipeline struct {
 	DependsOn   []string
 	SourceRepo  string
 	SourceRef   string
+	Versioning  config.PipelineVersioning
 	Jobs        []PersistedPipelineJob
 }
 
@@ -98,6 +99,7 @@ func (s *Store) migrate() error {
 			depends_on_json TEXT NOT NULL DEFAULT '[]',
 			source_repo TEXT,
 			source_ref TEXT,
+			versioning_json TEXT NOT NULL DEFAULT '{}',
 			created_utc TEXT NOT NULL,
 			updated_utc TEXT NOT NULL,
 			UNIQUE(project_id, pipeline_id),
@@ -189,6 +191,9 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("pipelines", "depends_on_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("pipelines", "versioning_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {

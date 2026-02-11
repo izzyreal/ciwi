@@ -141,6 +141,9 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(pagesJS, "function buildJobExecutionRow(") {
 		t.Fatalf("pages js missing job row builder")
 	}
+	if !strings.Contains(pagesJS, "function openVersionResolveModal(") {
+		t.Fatalf("pages js missing version resolve modal helper")
+	}
 
 	faviconResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/favicon.ico", nil)
 	if faviconResp.StatusCode != http.StatusOK {

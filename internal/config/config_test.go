@@ -227,3 +227,53 @@ pipelines:
 		t.Fatalf("expected duplicate/unknown dependency errors, got: %v", err)
 	}
 }
+
+func TestParsePipelineVersioning(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    source:
+      repo: https://github.com/izzyreal/ciwi.git
+    versioning:
+      file: VERSION
+      tag_prefix: v
+      auto_bump: patch
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - run: echo publish
+`), "test-versioning")
+	if err != nil {
+		t.Fatalf("parse versioning config: %v", err)
+	}
+	if len(cfg.Pipelines) != 1 || cfg.Pipelines[0].Versioning == nil {
+		t.Fatalf("expected pipeline versioning to be parsed")
+	}
+	if got := cfg.Pipelines[0].Versioning.AutoBump; got != "patch" {
+		t.Fatalf("unexpected auto_bump: %q", got)
+	}
+}
+
+func TestParseRejectsInvalidAutoBumpMode(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    versioning:
+      auto_bump: banana
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - run: echo publish
+`), "test-invalid-auto-bump")
+	if err == nil || !strings.Contains(err.Error(), "auto_bump") {
+		t.Fatalf("expected auto_bump validation error, got: %v", err)
+	}
+}

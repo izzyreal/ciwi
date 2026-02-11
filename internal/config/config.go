@@ -35,11 +35,18 @@ type ProjectVaultSecret struct {
 }
 
 type Pipeline struct {
-	ID        string   `yaml:"id" json:"id"`
-	Trigger   string   `yaml:"trigger" json:"trigger"`
-	DependsOn []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
-	Source    Source   `yaml:"source" json:"source"`
-	Jobs      []Job    `yaml:"jobs" json:"jobs"`
+	ID         string              `yaml:"id" json:"id"`
+	Trigger    string              `yaml:"trigger" json:"trigger"`
+	DependsOn  []string            `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+	Source     Source              `yaml:"source" json:"source"`
+	Versioning *PipelineVersioning `yaml:"versioning,omitempty" json:"versioning,omitempty"`
+	Jobs       []Job               `yaml:"jobs" json:"jobs"`
+}
+
+type PipelineVersioning struct {
+	File      string `yaml:"file,omitempty" json:"file,omitempty"`
+	TagPrefix string `yaml:"tag_prefix,omitempty" json:"tag_prefix,omitempty"`
+	AutoBump  string `yaml:"auto_bump,omitempty" json:"auto_bump,omitempty"`
 }
 
 type Source struct {
@@ -156,6 +163,18 @@ func (cfg File) Validate() []string {
 
 		if len(p.Jobs) == 0 {
 			errs = append(errs, fmt.Sprintf("pipelines[%d].jobs must contain at least one job", i))
+		}
+		if p.Versioning != nil {
+			if file := strings.TrimSpace(p.Versioning.File); file != "" {
+				if strings.HasPrefix(file, "/") || strings.HasPrefix(file, "..") || strings.Contains(file, ".."+string(os.PathSeparator)) {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.file must be a relative in-repo path", i))
+				}
+			}
+			switch strings.TrimSpace(p.Versioning.AutoBump) {
+			case "", "patch", "minor", "major":
+			default:
+				errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.auto_bump must be one of patch,minor,major", i))
+			}
 		}
 
 		jobIDs := map[string]struct{}{}

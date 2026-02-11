@@ -145,7 +145,14 @@ type PipelineDetail struct {
 	DependsOn  []string            `json:"depends_on,omitempty"`
 	SourceRepo string              `json:"source_repo,omitempty"`
 	SourceRef  string              `json:"source_ref,omitempty"`
+	Versioning PipelineVersioning  `json:"versioning,omitempty"`
 	Jobs       []PipelineJobDetail `json:"jobs,omitempty"`
+}
+
+type PipelineVersioning struct {
+	File      string `json:"file,omitempty"`
+	TagPrefix string `json:"tag_prefix,omitempty"`
+	AutoBump  string `json:"auto_bump,omitempty"`
 }
 
 type ProjectDetail struct {

@@ -34,6 +34,7 @@ Build-time version embedding:
 
 - `git` must be installed on the server host to import projects from git repositories.
 - Project import fetches only git metadata + the root config file (no full repo checkout).
+- `git` is also used by pipeline versioning (`pipelines[].versioning`) to resolve a single run version + pinned source commit.
 
 ## Agent prerequisites
 
@@ -243,6 +244,21 @@ Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps
 - `pipelines[].source.ref` (optional): branch/tag/ref to checkout
 - `pipelines[].depends_on` (optional): list of pipeline IDs that must have latest successful run before enqueue
+
+Optional pipeline versioning:
+- `pipelines[].versioning.file` (default `VERSION`): file read once per pipeline run from source checkout at a pinned commit.
+- `pipelines[].versioning.tag_prefix` (default `v`): prepended to `x.y.z` from version file.
+- `pipelines[].versioning.auto_bump` (`patch|minor|major`): ciwi-managed bump/push after successful run (currently requires that the run resolves to exactly one job execution).
+
+When versioning is active, ciwi injects env vars into every job in that pipeline run:
+- `CIWI_PIPELINE_VERSION_RAW` (for example `1.2.3`)
+- `CIWI_PIPELINE_VERSION` / `CIWI_PIPELINE_TAG` (for example `v1.2.3`)
+- `CIWI_PIPELINE_TAG_PREFIX` (for example `v`)
+- `CIWI_PIPELINE_SOURCE_REF` (resolved commit SHA)
+- `CIWI_PIPELINE_SOURCE_REPO`
+- `CIWI_PIPELINE_VERSION_FILE`
+
+`depends_on` pipelines inherit dependency run version/source metadata, so chained runs (for example `build -> release`) stay version-consistent end-to-end.
 
 Config parsing uses strict YAML field validation (`KnownFields`), so unknown keys are rejected.
 
