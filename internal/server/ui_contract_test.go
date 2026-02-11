@@ -67,6 +67,18 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(rootHTML, `<script src="/ui/shared.js"></script>`) {
 		t.Fatalf("root page missing shared js include")
 	}
+	if !strings.Contains(rootHTML, `<img src="/ciwi-logo.png"`) {
+		t.Fatalf("root page missing header logo")
+	}
+	if !strings.Contains(rootHTML, `href="/ciwi-favicon.png"`) {
+		t.Fatalf("root page missing favicon link")
+	}
+	if strings.Contains(rootHTML, "Output/Error") {
+		t.Fatalf("root page should not show Output/Error overview column")
+	}
+	if !strings.Contains(rootHTML, "table-layout: fixed") || !strings.Contains(rootHTML, "overflow-wrap: anywhere") {
+		t.Fatalf("root page missing log overflow containment CSS")
+	}
 
 	resp = mustJSONRequest(t, client, http.MethodGet, ts.URL+"/ui/shared.js", nil)
 	if resp.StatusCode != http.StatusOK {
@@ -82,6 +94,21 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(js, "function jobDescription(") {
 		t.Fatalf("shared js missing jobDescription helper")
 	}
+	if !strings.Contains(js, "function formatBytes(") {
+		t.Fatalf("shared js missing formatBytes helper")
+	}
+
+	faviconResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/favicon.ico", nil)
+	if faviconResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /favicon.ico status=%d body=%s", faviconResp.StatusCode, readBody(t, faviconResp))
+	}
+	_ = readBody(t, faviconResp)
+
+	logoResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/ciwi-logo.png", nil)
+	if logoResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /ciwi-logo.png status=%d body=%s", logoResp.StatusCode, readBody(t, logoResp))
+	}
+	_ = readBody(t, logoResp)
 }
 
 func TestUIProjectAndJobPagesServed(t *testing.T) {
@@ -127,8 +154,20 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 	if !strings.Contains(projectHTML, "Execution History") {
 		t.Fatalf("project page missing execution history section")
 	}
+	if !strings.Contains(projectHTML, `<img src="/ciwi-logo.png"`) {
+		t.Fatalf("project page missing header logo")
+	}
+	if !strings.Contains(projectHTML, `href="/ciwi-favicon.png"`) {
+		t.Fatalf("project page missing favicon link")
+	}
+	if strings.Contains(projectHTML, "Output/Error") {
+		t.Fatalf("project page should not show Output/Error column")
+	}
 	if !strings.Contains(projectHTML, "loadProject()") {
 		t.Fatalf("project page missing loadProject call")
+	}
+	if !strings.Contains(projectHTML, "table-layout: fixed") || !strings.Contains(projectHTML, "overflow-wrap: anywhere") {
+		t.Fatalf("project page missing log overflow containment CSS")
 	}
 
 	var jobsPayload struct {
@@ -153,7 +192,19 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 	if !strings.Contains(jobHTML, `id="logBox"`) {
 		t.Fatalf("job page missing log box")
 	}
+	if !strings.Contains(jobHTML, `<img src="/ciwi-logo.png"`) {
+		t.Fatalf("job page missing header logo")
+	}
+	if !strings.Contains(jobHTML, `href="/ciwi-favicon.png"`) {
+		t.Fatalf("job page missing favicon link")
+	}
 	if !strings.Contains(jobHTML, "Output / Error") {
 		t.Fatalf("job page missing output section")
+	}
+	if !strings.Contains(jobHTML, "formatBytes(a.size_bytes)") {
+		t.Fatalf("job page should render human-friendly artifact sizes")
+	}
+	if strings.Contains(jobHTML, "['Status',") {
+		t.Fatalf("job page should not duplicate status in meta rows")
 	}
 }

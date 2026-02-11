@@ -55,4 +55,27 @@ function jobDescription(job) {
   if (pipelineJob) return pipelineJob;
   if (pipeline) return pipeline;
   return 'Job';
+}
+
+function formatJobStatus(job) {
+  const status = (job && job.status) || '';
+  const summary = job && job.test_summary;
+  if (!summary || !summary.total) return status;
+  if (summary.failed > 0) return status + ' (' + summary.passed + '/' + summary.total + ' passed)';
+  return status + ' (' + summary.passed + '/' + summary.total + ' passed)';
+}
+
+function formatBytes(n) {
+  const value = Number(n || 0);
+  if (!Number.isFinite(value) || value < 0) return '0 B';
+  if (value < 1024) return String(Math.round(value)) + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = value / 1024;
+  let idx = 0;
+  while (size >= 1024 && idx < units.length - 1) {
+    size /= 1024;
+    idx++;
+  }
+  const rounded = size >= 10 ? size.toFixed(1) : size.toFixed(2);
+  return rounded.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') + ' ' + units[idx];
 }`

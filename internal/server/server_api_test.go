@@ -275,6 +275,59 @@ func TestServerLoadListRunAndQueueHistoryEndpoints(t *testing.T) {
 		t.Fatalf("unexpected tests report: %+v", testsPayload.Report)
 	}
 
+	artifactsAfterTestsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/artifacts", nil)
+	if artifactsAfterTestsResp.StatusCode != http.StatusOK {
+		t.Fatalf("artifacts after tests status=%d body=%s", artifactsAfterTestsResp.StatusCode, readBody(t, artifactsAfterTestsResp))
+	}
+	var artifactsAfterTests struct {
+		Artifacts []struct {
+			Path string `json:"path"`
+			URL  string `json:"url"`
+		} `json:"artifacts"`
+	}
+	decodeJSONBody(t, artifactsAfterTestsResp, &artifactsAfterTests)
+	foundReportArtifact := false
+	for _, a := range artifactsAfterTests.Artifacts {
+		if a.Path == "test-report.json" {
+			foundReportArtifact = true
+			if a.URL == "" {
+				t.Fatalf("test report artifact URL should not be empty")
+			}
+			break
+		}
+	}
+	if !foundReportArtifact {
+		t.Fatalf("expected test-report.json artifact after tests upload")
+	}
+
+	jobsWithSummaryResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
+	if jobsWithSummaryResp.StatusCode != http.StatusOK {
+		t.Fatalf("jobs with summary status=%d body=%s", jobsWithSummaryResp.StatusCode, readBody(t, jobsWithSummaryResp))
+	}
+	var jobsWithSummary struct {
+		Jobs []struct {
+			ID          string `json:"id"`
+			TestSummary *struct {
+				Total  int `json:"total"`
+				Failed int `json:"failed"`
+			} `json:"test_summary"`
+		} `json:"jobs"`
+	}
+	decodeJSONBody(t, jobsWithSummaryResp, &jobsWithSummary)
+	foundSummary := false
+	for _, j := range jobsWithSummary.Jobs {
+		if j.ID != createPayload.Job.ID || j.TestSummary == nil {
+			continue
+		}
+		if j.TestSummary.Total != 2 || j.TestSummary.Failed != 1 {
+			t.Fatalf("unexpected test_summary for job %s: %+v", j.ID, j.TestSummary)
+		}
+		foundSummary = true
+	}
+	if !foundSummary {
+		t.Fatalf("expected test_summary for job %s", createPayload.Job.ID)
+	}
+
 	flushResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/flush-history", map[string]any{})
 	if flushResp.StatusCode != http.StatusOK {
 		t.Fatalf("flush history status=%d body=%s", flushResp.StatusCode, readBody(t, flushResp))

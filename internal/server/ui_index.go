@@ -6,6 +6,7 @@ const indexHTML = `<!doctype html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi</title>
+  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
     :root {
       --bg: #f2f7f4;
@@ -52,13 +53,22 @@ const indexHTML = `<!doctype html>
     }
     button.secondary { background: white; color: var(--accent); }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img {
+      width: 110px;
+      height: 91px;
+      object-fit: contain;
+      display: block;
+      image-rendering: crisp-edges;
+      image-rendering: pixelated;
+    }
     .project { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
     .pipeline { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
     th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px 6px; vertical-align: top; }
-    td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; }
+    td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .status-succeeded { color: var(--ok); font-weight: 600; }
     .status-failed { color: var(--bad); font-weight: 600; }
     .status-running { color: #a56a00; font-weight: 600; }
@@ -71,8 +81,13 @@ const indexHTML = `<!doctype html>
 <body>
   <main>
     <div class="card">
-      <h1>ciwi</h1>
-      <p>Projects, pipelines and jobs</p>
+      <div class="brand">
+        <img src="/ciwi-logo.png" alt="ciwi logo" />
+        <div>
+          <h1>ciwi</h1>
+          <p>Projects, pipelines and jobs</p>
+        </div>
+      </div>
       <div class="row">
         <input id="repoUrl" placeholder="https://github.com/you/project.git" style="width:380px" />
         <input id="repoRef" placeholder="ref (optional: main, tag, sha)" />
@@ -92,7 +107,7 @@ const indexHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Output/Error</th><th>Actions</th></tr>
+          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Actions</th></tr>
         </thead>
         <tbody id="queuedJobsBody"></tbody>
       </table>
@@ -104,7 +119,7 @@ const indexHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Output/Error</th></tr>
+          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th></tr>
         </thead>
         <tbody id="historyJobsBody"></tbody>
       </table>
@@ -220,15 +235,13 @@ const indexHTML = `<!doctype html>
     function renderJobRow(job, includeActions) {
       const tr = document.createElement('tr');
       const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
-      const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
       const description = jobDescription(job);
       tr.innerHTML =
         '<td><a class="job-link" href="/jobs/' + encodeURIComponent(job.id) + '">' + escapeHtml(description) + '</a></td>' +
-        '<td class="' + statusClass(job.status) + '">' + (job.status || '') + '</td>' +
+        '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
         '<td>' + pipeline + '</td>' +
         '<td>' + (job.leased_by_agent_id || '') + '</td>' +
-        '<td>' + formatTimestamp(job.created_utc) + '</td>' +
-        '<td><code>' + escapeHtml(output).slice(-800) + '</code></td>';
+        '<td>' + formatTimestamp(job.created_utc) + '</td>';
       if (includeActions) {
         const actionTd = document.createElement('td');
         if ((job.status || '').toLowerCase() === 'queued') {

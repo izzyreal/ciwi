@@ -6,6 +6,7 @@ const projectHTML = `<!doctype html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi project</title>
+  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
     :root {
       --bg: #f2f7f4;
@@ -35,13 +36,23 @@ const projectHTML = `<!doctype html>
       box-shadow: 0 8px 24px rgba(21,127,102,.08);
     }
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .brand img {
+      width: 110px;
+      height: 91px;
+      object-fit: contain;
+      display:block;
+      image-rendering: crisp-edges;
+      image-rendering: pixelated;
+    }
     .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .muted { color: var(--muted); font-size: 13px; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
     button { border: 1px solid var(--accent); border-radius: 8px; padding: 7px 11px; background: var(--accent); color:#fff; cursor:pointer; }
     button.secondary { background: #fff; color: var(--accent); border-color: var(--line); }
-    table { width:100%; border-collapse: collapse; font-size: 13px; }
+    table { width:100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
     th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px 6px; vertical-align: top; }
+    td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .status-succeeded { color: var(--ok); font-weight: 600; }
     .status-failed { color: var(--bad); font-weight: 600; }
     .status-running { color: #a56a00; font-weight: 600; }
@@ -57,9 +68,12 @@ const projectHTML = `<!doctype html>
 <body>
   <main>
     <div class="card top">
-      <div>
-        <div id="title" style="font-size:22px;font-weight:700;">Project</div>
-        <div id="subtitle" class="muted">Loading...</div>
+      <div class="brand">
+        <img src="/ciwi-logo.png" alt="ciwi logo" />
+        <div>
+          <div id="title" style="font-size:22px;font-weight:700;">Project</div>
+          <div id="subtitle" class="muted">Loading...</div>
+        </div>
       </div>
       <div><a href="/">Back to Projects</a></div>
     </div>
@@ -73,7 +87,7 @@ const projectHTML = `<!doctype html>
       <h2 style="margin:0 0 10px;">Execution History</h2>
       <table>
         <thead>
-          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th><th>Output/Error</th></tr>
+          <tr><th>Description</th><th>Status</th><th>Pipeline</th><th>Agent</th><th>Created</th></tr>
         </thead>
         <tbody id="historyBody"></tbody>
       </table>
@@ -191,15 +205,13 @@ const projectHTML = `<!doctype html>
       const rows = (data.jobs || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
       rows.forEach(job => {
         const tr = document.createElement('tr');
-        const output = (job.error ? ('ERR: ' + job.error + '\\n') : '') + (job.output || '');
         const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
         tr.innerHTML =
           '<td><a href="/jobs/' + encodeURIComponent(job.id) + '">' + escapeHtml(jobDescription(job)) + '</a></td>' +
-          '<td class="' + statusClass(job.status) + '">' + escapeHtml(job.status || '') + '</td>' +
+          '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
           '<td>' + escapeHtml(pipeline) + '</td>' +
           '<td>' + escapeHtml(job.leased_by_agent_id || '') + '</td>' +
-          '<td>' + escapeHtml(formatTimestamp(job.created_utc)) + '</td>' +
-          '<td><code>' + escapeHtml(output).slice(-800) + '</code></td>';
+          '<td>' + escapeHtml(formatTimestamp(job.created_utc)) + '</td>';
         body.appendChild(tr);
       });
     }

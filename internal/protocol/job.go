@@ -42,6 +42,7 @@ type Job struct {
 	ExitCode             *int              `json:"exit_code,omitempty"`
 	Error                string            `json:"error,omitempty"`
 	Output               string            `json:"output,omitempty"`
+	TestSummary          *JobTestSummary   `json:"test_summary,omitempty"`
 }
 
 type CreateJobResponse struct {
@@ -219,6 +220,13 @@ type JobTestReport struct {
 	Failed  int               `json:"failed"`
 	Skipped int               `json:"skipped"`
 	Suites  []TestSuiteReport `json:"suites,omitempty"`
+}
+
+type JobTestSummary struct {
+	Total   int `json:"total"`
+	Passed  int `json:"passed"`
+	Failed  int `json:"failed"`
+	Skipped int `json:"skipped"`
 }
 
 type UploadTestReportRequest struct {

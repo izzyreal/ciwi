@@ -6,6 +6,7 @@ const jobHTML = `<!doctype html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi job</title>
+  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
     :root {
       --bg: #f2f7f4;
@@ -35,6 +36,15 @@ const jobHTML = `<!doctype html>
       box-shadow: 0 8px 24px rgba(21,127,102,.08);
     }
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .brand img {
+      width: 110px;
+      height: 91px;
+      object-fit: contain;
+      display:block;
+      image-rendering: crisp-edges;
+      image-rendering: pixelated;
+    }
     .meta-grid { display:grid; grid-template-columns: 160px 1fr; gap:8px 12px; font-size:14px; }
     .label { color: var(--muted); }
     .status-succeeded { color: var(--ok); font-weight: 700; }
@@ -64,9 +74,12 @@ const jobHTML = `<!doctype html>
 <body>
   <main>
     <div class="card top">
-      <div>
-        <div style="font-size:20px;font-weight:700;" id="jobTitle">Job</div>
-        <div style="color:#5f6f67;" id="subtitle">Loading...</div>
+      <div class="brand">
+        <img src="/ciwi-logo.png" alt="ciwi logo" />
+        <div>
+          <div style="font-size:20px;font-weight:700;" id="jobTitle">Job</div>
+          <div style="color:#5f6f67;" id="subtitle">Loading...</div>
+        </div>
       </div>
       <div><a href="/">Back to Queue</a></div>
     </div>
@@ -115,12 +128,11 @@ const jobHTML = `<!doctype html>
 
       const desc = jobDescription(job);
       document.getElementById('jobTitle').textContent = desc;
-      document.getElementById('subtitle').innerHTML = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(job.status || '') + '</span>';
+      document.getElementById('subtitle').innerHTML = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
 
       const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
       const rows = [
         ['Job ID', escapeHtml(job.id || '')],
-        ['Status', '<span class="' + statusClass(job.status) + '">' + escapeHtml(job.status || '') + '</span>'],
         ['Pipeline', escapeHtml(pipeline)],
         ['Agent', escapeHtml(job.leased_by_agent_id || '')],
         ['Created', escapeHtml(formatTimestamp(job.created_utc))],
@@ -147,7 +159,7 @@ const jobHTML = `<!doctype html>
           box.textContent = 'No artifacts';
         } else {
           box.innerHTML = items.map(a =>
-            '<div><a href=\"' + a.url + '\" target=\"_blank\" rel=\"noopener\">' + escapeHtml(a.path) + '</a> (' + a.size_bytes + ' bytes)</div>'
+            '<div><a href=\"' + a.url + '\" target=\"_blank\" rel=\"noopener\">' + escapeHtml(a.path) + '</a> (' + formatBytes(a.size_bytes) + ')</div>'
           ).join('');
         }
       } catch (_) {
