@@ -135,14 +135,27 @@ pipelines:
                 echo "__CIWI_RELEASE_SUMMARY__ release_created=no (dry-run)"
               else
                 gh release create "$TAG" \
+                  --repo izzyreal/ciwi \
+                  --title "ciwi $TAG" \
+                  --notes "Release $TAG"
+
+                set -- \
                   dist/ciwi-linux-amd64 \
                   dist/ciwi-darwin-amd64 \
                   dist/ciwi-darwin-arm64 \
                   dist/ciwi-windows-amd64.exe \
-                  dist/ciwi-checksums.txt \
-                  --repo izzyreal/ciwi \
-                  --title "ciwi $TAG" \
-                  --notes "Release $TAG"
+                  dist/ciwi-checksums.txt
+                TOTAL="$#"
+                IDX=0
+                for FILE in "$@"; do
+                  IDX=$((IDX + 1))
+                  SIZE="$(wc -c < "$FILE" | tr -d ' ')"
+                  START="$(date +%s)"
+                  echo "[release] Uploading ${IDX}/${TOTAL}: ${FILE} (${SIZE} bytes)"
+                  gh release upload "$TAG" "$FILE" --repo izzyreal/ciwi --clobber
+                  END="$(date +%s)"
+                  echo "[release] Uploaded ${IDX}/${TOTAL}: ${FILE} in $((END-START))s"
+                done
                 echo "__CIWI_RELEASE_SUMMARY__ release_created=yes"
               fi
             env:
