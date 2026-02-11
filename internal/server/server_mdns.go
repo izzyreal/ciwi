@@ -4,10 +4,10 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/hashicorp/mdns"
 )
 
 func startMDNSAdvertiser(serverAddr string) func() {
@@ -22,6 +22,7 @@ func startMDNSAdvertiser(serverAddr string) func() {
 	if _, err := strconv.Atoi(port); err != nil {
 		return func() {}
 	}
+	portNum, _ := strconv.Atoi(port)
 
 	host, _ := os.Hostname()
 	if strings.TrimSpace(host) == "" {
@@ -32,36 +33,25 @@ func startMDNSAdvertiser(serverAddr string) func() {
 		instance = "ciwi"
 	}
 
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		if _, err := exec.LookPath("dns-sd"); err != nil {
-			return func() {}
-		}
-		cmd = exec.Command("dns-sd", "-R", instance, "_ciwi._tcp", "local", port)
-	case "linux":
-		if _, err := exec.LookPath("avahi-publish-service"); err != nil {
-			return func() {}
-		}
-		cmd = exec.Command("avahi-publish-service", instance, "_ciwi._tcp", port)
-	default:
+	meta := []string{
+		"name=ciwi",
+		"api_version=1",
+		"version=" + currentVersion(),
+	}
+	service, err := mdns.NewMDNSService(instance, "_ciwi._tcp", "", "", portNum, nil, meta)
+	if err != nil {
+		log.Printf("mdns advertise service setup failed: %v", err)
 		return func() {}
 	}
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
+	server, err := mdns.NewServer(&mdns.Config{Zone: service})
+	if err != nil {
 		log.Printf("mdns advertise start failed: %v", err)
 		return func() {}
 	}
 	log.Printf("mdns advertising enabled: service=_ciwi._tcp instance=%q port=%s", instance, port)
 
 	return func() {
-		if cmd.Process == nil {
-			return
-		}
-		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		server.Shutdown()
 	}
 }
 

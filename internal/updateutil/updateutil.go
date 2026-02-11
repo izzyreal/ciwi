@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
 func ExpectedAssetName(goos, goarch string) string {
@@ -30,16 +31,10 @@ func ExpectedAssetName(goos, goarch string) string {
 }
 
 func IsVersionNewer(latest, current string) bool {
-	l := parseSemver(strings.TrimSpace(latest))
-	c := parseSemver(strings.TrimSpace(current))
-	if l.valid && c.valid {
-		if l.major != c.major {
-			return l.major > c.major
-		}
-		if l.minor != c.minor {
-			return l.minor > c.minor
-		}
-		return l.patch > c.patch
+	l, lok := normalizeSemver(latest)
+	c, cok := normalizeSemver(current)
+	if lok && cok {
+		return semver.Compare(l, c) > 0
 	}
 	return strings.TrimPrefix(latest, "v") != strings.TrimPrefix(current, "v")
 }
@@ -118,26 +113,18 @@ func LooksLikeGoRunBinary(path string) bool {
 	return strings.Contains(p, "/go-build") || strings.Contains(p, "/temp/")
 }
 
-type semver struct {
-	major int
-	minor int
-	patch int
-	valid bool
-}
-
-func parseSemver(v string) semver {
-	v = strings.TrimPrefix(v, "v")
-	parts := strings.Split(v, ".")
-	if len(parts) != 3 {
-		return semver{}
+func normalizeSemver(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", false
 	}
-	maj, e1 := strconv.Atoi(parts[0])
-	min, e2 := strconv.Atoi(parts[1])
-	pat, e3 := strconv.Atoi(parts[2])
-	if e1 != nil || e2 != nil || e3 != nil {
-		return semver{}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
 	}
-	return semver{major: maj, minor: min, patch: pat, valid: true}
+	if !semver.IsValid(v) {
+		return "", false
+	}
+	return v, true
 }
 
 func envOrDefault(key, fallback string) string {
