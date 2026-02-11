@@ -69,6 +69,22 @@ launchctl print gui/$(id -u)/nl.izmar.ciwi.agent
 tail -f "$HOME/Library/Logs/ciwi/agent.out.log" "$HOME/Library/Logs/ciwi/agent.err.log"
 ```
 
+### macOS agent uninstall
+
+One-line uninstall (no options):
+
+```bash
+curl -fsSL -o /tmp/uninstall_ciwi_agent_macos.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/uninstall_agent_macos.sh && \
+sh /tmp/uninstall_ciwi_agent_macos.sh
+```
+
+Uninstaller behavior:
+- Stops/unloads LaunchAgent `nl.izmar.ciwi.agent`
+- Removes `~/Library/LaunchAgents/nl.izmar.ciwi.agent.plist`
+- Removes ciwi binary from `~/.local/bin/ciwi` and `/usr/local/bin/ciwi` (with sudo if needed)
+- Leaves logs/workdir by default (`~/Library/Logs/ciwi`, `~/.ciwi-agent`) and prints cleanup command
+
 ## Linux server installer (systemd)
 
 One-line install (no options):
