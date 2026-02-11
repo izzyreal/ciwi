@@ -93,6 +93,7 @@ const indexHTML = `<!doctype html>
         <input id="repoRef" placeholder="ref (optional: main, tag, sha)" />
         <input id="configFile" value="ciwi-project.yaml" />
         <button id="importProjectBtn">Add Project</button>
+        <a class="job-link" href="/vault">Vault Connections</a>
         <span id="importResult"></span>
       </div>
     </div>
@@ -245,7 +246,7 @@ const indexHTML = `<!doctype html>
         '<td>' + formatTimestamp(job.created_utc) + '</td>';
       if (includeActions) {
         const actionTd = document.createElement('td');
-        if ((job.status || '').toLowerCase() === 'queued') {
+        if (['queued', 'leased'].includes((job.status || '').toLowerCase())) {
           const btn = document.createElement('button');
           btn.className = 'secondary';
           btn.textContent = 'Remove';
@@ -288,7 +289,7 @@ const indexHTML = `<!doctype html>
       }
     };
     document.getElementById('clearQueueBtn').onclick = async () => {
-      if (!confirm('Clear all queued jobs?')) {
+      if (!confirm('Clear all queued/leased jobs?')) {
         return;
       }
       try {

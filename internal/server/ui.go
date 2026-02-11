@@ -29,6 +29,10 @@ func (s *stateStore) uiHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(projectHTML))
 		return
+	case r.URL.Path == "/vault":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(vaultHTML))
+		return
 	case strings.HasPrefix(r.URL.Path, "/jobs/"):
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(jobHTML))

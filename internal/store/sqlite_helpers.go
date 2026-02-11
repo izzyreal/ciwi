@@ -12,23 +12,24 @@ import (
 
 func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error) {
 	var (
-		job                                           protocol.Job
-		requiredJSON, artifactGlobsJSON, metadataJSON string
-		sourceRepo, sourceRef                         sql.NullString
-		createdUTC                                    string
-		startedUTC, finishedUTC                       sql.NullString
-		leasedByAgentID, leasedUTC                    sql.NullString
-		exitCode                                      sql.NullInt64
-		errorText, outputText                         sql.NullString
+		job                                                    protocol.Job
+		envJSON, requiredJSON, artifactGlobsJSON, metadataJSON string
+		sourceRepo, sourceRef                                  sql.NullString
+		createdUTC                                             string
+		startedUTC, finishedUTC                                sql.NullString
+		leasedByAgentID, leasedUTC                             sql.NullString
+		exitCode                                               sql.NullInt64
+		errorText, outputText                                  sql.NullString
 	)
 
 	if err := scanner.Scan(
-		&job.ID, &job.Script, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &sourceRepo, &sourceRef, &metadataJSON,
+		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &sourceRepo, &sourceRef, &metadataJSON,
 		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText,
 	); err != nil {
 		return protocol.Job{}, err
 	}
 
+	_ = json.Unmarshal([]byte(envJSON), &job.Env)
 	_ = json.Unmarshal([]byte(requiredJSON), &job.RequiredCapabilities)
 	_ = json.Unmarshal([]byte(artifactGlobsJSON), &job.ArtifactGlobs)
 	_ = json.Unmarshal([]byte(metadataJSON), &job.Metadata)

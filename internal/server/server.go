@@ -32,6 +32,7 @@ type stateStore struct {
 	agents       map[string]agentState
 	db           *store.Store
 	artifactsDir string
+	vaultTokens  *vaultTokenCache
 }
 
 func Run(ctx context.Context) error {
@@ -49,7 +50,7 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("create artifacts dir: %w", err)
 	}
 
-	s := &stateStore{agents: make(map[string]agentState), db: db, artifactsDir: artifactsDir}
+	s := &stateStore{agents: make(map[string]agentState), db: db, artifactsDir: artifactsDir, vaultTokens: newVaultTokenCache()}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.uiHandler)
@@ -60,6 +61,8 @@ func Run(ctx context.Context) error {
 	mux.HandleFunc("/api/v1/projects/import", s.importProjectHandler)
 	mux.HandleFunc("/api/v1/projects", s.listProjectsHandler)
 	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)
+	mux.HandleFunc("/api/v1/vault/connections", s.vaultConnectionsHandler)
+	mux.HandleFunc("/api/v1/vault/connections/", s.vaultConnectionByIDHandler)
 	mux.HandleFunc("/api/v1/jobs", s.jobsHandler)
 	mux.HandleFunc("/api/v1/jobs/", s.jobByIDHandler)
 	mux.HandleFunc("/api/v1/jobs/clear-queue", s.clearQueueHandler)

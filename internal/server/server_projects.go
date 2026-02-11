@@ -127,56 +127,65 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if len(parts) != 2 || parts[1] != "reload" {
+	if len(parts) != 2 {
 		http.NotFound(w, r)
 		return
 	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	switch parts[1] {
+	case "reload":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 
-	project, err := s.db.GetProjectByID(projectID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-	if strings.TrimSpace(project.RepoURL) == "" {
-		http.Error(w, "project has no repo_url configured", http.StatusBadRequest)
-		return
-	}
-	configFile := project.ConfigFile
-	if configFile == "" {
-		configFile = "ciwi-project.yaml"
-	}
+		project, err := s.db.GetProjectByID(projectID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if strings.TrimSpace(project.RepoURL) == "" {
+			http.Error(w, "project has no repo_url configured", http.StatusBadRequest)
+			return
+		}
+		configFile := project.ConfigFile
+		if configFile == "" {
+			configFile = "ciwi-project.yaml"
+		}
 
-	tmpDir, err := os.MkdirTemp("", "ciwi-reload-*")
-	if err != nil {
-		http.Error(w, fmt.Sprintf("create temp dir: %v", err), http.StatusInternalServerError)
-		return
+		tmpDir, err := os.MkdirTemp("", "ciwi-reload-*")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("create temp dir: %v", err), http.StatusInternalServerError)
+			return
+		}
+		defer os.RemoveAll(tmpDir)
+
+		reloadCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+
+		cfgContent, err := fetchConfigFileFromRepo(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		resp, err := s.persistImportedProject(protocol.ImportProjectRequest{
+			RepoURL:    project.RepoURL,
+			RepoRef:    project.RepoRef,
+			ConfigFile: configFile,
+		}, cfgContent)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, resp)
+	case "vault":
+		s.projectVaultHandler(w, r, projectID)
+	case "vault-test":
+		s.projectVaultTestHandler(w, r, projectID)
+	default:
+		http.NotFound(w, r)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	reloadCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-	defer cancel()
-
-	cfgContent, err := fetchConfigFileFromRepo(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	resp, err := s.persistImportedProject(protocol.ImportProjectRequest{
-		RepoURL:    project.RepoURL,
-		RepoRef:    project.RepoRef,
-		ConfigFile: configFile,
-	}, cfgContent)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, resp)
 }
 
 func fetchConfigFileFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (string, error) {

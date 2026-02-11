@@ -124,6 +124,22 @@ func (s *Store) GetProjectByID(id int64) (protocol.ProjectSummary, error) {
 	return p, nil
 }
 
+func (s *Store) GetProjectByName(name string) (protocol.ProjectSummary, error) {
+	var p protocol.ProjectSummary
+	row := s.db.QueryRow(`
+		SELECT id, name, config_path, repo_url, repo_ref, config_file
+		FROM projects
+		WHERE name = ?
+	`, name)
+	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile); err != nil {
+		if err == sql.ErrNoRows {
+			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
+		}
+		return protocol.ProjectSummary{}, fmt.Errorf("get project: %w", err)
+	}
+	return p, nil
+}
+
 func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 	project, err := s.GetProjectByID(id)
 	if err != nil {
@@ -174,12 +190,14 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 						TestName:    step.Test.Name,
 						TestCommand: step.Test.Command,
 						TestFormat:  step.Test.Format,
+						Env:         cloneMap(step.Env),
 					})
 					continue
 				}
 				d.Steps = append(d.Steps, protocol.PipelineStep{
 					Type: "run",
 					Run:  step.Run,
+					Env:  cloneMap(step.Env),
 				})
 			}
 			for idx, vars := range j.MatrixInclude {

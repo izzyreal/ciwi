@@ -83,6 +83,59 @@ project:
 	}
 }
 
+func TestParseProjectVault(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+  vault:
+    connection: home-vault
+    secrets:
+      - name: github-secret
+        mount: kv
+        path: gh
+        key: token
+        kv_version: 2
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+`), "test-vault")
+	if err != nil {
+		t.Fatalf("parse vault config: %v", err)
+	}
+	if cfg.Project.Vault == nil {
+		t.Fatal("expected project.vault to be parsed")
+	}
+	if cfg.Project.Vault.Connection != "home-vault" {
+		t.Fatalf("unexpected vault connection: %q", cfg.Project.Vault.Connection)
+	}
+	if len(cfg.Project.Vault.Secrets) != 1 || cfg.Project.Vault.Secrets[0].Name != "github-secret" {
+		t.Fatalf("unexpected vault secrets: %+v", cfg.Project.Vault.Secrets)
+	}
+}
+
+func TestParseRejectsInvalidProjectVault(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+  vault:
+    connection: ""
+    secrets:
+      - name: github-secret
+        path: gh
+        key: token
+pipelines: []
+`), "test-invalid-vault")
+	if err == nil || !strings.Contains(err.Error(), "project.vault.connection is required") {
+		t.Fatalf("expected project.vault.connection error, got: %v", err)
+	}
+}
+
 func TestParseRejectsInvalidYAML(t *testing.T) {
 	_, err := Parse([]byte("version: ["), "test-yaml")
 	if err == nil || !strings.Contains(err.Error(), "parse YAML") {

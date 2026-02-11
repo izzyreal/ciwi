@@ -22,6 +22,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	jobID := fmt.Sprintf("job-%d", now.UnixNano())
 
 	requiredJSON, _ := json.Marshal(req.RequiredCapabilities)
+	envJSON, _ := json.Marshal(req.Env)
 	artifactGlobsJSON, _ := json.Marshal(req.ArtifactGlobs)
 	metadataJSON, _ := json.Marshal(req.Metadata)
 
@@ -32,15 +33,16 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	}
 
 	if _, err := s.db.Exec(`
-		INSERT INTO jobs (id, script, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json, status, created_utc)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, jobID, req.Script, string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), sourceRepo, sourceRef, string(metadataJSON), "queued", now.Format(time.RFC3339Nano)); err != nil {
+		INSERT INTO jobs (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json, status, created_utc)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), sourceRepo, sourceRef, string(metadataJSON), "queued", now.Format(time.RFC3339Nano)); err != nil {
 		return protocol.Job{}, fmt.Errorf("insert job: %w", err)
 	}
 
 	return protocol.Job{
 		ID:                   jobID,
 		Script:               req.Script,
+		Env:                  cloneMap(req.Env),
 		RequiredCapabilities: cloneMap(req.RequiredCapabilities),
 		TimeoutSeconds:       req.TimeoutSeconds,
 		ArtifactGlobs:        append([]string(nil), req.ArtifactGlobs...),
@@ -53,7 +55,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 
 func (s *Store) ListJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM jobs
 		ORDER BY created_utc DESC
@@ -79,7 +81,7 @@ func (s *Store) ListJobs() ([]protocol.Job, error) {
 
 func (s *Store) GetJob(id string) (protocol.Job, error) {
 	row := s.db.QueryRow(`
-		SELECT id, script, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM jobs WHERE id = ?
 	`, id)
@@ -129,7 +131,7 @@ func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol
 
 func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM jobs WHERE status = 'queued'
 		ORDER BY created_utc ASC
@@ -204,7 +206,7 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 }
 
 func (s *Store) DeleteQueuedJob(jobID string) error {
-	res, err := s.db.Exec(`DELETE FROM jobs WHERE id = ? AND status = 'queued'`, jobID)
+	res, err := s.db.Exec(`DELETE FROM jobs WHERE id = ? AND status IN ('queued', 'leased')`, jobID)
 	if err != nil {
 		return fmt.Errorf("delete queued job: %w", err)
 	}
@@ -214,13 +216,13 @@ func (s *Store) DeleteQueuedJob(jobID string) error {
 		if getErr != nil {
 			return fmt.Errorf("job not found")
 		}
-		return fmt.Errorf("job is not queued")
+		return fmt.Errorf("job is not pending")
 	}
 	return nil
 }
 
 func (s *Store) ClearQueuedJobs() (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM jobs WHERE status = 'queued'`)
+	res, err := s.db.Exec(`DELETE FROM jobs WHERE status IN ('queued', 'leased')`)
 	if err != nil {
 		return 0, fmt.Errorf("clear queued jobs: %w", err)
 	}

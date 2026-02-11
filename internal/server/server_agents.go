@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -83,6 +84,16 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if job == nil {
 		writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{Assigned: false, Message: "no matching queued job"})
+		return
+	}
+	if err := s.resolveJobSecrets(r.Context(), job); err != nil {
+		failMsg := fmt.Sprintf("secret resolution failed before execution: %v", err)
+		_, _ = s.db.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+			AgentID: req.AgentID,
+			Status:  "failed",
+			Error:   failMsg,
+		})
+		writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{Assigned: false, Message: failMsg})
 		return
 	}
 	writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{Assigned: true, Job: job})

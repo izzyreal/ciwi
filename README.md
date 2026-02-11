@@ -39,6 +39,8 @@ go run ./cmd/ciwi all-in-one
 - `GET /api/v1/agents` returns known agents
 - `POST /api/v1/projects/import` imports a project from git (`ciwi-project.yaml` by default)
 - `POST /api/v1/projects/{projectId}/reload` reloads project definition from saved VCS settings
+- `GET/PUT /api/v1/projects/{projectId}/vault` gets/updates project Vault settings
+- `POST /api/v1/projects/{projectId}/vault-test` tests project Vault access + mapped secrets
 - `POST /api/v1/jobs` enqueues a job
 - `GET /api/v1/jobs` returns all jobs
 - `GET /api/v1/jobs/{id}` returns one job
@@ -50,6 +52,9 @@ go run ./cmd/ciwi all-in-one
 - `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job (agent use)
 - `GET /api/v1/jobs/{id}/tests` returns parsed test report for a job
 - `POST /api/v1/jobs/{id}/tests` uploads parsed test report for a job (agent use)
+- `GET/POST /api/v1/vault/connections` lists/upserts Vault AppRole connections
+- `DELETE /api/v1/vault/connections/{id}` deletes a Vault connection
+- `POST /api/v1/vault/connections/{id}/test` tests Vault connection auth and optional read
 - `POST /api/v1/agent/lease` leases a matching queued job to an agent
 - `GET /api/v1/projects` returns persisted projects with pipelines
 - `GET /api/v1/projects/{projectId}` returns full project structure (pipelines/jobs/matrix)
@@ -65,6 +70,75 @@ Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `run`: executes a shell command line.
 - `test`: executes a dedicated test command and enables parsed test reports in job UI/API.
   - fields: `name` (optional), `command` (required), `format` (optional, currently `go-test-json`).
+
+Step-level env vars are supported:
+- `steps[].env` key/value pairs are passed to the job process environment.
+- Secret placeholders inside env values are resolved at lease-time:
+  - `{{ secret.<name> }}`
+
+## Vault setup (AppRole)
+
+Vault is configured in two layers:
+1. Global Vault connection (`/vault` page)
+2. Per-project secret mappings (Project page -> "Vault Access")
+
+You can also define project Vault mappings in `ciwi-project.yaml` under `project.vault`; on import/reload/load this is synced into sqlite.
+
+### 1) Add Vault connection
+
+Open `/vault` and create a connection with:
+- `name` (e.g. `home-vault`)
+- `url` (e.g. `http://bhakti.local:8200`)
+- `approle_mount` (usually `approle`)
+- `role_id`
+- `secret_id_env` (required): name of environment variable that contains the AppRole Secret ID
+
+Then use the **Test** button to validate AppRole login (and optional read checks through project test flow).
+
+### 2) Configure project Vault access
+
+Open a project page and in **Vault Access**:
+- select the Vault connection
+- define mappings, one per line:
+  - `name=mount/path#key`
+  - example: `github_secret=kv/gh#token`
+- click **Save Vault Settings**
+- click **Test**
+
+### 3) Use mapped secrets in pipeline YAML
+
+Example `ciwi-project.yaml` step:
+
+```yaml
+steps:
+  - run: github-release ... --security-token "$GITHUB_SECRET"
+    env:
+      GITHUB_SECRET: "{{ secret.github_secret }}"
+```
+
+This references the project mapping named `github_secret`.
+
+### Optional: define mappings in `ciwi-project.yaml`
+
+```yaml
+project:
+  name: ciwi
+  vault:
+    connection: home-vault
+    secrets:
+      - name: github-secret
+        mount: kv
+        path: gh
+        key: token
+        kv_version: 2
+```
+
+## Vault security model
+
+- Secrets are resolved **just-in-time** when an agent leases a job.
+- Plaintext secret values are **not persisted** in sqlite.
+- Jobs with secrets automatically disable shell trace (`set -x`) for safer logs.
+- Job output streaming/final logs redact known secret values as `***`.
 
 ## Quick API test
 

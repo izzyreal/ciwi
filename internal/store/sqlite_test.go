@@ -115,6 +115,66 @@ func TestStoreLoadConfigAndProjectDetail(t *testing.T) {
 	}
 }
 
+func TestStoreLoadConfigAppliesProjectVaultSettings(t *testing.T) {
+	s := openTestStore(t)
+
+	if _, err := s.UpsertVaultConnection(protocol.UpsertVaultConnectionRequest{
+		Name:         "home-vault",
+		URL:          "http://vault.local:8200",
+		AuthMethod:   "approle",
+		AppRoleMount: "approle",
+		RoleID:       "role-1",
+		SecretIDEnv:  "CIWI_VAULT_SECRET_ID",
+	}); err != nil {
+		t.Fatalf("upsert vault connection: %v", err)
+	}
+
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+  vault:
+    connection: home-vault
+    secrets:
+      - name: github-secret
+        mount: kv
+        path: gh
+        key: token
+pipelines:
+  - id: build
+    jobs:
+      - id: unit
+        timeout_seconds: 60
+        steps:
+          - run: go test ./...
+`), "vault-config")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	if err := s.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	project, err := s.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	settings, err := s.GetProjectVaultSettings(project.ID)
+	if err != nil {
+		t.Fatalf("get project vault settings: %v", err)
+	}
+	if settings.VaultConnectionName != "home-vault" {
+		t.Fatalf("expected connection name home-vault, got %q", settings.VaultConnectionName)
+	}
+	if settings.VaultConnectionID <= 0 {
+		t.Fatalf("expected resolved connection id > 0, got %d", settings.VaultConnectionID)
+	}
+	if len(settings.Secrets) != 1 || settings.Secrets[0].Name != "github-secret" || settings.Secrets[0].Path != "gh" || settings.Secrets[0].Key != "token" {
+		t.Fatalf("unexpected project vault secrets: %+v", settings.Secrets)
+	}
+}
+
 func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 	s := openTestStore(t)
 
@@ -173,8 +233,8 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clear queued jobs: %v", err)
 	}
-	if cleared != 0 {
-		t.Fatalf("expected clear queued count 0, got %d", cleared)
+	if cleared != 1 {
+		t.Fatalf("expected clear queued count 1 (leased), got %d", cleared)
 	}
 
 	flushed, err := s.FlushJobHistory()
@@ -189,11 +249,24 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected 1 remaining job (leased), got %d", len(jobs))
+	if len(jobs) != 0 {
+		t.Fatalf("expected no pending jobs after clear queue, got %d", len(jobs))
 	}
-	if jobs[0].Status != "leased" {
-		t.Fatalf("expected remaining job status leased, got %q", jobs[0].Status)
+
+	cleared, err = s.ClearQueuedJobs()
+	if err != nil {
+		t.Fatalf("clear queued second pass: %v", err)
+	}
+	if cleared != 0 {
+		t.Fatalf("expected clear queued count 0 on second pass, got %d", cleared)
+	}
+
+	jobs, err = s.ListJobs()
+	if err != nil {
+		t.Fatalf("list jobs second pass: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("expected no remaining jobs after second clear, got %d", len(jobs))
 	}
 }
 

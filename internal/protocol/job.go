@@ -18,6 +18,7 @@ type SourceSpec struct {
 
 type CreateJobRequest struct {
 	Script               string            `json:"script"`
+	Env                  map[string]string `json:"env,omitempty"`
 	RequiredCapabilities map[string]string `json:"required_capabilities"`
 	TimeoutSeconds       int               `json:"timeout_seconds"`
 	ArtifactGlobs        []string          `json:"artifact_globs,omitempty"`
@@ -28,6 +29,7 @@ type CreateJobRequest struct {
 type Job struct {
 	ID                   string            `json:"id"`
 	Script               string            `json:"script"`
+	Env                  map[string]string `json:"env,omitempty"`
 	RequiredCapabilities map[string]string `json:"required_capabilities"`
 	TimeoutSeconds       int               `json:"timeout_seconds"`
 	ArtifactGlobs        []string          `json:"artifact_globs,omitempty"`
@@ -43,6 +45,7 @@ type Job struct {
 	Error                string            `json:"error,omitempty"`
 	Output               string            `json:"output,omitempty"`
 	TestSummary          *JobTestSummary   `json:"test_summary,omitempty"`
+	SensitiveValues      []string          `json:"sensitive_values,omitempty"`
 }
 
 type CreateJobResponse struct {
@@ -116,11 +119,12 @@ type PipelineJobDetail struct {
 }
 
 type PipelineStep struct {
-	Type        string `json:"type"`
-	Run         string `json:"run,omitempty"`
-	TestName    string `json:"test_name,omitempty"`
-	TestCommand string `json:"test_command,omitempty"`
-	TestFormat  string `json:"test_format,omitempty"`
+	Type        string            `json:"type"`
+	Run         string            `json:"run,omitempty"`
+	TestName    string            `json:"test_name,omitempty"`
+	TestCommand string            `json:"test_command,omitempty"`
+	TestFormat  string            `json:"test_format,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
 }
 
 type PipelineDetail struct {

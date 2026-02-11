@@ -135,7 +135,11 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				}
 			}
 			rendered := make([]string, 0, len(pj.Steps)*3)
+			env := make(map[string]string)
 			for idx, step := range pj.Steps {
+				for k, v := range step.Env {
+					env[k] = renderTemplate(v, vars)
+				}
 				if step.Test != nil {
 					command := renderTemplate(step.Test.Command, vars)
 					if strings.TrimSpace(command) == "" {
@@ -178,6 +182,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 
 			job, err := s.db.CreateJob(protocol.CreateJobRequest{
 				Script:               strings.Join(rendered, "\n"),
+				Env:                  cloneMap(env),
 				RequiredCapabilities: cloneMap(pj.RunsOn),
 				TimeoutSeconds:       pj.TimeoutSeconds,
 				ArtifactGlobs:        append([]string(nil), pj.Artifacts...),

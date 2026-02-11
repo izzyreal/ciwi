@@ -57,7 +57,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		if checkoutErr != nil {
 			exitCode := exitCodeFromErr(checkoutErr)
 			failMsg := "checkout failed: " + checkoutErr.Error()
-			trimmedOutput := trimOutput(output.String())
+			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 			if reportErr := reportFailure(ctx, client, serverURL, agentID, job, exitCode, failMsg, trimmedOutput); reportErr != nil {
 				return reportErr
 			}
@@ -69,6 +69,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 
 	traceShell := boolEnv("CIWI_AGENT_TRACE_SHELL", true)
 	verboseGo := boolEnv("CIWI_AGENT_GO_BUILD_VERBOSE", true)
+	if job.Metadata != nil && job.Metadata["has_secrets"] == "1" {
+		traceShell = false
+	}
 
 	tracedScript := job.Script
 	if runtime.GOOS == "windows" {
@@ -92,9 +95,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	cmd.Dir = execDir
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	cmd.Env = withGoVerbose(os.Environ(), verboseGo)
+	cmd.Env = withGoVerbose(mergeEnv(os.Environ(), job.Env), verboseGo)
 
-	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output)
+	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output, job.SensitiveValues)
 	defer stopStreaming()
 
 	runStart := time.Now()
@@ -115,7 +118,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 	}
 
-	trimmedOutput := trimOutput(output.String())
+	trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 	testReport := parseJobTestReport(output.String())
 	if testReport.Total > 0 {
 		if err := uploadTestReport(ctx, client, serverURL, agentID, job.ID, testReport); err != nil {
@@ -123,7 +126,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		} else {
 			fmt.Fprintf(&output, "%s\n", testReportSummary(testReport))
 		}
-		trimmedOutput = trimOutput(output.String())
+		trimmedOutput = redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 	}
 
 	if err == nil {
@@ -183,7 +186,7 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer) func() {
+func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, sensitive []string) func() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	done := make(chan struct{})
 	stopCh := make(chan struct{})
@@ -198,7 +201,7 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				snapshot := trimOutput(output.String())
+				snapshot := redactSensitive(trimOutput(output.String()), sensitive)
 				if snapshot == lastSent {
 					continue
 				}
@@ -278,6 +281,39 @@ func withGoVerbose(env []string, enabled bool) []string {
 		}
 	}
 	return append(env, "GOFLAGS=-v")
+}
+
+func mergeEnv(base []string, extra map[string]string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	out := append([]string(nil), base...)
+	index := map[string]int{}
+	for i, e := range out {
+		if eq := strings.IndexByte(e, '='); eq > 0 {
+			index[e[:eq]] = i
+		}
+	}
+	for k, v := range extra {
+		entry := k + "=" + v
+		if pos, ok := index[k]; ok {
+			out[pos] = entry
+		} else {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+func redactSensitive(in string, sensitive []string) string {
+	out := in
+	for _, secret := range sensitive {
+		if strings.TrimSpace(secret) == "" {
+			continue
+		}
+		out = strings.ReplaceAll(out, secret, "***")
+	}
+	return out
 }
 
 func boolEnv(key string, defaultValue bool) bool {

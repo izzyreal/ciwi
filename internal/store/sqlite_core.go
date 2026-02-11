@@ -10,6 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 type Store struct {
@@ -66,6 +67,24 @@ func (s *Store) migrate() error {
 			repo_url TEXT,
 			repo_ref TEXT,
 			config_file TEXT,
+			vault_connection_id INTEGER,
+			vault_connection_name TEXT,
+			project_secrets_json TEXT NOT NULL DEFAULT '[]',
+			created_utc TEXT NOT NULL,
+			updated_utc TEXT NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS vault_connections (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			url TEXT NOT NULL,
+			auth_method TEXT NOT NULL,
+			approle_mount TEXT NOT NULL,
+			role_id TEXT NOT NULL,
+			secret_id_file TEXT,
+			secret_id_env TEXT,
+			namespace TEXT,
+			kv_default_mount TEXT,
+			kv_default_version INTEGER NOT NULL DEFAULT 2,
 			created_utc TEXT NOT NULL,
 			updated_utc TEXT NOT NULL
 		);`,
@@ -96,6 +115,7 @@ func (s *Store) migrate() error {
 		`CREATE TABLE IF NOT EXISTS jobs (
 			id TEXT PRIMARY KEY,
 			script TEXT NOT NULL,
+			env_json TEXT NOT NULL DEFAULT '{}',
 			required_capabilities_json TEXT NOT NULL,
 			timeout_seconds INTEGER NOT NULL,
 			artifact_globs_json TEXT NOT NULL DEFAULT '[]',
@@ -144,10 +164,22 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("projects", "config_file", "TEXT"); err != nil {
 		return err
 	}
+	if err := s.addColumnIfMissing("projects", "vault_connection_id", "INTEGER"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("projects", "vault_connection_name", "TEXT"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("projects", "project_secrets_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
 	if err := s.addColumnIfMissing("pipeline_jobs", "artifacts_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	if err := s.addColumnIfMissing("jobs", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("jobs", "env_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
 		return err
 	}
 	return nil
@@ -172,6 +204,9 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 
 	projectID, err := upsertProject(tx, cfg.Project.Name, configPath, repoURL, repoRef, configFile, now)
 	if err != nil {
+		return err
+	}
+	if err := applyProjectVaultConfig(tx, projectID, cfg.Project.Vault, now); err != nil {
 		return err
 	}
 
@@ -202,6 +237,44 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+func applyProjectVaultConfig(tx *sql.Tx, projectID int64, vault *config.ProjectVault, now string) error {
+	if vault == nil {
+		return nil
+	}
+
+	secrets := make([]protocol.ProjectSecretSpec, 0, len(vault.Secrets))
+	for _, sec := range vault.Secrets {
+		secrets = append(secrets, protocol.ProjectSecretSpec{
+			Name:      sec.Name,
+			Mount:     sec.Mount,
+			Path:      sec.Path,
+			Key:       sec.Key,
+			KVVersion: sec.KVVersion,
+		})
+	}
+	secretsJSON, _ := json.Marshal(secrets)
+
+	connName := strings.TrimSpace(vault.Connection)
+	var connID any
+	if connName != "" {
+		var id int64
+		if err := tx.QueryRow(`SELECT id FROM vault_connections WHERE name = ?`, connName).Scan(&id); err == nil {
+			connID = id
+		} else if err != sql.ErrNoRows {
+			return fmt.Errorf("resolve vault connection %q: %w", connName, err)
+		}
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE projects
+		SET vault_connection_id = ?, vault_connection_name = ?, project_secrets_json = ?, updated_utc = ?
+		WHERE id = ?
+	`, connID, connName, string(secretsJSON), now, projectID); err != nil {
+		return fmt.Errorf("apply project vault config: %w", err)
 	}
 	return nil
 }
