@@ -54,6 +54,7 @@ sh /tmp/install_ciwi_agent_macos.sh
 
 Installer behavior:
 - Tries mDNS/Bonjour discovery first (`_ciwi._tcp`), then falls back to probing `http://<local-ip>:8112`.
+- Prefers hostname-based URLs when resolvable (for example `http://bhakti.local:8112`) and deduplicates same host seen via multiple IPs/adapters.
 - If multiple servers are found, prompts you to choose one.
 - If none are found, prompts for server URL.
 - Prompts for sudo only if needed to install into `/usr/local/bin`; otherwise falls back to `~/.local/bin`.

@@ -13,6 +13,65 @@ require_cmd() {
   fi
 }
 
+normalize_host() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/\.$//'
+}
+
+is_ipv4() {
+  printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+}
+
+resolve_hostname_for_ip() {
+  ip="$1"
+  if ! is_ipv4 "$ip"; then
+    printf '%s\n' ""
+    return
+  fi
+  if command -v dig >/dev/null 2>&1; then
+    name="$(dig +short -x "$ip" 2>/dev/null | sed 's/\.$//' | sed -n '1p' || true)"
+    if [ -n "$name" ]; then
+      printf '%s\n' "$name"
+      return
+    fi
+  fi
+  if command -v dscacheutil >/dev/null 2>&1; then
+    name="$(dscacheutil -q host -a ip_address "$ip" 2>/dev/null | awk '/^name:/{print $2; exit}' || true)"
+    if [ -n "$name" ]; then
+      printf '%s\n' "$name"
+      return
+    fi
+  fi
+  printf '%s\n' ""
+}
+
+canonicalize_url() {
+  url="$(printf '%s' "$1" | tr -d '[:space:]')"
+  hostport="${url#http://}"
+  if [ "$hostport" = "$url" ]; then
+    printf '%s\n' "$url"
+    return
+  fi
+  host="${hostport%%:*}"
+  port="${hostport##*:}"
+  host="$(normalize_host "$host")"
+  if is_ipv4 "$host"; then
+    resolved="$(resolve_hostname_for_ip "$host")"
+    if [ -n "$resolved" ]; then
+      host="$(normalize_host "$resolved")"
+    fi
+  fi
+  printf 'http://%s:%s\n' "$host" "$port"
+}
+
+normalize_url() {
+  url="$(canonicalize_url "$1")"
+  hostport="${url#http://}"
+  host="${hostport%%:*}"
+  port="${hostport##*:}"
+  host="$(normalize_host "$host")"
+  printf 'http://%s:%s\n' "$host" "$port"
+}
+
 probe_server() {
   url="$1"
   health="$(curl -fsS --max-time 1 "${url}/healthz" 2>/dev/null || true)"
@@ -34,14 +93,21 @@ probe_server() {
 append_unique() {
   list="$1"
   item="$2"
+  item="$(canonicalize_url "$item")"
+  norm_item="$(normalize_url "$item")"
   if [ -z "$list" ]; then
     printf '%s\n' "$item"
     return
   fi
-  if printf '%s\n' "$list" | grep -Fxq "$item"; then
-    printf '%s\n' "$list"
-    return
-  fi
+  while IFS= read -r existing; do
+    [ -n "$existing" ] || continue
+    if [ "$(normalize_url "$existing")" = "$norm_item" ]; then
+      printf '%s\n' "$list"
+      return
+    fi
+  done <<EOF
+$list
+EOF
   printf '%s\n%s\n' "$list" "$item"
 }
 
@@ -97,7 +163,12 @@ discover_servers() {
 
   if command -v arp >/dev/null 2>&1; then
     for ip in $(arp -an | awk '{print $2}' | tr -d '()' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u); do
-      url="http://${ip}:8112"
+      host="$(resolve_hostname_for_ip "$ip")"
+      if [ -n "$host" ]; then
+        url="http://${host}:8112"
+      else
+        url="http://${ip}:8112"
+      fi
       if probe_server "$url"; then
         found="$(append_unique "$found" "$url")"
       fi
@@ -144,7 +215,7 @@ choose_server_url() {
     echo "server URL is required" >&2
     exit 1
   fi
-  printf '%s\n' "$entered"
+  printf '%s\n' "$(canonicalize_url "$entered")"
 }
 
 install_binary() {
