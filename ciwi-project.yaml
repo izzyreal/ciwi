@@ -112,7 +112,7 @@ pipelines:
                 dist/ciwi-darwin-amd64 \
                 dist/ciwi-darwin-arm64 \
                 dist/ciwi-windows-amd64.exe; do
-                shasum -a 256 "$f"
+                shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
               done > dist/ciwi-checksums.txt
               test -f dist/ciwi-checksums.txt
               echo "__CIWI_RELEASE_SUMMARY__ artifacts=ciwi-linux-amd64,ciwi-darwin-amd64,ciwi-darwin-arm64,ciwi-windows-amd64.exe,ciwi-checksums.txt"

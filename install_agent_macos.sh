@@ -228,7 +228,9 @@ EXPECTED_SHA="$(awk -v n="${ASSET}" '
   NF >= 2 {
     name=$2
     sub(/^\*/, "", name)
-    if (name == n) { print tolower($1); exit }
+    base=name
+    sub(/^.*\//, "", base)
+    if (name == n || base == n) { print tolower($1); exit }
   }
 ' "${TMP_DIR}/${CHECKSUM_ASSET}")"
 if [ -z "$EXPECTED_SHA" ]; then
