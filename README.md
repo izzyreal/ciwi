@@ -60,8 +60,8 @@ go run ./cmd/ciwi all-in-one
 - `GET /api/v1/projects` returns persisted projects with pipelines
 - `GET /api/v1/projects/{projectId}` returns full project structure (pipelines/jobs/matrix)
 - `POST /api/v1/pipelines/run` loads `ciwi.yaml` and enqueues pipeline jobs
-- `POST /api/v1/pipelines/{pipelineDbId}/run` runs a persisted pipeline from sqlite
-- `POST /api/v1/pipelines/{pipelineDbId}/run-selection` runs a selected job/matrix include
+- `POST /api/v1/pipelines/{pipelineDbId}/run` runs a persisted pipeline from sqlite (optional `{ "dry_run": true }`)
+- `POST /api/v1/pipelines/{pipelineDbId}/run-selection` runs a selected job/matrix include (optional `{ "dry_run": true }`)
 
 Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps

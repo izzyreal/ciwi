@@ -87,6 +87,10 @@ const jobHTML = `<!doctype html>
     <div class="card">
       <div class="meta-grid" id="metaGrid"></div>
     </div>
+    <div class="card" id="releaseSummaryCard" style="display:none;">
+      <h3 style="margin:0 0 10px;">Release Summary</h3>
+      <div id="releaseSummaryBox" style="font-size:14px;color:#1f2a24;"></div>
+    </div>
 
     <div class="card">
       <h3 style="margin:0 0 10px;">Output / Error</h3>
@@ -161,6 +165,8 @@ const jobHTML = `<!doctype html>
       const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
       document.getElementById('logBox').value = output || '<no output yet>';
 
+      renderReleaseSummary(job, output);
+
       try {
         const ares = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts');
         if (!ares.ok) {
@@ -215,6 +221,44 @@ const jobHTML = `<!doctype html>
       } catch (_) {
         document.getElementById('testReportBox').textContent = 'Could not load test report';
       }
+    }
+
+    function parseReleaseSummary(output) {
+      const out = {};
+      (output || '').split('\n').forEach(line => {
+        const m = line.match(/^__CIWI_RELEASE_SUMMARY__\s+([a-zA-Z0-9_]+)=(.*)$/);
+        if (!m) return;
+        out[m[1]] = m[2];
+      });
+      return out;
+    }
+
+    function renderReleaseSummary(job, output) {
+      const card = document.getElementById('releaseSummaryCard');
+      const box = document.getElementById('releaseSummaryBox');
+      if (!card || !box) return;
+
+      const m = (job && job.metadata) || {};
+      const isReleasePipeline = (m.pipeline_id || '') === 'release';
+      const parsed = parseReleaseSummary(output);
+      if (!isReleasePipeline && Object.keys(parsed).length === 0) {
+        card.style.display = 'none';
+        box.innerHTML = '';
+        return;
+      }
+
+      const dryRun = (m.dry_run || '') === '1';
+      const lines = [];
+      lines.push('<div><strong>Mode:</strong> ' + (dryRun ? 'dry-run' : 'live') + '</div>');
+      if (parsed.version) lines.push('<div><strong>Version:</strong> ' + escapeHtml(parsed.version) + '</div>');
+      if (parsed.tag) lines.push('<div><strong>Tag:</strong> ' + escapeHtml(parsed.tag) + '</div>');
+      if (parsed.release_created) lines.push('<div><strong>GitHub release:</strong> ' + escapeHtml(parsed.release_created) + '</div>');
+      if (parsed.artifacts) lines.push('<div><strong>Assets:</strong> ' + escapeHtml(parsed.artifacts) + '</div>');
+      if (parsed.next_version) lines.push('<div><strong>Next version:</strong> ' + escapeHtml(parsed.next_version) + '</div>');
+      if (lines.length === 1) lines.push('<div class="label">No release markers emitted yet.</div>');
+
+      box.innerHTML = lines.join('');
+      card.style.display = '';
     }
 
     setBackLink();

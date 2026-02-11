@@ -70,7 +70,11 @@ pipelines:
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
           - run: test -f VERSION
-          - run: git diff --quiet
+          - run: |
+              if [ -n "$(git status --porcelain)" ]; then
+                echo "working tree is not clean"
+                exit 1
+              fi
           - run: mkdir -p dist
           - run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o dist/ciwi-linux-amd64 ./cmd/ciwi
           - run: GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -o dist/ciwi-darwin-amd64 ./cmd/ciwi
@@ -79,6 +83,9 @@ pipelines:
               VERSION="$(cat VERSION)"
               test -n "$VERSION"
               echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+              TAG="v$VERSION"
+              echo "__CIWI_RELEASE_SUMMARY__ version=$VERSION"
+              echo "__CIWI_RELEASE_SUMMARY__ tag=$TAG"
           - run: |
               VERSION="$(cat VERSION)"
               TAG="v$VERSION"
@@ -86,23 +93,42 @@ pipelines:
                 echo "tag exists: $TAG"
                 exit 1
               fi
+              if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+                echo "remote tag exists: $TAG"
+                exit 1
+              fi
+          - run: |
+              test -f dist/ciwi-linux-amd64
+              test -f dist/ciwi-darwin-amd64
+              test -f dist/ciwi-windows-amd64.exe
+              echo "__CIWI_RELEASE_SUMMARY__ artifacts=ciwi-linux-amd64,ciwi-darwin-amd64,ciwi-windows-amd64.exe"
           - run: |
               VERSION="$(cat VERSION)"
               TAG="v$VERSION"
               git config user.name "ciwi-agent"
               git config user.email "ciwi-agent@local"
-              git tag -a "$TAG" -m "ciwi $TAG"
-              git push origin "$TAG"
+              if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
+                echo "[dry-run] skipping git tag/push"
+              else
+                git tag -a "$TAG" -m "ciwi $TAG"
+                git push origin "$TAG"
+              fi
           - run: |
               VERSION="$(cat VERSION)"
               TAG="v$VERSION"
-              gh release create "$TAG" \
-                dist/ciwi-linux-amd64 \
-                dist/ciwi-darwin-amd64 \
-                dist/ciwi-windows-amd64.exe \
-                --repo izzyreal/ciwi \
-                --title "ciwi $TAG" \
-                --notes "Release $TAG"
+              if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
+                echo "[dry-run] skipping gh release create"
+                echo "__CIWI_RELEASE_SUMMARY__ release_created=no (dry-run)"
+              else
+                gh release create "$TAG" \
+                  dist/ciwi-linux-amd64 \
+                  dist/ciwi-darwin-amd64 \
+                  dist/ciwi-windows-amd64.exe \
+                  --repo izzyreal/ciwi \
+                  --title "ciwi $TAG" \
+                  --notes "Release $TAG"
+                echo "__CIWI_RELEASE_SUMMARY__ release_created=yes"
+              fi
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
           - run: |
@@ -111,11 +137,16 @@ pipelines:
               $VERSION
               EOF
               NEXT_VERSION="${MAJOR}.${MINOR}.$((PATCH+1))"
-              printf '%s\n' "$NEXT_VERSION" > VERSION
-              git add VERSION
-              git commit -m "chore: bump VERSION to ${NEXT_VERSION} [skip ci]"
-              BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-              if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then BRANCH="main"; fi
-              git push origin "HEAD:${BRANCH}"
+              if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
+                echo "[dry-run] skipping VERSION bump commit/push"
+              else
+                printf '%s\n' "$NEXT_VERSION" > VERSION
+                git add VERSION
+                git commit -m "chore: bump VERSION to ${NEXT_VERSION} [skip ci]"
+                BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+                if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then BRANCH="main"; fi
+                git push origin "HEAD:${BRANCH}"
+              fi
+              echo "__CIWI_RELEASE_SUMMARY__ next_version=$NEXT_VERSION"
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"

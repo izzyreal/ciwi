@@ -169,6 +169,7 @@ type RunPipelineSelectionRequest struct {
 	PipelineJobID string `json:"pipeline_job_id,omitempty"`
 	MatrixName    string `json:"matrix_name,omitempty"`
 	MatrixIndex   *int   `json:"matrix_index,omitempty"`
+	DryRun        bool   `json:"dry_run,omitempty"`
 }
 
 type JobArtifact struct {

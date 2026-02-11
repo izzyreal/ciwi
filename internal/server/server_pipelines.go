@@ -85,8 +85,12 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	var req protocol.RunPipelineSelectionRequest
 	if parts[1] == "run" {
-		resp, err := s.enqueuePersistedPipeline(p, nil)
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&req)
+		}
+		resp, err := s.enqueuePersistedPipeline(p, &req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -95,7 +99,6 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var req protocol.RunPipelineSelectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
@@ -182,8 +185,14 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				"pipeline_job_id":    pj.ID,
 				"pipeline_job_index": strconv.Itoa(index),
 			}
+			if selection != nil && selection.DryRun {
+				metadata["dry_run"] = "1"
+			}
 			if name := vars["name"]; name != "" {
 				metadata["matrix_name"] = name
+			}
+			if selection != nil && selection.DryRun {
+				env["CIWI_DRY_RUN"] = "1"
 			}
 
 			job, err := s.db.CreateJob(protocol.CreateJobRequest{

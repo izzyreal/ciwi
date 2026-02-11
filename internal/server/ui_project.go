@@ -165,7 +165,22 @@ const projectHTML = `<!doctype html>
             runAll.disabled = false;
           }
         };
+        const dryAll = document.createElement('button');
+        dryAll.textContent = 'Dry Run Pipeline';
+        dryAll.className = 'secondary';
+        dryAll.onclick = async () => {
+          dryAll.disabled = true;
+          try {
+            await api('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+            await loadHistory();
+          } catch (e) {
+            alert('Dry run failed: ' + e.message);
+          } finally {
+            dryAll.disabled = false;
+          }
+        };
         head.appendChild(runAll);
+        head.appendChild(dryAll);
         container.appendChild(head);
 
         (pl.jobs || []).forEach(j => {
@@ -203,7 +218,26 @@ const projectHTML = `<!doctype html>
                 btn.disabled = false;
               }
             };
+            const dryBtn = document.createElement('button');
+            dryBtn.textContent = 'Dry Run';
+            dryBtn.className = 'secondary';
+            dryBtn.style.marginTop = '6px';
+            dryBtn.onclick = async () => {
+              dryBtn.disabled = true;
+              try {
+                await api('/api/v1/pipelines/' + pl.id + '/run-selection', {
+                  method: 'POST',
+                  body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true })
+                });
+                await loadHistory();
+              } catch (e) {
+                alert('Dry run selection failed: ' + e.message);
+              } finally {
+                dryBtn.disabled = false;
+              }
+            };
             item.appendChild(btn);
+            item.appendChild(dryBtn);
             matrixList.appendChild(item);
           });
           jb.appendChild(matrixList);

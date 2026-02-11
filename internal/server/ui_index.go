@@ -215,8 +215,26 @@ const indexHTML = `<!doctype html>
               btn.disabled = false;
             }
           };
+          const dryBtn = document.createElement('button');
+          dryBtn.className = 'secondary';
+          dryBtn.textContent = 'Dry Run';
+          dryBtn.onclick = async () => {
+            dryBtn.disabled = true;
+            try {
+              await api('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+              await refreshJobs();
+            } catch (e) {
+              alert('Dry run failed: ' + e.message);
+            } finally {
+              dryBtn.disabled = false;
+            }
+          };
           row.appendChild(info);
-          row.appendChild(btn);
+          const actions = document.createElement('div');
+          actions.className = 'row';
+          actions.appendChild(btn);
+          actions.appendChild(dryBtn);
+          row.appendChild(actions);
           wrap.appendChild(row);
         });
         root.appendChild(wrap);
