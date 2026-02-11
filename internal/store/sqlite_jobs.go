@@ -222,12 +222,28 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 		}
 	}
 
-	if _, err := s.db.Exec(`
+	where := "id = ?"
+	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output}
+	if status == "running" {
+		// Never allow a running heartbeat/log-stream update to overwrite a terminal state.
+		where = "id = ? AND status NOT IN ('succeeded', 'failed')"
+	} else if status == "succeeded" || status == "failed" {
+		// First terminal status wins under races; later terminal writes become no-ops.
+		where = "id = ? AND status NOT IN ('succeeded', 'failed')"
+	}
+	args = append(args, jobID)
+
+	res, err := s.db.Exec(`
 		UPDATE job_executions
 		SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?
-		WHERE id = ?
-	`, status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output, jobID); err != nil {
+		WHERE `+where+`
+	`, args...)
+	if err != nil {
 		return protocol.Job{}, fmt.Errorf("update job status: %w", err)
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		// Another concurrent writer won (typically terminal status); return latest state.
+		return s.GetJob(jobID)
 	}
 
 	return s.GetJob(jobID)

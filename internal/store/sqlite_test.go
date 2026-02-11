@@ -482,3 +482,86 @@ func TestStoreAgentHasActiveJob(t *testing.T) {
 		t.Fatalf("expected no active job after succeeded")
 	}
 }
+
+func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJob(protocol.CreateJobRequest{
+		Script:         "echo hi",
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	if _, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  "running",
+		Output:  "stream-1",
+	}); err != nil {
+		t.Fatalf("mark running: %v", err)
+	}
+
+	exitCode := 0
+	var wg sync.WaitGroup
+	var errSucceeded atomic.Value
+	var errRunning atomic.Value
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for attempt := 0; attempt < 8; attempt++ {
+			_, uerr := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+				AgentID:  "agent-1",
+				Status:   "succeeded",
+				ExitCode: &exitCode,
+				Output:   "final",
+			})
+			if uerr != nil && strings.Contains(strings.ToLower(uerr.Error()), "database is locked") {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if uerr != nil {
+				errSucceeded.Store(uerr)
+			}
+			return
+		}
+		errSucceeded.Store("update retries exhausted due to database lock")
+	}()
+	go func() {
+		defer wg.Done()
+		for attempt := 0; attempt < 8; attempt++ {
+			_, uerr := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+				AgentID: "agent-1",
+				Status:  "running",
+				Output:  "late-stream",
+			})
+			if uerr != nil && strings.Contains(strings.ToLower(uerr.Error()), "database is locked") {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if uerr != nil {
+				errRunning.Store(uerr)
+			}
+			return
+		}
+		errRunning.Store("update retries exhausted due to database lock")
+	}()
+	wg.Wait()
+
+	if v := errSucceeded.Load(); v != nil {
+		t.Fatalf("concurrent succeeded update error: %v", v)
+	}
+	if v := errRunning.Load(); v != nil {
+		t.Fatalf("concurrent running update error: %v", v)
+	}
+
+	got, err := s.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if got.Status != "succeeded" {
+		t.Fatalf("expected succeeded, got %q", got.Status)
+	}
+	if got.FinishedUTC.IsZero() {
+		t.Fatalf("expected finished timestamp to be set")
+	}
+}
