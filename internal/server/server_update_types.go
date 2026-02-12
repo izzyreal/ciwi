@@ -29,10 +29,6 @@ type githubReleaseAsset struct {
 	URL  string `json:"url"`
 }
 
-type githubRepoTag struct {
-	Name string `json:"name"`
-}
-
 type latestUpdateInfo struct {
 	TagName       string
 	HTMLURL       string

@@ -40,15 +40,6 @@ func IsVersionNewer(latest, current string) bool {
 	return strings.TrimPrefix(latest, "v") != strings.TrimPrefix(current, "v")
 }
 
-func IsVersionDifferent(target, current string) bool {
-	t, tok := normalizeSemver(target)
-	c, cok := normalizeSemver(current)
-	if tok && cok {
-		return semver.Compare(t, c) != 0
-	}
-	return strings.TrimPrefix(target, "v") != strings.TrimPrefix(current, "v")
-}
-
 func CurrentVersion() string {
 	return version.Current()
 }
