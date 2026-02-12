@@ -110,6 +110,9 @@ const settingsHTML = `<!doctype html>
       <div class="row">
         <button id="checkUpdatesBtn" class="secondary">Check for updates</button>
         <button id="applyUpdateBtn" class="secondary">Update now</button>
+        <select id="rollbackTagSelect" style="min-width:220px;"></select>
+        <button id="refreshRollbackTagsBtn" class="secondary">Refresh tags</button>
+        <button id="rollbackUpdateBtn" class="secondary">Rollback</button>
         <span id="updateResult" style="color:#5f6f67;"></span>
       </div>
       <div id="updateStatus" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
@@ -128,6 +131,7 @@ const settingsHTML = `<!doctype html>
     let refreshPausedUntil = 0;
     const projectReloadState = new Map();
     let updateRestartWatchActive = false;
+    let rollbackTagsLoadedAt = 0;
 
     function hasActiveTextSelection() {
       const sel = window.getSelection && window.getSelection();
@@ -249,7 +253,55 @@ const settingsHTML = `<!doctype html>
         result.textContent = 'Update check failed: ' + e.message;
       }
       await refreshUpdateStatus();
+      await refreshRollbackTags(false);
     };
+
+    async function refreshRollbackTags(force) {
+      const select = document.getElementById('rollbackTagSelect');
+      if (!select) return;
+      const now = Date.now();
+      if (!force && rollbackTagsLoadedAt > 0 && (now - rollbackTagsLoadedAt) < 60000 && select.options.length > 0) {
+        return;
+      }
+      const prev = select.value;
+      try {
+        const r = await apiJSON('/api/v1/update/tags');
+        const tags = Array.isArray(r.tags) ? r.tags : [];
+        select.innerHTML = '';
+        if (tags.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No tags available';
+          select.appendChild(opt);
+          rollbackTagsLoadedAt = now;
+          return;
+        }
+        tags.forEach(tag => {
+          const v = (tag || '').trim();
+          if (!v) return;
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          select.appendChild(opt);
+        });
+        const hasPrev = prev && Array.from(select.options).some(o => o.value === prev);
+        if (hasPrev) {
+          select.value = prev;
+        } else if (r.current_version && Array.from(select.options).some(o => o.value === r.current_version)) {
+          select.value = r.current_version;
+        } else if (select.options.length > 0) {
+          select.selectedIndex = 0;
+        }
+        rollbackTagsLoadedAt = now;
+      } catch (e) {
+        select.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Tag load failed';
+        select.appendChild(opt);
+        rollbackTagsLoadedAt = now;
+      }
+    }
 
     async function postJSONWithTimeout(path, body, timeoutMs) {
       const ctrl = new AbortController();
@@ -322,6 +374,39 @@ const settingsHTML = `<!doctype html>
         }
       }
       await refreshUpdateStatus();
+    };
+
+    document.getElementById('refreshRollbackTagsBtn').onclick = async () => {
+      await refreshRollbackTags(true);
+    };
+
+    document.getElementById('rollbackUpdateBtn').onclick = async () => {
+      const result = document.getElementById('updateResult');
+      const select = document.getElementById('rollbackTagSelect');
+      const target = ((select && select.value) || '').trim();
+      if (!target) {
+        result.textContent = 'Select a rollback tag first.';
+        return;
+      }
+      if (!confirm('Rollback server and agents to ' + target + '?')) return;
+      result.textContent = 'Starting rollback to ' + target + '...';
+      try {
+        const body = JSON.stringify({ target_version: target });
+        const r = await postJSONWithTimeout('/api/v1/update/rollback', body, 30000);
+        result.textContent = (r.message || ('Rollback to ' + target + ' started.'));
+        if (r.updated) {
+          waitForServerRestartAndReload();
+        }
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          result.textContent = 'Rollback request timed out; checking status...';
+          await monitorApplyProgressAfterTimeout();
+        } else {
+          result.textContent = 'Rollback failed: ' + e.message;
+        }
+      }
+      await refreshUpdateStatus();
+      await refreshRollbackTags(false);
     };
 
     async function waitForServerRestartAndReload() {
@@ -403,7 +488,7 @@ const settingsHTML = `<!doctype html>
       }
       refreshInFlight = true;
       try {
-        await Promise.all([refreshSettingsProjects(), refreshUpdateStatus()]);
+        await Promise.all([refreshSettingsProjects(), refreshUpdateStatus(), refreshRollbackTags(false)]);
       } catch (e) {
         console.error(e);
       } finally {

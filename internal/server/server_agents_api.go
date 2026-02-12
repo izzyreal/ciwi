@@ -36,8 +36,10 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		updateTarget := serverVersion
 		if pendingTarget != "" {
 			updateTarget = pendingTarget
+		} else if strings.TrimSpace(a.UpdateTarget) != "" {
+			updateTarget = strings.TrimSpace(a.UpdateTarget)
 		}
-		updateRequested := pendingTarget != "" || (a.UpdateTarget != "" && isVersionNewer(a.UpdateTarget, strings.TrimSpace(a.Version)))
+		updateRequested := pendingTarget != "" || (a.UpdateTarget != "" && isVersionDifferent(a.UpdateTarget, strings.TrimSpace(a.Version)))
 		info := map[string]any{
 			"agent_id":                agentID,
 			"hostname":                a.Hostname,
@@ -103,11 +105,11 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent not found", http.StatusNotFound)
 		return
 	}
-	if !isVersionNewer(target, strings.TrimSpace(a.Version)) {
-		a.RecentLog = appendAgentLog(a.RecentLog, "manual update requested but agent is already up to date")
+	if !isVersionDifferent(target, strings.TrimSpace(a.Version)) {
+		a.RecentLog = appendAgentLog(a.RecentLog, "manual update requested but agent is already at target version")
 		s.agents[agentID] = a
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, map[string]any{"requested": false, "message": "agent is already up to date"})
+		writeJSON(w, http.StatusOK, map[string]any{"requested": false, "message": "agent is already at target version"})
 		return
 	}
 	s.agentUpdates[agentID] = target

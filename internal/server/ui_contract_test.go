@@ -108,6 +108,9 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(settingsHTML, `id="checkUpdatesBtn"`) || !strings.Contains(settingsHTML, `id="applyUpdateBtn"`) {
 		t.Fatalf("settings page missing update controls")
 	}
+	if !strings.Contains(settingsHTML, `id="rollbackTagSelect"`) || !strings.Contains(settingsHTML, `id="rollbackUpdateBtn"`) {
+		t.Fatalf("settings page missing rollback controls")
+	}
 	if !strings.Contains(settingsHTML, `href="/vault"`) {
 		t.Fatalf("settings page missing vault link")
 	}

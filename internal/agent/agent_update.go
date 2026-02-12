@@ -43,7 +43,7 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 	}
 
 	targetVersion = strings.TrimSpace(targetVersion)
-	if targetVersion == "" || !isVersionNewer(targetVersion, currentVersion()) {
+	if targetVersion == "" || !isVersionDifferent(targetVersion, currentVersion()) {
 		return nil
 	}
 
@@ -252,6 +252,10 @@ func looksLikeGoRunBinary(path string) bool {
 
 func isVersionNewer(latest, current string) bool {
 	return updateutil.IsVersionNewer(latest, current)
+}
+
+func isVersionDifferent(target, current string) bool {
+	return updateutil.IsVersionDifferent(target, current)
 }
 
 func downloadUpdateAsset(ctx context.Context, assetURL, assetName string) (string, error) {

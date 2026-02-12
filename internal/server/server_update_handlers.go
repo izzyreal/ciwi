@@ -1,7 +1,9 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -57,7 +59,70 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	var req struct {
+		TargetVersion string `json:"target_version"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+	}
+	s.applyUpdateTargetHandler(w, r, strings.TrimSpace(req.TargetVersion), false)
+}
 
+func (s *stateStore) updateRollbackHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		TargetVersion string `json:"target_version"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+	}
+	target := strings.TrimSpace(req.TargetVersion)
+	if target == "" {
+		http.Error(w, "target_version is required", http.StatusBadRequest)
+		return
+	}
+	s.applyUpdateTargetHandler(w, r, target, true)
+}
+
+func (s *stateStore) updateTagsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	tags, err := s.fetchUpdateTags(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	current := strings.TrimSpace(currentVersion())
+	if current != "" {
+		seen := false
+		for _, t := range tags {
+			if strings.TrimSpace(t) == current {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			tags = append([]string{current}, tags...)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tags":            tags,
+		"current_version": current,
+	})
+}
+
+func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Request, targetVersion string, rollback bool) {
 	s.update.mu.Lock()
 	if s.update.inProgress {
 		s.update.mu.Unlock()
@@ -94,7 +159,7 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	info, err := s.fetchLatestUpdateInfo(r.Context())
+	info, err := s.fetchUpdateInfoForTag(r.Context(), targetVersion)
 	if err != nil {
 		_ = s.persistUpdateStatus(map[string]string{
 			"update_last_apply_status": "failed",
@@ -103,15 +168,21 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !isVersionNewer(info.TagName, currentVersion()) {
+	if !isVersionDifferent(info.TagName, currentVersion()) {
+		msg := "already at target version"
+		if !rollback {
+			msg = "already up to date"
+		}
 		_ = s.persistUpdateStatus(map[string]string{
 			"update_last_apply_status": "noop",
-			"update_message":           "already up to date",
+			"update_message":           msg,
+			"update_latest_version":    info.TagName,
 		})
 		_ = s.setAgentUpdateTarget(currentVersion())
 		writeJSON(w, http.StatusOK, map[string]any{
 			"updated": false,
-			"message": "already up to date",
+			"message": msg,
+			"target":  info.TagName,
 		})
 		return
 	}
@@ -164,13 +235,13 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		_ = s.persistUpdateStatus(map[string]string{
 			"update_last_apply_status": "staged",
-			"update_message":           "staged update and triggered linux updater",
+			"update_message":           updateApplyMessage(rollback, true),
 			"update_latest_version":    info.TagName,
 		})
 		_ = s.setAgentUpdateTarget(info.TagName)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"updated":         true,
-			"message":         "staged update; linux updater triggered",
+			"message":         updateApplyMessage(rollback, true),
 			"target_version":  info.TagName,
 			"current_version": currentVersion(),
 			"staged":          true,
@@ -198,14 +269,14 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	_ = s.persistUpdateStatus(map[string]string{
 		"update_last_apply_status": "success",
-		"update_message":           "update helper started, restarting",
+		"update_message":           updateApplyMessage(rollback, false),
 		"update_latest_version":    info.TagName,
 	})
 	_ = s.setAgentUpdateTarget(info.TagName)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"updated":         true,
-		"message":         "update helper started, restarting",
+		"message":         updateApplyMessage(rollback, false),
 		"target_version":  info.TagName,
 		"current_version": currentVersion(),
 	})
@@ -214,6 +285,19 @@ func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) 
 		time.Sleep(250 * time.Millisecond)
 		os.Exit(0)
 	}()
+}
+
+func updateApplyMessage(rollback, staged bool) string {
+	if rollback {
+		if staged {
+			return "staged rollback and triggered linux updater"
+		}
+		return "rollback helper started, restarting"
+	}
+	if staged {
+		return "staged update and triggered linux updater"
+	}
+	return "update helper started, restarting"
 }
 
 func (s *stateStore) updateStatusHandler(w http.ResponseWriter, r *http.Request) {
