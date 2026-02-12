@@ -92,7 +92,27 @@ const jobHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script>
     let refreshInFlight = false;
+    let liveDuration = null;
+    let liveDurationTicker = null;
     const refreshGuard = createRefreshGuard(5000);
+
+    function renderLiveDuration() {
+      const cell = document.getElementById('durationValue');
+      if (!cell || !liveDuration) return;
+      cell.textContent = formatDuration(liveDuration.started, liveDuration.finished, liveDuration.status);
+    }
+
+    function setLiveDuration(job) {
+      liveDuration = {
+        started: (job && job.started_utc) || '',
+        finished: (job && job.finished_utc) || '',
+        status: String((job && job.status) || '').toLowerCase(),
+      };
+      renderLiveDuration();
+      if (!liveDurationTicker) {
+        liveDurationTicker = setInterval(renderLiveDuration, 1000);
+      }
+    }
 
     function jobIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
@@ -141,18 +161,21 @@ const jobHTML = `<!doctype html>
         const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
         const buildVersion = buildVersionLabel(job);
         const rows = [
-          ['Job Execution ID', escapeHtml(job.id || '')],
-          ['Pipeline', escapeHtml(pipeline)],
-          ['Build', escapeHtml(buildVersion)],
-          ['Agent', escapeHtml(job.leased_by_agent_id || '')],
-          ['Created', escapeHtml(formatTimestamp(job.created_utc))],
-          ['Started', escapeHtml(formatTimestamp(job.started_utc))],
-          ['Duration', escapeHtml(formatDuration(job.started_utc, job.finished_utc, job.status))],
-          ['Exit Code', (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code)],
+          { label: 'Job Execution ID', value: escapeHtml(job.id || '') },
+          { label: 'Pipeline', value: escapeHtml(pipeline) },
+          { label: 'Build', value: escapeHtml(buildVersion) },
+          { label: 'Agent', value: escapeHtml(job.leased_by_agent_id || '') },
+          { label: 'Created', value: escapeHtml(formatTimestamp(job.created_utc)) },
+          { label: 'Started', value: escapeHtml(formatTimestamp(job.started_utc)) },
+          { label: 'Duration', value: escapeHtml(formatDuration(job.started_utc, job.finished_utc, job.status)), valueId: 'durationValue' },
+          { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
 
         const meta = document.getElementById('metaGrid');
-        meta.innerHTML = rows.map(r => '<div class="label">' + r[0] + '</div><div>' + r[1] + '</div>').join('');
+        meta.innerHTML = rows.map(r =>
+          '<div class="label">' + r.label + '</div><div' + (r.valueId ? ' id="' + r.valueId + '"' : '') + '>' + r.value + '</div>'
+        ).join('');
+        setLiveDuration(job);
 
         const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
         document.getElementById('logBox').value = output || '<no output yet>';
