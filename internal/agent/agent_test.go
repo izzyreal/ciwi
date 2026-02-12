@@ -325,6 +325,65 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	}
 }
 
+func TestExecuteLeasedJobDisablesShellTraceForAdhoc(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell assertion test skipped on windows")
+	}
+
+	var (
+		mu       sync.Mutex
+		statuses []protocol.JobStatusUpdateRequest
+	)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-adhoc/status" {
+				var req protocol.JobStatusUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode status: %v", err)
+				}
+				mu.Lock()
+				statuses = append(statuses, req)
+				mu.Unlock()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	job := protocol.Job{
+		ID:             "job-adhoc",
+		Script:         `echo "hello from adhoc"`,
+		TimeoutSeconds: 30,
+		Metadata: map[string]string{
+			"adhoc": "1",
+		},
+	}
+	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", t.TempDir(), job); err != nil {
+		t.Fatalf("executeLeasedJob: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) == 0 {
+		t.Fatalf("expected status updates")
+	}
+	last := statuses[len(statuses)-1]
+	if last.Status != "succeeded" {
+		t.Fatalf("expected succeeded status, got %q", last.Status)
+	}
+	if !strings.Contains(last.Output, "[run] shell_trace=false") {
+		t.Fatalf("expected shell trace disabled in output, got:\n%s", last.Output)
+	}
+}
+
 func TestReportTerminalJobStatusWithRetry(t *testing.T) {
 	var attempts int32
 	client := &http.Client{

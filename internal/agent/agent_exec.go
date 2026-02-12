@@ -76,8 +76,11 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 
 	traceShell := boolEnv("CIWI_AGENT_TRACE_SHELL", true)
 	verboseGo := boolEnv("CIWI_AGENT_GO_BUILD_VERBOSE", true)
-	if job.Metadata != nil && job.Metadata["has_secrets"] == "1" {
-		traceShell = false
+	if job.Metadata != nil {
+		// Keep ad-hoc runs readable and avoid leaking shell traces for secret-backed jobs.
+		if job.Metadata["has_secrets"] == "1" || job.Metadata["adhoc"] == "1" {
+			traceShell = false
+		}
 	}
 
 	shell, err := resolveJobShell(job.RequiredCapabilities)

@@ -186,18 +186,15 @@ const agentHTML = `<!doctype html>
     function exampleScriptForShell(shell) {
       if (shell === 'cmd') {
         return [
-          'echo Hello from ciwi ad-hoc (cmd)',
-          'echo Date: %DATE%',
-          'echo Time: %TIME%',
-          'ver',
+          'echo Hello from ciwi ad-hoc (cmd) && echo Date: %DATE% && echo Time: %TIME% && ver',
         ].join('\n');
       }
       if (shell === 'powershell') {
         return [
           '$ErrorActionPreference = "Stop"',
           'Write-Host "Hello from ciwi ad-hoc (PowerShell)"',
-          '$PSVersionTable.PSVersion.ToString()',
-          'Get-Date',
+          'Write-Host ("PSVersion: " + $PSVersionTable.PSVersion.ToString())',
+          'Write-Host ("Date: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))',
         ].join('\n');
       }
       return [
