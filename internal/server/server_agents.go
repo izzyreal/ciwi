@@ -72,7 +72,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		OS:                   hb.OS,
 		Arch:                 hb.Arch,
 		Version:              hb.Version,
-		Capabilities:         hb.Capabilities,
+		Capabilities:         normalizeCapabilities(hb.Capabilities, hb.OS),
 		LastSeenUTC:          hb.TimestampUTC,
 		RecentLog:            append([]string(nil), prev.RecentLog...),
 		UpdateTarget:         prev.UpdateTarget,
@@ -158,7 +158,7 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agentCaps := req.Capabilities
+	agentCaps := normalizeCapabilities(req.Capabilities, "")
 	s.mu.Lock()
 	if a, ok := s.agents[req.AgentID]; ok {
 		agentCaps = mergeCapabilities(a, req.Capabilities)

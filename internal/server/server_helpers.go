@@ -66,7 +66,94 @@ func mergeCapabilities(agent agentState, override map[string]string) map[string]
 	for k, v := range override {
 		merged[k] = v
 	}
-	return merged
+	return normalizeCapabilities(merged, merged["os"])
+}
+
+func normalizeCapabilities(in map[string]string, osName string) map[string]string {
+	out := cloneMap(in)
+	if out == nil {
+		out = map[string]string{}
+	}
+
+	normalizedOS := strings.ToLower(strings.TrimSpace(osName))
+	if normalizedOS == "" {
+		normalizedOS = strings.ToLower(strings.TrimSpace(out["os"]))
+	}
+	if normalizedOS != "" {
+		out["os"] = normalizedOS
+	}
+
+	executor := strings.ToLower(strings.TrimSpace(out["executor"]))
+	if executor == "shell" {
+		executor = "script"
+	}
+	if executor != "" {
+		out["executor"] = executor
+	}
+
+	shell := strings.ToLower(strings.TrimSpace(out["shell"]))
+	if shell == "" && executor == "script" {
+		shell = defaultShellForOS(normalizedOS)
+	}
+	if shell != "" {
+		out["shell"] = shell
+	}
+
+	shellList := parseShellList(out["shells"])
+	if len(shellList) == 0 {
+		shellList = supportedShellsForOS(normalizedOS)
+	}
+	if shell != "" {
+		seen := false
+		for _, s := range shellList {
+			if s == shell {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			shellList = append(shellList, shell)
+		}
+	}
+	if len(shellList) > 0 {
+		out["shells"] = strings.Join(shellList, ",")
+	}
+
+	return out
+}
+
+func parseShellList(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		v := strings.ToLower(strings.TrimSpace(part))
+		switch v {
+		case "posix", "cmd", "powershell":
+		default:
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+func defaultShellForOS(osName string) string {
+	if strings.EqualFold(strings.TrimSpace(osName), "windows") {
+		return "cmd"
+	}
+	return "posix"
+}
+
+func supportedShellsForOS(osName string) []string {
+	if strings.EqualFold(strings.TrimSpace(osName), "windows") {
+		return []string{"cmd", "powershell"}
+	}
+	return []string{"posix"}
 }
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
