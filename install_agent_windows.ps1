@@ -57,7 +57,7 @@ function Canonicalize-Url {
   if ($port -le 0) {
     $port = 8112
   }
-  return "http://$host:$port"
+  return "http://${host}:$port"
 }
 
 function Get-ServerInfoJson {
@@ -120,12 +120,12 @@ function Prefer-HostnameUrl {
   if ($host -eq 'localhost' -or $host -eq '127.0.0.1') {
     return $canonical
   }
-  $candidate = "http://$host:$($uri.Port)"
+  $candidate = "http://${host}:$($uri.Port)"
   if (Test-CiwiServer -BaseUrl $candidate) {
     return $candidate
   }
   if ($host -notmatch '\.') {
-    $candidateLocal = "http://$host.local:$($uri.Port)"
+    $candidateLocal = "http://${host}.local:$($uri.Port)"
     if (Test-CiwiServer -BaseUrl $candidateLocal) {
       return $candidateLocal
     }
@@ -170,14 +170,14 @@ function Discover-Servers {
   }
 
   foreach ($ip in ($ips.Keys | Sort-Object)) {
-    $candidateIp = "http://$ip:8112"
+    $candidateIp = "http://${ip}:8112"
     if (Test-CiwiServer -BaseUrl $candidateIp) {
       Add-UniqueServer -Map $found -Url $candidateIp
       continue
     }
     $host = Resolve-HostnameForIp -Ip $ip
     if (-not [string]::IsNullOrWhiteSpace($host)) {
-      $candidateHost = "http://$host:8112"
+      $candidateHost = "http://${host}:8112"
       if (Test-CiwiServer -BaseUrl $candidateHost) {
         Add-UniqueServer -Map $found -Url $candidateHost
       }
