@@ -187,11 +187,11 @@ const agentHTML = `<!doctype html>
     function exampleScriptForShell(shell) {
       if (shell === 'cmd') {
         return [
-          '@echo off',
           'echo Hello from ciwi ad-hoc (cmd)',
+          'echo Date: %DATE%',
+          'echo Time: %TIME%',
           'ver',
-          'echo Date: %DATE% Time: %TIME%',
-        ].join('\r\n');
+        ].join('\n');
       }
       if (shell === 'powershell') {
         return [
@@ -408,10 +408,7 @@ const agentHTML = `<!doctype html>
     wireModalCloseBehavior(adhocModalOverlay, closeAdhocModal);
     adhocShellSelect.onchange = () => {
       const suggested = exampleScriptForShell(String(adhocShellSelect.value || ''));
-      const current = String(adhocScriptInput.value || '');
-      if (!current.trim() || current === lastSuggestedScript) {
-        adhocScriptInput.value = suggested;
-      }
+      adhocScriptInput.value = suggested;
       lastSuggestedScript = suggested;
     };
     adhocRunBtn.onclick = () => runAdhocScript();

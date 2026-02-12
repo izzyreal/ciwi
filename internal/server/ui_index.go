@@ -113,6 +113,9 @@ const indexHTML = `<!doctype html>
   <script>
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
+    let jobsRenderEpoch = 0;
+    const JOBS_WINDOW = 150;
+    const JOBS_BATCH_SIZE = 24;
 
     async function refreshProjects() {
       const data = await apiJSON('/api/v1/projects');
@@ -185,17 +188,78 @@ const indexHTML = `<!doctype html>
         root.appendChild(wrap);
       });
     }
+    function allocateJobSkeletonRows(tbody, count, columnCount, emptyText) {
+      if (count <= 0) {
+        const existing = tbody.querySelector('.ciwi-empty-row');
+        if (existing && tbody.children.length === 1) {
+          return;
+        }
+        tbody.innerHTML = '';
+        const tr = document.createElement('tr');
+        tr.className = 'ciwi-empty-row';
+        tr.innerHTML = '<td colspan="' + String(columnCount) + '" class="muted">' + escapeHtml(emptyText) + '</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+      if (tbody.children.length === 1 && tbody.firstElementChild && tbody.firstElementChild.classList.contains('ciwi-empty-row')) {
+        tbody.innerHTML = '';
+      }
+      while (tbody.children.length < count) {
+        tbody.appendChild(buildJobSkeletonRow(columnCount));
+      }
+      while (tbody.children.length > count) {
+        tbody.removeChild(tbody.lastElementChild);
+      }
+    }
+
+    function replaceJobRowAt(tbody, index, row) {
+      const current = tbody.children[index];
+      if (current) {
+        const currentKey = (current.dataset && current.dataset.ciwiRenderKey) || '';
+        const nextKey = (row.dataset && row.dataset.ciwiRenderKey) || '';
+        const isSkeleton = current.classList && current.classList.contains('ciwi-job-skeleton-row');
+        if (!isSkeleton && currentKey !== '' && currentKey === nextKey) {
+          return;
+        }
+        tbody.replaceChild(row, current);
+        if (isSkeleton) {
+          fadeInJobRow(row);
+        }
+      } else {
+        tbody.appendChild(row);
+        fadeInJobRow(row);
+      }
+    }
+
+    async function fetchAndRenderJobList(view, tbody, total, opts, epoch) {
+      for (let offset = 0; offset < total; offset += JOBS_BATCH_SIZE) {
+        if (epoch !== jobsRenderEpoch) return;
+        const data = await apiJSON('/api/v1/jobs?view=' + encodeURIComponent(view) +
+          '&max=' + String(JOBS_WINDOW) +
+          '&offset=' + String(offset) +
+          '&limit=' + String(JOBS_BATCH_SIZE));
+        if (epoch !== jobsRenderEpoch) return;
+        const jobs = data.job_executions || data.jobs || [];
+        jobs.forEach((job, i) => {
+          const row = buildJobExecutionRow(job, opts);
+          replaceJobRowAt(tbody, offset + i, row);
+        });
+      }
+    }
+
     async function refreshJobs() {
-      const data = await apiJSON('/api/v1/jobs');
+      const epoch = ++jobsRenderEpoch;
       const queuedBody = document.getElementById('queuedJobsBody');
       const historyBody = document.getElementById('historyJobsBody');
-      queuedBody.innerHTML = '';
-      historyBody.innerHTML = '';
-      const queuedStatuses = new Set(['queued', 'leased', 'running']);
-      const jobs = (data.job_executions || data.jobs || []).slice(0, 150);
-      const queuedJobs = jobs.filter(job => queuedStatuses.has((job.status || '').toLowerCase()));
-      const historyJobs = jobs.filter(job => !queuedStatuses.has((job.status || '').toLowerCase()));
-      queuedJobs.forEach(job => queuedBody.appendChild(buildJobExecutionRow(job, {
+      const summary = await apiJSON('/api/v1/jobs?view=summary&max=' + String(JOBS_WINDOW));
+      if (epoch !== jobsRenderEpoch) return;
+
+      const queuedTotal = Number(summary.queued_count || 0);
+      const historyTotal = Number(summary.history_count || 0);
+      allocateJobSkeletonRows(queuedBody, queuedTotal, 8, 'No queued jobs.');
+      allocateJobSkeletonRows(historyBody, historyTotal, 7, 'No job history yet.');
+
+      const queuedOpts = {
         includeActions: true,
         includeReason: true,
         backPath: window.location.pathname || '/',
@@ -208,13 +272,18 @@ const indexHTML = `<!doctype html>
             alert('Remove failed: ' + e.message);
           }
         }
-      })));
-      historyJobs.forEach(job => historyBody.appendChild(buildJobExecutionRow(job, {
+      };
+      const historyOpts = {
         includeActions: false,
         includeReason: true,
         backPath: window.location.pathname || '/',
         linkClass: 'job-link'
-      })));
+      };
+
+      await Promise.all([
+        fetchAndRenderJobList('queued', queuedBody, queuedTotal, queuedOpts, epoch),
+        fetchAndRenderJobList('history', historyBody, historyTotal, historyOpts, epoch),
+      ]);
     }
     document.getElementById('clearQueueBtn').onclick = async () => {
       if (!confirm('Clear all queued/leased jobs?')) {

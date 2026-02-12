@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,11 +14,50 @@ import (
 func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		view := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("view")))
+		maxJobs := parseJobsQueryInt(r, "max", 150, 1, 2000)
+
 		jobs, err := s.db.ListJobs()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if maxJobs > 0 && len(jobs) > maxJobs {
+			jobs = jobs[:maxJobs]
+		}
+
+		queuedJobs, historyJobs := splitJobsByState(jobs)
+		switch view {
+		case "summary":
+			writeJSON(w, http.StatusOK, map[string]any{
+				"view":          "summary",
+				"max":           maxJobs,
+				"total":         len(jobs),
+				"queued_count":  len(queuedJobs),
+				"history_count": len(historyJobs),
+			})
+			return
+		case "queued", "history":
+			source := queuedJobs
+			if view == "history" {
+				source = historyJobs
+			}
+			offset := parseJobsQueryInt(r, "offset", 0, 0, 1_000_000)
+			limit := parseJobsQueryInt(r, "limit", 25, 1, 200)
+			page := paginateJobs(source, offset, limit)
+			s.attachTestSummaries(page)
+			s.attachUnmetRequirements(page)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"view":           view,
+				"total":          len(source),
+				"offset":         offset,
+				"limit":          limit,
+				"job_executions": page,
+				"jobs":           page,
+			})
+			return
+		}
+
 		s.attachTestSummaries(jobs)
 		s.attachUnmetRequirements(jobs)
 		writeJSON(w, http.StatusOK, map[string]any{"job_executions": jobs, "jobs": jobs})
@@ -36,6 +76,49 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func parseJobsQueryInt(r *http.Request, key string, fallback, min, max int) int {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+func splitJobsByState(jobs []protocol.Job) (queued []protocol.Job, history []protocol.Job) {
+	queued = make([]protocol.Job, 0, len(jobs))
+	history = make([]protocol.Job, 0, len(jobs))
+	for _, job := range jobs {
+		switch strings.ToLower(strings.TrimSpace(job.Status)) {
+		case "queued", "leased", "running":
+			queued = append(queued, job)
+		default:
+			history = append(history, job)
+		}
+	}
+	return queued, history
+}
+
+func paginateJobs(jobs []protocol.Job, offset, limit int) []protocol.Job {
+	if offset >= len(jobs) {
+		return []protocol.Job{}
+	}
+	end := offset + limit
+	if end > len(jobs) {
+		end = len(jobs)
+	}
+	return append([]protocol.Job(nil), jobs[offset:end]...)
 }
 
 func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {

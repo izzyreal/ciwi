@@ -57,7 +57,58 @@ function buildJobExecutionRow(job, opts = {}) {
     tr.appendChild(actionTd);
   }
 
+  tr.dataset.ciwiRenderKey = jobRowRenderKey(job);
   return tr;
+}
+
+function jobRowRenderKey(job) {
+  const m = (job && job.metadata) || {};
+  const reasons = ((job && job.unmet_requirements) || []).join('|');
+  return [
+    job && job.id || '',
+    job && job.status || '',
+    job && job.leased_by_agent_id || '',
+    job && job.created_utc || '',
+    m.pipeline_id || '',
+    m.pipeline_job_id || '',
+    m.matrix_name || '',
+    m.build_version || '',
+    m.build_target || '',
+    reasons,
+  ].join('\x1f');
+}
+
+function ensureJobSkeletonStyles() {
+  if (document.getElementById('__ciwiJobSkeletonStyles')) return;
+  const style = document.createElement('style');
+  style.id = '__ciwiJobSkeletonStyles';
+  style.textContent = [
+    '@keyframes ciwiSkeletonFade { 0% { opacity: .35; } 50% { opacity: .9; } 100% { opacity: .35; } }',
+    '.ciwi-job-skeleton-row td{padding-top:10px;padding-bottom:10px;}',
+    '.ciwi-job-skeleton-bar{height:10px;border-radius:999px;background:#dcebe2;animation:ciwiSkeletonFade 2.2s ease-in-out infinite;}',
+    '.ciwi-job-row-enter{opacity:0;transform:translateY(3px);}',
+    '.ciwi-job-row-enter-active{transition:opacity .45s ease,transform .45s ease;opacity:1;transform:translateY(0);}',
+  ].join('');
+  document.head.appendChild(style);
+}
+
+function buildJobSkeletonRow(columnCount) {
+  ensureJobSkeletonStyles();
+  const tr = document.createElement('tr');
+  tr.className = 'ciwi-job-skeleton-row';
+  const colspan = Math.max(1, Number(columnCount || 1));
+  tr.innerHTML = '<td colspan="' + String(colspan) + '"><div class="ciwi-job-skeleton-bar"></div></td>';
+  return tr;
+}
+
+function fadeInJobRow(tr) {
+  if (!tr) return;
+  tr.classList.add('ciwi-job-row-enter');
+  requestAnimationFrame(() => tr.classList.add('ciwi-job-row-enter-active'));
+  setTimeout(() => {
+    tr.classList.remove('ciwi-job-row-enter');
+    tr.classList.remove('ciwi-job-row-enter-active');
+  }, 520);
 }
 
 function ensureVersionResolveStyles() {
