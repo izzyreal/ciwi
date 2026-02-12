@@ -8,51 +8,8 @@ const jobHTML = `<!doctype html>
   <title>ciwi job execution</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
-    :root {
-      --bg: #f2f7f4;
-      --bg2: #d9efe2;
-      --card: #ffffff;
-      --ink: #1f2a24;
-      --muted: #5f6f67;
-      --ok: #1f8a4c;
-      --bad: #b23a48;
-      --accent: #157f66;
-      --line: #c4ddd0;
-    }
-    * { box-sizing: border-box; }
-    :where(body, main, .card, p, h3, div, span, table, thead, tbody, tr, th, td, code, pre, input, textarea, a) {
-      -webkit-user-select: text;
-      user-select: text;
-    }
-    :where(button) {
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    body {
-      margin: 0;
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
-      color: var(--ink);
-      background: radial-gradient(circle at 20% 0%, var(--bg2), var(--bg));
-    }
-    main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-      box-shadow: 0 8px 24px rgba(21,127,102,.08);
-    }
+` + uiPageChromeCSS + `
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
-    .brand { display:flex; align-items:center; gap:12px; }
-    .brand img {
-      width: 110px;
-      height: 91px;
-      object-fit: contain;
-      display:block;
-      image-rendering: crisp-edges;
-      image-rendering: pixelated;
-    }
     .meta-grid { display:grid; grid-template-columns: 160px 1fr; gap:8px 12px; font-size:14px; }
     .label { color: var(--muted); }
     .status-succeeded { color: var(--ok); font-weight: 700; }
@@ -75,8 +32,6 @@ const jobHTML = `<!doctype html>
       resize: vertical;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
-    a { color: var(--accent); text-decoration:none; }
-    a:hover { text-decoration:underline; }
     .artifact-row {
       display: flex;
       align-items: center;
@@ -143,22 +98,7 @@ const jobHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script>
     let refreshInFlight = false;
-    let refreshPausedUntil = 0;
-
-    function hasActiveTextSelection() {
-      const sel = window.getSelection && window.getSelection();
-      if (!sel) return false;
-      const text = (sel.toString() || '').trim();
-      return text.length > 0;
-    }
-
-    function shouldPauseRefresh() {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-        return true;
-      }
-      return Date.now() < refreshPausedUntil;
-    }
+    const refreshGuard = createRefreshGuard(5000);
 
     function jobIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
@@ -180,7 +120,7 @@ const jobHTML = `<!doctype html>
     }
 
     async function loadJob(force) {
-      if (refreshInFlight || (!force && shouldPauseRefresh())) {
+      if (refreshInFlight || (!force && refreshGuard.shouldPause())) {
         return;
       }
       refreshInFlight = true;
@@ -373,11 +313,7 @@ const jobHTML = `<!doctype html>
     }
 
     setBackLink();
-    document.addEventListener('selectionchange', () => {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-      }
-    });
+    refreshGuard.bindSelectionListener();
     loadJob(true);
     setInterval(() => loadJob(false), 500);
   </script>

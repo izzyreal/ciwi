@@ -8,41 +8,7 @@ const indexHTML = `<!doctype html>
   <title>ciwi</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
-    :root {
-      --bg: #f2f7f4;
-      --bg2: #d9efe2;
-      --card: #ffffff;
-      --ink: #1f2a24;
-      --muted: #5f6f67;
-      --ok: #1f8a4c;
-      --bad: #b23a48;
-      --accent: #157f66;
-      --line: #c4ddd0;
-    }
-    * { box-sizing: border-box; }
-    :where(body, main, .card, p, h1, h2, div, span, table, thead, tbody, tr, th, td, code, pre, input, textarea, a) {
-      -webkit-user-select: text;
-      user-select: text;
-    }
-    :where(button) {
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    body {
-      margin: 0;
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
-      color: var(--ink);
-      background: radial-gradient(circle at 20% 0%, var(--bg2), var(--bg));
-    }
-    main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-      box-shadow: 0 8px 24px rgba(21,127,102,.08);
-    }
+` + uiPageChromeCSS + `
     h1 { margin: 0 0 4px; font-size: 28px; }
     h2 { margin: 0 0 12px; font-size: 18px; }
     p { margin: 0 0 10px; color: var(--muted); }
@@ -61,7 +27,6 @@ const indexHTML = `<!doctype html>
     }
     button.secondary { background: white; color: var(--accent); }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .brand { display: flex; align-items: center; gap: 12px; }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .header-actions { display: flex; align-items: center; gap: 12px; }
     .gear-link {
@@ -74,14 +39,6 @@ const indexHTML = `<!doctype html>
       justify-content: center;
     }
     .gear-link:hover { text-decoration: none; opacity: .85; }
-    .brand img {
-      width: 110px;
-      height: 91px;
-      object-fit: contain;
-      display: block;
-      image-rendering: crisp-edges;
-      image-rendering: pixelated;
-    }
     .project { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
     .pipeline { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; }
@@ -101,8 +58,7 @@ const indexHTML = `<!doctype html>
     .status-failed { color: var(--bad); font-weight: 600; }
     .status-running { color: #a56a00; font-weight: 600; }
     .status-queued, .status-leased { color: var(--muted); }
-    a.job-link { color: var(--accent); text-decoration: none; }
-    a.job-link:hover { text-decoration: underline; }
+    a.job-link { color: var(--accent); }
     @media (max-width: 760px) { table { font-size: 12px; } }
   </style>
 </head>
@@ -156,22 +112,7 @@ const indexHTML = `<!doctype html>
   <script src="/ui/pages.js"></script>
   <script>
     let refreshInFlight = false;
-    let refreshPausedUntil = 0;
-
-    function hasActiveTextSelection() {
-      const sel = window.getSelection && window.getSelection();
-      if (!sel) return false;
-      const text = (sel.toString() || '').trim();
-      return text.length > 0;
-    }
-
-    function shouldPauseRefresh() {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-        return true;
-      }
-      return Date.now() < refreshPausedUntil;
-    }
+    const refreshGuard = createRefreshGuard(5000);
 
     async function refreshProjects() {
       const data = await apiJSON('/api/v1/projects');
@@ -298,7 +239,7 @@ const indexHTML = `<!doctype html>
       }
     };
     async function tick() {
-      if (refreshInFlight || shouldPauseRefresh()) {
+      if (refreshInFlight || refreshGuard.shouldPause()) {
         return;
       }
       refreshInFlight = true;
@@ -310,11 +251,7 @@ const indexHTML = `<!doctype html>
         refreshInFlight = false;
       }
     }
-    document.addEventListener('selectionchange', () => {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-      }
-    });
+    refreshGuard.bindSelectionListener();
     tick();
     setInterval(tick, 3000);
   </script>

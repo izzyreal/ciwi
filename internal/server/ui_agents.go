@@ -8,23 +8,8 @@ const agentsHTML = `<!doctype html>
   <title>ciwi agents</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
-    :root { --bg:#f2f7f4; --bg2:#d9efe2; --card:#fff; --ink:#1f2a24; --muted:#5f6f67; --ok:#1f8a4c; --bad:#b23a48; --accent:#157f66; --line:#c4ddd0; }
-    * { box-sizing:border-box; }
-    :where(body, main, .card, p, div, span, table, thead, tbody, tr, th, td, code, pre, input, textarea, a) {
-      -webkit-user-select: text;
-      user-select: text;
-    }
-    :where(button) {
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    body { margin:0; font-family:"Avenir Next","Segoe UI",sans-serif; color:var(--ink); background:radial-gradient(circle at 20% 0%, var(--bg2), var(--bg)); }
-    main { max-width:1100px; margin:24px auto; padding:0 16px; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 8px 24px rgba(21,127,102,.08); }
+` + uiPageChromeCSS + `
     .row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
-    .brand { display:flex; align-items:center; gap:12px; }
-    .brand img { width:110px; height:91px; object-fit:contain; display:block; image-rendering:crisp-edges; image-rendering:pixelated; }
-    .muted { color:var(--muted); font-size:13px; }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
     th, td { border-bottom:1px solid var(--line); text-align:left; padding:8px 6px; vertical-align:top; overflow-wrap:anywhere; word-break:break-word; }
     .logbox {
@@ -57,7 +42,6 @@ const agentsHTML = `<!doctype html>
     }
     .badge-warn { background:#fff6e6; color:#8a5a00; }
     button { border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; background:#fff; color:var(--accent); }
-    a { color: var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
   </style>
 </head>
 <body>

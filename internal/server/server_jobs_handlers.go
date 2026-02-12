@@ -1,20 +1,14 @@
 package server
 
 import (
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
-
-const testReportArtifactPath = "test-report.json"
 
 func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -266,77 +260,6 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func (s *stateStore) attachTestSummaries(jobs []protocol.Job) {
-	for i := range jobs {
-		s.attachTestSummary(&jobs[i])
-	}
-}
-
-func (s *stateStore) markAgentSeen(agentID string, ts time.Time) {
-	agentID = strings.TrimSpace(agentID)
-	if agentID == "" {
-		return
-	}
-	if ts.IsZero() {
-		ts = time.Now().UTC()
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	a, ok := s.agents[agentID]
-	if !ok {
-		return
-	}
-	a.LastSeenUTC = ts
-	s.agents[agentID] = a
-}
-
-func (s *stateStore) attachTestSummary(job *protocol.Job) {
-	if job == nil || strings.TrimSpace(job.ID) == "" {
-		return
-	}
-	report, found, err := s.db.GetJobTestReport(job.ID)
-	if err != nil || !found {
-		return
-	}
-	job.TestSummary = &protocol.JobTestSummary{
-		Total:   report.Total,
-		Passed:  report.Passed,
-		Failed:  report.Failed,
-		Skipped: report.Skipped,
-	}
-}
-
-func (s *stateStore) attachUnmetRequirements(jobs []protocol.Job) {
-	s.mu.Lock()
-	agents := make(map[string]agentState, len(s.agents))
-	for id, a := range s.agents {
-		agents[id] = a
-	}
-	s.mu.Unlock()
-	for i := range jobs {
-		if strings.ToLower(strings.TrimSpace(jobs[i].Status)) != "queued" {
-			continue
-		}
-		jobs[i].UnmetRequirements = diagnoseUnmetRequirements(jobs[i].RequiredCapabilities, agents)
-	}
-}
-
-func (s *stateStore) attachUnmetRequirementsToJob(job *protocol.Job) {
-	if job == nil {
-		return
-	}
-	if strings.ToLower(strings.TrimSpace(job.Status)) != "queued" {
-		return
-	}
-	s.mu.Lock()
-	agents := make(map[string]agentState, len(s.agents))
-	for id, a := range s.agents {
-		agents[id] = a
-	}
-	s.mu.Unlock()
-	job.UnmetRequirements = diagnoseUnmetRequirements(job.RequiredCapabilities, agents)
-}
-
 func (s *stateStore) clearQueueHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -361,81 +284,4 @@ func (s *stateStore) flushHistoryHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"flushed": n})
-}
-
-func (s *stateStore) persistArtifacts(jobID string, incoming []protocol.UploadArtifact) ([]protocol.JobArtifact, error) {
-	if len(incoming) == 0 {
-		return nil, nil
-	}
-	base := filepath.Join(s.artifactsDir, jobID)
-	if err := os.MkdirAll(base, 0o755); err != nil {
-		return nil, fmt.Errorf("create artifact dir: %w", err)
-	}
-
-	artifacts := make([]protocol.JobArtifact, 0, len(incoming))
-	for _, in := range incoming {
-		rel := filepath.ToSlash(filepath.Clean(in.Path))
-		if rel == "." || rel == "" || strings.HasPrefix(rel, "/") || strings.Contains(rel, "..") {
-			return nil, fmt.Errorf("invalid artifact path: %q", in.Path)
-		}
-
-		decoded, err := base64.StdEncoding.DecodeString(in.DataBase64)
-		if err != nil {
-			return nil, fmt.Errorf("decode artifact %q: %w", in.Path, err)
-		}
-
-		dst := filepath.Join(base, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return nil, fmt.Errorf("mkdir artifact parent: %w", err)
-		}
-		if err := os.WriteFile(dst, decoded, 0o644); err != nil {
-			return nil, fmt.Errorf("write artifact %q: %w", in.Path, err)
-		}
-
-		storedRel := filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(rel)))
-		artifacts = append(artifacts, protocol.JobArtifact{
-			JobID:     jobID,
-			Path:      rel,
-			URL:       storedRel,
-			SizeBytes: int64(len(decoded)),
-		})
-	}
-	return artifacts, nil
-}
-
-func (s *stateStore) persistTestReportArtifact(jobID string, report protocol.JobTestReport) error {
-	base := filepath.Join(s.artifactsDir, jobID)
-	if err := os.MkdirAll(base, 0o755); err != nil {
-		return fmt.Errorf("create test report artifact dir: %w", err)
-	}
-	dst := filepath.Join(base, filepath.FromSlash(testReportArtifactPath))
-	payload, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal test report artifact: %w", err)
-	}
-	if err := os.WriteFile(dst, payload, 0o644); err != nil {
-		return fmt.Errorf("write test report artifact: %w", err)
-	}
-	return nil
-}
-
-func appendSyntheticTestReportArtifact(artifactsDir, jobID string, artifacts []protocol.JobArtifact) []protocol.JobArtifact {
-	testReportFull := filepath.Join(artifactsDir, jobID, filepath.FromSlash(testReportArtifactPath))
-	info, err := os.Stat(testReportFull)
-	if err != nil || info.IsDir() {
-		return artifacts
-	}
-	for _, a := range artifacts {
-		if a.Path == testReportArtifactPath {
-			return artifacts
-		}
-	}
-	artifacts = append(artifacts, protocol.JobArtifact{
-		JobID:     jobID,
-		Path:      testReportArtifactPath,
-		URL:       filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(testReportArtifactPath))),
-		SizeBytes: info.Size(),
-	})
-	sort.SliceStable(artifacts, func(i, j int) bool { return artifacts[i].Path < artifacts[j].Path })
-	return artifacts
 }

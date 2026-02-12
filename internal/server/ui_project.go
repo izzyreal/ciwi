@@ -8,53 +8,10 @@ const projectHTML = `<!doctype html>
   <title>ciwi project</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
-    :root {
-      --bg: #f2f7f4;
-      --bg2: #d9efe2;
-      --card: #ffffff;
-      --ink: #1f2a24;
-      --muted: #5f6f67;
-      --ok: #1f8a4c;
-      --bad: #b23a48;
-      --accent: #157f66;
-      --line: #c4ddd0;
-    }
-    * { box-sizing: border-box; }
-    :where(body, main, .card, p, h2, div, span, table, thead, tbody, tr, th, td, code, pre, input, textarea, select, label, a) {
-      -webkit-user-select: text;
-      user-select: text;
-    }
-    :where(button) {
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    body {
-      margin: 0;
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
-      color: var(--ink);
-      background: radial-gradient(circle at 20% 0%, var(--bg2), var(--bg));
-    }
-    main { max-width: 1150px; margin: 24px auto; padding: 0 16px; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-      box-shadow: 0 8px 24px rgba(21,127,102,.08);
-    }
+` + uiPageChromeCSS + `
+    main { max-width: 1150px; }
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
-    .brand { display:flex; align-items:center; gap:12px; }
-    .brand img {
-      width: 110px;
-      height: 91px;
-      object-fit: contain;
-      display:block;
-      image-rendering: crisp-edges;
-      image-rendering: pixelated;
-    }
     .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .muted { color: var(--muted); font-size: 13px; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
     button { border: 1px solid var(--accent); border-radius: 8px; padding: 7px 11px; background: var(--accent); color:#fff; cursor:pointer; }
     button.secondary { background: #fff; color: var(--accent); border-color: var(--line); }
@@ -65,8 +22,6 @@ const projectHTML = `<!doctype html>
     .status-failed { color: var(--bad); font-weight: 600; }
     .status-running { color: #a56a00; font-weight: 600; }
     .status-queued, .status-leased { color: var(--muted); }
-    a { color: var(--accent); text-decoration:none; }
-    a:hover { text-decoration:underline; }
     .pipeline { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .jobbox { margin: 8px 0 0 8px; padding: 8px; border-left: 2px solid var(--line); }
     .matrix-list { display:flex; flex-wrap:wrap; gap:6px; margin-top: 6px; }
@@ -118,22 +73,7 @@ const projectHTML = `<!doctype html>
   <script src="/ui/pages.js"></script>
   <script>
     let refreshInFlight = false;
-    let refreshPausedUntil = 0;
-
-    function hasActiveTextSelection() {
-      const sel = window.getSelection && window.getSelection();
-      if (!sel) return false;
-      const text = (sel.toString() || '').trim();
-      return text.length > 0;
-    }
-
-    function shouldPauseRefresh() {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-        return true;
-      }
-      return Date.now() < refreshPausedUntil;
-    }
+    const refreshGuard = createRefreshGuard(5000);
 
     function projectIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
@@ -357,7 +297,7 @@ const projectHTML = `<!doctype html>
     };
 
     async function loadHistory(force) {
-      if (refreshInFlight || (!force && shouldPauseRefresh())) {
+      if (refreshInFlight || (!force && refreshGuard.shouldPause())) {
         return;
       }
       refreshInFlight = true;
@@ -389,11 +329,7 @@ const projectHTML = `<!doctype html>
       }
     }
 
-    document.addEventListener('selectionchange', () => {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-      }
-    });
+    refreshGuard.bindSelectionListener();
     tick();
     setInterval(() => loadHistory(false), 4000);
   </script>

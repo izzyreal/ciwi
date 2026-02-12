@@ -8,19 +8,7 @@ const vaultHTML = `<!doctype html>
   <title>ciwi vault</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
-    :root { --bg:#f2f7f4; --bg2:#d9efe2; --card:#fff; --ink:#1f2a24; --muted:#5f6f67; --accent:#157f66; --line:#c4ddd0; }
-    * { box-sizing:border-box; }
-    :where(body, main, .card, p, h3, div, span, table, thead, tbody, tr, th, td, code, pre, input, textarea, select, label, a) {
-      -webkit-user-select: text;
-      user-select: text;
-    }
-    :where(button) {
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    body { margin:0; font-family:"Avenir Next","Segoe UI",sans-serif; color:var(--ink); background:radial-gradient(circle at 20% 0%, var(--bg2), var(--bg)); }
-    main { max-width:1100px; margin:24px auto; padding:0 16px; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 8px 24px rgba(21,127,102,.08); }
+` + uiPageChromeCSS + `
     .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     .field { display:flex; flex-direction:column; gap:4px; min-width:180px; }
     .field label { font-size:12px; color:var(--muted); }
@@ -29,10 +17,6 @@ const vaultHTML = `<!doctype html>
     button.secondary { background:#fff; color:var(--accent); }
     table { width:100%; border-collapse:collapse; font-size:13px; }
     th, td { border-bottom:1px solid var(--line); text-align:left; padding:8px 6px; vertical-align:top; }
-    .brand { display:flex; align-items:center; gap:12px; }
-    .brand img { width:110px; height:91px; object-fit:contain; display:block; image-rendering:crisp-edges; image-rendering:pixelated; }
-    .muted { color:var(--muted); font-size:13px; }
-    a { color: var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
   </style>
 </head>
 <body>
