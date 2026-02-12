@@ -186,7 +186,7 @@ func commandForScript(shell, script string) (string, []string, error) {
 		if runtime.GOOS != "windows" {
 			return "", nil, fmt.Errorf("shell %q is only supported on windows agents", shellCmd)
 		}
-		return "cmd.exe", []string{"/d", "/s", "/c", script}, nil
+		return "cmd.exe", []string{"/d", "/c", script}, nil
 	case shellPowerShell:
 		if runtime.GOOS != "windows" {
 			return "", nil, fmt.Errorf("shell %q is only supported on windows agents", shellPowerShell)
@@ -211,7 +211,7 @@ func stageCmdScript(execDir, script string) (string, error) {
 	if err := os.WriteFile(path, []byte(normalized), 0o644); err != nil {
 		return "", fmt.Errorf("write staged cmd script: %w", err)
 	}
-	return `call "` + path + `"`, nil
+	return path, nil
 }
 
 func applyShellTracing(shell, script string, trace bool) string {

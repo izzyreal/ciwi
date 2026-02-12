@@ -119,7 +119,7 @@ func TestCommandForScript(t *testing.T) {
 		if err != nil {
 			t.Fatalf("commandForScript(cmd): %v", err)
 		}
-		if !strings.EqualFold(bin, "cmd.exe") || len(args) != 4 || args[0] != "/d" || args[1] != "/s" || args[2] != "/c" || args[3] != "echo hi" {
+		if !strings.EqualFold(bin, "cmd.exe") || len(args) != 3 || args[0] != "/d" || args[1] != "/c" || args[2] != "echo hi" {
 			t.Fatalf("unexpected cmd command: %s %v", bin, args)
 		}
 		return
@@ -390,10 +390,11 @@ func TestStageCmdScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stageCmdScript: %v", err)
 	}
-	if !strings.HasPrefix(cmd, `call "`) || !strings.HasSuffix(cmd, `"`) {
-		t.Fatalf("unexpected staged cmd invocation: %q", cmd)
+	wantPath := filepath.Join(execDir, "ciwi-job-script.cmd")
+	if cmd != wantPath {
+		t.Fatalf("unexpected staged cmd path: got=%q want=%q", cmd, wantPath)
 	}
-	data, err := os.ReadFile(filepath.Join(execDir, "ciwi-job-script.cmd"))
+	data, err := os.ReadFile(wantPath)
 	if err != nil {
 		t.Fatalf("read staged script: %v", err)
 	}
