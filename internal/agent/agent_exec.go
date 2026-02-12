@@ -93,6 +93,13 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	fmt.Fprintf(&output, "[run] shell=%s\n", shell)
 
 	bin, args, err := commandForScript(shell, tracedScript)
+	if err == nil && runtime.GOOS == "windows" && shell == shellCmd {
+		stagedCmd, stageErr := stageCmdScript(execDir, tracedScript)
+		if stageErr != nil {
+			return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("stage cmd script: %v", stageErr), "")
+		}
+		bin, args, err = commandForScript(shell, stagedCmd)
+	}
 	if err != nil {
 		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("build shell command: %v", err), "")
 	}
@@ -179,7 +186,7 @@ func commandForScript(shell, script string) (string, []string, error) {
 		if runtime.GOOS != "windows" {
 			return "", nil, fmt.Errorf("shell %q is only supported on windows agents", shellCmd)
 		}
-		return "cmd", []string{"/d", "/s", "/c", script}, nil
+		return "cmd.exe", []string{"/d", "/s", "/c", script}, nil
 	case shellPowerShell:
 		if runtime.GOOS != "windows" {
 			return "", nil, fmt.Errorf("shell %q is only supported on windows agents", shellPowerShell)
@@ -188,6 +195,23 @@ func commandForScript(shell, script string) (string, []string, error) {
 	default:
 		return "", nil, fmt.Errorf("unsupported shell %q", shell)
 	}
+}
+
+func stageCmdScript(execDir, script string) (string, error) {
+	if strings.TrimSpace(execDir) == "" {
+		return "", fmt.Errorf("exec dir is required")
+	}
+	path := filepath.Join(execDir, "ciwi-job-script.cmd")
+	normalized := strings.ReplaceAll(script, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	normalized = strings.ReplaceAll(normalized, "\n", "\r\n")
+	if !strings.HasSuffix(normalized, "\r\n") {
+		normalized += "\r\n"
+	}
+	if err := os.WriteFile(path, []byte(normalized), 0o644); err != nil {
+		return "", fmt.Errorf("write staged cmd script: %w", err)
+	}
+	return `call "` + path + `"`, nil
 }
 
 func applyShellTracing(shell, script string, trace bool) string {

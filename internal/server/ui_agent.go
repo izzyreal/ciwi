@@ -186,7 +186,10 @@ const agentHTML = `<!doctype html>
     function exampleScriptForShell(shell) {
       if (shell === 'cmd') {
         return [
-          'echo Hello from ciwi ad-hoc (cmd) && echo Date: %DATE% && echo Time: %TIME% && ver',
+          'ver',
+          'echo Hello from ciwi ad-hoc cmd',
+          'echo Date: %DATE%',
+          'echo Time: %TIME%',
         ].join('\n');
       }
       if (shell === 'powershell') {
