@@ -98,7 +98,7 @@ const indexHTML = `<!doctype html>
     const refreshGuard = createRefreshGuard(5000);
     let jobsRenderEpoch = 0;
     const JOBS_WINDOW = 150;
-    const JOBS_BATCH_SIZE = 24;
+    const JOBS_BATCH_SIZE = 5;
 
     async function refreshProjects() {
       const data = await apiJSON('/api/v1/projects');
