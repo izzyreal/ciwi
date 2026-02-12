@@ -36,6 +36,7 @@ type PersistedPipelineJob struct {
 	RequiresTools  map[string]string
 	TimeoutSeconds int
 	Artifacts      []string
+	Caches         []config.JobCache
 	MatrixInclude  []map[string]string
 	Steps          []config.Step
 	Position       int
@@ -114,6 +115,7 @@ func (s *Store) migrate() error {
 			requires_tools_json TEXT NOT NULL DEFAULT '{}',
 			timeout_seconds INTEGER NOT NULL,
 			artifacts_json TEXT NOT NULL DEFAULT '[]',
+			caches_json TEXT NOT NULL DEFAULT '[]',
 			matrix_json TEXT NOT NULL,
 			steps_json TEXT NOT NULL,
 			FOREIGN KEY(pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
@@ -125,6 +127,7 @@ func (s *Store) migrate() error {
 			required_capabilities_json TEXT NOT NULL,
 			timeout_seconds INTEGER NOT NULL,
 			artifact_globs_json TEXT NOT NULL DEFAULT '[]',
+			caches_json TEXT NOT NULL DEFAULT '[]',
 			source_repo TEXT,
 			source_ref TEXT,
 			metadata_json TEXT NOT NULL,
@@ -187,6 +190,9 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("pipeline_jobs", "artifacts_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
+	if err := s.addColumnIfMissing("pipeline_jobs", "caches_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
 	if err := s.addColumnIfMissing("pipeline_jobs", "requires_tools_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
 		return err
 	}
@@ -197,6 +203,9 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("job_executions", "caches_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "env_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
@@ -244,13 +253,14 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 			runsOnJSON, _ := json.Marshal(j.RunsOn)
 			requiresToolsJSON, _ := json.Marshal(j.Requires.Tools)
 			artifactsJSON, _ := json.Marshal(j.Artifacts)
+			cachesJSON, _ := json.Marshal(j.Caches)
 			matrixJSON, _ := json.Marshal(j.Matrix.Include)
 			stepsJSON, _ := json.Marshal(j.Steps)
 
 			if _, err := tx.Exec(`
-				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, runs_on_json, requires_tools_json, timeout_seconds, artifacts_json, matrix_json, steps_json)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, pipelineDBID, j.ID, i, string(runsOnJSON), string(requiresToolsJSON), j.TimeoutSeconds, string(artifactsJSON), string(matrixJSON), string(stepsJSON)); err != nil {
+				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, runs_on_json, requires_tools_json, timeout_seconds, artifacts_json, caches_json, matrix_json, steps_json)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, pipelineDBID, j.ID, i, string(runsOnJSON), string(requiresToolsJSON), j.TimeoutSeconds, string(artifactsJSON), string(cachesJSON), string(matrixJSON), string(stepsJSON)); err != nil {
 				return fmt.Errorf("insert pipeline job: %w", err)
 			}
 		}

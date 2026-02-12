@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -31,6 +32,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 		requiredCaps   map[string]string
 		timeoutSeconds int
 		artifactGlobs  []string
+		caches         []protocol.JobCacheSpec
 		sourceRepo     string
 		sourceRef      string
 		metadata       map[string]string
@@ -177,6 +179,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				requiredCaps:   requiredCaps,
 				timeoutSeconds: pj.TimeoutSeconds,
 				artifactGlobs:  append([]string(nil), pj.Artifacts...),
+				caches:         cloneJobCachesFromPersisted(pj.Caches),
 				sourceRepo:     p.SourceRepo,
 				sourceRef:      sourceRef,
 				metadata:       metadata,
@@ -200,6 +203,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			RequiredCapabilities: spec.requiredCaps,
 			TimeoutSeconds:       spec.timeoutSeconds,
 			ArtifactGlobs:        append([]string(nil), spec.artifactGlobs...),
+			Caches:               cloneProtocolJobCaches(spec.caches),
 			Source:               &protocol.SourceSpec{Repo: spec.sourceRepo, Ref: spec.sourceRef},
 			Metadata:             spec.metadata,
 		})
@@ -214,4 +218,58 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 	}
 
 	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobIDs: jobIDs}, nil
+}
+
+func cloneProtocolJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobCacheSpec, 0, len(in))
+	for _, c := range in {
+		out = append(out, protocol.JobCacheSpec{
+			ID:          c.ID,
+			Env:         c.Env,
+			Key:         cloneProtocolJobCacheKey(c.Key),
+			RestoreKeys: append([]string(nil), c.RestoreKeys...),
+			Policy:      c.Policy,
+			TTLDays:     c.TTLDays,
+			MaxSizeMB:   c.MaxSizeMB,
+		})
+	}
+	return out
+}
+
+func cloneProtocolJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
+	return protocol.JobCacheKey{
+		Prefix:  in.Prefix,
+		Files:   append([]string(nil), in.Files...),
+		Runtime: append([]string(nil), in.Runtime...),
+		Tools:   append([]string(nil), in.Tools...),
+		Env:     append([]string(nil), in.Env...),
+	}
+}
+
+func cloneJobCachesFromPersisted(in []config.JobCache) []protocol.JobCacheSpec {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobCacheSpec, 0, len(in))
+	for _, c := range in {
+		out = append(out, protocol.JobCacheSpec{
+			ID:  c.ID,
+			Env: c.Env,
+			Key: protocol.JobCacheKey{
+				Prefix:  c.Key.Prefix,
+				Files:   append([]string(nil), c.Key.Files...),
+				Runtime: append([]string(nil), c.Key.Runtime...),
+				Tools:   append([]string(nil), c.Key.Tools...),
+				Env:     append([]string(nil), c.Key.Env...),
+			},
+			RestoreKeys: append([]string(nil), c.RestoreKeys...),
+			Policy:      c.Policy,
+			TTLDays:     c.TTLDays,
+			MaxSizeMB:   c.MaxSizeMB,
+		})
+	}
+	return out
 }

@@ -8,24 +8,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"golang.org/x/mod/semver"
 )
 
 func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error) {
 	var (
-		job                                                    protocol.Job
-		envJSON, requiredJSON, artifactGlobsJSON, metadataJSON string
-		sourceRepo, sourceRef                                  sql.NullString
-		createdUTC                                             string
-		startedUTC, finishedUTC                                sql.NullString
-		leasedByAgentID, leasedUTC                             sql.NullString
-		exitCode                                               sql.NullInt64
-		errorText, outputText                                  sql.NullString
+		job                                                                protocol.Job
+		envJSON, requiredJSON, artifactGlobsJSON, cachesJSON, metadataJSON string
+		sourceRepo, sourceRef                                              sql.NullString
+		createdUTC                                                         string
+		startedUTC, finishedUTC                                            sql.NullString
+		leasedByAgentID, leasedUTC                                         sql.NullString
+		exitCode                                                           sql.NullInt64
+		errorText, outputText                                              sql.NullString
 	)
 
 	if err := scanner.Scan(
-		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &sourceRepo, &sourceRef, &metadataJSON,
+		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON,
 		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText,
 	); err != nil {
 		return protocol.Job{}, err
@@ -34,6 +35,7 @@ func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error)
 	_ = json.Unmarshal([]byte(envJSON), &job.Env)
 	_ = json.Unmarshal([]byte(requiredJSON), &job.RequiredCapabilities)
 	_ = json.Unmarshal([]byte(artifactGlobsJSON), &job.ArtifactGlobs)
+	_ = json.Unmarshal([]byte(cachesJSON), &job.Caches)
 	_ = json.Unmarshal([]byte(metadataJSON), &job.Metadata)
 
 	if sourceRepo.Valid && sourceRepo.String != "" {
@@ -217,6 +219,60 @@ func cloneMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func cloneJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobCacheSpec, 0, len(in))
+	for _, c := range in {
+		out = append(out, protocol.JobCacheSpec{
+			ID:          c.ID,
+			Env:         c.Env,
+			Key:         cloneJobCacheKey(c.Key),
+			RestoreKeys: append([]string(nil), c.RestoreKeys...),
+			Policy:      c.Policy,
+			TTLDays:     c.TTLDays,
+			MaxSizeMB:   c.MaxSizeMB,
+		})
+	}
+	return out
+}
+
+func cloneJobCachesFromConfig(in []config.JobCache) []protocol.JobCacheSpec {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobCacheSpec, 0, len(in))
+	for _, c := range in {
+		out = append(out, protocol.JobCacheSpec{
+			ID:  c.ID,
+			Env: c.Env,
+			Key: protocol.JobCacheKey{
+				Prefix:  c.Key.Prefix,
+				Files:   append([]string(nil), c.Key.Files...),
+				Runtime: append([]string(nil), c.Key.Runtime...),
+				Tools:   append([]string(nil), c.Key.Tools...),
+				Env:     append([]string(nil), c.Key.Env...),
+			},
+			RestoreKeys: append([]string(nil), c.RestoreKeys...),
+			Policy:      c.Policy,
+			TTLDays:     c.TTLDays,
+			MaxSizeMB:   c.MaxSizeMB,
+		})
+	}
+	return out
+}
+
+func cloneJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
+	return protocol.JobCacheKey{
+		Prefix:  in.Prefix,
+		Files:   append([]string(nil), in.Files...),
+		Runtime: append([]string(nil), in.Runtime...),
+		Tools:   append([]string(nil), in.Tools...),
+		Env:     append([]string(nil), in.Env...),
+	}
 }
 
 func cloneSource(in *protocol.SourceSpec) *protocol.SourceSpec {

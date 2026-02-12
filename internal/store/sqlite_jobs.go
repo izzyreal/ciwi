@@ -24,6 +24,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	requiredJSON, _ := json.Marshal(req.RequiredCapabilities)
 	envJSON, _ := json.Marshal(req.Env)
 	artifactGlobsJSON, _ := json.Marshal(req.ArtifactGlobs)
+	cachesJSON, _ := json.Marshal(req.Caches)
 	metadataJSON, _ := json.Marshal(req.Metadata)
 
 	var sourceRepo, sourceRef string
@@ -33,9 +34,9 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	}
 
 	if _, err := s.db.Exec(`
-		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json, status, created_utc)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), sourceRepo, sourceRef, string(metadataJSON), "queued", now.Format(time.RFC3339Nano)); err != nil {
+		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, status, created_utc)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), "queued", now.Format(time.RFC3339Nano)); err != nil {
 		return protocol.Job{}, fmt.Errorf("insert job: %w", err)
 	}
 
@@ -46,6 +47,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 		RequiredCapabilities: cloneMap(req.RequiredCapabilities),
 		TimeoutSeconds:       req.TimeoutSeconds,
 		ArtifactGlobs:        append([]string(nil), req.ArtifactGlobs...),
+		Caches:               cloneJobCaches(req.Caches),
 		Source:               cloneSource(req.Source),
 		Metadata:             cloneMap(req.Metadata),
 		Status:               "queued",
@@ -55,7 +57,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 
 func (s *Store) ListJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM job_executions
 		ORDER BY created_utc DESC
@@ -81,7 +83,7 @@ func (s *Store) ListJobs() ([]protocol.Job, error) {
 
 func (s *Store) GetJob(id string) (protocol.Job, error) {
 	row := s.db.QueryRow(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM job_executions WHERE id = ?
 	`, id)
@@ -148,7 +150,7 @@ func (s *Store) AgentHasActiveJob(agentID string) (bool, error) {
 
 func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
 		FROM job_executions WHERE status = 'queued'
 		ORDER BY created_utc ASC

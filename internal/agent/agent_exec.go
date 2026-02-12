@@ -25,7 +25,7 @@ const (
 	shellPowerShell = "powershell"
 )
 
-func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, job protocol.Job) error {
+func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.Job) error {
 	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 		AgentID:      agentID,
 		Status:       "running",
@@ -73,6 +73,10 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		execDir = sourceDir
 	}
+	cacheEnv, cacheLogs := resolveJobCacheEnv(workDir, execDir, job, agentCapabilities)
+	for _, line := range cacheLogs {
+		fmt.Fprintf(&output, "[cache] %s\n", line)
+	}
 
 	traceShell := boolEnv("CIWI_AGENT_TRACE_SHELL", true)
 	verboseGo := boolEnv("CIWI_AGENT_GO_BUILD_VERBOSE", true)
@@ -107,7 +111,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	cmd.Dir = execDir
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	cmd.Env = withGoVerbose(mergeEnv(os.Environ(), job.Env), verboseGo)
+	cmd.Env = withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
 
 	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output, job.SensitiveValues)
 	defer stopStreaming()

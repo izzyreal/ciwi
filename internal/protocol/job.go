@@ -24,12 +24,31 @@ type SourceSpec struct {
 	Ref  string `json:"ref,omitempty"`
 }
 
+type JobCacheSpec struct {
+	ID          string      `json:"id"`
+	Env         string      `json:"env,omitempty"`
+	Key         JobCacheKey `json:"key,omitempty"`
+	RestoreKeys []string    `json:"restore_keys,omitempty"`
+	Policy      string      `json:"policy,omitempty"`
+	TTLDays     int         `json:"ttl_days,omitempty"`
+	MaxSizeMB   int         `json:"max_size_mb,omitempty"`
+}
+
+type JobCacheKey struct {
+	Prefix  string   `json:"prefix,omitempty"`
+	Files   []string `json:"files,omitempty"`
+	Runtime []string `json:"runtime,omitempty"`
+	Tools   []string `json:"tools,omitempty"`
+	Env     []string `json:"env,omitempty"`
+}
+
 type CreateJobRequest struct {
 	Script               string            `json:"script"`
 	Env                  map[string]string `json:"env,omitempty"`
 	RequiredCapabilities map[string]string `json:"required_capabilities"`
 	TimeoutSeconds       int               `json:"timeout_seconds"`
 	ArtifactGlobs        []string          `json:"artifact_globs,omitempty"`
+	Caches               []JobCacheSpec    `json:"caches,omitempty"`
 	Source               *SourceSpec       `json:"source,omitempty"`
 	Metadata             map[string]string `json:"metadata,omitempty"`
 }
@@ -41,6 +60,7 @@ type Job struct {
 	RequiredCapabilities map[string]string `json:"required_capabilities"`
 	TimeoutSeconds       int               `json:"timeout_seconds"`
 	ArtifactGlobs        []string          `json:"artifact_globs,omitempty"`
+	Caches               []JobCacheSpec    `json:"caches,omitempty"`
 	Source               *SourceSpec       `json:"source,omitempty"`
 	Metadata             map[string]string `json:"metadata,omitempty"`
 	Status               string            `json:"status"`
@@ -125,6 +145,7 @@ type PipelineJobDetail struct {
 	RunsOn         map[string]string `json:"runs_on,omitempty"`
 	RequiresTools  map[string]string `json:"requires_tools,omitempty"`
 	Artifacts      []string          `json:"artifacts,omitempty"`
+	Caches         []JobCacheSpec    `json:"caches,omitempty"`
 	Steps          []PipelineStep    `json:"steps,omitempty"`
 	MatrixIncludes []MatrixInclude   `json:"matrix_includes,omitempty"`
 }

@@ -87,7 +87,7 @@ func runLoop(ctx context.Context) error {
 			if job == nil {
 				continue
 			}
-			if err := executeLeasedJob(ctx, client, serverURL, agentID, workDir, *job); err != nil {
+			if err := executeLeasedJob(ctx, client, serverURL, agentID, workDir, capabilities, *job); err != nil {
 				slog.Error("execute job failed", "job_execution_id", job.ID, "error", err)
 			}
 		}

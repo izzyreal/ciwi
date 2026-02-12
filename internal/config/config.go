@@ -60,8 +60,27 @@ type Job struct {
 	Requires       Requires          `yaml:"requires,omitempty" json:"requires,omitempty"`
 	TimeoutSeconds int               `yaml:"timeout_seconds" json:"timeout_seconds"`
 	Artifacts      []string          `yaml:"artifacts" json:"artifacts"`
+	Caches         []JobCache        `yaml:"caches,omitempty" json:"caches,omitempty"`
 	Matrix         Matrix            `yaml:"matrix" json:"matrix"`
 	Steps          []Step            `yaml:"steps" json:"steps"`
+}
+
+type JobCache struct {
+	ID          string      `yaml:"id" json:"id"`
+	Env         string      `yaml:"env,omitempty" json:"env,omitempty"`
+	Key         JobCacheKey `yaml:"key,omitempty" json:"key,omitempty"`
+	RestoreKeys []string    `yaml:"restore_keys,omitempty" json:"restore_keys,omitempty"`
+	Policy      string      `yaml:"policy,omitempty" json:"policy,omitempty"`
+	TTLDays     int         `yaml:"ttl_days,omitempty" json:"ttl_days,omitempty"`
+	MaxSizeMB   int         `yaml:"max_size_mb,omitempty" json:"max_size_mb,omitempty"`
+}
+
+type JobCacheKey struct {
+	Prefix  string   `yaml:"prefix,omitempty" json:"prefix,omitempty"`
+	Files   []string `yaml:"files,omitempty" json:"files,omitempty"`
+	Runtime []string `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Tools   []string `yaml:"tools,omitempty" json:"tools,omitempty"`
+	Env     []string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 type Requires struct {
@@ -219,6 +238,66 @@ func (cfg File) Validate() []string {
 					continue
 				}
 			}
+			cacheIDs := map[string]struct{}{}
+			for cIdx, c := range job.Caches {
+				cacheID := strings.TrimSpace(c.ID)
+				if cacheID == "" {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].id is required", i, j, cIdx))
+				} else {
+					if _, exists := cacheIDs[cacheID]; exists {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].id duplicate %q", i, j, cIdx, cacheID))
+					}
+					cacheIDs[cacheID] = struct{}{}
+				}
+				cacheEnv := strings.TrimSpace(c.Env)
+				if cacheEnv == "" {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].env is required", i, j, cIdx))
+				}
+				policy := strings.ToLower(strings.TrimSpace(c.Policy))
+				switch policy {
+				case "", "pull-push", "pull", "push":
+				default:
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].policy must be one of pull-push,pull,push", i, j, cIdx))
+				}
+				if c.TTLDays < 0 {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].ttl_days must be >= 0", i, j, cIdx))
+				}
+				if c.MaxSizeMB < 0 {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].max_size_mb must be >= 0", i, j, cIdx))
+				}
+				for k, pattern := range c.Key.Files {
+					pathSpec := strings.TrimSpace(pattern)
+					if pathSpec == "" {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.files[%d] must not be empty", i, j, cIdx, k))
+						continue
+					}
+					if hasUnsafePath(pathSpec) {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.files[%d] must be a relative in-repo path/glob", i, j, cIdx, k))
+					}
+				}
+				for k, token := range c.Key.Runtime {
+					switch strings.TrimSpace(token) {
+					case "os", "arch":
+					default:
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.runtime[%d] must be one of os,arch", i, j, cIdx, k))
+					}
+				}
+				for k, tool := range c.Key.Tools {
+					if strings.TrimSpace(tool) == "" || strings.ContainsAny(tool, " \t\n\r") {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.tools[%d] invalid tool name", i, j, cIdx, k))
+					}
+				}
+				for k, envName := range c.Key.Env {
+					if strings.TrimSpace(envName) == "" || strings.ContainsAny(envName, " \t\n\r=") {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.env[%d] invalid env var name", i, j, cIdx, k))
+					}
+				}
+				for k, restore := range c.RestoreKeys {
+					if strings.TrimSpace(restore) == "" {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].restore_keys[%d] must not be empty", i, j, cIdx, k))
+					}
+				}
+			}
 			for k, st := range job.Steps {
 				runSet := strings.TrimSpace(st.Run) != ""
 				testSet := st.Test != nil
@@ -255,4 +334,18 @@ func (cfg File) Validate() []string {
 	}
 
 	return errs
+}
+
+func hasUnsafePath(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return true
+	}
+	if strings.HasPrefix(v, "/") || strings.HasPrefix(v, "\\") {
+		return true
+	}
+	if strings.HasPrefix(v, "..") || strings.Contains(v, "../") || strings.Contains(v, `..\`) {
+		return true
+	}
+	return false
 }

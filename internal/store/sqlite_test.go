@@ -26,6 +26,23 @@ pipelines:
         timeout_seconds: 300
         artifacts:
           - dist/*
+        caches:
+          - id: fetchcontent
+            env: FETCHCONTENT_BASE_DIR
+            key:
+              prefix: fetchcontent-v1
+              files:
+                - CMakeLists.txt
+              runtime:
+                - os
+                - arch
+              tools:
+                - cmake
+            restore_keys:
+              - fetchcontent-v1
+            policy: pull-push
+            ttl_days: 14
+            max_size_mb: 1024
         matrix:
           include:
             - name: linux-amd64
@@ -105,6 +122,12 @@ func TestStoreLoadConfigAndProjectDetail(t *testing.T) {
 	}
 	if got := detail.Pipelines[0].Jobs[0].ID; got != "compile" {
 		t.Fatalf("unexpected pipeline job id: %q", got)
+	}
+	if got := len(detail.Pipelines[0].Jobs[0].Caches); got != 1 {
+		t.Fatalf("expected 1 cache in pipeline job detail, got %d", got)
+	}
+	if got := detail.Pipelines[0].Jobs[0].Caches[0].ID; got != "fetchcontent" {
+		t.Fatalf("unexpected cache id: %q", got)
 	}
 	if got := len(detail.Pipelines[0].Jobs[0].MatrixIncludes); got != 2 {
 		t.Fatalf("expected 2 matrix includes, got %d", got)

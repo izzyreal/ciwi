@@ -358,3 +358,82 @@ pipelines:
 		t.Fatalf("expected powershell shell to validate, got: %v", err)
 	}
 }
+
+func TestParseJobCaches(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        caches:
+          - id: fetchcontent
+            env: FETCHCONTENT_BASE_DIR
+            key:
+              prefix: fetchcontent-v1
+              files:
+                - CMakeLists.txt
+                - cmake/**/*.cmake
+              runtime:
+                - os
+                - arch
+              tools:
+                - cmake
+              env:
+                - CMAKE_TOOLCHAIN_FILE
+            restore_keys:
+              - fetchcontent-v1
+            policy: pull-push
+            ttl_days: 14
+            max_size_mb: 2048
+        steps:
+          - run: cmake -S . -B build
+`), "test-caches")
+	if err != nil {
+		t.Fatalf("expected caches config to validate, got: %v", err)
+	}
+}
+
+func TestParseRejectsInvalidJobCache(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        caches:
+          - id: ""
+            env: ""
+            key:
+              files:
+                - ../outside
+              runtime:
+                - kernel
+              tools:
+                - "bad tool"
+              env:
+                - "bad env"
+            policy: invalid
+            ttl_days: -1
+            max_size_mb: -5
+            restore_keys:
+              - ""
+        steps:
+          - run: cmake -S . -B build
+`), "test-invalid-cache")
+	if err == nil || !strings.Contains(err.Error(), "caches") {
+		t.Fatalf("expected cache validation error, got: %v", err)
+	}
+}

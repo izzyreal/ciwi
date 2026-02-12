@@ -258,6 +258,80 @@ func TestParseJobTestReport(t *testing.T) {
 	}
 }
 
+func TestResolveJobCacheEnvMissThenHit(t *testing.T) {
+	workDir := t.TempDir()
+	execDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(execDir, "CMakeLists.txt"), []byte("cmake_minimum_required(VERSION 3.20)"), 0o644); err != nil {
+		t.Fatalf("write CMakeLists: %v", err)
+	}
+
+	job := protocol.Job{
+		Caches: []protocol.JobCacheSpec{
+			{
+				ID:  "fetchcontent",
+				Env: "FETCHCONTENT_BASE_DIR",
+				Key: protocol.JobCacheKey{
+					Prefix: "fetchcontent-v1",
+					Files:  []string{"CMakeLists.txt"},
+				},
+			},
+		},
+	}
+
+	env1, logs1 := resolveJobCacheEnv(workDir, execDir, job, nil)
+	dir1 := env1["FETCHCONTENT_BASE_DIR"]
+	if dir1 == "" {
+		t.Fatalf("expected FETCHCONTENT_BASE_DIR to be set, logs=%v", logs1)
+	}
+	if !strings.Contains(strings.Join(logs1, "\n"), "source=miss") {
+		t.Fatalf("expected miss log, logs=%v", logs1)
+	}
+	if _, err := os.Stat(dir1); err != nil {
+		t.Fatalf("expected cache dir to exist: %v", err)
+	}
+
+	env2, logs2 := resolveJobCacheEnv(workDir, execDir, job, nil)
+	dir2 := env2["FETCHCONTENT_BASE_DIR"]
+	if dir2 != dir1 {
+		t.Fatalf("expected same cache dir on second resolve: %q vs %q", dir2, dir1)
+	}
+	if !strings.Contains(strings.Join(logs2, "\n"), "source=hit") {
+		t.Fatalf("expected hit log, logs=%v", logs2)
+	}
+}
+
+func TestResolveJobCacheEnvUsesRestoreKey(t *testing.T) {
+	workDir := t.TempDir()
+	execDir := t.TempDir()
+	cacheBase := filepath.Join(workDir, "cache", "fetchcontent")
+	restored := filepath.Join(cacheBase, "fetchcontent-v1-old")
+	if err := os.MkdirAll(restored, 0o755); err != nil {
+		t.Fatalf("mkdir restore cache: %v", err)
+	}
+
+	job := protocol.Job{
+		Caches: []protocol.JobCacheSpec{
+			{
+				ID:          "fetchcontent",
+				Env:         "FETCHCONTENT_BASE_DIR",
+				RestoreKeys: []string{"fetchcontent-v1"},
+				Key: protocol.JobCacheKey{
+					Prefix: "fetchcontent-v1",
+					Files:  []string{"CMakeLists.txt"},
+				},
+			},
+		},
+	}
+	env, logs := resolveJobCacheEnv(workDir, execDir, job, nil)
+	got := env["FETCHCONTENT_BASE_DIR"]
+	if !samePath(got, restored) {
+		t.Fatalf("expected restore dir %q, got %q (logs=%v)", restored, got, logs)
+	}
+	if !strings.Contains(strings.Join(logs, "\n"), "source=restore:fetchcontent-v1-old") {
+		t.Fatalf("expected restore source in logs, logs=%v", logs)
+	}
+}
+
 func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell-script assertion test skipped on windows")
@@ -306,7 +380,7 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 		TimeoutSeconds: 30,
 		ArtifactGlobs:  []string{"dist/*"},
 	}
-	err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", workDir, job)
+	err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", workDir, nil, job)
 	if err != nil {
 		t.Fatalf("executeLeasedJob: %v", err)
 	}
@@ -366,7 +440,7 @@ func TestExecuteLeasedJobDisablesShellTraceForAdhoc(t *testing.T) {
 			"adhoc": "1",
 		},
 	}
-	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", t.TempDir(), job); err != nil {
+	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", t.TempDir(), nil, job); err != nil {
 		t.Fatalf("executeLeasedJob: %v", err)
 	}
 
