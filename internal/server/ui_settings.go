@@ -128,25 +128,10 @@ const settingsHTML = `<!doctype html>
   <script src="/ui/pages.js"></script>
   <script>
     let refreshInFlight = false;
-    let refreshPausedUntil = 0;
+    const refreshGuard = createRefreshGuard(5000);
     const projectReloadState = new Map();
     let updateRestartWatchActive = false;
     let rollbackTagsLoadedAt = 0;
-
-    function hasActiveTextSelection() {
-      const sel = window.getSelection && window.getSelection();
-      if (!sel) return false;
-      const text = (sel.toString() || '').trim();
-      return text.length > 0;
-    }
-
-    function shouldPauseRefresh() {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-        return true;
-      }
-      return Date.now() < refreshPausedUntil;
-    }
 
     function setProjectReloadState(projectId, text, color) {
       projectReloadState.set(String(projectId), { text, color });
@@ -483,7 +468,7 @@ const settingsHTML = `<!doctype html>
     }
 
     async function tick() {
-      if (refreshInFlight || shouldPauseRefresh()) {
+      if (refreshInFlight || refreshGuard.shouldPause()) {
         return;
       }
       refreshInFlight = true;
@@ -495,11 +480,7 @@ const settingsHTML = `<!doctype html>
         refreshInFlight = false;
       }
     }
-    document.addEventListener('selectionchange', () => {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-      }
-    });
+    refreshGuard.bindSelectionListener();
     tick();
     setInterval(tick, 3000);
   </script>

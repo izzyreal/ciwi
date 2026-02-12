@@ -215,18 +215,29 @@ function Choose-ServerUrl {
   return Canonicalize-Url $entered
 }
 
+function New-GitHubHeaders {
+  param(
+    [string]$Token,
+    [switch]$Api
+  )
+  $headers = @{
+    'User-Agent' = 'ciwi-installer'
+  }
+  if ($Api.IsPresent) {
+    $headers['Accept'] = 'application/vnd.github+json'
+  }
+  if (-not [string]::IsNullOrWhiteSpace($Token)) {
+    $headers['Authorization'] = "Bearer $Token"
+  }
+  return $headers
+}
+
 function Get-LatestTag {
   param(
     [Parameter(Mandatory = $true)][string]$Repo,
     [string]$Token
   )
-  $headers = @{
-    'Accept' = 'application/vnd.github+json'
-    'User-Agent' = 'ciwi-installer'
-  }
-  if (-not [string]::IsNullOrWhiteSpace($Token)) {
-    $headers['Authorization'] = "Bearer $Token"
-  }
+  $headers = New-GitHubHeaders -Token $Token -Api
   try {
     $rel = Invoke-RestMethod -Method Get -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers
     return Trim-OneLine ([string]$rel.tag_name)
@@ -424,9 +435,7 @@ if (-not [string]::IsNullOrWhiteSpace($targetVersion)) {
   Write-Host '[info] Preparing to install ciwi agent version: unknown (GitHub API query failed; continuing with latest/download)'
 }
 
-$headers = @{
-  'User-Agent' = 'ciwi-installer'
-}
+$headers = New-GitHubHeaders -Token $token
 
 $tempRoot = Join-Path $env:TEMP ("ciwi-agent-install-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null

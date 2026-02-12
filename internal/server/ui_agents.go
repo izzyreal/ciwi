@@ -88,41 +88,9 @@ const agentsHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script>
     let refreshInFlight = false;
-    let refreshPausedUntil = 0;
-
-    function hasActiveTextSelection() {
-      const sel = window.getSelection && window.getSelection();
-      if (!sel) return false;
-      const text = (sel.toString() || '').trim();
-      return text.length > 0;
-    }
-
-    function shouldPauseRefresh() {
-      if (hasActiveTextSelection()) {
-        // Keep the table stable while user is selecting/copying text.
-        refreshPausedUntil = Date.now() + 5000;
-        return true;
-      }
-      return Date.now() < refreshPausedUntil;
-    }
-
-    function statusForLastSeen(ts) {
-      if (!ts) return { label: 'unknown', cls: 'offline' };
-      const d = new Date(ts);
-      if (isNaN(d.getTime())) return { label: 'unknown', cls: 'offline' };
-      const ageMs = Date.now() - d.getTime();
-      if (ageMs <= 20000) return { label: 'online', cls: 'ok' };
-      if (ageMs <= 60000) return { label: 'stale', cls: 'stale' };
-      return { label: 'offline', cls: 'offline' };
-    }
-    function formatCapabilities(caps) {
-      if (!caps) return '';
-      const entries = Object.entries(caps);
-      if (entries.length === 0) return '';
-      return entries.map(([k,v]) => k + '=' + v).join(', ');
-    }
+    const refreshGuard = createRefreshGuard(5000);
     async function refreshAgents() {
-      if (refreshInFlight || shouldPauseRefresh()) {
+      if (refreshInFlight || refreshGuard.shouldPause()) {
         return;
       }
       refreshInFlight = true;
@@ -197,11 +165,7 @@ const agentsHTML = `<!doctype html>
       }
     }
     document.getElementById('refreshBtn').onclick = refreshAgents;
-    document.addEventListener('selectionchange', () => {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-      }
-    });
+    refreshGuard.bindSelectionListener();
     refreshAgents();
     setInterval(refreshAgents, 3000);
   </script>

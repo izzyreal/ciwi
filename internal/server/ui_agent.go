@@ -174,43 +174,11 @@ const agentHTML = `<!doctype html>
     const adhocOutput = document.getElementById('adhocOutput');
     const adhocRunBtn = document.getElementById('adhocRunBtn');
     let refreshInFlight = false;
-    let refreshPausedUntil = 0;
+    const refreshGuard = createRefreshGuard(5000);
     let adhocShells = [];
     let adhocActiveJobID = '';
     let adhocPollTimer = null;
     let lastSuggestedScript = '';
-
-    function hasActiveTextSelection() {
-      const sel = window.getSelection && window.getSelection();
-      if (!sel) return false;
-      const text = (sel.toString() || '').trim();
-      return text.length > 0;
-    }
-
-    function shouldPauseRefresh() {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-        return true;
-      }
-      return Date.now() < refreshPausedUntil;
-    }
-
-    function statusForLastSeen(ts) {
-      if (!ts) return { label: 'unknown', cls: 'offline' };
-      const d = new Date(ts);
-      if (isNaN(d.getTime())) return { label: 'unknown', cls: 'offline' };
-      const ageMs = Date.now() - d.getTime();
-      if (ageMs <= 20000) return { label: 'online', cls: 'ok' };
-      if (ageMs <= 60000) return { label: 'stale', cls: 'stale' };
-      return { label: 'offline', cls: 'offline' };
-    }
-
-    function formatCapabilities(caps) {
-      if (!caps) return '';
-      const entries = Object.entries(caps);
-      if (entries.length === 0) return '';
-      return entries.map(([k,v]) => k + '=' + v).join(', ');
-    }
 
     function metaRow(k, v) {
       return '<div class="label">' + escapeHtml(k) + '</div><div class="value">' + v + '</div>';
@@ -377,7 +345,7 @@ const agentHTML = `<!doctype html>
     }
 
     async function refreshAgent(force) {
-      if (refreshInFlight || (!force && shouldPauseRefresh())) {
+      if (refreshInFlight || (!force && refreshGuard.shouldPause())) {
         return;
       }
       refreshInFlight = true;
@@ -464,11 +432,7 @@ const agentHTML = `<!doctype html>
     };
     adhocRunBtn.onclick = () => runAdhocScript();
     document.getElementById('adhocCloseBtn').onclick = () => closeAdhocModal();
-    document.addEventListener('selectionchange', () => {
-      if (hasActiveTextSelection()) {
-        refreshPausedUntil = Date.now() + 5000;
-      }
-    });
+    refreshGuard.bindSelectionListener();
     refreshAgent(true);
     setInterval(() => refreshAgent(false), 3000);
   </script>

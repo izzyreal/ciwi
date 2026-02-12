@@ -39,23 +39,31 @@ read_existing_github_token() {
   printf '%s' ""
 }
 
-fetch_latest_tag() {
-  api_url="https://api.github.com/repos/${REPO}/releases/latest"
-  auth_header=""
+github_auth_header() {
   token="$(trim_single_line "${CIWI_GITHUB_TOKEN:-}")"
   if [ -z "$token" ]; then
     token="$(trim_single_line "${INSTALL_GITHUB_TOKEN:-}")"
   fi
   if [ -n "$token" ]; then
-    auth_header="Authorization: Bearer ${token}"
-  fi
-  if [ -n "$auth_header" ]; then
-    curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ciwi-installer" -H "$auth_header" "$api_url" \
-      | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '1p'
+    printf 'Authorization: Bearer %s\n' "$token"
   else
-    curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ciwi-installer" "$api_url" \
-      | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '1p'
+    printf '%s\n' ""
   fi
+}
+
+github_api_get() {
+  url="$1"
+  auth_header="$(github_auth_header)"
+  if [ -n "$auth_header" ]; then
+    curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ciwi-installer" -H "$auth_header" "$url"
+  else
+    curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ciwi-installer" "$url"
+  fi
+}
+
+fetch_latest_tag() {
+  api_url="https://api.github.com/repos/${REPO}/releases/latest"
+  github_api_get "$api_url" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '1p'
 }
 
 normalize_host() {

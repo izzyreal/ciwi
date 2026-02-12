@@ -88,6 +88,52 @@ function formatBytes(n) {
   return rounded.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') + ' ' + units[idx];
 }
 
+function createRefreshGuard(holdMs) {
+  const pauseMs = Math.max(0, Number(holdMs || 5000));
+  let pausedUntil = 0;
+
+  function hasActiveTextSelection() {
+    const sel = window.getSelection && window.getSelection();
+    if (!sel) return false;
+    const text = (sel.toString() || '').trim();
+    return text.length > 0;
+  }
+
+  return {
+    shouldPause: function() {
+      if (hasActiveTextSelection()) {
+        pausedUntil = Date.now() + pauseMs;
+        return true;
+      }
+      return Date.now() < pausedUntil;
+    },
+    bindSelectionListener: function() {
+      document.addEventListener('selectionchange', () => {
+        if (hasActiveTextSelection()) {
+          pausedUntil = Date.now() + pauseMs;
+        }
+      });
+    },
+  };
+}
+
+function statusForLastSeen(ts) {
+  if (!ts) return { label: 'unknown', cls: 'offline' };
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return { label: 'unknown', cls: 'offline' };
+  const ageMs = Date.now() - d.getTime();
+  if (ageMs <= 20000) return { label: 'online', cls: 'ok' };
+  if (ageMs <= 60000) return { label: 'stale', cls: 'stale' };
+  return { label: 'offline', cls: 'offline' };
+}
+
+function formatCapabilities(caps) {
+  if (!caps) return '';
+  const entries = Object.entries(caps);
+  if (entries.length === 0) return '';
+  return entries.map(([k,v]) => k + '=' + v).join(', ');
+}
+
 function ensureModalBaseStyles() {
   if (document.getElementById('__ciwiModalBaseStyles')) return;
   const style = document.createElement('style');
