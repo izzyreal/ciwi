@@ -46,6 +46,7 @@ function formatDuration(startTs, finishTs, status) {
 
 function jobDescription(job) {
   const m = job.metadata || {};
+  if (String(m.adhoc || '').trim() === '1') return 'Adhoc script';
   const matrix = (m.matrix_name || '').trim();
   const pipelineJob = (m.pipeline_job_id || '').trim();
   const pipeline = (m.pipeline_id || '').trim();

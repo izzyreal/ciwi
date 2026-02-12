@@ -87,6 +87,37 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(rootHTML, "table-layout: fixed") || !strings.Contains(rootHTML, "overflow-wrap: anywhere") {
 		t.Fatalf("root page missing log overflow containment CSS")
 	}
+	if !strings.Contains(rootHTML, ".ciwi-job-group-card") || !strings.Contains(rootHTML, ".ciwi-job-group-details") {
+		t.Fatalf("root page missing grouped job container styles")
+	}
+	if !strings.Contains(rootHTML, ".ciwi-job-group-details[open] .ciwi-job-group-toggle::before") {
+		t.Fatalf("root page missing grouped job collapse/expand icon styles")
+	}
+	if !strings.Contains(rootHTML, ".project-group[open] .project-group-toggle::before") {
+		t.Fatalf("root page missing project collapse/expand icon styles")
+	}
+	if !strings.Contains(rootHTML, "const JOB_GROUPS_STORAGE_KEY = 'ciwi.index.jobGroupsExpanded.v1'") {
+		t.Fatalf("root page missing grouped job storage key")
+	}
+	if !strings.Contains(rootHTML, "const PROJECT_GROUPS_STORAGE_KEY = 'ciwi.index.projectGroupsCollapsed.v1'") {
+		t.Fatalf("root page missing project storage key")
+	}
+	if !strings.Contains(rootHTML, "function normalizeSummaryGroups(") ||
+		!strings.Contains(rootHTML, "function allocateGroupedSkeletonRows(") ||
+		!strings.Contains(rootHTML, "function buildJobGroupSkeletonRow(") {
+		t.Fatalf("root page missing grouped skeleton allocation helpers")
+	}
+	if !strings.Contains(rootHTML, "summary.queued_groups") || !strings.Contains(rootHTML, "summary.history_groups") {
+		t.Fatalf("root page missing summary-driven grouped skeleton wiring")
+	}
+	if !strings.Contains(rootHTML, "function jobsSignature(") ||
+		!strings.Contains(rootHTML, "if (queuedSig !== lastQueuedJobsSignature)") ||
+		!strings.Contains(rootHTML, "if (historySig !== lastHistoryJobsSignature)") {
+		t.Fatalf("root page missing no-blink signature-based rerender guard")
+	}
+	if !strings.Contains(rootHTML, "tbody.appendChild(buildStaticJobGroupRow(job, opts, columnCount));") {
+		t.Fatalf("root page missing static single-job container rendering")
+	}
 	if strings.Contains(rootHTML, `id="importProjectBtn"`) {
 		t.Fatalf("root page should not include project import controls")
 	}
@@ -128,6 +159,9 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	}
 	if !strings.Contains(js, "function jobDescription(") {
 		t.Fatalf("shared js missing jobDescription helper")
+	}
+	if !strings.Contains(js, `if (String(m.adhoc || '').trim() === '1') return 'Adhoc script';`) {
+		t.Fatalf("shared js missing adhoc job description label")
 	}
 	if !strings.Contains(js, "function formatBytes(") {
 		t.Fatalf("shared js missing formatBytes helper")

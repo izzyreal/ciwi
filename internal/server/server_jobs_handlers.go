@@ -11,6 +11,13 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
+type jobDisplayGroupSummary struct {
+	Key         string `json:"key"`
+	RunID       string `json:"run_id,omitempty"`
+	JobCount    int    `json:"job_count"`
+	Collapsible bool   `json:"collapsible"`
+}
+
 func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -29,12 +36,18 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 		queuedJobs, historyJobs := splitJobsByState(jobs)
 		switch view {
 		case "summary":
+			queuedGroups := summarizeJobDisplayGroups(queuedJobs)
+			historyGroups := summarizeJobDisplayGroups(historyJobs)
 			writeJSON(w, http.StatusOK, map[string]any{
-				"view":          "summary",
-				"max":           maxJobs,
-				"total":         len(jobs),
-				"queued_count":  len(queuedJobs),
-				"history_count": len(historyJobs),
+				"view":                "summary",
+				"max":                 maxJobs,
+				"total":               len(jobs),
+				"queued_count":        len(queuedJobs),
+				"history_count":       len(historyJobs),
+				"queued_group_count":  len(queuedGroups),
+				"history_group_count": len(historyGroups),
+				"queued_groups":       queuedGroups,
+				"history_groups":      historyGroups,
 			})
 			return
 		case "queued", "history":
@@ -108,6 +121,49 @@ func splitJobsByState(jobs []protocol.Job) (queued []protocol.Job, history []pro
 		}
 	}
 	return queued, history
+}
+
+func summarizeJobDisplayGroups(jobs []protocol.Job) []jobDisplayGroupSummary {
+	if len(jobs) == 0 {
+		return nil
+	}
+	byRunCount := map[string]int{}
+	for _, job := range jobs {
+		runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
+		if runID == "" {
+			continue
+		}
+		byRunCount[runID]++
+	}
+
+	out := make([]jobDisplayGroupSummary, 0, len(jobs))
+	seenRunIDs := map[string]struct{}{}
+	for _, job := range jobs {
+		jobID := strings.TrimSpace(job.ID)
+		runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
+		if runID == "" || byRunCount[runID] <= 1 {
+			if jobID == "" {
+				continue
+			}
+			out = append(out, jobDisplayGroupSummary{
+				Key:         "job:" + jobID,
+				JobCount:    1,
+				Collapsible: false,
+			})
+			continue
+		}
+		if _, ok := seenRunIDs[runID]; ok {
+			continue
+		}
+		seenRunIDs[runID] = struct{}{}
+		out = append(out, jobDisplayGroupSummary{
+			Key:         "run:" + runID,
+			RunID:       runID,
+			JobCount:    byRunCount[runID],
+			Collapsible: true,
+		})
+	}
+	return out
 }
 
 func paginateJobs(jobs []protocol.Job, offset, limit int) []protocol.Job {
