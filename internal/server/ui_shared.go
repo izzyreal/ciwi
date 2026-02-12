@@ -169,6 +169,11 @@ function closeModalOverlay(overlay) {
 
 function wireModalCloseBehavior(overlay, onClose) {
   if (!overlay || overlay.__ciwiModalCloseBound) return;
+  ensureModalBaseStyles();
+  if (overlay.getAttribute('aria-hidden') !== 'false') {
+    overlay.style.display = 'none';
+    overlay.setAttribute('aria-hidden', 'true');
+  }
   overlay.__ciwiModalCloseBound = true;
   overlay.addEventListener('click', (ev) => {
     if (ev.target !== overlay) return;
