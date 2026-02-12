@@ -1,10 +1,11 @@
 # ciwi
-Simple CI/CD and build automation system
-WIP.
-NOT SUITABLE FOR PUBLIC SERVERS.
-ONLY FOR PRIVATE NETWORKS AND HOMELAB STYLE PROJECTS.
 
 ![ciwi logo](internal/server/assets/ciwi-logo.png)
+
+Simple CI/CD and build automation system.</br>
+WIP.</br>
+NOT SUITABLE FOR PUBLIC SERVERS.</br>
+ONLY FOR PRIVATE NETWORKS AND HOMELAB STYLE PROJECTS.</br>
 
 ## Getting started
 
