@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 )
@@ -41,7 +44,6 @@ func detectToolVersions() map[string]string {
 		{name: "gcc", cmd: "gcc", args: []string{"--version"}},
 		{name: "clang", cmd: "clang", args: []string{"--version"}},
 		{name: "xcodebuild", cmd: "xcodebuild", args: []string{"-version"}},
-		{name: "msvc", cmd: "cl", args: []string{}},
 	}
 	out := map[string]string{}
 	for _, t := range tools {
@@ -49,11 +51,21 @@ func detectToolVersions() map[string]string {
 			out[t.name] = v
 		}
 	}
+	if v := detectMSVCVersion(); v != "" {
+		out["msvc"] = v
+	}
 	return out
 }
 
 func detectToolVersion(cmd string, args ...string) string {
 	if _, err := exec.LookPath(cmd); err != nil {
+		return ""
+	}
+	return detectToolVersionByPath(cmd, args...)
+}
+
+func detectToolVersionByPath(cmd string, args ...string) string {
+	if strings.TrimSpace(cmd) == "" {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -74,4 +86,162 @@ func detectToolVersion(cmd string, args ...string) string {
 		return m[1]
 	}
 	return ""
+}
+
+func detectMSVCVersion() string {
+	if v := detectToolVersion("cl"); v != "" {
+		return v
+	}
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	if clPath := findWindowsMSVCCompilerPath(); clPath != "" {
+		return detectToolVersionByPath(clPath)
+	}
+	return ""
+}
+
+func findWindowsMSVCCompilerPath() string {
+	if override := strings.TrimSpace(os.Getenv("CIWI_MSVC_CL_PATH")); override != "" && fileExists(override) {
+		return override
+	}
+
+	for _, vswherePath := range candidateVSWherePaths() {
+		if !fileExists(vswherePath) {
+			continue
+		}
+		installPath := queryVSWhereInstallPath(vswherePath)
+		if installPath == "" {
+			continue
+		}
+		if cl := findMSVCCompilerInInstallPath(installPath); cl != "" {
+			return cl
+		}
+	}
+
+	for _, root := range windowsProgramFilesRoots() {
+		if root == "" {
+			continue
+		}
+		base := filepath.Join(root, "Microsoft Visual Studio")
+		matches, err := filepath.Glob(filepath.Join(base, "*", "*"))
+		if err != nil {
+			continue
+		}
+		sort.Strings(matches)
+		for i := len(matches) - 1; i >= 0; i-- {
+			if cl := findMSVCCompilerInInstallPath(matches[i]); cl != "" {
+				return cl
+			}
+		}
+	}
+
+	return ""
+}
+
+func queryVSWhereInstallPath(vswherePath string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(
+		ctx,
+		vswherePath,
+		"-latest",
+		"-products", "*",
+		"-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+		"-property", "installationPath",
+	).CombinedOutput()
+	if err != nil && len(out) == 0 {
+		return ""
+	}
+	lines := strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func candidateVSWherePaths() []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 4)
+	add := func(p string) {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return
+		}
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	if p, err := exec.LookPath("vswhere.exe"); err == nil {
+		add(p)
+	}
+	for _, root := range windowsProgramFilesRoots() {
+		add(filepath.Join(root, "Microsoft Visual Studio", "Installer", "vswhere.exe"))
+	}
+	return out
+}
+
+func windowsProgramFilesRoots() []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 4)
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	add(os.Getenv("ProgramFiles(x86)"))
+	add(os.Getenv("ProgramW6432"))
+	add(os.Getenv("ProgramFiles"))
+	return out
+}
+
+func findMSVCCompilerInInstallPath(installPath string) string {
+	installPath = strings.TrimSpace(installPath)
+	if installPath == "" {
+		return ""
+	}
+
+	// Prefer host/target combos that match common amd64/arm64 agents, then fall back to any cl.exe.
+	patterns := []string{
+		filepath.Join(installPath, "VC", "Tools", "MSVC", "*", "bin", "Hostx64", "x64", "cl.exe"),
+		filepath.Join(installPath, "VC", "Tools", "MSVC", "*", "bin", "Hostarm64", "arm64", "cl.exe"),
+		filepath.Join(installPath, "VC", "Tools", "MSVC", "*", "bin", "Hostx64", "arm64", "cl.exe"),
+		filepath.Join(installPath, "VC", "Tools", "MSVC", "*", "bin", "Hostarm64", "x64", "cl.exe"),
+		filepath.Join(installPath, "VC", "Tools", "MSVC", "*", "bin", "*", "*", "cl.exe"),
+	}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil || len(matches) == 0 {
+			continue
+		}
+		sort.Strings(matches)
+		for i := len(matches) - 1; i >= 0; i-- {
+			if fileExists(matches[i]) {
+				return matches[i]
+			}
+		}
+	}
+	return ""
+}
+
+func fileExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
