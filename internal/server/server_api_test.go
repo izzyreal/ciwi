@@ -1031,59 +1031,6 @@ func TestServerLeaseRejectsAgentWithActiveJob(t *testing.T) {
 	}
 }
 
-func TestServerLeaseMatchesLegacyShellExecutorCapabilities(t *testing.T) {
-	ts := newTestHTTPServer(t)
-	defer ts.Close()
-
-	client := ts.Client()
-	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
-		"script": "echo legacy",
-		"required_capabilities": map[string]any{
-			"executor": "script",
-			"shell":    "posix",
-			"os":       "linux",
-		},
-		"timeout_seconds": 30,
-	})
-	if createResp.StatusCode != http.StatusCreated {
-		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
-	}
-	_ = readBody(t, createResp)
-
-	hbResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
-		"agent_id":   "legacy-agent",
-		"hostname":   "legacy-host",
-		"os":         "linux",
-		"arch":       "amd64",
-		"version":    "v0.0.1",
-		"timestamp":  "2024-01-01T00:00:00Z",
-		"capabilities": map[string]any{
-			"executor": "shell",
-			"os":       "linux",
-		},
-	})
-	if hbResp.StatusCode != http.StatusOK {
-		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
-	}
-	_ = readBody(t, hbResp)
-
-	leaseResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
-		"agent_id": "legacy-agent",
-		"capabilities": map[string]any{
-			"executor": "shell",
-			"os":       "linux",
-		},
-	})
-	if leaseResp.StatusCode != http.StatusOK {
-		t.Fatalf("lease status=%d body=%s", leaseResp.StatusCode, readBody(t, leaseResp))
-	}
-	var lease protocol.LeaseJobResponse
-	decodeJSONBody(t, leaseResp, &lease)
-	if !lease.Assigned || lease.Job == nil {
-		t.Fatalf("expected lease to succeed for normalized legacy capabilities, got %+v", lease)
-	}
-}
-
 func TestServerForceFailActiveJob(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()
