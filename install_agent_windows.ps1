@@ -215,7 +215,7 @@ function Choose-ServerUrl {
   return Canonicalize-Url $entered
 }
 
-function Get-LatestRelease {
+function Get-LatestTag {
   param(
     [Parameter(Mandatory = $true)][string]$Repo,
     [string]$Token
@@ -227,7 +227,12 @@ function Get-LatestRelease {
   if (-not [string]::IsNullOrWhiteSpace($Token)) {
     $headers['Authorization'] = "Bearer $Token"
   }
-  return Invoke-RestMethod -Method Get -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers
+  try {
+    $rel = Invoke-RestMethod -Method Get -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers
+    return Trim-OneLine ([string]$rel.tag_name)
+  } catch {
+    return ''
+  }
 }
 
 function Get-WindowsArch {
@@ -382,31 +387,18 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 $arch = Get-WindowsArch
 $assetName = "ciwi-windows-$arch.exe"
 $checksumAssetName = 'ciwi-checksums.txt'
+$releaseBase = "https://github.com/$repo/releases/latest/download"
 
-Write-Host "[1/7] Querying latest release metadata..."
-$release = Get-LatestRelease -Repo $repo -Token $token
-$targetVersion = Trim-OneLine $release.tag_name
+Write-Host "[1/7] Resolving latest release version..."
+$targetVersion = Get-LatestTag -Repo $repo -Token $token
 if (-not [string]::IsNullOrWhiteSpace($targetVersion)) {
   Write-Host "[info] Preparing to install ciwi agent version: $targetVersion"
 } else {
-  Write-Host '[info] Preparing to install ciwi agent version: unknown (GitHub tag query failed)'
-}
-
-$asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-if ($null -eq $asset) {
-  throw "release '$targetVersion' has no asset '$assetName'"
-}
-$checksumAsset = $release.assets | Where-Object { $_.name -eq $checksumAssetName -or $_.name -eq 'checksums.txt' } | Select-Object -First 1
-if ($null -eq $checksumAsset) {
-  throw "release '$targetVersion' has no checksum asset ('$checksumAssetName')"
+  Write-Host '[info] Preparing to install ciwi agent version: unknown (GitHub API query failed; continuing with latest/download)'
 }
 
 $headers = @{
-  'Accept' = 'application/octet-stream'
   'User-Agent' = 'ciwi-installer'
-}
-if (-not [string]::IsNullOrWhiteSpace($token)) {
-  $headers['Authorization'] = "Bearer $token"
 }
 
 $tempRoot = Join-Path $env:TEMP ("ciwi-agent-install-" + [Guid]::NewGuid().ToString('N'))
@@ -416,8 +408,8 @@ $checksumPath = Join-Path $tempRoot $checksumAssetName
 
 try {
   Write-Host "[2/7] Downloading $assetName..."
-  Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile $assetPath
-  Invoke-WebRequest -Uri $checksumAsset.url -Headers $headers -OutFile $checksumPath
+  Invoke-WebRequest -Uri "$releaseBase/$assetName" -Headers $headers -OutFile $assetPath
+  Invoke-WebRequest -Uri "$releaseBase/$checksumAssetName" -Headers $headers -OutFile $checksumPath
 
   Write-Host '[3/7] Verifying checksum...'
   $checksums = Parse-Checksums -Content (Get-Content -LiteralPath $checksumPath -Raw)
