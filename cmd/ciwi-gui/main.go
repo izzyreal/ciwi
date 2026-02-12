@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,7 @@ type watchUpdate struct {
 	phase      connectionPhase
 	statusText string
 	errText    string
+	actionText string
 	event      *grpcapi.WatchStateEvent
 }
 
@@ -57,6 +59,28 @@ type snapshot struct {
 	queuedGroups  int
 	historyGroups int
 	agentIDs      []string
+}
+
+type pipelineView struct {
+	dbID       int64
+	project    string
+	pipelineID string
+	trigger    string
+	sourceRepo string
+	sourceRef  string
+	dependsOn  []string
+}
+
+type projectView struct {
+	name      string
+	repoURL   string
+	configRef string
+	pipelines []pipelineView
+}
+
+type pipelineButtons struct {
+	run    widget.Clickable
+	dryRun widget.Clickable
 }
 
 type guiApp struct {
@@ -78,7 +102,12 @@ type guiApp struct {
 	phase      connectionPhase
 	statusText string
 	lastError  string
+	lastAction string
 	snap       snapshot
+	projects   []projectView
+
+	projectList     widget.List
+	pipelineActions map[string]*pipelineButtons
 }
 
 func main() {
@@ -99,12 +128,15 @@ func main() {
 
 func run(w *app.Window) error {
 	model := &guiApp{
-		theme:      material.NewTheme(),
-		updates:    make(chan watchUpdate, 256),
-		window:     w,
-		phase:      phaseDisconnected,
-		statusText: "Disconnected",
+		theme:           material.NewTheme(),
+		updates:         make(chan watchUpdate, 256),
+		window:          w,
+		phase:           phaseDisconnected,
+		statusText:      "Disconnected",
+		lastAction:      "none",
+		pipelineActions: map[string]*pipelineButtons{},
 	}
+	model.projectList.List.Axis = layout.Vertical
 	model.addrEditor.SingleLine = true
 	model.addrEditor.Submit = true
 	model.addrEditor.SetText(defaultServerAddr())
@@ -153,6 +185,17 @@ func (m *guiApp) processActions(gtx C) {
 	}
 	for m.disconnBtn.Clicked(gtx) {
 		m.stopWatch("Disconnected")
+	}
+	for _, project := range m.projects {
+		for _, pipeline := range project.pipelines {
+			btns := m.pipelineButtonSet(pipeline.dbID)
+			for btns.run.Clicked(gtx) {
+				m.triggerPipelineRun(pipeline, false)
+			}
+			for btns.dryRun.Clicked(gtx) {
+				m.triggerPipelineRun(pipeline, true)
+			}
+		}
 	}
 }
 
@@ -330,11 +373,79 @@ func (m *guiApp) processUpdates() {
 			}
 			if u.event != nil {
 				m.snap = snapshotFromEvent(u.event)
+				m.projects = projectsFromEvent(u.event)
+			}
+			if strings.TrimSpace(u.actionText) != "" {
+				m.lastAction = u.actionText
 			}
 		default:
 			return
 		}
 	}
+}
+
+func (m *guiApp) pipelineButtonSet(dbID int64) *pipelineButtons {
+	key := strconv.FormatInt(dbID, 10)
+	if existing, ok := m.pipelineActions[key]; ok && existing != nil {
+		return existing
+	}
+	created := &pipelineButtons{}
+	m.pipelineActions[key] = created
+	return created
+}
+
+func (m *guiApp) triggerPipelineRun(p pipelineView, dryRun bool) {
+	addr := normalizeServerAddr(m.addrEditor.Text())
+	if addr == "" {
+		m.lastAction = "run request rejected: empty gRPC address"
+		if m.window != nil {
+			m.window.Invalidate()
+		}
+		return
+	}
+	mode := "run"
+	if dryRun {
+		mode = "dry run"
+	}
+	m.lastAction = fmt.Sprintf("Submitting %s for %s / %s", mode, p.project, p.pipelineID)
+	if m.window != nil {
+		m.window.Invalidate()
+	}
+	go m.runPipelineRPC(addr, p, dryRun)
+}
+
+func (m *guiApp) runPipelineRPC(addr string, p pipelineView, dryRun bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		m.enqueueUpdate(watchUpdate{actionText: fmt.Sprintf("Run failed for %s / %s: %v", p.project, p.pipelineID, err)})
+		return
+	}
+	defer func() { _ = conn.Close() }()
+
+	client := grpcapi.NewCiwiServiceClient(conn)
+	resp, err := client.RunPipeline(ctx, &grpcapi.RunPipelineRequest{
+		PipelineId: strconv.FormatInt(p.dbID, 10),
+		DryRun:     dryRun,
+	})
+	if err != nil {
+		m.enqueueUpdate(watchUpdate{actionText: fmt.Sprintf("Run failed for %s / %s: %v", p.project, p.pipelineID, err)})
+		return
+	}
+
+	mode := "Run"
+	if dryRun {
+		mode = "Dry run"
+	}
+	m.enqueueUpdate(watchUpdate{
+		actionText: fmt.Sprintf("%s queued for %s / %s: enqueued=%d jobs=%d",
+			mode, p.project, p.pipelineID, resp.GetEnqueued(), len(resp.GetJobIds())),
+	})
 }
 
 func snapshotFromEvent(evt *grpcapi.WatchStateEvent) snapshot {
@@ -375,6 +486,46 @@ func snapshotFromEvent(evt *grpcapi.WatchStateEvent) snapshot {
 	return s
 }
 
+func projectsFromEvent(evt *grpcapi.WatchStateEvent) []projectView {
+	if evt == nil || evt.GetProjects() == nil {
+		return nil
+	}
+	src := evt.GetProjects().GetProjects()
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]projectView, 0, len(src))
+	for _, p := range src {
+		if p == nil {
+			continue
+		}
+		pv := projectView{
+			name:      p.GetName(),
+			repoURL:   p.GetRepoUrl(),
+			configRef: p.GetConfigFile(),
+		}
+		if strings.TrimSpace(pv.configRef) == "" {
+			pv.configRef = p.GetConfigPath()
+		}
+		for _, pl := range p.GetPipelines() {
+			if pl == nil {
+				continue
+			}
+			pv.pipelines = append(pv.pipelines, pipelineView{
+				dbID:       pl.GetId(),
+				project:    p.GetName(),
+				pipelineID: pl.GetPipelineId(),
+				trigger:    pl.GetTrigger(),
+				sourceRepo: pl.GetSourceRepo(),
+				sourceRef:  pl.GetSourceRef(),
+				dependsOn:  append([]string(nil), pl.GetDependsOn()...),
+			})
+		}
+		out = append(out, pv)
+	}
+	return out
+}
+
 func (m *guiApp) layout(gtx C) D {
 	in := layout.UniformInset(unit.Dp(16))
 	return in.Layout(gtx, func(gtx C) D {
@@ -394,6 +545,8 @@ func (m *guiApp) layout(gtx C) D {
 			layout.Rigid(m.layoutStatusPanel),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout),
 			layout.Rigid(m.layoutSnapshotPanel),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout),
+			layout.Flexed(1, m.layoutProjectsPanel),
 		)
 	})
 }
@@ -430,6 +583,15 @@ func (m *guiApp) layoutStatusPanel(gtx C) D {
 				err = "none"
 			}
 			l := material.Body2(m.theme, "Last error: "+err)
+			return l.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+		layout.Rigid(func(gtx C) D {
+			action := strings.TrimSpace(m.lastAction)
+			if action == "" {
+				action = "none"
+			}
+			l := material.Body2(m.theme, "Last action: "+action)
 			return l.Layout(gtx)
 		}),
 	)
@@ -470,6 +632,125 @@ func (m *guiApp) layoutSnapshotPanel(gtx C) D {
 		}),
 		layout.Rigid(func(gtx C) D {
 			l := material.Body2(m.theme, "agents: "+agents)
+			return l.Layout(gtx)
+		}),
+	)
+}
+
+func (m *guiApp) layoutProjectsPanel(gtx C) D {
+	header := material.H6(m.theme, "Projects and Pipelines")
+	if len(m.projects) == 0 {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(header.Layout),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			layout.Rigid(func(gtx C) D {
+				l := material.Body2(m.theme, "Waiting for project data from WatchState...")
+				return l.Layout(gtx)
+			}),
+		)
+	}
+
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(header.Layout),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Flexed(1, func(gtx C) D {
+			list := material.List(m.theme, &m.projectList)
+			return list.Layout(gtx, len(m.projects), func(gtx C, i int) D {
+				project := m.projects[i]
+				return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx C) D {
+					return m.layoutProjectBlock(gtx, project)
+				})
+			})
+		}),
+	)
+}
+
+func (m *guiApp) layoutProjectBlock(gtx C, p projectView) D {
+	children := []layout.FlexChild{
+		layout.Rigid(func(gtx C) D {
+			title := p.name
+			if strings.TrimSpace(title) == "" {
+				title = "(unnamed project)"
+			}
+			l := material.Body1(m.theme, "Project: "+title)
+			return l.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx C) D {
+			repo := strings.TrimSpace(p.repoURL)
+			if repo == "" {
+				repo = "(no repo)"
+			}
+			cfg := strings.TrimSpace(p.configRef)
+			if cfg == "" {
+				cfg = "(no config ref)"
+			}
+			l := material.Body2(m.theme, "repo="+repo+"  config="+cfg)
+			return l.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+	}
+	if len(p.pipelines) == 0 {
+		children = append(children, layout.Rigid(func(gtx C) D {
+			l := material.Body2(m.theme, "No pipelines")
+			return l.Layout(gtx)
+		}))
+	} else {
+		for _, pipeline := range p.pipelines {
+			pl := pipeline
+			children = append(children, layout.Rigid(func(gtx C) D {
+				return m.layoutPipelineRow(gtx, pl)
+			}))
+			children = append(children, layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout))
+		}
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
+func (m *guiApp) layoutPipelineRow(gtx C, p pipelineView) D {
+	btns := m.pipelineButtonSet(p.dbID)
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx C) D {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx C) D {
+					label := strings.TrimSpace(p.pipelineID)
+					if label == "" {
+						label = "(unnamed pipeline)"
+					}
+					l := material.Body1(m.theme, "Pipeline: "+label)
+					return l.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx C) D {
+					b := material.Button(m.theme, &btns.run, "Run")
+					return b.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx C) D {
+					b := material.Button(m.theme, &btns.dryRun, "Dry Run")
+					return b.Layout(gtx)
+				}),
+			)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(2)}.Layout),
+		layout.Rigid(func(gtx C) D {
+			trigger := strings.TrimSpace(p.trigger)
+			if trigger == "" {
+				trigger = "(none)"
+			}
+			sourceRepo := strings.TrimSpace(p.sourceRepo)
+			if sourceRepo == "" {
+				sourceRepo = "(none)"
+			}
+			sourceRef := strings.TrimSpace(p.sourceRef)
+			if sourceRef == "" {
+				sourceRef = "(none)"
+			}
+			deps := "(none)"
+			if len(p.dependsOn) > 0 {
+				deps = strings.Join(p.dependsOn, ",")
+			}
+			line := fmt.Sprintf("trigger=%s  source=%s@%s  depends_on=%s", trigger, sourceRepo, sourceRef, deps)
+			l := material.Body2(m.theme, line)
 			return l.Layout(gtx)
 		}),
 	)
