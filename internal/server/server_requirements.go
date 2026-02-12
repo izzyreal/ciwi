@@ -78,9 +78,6 @@ func shellCapabilityMatch(agentCapabilities map[string]string, requiredValue str
 	if required == "" {
 		return true
 	}
-	if strings.EqualFold(strings.TrimSpace(agentCapabilities["shell"]), required) {
-		return true
-	}
 	for _, s := range strings.Split(agentCapabilities["shells"], ",") {
 		if strings.EqualFold(strings.TrimSpace(s), required) {
 			return true

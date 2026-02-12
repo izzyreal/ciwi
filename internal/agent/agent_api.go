@@ -70,9 +70,6 @@ func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID strin
 	if caps["executor"] == "" {
 		caps["executor"] = executorScript
 	}
-	if caps["shell"] == "" {
-		caps["shell"] = defaultShellForRuntime()
-	}
 	if caps["shells"] == "" {
 		caps["shells"] = strings.Join(supportedShellsForRuntime(), ",")
 	}

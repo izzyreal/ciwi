@@ -330,7 +330,7 @@ func TestCapabilitiesMatchToolConstraints(t *testing.T) {
 		"os":         "linux",
 		"arch":       "amd64",
 		"executor":   "script",
-		"shell":      "posix",
+		"shells":     "posix",
 		"tool.go":    "1.25.7",
 		"tool.git":   "2.44.0",
 		"tool.cmake": "3.28.1",
@@ -360,7 +360,6 @@ func TestCapabilitiesMatchShellsList(t *testing.T) {
 		"os":       "windows",
 		"arch":     "amd64",
 		"executor": "script",
-		"shell":    "cmd",
 		"shells":   "cmd,powershell",
 	}
 	req := map[string]string{

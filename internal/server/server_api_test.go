@@ -1282,7 +1282,7 @@ func TestHeartbeatDoesNotRequestAgentUpdate(t *testing.T) {
 		"os":            "linux",
 		"arch":          "amd64",
 		"version":       "v1.1.0",
-		"capabilities":  map[string]string{"executor": "script", "shell": "posix"},
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
 		"timestamp_utc": "2026-02-11T00:00:00Z",
 	})
 	if hbResp.StatusCode != http.StatusOK {
@@ -1338,7 +1338,7 @@ func TestGetAgentByIDEndpoint(t *testing.T) {
 		"os":            "linux",
 		"arch":          "amd64",
 		"version":       "v1.1.0",
-		"capabilities":  map[string]string{"executor": "script", "shell": "posix"},
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
 		"timestamp_utc": "2026-02-11T00:00:00Z",
 	})
 	if hbResp.StatusCode != http.StatusOK {
@@ -1394,7 +1394,7 @@ func TestManualAgentUpdateRequestTriggersHeartbeatUpdate(t *testing.T) {
 		"os":            "darwin",
 		"arch":          "arm64",
 		"version":       "v1.1.0",
-		"capabilities":  map[string]string{"executor": "script", "shell": "posix"},
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
 		"timestamp_utc": "2026-02-11T00:00:00Z",
 	})
 	if firstHB.StatusCode != http.StatusOK {
@@ -1436,7 +1436,7 @@ func TestManualAgentUpdateRequestTriggersHeartbeatUpdate(t *testing.T) {
 		"os":            "darwin",
 		"arch":          "arm64",
 		"version":       "v1.1.0",
-		"capabilities":  map[string]string{"executor": "script", "shell": "posix"},
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
 		"timestamp_utc": "2026-02-11T00:00:10Z",
 	})
 	if secondHB.StatusCode != http.StatusOK {
@@ -1466,7 +1466,7 @@ func TestManualRefreshToolsRequest(t *testing.T) {
 		"os":            "linux",
 		"arch":          "amd64",
 		"version":       "v1.0.0",
-		"capabilities":  map[string]string{"executor": "script", "shell": "posix"},
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
 		"timestamp_utc": "2026-02-11T00:00:00Z",
 	})
 	if firstHB.StatusCode != http.StatusOK {
@@ -1486,7 +1486,7 @@ func TestManualRefreshToolsRequest(t *testing.T) {
 		"os":            "linux",
 		"arch":          "amd64",
 		"version":       "v1.0.0",
-		"capabilities":  map[string]string{"executor": "script", "shell": "posix"},
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
 		"timestamp_utc": "2026-02-11T00:00:10Z",
 	})
 	if secondHB.StatusCode != http.StatusOK {
