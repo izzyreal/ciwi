@@ -14,30 +14,43 @@ const uiPagesJS = `function apiJSON(path, opts = {}) {
 function buildJobExecutionRow(job, opts = {}) {
   const includeActions = !!opts.includeActions;
   const includeReason = !!opts.includeReason;
+  const fixedLines = Math.max(0, Number(opts.fixedLines || 0));
   const backPath = opts.backPath || (window.location.pathname || '/');
   const onRemove = opts.onRemove || null;
   const linkClass = opts.linkClass || '';
 
   const tr = document.createElement('tr');
+  if (fixedLines > 0) {
+    tr.classList.add('ciwi-job-two-line-row');
+  }
   const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
   const description = jobDescription(job);
   const backTo = encodeURIComponent(backPath);
+  const cellText = (value) => {
+    const text = escapeHtml(value || '');
+    if (fixedLines <= 0) return text;
+    return '<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '">' + text + '</span>';
+  };
+  const linkClasses = fixedLines > 0 ? ((linkClass ? linkClass + ' ' : '') + 'ciwi-job-cell-link') : linkClass;
 
   tr.innerHTML =
-    '<td><a class="' + linkClass + '" href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + escapeHtml(description) + '</a></td>' +
-    '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
-    '<td>' + escapeHtml(pipeline) + '</td>' +
-    '<td>' + escapeHtml(buildVersionLabel(job)) + '</td>' +
-    '<td>' + escapeHtml(job.leased_by_agent_id || '') + '</td>' +
-    '<td>' + escapeHtml(formatTimestamp(job.created_utc)) + '</td>';
+    '<td><a class="' + linkClasses + '" href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + cellText(description) + '</a></td>' +
+    '<td class="' + statusClass(job.status) + '">' + cellText(formatJobStatus(job)) + '</td>' +
+    '<td>' + cellText(pipeline) + '</td>' +
+    '<td>' + cellText(buildVersionLabel(job)) + '</td>' +
+    '<td>' + cellText(job.leased_by_agent_id || '') + '</td>' +
+    '<td>' + cellText(formatTimestamp(job.created_utc)) + '</td>';
 
   if (includeReason) {
     const reasons = (job.unmet_requirements || []);
-    tr.innerHTML += '<td>' + escapeHtml(reasons.join('; ')) + '</td>';
+    tr.innerHTML += '<td>' + cellText(reasons.join('; ')) + '</td>';
   }
 
   if (includeActions) {
     const actionTd = document.createElement('td');
+    if (fixedLines > 0) {
+      actionTd.className = 'ciwi-job-actions-cell';
+    }
     if (['queued', 'leased'].includes((job.status || '').toLowerCase())) {
       const btn = document.createElement('button');
       btn.className = 'secondary';
@@ -84,8 +97,15 @@ function ensureJobSkeletonStyles() {
   style.id = '__ciwiJobSkeletonStyles';
   style.textContent = [
     '@keyframes ciwiSkeletonFade { 0% { opacity: .35; } 50% { opacity: .9; } 100% { opacity: .35; } }',
-    '.ciwi-job-skeleton-row td{padding-top:10px;padding-bottom:10px;}',
-    '.ciwi-job-skeleton-bar{height:10px;border-radius:999px;background:#dcebe2;animation:ciwiSkeletonFade 2.2s ease-in-out infinite;}',
+    '.ciwi-job-two-line-row td{padding-top:6px;padding-bottom:6px;vertical-align:top;}',
+    '.ciwi-job-cell-link{display:block;color:inherit;}',
+    '.ciwi-job-two-line-row .ciwi-job-cell{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25;min-height:2.5em;max-height:2.5em;}',
+    '.ciwi-job-two-line-row .ciwi-job-cell-lines-2{-webkit-line-clamp:2;}',
+    '.ciwi-job-two-line-row .ciwi-job-actions-cell{vertical-align:middle;}',
+    '.ciwi-job-skeleton-row td{padding-top:6px;padding-bottom:6px;}',
+    '.ciwi-job-skeleton-lines{display:flex;flex-direction:column;gap:8px;}',
+    '.ciwi-job-skeleton-bar{height:12px;border-radius:999px;background:#dcebe2;animation:ciwiSkeletonFade 2.2s ease-in-out infinite;}',
+    '.ciwi-job-skeleton-bar-short{width:72%;}',
     '.ciwi-job-row-enter{opacity:0;transform:translateY(3px);}',
     '.ciwi-job-row-enter-active{transition:opacity .45s ease,transform .45s ease;opacity:1;transform:translateY(0);}',
   ].join('');
@@ -97,7 +117,7 @@ function buildJobSkeletonRow(columnCount) {
   const tr = document.createElement('tr');
   tr.className = 'ciwi-job-skeleton-row';
   const colspan = Math.max(1, Number(columnCount || 1));
-  tr.innerHTML = '<td colspan="' + String(colspan) + '"><div class="ciwi-job-skeleton-bar"></div></td>';
+  tr.innerHTML = '<td colspan="' + String(colspan) + '"><div class="ciwi-job-skeleton-lines"><div class="ciwi-job-skeleton-bar"></div><div class="ciwi-job-skeleton-bar ciwi-job-skeleton-bar-short"></div></div></td>';
   return tr;
 }
 

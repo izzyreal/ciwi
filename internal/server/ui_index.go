@@ -245,6 +245,7 @@ const indexHTML = `<!doctype html>
       const queuedOpts = {
         includeActions: true,
         includeReason: true,
+        fixedLines: 2,
         backPath: window.location.pathname || '/',
         linkClass: 'job-link',
         onRemove: async (j) => {
@@ -259,6 +260,7 @@ const indexHTML = `<!doctype html>
       const historyOpts = {
         includeActions: false,
         includeReason: true,
+        fixedLines: 2,
         backPath: window.location.pathname || '/',
         linkClass: 'job-link'
       };
