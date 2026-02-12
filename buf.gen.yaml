@@ -1,0 +1,10 @@
+version: v1
+plugins:
+  - plugin: buf.build/protocolbuffers/go
+    out: .
+    opt:
+      - module=github.com/izzyreal/ciwi
+  - plugin: buf.build/grpc/go
+    out: .
+    opt:
+      - module=github.com/izzyreal/ciwi

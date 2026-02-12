@@ -14,11 +14,14 @@ go run ./cmd/ciwi --help
 go run ./cmd/ciwi server
 go run ./cmd/ciwi agent
 go run ./cmd/ciwi all-in-one
+go run ./cmd/ciwi-gui
 ```
 
 ## Environment variables
 
 - `CIWI_SERVER_ADDR`: server bind address (default `:8112`)
+- `CIWI_GRPC_ADDR`: gRPC bind address (default `:8113`)
+- `CIWI_GUI_SERVER_ADDR`: default target address for `ciwi-gui` (default `127.0.0.1:8113`)
 - `CIWI_DB_PATH`: sqlite database path (default `ciwi.db`)
 - `CIWI_ARTIFACTS_DIR`: server artifact storage directory (default `ciwi-artifacts`)
 - `CIWI_SERVER_URL`: agent target base URL (default `http://127.0.0.1:8112`)
@@ -296,6 +299,22 @@ sudo journalctl -u ciwi-agent -f
 ```
 
 ## First functional API slice
+
+### gRPC / protobuf (phase 3 streaming + typed contract)
+
+- gRPC is enabled by default on `:8113`. Override with `CIWI_GRPC_ADDR`.
+- Proto contract: `api/ciwi/v1/ciwi.proto`
+- Generated Go stubs: `internal/server/grpcapi/ciwi.pb.go`, `internal/server/grpcapi/ciwi_grpc.pb.go`
+- Service name: `ciwi.v1.CiwiService`
+- Methods now use typed protobuf request/response messages (phase 2).
+- Regenerate stubs after editing proto: `buf generate`
+- Streaming state feed: `WatchState` (server-streaming snapshots for reactive native UI clients)
+- gRPC methods currently bridge to the same server behavior as REST for:
+  - server/project/agent/job reads
+  - pipeline run trigger
+  - queue/history maintenance
+  - agent update/tools refresh
+  - ad-hoc script enqueue
 
 - `GET /` minimal web UI (projects/pipelines/jobs)
 - `GET /projects/{projectId}` project page with structure, per-matrix run buttons and execution history

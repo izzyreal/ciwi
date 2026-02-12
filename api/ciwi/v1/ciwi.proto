@@ -1,0 +1,214 @@
+syntax = "proto3";
+
+package ciwi.v1;
+
+option go_package = "github.com/izzyreal/ciwi/internal/server/grpcapi;grpcapi";
+
+import "google/protobuf/empty.proto";
+
+service CiwiService {
+  rpc GetServerInfo(google.protobuf.Empty) returns (GetServerInfoResponse);
+  rpc ListProjects(google.protobuf.Empty) returns (ListProjectsResponse);
+  rpc ListAgents(google.protobuf.Empty) returns (ListAgentsResponse);
+  rpc GetAgent(GetAgentRequest) returns (GetAgentResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+
+  rpc RunPipeline(RunPipelineRequest) returns (RunPipelineResponse);
+  rpc ClearQueue(google.protobuf.Empty) returns (ClearQueueResponse);
+  rpc FlushHistory(google.protobuf.Empty) returns (FlushHistoryResponse);
+
+  rpc RequestAgentUpdate(AgentRequest) returns (AgentActionResponse);
+  rpc RequestAgentToolsRefresh(AgentRequest) returns (AgentActionResponse);
+  rpc RunAdhocScript(RunAdhocScriptRequest) returns (RunAdhocScriptResponse);
+  rpc WatchState(WatchStateRequest) returns (stream WatchStateEvent);
+}
+
+message GetServerInfoResponse {
+  string name = 1;
+  int32 api_version = 2;
+  string hostname = 3;
+  string version = 4;
+}
+
+message ProjectSummary {
+  int64 id = 1;
+  string name = 2;
+  string config_path = 3;
+  string repo_url = 4;
+  string repo_ref = 5;
+  string config_file = 6;
+  repeated PipelineSummary pipelines = 7;
+}
+
+message PipelineSummary {
+  int64 id = 1;
+  string pipeline_id = 2;
+  string trigger = 3;
+  repeated string depends_on = 4;
+  string source_repo = 5;
+  string source_ref = 6;
+}
+
+message ListProjectsResponse {
+  repeated ProjectSummary projects = 1;
+}
+
+message AgentInfo {
+  string agent_id = 1;
+  string hostname = 2;
+  string os = 3;
+  string arch = 4;
+  string version = 5;
+  map<string, string> capabilities = 6;
+  string last_seen_utc = 7;
+  repeated string recent_log = 8;
+  bool needs_update = 9;
+  string update_target = 10;
+  bool update_requested = 11;
+  int32 update_attempts = 12;
+  string update_last_request_utc = 13;
+  string update_next_retry_utc = 14;
+}
+
+message ListAgentsResponse {
+  repeated AgentInfo agents = 1;
+}
+
+message GetAgentRequest {
+  string agent_id = 1;
+}
+
+message GetAgentResponse {
+  AgentInfo agent = 1;
+}
+
+message JobDisplayGroupSummary {
+  string key = 1;
+  string run_id = 2;
+  int32 job_count = 3;
+  bool collapsible = 4;
+}
+
+message JobTestSummary {
+  int32 total = 1;
+  int32 passed = 2;
+  int32 failed = 3;
+  int32 skipped = 4;
+}
+
+message SourceSpec {
+  string repo = 1;
+  string ref = 2;
+}
+
+message JobExecution {
+  string id = 1;
+  string script = 2;
+  map<string, string> env = 3;
+  map<string, string> required_capabilities = 4;
+  int32 timeout_seconds = 5;
+  repeated string artifact_globs = 6;
+  SourceSpec source = 7;
+  map<string, string> metadata = 8;
+  string status = 9;
+  string created_utc = 10;
+  string started_utc = 11;
+  string finished_utc = 12;
+  string leased_by_agent_id = 13;
+  string leased_utc = 14;
+  int32 exit_code = 15;
+  string error = 16;
+  string output = 17;
+  JobTestSummary test_summary = 18;
+  repeated string unmet_requirements = 19;
+}
+
+message ListJobsRequest {
+  string view = 1;
+  int32 max = 2;
+  int32 offset = 3;
+  int32 limit = 4;
+}
+
+message ListJobsResponse {
+  string view = 1;
+  int32 max = 2;
+  int32 total = 3;
+  int32 queued_count = 4;
+  int32 history_count = 5;
+  int32 queued_group_count = 6;
+  int32 history_group_count = 7;
+  repeated JobDisplayGroupSummary queued_groups = 8;
+  repeated JobDisplayGroupSummary history_groups = 9;
+  int32 offset = 10;
+  int32 limit = 11;
+  repeated JobExecution job_executions = 12;
+}
+
+message RunPipelineRequest {
+  string pipeline_id = 1;
+  bool dry_run = 2;
+}
+
+message RunPipelineResponse {
+  string project_name = 1;
+  string pipeline_id = 2;
+  int32 enqueued = 3;
+  repeated string job_ids = 4;
+}
+
+message ClearQueueResponse {
+  int64 cleared = 1;
+}
+
+message FlushHistoryResponse {
+  int64 flushed = 1;
+}
+
+message AgentRequest {
+  string agent_id = 1;
+}
+
+message AgentActionResponse {
+  bool requested = 1;
+  string agent_id = 2;
+  string target = 3;
+  string message = 4;
+}
+
+message RunAdhocScriptRequest {
+  string agent_id = 1;
+  string shell = 2;
+  string script = 3;
+  int32 timeout_seconds = 4;
+}
+
+message RunAdhocScriptResponse {
+  bool queued = 1;
+  string agent_id = 2;
+  string job_id = 3;
+  string shell = 4;
+  int32 timeout_seconds = 5;
+}
+
+message WatchStateRequest {
+  int32 interval_ms = 1;
+  bool include_projects = 2;
+  bool include_agents = 3;
+  bool include_jobs_summary = 4;
+  bool include_queued_jobs = 5;
+  bool include_history_jobs = 6;
+  int32 jobs_limit = 7;
+}
+
+message WatchStateEvent {
+  string stream_id = 1;
+  int64 seq = 2;
+  string sent_utc = 3;
+  GetServerInfoResponse server_info = 4;
+  ListProjectsResponse projects = 5;
+  ListAgentsResponse agents = 6;
+  ListJobsResponse jobs_summary = 7;
+  ListJobsResponse queued_jobs = 8;
+  ListJobsResponse history_jobs = 9;
+}
