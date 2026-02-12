@@ -150,17 +150,6 @@ else
     patch|minor|major) ;;
     *) echo "unsupported auto bump mode: %s"; exit 1 ;;
   esac
-  IFS='.' read -r MAJOR MINOR PATCH <<EOF
-${CIWI_PIPELINE_VERSION_RAW}
-EOF
-  case "%s" in
-    patch) NEXT_VERSION="${MAJOR}.${MINOR}.$((PATCH+1))" ;;
-    minor) NEXT_VERSION="${MAJOR}.$((MINOR+1)).0" ;;
-    major) NEXT_VERSION="$((MAJOR+1)).0.0" ;;
-  esac
-  printf '%%s\n' "$NEXT_VERSION" > "${CIWI_PIPELINE_VERSION_FILE}"
-  git add "${CIWI_PIPELINE_VERSION_FILE}"
-  git commit -m "chore: bump ${CIWI_PIPELINE_VERSION_FILE} to ${NEXT_VERSION} [skip ci]"
   BRANCH=""
   RAW_REF="${CIWI_PIPELINE_SOURCE_REF_RAW:-}"
   if [ -n "$RAW_REF" ]; then
@@ -197,11 +186,38 @@ EOF
     echo "failed to resolve target branch for auto bump push"
     exit 1
   fi
-  if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-    echo "resolved auto bump branch not found on origin: $BRANCH"
+  if ! git fetch origin "$BRANCH" >/dev/null 2>&1; then
+    echo "failed to fetch origin branch for auto bump: $BRANCH"
     exit 1
   fi
-  git push origin "HEAD:refs/heads/${BRANCH}"
+  if ! git checkout -B ciwi-auto-bump "origin/$BRANCH" >/dev/null 2>&1; then
+    echo "failed to checkout origin/$BRANCH for auto bump"
+    exit 1
+  fi
+  CURRENT_VERSION="$(tr -d '\r\n[:space:]' < "${CIWI_PIPELINE_VERSION_FILE}" 2>/dev/null || true)"
+  if [ -z "$CURRENT_VERSION" ]; then
+    echo "failed to read current version file on branch $BRANCH: ${CIWI_PIPELINE_VERSION_FILE}"
+    exit 1
+  fi
+  if [ "$CURRENT_VERSION" != "${CIWI_PIPELINE_VERSION_RAW}" ]; then
+    echo "auto bump skipped: branch $BRANCH moved from ${CIWI_PIPELINE_VERSION_RAW} to ${CURRENT_VERSION}; rerun release from latest branch head"
+    exit 1
+  fi
+  IFS='.' read -r MAJOR MINOR PATCH <<EOF
+${CIWI_PIPELINE_VERSION_RAW}
+EOF
+  case "%s" in
+    patch) NEXT_VERSION="${MAJOR}.${MINOR}.$((PATCH+1))" ;;
+    minor) NEXT_VERSION="${MAJOR}.$((MINOR+1)).0" ;;
+    major) NEXT_VERSION="$((MAJOR+1)).0.0" ;;
+  esac
+  printf '%%s\n' "$NEXT_VERSION" > "${CIWI_PIPELINE_VERSION_FILE}"
+  git add "${CIWI_PIPELINE_VERSION_FILE}"
+  git commit -m "chore: bump ${CIWI_PIPELINE_VERSION_FILE} to ${NEXT_VERSION} [skip ci]"
+  if ! git push origin "HEAD:refs/heads/${BRANCH}"; then
+    echo "auto bump push failed; branch $BRANCH advanced during release"
+    exit 1
+  fi
   echo "__CIWI_RELEASE_SUMMARY__ auto_bump_branch=$BRANCH"
   echo "__CIWI_RELEASE_SUMMARY__ next_version=$NEXT_VERSION"
 fi`, mode, mode, mode)
