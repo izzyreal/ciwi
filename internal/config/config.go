@@ -308,8 +308,12 @@ func (cfg File) Validate() []string {
 					if strings.TrimSpace(st.Test.Command) == "" {
 						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.command is required", i, j, k))
 					}
-					if strings.TrimSpace(st.Test.Format) != "" && st.Test.Format != "go-test-json" {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.format unsupported %q", i, j, k, st.Test.Format))
+					if format := strings.TrimSpace(st.Test.Format); format != "" {
+						switch format {
+						case "go-test-json", "junit", "junit-xml":
+						default:
+							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.format unsupported %q", i, j, k, st.Test.Format))
+						}
 					}
 				}
 				for envK := range st.Env {

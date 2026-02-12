@@ -258,6 +258,66 @@ func TestParseJobTestReport(t *testing.T) {
 	}
 }
 
+func TestParseJobTestReportJUnitXML(t *testing.T) {
+	output := strings.Join([]string{
+		"noise",
+		"__CIWI_TEST_BEGIN__ name=cpp-unit format=junit-xml",
+		`<?xml version="1.0" encoding="UTF-8"?>`,
+		`<testsuites>`,
+		`  <testsuite name="suite-a" tests="3" failures="1" errors="0" skipped="1">`,
+		`    <testcase classname="math" name="adds" time="0.001"></testcase>`,
+		`    <testcase classname="math" name="divides" time="0.002"><failure message="expected 2">stack</failure></testcase>`,
+		`    <testcase classname="io" name="loads"><skipped message="todo"/></testcase>`,
+		`  </testsuite>`,
+		`</testsuites>`,
+		"__CIWI_TEST_END__",
+	}, "\n")
+
+	report := parseJobTestReport(output)
+	if report.Total != 3 || report.Passed != 1 || report.Failed != 1 || report.Skipped != 1 {
+		t.Fatalf("unexpected aggregate report: %+v", report)
+	}
+	if len(report.Suites) != 1 {
+		t.Fatalf("expected 1 suite, got %d", len(report.Suites))
+	}
+	s := report.Suites[0]
+	if s.Name != "cpp-unit" || s.Format != "junit-xml" {
+		t.Fatalf("unexpected suite metadata: %+v", s)
+	}
+	if len(s.Cases) != 3 {
+		t.Fatalf("expected 3 cases, got %d", len(s.Cases))
+	}
+	if s.Cases[1].Status != "fail" {
+		t.Fatalf("expected second case fail, got %+v", s.Cases[1])
+	}
+	if !strings.Contains(s.Cases[1].Output, "failure message=expected 2") {
+		t.Fatalf("expected failure output to include message, got: %q", s.Cases[1].Output)
+	}
+}
+
+func TestParseJobTestReportJUnitXMLSuiteTotals(t *testing.T) {
+	output := strings.Join([]string{
+		"__CIWI_TEST_BEGIN__ name=cpp-summary format=junit",
+		`<testsuite name="suite-a" tests="2" failures="1" skipped="1"></testsuite>`,
+		"__CIWI_TEST_END__",
+	}, "\n")
+
+	report := parseJobTestReport(output)
+	if report.Total != 2 || report.Passed != 0 || report.Failed != 1 || report.Skipped != 1 {
+		t.Fatalf("unexpected aggregate report: %+v", report)
+	}
+	if len(report.Suites) != 1 {
+		t.Fatalf("expected 1 suite, got %d", len(report.Suites))
+	}
+	s := report.Suites[0]
+	if s.Format != "junit-xml" {
+		t.Fatalf("unexpected suite format: %q", s.Format)
+	}
+	if len(s.Cases) != 0 {
+		t.Fatalf("expected no cases when junit testcase nodes are absent, got %d", len(s.Cases))
+	}
+}
+
 func TestResolveJobCacheEnvMissThenHit(t *testing.T) {
 	workDir := t.TempDir()
 	execDir := t.TempDir()

@@ -61,6 +61,34 @@ pipelines:
 	}
 }
 
+func TestParseTestStepJUnitXML(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: test
+    jobs:
+      - id: unit
+        timeout_seconds: 60
+        steps:
+          - test:
+              name: cpp-unit
+              command: ./tests --reporter junit
+              format: junit-xml
+`), "test-step-junit")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	step := cfg.Pipelines[0].Jobs[0].Steps[0]
+	if step.Test == nil {
+		t.Fatal("expected test step to be parsed")
+	}
+	if step.Test.Format != "junit-xml" {
+		t.Fatalf("unexpected test format: %q", step.Test.Format)
+	}
+}
+
 func TestParseRejectsUnsupportedVersion(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 2
@@ -199,6 +227,26 @@ pipelines:
 `), "test-step-shape")
 	if err == nil || !strings.Contains(err.Error(), "must set exactly one of run or test") {
 		t.Fatalf("expected step shape validation error, got: %v", err)
+	}
+}
+
+func TestParseRejectsUnsupportedTestFormat(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: test
+    jobs:
+      - id: unit
+        timeout_seconds: 60
+        steps:
+          - test:
+              command: ./tests
+              format: tap
+`), "test-step-format")
+	if err == nil || !strings.Contains(err.Error(), "test.format unsupported") {
+		t.Fatalf("expected unsupported test.format error, got: %v", err)
 	}
 }
 
