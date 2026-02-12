@@ -48,4 +48,41 @@ const uiPageChromeCSS = `
     .muted { color: var(--muted); font-size: 13px; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
+    button,
+    a.nav-btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+      line-height: 1.1;
+      background: #ffffff;
+      color: var(--accent);
+      cursor: pointer;
+    }
+    button:hover:not(:disabled),
+    a.nav-btn:hover {
+      background: #f4fbf7;
+      text-decoration: none;
+    }
+    button:disabled {
+      opacity: 0.65;
+      cursor: default;
+    }
+    button.secondary {
+      background: #ffffff;
+      color: var(--accent);
+    }
+    a.nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+    a.nav-btn .nav-emoji {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.28em;
+      line-height: 0.9;
+    }
 `

@@ -46,13 +46,7 @@ const jobHTML = `<!doctype html>
       color: #1f2a24;
     }
     .copy-btn {
-      border: 1px solid var(--line);
-      background: white;
-      color: var(--accent);
-      border-radius: 6px;
-      padding: 2px 8px;
-      font-size: 12px;
-      cursor: pointer;
+      font-weight: 600;
     }
   </style>
 </head>
@@ -68,7 +62,7 @@ const jobHTML = `<!doctype html>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button id="forceFailBtn" class="copy-btn" style="display:none;">Force Fail</button>
-        <a id="backLink" href="/">Back to Job Executions</a>
+        <a id="backLink" class="nav-btn" href="/">Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span></a>
       </div>
     </div>
 
@@ -112,11 +106,11 @@ const jobHTML = `<!doctype html>
       const back = params.get('back') || '';
       if (back && back.startsWith('/')) {
         link.href = back;
-        link.textContent = back.startsWith('/projects/') ? 'Back to Project' : 'Back to Job Executions';
+        link.innerHTML = (back.startsWith('/projects/') ? 'Back to Project' : 'Back to Job Executions') + ' <span class="nav-emoji" aria-hidden="true">↩</span>';
         return;
       }
       link.href = '/';
-      link.textContent = 'Back to Job Executions';
+      link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
     }
 
     async function loadJob(force) {

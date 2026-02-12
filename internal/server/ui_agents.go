@@ -41,7 +41,6 @@ const agentsHTML = `<!doctype html>
       margin-top: 4px;
     }
     .badge-warn { background:#fff6e6; color:#8a5a00; }
-    button { border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; background:#fff; color:var(--accent); }
   </style>
 </head>
 <body>
@@ -54,7 +53,7 @@ const agentsHTML = `<!doctype html>
           <div class="muted">Available execution agents and heartbeat status</div>
         </div>
       </div>
-      <a href="/">Back to Projects</a>
+      <a class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a>
     </div>
     <div class="card">
       <div class="row" style="margin-bottom:10px;">

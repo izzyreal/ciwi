@@ -12,20 +12,13 @@ const settingsHTML = `<!doctype html>
     h1 { margin: 0 0 4px; font-size: 28px; }
     h2 { margin: 0 0 12px; font-size: 18px; }
     p { margin: 0 0 10px; color: var(--muted); }
-    input, button {
+    input {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 9px 12px;
       font-size: 14px;
     }
     input { width: 280px; max-width: 100%; }
-    button {
-      background: var(--accent);
-      color: white;
-      border-color: var(--accent);
-      cursor: pointer;
-    }
-    button.secondary { background: white; color: var(--accent); }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .project { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -44,8 +37,8 @@ const settingsHTML = `<!doctype html>
         </div>
       </div>
       <div class="row">
-        <a class="job-link" href="/">Back to Main</a>
-        <a class="job-link" href="/agents">Agents</a>
+        <a class="nav-btn" href="/">Back to Main <span class="nav-emoji" aria-hidden="true">↩</span></a>
+        <a class="nav-btn" href="/agents">Agents <span class="nav-emoji" aria-hidden="true">🖥️</span></a>
       </div>
     </div>
 

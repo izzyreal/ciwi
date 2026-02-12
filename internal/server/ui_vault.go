@@ -12,9 +12,7 @@ const vaultHTML = `<!doctype html>
     .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     .field { display:flex; flex-direction:column; gap:4px; min-width:180px; }
     .field label { font-size:12px; color:var(--muted); }
-    input, button, select { border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
-    button { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
-    button.secondary { background:#fff; color:var(--accent); }
+    input, select { border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
     table { width:100%; border-collapse:collapse; font-size:13px; }
     th, td { border-bottom:1px solid var(--line); text-align:left; padding:8px 6px; vertical-align:top; }
   </style>
@@ -29,7 +27,7 @@ const vaultHTML = `<!doctype html>
           <div class="muted">Configure AppRole and test access</div>
         </div>
       </div>
-      <a href="/">Back to Projects</a>
+      <a class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a>
     </div>
     <div class="card">
       <h3 style="margin:0 0 10px;">Add / Update Connection</h3>

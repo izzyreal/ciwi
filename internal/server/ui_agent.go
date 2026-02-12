@@ -42,7 +42,6 @@ const agentHTML = `<!doctype html>
       border-radius:8px;
       padding:10px;
     }
-    button { border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; background:#fff; color:var(--accent); }
     .adhoc-modal-body {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -103,7 +102,7 @@ const agentHTML = `<!doctype html>
         </div>
       </div>
       <div class="row" style="gap:8px;">
-        <a href="/agents">Back to Agents</a>
+        <a class="nav-btn" href="/agents">Back to Agents <span class="nav-emoji" aria-hidden="true">↩</span></a>
         <button id="refreshBtn">Refresh</button>
       </div>
     </div>

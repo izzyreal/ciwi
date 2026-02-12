@@ -13,8 +13,6 @@ const projectHTML = `<!doctype html>
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
     .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
-    button { border: 1px solid var(--accent); border-radius: 8px; padding: 7px 11px; background: var(--accent); color:#fff; cursor:pointer; }
-    button.secondary { background: #fff; color: var(--accent); border-color: var(--line); }
     table { width:100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
     th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px 6px; vertical-align: top; }
     td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
@@ -38,7 +36,7 @@ const projectHTML = `<!doctype html>
           <div id="subtitle" class="muted">Loading...</div>
         </div>
       </div>
-      <div><a href="/">Back to Projects</a></div>
+      <div><a class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a></div>
     </div>
 
     <div class="card">

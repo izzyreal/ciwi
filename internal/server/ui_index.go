@@ -12,33 +12,16 @@ const indexHTML = `<!doctype html>
     h1 { margin: 0 0 4px; font-size: 28px; }
     h2 { margin: 0 0 12px; font-size: 18px; }
     p { margin: 0 0 10px; color: var(--muted); }
-    input, button {
+    input {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 9px 12px;
       font-size: 14px;
     }
     input { width: 280px; max-width: 100%; }
-    button {
-      background: var(--accent);
-      color: white;
-      border-color: var(--accent);
-      cursor: pointer;
-    }
-    button.secondary { background: white; color: var(--accent); }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .header-actions { display: flex; align-items: center; gap: 12px; }
-    .gear-link {
-      color: var(--accent);
-      text-decoration: none;
-      font-size: 28px;
-      line-height: 1;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .gear-link:hover { text-decoration: none; opacity: .85; }
     .project { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
     .pipeline { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; }
@@ -74,8 +57,8 @@ const indexHTML = `<!doctype html>
           </div>
         </div>
         <div class="header-actions">
-          <a class="job-link" href="/agents">Agents</a>
-          <a class="gear-link" href="/settings" aria-label="Settings" title="Settings">&#9881;</a>
+          <a class="nav-btn" href="/agents">Agents <span class="nav-emoji" aria-hidden="true">🖥️</span></a>
+          <a class="nav-btn" href="/settings" aria-label="Global Settings" title="Global Settings">Global Settings <span class="nav-emoji" aria-hidden="true">⚙️</span></a>
         </div>
       </div>
     </div>
