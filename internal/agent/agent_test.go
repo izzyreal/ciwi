@@ -80,6 +80,31 @@ func TestTrimOutput(t *testing.T) {
 	}
 }
 
+func TestParseSimpleEnv(t *testing.T) {
+	in := strings.Join([]string{
+		"# comment",
+		" CIWI_SERVER_URL = http://host:8112 ",
+		"CIWI_AGENT_ID=agent-win",
+		"CIWI_GITHUB_TOKEN='ghp_abc=xyz'",
+		"ignored",
+		"=empty",
+		"",
+	}, "\n")
+	got := parseSimpleEnv(in)
+	if got["CIWI_SERVER_URL"] != "http://host:8112" {
+		t.Fatalf("unexpected CIWI_SERVER_URL=%q", got["CIWI_SERVER_URL"])
+	}
+	if got["CIWI_AGENT_ID"] != "agent-win" {
+		t.Fatalf("unexpected CIWI_AGENT_ID=%q", got["CIWI_AGENT_ID"])
+	}
+	if got["CIWI_GITHUB_TOKEN"] != "ghp_abc=xyz" {
+		t.Fatalf("unexpected CIWI_GITHUB_TOKEN=%q", got["CIWI_GITHUB_TOKEN"])
+	}
+	if _, ok := got["ignored"]; ok {
+		t.Fatal("expected invalid lines to be ignored")
+	}
+}
+
 func TestCommandForScript(t *testing.T) {
 	bin, args, err := commandForScript(shellPosix, "echo hi")
 	if err != nil {

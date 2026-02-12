@@ -20,8 +20,10 @@ go run ./cmd/ciwi all-in-one
 - `CIWI_SERVER_URL`: agent target base URL (default `http://127.0.0.1:8112`)
 - `CIWI_AGENT_ID`: override agent ID (default `agent-<hostname>`)
 - `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent`)
+- `CIWI_AGENT_ENV_FILE`: Windows-only env file auto-loaded by agent startup (default `%ProgramData%\\ciwi-agent\\agent.env`)
 - `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` for `posix`, `@echo on` for `cmd`, `Set-PSDebug -Trace 1` for `powershell`) (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
+- `CIWI_WINDOWS_SERVICE_NAME`: Windows service name for service mode/self-update (default `ciwi-agent`)
 - `CIWI_UPDATE_REPO`: GitHub repo for update checks (default `izzyreal/ciwi`)
 - `CIWI_UPDATE_API_BASE`: GitHub API base URL (default `https://api.github.com`)
 - `CIWI_LOG_LEVEL`: log verbosity (`debug`, `info`, `warn`, `error`; default `info`)
@@ -131,6 +133,69 @@ Uninstaller behavior:
 - Removes ciwi binary from `~/.local/bin/ciwi` and `/usr/local/bin/ciwi` (with sudo if needed)
 - Removes `/etc/newsyslog.d/ciwi-<user>.conf` (with sudo when available)
 - Leaves logs/workdir by default (`~/Library/Logs/ciwi`, `~/.ciwi-agent`) and prints cleanup command
+
+## Windows agent installer (Service)
+
+Run from an elevated PowerShell session (Run as Administrator).
+
+One-line install (no options):
+
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_windows.ps1" -OutFile "$env:TEMP\\install_ciwi_agent_windows.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\install_ciwi_agent_windows.ps1"
+```
+
+Install with GitHub API token (recommended to avoid rate limits):
+
+```powershell
+$env:CIWI_GITHUB_TOKEN = "<your-token>"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_windows.ps1" -OutFile "$env:TEMP\\install_ciwi_agent_windows.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\install_ciwi_agent_windows.ps1"
+```
+
+Installer behavior:
+- If `CIWI_SERVER_URL` is unset, tries auto-discovery first:
+- Probe step: checks `http://127.0.0.1:8112` and `http://localhost:8112`.
+- Probe step: checks LAN neighbors from `arp -a` as `http://<ip>:8112`.
+- Validation step: requires `GET /healthz` and `GET /api/v1/server-info` to match ciwi API identity.
+- URL preference step: prefers hostname URLs when resolvable (for example `http://bhakti.local:8112`).
+- If multiple servers are found, prompts you to choose one.
+- If none are found, prompts for server URL.
+- Downloads latest `ciwi-windows-<arch>.exe` release asset.
+- Verifies SHA256 using `ciwi-checksums.txt`.
+- Installs `C:\\Program Files\\ciwi\\ciwi.exe`.
+- Creates/updates service `ciwi-agent` with command `"C:\\Program Files\\ciwi\\ciwi.exe agent"`.
+- Writes `%ProgramData%\\ciwi-agent\\agent.env` with:
+  - `CIWI_SERVER_URL`
+  - `CIWI_AGENT_ID`
+  - `CIWI_AGENT_WORKDIR`
+  - `CIWI_LOG_LEVEL`
+  - `CIWI_AGENT_TRACE_SHELL`
+  - `CIWI_WINDOWS_SERVICE_NAME`
+  - optional `CIWI_GITHUB_TOKEN` (preserved on reinstall if not passed)
+- Starts `ciwi-agent`.
+
+After install:
+
+```powershell
+Get-Service ciwi-agent
+sc.exe qc ciwi-agent
+sc.exe query ciwi-agent
+```
+
+### Windows agent uninstall
+
+One-line uninstall (elevated PowerShell):
+
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/izzyreal/ciwi/main/uninstall_agent_windows.ps1" -OutFile "$env:TEMP\\uninstall_ciwi_agent_windows.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\uninstall_ciwi_agent_windows.ps1"
+```
+
+Uninstaller behavior:
+- Stops/deletes service `ciwi-agent`.
+- Removes binary `C:\\Program Files\\ciwi\\ciwi.exe`.
+- Optionally removes `%ProgramData%\\ciwi-agent` (workdir/logs/config) after confirmation.
 
 ## Linux server installer (systemd)
 

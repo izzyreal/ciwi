@@ -11,6 +11,14 @@ import (
 )
 
 func Run(ctx context.Context) error {
+	loadAgentPlatformEnv()
+	if handled, err := runAsWindowsServiceIfNeeded(runLoop); handled {
+		return err
+	}
+	return runLoop(ctx)
+}
+
+func runLoop(ctx context.Context) error {
 	serverURL := envOrDefault("CIWI_SERVER_URL", "http://127.0.0.1:8112")
 	agentID := envOrDefault("CIWI_AGENT_ID", defaultAgentID())
 	hostname, _ := os.Hostname()

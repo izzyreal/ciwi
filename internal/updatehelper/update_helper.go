@@ -26,10 +26,12 @@ func Run(args []string) error {
 	var target string
 	var newPath string
 	var pid int
+	var serviceName string
 	var restartArgs multiArg
 	fs.StringVar(&target, "target", "", "target executable path")
 	fs.StringVar(&newPath, "new", "", "new binary path")
 	fs.IntVar(&pid, "pid", 0, "parent pid")
+	fs.StringVar(&serviceName, "service-name", "", "windows service name to restart")
 	fs.Var(&restartArgs, "arg", "restart arg")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -53,6 +55,15 @@ func Run(args []string) error {
 		return fmt.Errorf("move new binary into place: %w", err)
 	}
 	_ = os.Chmod(target, 0o755)
+
+	if runtime.GOOS == "windows" && strings.TrimSpace(serviceName) != "" {
+		if err := restartWindowsService(strings.TrimSpace(serviceName)); err != nil {
+			_ = os.Rename(target, newPath)
+			_ = os.Rename(bak, target)
+			return fmt.Errorf("restart windows service: %w", err)
+		}
+		return nil
+	}
 
 	if err := startRelaunched(target, restartArgs); err != nil {
 		_ = os.Rename(target, newPath)
@@ -115,4 +126,22 @@ func startRelaunched(target string, args []string) error {
 		return err
 	}
 	return nil
+}
+
+func restartWindowsService(name string) error {
+	var lastErr error
+	for i := 0; i < 6; i++ {
+		cmd := exec.Command("sc.exe", "start", name)
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		outText := strings.ToLower(strings.TrimSpace(string(out)))
+		if strings.Contains(outText, "1056") || strings.Contains(outText, "already been started") {
+			return nil
+		}
+		lastErr = fmt.Errorf("sc.exe start %q: %w (%s)", name, err, strings.TrimSpace(string(out)))
+		time.Sleep(500 * time.Millisecond)
+	}
+	return lastErr
 }

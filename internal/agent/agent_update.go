@@ -95,7 +95,14 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 	if err := copyFile(exePath, helperPath, 0o755); err != nil {
 		return fmt.Errorf("prepare update helper: %w", err)
 	}
-	if err := startUpdateHelper(helperPath, exePath, newBinPath, os.Getpid(), restartArgs); err != nil {
+	serviceName := ""
+	if runtime.GOOS == "windows" {
+		if active, name := windowsServiceInfo(); active {
+			serviceName = strings.TrimSpace(name)
+		}
+	}
+
+	if err := startUpdateHelper(helperPath, exePath, newBinPath, os.Getpid(), restartArgs, serviceName); err != nil {
 		return fmt.Errorf("start update helper: %w", err)
 	}
 
@@ -207,12 +214,15 @@ func fetchReleaseAssetsForTag(ctx context.Context, apiBase, repository, targetVe
 	return asset, checksum, nil
 }
 
-func startUpdateHelper(helperPath, targetPath, newBinaryPath string, parentPID int, restartArgs []string) error {
+func startUpdateHelper(helperPath, targetPath, newBinaryPath string, parentPID int, restartArgs []string, serviceName string) error {
 	args := []string{
 		"update-helper",
 		"--target", targetPath,
 		"--new", newBinaryPath,
 		"--pid", strconv.Itoa(parentPID),
+	}
+	if strings.TrimSpace(serviceName) != "" {
+		args = append(args, "--service-name", strings.TrimSpace(serviceName))
 	}
 	for _, a := range restartArgs {
 		args = append(args, "--arg", a)
