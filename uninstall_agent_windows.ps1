@@ -29,6 +29,20 @@ function Wait-ServiceStopped {
   throw "timed out waiting for service '$Name' to stop"
 }
 
+function Invoke-Sc {
+  param([Parameter(Mandatory = $true)][string[]]$Args)
+  $output = & sc.exe @Args 2>&1
+  $code = $LASTEXITCODE
+  if ($code -ne 0) {
+    $text = ($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
+    if ([string]::IsNullOrWhiteSpace($text)) {
+      $text = '(no output)'
+    }
+    throw "sc.exe $($Args -join ' ') failed with exit code $code.`n$text"
+  }
+  return $output
+}
+
 Ensure-Admin
 
 $serviceName = 'ciwi-agent'
@@ -46,9 +60,11 @@ $envFile = Join-Path $dataRoot 'agent.env'
 Write-Host '[1/4] Stopping and deleting Windows service...'
 $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if ($null -ne $svc) {
-  & sc.exe stop $serviceName | Out-Null
-  Wait-ServiceStopped -Name $serviceName -TimeoutSeconds 30
-  & sc.exe delete $serviceName | Out-Null
+  if ($svc.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped) {
+    Invoke-Sc -Args @('stop', $serviceName) | Out-Null
+    Wait-ServiceStopped -Name $serviceName -TimeoutSeconds 30
+  }
+  Invoke-Sc -Args @('delete', $serviceName) | Out-Null
 }
 
 Write-Host '[2/4] Removing ciwi binary...'

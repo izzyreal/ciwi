@@ -141,16 +141,20 @@ Run from an elevated PowerShell session (Run as Administrator).
 One-line install (no options):
 
 ```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_windows.ps1" -OutFile "$env:TEMP\\install_ciwi_agent_windows.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\install_ciwi_agent_windows.ps1"
+$script = Join-Path $env:TEMP ("install_ciwi_agent_windows_" + [Guid]::NewGuid().ToString("N") + ".ps1")
+$uri = "https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_windows.ps1?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+Invoke-WebRequest -Uri $uri -OutFile $script
+powershell -NoProfile -ExecutionPolicy Bypass -File $script
 ```
 
 Install with GitHub API token (recommended to avoid rate limits):
 
 ```powershell
 $env:CIWI_GITHUB_TOKEN = "<your-token>"
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_windows.ps1" -OutFile "$env:TEMP\\install_ciwi_agent_windows.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\install_ciwi_agent_windows.ps1"
+$script = Join-Path $env:TEMP ("install_ciwi_agent_windows_" + [Guid]::NewGuid().ToString("N") + ".ps1")
+$uri = "https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_windows.ps1?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+Invoke-WebRequest -Uri $uri -OutFile $script
+powershell -NoProfile -ExecutionPolicy Bypass -File $script
 ```
 
 Installer behavior:
@@ -188,8 +192,10 @@ sc.exe query ciwi-agent
 One-line uninstall (elevated PowerShell):
 
 ```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/izzyreal/ciwi/main/uninstall_agent_windows.ps1" -OutFile "$env:TEMP\\uninstall_ciwi_agent_windows.ps1"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\uninstall_ciwi_agent_windows.ps1"
+$script = Join-Path $env:TEMP ("uninstall_ciwi_agent_windows_" + [Guid]::NewGuid().ToString("N") + ".ps1")
+$uri = "https://raw.githubusercontent.com/izzyreal/ciwi/main/uninstall_agent_windows.ps1?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+Invoke-WebRequest -Uri $uri -OutFile $script
+powershell -NoProfile -ExecutionPolicy Bypass -File $script
 ```
 
 Uninstaller behavior:

@@ -323,6 +323,20 @@ function Wait-ServiceStopped {
   throw "timed out waiting for service '$Name' to stop"
 }
 
+function Invoke-Sc {
+  param([Parameter(Mandatory = $true)][string[]]$Args)
+  $output = & sc.exe @Args 2>&1
+  $code = $LASTEXITCODE
+  if ($code -ne 0) {
+    $text = ($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
+    if ([string]::IsNullOrWhiteSpace($text)) {
+      $text = '(no output)'
+    }
+    throw "sc.exe $($Args -join ' ') failed with exit code $code.`n$text"
+  }
+  return $output
+}
+
 function Ensure-Service {
   param(
     [Parameter(Mandatory = $true)][string]$Name,
@@ -331,12 +345,25 @@ function Ensure-Service {
 
   $bin = "`"$BinaryPath`" agent"
   $svc = Get-Service -Name $Name -ErrorAction SilentlyContinue
+  $serviceRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name"
   if ($null -eq $svc) {
-    & sc.exe create $Name "binPath= $bin" 'start= auto' 'DisplayName= ciwi agent' | Out-Null
+    New-Service `
+      -Name $Name `
+      -BinaryPathName $bin `
+      -DisplayName 'ciwi agent' `
+      -StartupType Automatic `
+      -Description 'ciwi execution agent service' | Out-Null
   } else {
-    & sc.exe config $Name "binPath= $bin" 'start= auto' | Out-Null
+    Set-ItemProperty -Path $serviceRegPath -Name 'ImagePath' -Value $bin
+    Set-ItemProperty -Path $serviceRegPath -Name 'DisplayName' -Value 'ciwi agent'
+    Set-ItemProperty -Path $serviceRegPath -Name 'Description' -Value 'ciwi execution agent service'
+    Set-Service -Name $Name -StartupType Automatic
   }
-  & sc.exe description $Name 'ciwi execution agent service' | Out-Null
+
+  $created = Get-Service -Name $Name -ErrorAction SilentlyContinue
+  if ($null -eq $created) {
+    throw "service '$Name' was not found after create/config"
+  }
 }
 
 Require-Command curl.exe
@@ -432,7 +459,7 @@ try {
   Write-Host '[5/7] Stopping existing service if present...'
   $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
   if ($null -ne $existing) {
-    & sc.exe stop $serviceName | Out-Null
+    Invoke-Sc -Args @('stop', $serviceName) | Out-Null
     Wait-ServiceStopped -Name $serviceName -TimeoutSeconds 30
   }
 
@@ -441,7 +468,7 @@ try {
   Ensure-Service -Name $serviceName -BinaryPath $binaryPath
 
   Write-Host '[7/7] Starting service...'
-  & sc.exe start $serviceName | Out-Null
+  Invoke-Sc -Args @('start', $serviceName) | Out-Null
 
   Write-Host ''
   Write-Host 'ciwi Windows agent installed and started.'
