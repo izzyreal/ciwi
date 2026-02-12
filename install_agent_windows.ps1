@@ -28,8 +28,8 @@ function Trim-OneLine {
 }
 
 function Is-IPv4 {
-  param([string]$Host)
-  return ($Host -match '^\d{1,3}(\.\d{1,3}){3}$')
+  param([string]$Value)
+  return ($Value -match '^\d{1,3}(\.\d{1,3}){3}$')
 }
 
 function Canonicalize-Url {
@@ -48,16 +48,16 @@ function Canonicalize-Url {
   if ($uri.Scheme -ne 'http') {
     throw "unsupported server URL scheme '$($uri.Scheme)'; expected http://"
   }
-  $host = Trim-OneLine $uri.Host
-  if ([string]::IsNullOrWhiteSpace($host)) {
+  $serverHost = Trim-OneLine $uri.Host
+  if ([string]::IsNullOrWhiteSpace($serverHost)) {
     throw "invalid server URL host in '$Url'"
   }
-  $host = $host.TrimEnd('.').ToLowerInvariant()
+  $serverHost = $serverHost.TrimEnd('.').ToLowerInvariant()
   $port = $uri.Port
   if ($port -le 0) {
     $port = 8112
   }
-  return "http://${host}:$port"
+  return "http://${serverHost}:$port"
 }
 
 function Get-ServerInfoJson {
@@ -112,20 +112,20 @@ function Prefer-HostnameUrl {
   if ($null -eq $info) {
     return $canonical
   }
-  $host = Trim-OneLine ([string]$info.hostname)
-  $host = $host.TrimEnd('.').ToLowerInvariant()
-  if ([string]::IsNullOrWhiteSpace($host)) {
+  $serverHost = Trim-OneLine ([string]$info.hostname)
+  $serverHost = $serverHost.TrimEnd('.').ToLowerInvariant()
+  if ([string]::IsNullOrWhiteSpace($serverHost)) {
     return $canonical
   }
-  if ($host -eq 'localhost' -or $host -eq '127.0.0.1') {
+  if ($serverHost -eq 'localhost' -or $serverHost -eq '127.0.0.1') {
     return $canonical
   }
-  $candidate = "http://${host}:$($uri.Port)"
+  $candidate = "http://${serverHost}:$($uri.Port)"
   if (Test-CiwiServer -BaseUrl $candidate) {
     return $candidate
   }
-  if ($host -notmatch '\.') {
-    $candidateLocal = "http://${host}.local:$($uri.Port)"
+  if ($serverHost -notmatch '\.') {
+    $candidateLocal = "http://${serverHost}.local:$($uri.Port)"
     if (Test-CiwiServer -BaseUrl $candidateLocal) {
       return $candidateLocal
     }
@@ -175,9 +175,9 @@ function Discover-Servers {
       Add-UniqueServer -Map $found -Url $candidateIp
       continue
     }
-    $host = Resolve-HostnameForIp -Ip $ip
-    if (-not [string]::IsNullOrWhiteSpace($host)) {
-      $candidateHost = "http://${host}:8112"
+    $resolvedHost = Resolve-HostnameForIp -Ip $ip
+    if (-not [string]::IsNullOrWhiteSpace($resolvedHost)) {
+      $candidateHost = "http://${resolvedHost}:8112"
       if (Test-CiwiServer -BaseUrl $candidateHost) {
         Add-UniqueServer -Map $found -Url $candidateHost
       }
