@@ -21,7 +21,8 @@ pipelines:
     jobs:
       - id: unit-tests
         runs_on:
-          executor: shell
+          executor: script
+          shell: posix
         requires:
           tools:
             git: "*"
@@ -34,7 +35,8 @@ pipelines:
               format: go-test-json
       - id: build-cross-platform
         runs_on:
-          executor: shell
+          executor: script
+          shell: posix
         requires:
           tools:
             git: "*"
@@ -76,7 +78,8 @@ pipelines:
     jobs:
       - id: github-release
         runs_on:
-          executor: shell
+          executor: script
+          shell: posix
         requires:
           tools:
             git: "*"
