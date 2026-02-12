@@ -150,6 +150,9 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			if runCtx.SourceRefResolved != "" {
 				env["CIWI_PIPELINE_SOURCE_REF"] = runCtx.SourceRefResolved
 			}
+			if strings.TrimSpace(p.SourceRef) != "" {
+				env["CIWI_PIPELINE_SOURCE_REF_RAW"] = strings.TrimSpace(p.SourceRef)
+			}
 			env["CIWI_PIPELINE_SOURCE_REPO"] = p.SourceRepo
 
 			requiredCaps := cloneMap(pj.RunsOn)

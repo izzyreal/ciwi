@@ -161,9 +161,48 @@ EOF
   printf '%%s\n' "$NEXT_VERSION" > "${CIWI_PIPELINE_VERSION_FILE}"
   git add "${CIWI_PIPELINE_VERSION_FILE}"
   git commit -m "chore: bump ${CIWI_PIPELINE_VERSION_FILE} to ${NEXT_VERSION} [skip ci]"
-  BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-  if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then BRANCH="main"; fi
-  git push origin "HEAD:${BRANCH}"
+  BRANCH=""
+  RAW_REF="${CIWI_PIPELINE_SOURCE_REF_RAW:-}"
+  if [ -n "$RAW_REF" ]; then
+    case "$RAW_REF" in
+      refs/heads/*)
+        BRANCH="${RAW_REF#refs/heads/}"
+        ;;
+      refs/*)
+        echo "auto bump requires source.ref to be a branch, got: $RAW_REF"
+        exit 1
+        ;;
+      *)
+        if echo "$RAW_REF" | grep -Eq '^[0-9a-fA-F]{7,40}$'; then
+          echo "auto bump requires source.ref to be a branch, got commit-like ref: $RAW_REF"
+          exit 1
+        fi
+        BRANCH="$RAW_REF"
+        ;;
+    esac
+  fi
+  if [ -z "$BRANCH" ]; then
+    CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "HEAD" ]; then
+      BRANCH="$CURRENT_BRANCH"
+    fi
+  fi
+  if [ -z "$BRANCH" ]; then
+    ORIGIN_HEAD="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    if [ -n "$ORIGIN_HEAD" ]; then
+      BRANCH="${ORIGIN_HEAD#origin/}"
+    fi
+  fi
+  if [ -z "$BRANCH" ]; then
+    echo "failed to resolve target branch for auto bump push"
+    exit 1
+  fi
+  if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+    echo "resolved auto bump branch not found on origin: $BRANCH"
+    exit 1
+  fi
+  git push origin "HEAD:refs/heads/${BRANCH}"
+  echo "__CIWI_RELEASE_SUMMARY__ auto_bump_branch=$BRANCH"
   echo "__CIWI_RELEASE_SUMMARY__ next_version=$NEXT_VERSION"
 fi`, mode, mode, mode)
 }
