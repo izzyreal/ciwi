@@ -46,6 +46,7 @@ const uiPageChromeCSS = `
       image-rendering: pixelated;
     }
     .muted { color: var(--muted); font-size: 13px; }
+    .ciwi-modal-overlay { display: none; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     button,
