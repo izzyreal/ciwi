@@ -43,7 +43,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updateRequested := false
-	needsUpdate := target != "" && isVersionNewer(target, strings.TrimSpace(hb.Version))
+	needsUpdate := target != "" && isVersionDifferent(target, strings.TrimSpace(hb.Version))
 	if needsUpdate {
 		if strings.TrimSpace(prev.UpdateTarget) != target {
 			prev.UpdateTarget = target
@@ -120,8 +120,10 @@ func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {
 		updateTarget := serverVersion
 		if pendingTarget != "" {
 			updateTarget = pendingTarget
+		} else if strings.TrimSpace(a.UpdateTarget) != "" {
+			updateTarget = strings.TrimSpace(a.UpdateTarget)
 		}
-		updateRequested := pendingTarget != "" || (a.UpdateTarget != "" && isVersionNewer(a.UpdateTarget, strings.TrimSpace(a.Version)))
+		updateRequested := pendingTarget != "" || (a.UpdateTarget != "" && isVersionDifferent(a.UpdateTarget, strings.TrimSpace(a.Version)))
 		agents = append(agents, protocol.AgentInfo{
 			AgentID:              id,
 			Hostname:             a.Hostname,

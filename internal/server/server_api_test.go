@@ -91,6 +91,8 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v1/vault/connections/", s.vaultConnectionByIDHandler)
 	mux.HandleFunc("/api/v1/update/check", s.updateCheckHandler)
 	mux.HandleFunc("/api/v1/update/apply", s.updateApplyHandler)
+	mux.HandleFunc("/api/v1/update/rollback", s.updateRollbackHandler)
+	mux.HandleFunc("/api/v1/update/tags", s.updateTagsHandler)
 	mux.HandleFunc("/api/v1/update/status", s.updateStatusHandler)
 
 	return httptest.NewServer(mux)
@@ -1265,6 +1267,56 @@ func TestServerUpdateStatusEndpoint(t *testing.T) {
 	}
 	if payload.Status["update_available"] != "1" {
 		t.Fatalf("unexpected update_available: %q", payload.Status["update_available"])
+	}
+}
+
+func TestServerUpdateTagsEndpoint(t *testing.T) {
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/izzyreal/ciwi/tags" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"name":"v2.0.0"},{"name":"v1.9.0"}]`))
+	}))
+	defer gh.Close()
+
+	t.Setenv("CIWI_UPDATE_API_BASE", gh.URL)
+	t.Setenv("CIWI_UPDATE_REPO", "izzyreal/ciwi")
+	oldVersion := version.Version
+	version.Version = "v1.8.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/update/tags", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update tags status=%d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		Tags           []string `json:"tags"`
+		CurrentVersion string   `json:"current_version"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.CurrentVersion != "v1.8.0" {
+		t.Fatalf("unexpected current_version: %q", payload.CurrentVersion)
+	}
+	if len(payload.Tags) < 3 {
+		t.Fatalf("expected current version to be prepended to tags, got %+v", payload.Tags)
+	}
+	if payload.Tags[0] != "v1.8.0" {
+		t.Fatalf("expected current version first, got %+v", payload.Tags)
+	}
+}
+
+func TestServerRollbackRequiresTargetVersion(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/rollback", map[string]any{})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("rollback status=%d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 }
 
