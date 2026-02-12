@@ -166,6 +166,10 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		agentCaps = mergeCapabilities(a, req.Capabilities)
 	}
 	s.mu.Unlock()
+	if agentCaps == nil {
+		agentCaps = map[string]string{}
+	}
+	agentCaps["agent_id"] = req.AgentID
 	hasActive, err := s.db.AgentHasActiveJob(req.AgentID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

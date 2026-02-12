@@ -57,6 +57,20 @@ func diagnoseUnmetRequirements(required map[string]string, agents map[string]age
 			}
 			continue
 		}
+		if k == "agent_id" {
+			need := strings.TrimSpace(v)
+			ok := false
+			for id := range agents {
+				if strings.TrimSpace(id) == need {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				reasons = append(reasons, fmt.Sprintf("no agent with %s=%s", k, need))
+			}
+			continue
+		}
 		need := strings.TrimSpace(v)
 		ok := false
 		for _, a := range agents {

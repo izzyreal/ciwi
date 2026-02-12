@@ -86,4 +86,51 @@ function formatBytes(n) {
   }
   const rounded = size >= 10 ? size.toFixed(1) : size.toFixed(2);
   return rounded.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1') + ' ' + units[idx];
+}
+
+function ensureModalBaseStyles() {
+  if (document.getElementById('__ciwiModalBaseStyles')) return;
+  const style = document.createElement('style');
+  style.id = '__ciwiModalBaseStyles';
+  style.textContent = [
+    '.ciwi-modal-overlay{position:fixed;inset:0;background:rgba(10,27,20,.45);display:none;align-items:center;justify-content:center;z-index:2000;padding:12px;}',
+    '.ciwi-modal{--ciwi-modal-width:70vw;--ciwi-modal-height:70vh;width:var(--ciwi-modal-width);height:var(--ciwi-modal-height);background:#fff;border:1px solid #c4ddd0;border-radius:12px;box-shadow:0 24px 56px rgba(15,31,24,.24);display:grid;grid-template-rows:auto 1fr;overflow:hidden;max-width:96vw;max-height:96vh;}',
+    '.ciwi-modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #c4ddd0;padding:12px;background:#f7fcf9;}',
+    '.ciwi-modal-title{font-size:18px;font-weight:700;}',
+    '.ciwi-modal-subtitle{font-size:12px;color:#5f6f67;}',
+    '.ciwi-modal-body{padding:12px;overflow:hidden;min-height:0;}',
+  ].join('');
+  document.head.appendChild(style);
+}
+
+function openModalOverlay(overlay, width, height) {
+  if (!overlay) return;
+  ensureModalBaseStyles();
+  const panel = overlay.querySelector('.ciwi-modal');
+  if (panel) {
+    if (width) panel.style.setProperty('--ciwi-modal-width', width);
+    if (height) panel.style.setProperty('--ciwi-modal-height', height);
+  }
+  overlay.style.display = 'flex';
+  overlay.setAttribute('aria-hidden', 'false');
+}
+
+function closeModalOverlay(overlay) {
+  if (!overlay) return;
+  overlay.style.display = 'none';
+  overlay.setAttribute('aria-hidden', 'true');
+}
+
+function wireModalCloseBehavior(overlay, onClose) {
+  if (!overlay || overlay.__ciwiModalCloseBound) return;
+  overlay.__ciwiModalCloseBound = true;
+  overlay.addEventListener('click', (ev) => {
+    if (ev.target !== overlay) return;
+    if (typeof onClose === 'function') onClose(); else closeModalOverlay(overlay);
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    if (overlay.style.display !== 'flex') return;
+    if (typeof onClose === 'function') onClose(); else closeModalOverlay(overlay);
+  });
 }`

@@ -60,46 +60,48 @@ function buildJobExecutionRow(job, opts = {}) {
   return tr;
 }
 
+function ensureVersionResolveStyles() {
+  if (document.getElementById('__ciwiVersionResolveStyles')) return;
+  const style = document.createElement('style');
+  style.id = '__ciwiVersionResolveStyles';
+  style.textContent = [
+    '.version-resolve-modal{min-width:760px;min-height:420px;}',
+    '.version-resolve-body{display:flex;flex-direction:column;min-height:0;height:100%;}',
+    '.version-resolve-status{margin-bottom:8px;color:#5f6f67;font-size:13px;}',
+    '.version-resolve-log{margin:0;flex:1 1 auto;min-height:0;background:#0f1b16;color:#d7efe5;border-radius:8px;padding:12px;white-space:pre-wrap;overflow:auto;font-size:12px;line-height:1.45;}',
+  ].join('');
+  document.head.appendChild(style);
+}
+
 function ensureVersionResolveModal() {
   let modal = document.getElementById('versionResolveModal');
   if (modal) return modal;
+  ensureModalBaseStyles();
+  ensureVersionResolveStyles();
   modal = document.createElement('div');
   modal.id = 'versionResolveModal';
-  modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(12,20,16,.45);z-index:2000;align-items:center;justify-content:center;padding:10px;';
+  modal.className = 'ciwi-modal-overlay';
+  modal.setAttribute('aria-hidden', 'true');
   modal.innerHTML =
-    '<div id="versionResolvePanel" style="background:#fff;border:1px solid #c4ddd0;border-radius:12px;width:50vw;height:50vh;display:flex;flex-direction:column;box-shadow:0 12px 36px rgba(21,127,102,.18);overflow:hidden;">' +
-      '<div style="padding:12px 14px;border-bottom:1px solid #c4ddd0;display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
-        '<div><div id="versionResolveTitle" style="font-size:18px;font-weight:700;">Resolve Upcoming Build Version</div><div id="versionResolveSubtitle" style="font-size:12px;color:#5f6f67;"></div></div>' +
-        '<button id="versionResolveCloseBtn" class="secondary" style="padding:6px 10px;">Close</button>' +
+    '<div id="versionResolvePanel" class="ciwi-modal version-resolve-modal">' +
+      '<div class="ciwi-modal-head">' +
+        '<div><div id="versionResolveTitle" class="ciwi-modal-title">Resolve Upcoming Build Version</div><div id="versionResolveSubtitle" class="ciwi-modal-subtitle"></div></div>' +
+        '<button id="versionResolveCloseBtn" class="secondary">Close</button>' +
       '</div>' +
-      '<div style="padding:12px 14px;overflow:hidden;flex:1;display:flex;flex-direction:column;min-height:0;">' +
-        '<div id="versionResolveStatus" style="margin-bottom:8px;color:#5f6f67;font-size:13px;"></div>' +
-        '<pre id="versionResolveLog" style="margin:0;flex:1 1 auto;min-height:0;background:#0f1b16;color:#d7efe5;border-radius:8px;padding:12px;white-space:pre-wrap;overflow:auto;font-size:12px;line-height:1.45;"></pre>' +
+      '<div class="ciwi-modal-body version-resolve-body">' +
+        '<div id="versionResolveStatus" class="version-resolve-status"></div>' +
+        '<pre id="versionResolveLog" class="version-resolve-log"></pre>' +
       '</div>' +
     '</div>';
   document.body.appendChild(modal);
-  const panel = document.getElementById('versionResolvePanel');
-  if (panel) {
-    panel.style.minWidth = '760px';
-    panel.style.minHeight = '420px';
-    panel.style.maxWidth = '96vw';
-    panel.style.maxHeight = '96vh';
-  }
-  document.getElementById('versionResolveCloseBtn').onclick = () => {
+  const closeVersionModal = () => {
     closeVersionResolveStream();
-    modal.style.display = 'none';
+    closeModalOverlay(modal);
   };
-  if (!window.__ciwiVersionResolveEscBound) {
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        const m = document.getElementById('versionResolveModal');
-        if (!m || m.style.display === 'none') return;
-        closeVersionResolveStream();
-        m.style.display = 'none';
-      }
-    });
-    window.__ciwiVersionResolveEscBound = true;
-  }
+  document.getElementById('versionResolveCloseBtn').onclick = () => {
+    closeVersionModal();
+  };
+  wireModalCloseBehavior(modal, closeVersionModal);
   return modal;
 }
 
@@ -123,7 +125,7 @@ function openVersionResolveModal(pipelineId, pipelineLabel) {
   subtitle.textContent = 'Pipeline: ' + (pipelineLabel || String(pipelineId));
   status.textContent = 'Running...';
   log.textContent = '';
-  modal.style.display = 'flex';
+  openModalOverlay(modal, '50vw', '50vh');
 
   const fmt = (evt) => {
     const step = evt.step || 'step';

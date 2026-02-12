@@ -1,9 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +64,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"agent": info})
 		return
 	}
-	if len(parts) != 2 || (parts[1] != "update" && parts[1] != "refresh-tools") {
+	if len(parts) != 2 || (parts[1] != "update" && parts[1] != "refresh-tools" && parts[1] != "run-script") {
 		http.NotFound(w, r)
 		return
 	}
@@ -89,6 +93,86 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 			"requested": true,
 			"agent_id":  agentID,
 			"message":   "tools refresh requested",
+		})
+		return
+	}
+	if parts[1] == "run-script" {
+		var req struct {
+			Script         string `json:"script"`
+			Shell          string `json:"shell"`
+			TimeoutSeconds int    `json:"timeout_seconds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		script := strings.TrimSpace(req.Script)
+		shell := strings.ToLower(strings.TrimSpace(req.Shell))
+		if script == "" {
+			http.Error(w, "script is required", http.StatusBadRequest)
+			return
+		}
+		if shell == "" {
+			http.Error(w, "shell is required", http.StatusBadRequest)
+			return
+		}
+
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		if strings.TrimSpace(a.Capabilities["executor"]) != "script" {
+			s.mu.Unlock()
+			http.Error(w, "agent does not advertise script executor support", http.StatusBadRequest)
+			return
+		}
+		availableShells := capabilityShells(a.Capabilities)
+		if !containsString(availableShells, shell) {
+			s.mu.Unlock()
+			http.Error(w, "agent does not support requested shell", http.StatusBadRequest)
+			return
+		}
+		s.mu.Unlock()
+
+		timeout := req.TimeoutSeconds
+		if timeout <= 0 {
+			timeout = 600
+		}
+		job, err := s.db.CreateJob(protocol.CreateJobRequest{
+			Script: script,
+			RequiredCapabilities: map[string]string{
+				"agent_id": agentID,
+				"executor": "script",
+				"shell":    shell,
+			},
+			TimeoutSeconds: timeout,
+			Metadata: map[string]string{
+				"adhoc":          "1",
+				"adhoc_agent_id": agentID,
+				"adhoc_shell":    shell,
+			},
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		s.mu.Lock()
+		if a, ok := s.agents[agentID]; ok {
+			a.RecentLog = appendAgentLog(a.RecentLog, "ad-hoc script queued ("+shell+") job="+job.ID)
+			s.agents[agentID] = a
+		}
+		s.mu.Unlock()
+
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"queued":          true,
+			"agent_id":        agentID,
+			"job_id":          job.ID,
+			"shell":           shell,
+			"timeout_seconds": timeout,
 		})
 		return
 	}
@@ -126,4 +210,35 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		"agent_id":  agentID,
 		"target":    target,
 	})
+}
+
+func capabilityShells(caps map[string]string) []string {
+	raw := strings.TrimSpace(caps["shells"])
+	if raw == "" {
+		return nil
+	}
+	dedup := map[string]struct{}{}
+	out := make([]string, 0, 4)
+	for _, part := range strings.Split(raw, ",") {
+		s := strings.ToLower(strings.TrimSpace(part))
+		if s == "" {
+			continue
+		}
+		if _, seen := dedup[s]; seen {
+			continue
+		}
+		dedup[s] = struct{}{}
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func containsString(list []string, needle string) bool {
+	for _, v := range list {
+		if v == needle {
+			return true
+		}
+	}
+	return false
 }

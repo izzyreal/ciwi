@@ -186,6 +186,12 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(agentDetailHTML, "/api/v1/agents/") {
 		t.Fatalf("agent detail page missing agent API wiring")
 	}
+	if !strings.Contains(agentDetailHTML, "Run Adhoc Script") {
+		t.Fatalf("agent detail page missing run adhoc control")
+	}
+	if !strings.Contains(agentDetailHTML, "/run-script") {
+		t.Fatalf("agent detail page missing run-script API wiring")
+	}
 }
 
 func TestUIProjectAndJobPagesServed(t *testing.T) {
