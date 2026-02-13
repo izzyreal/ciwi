@@ -72,6 +72,16 @@ const agentsHTML = `<!doctype html>
   <script>
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
+
+    function formatUpdateRetryText(a) {
+      if (!a || !a.update_requested || !a.update_next_retry_utc) return '';
+      const attempt = Number(a.update_attempts || 0);
+      if (attempt <= 0) {
+        return '<div class="badge badge-warn">First attempt at ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + '</div>';
+      }
+      return '<div class="badge badge-warn">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(attempt) + ')</div>';
+    }
+
     async function refreshAgents() {
       if (refreshInFlight || refreshGuard.shouldPause()) {
         return;
@@ -102,9 +112,7 @@ const agentsHTML = `<!doctype html>
           const refreshBtn = (s.label !== 'offline')
             ? '<button data-action="refresh-tools" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Refresh Tools</button>'
             : '';
-          const retryText = (a.update_requested && a.update_next_retry_utc)
-            ? ('<div class="badge badge-warn">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(a.update_attempts || 0) + ')</div>')
-            : '';
+          const retryText = formatUpdateRetryText(a);
           const versionCell = escapeHtml(a.version || '') +
             (a.update_requested ? ('<div class="badge">Update requested → ' + escapeHtml(a.update_target || '') + '</div>') : '') +
             retryText;

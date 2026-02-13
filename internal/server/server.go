@@ -28,11 +28,19 @@ type agentState struct {
 	UpdateNextRetryUTC   time.Time         `json:"update_next_retry_utc,omitempty"`
 }
 
+type agentUpdateRolloutState struct {
+	Target     string
+	StartedUTC time.Time
+	NextSlot   int
+	Slots      map[string]int
+}
+
 type stateStore struct {
 	mu               sync.Mutex
 	agents           map[string]agentState
 	agentUpdates     map[string]string
 	agentToolRefresh map[string]bool
+	agentRollout     agentUpdateRolloutState
 	db               *store.Store
 	artifactsDir     string
 	vaultTokens      *servervault.TokenCache
@@ -58,9 +66,12 @@ func Run(ctx context.Context) error {
 		agents:           make(map[string]agentState),
 		agentUpdates:     make(map[string]string),
 		agentToolRefresh: make(map[string]bool),
-		db:               db,
-		artifactsDir:     artifactsDir,
-		vaultTokens:      servervault.NewTokenCache(),
+		agentRollout: agentUpdateRolloutState{
+			Slots: make(map[string]int),
+		},
+		db:           db,
+		artifactsDir: artifactsDir,
+		vaultTokens:  servervault.NewTokenCache(),
 	}
 	if target, ok, err := db.GetAppState("agent_update_target"); err == nil && ok {
 		s.update.mu.Lock()

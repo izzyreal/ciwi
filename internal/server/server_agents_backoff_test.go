@@ -33,8 +33,11 @@ func newAgentUpdateTestStateStore(t *testing.T) *stateStore {
 		agents:           make(map[string]agentState),
 		agentUpdates:     make(map[string]string),
 		agentToolRefresh: make(map[string]bool),
-		db:               db,
-		artifactsDir:     artifactsDir,
+		agentRollout: agentUpdateRolloutState{
+			Slots: make(map[string]int),
+		},
+		db:           db,
+		artifactsDir: artifactsDir,
 	}
 }
 
@@ -58,20 +61,22 @@ func heartbeatForTest(t *testing.T, s *stateStore, req protocol.HeartbeatRequest
 	return resp
 }
 
-func TestAgentUpdateInitialWarmupDeterministicAndBounded(t *testing.T) {
-	a := agentUpdateInitialWarmup("agent-a", "v1.2.3")
-	b := agentUpdateInitialWarmup("agent-a", "v1.2.3")
-	if a != b {
-		t.Fatalf("expected deterministic warmup delay, got %s and %s", a, b)
+func TestAgentUpdateFirstAttemptDelayBySlot(t *testing.T) {
+	if got, want := agentUpdateFirstAttemptDelay(0), 10*time.Second; got != want {
+		t.Fatalf("slot 0 delay=%s want=%s", got, want)
 	}
-	min := agentUpdateInitialWarmupBase
-	max := agentUpdateInitialWarmupBase + agentUpdateInitialWarmupJitter
-	if a < min || a > max {
-		t.Fatalf("warmup delay out of range: got=%s min=%s max=%s", a, min, max)
+	if got, want := agentUpdateFirstAttemptDelay(1), 12*time.Second; got != want {
+		t.Fatalf("slot 1 delay=%s want=%s", got, want)
+	}
+	if got, want := agentUpdateFirstAttemptDelay(2), 14*time.Second; got != want {
+		t.Fatalf("slot 2 delay=%s want=%s", got, want)
+	}
+	if got, want := agentUpdateFirstAttemptDelay(-5), 10*time.Second; got != want {
+		t.Fatalf("negative slot delay=%s want=%s", got, want)
 	}
 }
 
-func TestHeartbeatAutomaticUpdateUsesWarmupBeforeFirstRequest(t *testing.T) {
+func TestHeartbeatAutomaticUpdateSchedulesFirstAttemptAfterBaseDelay(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"
 	t.Cleanup(func() { version.Version = oldVersion })
@@ -92,26 +97,26 @@ func TestHeartbeatAutomaticUpdateUsesWarmupBeforeFirstRequest(t *testing.T) {
 		TimestampUTC: start,
 	})
 	if first.UpdateRequested {
-		t.Fatalf("expected first automatic heartbeat update request to be delayed by warmup")
+		t.Fatalf("expected first automatic heartbeat update request to be delayed")
 	}
 
-	delay := agentUpdateInitialWarmup("agent-auto", "v1.2.0")
+	delay := agentUpdateFirstAttemptDelay(0)
 	s.mu.Lock()
 	state := s.agents["agent-auto"]
 	s.mu.Unlock()
 	if state.UpdateAttempts != 0 {
-		t.Fatalf("expected no attempts during warmup, got %d", state.UpdateAttempts)
+		t.Fatalf("expected no attempts before first scheduled request, got %d", state.UpdateAttempts)
 	}
 	if !state.UpdateLastRequestUTC.IsZero() {
-		t.Fatalf("expected no last request timestamp during warmup")
+		t.Fatalf("expected no last request timestamp before first scheduled request")
 	}
 	if state.UpdateNextRetryUTC.IsZero() {
-		t.Fatalf("expected warmup next retry timestamp to be set")
+		t.Fatalf("expected first-attempt schedule timestamp to be set")
 	}
 	minNext := start.Add(delay - 2*time.Second)
 	maxNext := time.Now().UTC().Add(delay + 2*time.Second)
 	if state.UpdateNextRetryUTC.Before(minNext) || state.UpdateNextRetryUTC.After(maxNext) {
-		t.Fatalf("unexpected warmup next retry timestamp: got=%s expected around now+%s", state.UpdateNextRetryUTC, delay)
+		t.Fatalf("unexpected first-attempt schedule timestamp: got=%s expected around now+%s", state.UpdateNextRetryUTC, delay)
 	}
 
 	s.mu.Lock()
@@ -129,7 +134,7 @@ func TestHeartbeatAutomaticUpdateUsesWarmupBeforeFirstRequest(t *testing.T) {
 		TimestampUTC: start.Add(10 * time.Second),
 	})
 	if !second.UpdateRequested {
-		t.Fatalf("expected update request after warmup expires")
+		t.Fatalf("expected update request after first-attempt schedule expires")
 	}
 	if second.UpdateTarget != "v1.2.0" {
 		t.Fatalf("unexpected update target: %q", second.UpdateTarget)
@@ -146,7 +151,56 @@ func TestHeartbeatAutomaticUpdateUsesWarmupBeforeFirstRequest(t *testing.T) {
 	}
 }
 
-func TestHeartbeatManualUpdateBypassesWarmupDelay(t *testing.T) {
+func TestHeartbeatAutomaticUpdatePhasesAgentsByTwoSecondSlots(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	s := newAgentUpdateTestStateStore(t)
+	if err := s.setAgentUpdateTarget("v1.2.0"); err != nil {
+		t.Fatalf("set agent update target: %v", err)
+	}
+
+	first := heartbeatForTest(t, s, protocol.HeartbeatRequest{
+		AgentID:      "agent-1",
+		Hostname:     "host-1",
+		OS:           "linux",
+		Arch:         "amd64",
+		Version:      "v1.1.0",
+		Capabilities: map[string]string{"executor": "script", "shells": "posix"},
+		TimestampUTC: time.Now().UTC(),
+	})
+	if first.UpdateRequested {
+		t.Fatalf("expected first request for agent-1 to be scheduled, not immediate")
+	}
+
+	second := heartbeatForTest(t, s, protocol.HeartbeatRequest{
+		AgentID:      "agent-2",
+		Hostname:     "host-2",
+		OS:           "linux",
+		Arch:         "amd64",
+		Version:      "v1.1.0",
+		Capabilities: map[string]string{"executor": "script", "shells": "posix"},
+		TimestampUTC: time.Now().UTC(),
+	})
+	if second.UpdateRequested {
+		t.Fatalf("expected first request for agent-2 to be scheduled, not immediate")
+	}
+
+	s.mu.Lock()
+	a1 := s.agents["agent-1"]
+	a2 := s.agents["agent-2"]
+	s.mu.Unlock()
+	if a1.UpdateNextRetryUTC.IsZero() || a2.UpdateNextRetryUTC.IsZero() {
+		t.Fatalf("expected both agents to have first-attempt schedule timestamps")
+	}
+	diff := a2.UpdateNextRetryUTC.Sub(a1.UpdateNextRetryUTC)
+	if diff < 1500*time.Millisecond || diff > 2500*time.Millisecond {
+		t.Fatalf("expected phase difference near 2s, got %s", diff)
+	}
+}
+
+func TestHeartbeatManualUpdateBypassesFirstAttemptSchedule(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"
 	t.Cleanup(func() { version.Version = oldVersion })

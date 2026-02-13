@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -748,5 +749,66 @@ func TestReportTerminalJobStatusWithRetry(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&attempts); got != 3 {
 		t.Fatalf("expected 3 attempts, got %d", got)
+	}
+}
+
+func TestShouldRetryUpdateHTTPStatus(t *testing.T) {
+	tests := []struct {
+		status int
+		want   bool
+	}{
+		{status: http.StatusTooManyRequests, want: true},
+		{status: http.StatusInternalServerError, want: true},
+		{status: http.StatusBadGateway, want: true},
+		{status: http.StatusServiceUnavailable, want: true},
+		{status: http.StatusGatewayTimeout, want: true},
+		{status: http.StatusForbidden, want: false},
+		{status: http.StatusNotFound, want: false},
+	}
+	for _, tt := range tests {
+		if got := shouldRetryUpdateHTTPStatus(tt.status); got != tt.want {
+			t.Fatalf("shouldRetryUpdateHTTPStatus(%d)=%v want=%v", tt.status, got, tt.want)
+		}
+	}
+}
+
+func TestShouldRetryUpdateError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "context canceled", err: context.Canceled, want: false},
+		{name: "deadline exceeded", err: context.DeadlineExceeded, want: false},
+		{name: "http2 stream", err: errors.New("HTTP/2 stream 1 was not closed cleanly before end of the underlying stream"), want: true},
+		{name: "temporary dns", err: &net.DNSError{IsTemporary: true}, want: true},
+		{name: "timeout marker", err: errors.New("connection timed out"), want: true},
+		{name: "non transient", err: errors.New("permission denied"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldRetryUpdateError(tt.err); got != tt.want {
+				t.Fatalf("shouldRetryUpdateError(%v)=%v want=%v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateRetryDelay(t *testing.T) {
+	tests := []struct {
+		attempt int
+		want    string
+	}{
+		{attempt: 0, want: "1s"},
+		{attempt: 1, want: "1s"},
+		{attempt: 2, want: "2s"},
+		{attempt: 3, want: "4s"},
+		{attempt: 10, want: "4s"},
+	}
+	for _, tt := range tests {
+		if got := updateRetryDelay(tt.attempt).String(); got != tt.want {
+			t.Fatalf("updateRetryDelay(%d)=%s want=%s", tt.attempt, got, tt.want)
+		}
 	}
 }

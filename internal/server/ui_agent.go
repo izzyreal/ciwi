@@ -161,6 +161,15 @@ const agentHTML = `<!doctype html>
     let adhocShells = [];
     let adhocActiveJobID = '';
     let adhocPollTimer = null;
+
+    function formatUpdateRetryText(a) {
+      if (!a || !a.update_requested || !a.update_next_retry_utc) return '';
+      const attempt = Number(a.update_attempts || 0);
+      if (attempt <= 0) {
+        return '<span class="badge badge-warn">First attempt at ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + '</span>';
+      }
+      return '<span class="badge badge-warn">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(attempt) + ')</span>';
+    }
     let lastSuggestedScript = '';
 
     function metaRow(k, v) {
@@ -356,8 +365,9 @@ const agentHTML = `<!doctype html>
         let updateState = '';
         if (a.update_requested) {
           updateState = '<span class="badge">Update requested → ' + escapeHtml(a.update_target || '') + '</span>';
-          if (a.update_next_retry_utc) {
-            updateState += ' <span class="badge badge-warn">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(a.update_attempts || 0) + ')</span>';
+          const retryText = formatUpdateRetryText(a);
+          if (retryText) {
+            updateState += ' ' + retryText;
           }
         }
 
