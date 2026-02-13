@@ -40,19 +40,26 @@ func runLoop(ctx context.Context) error {
 	leaseTicker := time.NewTicker(3 * time.Second)
 	defer leaseTicker.Stop()
 	capabilities := detectAgentCapabilities()
+	pendingUpdateFailure := ""
 
-	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities); err != nil {
+	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure); err != nil {
 		slog.Error("initial heartbeat failed", "error", err)
 	} else {
+		pendingUpdateFailure = ""
 		if hb.RefreshToolsRequested {
 			capabilities = detectAgentCapabilities()
 			slog.Info("server requested tools refresh")
-			_, _ = sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities)
+			if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure); err != nil {
+				slog.Error("heartbeat failed", "error", err)
+			} else {
+				pendingUpdateFailure = ""
+			}
 		}
 		if hb.UpdateRequested {
 			slog.Info("server requested agent update", "target_version", hb.UpdateTarget)
 			if err := selfUpdateAndRestart(ctx, hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase, os.Args[1:]); err != nil {
 				slog.Error("agent self-update failed", "error", err)
+				pendingUpdateFailure = err.Error()
 			}
 		}
 	}
@@ -62,19 +69,25 @@ func runLoop(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-heartbeatTicker.C:
-			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities)
+			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure)
 			if err != nil {
 				slog.Error("heartbeat failed", "error", err)
 			} else {
+				pendingUpdateFailure = ""
 				if hb.RefreshToolsRequested {
 					capabilities = detectAgentCapabilities()
 					slog.Info("server requested tools refresh")
-					_, _ = sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities)
+					if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure); err != nil {
+						slog.Error("heartbeat failed", "error", err)
+					} else {
+						pendingUpdateFailure = ""
+					}
 				}
 				if hb.UpdateRequested {
 					slog.Info("server requested agent update", "target_version", hb.UpdateTarget)
 					if err := selfUpdateAndRestart(ctx, hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase, os.Args[1:]); err != nil {
 						slog.Error("agent self-update failed", "error", err)
+						pendingUpdateFailure = err.Error()
 					}
 				}
 			}

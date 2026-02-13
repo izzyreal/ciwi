@@ -27,6 +27,8 @@ type agentState struct {
 	UpdateInProgress     bool              `json:"update_in_progress,omitempty"`
 	UpdateLastRequestUTC time.Time         `json:"update_last_request_utc,omitempty"`
 	UpdateNextRetryUTC   time.Time         `json:"update_next_retry_utc,omitempty"`
+	UpdateLastError      string            `json:"update_last_error,omitempty"`
+	UpdateLastErrorUTC   time.Time         `json:"update_last_error_utc,omitempty"`
 }
 
 type agentUpdateRolloutState struct {

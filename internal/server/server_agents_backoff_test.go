@@ -215,6 +215,117 @@ func TestHeartbeatAutomaticUpdateMarksFailedAttemptAndSchedulesBackoff(t *testin
 	}
 }
 
+func TestHeartbeatAutomaticUpdateUsesReportedFailureReasonAndSchedulesBackoff(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	s := newAgentUpdateTestStateStore(t)
+	if err := s.setAgentUpdateTarget("v1.2.0"); err != nil {
+		t.Fatalf("set agent update target: %v", err)
+	}
+
+	now := time.Now().UTC()
+	reason := "download update asset: status=502 body=bad gateway"
+	s.mu.Lock()
+	s.agents["agent-auto"] = agentState{
+		Hostname:             "host-a",
+		OS:                   "linux",
+		Arch:                 "amd64",
+		Version:              "v1.1.0",
+		Capabilities:         map[string]string{"executor": "script", "shells": "posix"},
+		UpdateTarget:         "v1.2.0",
+		UpdateAttempts:       1,
+		UpdateInProgress:     true,
+		UpdateLastRequestUTC: now.Add(-time.Second),
+	}
+	s.mu.Unlock()
+
+	resp := heartbeatForTest(t, s, protocol.HeartbeatRequest{
+		AgentID:       "agent-auto",
+		Hostname:      "host-a",
+		OS:            "linux",
+		Arch:          "amd64",
+		Version:       "v1.1.0",
+		Capabilities:  map[string]string{"executor": "script", "shells": "posix"},
+		UpdateFailure: reason,
+		TimestampUTC:  now,
+	})
+	if resp.UpdateRequested {
+		t.Fatalf("expected reported failure to enter backoff before retry")
+	}
+
+	s.mu.Lock()
+	state := s.agents["agent-auto"]
+	s.mu.Unlock()
+	if state.UpdateInProgress {
+		t.Fatalf("expected update_in_progress=false after reported failure")
+	}
+	if state.UpdateAttempts != 1 {
+		t.Fatalf("expected attempts to remain 1 after reported failure, got %d", state.UpdateAttempts)
+	}
+	if state.UpdateNextRetryUTC.IsZero() {
+		t.Fatalf("expected retry schedule to be set after reported failure")
+	}
+	if state.UpdateLastError != reason {
+		t.Fatalf("unexpected update_last_error=%q want=%q", state.UpdateLastError, reason)
+	}
+	if state.UpdateLastErrorUTC.IsZero() {
+		t.Fatalf("expected update_last_error_utc to be set")
+	}
+	delta := state.UpdateNextRetryUTC.Sub(time.Now().UTC())
+	if delta < 25*time.Second || delta > 35*time.Second {
+		t.Fatalf("expected first failure backoff around 30s, got %s", delta)
+	}
+}
+
+func TestHeartbeatClearsReportedUpdateFailureAfterAgentReachesTarget(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	s := newAgentUpdateTestStateStore(t)
+	if err := s.setAgentUpdateTarget("v1.2.0"); err != nil {
+		t.Fatalf("set agent update target: %v", err)
+	}
+
+	s.mu.Lock()
+	s.agents["agent-auto"] = agentState{
+		Hostname:           "host-a",
+		OS:                 "linux",
+		Arch:               "amd64",
+		Version:            "v1.1.0",
+		Capabilities:       map[string]string{"executor": "script", "shells": "posix"},
+		UpdateTarget:       "v1.2.0",
+		UpdateAttempts:     1,
+		UpdateInProgress:   false,
+		UpdateNextRetryUTC: time.Now().UTC().Add(30 * time.Second),
+		UpdateLastError:    "download update asset: status=502 body=bad gateway",
+		UpdateLastErrorUTC: time.Now().UTC().Add(-time.Second),
+	}
+	s.mu.Unlock()
+
+	_ = heartbeatForTest(t, s, protocol.HeartbeatRequest{
+		AgentID:      "agent-auto",
+		Hostname:     "host-a",
+		OS:           "linux",
+		Arch:         "amd64",
+		Version:      "v1.2.0",
+		Capabilities: map[string]string{"executor": "script", "shells": "posix"},
+		TimestampUTC: time.Now().UTC(),
+	})
+
+	s.mu.Lock()
+	state := s.agents["agent-auto"]
+	s.mu.Unlock()
+	if state.UpdateLastError != "" {
+		t.Fatalf("expected update_last_error to be cleared after reaching target, got %q", state.UpdateLastError)
+	}
+	if !state.UpdateLastErrorUTC.IsZero() {
+		t.Fatalf("expected update_last_error_utc to be cleared after reaching target, got %s", state.UpdateLastErrorUTC)
+	}
+}
+
 func TestHeartbeatAutomaticUpdatePhasesAgentsByTwoSecondSlots(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"

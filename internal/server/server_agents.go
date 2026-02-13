@@ -12,6 +12,8 @@ import (
 	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 )
 
+const maxReportedUpdateFailureLength = 240
+
 func (s *stateStore) scheduleAutomaticUpdateFirstAttemptLocked(agentID, target string, now time.Time) (time.Time, int) {
 	agentID = strings.TrimSpace(agentID)
 	target = strings.TrimSpace(target)
@@ -71,8 +73,10 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 
 	updateRequested := false
 	updateAttemptFailed := false
+	updateAttemptFailureReason := ""
 	firstAttemptAt := time.Time{}
 	firstAttemptSlot := -1
+	reportedUpdateFailure := summarizeUpdateFailure(hb.UpdateFailure)
 	needsUpdate := target != "" && isVersionDifferent(target, strings.TrimSpace(hb.Version))
 	if needsUpdate {
 		if strings.TrimSpace(prev.UpdateTarget) != target {
@@ -81,6 +85,8 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 			prev.UpdateInProgress = false
 			prev.UpdateLastRequestUTC = time.Time{}
 			prev.UpdateNextRetryUTC = time.Time{}
+			prev.UpdateLastError = ""
+			prev.UpdateLastErrorUTC = time.Time{}
 			if manualTarget == "" {
 				firstAttemptAt, firstAttemptSlot = s.scheduleAutomaticUpdateFirstAttemptLocked(hb.AgentID, target, now)
 				if !firstAttemptAt.IsZero() {
@@ -88,9 +94,18 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		if reportedUpdateFailure != "" {
+			prev.UpdateLastError = reportedUpdateFailure
+			prev.UpdateLastErrorUTC = now
+		}
 
 		if prev.UpdateInProgress {
-			if prev.UpdateLastRequestUTC.IsZero() || !now.Before(prev.UpdateLastRequestUTC.Add(agentUpdateInProgressGrace)) {
+			if reportedUpdateFailure != "" {
+				prev.UpdateInProgress = false
+				prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
+				updateAttemptFailed = true
+				updateAttemptFailureReason = reportedUpdateFailure
+			} else if prev.UpdateLastRequestUTC.IsZero() || !now.Before(prev.UpdateLastRequestUTC.Add(agentUpdateInProgressGrace)) {
 				prev.UpdateInProgress = false
 				prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
 				updateAttemptFailed = true
@@ -113,6 +128,8 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		prev.UpdateInProgress = false
 		prev.UpdateLastRequestUTC = time.Time{}
 		prev.UpdateNextRetryUTC = time.Time{}
+		prev.UpdateLastError = ""
+		prev.UpdateLastErrorUTC = time.Time{}
 	}
 
 	state := agentState{
@@ -128,6 +145,8 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		UpdateInProgress:     prev.UpdateInProgress,
 		UpdateLastRequestUTC: prev.UpdateLastRequestUTC,
 		UpdateNextRetryUTC:   prev.UpdateNextRetryUTC,
+		UpdateLastError:      prev.UpdateLastError,
+		UpdateLastErrorUTC:   prev.UpdateLastErrorUTC,
 	}
 	state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("heartbeat version=%s platform=%s/%s", strings.TrimSpace(hb.Version), strings.TrimSpace(hb.OS), strings.TrimSpace(hb.Arch)))
 	if refreshTools {
@@ -141,7 +160,13 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("scheduled automatic update to %s at %s (in=%s, slot=%d)", target, firstAttemptAt.Local().Format("15:04:05"), delay.Round(time.Second), firstAttemptSlot))
 	}
 	if updateAttemptFailed {
-		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("update attempt to %s did not complete; retry at %s (attempt=%d)", target, state.UpdateNextRetryUTC.Local().Format("15:04:05"), state.UpdateAttempts))
+		if updateAttemptFailureReason != "" {
+			state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("update attempt to %s failed: %s; retry at %s (attempt=%d)", target, updateAttemptFailureReason, state.UpdateNextRetryUTC.Local().Format("15:04:05"), state.UpdateAttempts))
+		} else {
+			state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("update attempt to %s did not complete; retry at %s (attempt=%d)", target, state.UpdateNextRetryUTC.Local().Format("15:04:05"), state.UpdateAttempts))
+		}
+	} else if reportedUpdateFailure != "" {
+		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("agent reported update failure: %s", reportedUpdateFailure))
 	}
 	if updateRequested {
 		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("server requested update to %s (attempt=%d)", target, state.UpdateAttempts))
@@ -163,6 +188,20 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		resp.Message = "server requested agent update"
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func summarizeUpdateFailure(raw string) string {
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if normalized == "" {
+		return ""
+	}
+	if len(normalized) <= maxReportedUpdateFailureLength {
+		return normalized
+	}
+	if maxReportedUpdateFailureLength <= 3 {
+		return normalized[:maxReportedUpdateFailureLength]
+	}
+	return strings.TrimSpace(normalized[:maxReportedUpdateFailureLength-3]) + "..."
 }
 
 func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {

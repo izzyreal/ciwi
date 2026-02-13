@@ -176,7 +176,9 @@ const agentHTML = `<!doctype html>
       if (!a || !a.update_requested || a.update_in_progress || !a.update_next_retry_utc) return '';
       const attempt = Number(a.update_attempts || 0);
       if (attempt <= 0) return '';
-      return '<span class="badge badge-error">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(attempt) + ')</span>';
+      const reason = String(a.update_last_error || '').trim();
+      const reasonSuffix = reason ? ': ' + escapeHtml(reason) : '';
+      return '<span class="badge badge-error">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(attempt) + ')' + reasonSuffix + '</span>';
     }
     let lastSuggestedScript = '';
 

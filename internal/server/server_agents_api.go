@@ -182,6 +182,8 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 	a.UpdateInProgress = false
 	a.UpdateLastRequestUTC = time.Time{}
 	a.UpdateNextRetryUTC = time.Time{}
+	a.UpdateLastError = ""
+	a.UpdateLastErrorUTC = time.Time{}
 	a.RecentLog = appendAgentLog(a.RecentLog, "manual update requested to "+target)
 	s.agents[agentID] = a
 	s.mu.Unlock()
