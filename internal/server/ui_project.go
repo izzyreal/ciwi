@@ -303,7 +303,7 @@ const projectHTML = `<!doctype html>
         const data = await apiJSON('/api/v1/jobs');
         const body = document.getElementById('historyBody');
         body.innerHTML = '';
-        const rows = (data.job_executions || data.jobs || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
+        const rows = (data.job_executions || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
         rows.forEach(job => {
           const tr = buildJobExecutionRow(job, {
             includeActions: false,

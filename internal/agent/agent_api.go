@@ -62,7 +62,7 @@ func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID,
 	return hbResp, nil
 }
 
-func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID string, capabilities map[string]string) (*protocol.Job, error) {
+func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID string, capabilities map[string]string) (*protocol.JobExecution, error) {
 	caps := cloneMap(capabilities)
 	if caps == nil {
 		caps = map[string]string{}
@@ -79,7 +79,7 @@ func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID strin
 	if caps["arch"] == "" {
 		caps["arch"] = runtime.GOARCH
 	}
-	payload := protocol.LeaseJobRequest{
+	payload := protocol.LeaseJobExecutionRequest{
 		AgentID:      agentID,
 		Capabilities: caps,
 	}
@@ -106,22 +106,22 @@ func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID strin
 		return nil, fmt.Errorf("lease rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
 	}
 
-	var leaseResp protocol.LeaseJobResponse
+	var leaseResp protocol.LeaseJobExecutionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&leaseResp); err != nil {
 		return nil, fmt.Errorf("decode lease response: %w", err)
 	}
-	if !leaseResp.Assigned || leaseResp.Job == nil {
+	if !leaseResp.Assigned || leaseResp.JobExecution == nil {
 		return nil, nil
 	}
 
-	slog.Info("job leased", "job_execution_id", leaseResp.Job.ID)
-	return leaseResp.Job, nil
+	slog.Info("job leased", "job_execution_id", leaseResp.JobExecution.ID)
+	return leaseResp.JobExecution, nil
 }
 
-func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID string, job protocol.Job, exitCode *int, failMsg, output string) error {
-	return reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID string, job protocol.JobExecution, exitCode *int, failMsg, output string) error {
+	return reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:      agentID,
-		Status:       protocol.JobStatusFailed,
+		Status:       protocol.JobExecutionStatusFailed,
 		ExitCode:     exitCode,
 		Error:        failMsg,
 		Output:       output,
@@ -130,7 +130,7 @@ func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID 
 	})
 }
 
-func reportTerminalJobStatusWithRetry(client *http.Client, serverURL, jobID string, reqBody protocol.JobStatusUpdateRequest) error {
+func reportTerminalJobStatusWithRetry(client *http.Client, serverURL, jobID string, reqBody protocol.JobExecutionStatusUpdateRequest) error {
 	var lastErr error
 	for attempt := 1; attempt <= terminalStatusMaxAttempts; attempt++ {
 		attemptCtx, cancel := context.WithTimeout(context.Background(), terminalStatusAttemptTTL)
@@ -149,7 +149,7 @@ func reportTerminalJobStatusWithRetry(client *http.Client, serverURL, jobID stri
 	return fmt.Errorf("terminal status report failed after %d attempts: %w", terminalStatusMaxAttempts, lastErr)
 }
 
-func reportJobStatus(ctx context.Context, client *http.Client, serverURL, jobID string, reqBody protocol.JobStatusUpdateRequest) error {
+func reportJobStatus(ctx context.Context, client *http.Client, serverURL, jobID string, reqBody protocol.JobExecutionStatusUpdateRequest) error {
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("marshal job status: %w", err)

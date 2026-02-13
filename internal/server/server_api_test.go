@@ -72,22 +72,22 @@ func TestServerLoadListRunAndQueueHistoryEndpoints(t *testing.T) {
 		t.Fatalf("run pipeline status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
 	}
 	var runPayload struct {
-		Enqueued int      `json:"enqueued"`
-		JobIDs   []string `json:"job_ids"`
+		Enqueued        int      `json:"enqueued"`
+		JobExecutionIDs []string `json:"job_execution_ids"`
 	}
 	decodeJSONBody(t, runResp, &runPayload)
 	if runPayload.Enqueued != 2 {
 		t.Fatalf("expected enqueued=2 from matrix, got %d", runPayload.Enqueued)
 	}
-	if len(runPayload.JobIDs) != 2 {
-		t.Fatalf("expected 2 job ids, got %d", len(runPayload.JobIDs))
+	if len(runPayload.JobExecutionIDs) != 2 {
+		t.Fatalf("expected 2 job execution ids, got %d", len(runPayload.JobExecutionIDs))
 	}
 
 	var jobsPayload struct {
 		Jobs []struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
 	if jobsResp.StatusCode != http.StatusOK {
@@ -120,7 +120,7 @@ func TestServerLoadListRunAndQueueHistoryEndpoints(t *testing.T) {
 	var createPayload struct {
 		Job struct {
 			ID string `json:"id"`
-		} `json:"job"`
+		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, createResp, &createPayload)
 
@@ -202,7 +202,7 @@ func TestServerLoadListRunAndQueueHistoryEndpoints(t *testing.T) {
 				Total  int `json:"total"`
 				Failed int `json:"failed"`
 			} `json:"test_summary"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, jobsWithSummaryResp, &jobsWithSummary)
 	foundSummary := false
@@ -236,7 +236,7 @@ func TestServerLoadListRunAndQueueHistoryEndpoints(t *testing.T) {
 		t.Fatalf("jobs after flush status=%d body=%s", jobsAfterResp.StatusCode, readBody(t, jobsAfterResp))
 	}
 	var jobsAfter struct {
-		Jobs []any `json:"jobs"`
+		Jobs []any `json:"job_executions"`
 	}
 	decodeJSONBody(t, jobsAfterResp, &jobsAfter)
 	if len(jobsAfter.Jobs) != 0 {
@@ -260,7 +260,7 @@ func TestJobJSONOmitsZeroStartedAndFinishedTimestamps(t *testing.T) {
 	var createPayload struct {
 		Job struct {
 			ID string `json:"id"`
-		} `json:"job"`
+		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, createResp, &createPayload)
 
@@ -312,17 +312,13 @@ func TestJobJSONOmitsZeroStartedAndFinishedTimestamps(t *testing.T) {
 func decodeJobByIDPayload(t *testing.T, resp *http.Response) map[string]any {
 	t.Helper()
 	var payload struct {
-		Job          map[string]any `json:"job"`
 		JobExecution map[string]any `json:"job_execution"`
 	}
 	decodeJSONBody(t, resp, &payload)
-	if payload.Job != nil {
-		return payload.Job
-	}
 	if payload.JobExecution != nil {
 		return payload.JobExecution
 	}
-	t.Fatalf("job-by-id payload missing both job and job_execution")
+	t.Fatalf("job-by-id payload missing job_execution")
 	return nil
 }
 
@@ -405,18 +401,18 @@ func TestServerRunSelectionQueuesSingleMatrixEntry(t *testing.T) {
 		t.Fatalf("run selection status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
 	}
 	var runPayload struct {
-		Enqueued int      `json:"enqueued"`
-		JobIDs   []string `json:"job_ids"`
+		Enqueued        int      `json:"enqueued"`
+		JobExecutionIDs []string `json:"job_execution_ids"`
 	}
 	decodeJSONBody(t, runResp, &runPayload)
 	if runPayload.Enqueued != 1 {
 		t.Fatalf("expected enqueued=1, got %d", runPayload.Enqueued)
 	}
-	if len(runPayload.JobIDs) != runPayload.Enqueued {
-		t.Fatalf("expected job_ids to match enqueued=%d, got %d", runPayload.Enqueued, len(runPayload.JobIDs))
+	if len(runPayload.JobExecutionIDs) != runPayload.Enqueued {
+		t.Fatalf("expected job_execution_ids to match enqueued=%d, got %d", runPayload.Enqueued, len(runPayload.JobExecutionIDs))
 	}
-	if strings.TrimSpace(runPayload.JobIDs[0]) == "" {
-		t.Fatalf("expected non-empty job_id in run-selection response")
+	if strings.TrimSpace(runPayload.JobExecutionIDs[0]) == "" {
+		t.Fatalf("expected non-empty job_execution_id in run-selection response")
 	}
 
 	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
@@ -426,7 +422,7 @@ func TestServerRunSelectionQueuesSingleMatrixEntry(t *testing.T) {
 	var jobsPayload struct {
 		Jobs []struct {
 			Metadata map[string]string `json:"metadata"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, jobsResp, &jobsPayload)
 	if len(jobsPayload.Jobs) != 1 {
@@ -539,13 +535,13 @@ pipelines:
 		t.Fatalf("build run status=%d body=%s", buildRunResp.StatusCode, readBody(t, buildRunResp))
 	}
 	var buildRunPayload struct {
-		JobIDs []string `json:"job_ids"`
+		JobExecutionIDs []string `json:"job_execution_ids"`
 	}
 	decodeJSONBody(t, buildRunResp, &buildRunPayload)
-	if len(buildRunPayload.JobIDs) != 1 {
-		t.Fatalf("expected 1 build job id, got %d", len(buildRunPayload.JobIDs))
+	if len(buildRunPayload.JobExecutionIDs) != 1 {
+		t.Fatalf("expected 1 build job execution id, got %d", len(buildRunPayload.JobExecutionIDs))
 	}
-	buildJobID := buildRunPayload.JobIDs[0]
+	buildJobID := buildRunPayload.JobExecutionIDs[0]
 
 	buildDoneResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+buildJobID+"/status", map[string]any{
 		"agent_id": "agent-test",
@@ -562,11 +558,11 @@ pipelines:
 		t.Fatalf("release after build expected 201, got %d body=%s", releaseAfterResp.StatusCode, readBody(t, releaseAfterResp))
 	}
 	var releaseRunPayload struct {
-		JobIDs []string `json:"job_ids"`
+		JobExecutionIDs []string `json:"job_execution_ids"`
 	}
 	decodeJSONBody(t, releaseAfterResp, &releaseRunPayload)
-	if len(releaseRunPayload.JobIDs) != 1 {
-		t.Fatalf("expected 1 release job id, got %d", len(releaseRunPayload.JobIDs))
+	if len(releaseRunPayload.JobExecutionIDs) != 1 {
+		t.Fatalf("expected 1 release job execution id, got %d", len(releaseRunPayload.JobExecutionIDs))
 	}
 
 	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
@@ -577,12 +573,12 @@ pipelines:
 		Jobs []struct {
 			ID       string            `json:"id"`
 			Metadata map[string]string `json:"metadata"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, jobsResp, &jobsPayload)
 	foundRelease := false
 	for _, j := range jobsPayload.Jobs {
-		if j.ID != releaseRunPayload.JobIDs[0] {
+		if j.ID != releaseRunPayload.JobExecutionIDs[0] {
 			continue
 		}
 		if strings.TrimSpace(j.Metadata["pipeline_run_id"]) == "" {

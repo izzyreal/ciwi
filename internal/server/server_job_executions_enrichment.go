@@ -7,9 +7,9 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func (s *stateStore) attachTestSummaries(jobs []protocol.Job) {
+func (s *stateStore) attachJobExecutionTestSummaries(jobs []protocol.JobExecution) {
 	for i := range jobs {
-		s.attachTestSummary(&jobs[i])
+		s.attachJobExecutionTestSummary(&jobs[i])
 	}
 }
 
@@ -31,15 +31,15 @@ func (s *stateStore) markAgentSeen(agentID string, ts time.Time) {
 	s.agents[agentID] = a
 }
 
-func (s *stateStore) attachTestSummary(job *protocol.Job) {
+func (s *stateStore) attachJobExecutionTestSummary(job *protocol.JobExecution) {
 	if job == nil || strings.TrimSpace(job.ID) == "" {
 		return
 	}
-	report, found, err := s.db.GetJobTestReport(job.ID)
+	report, found, err := s.db.GetJobExecutionTestReport(job.ID)
 	if err != nil || !found {
 		return
 	}
-	job.TestSummary = &protocol.JobTestSummary{
+	job.TestSummary = &protocol.JobExecutionTestSummary{
 		Total:   report.Total,
 		Passed:  report.Passed,
 		Failed:  report.Failed,
@@ -47,7 +47,7 @@ func (s *stateStore) attachTestSummary(job *protocol.Job) {
 	}
 }
 
-func (s *stateStore) attachUnmetRequirements(jobs []protocol.Job) {
+func (s *stateStore) attachJobExecutionUnmetRequirements(jobs []protocol.JobExecution) {
 	s.mu.Lock()
 	agents := make(map[string]agentState, len(s.agents))
 	for id, a := range s.agents {
@@ -55,18 +55,18 @@ func (s *stateStore) attachUnmetRequirements(jobs []protocol.Job) {
 	}
 	s.mu.Unlock()
 	for i := range jobs {
-		if !protocol.IsQueuedJobStatus(jobs[i].Status) {
+		if !protocol.IsQueuedJobExecutionStatus(jobs[i].Status) {
 			continue
 		}
 		jobs[i].UnmetRequirements = diagnoseUnmetRequirements(jobs[i].RequiredCapabilities, agents)
 	}
 }
 
-func (s *stateStore) attachUnmetRequirementsToJob(job *protocol.Job) {
+func (s *stateStore) attachJobExecutionUnmetRequirementsToJobExecution(job *protocol.JobExecution) {
 	if job == nil {
 		return
 	}
-	if !protocol.IsQueuedJobStatus(job.Status) {
+	if !protocol.IsQueuedJobExecutionStatus(job.Status) {
 		return
 	}
 	s.mu.Lock()

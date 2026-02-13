@@ -233,7 +233,7 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 
 func TestExtractCurrentStepFromOutput(t *testing.T) {
 	output := strings.Join([]string{
-		"[meta] job_id=job-1",
+		"[meta] job_execution_id=job-1",
 		`__CIWI_STEP_BEGIN__ index=1 total=3 name=checkout_source`,
 		"cloning...",
 		`"__CIWI_STEP_BEGIN__ index=2 total=3 name=build_app"`,
@@ -252,7 +252,7 @@ func TestResolveJobCacheEnvMissThenHit(t *testing.T) {
 		t.Fatalf("write CMakeLists: %v", err)
 	}
 
-	job := protocol.Job{
+	job := protocol.JobExecution{
 		Caches: []protocol.JobCacheSpec{
 			{
 				ID:  "fetchcontent",
@@ -296,7 +296,7 @@ func TestResolveJobCacheEnvUsesRestoreKey(t *testing.T) {
 		t.Fatalf("mkdir restore cache: %v", err)
 	}
 
-	job := protocol.Job{
+	job := protocol.JobExecution{
 		Caches: []protocol.JobCacheSpec{
 			{
 				ID:          "fetchcontent",
@@ -326,13 +326,13 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 
 	var (
 		mu       sync.Mutex
-		statuses []protocol.JobStatusUpdateRequest
+		statuses []protocol.JobExecutionStatusUpdateRequest
 	)
 	client := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
 			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/status":
-				var req protocol.JobStatusUpdateRequest
+				var req protocol.JobExecutionStatusUpdateRequest
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Fatalf("decode status: %v", err)
 				}
@@ -361,7 +361,7 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	}
 
 	workDir := t.TempDir()
-	job := protocol.Job{
+	job := protocol.JobExecution{
 		ID:             "job-1",
 		Script:         "mkdir -p dist && printf 'x' > dist/a.bin",
 		TimeoutSeconds: 30,
@@ -422,7 +422,7 @@ func TestExecuteLeasedJobRunsPipelineStepsInSeparateShellProcesses(t *testing.T)
 		`echo "__CIWI_STEP_BEGIN__ index=3 total=3 name=third"`,
 		`pwd > step3.txt`,
 	}, "\n")
-	job := protocol.Job{
+	job := protocol.JobExecution{
 		ID:             jobID,
 		Script:         script,
 		TimeoutSeconds: 30,
@@ -455,12 +455,12 @@ func TestExecuteLeasedJobFailsWhenStepTestReportContainsFailures(t *testing.T) {
 
 	var (
 		mu       sync.Mutex
-		statuses []protocol.JobStatusUpdateRequest
+		statuses []protocol.JobExecutionStatusUpdateRequest
 	)
 	client := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-test-report/status" {
-				var req protocol.JobStatusUpdateRequest
+				var req protocol.JobExecutionStatusUpdateRequest
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Fatalf("decode status: %v", err)
 				}
@@ -493,7 +493,7 @@ func TestExecuteLeasedJobFailsWhenStepTestReportContainsFailures(t *testing.T) {
 		`mkdir -p out`,
 		`printf '%s\n' '{"Action":"run","Package":"p","Test":"TestA"}' '{"Action":"fail","Package":"p","Test":"TestA","Elapsed":0.01}' > out/report.json`,
 	}, "\n")
-	job := protocol.Job{
+	job := protocol.JobExecution{
 		ID:             "job-test-report",
 		Script:         script,
 		TimeoutSeconds: 30,
@@ -526,12 +526,12 @@ func TestExecuteLeasedJobDisablesShellTraceForAdhoc(t *testing.T) {
 
 	var (
 		mu       sync.Mutex
-		statuses []protocol.JobStatusUpdateRequest
+		statuses []protocol.JobExecutionStatusUpdateRequest
 	)
 	client := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-adhoc/status" {
-				var req protocol.JobStatusUpdateRequest
+				var req protocol.JobExecutionStatusUpdateRequest
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Fatalf("decode status: %v", err)
 				}
@@ -552,7 +552,7 @@ func TestExecuteLeasedJobDisablesShellTraceForAdhoc(t *testing.T) {
 		}),
 	}
 
-	job := protocol.Job{
+	job := protocol.JobExecution{
 		ID:             "job-adhoc",
 		Script:         `echo "hello from adhoc"`,
 		TimeoutSeconds: 30,
@@ -616,7 +616,7 @@ func TestReportTerminalJobStatusWithRetry(t *testing.T) {
 			}, nil
 		}),
 	}
-	err := reportTerminalJobStatusWithRetry(client, "http://example.local", "job-xyz", protocol.JobStatusUpdateRequest{
+	err := reportTerminalJobStatusWithRetry(client, "http://example.local", "job-xyz", protocol.JobExecutionStatusUpdateRequest{
 		AgentID: "agent-1",
 		Status:  "succeeded",
 	})

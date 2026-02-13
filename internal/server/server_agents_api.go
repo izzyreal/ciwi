@@ -118,7 +118,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		if timeout <= 0 {
 			timeout = 600
 		}
-		job, err := s.db.CreateJob(protocol.CreateJobRequest{
+		job, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 			Script: script,
 			RequiredCapabilities: map[string]string{
 				"agent_id": agentID,
@@ -147,7 +147,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, agentRunScriptResponse{
 			Queued:         true,
 			AgentID:        agentID,
-			JobID:          job.ID,
+			JobExecutionID: job.ID,
 			Shell:          shell,
 			TimeoutSeconds: timeout,
 		})

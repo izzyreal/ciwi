@@ -175,7 +175,7 @@ pipelines:
 			Env             map[string]string `json:"env"`
 			Metadata        map[string]string `json:"metadata"`
 			SensitiveValues []string          `json:"sensitive_values"`
-		} `json:"job"`
+		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, leaseResp, &leasePayload)
 	if !leasePayload.Assigned || leasePayload.Job == nil {
@@ -330,7 +330,7 @@ pipelines:
 	var jobs struct {
 		Jobs []struct {
 			Status string `json:"status"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, jobsResp, &jobs)
 	if len(jobs.Jobs) == 0 {

@@ -2,7 +2,7 @@ package server
 
 import "strings"
 
-func parseBuildMetadataFromOutput(output string) map[string]string {
+func parseJobExecutionBuildMetadataFromOutput(output string) map[string]string {
 	output = strings.TrimSpace(output)
 	if output == "" {
 		return nil

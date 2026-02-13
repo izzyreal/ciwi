@@ -36,9 +36,9 @@ type PersistedPipelineJob struct {
 	RequiresTools  map[string]string
 	TimeoutSeconds int
 	Artifacts      []string
-	Caches         []config.JobCache
+	Caches         []config.PipelineJobCacheSpec
 	MatrixInclude  []map[string]string
-	Steps          []config.Step
+	Steps          []config.PipelineJobStep
 	Position       int
 }
 

@@ -197,7 +197,7 @@ pipelines:
 func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 	s := openTestStore(t)
 
-	_, err := s.CreateJob(protocol.CreateJobRequest{
+	_, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:               "echo leased",
 		RequiredCapabilities: map[string]string{"os": "linux"},
 		TimeoutSeconds:       30,
@@ -206,7 +206,7 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("create leaseable job: %v", err)
 	}
 
-	jQueued, err := s.CreateJob(protocol.CreateJobRequest{
+	jQueued, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:               "echo queued",
 		RequiredCapabilities: map[string]string{"os": "linux"},
 		TimeoutSeconds:       30,
@@ -215,7 +215,7 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("create queued job: %v", err)
 	}
 
-	leased, err := s.LeaseJob("agent-1", map[string]string{"os": "linux"})
+	leased, err := s.LeaseJobExecution("agent-1", map[string]string{"os": "linux"})
 	if err != nil {
 		t.Fatalf("lease job: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatal("expected leased job, got nil")
 	}
 
-	jHistory, err := s.CreateJob(protocol.CreateJobRequest{
+	jHistory, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:         "echo done",
 		TimeoutSeconds: 30,
 	})
@@ -231,7 +231,7 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("create history job: %v", err)
 	}
 
-	_, err = s.UpdateJobStatus(jHistory.ID, protocol.JobStatusUpdateRequest{
+	_, err = s.UpdateJobExecutionStatus(jHistory.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID: "agent-1",
 		Status:  "succeeded",
 		Output:  "ok",
@@ -240,15 +240,15 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("mark history job succeeded: %v", err)
 	}
 
-	if err := s.DeleteQueuedJob(jHistory.ID); err == nil {
+	if err := s.DeleteQueuedJobExecution(jHistory.ID); err == nil {
 		t.Fatal("expected delete queued conflict for succeeded job")
 	}
 
-	if err := s.DeleteQueuedJob(jQueued.ID); err != nil {
+	if err := s.DeleteQueuedJobExecution(jQueued.ID); err != nil {
 		t.Fatalf("delete queued job: %v", err)
 	}
 
-	cleared, err := s.ClearQueuedJobs()
+	cleared, err := s.ClearQueuedJobExecutions()
 	if err != nil {
 		t.Fatalf("clear queued jobs: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("expected clear queued count 1 (leased), got %d", cleared)
 	}
 
-	flushed, err := s.FlushJobHistory()
+	flushed, err := s.FlushJobExecutionHistory()
 	if err != nil {
 		t.Fatalf("flush history: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("expected flush count 1, got %d", flushed)
 	}
 
-	jobs, err := s.ListJobs()
+	jobs, err := s.ListJobExecutions()
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("expected no pending jobs after clear queue, got %d", len(jobs))
 	}
 
-	cleared, err = s.ClearQueuedJobs()
+	cleared, err = s.ClearQueuedJobExecutions()
 	if err != nil {
 		t.Fatalf("clear queued second pass: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("expected clear queued count 0 on second pass, got %d", cleared)
 	}
 
-	jobs, err = s.ListJobs()
+	jobs, err = s.ListJobExecutions()
 	if err != nil {
 		t.Fatalf("list jobs second pass: %v", err)
 	}

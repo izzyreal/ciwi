@@ -301,9 +301,9 @@ func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, er
 			// Backward compatibility for existing rows where steps_json is []string.
 			var legacy []string
 			if legacyErr := json.Unmarshal([]byte(stepsJSON), &legacy); legacyErr == nil {
-				j.Steps = make([]config.Step, 0, len(legacy))
+				j.Steps = make([]config.PipelineJobStep, 0, len(legacy))
 				for _, run := range legacy {
-					j.Steps = append(j.Steps, config.Step{Run: run})
+					j.Steps = append(j.Steps, config.PipelineJobStep{Run: run})
 				}
 			}
 		}

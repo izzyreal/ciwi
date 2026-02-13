@@ -127,7 +127,7 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req protocol.LeaseJobRequest
+	var req protocol.LeaseJobExecutionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
@@ -147,38 +147,38 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		agentCaps = map[string]string{}
 	}
 	agentCaps["agent_id"] = req.AgentID
-	hasActive, err := s.db.AgentHasActiveJob(req.AgentID)
+	hasActive, err := s.db.AgentHasActiveJobExecution(req.AgentID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if hasActive {
-		writeJSON(w, http.StatusOK, leaseJobViewResponse{
+		writeJSON(w, http.StatusOK, leaseJobExecutionViewResponse{
 			Assigned: false,
 			Message:  "agent already has an active job",
 		})
 		return
 	}
 
-	job, err := s.db.LeaseJob(req.AgentID, agentCaps)
+	job, err := s.db.LeaseJobExecution(req.AgentID, agentCaps)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if job == nil {
-		writeJSON(w, http.StatusOK, leaseJobViewResponse{Assigned: false, Message: "no matching queued job"})
+		writeJSON(w, http.StatusOK, leaseJobExecutionViewResponse{Assigned: false, Message: "no matching queued job"})
 		return
 	}
 	if err := s.resolveJobSecrets(r.Context(), job); err != nil {
 		failMsg := fmt.Sprintf("secret resolution failed before execution: %v", err)
-		_, _ = s.db.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+		_, _ = s.db.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID: req.AgentID,
-			Status:  protocol.JobStatusFailed,
+			Status:  protocol.JobExecutionStatusFailed,
 			Error:   failMsg,
 		})
-		writeJSON(w, http.StatusOK, leaseJobViewResponse{Assigned: false, Message: failMsg})
+		writeJSON(w, http.StatusOK, leaseJobExecutionViewResponse{Assigned: false, Message: failMsg})
 		return
 	}
-	jobResponse := jobViewFromProtocol(*job)
-	writeJSON(w, http.StatusOK, leaseJobViewResponse{Assigned: true, Job: &jobResponse})
+	jobResponse := jobExecutionViewFromProtocol(*job)
+	writeJSON(w, http.StatusOK, leaseJobExecutionViewResponse{Assigned: true, JobExecution: &jobResponse})
 }

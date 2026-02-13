@@ -32,7 +32,7 @@ func newVaultTokenCache() *vaultTokenCache {
 	return &vaultTokenCache{byConn: map[int64]vaultTokenState{}}
 }
 
-func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.Job) error {
+func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExecution) error {
 	if job == nil || len(job.Env) == 0 {
 		return nil
 	}

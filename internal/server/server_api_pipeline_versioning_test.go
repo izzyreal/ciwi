@@ -134,13 +134,13 @@ pipelines:
 		t.Fatalf("build run status=%d body=%s", buildRunResp.StatusCode, readBody(t, buildRunResp))
 	}
 	var buildRun struct {
-		JobIDs []string `json:"job_ids"`
+		JobExecutionIDs []string `json:"job_execution_ids"`
 	}
 	decodeJSONBody(t, buildRunResp, &buildRun)
-	if len(buildRun.JobIDs) != 1 {
+	if len(buildRun.JobExecutionIDs) != 1 {
 		t.Fatalf("expected 1 build job")
 	}
-	buildJobID := buildRun.JobIDs[0]
+	buildJobID := buildRun.JobExecutionIDs[0]
 
 	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
 	if jobsResp.StatusCode != http.StatusOK {
@@ -153,7 +153,7 @@ pipelines:
 				Ref string `json:"ref"`
 			} `json:"source"`
 			Metadata map[string]string `json:"metadata"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, jobsResp, &jobsPayload)
 	var buildMeta map[string]string
@@ -187,10 +187,10 @@ pipelines:
 		t.Fatalf("release run status=%d body=%s", releaseRunResp.StatusCode, readBody(t, releaseRunResp))
 	}
 	var releaseRun struct {
-		JobIDs []string `json:"job_ids"`
+		JobExecutionIDs []string `json:"job_execution_ids"`
 	}
 	decodeJSONBody(t, releaseRunResp, &releaseRun)
-	if len(releaseRun.JobIDs) != 1 {
+	if len(releaseRun.JobExecutionIDs) != 1 {
 		t.Fatalf("expected 1 release job")
 	}
 
@@ -200,7 +200,7 @@ pipelines:
 	}
 	decodeJSONBody(t, jobsResp, &jobsPayload)
 	for _, j := range jobsPayload.Jobs {
-		if j.ID != releaseRun.JobIDs[0] {
+		if j.ID != releaseRun.JobExecutionIDs[0] {
 			continue
 		}
 		if got := j.Metadata["pipeline_version"]; got != "v1.2.3" {

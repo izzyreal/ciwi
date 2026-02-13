@@ -1,6 +1,6 @@
 package server
 
-const uiIndexJobsJS = `
+const uiIndexJobExecutionsJS = `
     function normalizeSummaryGroups(rawGroups, fallbackCount) {
       if (Array.isArray(rawGroups) && rawGroups.length > 0) {
         return rawGroups.map((g, idx) => {
@@ -108,7 +108,7 @@ const uiIndexJobsJS = `
           '&offset=' + String(offset) +
           '&limit=' + String(JOBS_BATCH_SIZE));
         if (epoch !== jobsRenderEpoch) return null;
-        const jobs = data.job_executions || data.jobs || [];
+        const jobs = data.job_executions || [];
         out.push(...jobs);
       }
       return out;

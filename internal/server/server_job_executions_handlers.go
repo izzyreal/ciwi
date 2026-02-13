@@ -11,20 +11,20 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-type jobDisplayGroupSummary struct {
+type jobExecutionDisplayGroupSummary struct {
 	Key         string `json:"key"`
 	RunID       string `json:"run_id,omitempty"`
 	JobCount    int    `json:"job_count"`
 	Collapsible bool   `json:"collapsible"`
 }
 
-func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
+func (s *stateStore) jobExecutionsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		view := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("view")))
-		maxJobs := parseJobsQueryInt(r, "max", 150, 1, 2000)
+		maxJobs := parseJobExecutionsQueryInt(r, "max", 150, 1, 2000)
 
-		jobs, err := s.db.ListJobs()
+		jobs, err := s.db.ListJobExecutions()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -33,12 +33,12 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 			jobs = jobs[:maxJobs]
 		}
 
-		queuedJobs, historyJobs := splitJobsByState(jobs)
+		queuedJobs, historyJobs := splitJobExecutionsByState(jobs)
 		switch view {
 		case "summary":
-			queuedGroups := summarizeJobDisplayGroups(queuedJobs)
-			historyGroups := summarizeJobDisplayGroups(historyJobs)
-			writeJSON(w, http.StatusOK, jobsSummaryViewResponse{
+			queuedGroups := summarizeJobExecutionDisplayGroups(queuedJobs)
+			historyGroups := summarizeJobExecutionDisplayGroups(historyJobs)
+			writeJSON(w, http.StatusOK, jobExecutionsSummaryViewResponse{
 				View:              "summary",
 				Max:               maxJobs,
 				Total:             len(jobs),
@@ -55,45 +55,44 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 			if view == "history" {
 				source = historyJobs
 			}
-			offset := parseJobsQueryInt(r, "offset", 0, 0, 1_000_000)
-			limit := parseJobsQueryInt(r, "limit", 25, 1, 200)
-			page := paginateJobs(source, offset, limit)
-			s.attachTestSummaries(page)
-			s.attachUnmetRequirements(page)
-			pageViews := jobViewsFromProtocol(page)
-			writeJSON(w, http.StatusOK, jobsPagedViewResponse{
+			offset := parseJobExecutionsQueryInt(r, "offset", 0, 0, 1_000_000)
+			limit := parseJobExecutionsQueryInt(r, "limit", 25, 1, 200)
+			page := paginateJobExecutions(source, offset, limit)
+			s.attachJobExecutionTestSummaries(page)
+			s.attachJobExecutionUnmetRequirements(page)
+			pageViews := jobExecutionViewsFromProtocol(page)
+			writeJSON(w, http.StatusOK, jobExecutionsPagedViewResponse{
 				View:          view,
 				Total:         len(source),
 				Offset:        offset,
 				Limit:         limit,
 				JobExecutions: pageViews,
-				Jobs:          pageViews,
 			})
 			return
 		}
 
-		s.attachTestSummaries(jobs)
-		s.attachUnmetRequirements(jobs)
-		jobsViews := jobViewsFromProtocol(jobs)
-		writeJSON(w, http.StatusOK, jobsListViewResponse{JobExecutions: jobsViews, Jobs: jobsViews})
+		s.attachJobExecutionTestSummaries(jobs)
+		s.attachJobExecutionUnmetRequirements(jobs)
+		jobsViews := jobExecutionViewsFromProtocol(jobs)
+		writeJSON(w, http.StatusOK, jobExecutionsListViewResponse{JobExecutions: jobsViews})
 	case http.MethodPost:
-		var req protocol.CreateJobRequest
+		var req protocol.CreateJobExecutionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON body", http.StatusBadRequest)
 			return
 		}
-		job, err := s.db.CreateJob(req)
+		job, err := s.db.CreateJobExecution(req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, createJobViewResponse{Job: jobViewFromProtocol(job)})
+		writeJSON(w, http.StatusCreated, createJobExecutionViewResponse{JobExecution: jobExecutionViewFromProtocol(job)})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func parseJobsQueryInt(r *http.Request, key string, fallback, min, max int) int {
+func parseJobExecutionsQueryInt(r *http.Request, key string, fallback, min, max int) int {
 	raw := strings.TrimSpace(r.URL.Query().Get(key))
 	if raw == "" {
 		return fallback
@@ -111,11 +110,11 @@ func parseJobsQueryInt(r *http.Request, key string, fallback, min, max int) int 
 	return v
 }
 
-func splitJobsByState(jobs []protocol.Job) (queued []protocol.Job, history []protocol.Job) {
-	queued = make([]protocol.Job, 0, len(jobs))
-	history = make([]protocol.Job, 0, len(jobs))
+func splitJobExecutionsByState(jobs []protocol.JobExecution) (queued []protocol.JobExecution, history []protocol.JobExecution) {
+	queued = make([]protocol.JobExecution, 0, len(jobs))
+	history = make([]protocol.JobExecution, 0, len(jobs))
 	for _, job := range jobs {
-		if protocol.IsActiveJobStatus(job.Status) {
+		if protocol.IsActiveJobExecutionStatus(job.Status) {
 			queued = append(queued, job)
 			continue
 		}
@@ -124,7 +123,7 @@ func splitJobsByState(jobs []protocol.Job) (queued []protocol.Job, history []pro
 	return queued, history
 }
 
-func summarizeJobDisplayGroups(jobs []protocol.Job) []jobDisplayGroupSummary {
+func summarizeJobExecutionDisplayGroups(jobs []protocol.JobExecution) []jobExecutionDisplayGroupSummary {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -137,7 +136,7 @@ func summarizeJobDisplayGroups(jobs []protocol.Job) []jobDisplayGroupSummary {
 		byRunCount[runID]++
 	}
 
-	out := make([]jobDisplayGroupSummary, 0, len(jobs))
+	out := make([]jobExecutionDisplayGroupSummary, 0, len(jobs))
 	seenRunIDs := map[string]struct{}{}
 	for _, job := range jobs {
 		jobID := strings.TrimSpace(job.ID)
@@ -146,7 +145,7 @@ func summarizeJobDisplayGroups(jobs []protocol.Job) []jobDisplayGroupSummary {
 			if jobID == "" {
 				continue
 			}
-			out = append(out, jobDisplayGroupSummary{
+			out = append(out, jobExecutionDisplayGroupSummary{
 				Key:         "job:" + jobID,
 				JobCount:    1,
 				Collapsible: false,
@@ -157,7 +156,7 @@ func summarizeJobDisplayGroups(jobs []protocol.Job) []jobDisplayGroupSummary {
 			continue
 		}
 		seenRunIDs[runID] = struct{}{}
-		out = append(out, jobDisplayGroupSummary{
+		out = append(out, jobExecutionDisplayGroupSummary{
 			Key:         "run:" + runID,
 			RunID:       runID,
 			JobCount:    byRunCount[runID],
@@ -167,18 +166,18 @@ func summarizeJobDisplayGroups(jobs []protocol.Job) []jobDisplayGroupSummary {
 	return out
 }
 
-func paginateJobs(jobs []protocol.Job, offset, limit int) []protocol.Job {
+func paginateJobExecutions(jobs []protocol.JobExecution, offset, limit int) []protocol.JobExecution {
 	if offset >= len(jobs) {
-		return []protocol.Job{}
+		return []protocol.JobExecution{}
 	}
 	end := offset + limit
 	if end > len(jobs) {
 		end = len(jobs)
 	}
-	return append([]protocol.Job(nil), jobs[offset:end]...)
+	return append([]protocol.JobExecution(nil), jobs[offset:end]...)
 }
 
-func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
+func (s *stateStore) jobExecutionByIDHandler(w http.ResponseWriter, r *http.Request) {
 	rel := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
 	if rel == "" {
 		http.NotFound(w, r)
@@ -190,17 +189,17 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 1 {
 		switch r.Method {
 		case http.MethodGet:
-			job, err := s.db.GetJob(jobID)
+			job, err := s.db.GetJobExecution(jobID)
 			if err != nil {
 				http.Error(w, "job not found", http.StatusNotFound)
 				return
 			}
-			s.attachTestSummary(&job)
-			s.attachUnmetRequirementsToJob(&job)
-			jobResponse := jobViewFromProtocol(job)
-			writeJSON(w, http.StatusOK, jobPairViewResponse{JobExecution: jobResponse, Job: jobResponse})
+			s.attachJobExecutionTestSummary(&job)
+			s.attachJobExecutionUnmetRequirementsToJobExecution(&job)
+			jobResponse := jobExecutionViewFromProtocol(job)
+			writeJSON(w, http.StatusOK, jobExecutionViewResponse{JobExecution: jobResponse})
 		case http.MethodDelete:
-			err := s.db.DeleteQueuedJob(jobID)
+			err := s.db.DeleteQueuedJobExecution(jobID)
 			if err != nil {
 				if strings.Contains(err.Error(), "not found") {
 					http.Error(w, err.Error(), http.StatusNotFound)
@@ -209,7 +208,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
-			writeJSON(w, http.StatusOK, deleteJobViewResponse{Deleted: true, JobID: jobID})
+			writeJSON(w, http.StatusOK, deleteJobExecutionViewResponse{Deleted: true, JobExecutionID: jobID})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -221,12 +220,12 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		job, err := s.db.GetJob(jobID)
+		job, err := s.db.GetJobExecution(jobID)
 		if err != nil {
 			http.Error(w, "job not found", http.StatusNotFound)
 			return
 		}
-		if !protocol.IsActiveJobStatus(job.Status) {
+		if !protocol.IsActiveJobExecutionStatus(job.Status) {
 			http.Error(w, "job is not active", http.StatusConflict)
 			return
 		}
@@ -239,9 +238,9 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			output += "\n"
 		}
 		output += "[control] job force-failed from UI"
-		updated, err := s.db.UpdateJobStatus(jobID, protocol.JobStatusUpdateRequest{
+		updated, err := s.db.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:      agentID,
-			Status:       protocol.JobStatusFailed,
+			Status:       protocol.JobExecutionStatusFailed,
 			Error:        "force-failed from UI",
 			Output:       output,
 			TimestampUTC: time.Now().UTC(),
@@ -250,8 +249,8 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		updatedResponse := jobViewFromProtocol(updated)
-		writeJSON(w, http.StatusOK, jobPairViewResponse{JobExecution: updatedResponse, Job: updatedResponse})
+		updatedResponse := jobExecutionViewFromProtocol(updated)
+		writeJSON(w, http.StatusOK, jobExecutionViewResponse{JobExecution: updatedResponse})
 		return
 	}
 
@@ -260,7 +259,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		var req protocol.JobStatusUpdateRequest
+		var req protocol.JobExecutionStatusUpdateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON body", http.StatusBadRequest)
 			return
@@ -273,7 +272,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "status must be running, succeeded or failed", http.StatusBadRequest)
 			return
 		}
-		job, err := s.db.UpdateJobStatus(jobID, req)
+		job, err := s.db.UpdateJobExecutionStatus(jobID, req)
 		if err != nil {
 			if strings.Contains(err.Error(), "another agent") {
 				http.Error(w, err.Error(), http.StatusConflict)
@@ -282,30 +281,30 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if patch := parseBuildMetadataFromOutput(req.Output); len(patch) > 0 {
-			if merged, err := s.db.MergeJobMetadata(jobID, patch); err == nil {
+		if patch := parseJobExecutionBuildMetadataFromOutput(req.Output); len(patch) > 0 {
+			if merged, err := s.db.MergeJobExecutionMetadata(jobID, patch); err == nil {
 				job.Metadata = merged
 			}
 		}
 		// Status updates are a liveness signal while an agent is busy.
 		s.markAgentSeen(req.AgentID, req.TimestampUTC)
-		writeJSON(w, http.StatusOK, jobSingleViewResponse{Job: jobViewFromProtocol(job)})
+		writeJSON(w, http.StatusOK, jobExecutionViewResponse{JobExecution: jobExecutionViewFromProtocol(job)})
 		return
 	}
 
 	if len(parts) == 2 && parts[1] == "artifacts" {
 		switch r.Method {
 		case http.MethodGet:
-			artifacts, err := s.db.ListJobArtifacts(jobID)
+			artifacts, err := s.db.ListJobExecutionArtifacts(jobID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			artifacts = appendSyntheticTestReportArtifact(s.artifactsDir, jobID, artifacts)
+			artifacts = appendSyntheticJobExecutionTestReportArtifact(s.artifactsDir, jobID, artifacts)
 			for i := range artifacts {
 				artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
 			}
-			writeJSON(w, http.StatusOK, protocol.JobArtifactsResponse{Artifacts: artifacts})
+			writeJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
 		case http.MethodPost:
 			var req protocol.UploadArtifactsRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -316,7 +315,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "agent_id is required", http.StatusBadRequest)
 				return
 			}
-			job, err := s.db.GetJob(jobID)
+			job, err := s.db.GetJobExecution(jobID)
 			if err != nil {
 				http.Error(w, "job not found", http.StatusNotFound)
 				return
@@ -326,12 +325,12 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			artifacts, err := s.persistArtifacts(jobID, req.Artifacts)
+			artifacts, err := s.persistJobExecutionArtifacts(jobID, req.Artifacts)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			if err := s.db.SaveJobArtifacts(jobID, artifacts); err != nil {
+			if err := s.db.SaveJobExecutionArtifacts(jobID, artifacts); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -340,7 +339,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			// Artifact upload traffic confirms the agent is alive.
 			s.markAgentSeen(req.AgentID, time.Now().UTC())
-			writeJSON(w, http.StatusOK, protocol.JobArtifactsResponse{Artifacts: artifacts})
+			writeJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -350,16 +349,16 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 && parts[1] == "tests" {
 		switch r.Method {
 		case http.MethodGet:
-			report, found, err := s.db.GetJobTestReport(jobID)
+			report, found, err := s.db.GetJobExecutionTestReport(jobID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			if !found {
-				writeJSON(w, http.StatusOK, protocol.JobTestReportResponse{})
+				writeJSON(w, http.StatusOK, protocol.JobExecutionTestReportResponse{})
 				return
 			}
-			writeJSON(w, http.StatusOK, protocol.JobTestReportResponse{Report: report})
+			writeJSON(w, http.StatusOK, protocol.JobExecutionTestReportResponse{Report: report})
 		case http.MethodPost:
 			var req protocol.UploadTestReportRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -370,7 +369,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "agent_id is required", http.StatusBadRequest)
 				return
 			}
-			job, err := s.db.GetJob(jobID)
+			job, err := s.db.GetJobExecution(jobID)
 			if err != nil {
 				http.Error(w, "job not found", http.StatusNotFound)
 				return
@@ -379,17 +378,17 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "job is leased by another agent", http.StatusConflict)
 				return
 			}
-			if err := s.db.SaveJobTestReport(jobID, req.Report); err != nil {
+			if err := s.db.SaveJobExecutionTestReport(jobID, req.Report); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			if err := s.persistTestReportArtifact(jobID, req.Report); err != nil {
+			if err := s.persistJobExecutionTestReportArtifact(jobID, req.Report); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			// Test report upload is also a liveness signal.
 			s.markAgentSeen(req.AgentID, time.Now().UTC())
-			writeJSON(w, http.StatusOK, protocol.JobTestReportResponse{Report: req.Report})
+			writeJSON(w, http.StatusOK, protocol.JobExecutionTestReportResponse{Report: req.Report})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -399,28 +398,28 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func (s *stateStore) clearQueueHandler(w http.ResponseWriter, r *http.Request) {
+func (s *stateStore) clearJobExecutionQueueHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	n, err := s.db.ClearQueuedJobs()
+	n, err := s.db.ClearQueuedJobExecutions()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, clearQueueViewResponse{Cleared: n})
+	writeJSON(w, http.StatusOK, clearJobExecutionQueueViewResponse{Cleared: n})
 }
 
-func (s *stateStore) flushHistoryHandler(w http.ResponseWriter, r *http.Request) {
+func (s *stateStore) flushJobExecutionHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	n, err := s.db.FlushJobHistory()
+	n, err := s.db.FlushJobExecutionHistory()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, flushHistoryViewResponse{Flushed: n})
+	writeJSON(w, http.StatusOK, flushJobExecutionHistoryViewResponse{Flushed: n})
 }

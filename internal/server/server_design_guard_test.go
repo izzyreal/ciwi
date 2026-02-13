@@ -13,9 +13,9 @@ func TestDesignGuardGoCodeAvoidsRawJobStatusLiterals(t *testing.T) {
 	root := repoRootFromServerTests(t)
 	files := []string{
 		"internal/server/server_agents.go",
-		"internal/server/server_job_views.go",
+		"internal/server/server_job_execution_views.go",
 		"internal/agent/agent_exec.go",
-		"internal/store/sqlite_jobs.go",
+		"internal/store/sqlite_job_executions.go",
 	}
 	forbidden := []string{
 		`"queued"`,
@@ -40,10 +40,10 @@ func TestDesignGuardGoCodeAvoidsRawJobStatusLiterals(t *testing.T) {
 func TestDesignGuardUIJobsUseSharedStatusHelpers(t *testing.T) {
 	root := repoRootFromServerTests(t)
 	files := []string{
-		"internal/server/ui_job.go",
+		"internal/server/ui_job_execution.go",
 		"internal/server/ui_pages.go",
 		"internal/server/ui_agent.go",
-		"internal/server/ui_index_js_jobs.go",
+		"internal/server/ui_index_js_job_executions.go",
 	}
 	directJobStatusComparison := regexp.MustCompile(`(?:\bstatus\b|\.status\b|normalizedJobStatus\s*\([^)]*\))\s*(?:===|==)\s*['"](queued|leased|running|succeeded|failed)['"]`)
 
@@ -131,12 +131,12 @@ func TestDesignGuardInfoHandlersAvoidInlineMapResponses(t *testing.T) {
 
 func TestDesignGuardJobHandlersAvoidUntypedJSONMaps(t *testing.T) {
 	root := repoRootFromServerTests(t)
-	source := mustReadRepoFile(t, root, "internal/server/server_jobs_handlers.go")
+	source := mustReadRepoFile(t, root, "internal/server/server_job_executions_handlers.go")
 	lines := literalLineNumbers(source, "map[string]any{")
 	if len(lines) == 0 {
 		return
 	}
-	t.Errorf("internal/server/server_jobs_handlers.go contains untyped map JSON response literals at lines %v; use typed response DTOs", lines)
+	t.Errorf("internal/server/server_job_executions_handlers.go contains untyped map JSON response literals at lines %v; use typed response DTOs", lines)
 }
 
 func repoRootFromServerTests(t *testing.T) string {

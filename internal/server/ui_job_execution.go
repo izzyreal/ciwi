@@ -1,6 +1,6 @@
 package server
 
-const jobHTML = `<!doctype html>
+const jobExecutionHTML = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -94,7 +94,7 @@ const jobHTML = `<!doctype html>
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
 
-    function jobIdFromPath() {
+    function jobExecutionIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
       return parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
     }
@@ -107,7 +107,7 @@ const jobHTML = `<!doctype html>
       return parsed;
     }
 
-    function computeJobDuration(startTs, finishTs, status) {
+    function computeJobExecutionDuration(startTs, finishTs, status) {
       const start = parseOptionalTimestamp(startTs);
       if (!start) return null;
       const running = isRunningJobStatus(status);
@@ -122,8 +122,8 @@ const jobHTML = `<!doctype html>
       };
     }
 
-    function formatJobDuration(startTs, finishTs, status) {
-      const duration = computeJobDuration(startTs, finishTs, status);
+    function formatJobExecutionDuration(startTs, finishTs, status) {
+      const duration = computeJobExecutionDuration(startTs, finishTs, status);
       if (!duration) return '';
       const core = formatDurationMs(duration.ms);
       if (!core) return '';
@@ -145,12 +145,12 @@ const jobHTML = `<!doctype html>
       link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
     }
 
-    async function loadJob(force) {
+    async function loadJobExecution(force) {
       if (refreshInFlight || (!force && refreshGuard.shouldPause())) {
         return;
       }
       refreshInFlight = true;
-      const jobId = jobIdFromPath();
+      const jobId = jobExecutionIdFromPath();
       if (!jobId) {
         document.getElementById('subtitle').textContent = 'Missing job id';
         refreshInFlight = false;
@@ -164,7 +164,7 @@ const jobHTML = `<!doctype html>
           return;
         }
         const data = await res.json();
-        const job = data.job_execution || data.job;
+        const job = data.job_execution || {};
 
         const desc = jobDescription(job);
         document.getElementById('jobTitle').textContent = desc;
@@ -178,7 +178,7 @@ const jobHTML = `<!doctype html>
           { label: 'Agent', value: escapeHtml(job.leased_by_agent_id || '') },
           { label: 'Created', value: escapeHtml(formatTimestamp(job.created_utc)) },
           { label: 'Started', value: escapeHtml(formatTimestamp(job.started_utc)) },
-          { label: 'Duration', value: escapeHtml(formatJobDuration(job.started_utc, job.finished_utc, job.status)) },
+          { label: 'Duration', value: escapeHtml(formatJobExecutionDuration(job.started_utc, job.finished_utc, job.status)) },
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
 
@@ -213,7 +213,7 @@ const jobHTML = `<!doctype html>
             if (!fres.ok) {
               throw new Error(await fres.text() || ('HTTP ' + fres.status));
             }
-            await loadJob(true);
+            await loadJobExecution(true);
           } catch (e) {
             alert('Force fail failed: ' + e.message);
           } finally {
@@ -347,8 +347,8 @@ const jobHTML = `<!doctype html>
 
     setBackLink();
     refreshGuard.bindSelectionListener();
-    loadJob(true);
-    setInterval(() => loadJob(false), 500);
+    loadJobExecution(true);
+    setInterval(() => loadJobExecution(false), 500);
   </script>
 </body>
 </html>`

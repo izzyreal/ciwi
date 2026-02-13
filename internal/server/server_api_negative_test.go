@@ -93,7 +93,7 @@ func TestServerStatusAndRunSelectionValidation(t *testing.T) {
 	var createPayload struct {
 		Job struct {
 			ID string `json:"id"`
-		} `json:"job"`
+		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, createResp, &createPayload)
 

@@ -36,9 +36,9 @@ func TestServerLeaseRejectsAgentWithActiveJob(t *testing.T) {
 	if lease1.StatusCode != http.StatusOK {
 		t.Fatalf("lease1 status=%d body=%s", lease1.StatusCode, readBody(t, lease1))
 	}
-	var l1 protocol.LeaseJobResponse
+	var l1 protocol.LeaseJobExecutionResponse
 	decodeJSONBody(t, lease1, &l1)
-	if !l1.Assigned || l1.Job == nil {
+	if !l1.Assigned || l1.JobExecution == nil {
 		t.Fatalf("expected first lease assigned, got %+v", l1)
 	}
 
@@ -49,7 +49,7 @@ func TestServerLeaseRejectsAgentWithActiveJob(t *testing.T) {
 	if lease2.StatusCode != http.StatusOK {
 		t.Fatalf("lease2 status=%d body=%s", lease2.StatusCode, readBody(t, lease2))
 	}
-	var l2 protocol.LeaseJobResponse
+	var l2 protocol.LeaseJobExecutionResponse
 	decodeJSONBody(t, lease2, &l2)
 	if l2.Assigned {
 		t.Fatalf("expected second lease to be rejected while active job exists")
@@ -75,7 +75,7 @@ func TestServerForceFailActiveJob(t *testing.T) {
 	var createPayload struct {
 		Job struct {
 			ID string `json:"id"`
-		} `json:"job"`
+		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, createResp, &createPayload)
 	jobID := createPayload.Job.ID
@@ -102,7 +102,7 @@ func TestServerForceFailActiveJob(t *testing.T) {
 			Status string `json:"status"`
 			Error  string `json:"error"`
 			Output string `json:"output"`
-		} `json:"job"`
+		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, ffResp, &ffPayload)
 	if ffPayload.Job.Status != "failed" {

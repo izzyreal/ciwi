@@ -51,7 +51,7 @@ func (s *stateStore) uiHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	case strings.HasPrefix(r.URL.Path, "/jobs/"):
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(jobHTML))
+		_, _ = w.Write([]byte(jobExecutionHTML))
 		return
 	default:
 		http.NotFound(w, r)

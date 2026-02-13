@@ -40,8 +40,8 @@ func newTestHTTPServerWithUI(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v1/projects", s.listProjectsHandler)
 	mux.HandleFunc("/api/v1/projects/import", s.importProjectHandler)
 	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)
-	mux.HandleFunc("/api/v1/jobs", s.jobsHandler)
-	mux.HandleFunc("/api/v1/jobs/", s.jobByIDHandler)
+	mux.HandleFunc("/api/v1/jobs", s.jobExecutionsHandler)
+	mux.HandleFunc("/api/v1/jobs/", s.jobExecutionByIDHandler)
 	mux.HandleFunc("/api/v1/pipelines/", s.pipelineByIDHandler)
 	mux.HandleFunc("/api/v1/vault/connections", s.vaultConnectionsHandler)
 	mux.HandleFunc("/api/v1/vault/connections/", s.vaultConnectionByIDHandler)
@@ -265,7 +265,7 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 	var jobsPayload struct {
 		Jobs []struct {
 			ID string `json:"id"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
 	if jobsResp.StatusCode != http.StatusOK {
@@ -280,8 +280,8 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 	if jobResp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /jobs/{id} status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
 	}
-	jobHTML := readBody(t, jobResp)
-	requireContainsAll(t, jobHTML, "job page",
+	jobExecutionHTML := readBody(t, jobResp)
+	requireContainsAll(t, jobExecutionHTML, "job page",
 		`id="jobTitle"`,
 		`id="subtitle"`,
 		`id="metaGrid"`,
@@ -299,5 +299,5 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 		"/force-fail",
 		"formatBytes(",
 	)
-	requireNotContainsAll(t, jobHTML, "job page", "0001-01-01T00:00:00")
+	requireNotContainsAll(t, jobExecutionHTML, "job page", "0001-01-01T00:00:00")
 }

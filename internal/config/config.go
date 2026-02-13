@@ -40,7 +40,7 @@ type Pipeline struct {
 	DependsOn  []string            `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
 	Source     Source              `yaml:"source" json:"source"`
 	Versioning *PipelineVersioning `yaml:"versioning,omitempty" json:"versioning,omitempty"`
-	Jobs       []Job               `yaml:"jobs" json:"jobs"`
+	Jobs       []PipelineJobSpec   `yaml:"jobs" json:"jobs"`
 }
 
 type PipelineVersioning struct {
@@ -54,28 +54,28 @@ type Source struct {
 	Ref  string `yaml:"ref" json:"ref"`
 }
 
-type Job struct {
-	ID             string            `yaml:"id" json:"id"`
-	RunsOn         map[string]string `yaml:"runs_on" json:"runs_on"`
-	Requires       Requires          `yaml:"requires,omitempty" json:"requires,omitempty"`
-	TimeoutSeconds int               `yaml:"timeout_seconds" json:"timeout_seconds"`
-	Artifacts      []string          `yaml:"artifacts" json:"artifacts"`
-	Caches         []JobCache        `yaml:"caches,omitempty" json:"caches,omitempty"`
-	Matrix         Matrix            `yaml:"matrix" json:"matrix"`
-	Steps          []Step            `yaml:"steps" json:"steps"`
+type PipelineJobSpec struct {
+	ID             string                  `yaml:"id" json:"id"`
+	RunsOn         map[string]string       `yaml:"runs_on" json:"runs_on"`
+	Requires       PipelineJobRequirements `yaml:"requires,omitempty" json:"requires,omitempty"`
+	TimeoutSeconds int                     `yaml:"timeout_seconds" json:"timeout_seconds"`
+	Artifacts      []string                `yaml:"artifacts" json:"artifacts"`
+	Caches         []PipelineJobCacheSpec  `yaml:"caches,omitempty" json:"caches,omitempty"`
+	Matrix         PipelineJobMatrix       `yaml:"matrix" json:"matrix"`
+	Steps          []PipelineJobStep       `yaml:"steps" json:"steps"`
 }
 
-type JobCache struct {
-	ID          string      `yaml:"id" json:"id"`
-	Env         string      `yaml:"env,omitempty" json:"env,omitempty"`
-	Key         JobCacheKey `yaml:"key,omitempty" json:"key,omitempty"`
-	RestoreKeys []string    `yaml:"restore_keys,omitempty" json:"restore_keys,omitempty"`
-	Policy      string      `yaml:"policy,omitempty" json:"policy,omitempty"`
-	TTLDays     int         `yaml:"ttl_days,omitempty" json:"ttl_days,omitempty"`
-	MaxSizeMB   int         `yaml:"max_size_mb,omitempty" json:"max_size_mb,omitempty"`
+type PipelineJobCacheSpec struct {
+	ID          string                  `yaml:"id" json:"id"`
+	Env         string                  `yaml:"env,omitempty" json:"env,omitempty"`
+	Key         PipelineJobCacheKeySpec `yaml:"key,omitempty" json:"key,omitempty"`
+	RestoreKeys []string                `yaml:"restore_keys,omitempty" json:"restore_keys,omitempty"`
+	Policy      string                  `yaml:"policy,omitempty" json:"policy,omitempty"`
+	TTLDays     int                     `yaml:"ttl_days,omitempty" json:"ttl_days,omitempty"`
+	MaxSizeMB   int                     `yaml:"max_size_mb,omitempty" json:"max_size_mb,omitempty"`
 }
 
-type JobCacheKey struct {
+type PipelineJobCacheKeySpec struct {
 	Prefix  string   `yaml:"prefix,omitempty" json:"prefix,omitempty"`
 	Files   []string `yaml:"files,omitempty" json:"files,omitempty"`
 	Runtime []string `yaml:"runtime,omitempty" json:"runtime,omitempty"`
@@ -83,21 +83,21 @@ type JobCacheKey struct {
 	Env     []string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
-type Requires struct {
+type PipelineJobRequirements struct {
 	Tools map[string]string `yaml:"tools,omitempty" json:"tools,omitempty"`
 }
 
-type Matrix struct {
+type PipelineJobMatrix struct {
 	Include []map[string]string `yaml:"include" json:"include"`
 }
 
-type Step struct {
-	Run  string            `yaml:"run,omitempty" json:"run,omitempty"`
-	Test *TestStep         `yaml:"test,omitempty" json:"test,omitempty"`
-	Env  map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+type PipelineJobStep struct {
+	Run  string               `yaml:"run,omitempty" json:"run,omitempty"`
+	Test *PipelineJobTestStep `yaml:"test,omitempty" json:"test,omitempty"`
+	Env  map[string]string    `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
-type TestStep struct {
+type PipelineJobTestStep struct {
 	Name    string `yaml:"name,omitempty" json:"name,omitempty"`
 	Command string `yaml:"command" json:"command"`
 	Format  string `yaml:"format,omitempty" json:"format,omitempty"`

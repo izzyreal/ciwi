@@ -60,7 +60,7 @@ const indexHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script src="/ui/pages.js"></script>
   <script>
-` + uiIndexStateJS + uiIndexProjectsJS + uiIndexJobsJS + uiIndexBootJS + `
+` + uiIndexStateJS + uiIndexProjectsJS + uiIndexJobExecutionsJS + uiIndexBootJS + `
   </script>
 </body>
 </html>`

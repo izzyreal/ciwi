@@ -42,7 +42,7 @@ type JobCacheKey struct {
 	Env     []string `json:"env,omitempty"`
 }
 
-type CreateJobRequest struct {
+type CreateJobExecutionRequest struct {
 	Script               string            `json:"script"`
 	Env                  map[string]string `json:"env,omitempty"`
 	RequiredCapabilities map[string]string `json:"required_capabilities"`
@@ -53,44 +53,44 @@ type CreateJobRequest struct {
 	Metadata             map[string]string `json:"metadata,omitempty"`
 }
 
-type Job struct {
-	ID                   string            `json:"id"`
-	Script               string            `json:"script"`
-	Env                  map[string]string `json:"env,omitempty"`
-	RequiredCapabilities map[string]string `json:"required_capabilities"`
-	TimeoutSeconds       int               `json:"timeout_seconds"`
-	ArtifactGlobs        []string          `json:"artifact_globs,omitempty"`
-	Caches               []JobCacheSpec    `json:"caches,omitempty"`
-	Source               *SourceSpec       `json:"source,omitempty"`
-	Metadata             map[string]string `json:"metadata,omitempty"`
-	CurrentStep          string            `json:"current_step,omitempty"`
-	Status               string            `json:"status"`
-	CreatedUTC           time.Time         `json:"created_utc"`
-	StartedUTC           time.Time         `json:"started_utc,omitempty"`
-	FinishedUTC          time.Time         `json:"finished_utc,omitempty"`
-	LeasedByAgentID      string            `json:"leased_by_agent_id,omitempty"`
-	LeasedUTC            time.Time         `json:"leased_utc,omitempty"`
-	ExitCode             *int              `json:"exit_code,omitempty"`
-	Error                string            `json:"error,omitempty"`
-	Output               string            `json:"output,omitempty"`
-	TestSummary          *JobTestSummary   `json:"test_summary,omitempty"`
-	UnmetRequirements    []string          `json:"unmet_requirements,omitempty"`
-	SensitiveValues      []string          `json:"sensitive_values,omitempty"`
+type JobExecution struct {
+	ID                   string                   `json:"id"`
+	Script               string                   `json:"script"`
+	Env                  map[string]string        `json:"env,omitempty"`
+	RequiredCapabilities map[string]string        `json:"required_capabilities"`
+	TimeoutSeconds       int                      `json:"timeout_seconds"`
+	ArtifactGlobs        []string                 `json:"artifact_globs,omitempty"`
+	Caches               []JobCacheSpec           `json:"caches,omitempty"`
+	Source               *SourceSpec              `json:"source,omitempty"`
+	Metadata             map[string]string        `json:"metadata,omitempty"`
+	CurrentStep          string                   `json:"current_step,omitempty"`
+	Status               string                   `json:"status"`
+	CreatedUTC           time.Time                `json:"created_utc"`
+	StartedUTC           time.Time                `json:"started_utc,omitempty"`
+	FinishedUTC          time.Time                `json:"finished_utc,omitempty"`
+	LeasedByAgentID      string                   `json:"leased_by_agent_id,omitempty"`
+	LeasedUTC            time.Time                `json:"leased_utc,omitempty"`
+	ExitCode             *int                     `json:"exit_code,omitempty"`
+	Error                string                   `json:"error,omitempty"`
+	Output               string                   `json:"output,omitempty"`
+	TestSummary          *JobExecutionTestSummary `json:"test_summary,omitempty"`
+	UnmetRequirements    []string                 `json:"unmet_requirements,omitempty"`
+	SensitiveValues      []string                 `json:"sensitive_values,omitempty"`
 }
 
-type CreateJobResponse struct {
-	Job Job `json:"job"`
+type CreateJobExecutionResponse struct {
+	JobExecution JobExecution `json:"job_execution"`
 }
 
-type LeaseJobRequest struct {
+type LeaseJobExecutionRequest struct {
 	AgentID      string            `json:"agent_id"`
 	Capabilities map[string]string `json:"capabilities"`
 }
 
-type LeaseJobResponse struct {
-	Assigned bool   `json:"assigned"`
-	Job      *Job   `json:"job,omitempty"`
-	Message  string `json:"message,omitempty"`
+type LeaseJobExecutionResponse struct {
+	Assigned     bool          `json:"assigned"`
+	JobExecution *JobExecution `json:"job_execution,omitempty"`
+	Message      string        `json:"message,omitempty"`
 }
 
 type RunPipelineRequest struct {
@@ -99,10 +99,10 @@ type RunPipelineRequest struct {
 }
 
 type RunPipelineResponse struct {
-	ProjectName string   `json:"project_name"`
-	PipelineID  string   `json:"pipeline_id"`
-	Enqueued    int      `json:"enqueued"`
-	JobIDs      []string `json:"job_ids"`
+	ProjectName     string   `json:"project_name"`
+	PipelineID      string   `json:"pipeline_id"`
+	Enqueued        int      `json:"enqueued"`
+	JobExecutionIDs []string `json:"job_execution_ids"`
 }
 
 type LoadConfigRequest struct {
@@ -212,16 +212,16 @@ type RunPipelineSelectionRequest struct {
 	DryRun        bool   `json:"dry_run,omitempty"`
 }
 
-type JobArtifact struct {
-	ID        int64  `json:"id"`
-	JobID     string `json:"job_id"`
-	Path      string `json:"path"`
-	URL       string `json:"url"`
-	SizeBytes int64  `json:"size_bytes"`
+type JobExecutionArtifact struct {
+	ID             int64  `json:"id"`
+	JobExecutionID string `json:"job_execution_id"`
+	Path           string `json:"path"`
+	URL            string `json:"url"`
+	SizeBytes      int64  `json:"size_bytes"`
 }
 
-type JobArtifactsResponse struct {
-	Artifacts []JobArtifact `json:"artifacts"`
+type JobExecutionArtifactsResponse struct {
+	Artifacts []JobExecutionArtifact `json:"artifacts"`
 }
 
 type UploadArtifact struct {
@@ -234,7 +234,7 @@ type UploadArtifactsRequest struct {
 	Artifacts []UploadArtifact `json:"artifacts"`
 }
 
-type JobStatusUpdateRequest struct {
+type JobExecutionStatusUpdateRequest struct {
 	AgentID      string    `json:"agent_id"`
 	Status       string    `json:"status"`
 	ExitCode     *int      `json:"exit_code,omitempty"`
@@ -262,7 +262,7 @@ type TestSuiteReport struct {
 	Cases   []TestCase `json:"cases,omitempty"`
 }
 
-type JobTestReport struct {
+type JobExecutionTestReport struct {
 	Total   int               `json:"total"`
 	Passed  int               `json:"passed"`
 	Failed  int               `json:"failed"`
@@ -270,7 +270,7 @@ type JobTestReport struct {
 	Suites  []TestSuiteReport `json:"suites,omitempty"`
 }
 
-type JobTestSummary struct {
+type JobExecutionTestSummary struct {
 	Total   int `json:"total"`
 	Passed  int `json:"passed"`
 	Failed  int `json:"failed"`
@@ -278,10 +278,10 @@ type JobTestSummary struct {
 }
 
 type UploadTestReportRequest struct {
-	AgentID string        `json:"agent_id"`
-	Report  JobTestReport `json:"report"`
+	AgentID string                 `json:"agent_id"`
+	Report  JobExecutionTestReport `json:"report"`
 }
 
-type JobTestReportResponse struct {
-	Report JobTestReport `json:"report"`
+type JobExecutionTestReportResponse struct {
+	Report JobExecutionTestReport `json:"report"`
 }

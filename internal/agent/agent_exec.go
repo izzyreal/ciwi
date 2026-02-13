@@ -25,10 +25,10 @@ const (
 	shellPowerShell = "powershell"
 )
 
-func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.Job) error {
-	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.JobExecution) error {
+	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:      agentID,
-		Status:       protocol.JobStatusRunning,
+		Status:       protocol.JobExecutionStatusRunning,
 		CurrentStep:  "Preparing execution",
 		TimestampUTC: time.Now().UTC(),
 	}); err != nil {
@@ -52,16 +52,16 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 
 	var output syncBuffer
 	fmt.Fprintf(&output, "[meta] agent=%s os=%s arch=%s\n", agentID, runtime.GOOS, runtime.GOARCH)
-	fmt.Fprintf(&output, "[meta] job_id=%s timeout_seconds=%d\n", job.ID, job.TimeoutSeconds)
+	fmt.Fprintf(&output, "[meta] job_execution_id=%s timeout_seconds=%d\n", job.ID, job.TimeoutSeconds)
 
 	execDir := jobDir
 	if job.Source != nil && strings.TrimSpace(job.Source.Repo) != "" {
 		sourceDir := filepath.Join(jobDir, "src")
 		checkoutStart := time.Now()
 		fmt.Fprintf(&output, "[checkout] repo=%s ref=%s\n", job.Source.Repo, job.Source.Ref)
-		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:      agentID,
-			Status:       protocol.JobStatusRunning,
+			Status:       protocol.JobExecutionStatusRunning,
 			CurrentStep:  "Checking out source",
 			TimestampUTC: time.Now().UTC(),
 		}); err != nil {
@@ -117,9 +117,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		for _, step := range scriptSteps {
 			currentStep := formatCurrentStep(step.meta)
 			fmt.Fprintf(&output, "__CIWI_STEP_BEGIN__ index=%d total=%d name=%s\n", step.meta.index, step.meta.total, step.meta.name)
-			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 				AgentID:      agentID,
-				Status:       protocol.JobStatusRunning,
+				Status:       protocol.JobExecutionStatusRunning,
 				CurrentStep:  currentStep,
 				TimestampUTC: time.Now().UTC(),
 			}); err != nil {
@@ -170,7 +170,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 
 	trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-	testReport := protocol.JobTestReport{Suites: collectedSuites}
+	testReport := protocol.JobExecutionTestReport{Suites: collectedSuites}
 	for _, s := range collectedSuites {
 		testReport.Total += s.Total
 		testReport.Passed += s.Passed
@@ -191,9 +191,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 
 	if err == nil {
 		exitCode := 0
-		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:      agentID,
-			Status:       protocol.JobStatusSucceeded,
+			Status:       protocol.JobExecutionStatusSucceeded,
 			ExitCode:     &exitCode,
 			Output:       trimmedOutput,
 			CurrentStep:  "",
@@ -517,9 +517,9 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 				}
 				lastSent = snapshot
 				lastStep = currentStep
-				if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobStatusUpdateRequest{
+				if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobExecutionStatusUpdateRequest{
 					AgentID:      agentID,
-					Status:       protocol.JobStatusRunning,
+					Status:       protocol.JobExecutionStatusRunning,
 					Output:       snapshot,
 					CurrentStep:  currentStep,
 					TimestampUTC: time.Now().UTC(),

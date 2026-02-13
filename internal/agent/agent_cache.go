@@ -23,7 +23,7 @@ type cachePolicy struct {
 	push bool
 }
 
-func resolveJobCacheEnv(workDir, execDir string, job protocol.Job, agentCapabilities map[string]string) (map[string]string, []string) {
+func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution, agentCapabilities map[string]string) (map[string]string, []string) {
 	if len(job.Caches) == 0 {
 		return nil, nil
 	}

@@ -13,9 +13,9 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error) {
+func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.JobExecution, error) {
 	var (
-		job                                                                protocol.Job
+		job                                                                protocol.JobExecution
 		envJSON, requiredJSON, artifactGlobsJSON, cachesJSON, metadataJSON string
 		sourceRepo, sourceRef                                              sql.NullString
 		createdUTC                                                         string
@@ -29,7 +29,7 @@ func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error)
 		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON,
 		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText, &currentStepText,
 	); err != nil {
-		return protocol.Job{}, err
+		return protocol.JobExecution{}, err
 	}
 
 	_ = json.Unmarshal([]byte(envJSON), &job.Env)
@@ -243,7 +243,7 @@ func cloneJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
 	return out
 }
 
-func cloneJobCachesFromConfig(in []config.JobCache) []protocol.JobCacheSpec {
+func cloneJobCachesFromConfig(in []config.PipelineJobCacheSpec) []protocol.JobCacheSpec {
 	if len(in) == 0 {
 		return nil
 	}

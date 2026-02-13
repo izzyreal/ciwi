@@ -19,7 +19,7 @@ func (s *stateStore) checkPipelineDependenciesWithReporter(p store.PersistedPipe
 	if report != nil {
 		report("dependencies", "running", fmt.Sprintf("checking %d dependency pipeline(s)", len(p.DependsOn)))
 	}
-	jobs, err := s.db.ListJobs()
+	jobs, err := s.db.ListJobExecutions()
 	if err != nil {
 		if report != nil {
 			report("dependencies", "error", "failed to read job history: "+err.Error())
@@ -70,7 +70,7 @@ func (s *stateStore) checkPipelineDependencies(p store.PersistedPipeline) (pipel
 	return s.checkPipelineDependenciesWithReporter(p, nil)
 }
 
-func verifyDependencyRun(jobs []protocol.Job, projectName, pipelineID string) (pipelineDependencyContext, error) {
+func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID string) (pipelineDependencyContext, error) {
 	type runState struct {
 		lastCreated time.Time
 		statuses    []string
@@ -92,7 +92,7 @@ func verifyDependencyRun(jobs []protocol.Job, projectName, pipelineID string) (p
 		if j.CreatedUTC.After(st.lastCreated) {
 			st.lastCreated = j.CreatedUTC
 		}
-		st.statuses = append(st.statuses, protocol.NormalizeJobStatus(j.Status))
+		st.statuses = append(st.statuses, protocol.NormalizeJobExecutionStatus(j.Status))
 		if st.metadata == nil {
 			st.metadata = map[string]string{}
 		}
@@ -117,10 +117,10 @@ func verifyDependencyRun(jobs []protocol.Job, projectName, pipelineID string) (p
 	}
 	statuses := byRun[latestRunID].statuses
 	for _, st := range statuses {
-		if protocol.IsActiveJobStatus(st) {
+		if protocol.IsActiveJobExecutionStatus(st) {
 			return pipelineDependencyContext{}, fmt.Errorf("latest run is still in progress")
 		}
-		if st == protocol.JobStatusFailed {
+		if st == protocol.JobExecutionStatusFailed {
 			return pipelineDependencyContext{}, fmt.Errorf("latest run failed")
 		}
 	}

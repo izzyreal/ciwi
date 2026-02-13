@@ -14,7 +14,7 @@ import (
 func TestStoreLeaseJobConcurrencySingleWinner(t *testing.T) {
 	s := openTestStore(t)
 
-	job, err := s.CreateJob(protocol.CreateJobRequest{
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:               "echo hello",
 		RequiredCapabilities: map[string]string{"os": "linux", "arch": "amd64"},
 		TimeoutSeconds:       30,
@@ -32,7 +32,7 @@ func TestStoreLeaseJobConcurrencySingleWinner(t *testing.T) {
 			defer wg.Done()
 			agentID := "agent-concurrent-" + string(rune('a'+(i%26)))
 			for attempt := 0; attempt < 8; attempt++ {
-				j, leaseErr := s.LeaseJob(agentID, map[string]string{"os": "linux", "arch": "amd64"})
+				j, leaseErr := s.LeaseJobExecution(agentID, map[string]string{"os": "linux", "arch": "amd64"})
 				if leaseErr != nil {
 					if strings.Contains(strings.ToLower(leaseErr.Error()), "database is locked") {
 						time.Sleep(10 * time.Millisecond)
@@ -54,7 +54,7 @@ func TestStoreLeaseJobConcurrencySingleWinner(t *testing.T) {
 		t.Fatalf("expected exactly one lease winner, got %d", leasedCount)
 	}
 
-	got, err := s.GetJob(job.ID)
+	got, err := s.GetJobExecution(job.ID)
 	if err != nil {
 		t.Fatalf("get job: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestCapabilitiesMatchShellsList(t *testing.T) {
 func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 	s := openTestStore(t)
 
-	job, err := s.CreateJob(protocol.CreateJobRequest{
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:         "echo tests",
 		TimeoutSeconds: 30,
 	})
@@ -124,7 +124,7 @@ func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 		t.Fatalf("create job: %v", err)
 	}
 
-	report := protocol.JobTestReport{
+	report := protocol.JobExecutionTestReport{
 		Total:   2,
 		Passed:  1,
 		Failed:  1,
@@ -144,11 +144,11 @@ func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 			},
 		},
 	}
-	if err := s.SaveJobTestReport(job.ID, report); err != nil {
+	if err := s.SaveJobExecutionTestReport(job.ID, report); err != nil {
 		t.Fatalf("save test report: %v", err)
 	}
 
-	got, found, err := s.GetJobTestReport(job.ID)
+	got, found, err := s.GetJobExecutionTestReport(job.ID)
 	if err != nil {
 		t.Fatalf("get test report: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 	s := openTestStore(t)
 
-	job, err := s.CreateJob(protocol.CreateJobRequest{
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:         "echo done",
 		TimeoutSeconds: 30,
 	})
@@ -171,7 +171,7 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 		t.Fatalf("create job: %v", err)
 	}
 
-	done, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+	done, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID: "agent-1",
 		Status:  "succeeded",
 		Output:  "final output",
@@ -183,7 +183,7 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 		t.Fatalf("expected succeeded, got %q", done.Status)
 	}
 
-	got, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+	got, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID: "agent-1",
 		Status:  "running",
 		Output:  "late running output",
@@ -202,7 +202,7 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 func TestStoreAgentHasActiveJob(t *testing.T) {
 	s := openTestStore(t)
 
-	job, err := s.CreateJob(protocol.CreateJobRequest{
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:               "echo hi",
 		RequiredCapabilities: map[string]string{"os": "linux"},
 		TimeoutSeconds:       30,
@@ -211,7 +211,7 @@ func TestStoreAgentHasActiveJob(t *testing.T) {
 		t.Fatalf("create job: %v", err)
 	}
 
-	leased, err := s.LeaseJob("agent-a", map[string]string{"os": "linux"})
+	leased, err := s.LeaseJobExecution("agent-a", map[string]string{"os": "linux"})
 	if err != nil {
 		t.Fatalf("lease: %v", err)
 	}
@@ -219,23 +219,23 @@ func TestStoreAgentHasActiveJob(t *testing.T) {
 		t.Fatalf("expected leased job %q", job.ID)
 	}
 
-	active, err := s.AgentHasActiveJob("agent-a")
+	active, err := s.AgentHasActiveJobExecution("agent-a")
 	if err != nil {
-		t.Fatalf("AgentHasActiveJob leased: %v", err)
+		t.Fatalf("AgentHasActiveJobExecution leased: %v", err)
 	}
 	if !active {
 		t.Fatalf("expected active job for agent-a")
 	}
 
-	if _, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID: "agent-a",
 		Status:  "succeeded",
 	}); err != nil {
 		t.Fatalf("mark succeeded: %v", err)
 	}
-	active, err = s.AgentHasActiveJob("agent-a")
+	active, err = s.AgentHasActiveJobExecution("agent-a")
 	if err != nil {
-		t.Fatalf("AgentHasActiveJob succeeded: %v", err)
+		t.Fatalf("AgentHasActiveJobExecution succeeded: %v", err)
 	}
 	if active {
 		t.Fatalf("expected no active job after succeeded")
@@ -245,14 +245,14 @@ func TestStoreAgentHasActiveJob(t *testing.T) {
 func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 	s := openTestStore(t)
 
-	job, err := s.CreateJob(protocol.CreateJobRequest{
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:         "echo hi",
 		TimeoutSeconds: 30,
 	})
 	if err != nil {
 		t.Fatalf("create job: %v", err)
 	}
-	if _, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID: "agent-1",
 		Status:  "running",
 		Output:  "stream-1",
@@ -268,7 +268,7 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for attempt := 0; attempt < 8; attempt++ {
-			_, uerr := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+			_, uerr := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 				AgentID:  "agent-1",
 				Status:   "succeeded",
 				ExitCode: &exitCode,
@@ -288,7 +288,7 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for attempt := 0; attempt < 8; attempt++ {
-			_, uerr := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+			_, uerr := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 				AgentID: "agent-1",
 				Status:  "running",
 				Output:  "late-stream",
@@ -313,7 +313,7 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 		t.Fatalf("concurrent running update error: %v", v)
 	}
 
-	got, err := s.GetJob(job.ID)
+	got, err := s.GetJobExecution(job.ID)
 	if err != nil {
 		t.Fatalf("get job: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 	s := openTestStore(t)
 
-	job, err := s.CreateJob(protocol.CreateJobRequest{
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:         "echo hi",
 		TimeoutSeconds: 30,
 	})
@@ -336,7 +336,7 @@ func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 		t.Fatalf("create job: %v", err)
 	}
 
-	running, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+	running, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:     "agent-1",
 		Status:      "running",
 		Output:      "stream-1",
@@ -349,7 +349,7 @@ func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 		t.Fatalf("unexpected running current_step: %q", running.CurrentStep)
 	}
 
-	done, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+	done, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID: "agent-1",
 		Status:  "succeeded",
 		Output:  "done",

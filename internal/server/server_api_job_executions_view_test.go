@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestJobsViewSummaryAndPagedLists(t *testing.T) {
+func TestJobExecutionsViewSummaryAndPagedLists(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()
 
@@ -23,7 +23,7 @@ func TestJobsViewSummaryAndPagedLists(t *testing.T) {
 		var payload struct {
 			Job struct {
 				ID string `json:"id"`
-			} `json:"job"`
+			} `json:"job_execution"`
 		}
 		decodeJSONBody(t, resp, &payload)
 		if strings.TrimSpace(payload.Job.ID) == "" {
@@ -111,7 +111,7 @@ func TestJobsViewSummaryAndPagedLists(t *testing.T) {
 		Jobs  []struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, queuedResp, &queued)
 	if queued.Total != 2 {
@@ -137,7 +137,7 @@ func TestJobsViewSummaryAndPagedLists(t *testing.T) {
 		Jobs  []struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`
-		} `json:"jobs"`
+		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, historyResp, &history)
 	if history.Total != 1 {
@@ -154,7 +154,7 @@ func TestJobsViewSummaryAndPagedLists(t *testing.T) {
 	}
 }
 
-func TestJobsViewSummaryIncludesGroupedCounts(t *testing.T) {
+func TestJobExecutionsViewSummaryIncludesGroupedCounts(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()
 
@@ -177,7 +177,7 @@ func TestJobsViewSummaryIncludesGroupedCounts(t *testing.T) {
 		var payload struct {
 			Job struct {
 				ID string `json:"id"`
-			} `json:"job"`
+			} `json:"job_execution"`
 		}
 		decodeJSONBody(t, resp, &payload)
 		return payload.Job.ID

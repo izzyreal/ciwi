@@ -10,12 +10,12 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
+func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error) {
 	if strings.TrimSpace(req.Script) == "" {
-		return protocol.Job{}, fmt.Errorf("script is required")
+		return protocol.JobExecution{}, fmt.Errorf("script is required")
 	}
 	if req.TimeoutSeconds < 0 {
-		return protocol.Job{}, fmt.Errorf("timeout_seconds must be >= 0")
+		return protocol.JobExecution{}, fmt.Errorf("timeout_seconds must be >= 0")
 	}
 
 	now := time.Now().UTC()
@@ -36,11 +36,11 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	if _, err := s.db.Exec(`
 		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, status, created_utc)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), protocol.JobStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
-		return protocol.Job{}, fmt.Errorf("insert job: %w", err)
+	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), protocol.JobExecutionStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
+		return protocol.JobExecution{}, fmt.Errorf("insert job: %w", err)
 	}
 
-	return protocol.Job{
+	return protocol.JobExecution{
 		ID:                   jobID,
 		Script:               req.Script,
 		Env:                  cloneMap(req.Env),
@@ -50,12 +50,12 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 		Caches:               cloneJobCaches(req.Caches),
 		Source:               cloneSource(req.Source),
 		Metadata:             cloneMap(req.Metadata),
-		Status:               protocol.JobStatusQueued,
+		Status:               protocol.JobExecutionStatusQueued,
 		CreatedUTC:           now,
 	}, nil
 }
 
-func (s *Store) ListJobs() ([]protocol.Job, error) {
+func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
@@ -67,9 +67,9 @@ func (s *Store) ListJobs() ([]protocol.Job, error) {
 	}
 	defer rows.Close()
 
-	jobs := []protocol.Job{}
+	jobs := []protocol.JobExecution{}
 	for rows.Next() {
-		job, err := scanJob(rows)
+		job, err := scanJobExecution(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -81,24 +81,24 @@ func (s *Store) ListJobs() ([]protocol.Job, error) {
 	return jobs, nil
 }
 
-func (s *Store) GetJob(id string) (protocol.Job, error) {
+func (s *Store) GetJobExecution(id string) (protocol.JobExecution, error) {
 	row := s.db.QueryRow(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
 		FROM job_executions WHERE id = ?
 	`, id)
-	job, err := scanJob(row)
+	job, err := scanJobExecution(row)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return protocol.Job{}, fmt.Errorf("job not found")
+			return protocol.JobExecution{}, fmt.Errorf("job not found")
 		}
-		return protocol.Job{}, err
+		return protocol.JobExecution{}, err
 	}
 	return job, nil
 }
 
-func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol.Job, error) {
-	jobs, err := s.ListQueuedJobs()
+func (s *Store) LeaseJobExecution(agentID string, agentCaps map[string]string) (*protocol.JobExecution, error) {
+	jobs, err := s.ListQueuedJobExecutions()
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol
 		res, err := s.db.Exec(`
 			UPDATE job_executions SET status = ?, leased_by_agent_id = ?, leased_utc = ?
 			WHERE id = ? AND status = ?
-		`, protocol.JobStatusLeased, agentID, now, job.ID, protocol.JobStatusQueued)
+		`, protocol.JobExecutionStatusLeased, agentID, now, job.ID, protocol.JobExecutionStatusQueued)
 		if err != nil {
 			return nil, fmt.Errorf("lease job: %w", err)
 		}
@@ -121,7 +121,7 @@ func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol
 			continue
 		}
 
-		leased, err := s.GetJob(job.ID)
+		leased, err := s.GetJobExecution(job.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -131,7 +131,7 @@ func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol
 	return nil, nil
 }
 
-func (s *Store) AgentHasActiveJob(agentID string) (bool, error) {
+func (s *Store) AgentHasActiveJobExecution(agentID string) (bool, error) {
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
 		return false, fmt.Errorf("agent id is required")
@@ -142,27 +142,27 @@ func (s *Store) AgentHasActiveJob(agentID string) (bool, error) {
 		FROM job_executions
 		WHERE leased_by_agent_id = ?
 		  AND status IN (?, ?)
-	`, agentID, protocol.JobStatusLeased, protocol.JobStatusRunning).Scan(&count); err != nil {
+	`, agentID, protocol.JobExecutionStatusLeased, protocol.JobExecutionStatusRunning).Scan(&count); err != nil {
 		return false, fmt.Errorf("check active jobs for agent: %w", err)
 	}
 	return count > 0, nil
 }
 
-func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
+func (s *Store) ListQueuedJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
 		FROM job_executions WHERE status = ?
 		ORDER BY created_utc ASC
-	`, protocol.JobStatusQueued)
+	`, protocol.JobExecutionStatusQueued)
 	if err != nil {
 		return nil, fmt.Errorf("list queued jobs: %w", err)
 	}
 	defer rows.Close()
 
-	jobs := []protocol.Job{}
+	jobs := []protocol.JobExecution{}
 	for rows.Next() {
-		job, err := scanJob(rows)
+		job, err := scanJobExecution(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -174,27 +174,27 @@ func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
 	return jobs, nil
 }
 
-func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateRequest) (protocol.Job, error) {
-	job, err := s.GetJob(jobID)
+func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error) {
+	job, err := s.GetJobExecution(jobID)
 	if err != nil {
-		return protocol.Job{}, err
+		return protocol.JobExecution{}, err
 	}
 
-	reqStatus := protocol.NormalizeJobStatus(req.Status)
+	reqStatus := protocol.NormalizeJobExecutionStatus(req.Status)
 
 	// Terminal status is sticky. Ignore late running updates (for example
 	// periodic log-stream updates racing with final succeeded/failed update).
-	if protocol.IsTerminalJobStatus(job.Status) {
-		if reqStatus == protocol.JobStatusRunning {
+	if protocol.IsTerminalJobExecutionStatus(job.Status) {
+		if reqStatus == protocol.JobExecutionStatusRunning {
 			return job, nil
 		}
-		if protocol.IsTerminalJobStatus(reqStatus) && reqStatus != protocol.NormalizeJobStatus(job.Status) {
+		if protocol.IsTerminalJobExecutionStatus(reqStatus) && reqStatus != protocol.NormalizeJobExecutionStatus(job.Status) {
 			return job, nil
 		}
 	}
 
 	if job.LeasedByAgentID != "" && job.LeasedByAgentID != req.AgentID {
-		return protocol.Job{}, fmt.Errorf("job is leased by another agent")
+		return protocol.JobExecution{}, fmt.Errorf("job is leased by another agent")
 	}
 
 	now := req.TimestampUTC
@@ -213,19 +213,19 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 		currentStep = strings.TrimSpace(job.CurrentStep)
 	}
 
-	if status == protocol.JobStatusRunning && !job.StartedUTC.IsZero() {
+	if status == protocol.JobExecutionStatusRunning && !job.StartedUTC.IsZero() {
 		started = nullableTime(job.StartedUTC)
 	}
-	if status == protocol.JobStatusRunning && job.StartedUTC.IsZero() {
+	if status == protocol.JobExecutionStatusRunning && job.StartedUTC.IsZero() {
 		started = sql.NullString{String: now.Format(time.RFC3339Nano), Valid: true}
 	}
 
-	if protocol.IsTerminalJobStatus(status) {
+	if protocol.IsTerminalJobExecutionStatus(status) {
 		if job.StartedUTC.IsZero() {
 			started = sql.NullString{String: now.Format(time.RFC3339Nano), Valid: true}
 		}
 		finished = sql.NullString{String: now.Format(time.RFC3339Nano), Valid: true}
-		if status == protocol.JobStatusSucceeded {
+		if status == protocol.JobExecutionStatusSucceeded {
 			errorText = ""
 		}
 		currentStep = ""
@@ -233,14 +233,14 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 
 	where := "id = ?"
 	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output, currentStep}
-	if status == protocol.JobStatusRunning {
+	if status == protocol.JobExecutionStatusRunning {
 		// Never allow a running heartbeat/log-stream update to overwrite a terminal state.
 		where = "id = ? AND status NOT IN (?, ?)"
-		args = append(args, jobID, protocol.JobStatusSucceeded, protocol.JobStatusFailed)
-	} else if protocol.IsTerminalJobStatus(status) {
+		args = append(args, jobID, protocol.JobExecutionStatusSucceeded, protocol.JobExecutionStatusFailed)
+	} else if protocol.IsTerminalJobExecutionStatus(status) {
 		// First terminal status wins under races; later terminal writes become no-ops.
 		where = "id = ? AND status NOT IN (?, ?)"
-		args = append(args, jobID, protocol.JobStatusSucceeded, protocol.JobStatusFailed)
+		args = append(args, jobID, protocol.JobExecutionStatusSucceeded, protocol.JobExecutionStatusFailed)
 	} else {
 		args = append(args, jobID)
 	}
@@ -258,16 +258,16 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 		}
 		// SQLite can transiently reject writes under WAL contention; retry briefly.
 		if !isSQLiteBusyError(execErr) || attempt >= 2 {
-			return protocol.Job{}, fmt.Errorf("update job status: %w", execErr)
+			return protocol.JobExecution{}, fmt.Errorf("update job status: %w", execErr)
 		}
 		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		// Another concurrent writer won (typically terminal status); return latest state.
-		return s.GetJob(jobID)
+		return s.GetJobExecution(jobID)
 	}
 
-	return s.GetJob(jobID)
+	return s.GetJobExecution(jobID)
 }
 
 func isSQLiteBusyError(err error) bool {
@@ -278,12 +278,12 @@ func isSQLiteBusyError(err error) bool {
 	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "sqlite_busy")
 }
 
-func (s *Store) MergeJobMetadata(jobID string, patch map[string]string) (map[string]string, error) {
+func (s *Store) MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return nil, fmt.Errorf("job id is required")
 	}
 	if len(patch) == 0 {
-		job, err := s.GetJob(jobID)
+		job, err := s.GetJobExecution(jobID)
 		if err != nil {
 			return nil, err
 		}
@@ -330,14 +330,14 @@ func (s *Store) MergeJobMetadata(jobID string, patch map[string]string) (map[str
 	return cloneMap(meta), nil
 }
 
-func (s *Store) DeleteQueuedJob(jobID string) error {
-	res, err := s.db.Exec(`DELETE FROM job_executions WHERE id = ? AND status IN (?, ?)`, jobID, protocol.JobStatusQueued, protocol.JobStatusLeased)
+func (s *Store) DeleteQueuedJobExecution(jobID string) error {
+	res, err := s.db.Exec(`DELETE FROM job_executions WHERE id = ? AND status IN (?, ?)`, jobID, protocol.JobExecutionStatusQueued, protocol.JobExecutionStatusLeased)
 	if err != nil {
 		return fmt.Errorf("delete queued job: %w", err)
 	}
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
-		_, getErr := s.GetJob(jobID)
+		_, getErr := s.GetJobExecution(jobID)
 		if getErr != nil {
 			return fmt.Errorf("job not found")
 		}
@@ -346,8 +346,8 @@ func (s *Store) DeleteQueuedJob(jobID string) error {
 	return nil
 }
 
-func (s *Store) ClearQueuedJobs() (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM job_executions WHERE status IN (?, ?)`, protocol.JobStatusQueued, protocol.JobStatusLeased)
+func (s *Store) ClearQueuedJobExecutions() (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM job_executions WHERE status IN (?, ?)`, protocol.JobExecutionStatusQueued, protocol.JobExecutionStatusLeased)
 	if err != nil {
 		return 0, fmt.Errorf("clear queued jobs: %w", err)
 	}
@@ -355,11 +355,11 @@ func (s *Store) ClearQueuedJobs() (int64, error) {
 	return affected, nil
 }
 
-func (s *Store) FlushJobHistory() (int64, error) {
+func (s *Store) FlushJobExecutionHistory() (int64, error) {
 	res, err := s.db.Exec(`
 		DELETE FROM job_executions
 		WHERE status NOT IN (?, ?, ?)
-	`, protocol.JobStatusQueued, protocol.JobStatusLeased, protocol.JobStatusRunning)
+	`, protocol.JobExecutionStatusQueued, protocol.JobExecutionStatusLeased, protocol.JobExecutionStatusRunning)
 	if err != nil {
 		return 0, fmt.Errorf("flush job history: %w", err)
 	}
@@ -367,7 +367,7 @@ func (s *Store) FlushJobHistory() (int64, error) {
 	return affected, nil
 }
 
-func (s *Store) SaveJobArtifacts(jobID string, artifacts []protocol.JobArtifact) error {
+func (s *Store) SaveJobExecutionArtifacts(jobID string, artifacts []protocol.JobExecutionArtifact) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -394,7 +394,7 @@ func (s *Store) SaveJobArtifacts(jobID string, artifacts []protocol.JobArtifact)
 	return nil
 }
 
-func (s *Store) ListJobArtifacts(jobID string) ([]protocol.JobArtifact, error) {
+func (s *Store) ListJobExecutionArtifacts(jobID string) ([]protocol.JobExecutionArtifact, error) {
 	rows, err := s.db.Query(`
 		SELECT id, job_execution_id, path, stored_rel, size_bytes
 		FROM job_execution_artifacts
@@ -406,10 +406,10 @@ func (s *Store) ListJobArtifacts(jobID string) ([]protocol.JobArtifact, error) {
 	}
 	defer rows.Close()
 
-	artifacts := []protocol.JobArtifact{}
+	artifacts := []protocol.JobExecutionArtifact{}
 	for rows.Next() {
-		var a protocol.JobArtifact
-		if err := rows.Scan(&a.ID, &a.JobID, &a.Path, &a.URL, &a.SizeBytes); err != nil {
+		var a protocol.JobExecutionArtifact
+		if err := rows.Scan(&a.ID, &a.JobExecutionID, &a.Path, &a.URL, &a.SizeBytes); err != nil {
 			return nil, fmt.Errorf("scan artifact: %w", err)
 		}
 		artifacts = append(artifacts, a)
@@ -420,7 +420,7 @@ func (s *Store) ListJobArtifacts(jobID string) ([]protocol.JobArtifact, error) {
 	return artifacts, nil
 }
 
-func (s *Store) SaveJobTestReport(jobID string, report protocol.JobTestReport) error {
+func (s *Store) SaveJobExecutionTestReport(jobID string, report protocol.JobExecutionTestReport) error {
 	reportJSON, err := json.Marshal(report)
 	if err != nil {
 		return fmt.Errorf("marshal test report: %w", err)
@@ -436,19 +436,19 @@ func (s *Store) SaveJobTestReport(jobID string, report protocol.JobTestReport) e
 	return nil
 }
 
-func (s *Store) GetJobTestReport(jobID string) (protocol.JobTestReport, bool, error) {
+func (s *Store) GetJobExecutionTestReport(jobID string) (protocol.JobExecutionTestReport, bool, error) {
 	var reportJSON string
 	row := s.db.QueryRow(`SELECT report_json FROM job_execution_test_reports WHERE job_execution_id = ?`, jobID)
 	if err := row.Scan(&reportJSON); err != nil {
 		if err == sql.ErrNoRows {
-			return protocol.JobTestReport{}, false, nil
+			return protocol.JobExecutionTestReport{}, false, nil
 		}
-		return protocol.JobTestReport{}, false, fmt.Errorf("get test report: %w", err)
+		return protocol.JobExecutionTestReport{}, false, fmt.Errorf("get test report: %w", err)
 	}
 
-	var report protocol.JobTestReport
+	var report protocol.JobExecutionTestReport
 	if err := json.Unmarshal([]byte(reportJSON), &report); err != nil {
-		return protocol.JobTestReport{}, false, fmt.Errorf("decode test report: %w", err)
+		return protocol.JobExecutionTestReport{}, false, fmt.Errorf("decode test report: %w", err)
 	}
 	return report, true, nil
 }

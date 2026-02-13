@@ -49,4 +49,3 @@ func (s *Store) ListAppState() (map[string]string, error) {
 	}
 	return out, nil
 }
-

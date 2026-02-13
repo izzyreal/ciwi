@@ -265,7 +265,7 @@ const agentHTML = `<!doctype html>
         const res = await fetch('/api/v1/jobs/' + encodeURIComponent(jobID));
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        const job = data.job || data.job_execution || {};
+        const job = data.job_execution || {};
         renderJobOutput(job);
         const terminal = isTerminalJobStatus(job.status);
         if (terminal) {
@@ -305,10 +305,10 @@ const agentHTML = `<!doctype html>
         });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
-        const jobID = String(data.job_id || '').trim();
-        if (!jobID) throw new Error('server response missing job_id');
+        const jobID = String(data.job_execution_id || '').trim();
+        if (!jobID) throw new Error('server response missing job_execution_id');
         adhocActiveJobID = jobID;
-        adhocOutput.textContent = '[queued] job_id=' + jobID + '\n[poll] waiting for agent output...';
+        adhocOutput.textContent = '[queued] job_execution_id=' + jobID + '\n[poll] waiting for agent output...';
         pollAdhocJob(jobID);
       } catch (e) {
         adhocRunBtn.disabled = false;

@@ -209,7 +209,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 		pending[0].script = pending[0].script + "\n" + buildAutoBumpStepScript(runCtx.AutoBump)
 	}
 	for _, spec := range pending {
-		job, err := s.db.CreateJob(protocol.CreateJobRequest{
+		job, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 			Script:               spec.script,
 			Env:                  cloneMap(spec.env),
 			RequiredCapabilities: spec.requiredCaps,
@@ -229,7 +229,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
 
-	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobIDs: jobIDs}, nil
+	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobExecutionIDs: jobIDs}, nil
 }
 
 func cloneProtocolJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
@@ -261,7 +261,7 @@ func cloneProtocolJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
 	}
 }
 
-func cloneJobCachesFromPersisted(in []config.JobCache) []protocol.JobCacheSpec {
+func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.JobCacheSpec {
 	if len(in) == 0 {
 		return nil
 	}

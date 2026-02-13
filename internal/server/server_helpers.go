@@ -15,7 +15,7 @@ import (
 )
 
 func isValidUpdateStatus(status string) bool {
-	return protocol.IsValidJobUpdateStatus(status)
+	return protocol.IsValidJobExecutionUpdateStatus(status)
 }
 
 func resolveConfigPath(path string) (string, error) {

@@ -12,7 +12,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func uploadTestReport(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, report protocol.JobTestReport) error {
+func uploadTestReport(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, report protocol.JobExecutionTestReport) error {
 	body, err := json.Marshal(protocol.UploadTestReportRequest{
 		AgentID: agentID,
 		Report:  report,
@@ -38,7 +38,7 @@ func uploadTestReport(ctx context.Context, client *http.Client, serverURL, agent
 	return nil
 }
 
-func testReportSummary(report protocol.JobTestReport) string {
+func testReportSummary(report protocol.JobExecutionTestReport) string {
 	if report.Total == 0 {
 		return "[tests] none"
 	}
