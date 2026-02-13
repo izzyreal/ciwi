@@ -167,12 +167,25 @@ const jobExecutionHTML = `<!doctype html>
         const job = data.job_execution || {};
 
         const desc = jobDescription(job);
-        document.getElementById('jobTitle').textContent = desc;
+        const metaSource = (job && job.metadata) || {};
+        const projectName = String(metaSource.project || '').trim();
+        const pipelineJobID = String(metaSource.pipeline_job_id || '').trim();
+        const matrixName = String(metaSource.matrix_name || '').trim();
+        let title = pipelineJobID || desc;
+        if (pipelineJobID && matrixName) {
+          title = pipelineJobID + ' / ' + matrixName;
+        }
+        if (projectName) {
+          title = projectName + ' / ' + title;
+        }
+        document.getElementById('jobTitle').textContent = title;
 
-        const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
+        const pipeline = String(metaSource.pipeline_id || '').trim();
         const buildVersion = buildVersionLabel(job);
         const rows = [
           { label: 'Job Execution ID', value: escapeHtml(job.id || '') },
+          { label: 'Project', value: escapeHtml(projectName) },
+          { label: 'Job ID', value: escapeHtml(pipelineJobID) },
           { label: 'Pipeline', value: escapeHtml(pipeline) },
           { label: 'Build', value: escapeHtml(buildVersion) },
           { label: 'Agent', value: escapeHtml(job.leased_by_agent_id || '') },

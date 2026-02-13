@@ -143,8 +143,13 @@ const uiIndexJobExecutionsJS = `
       const meta = first.metadata || {};
       const projectName = String(meta.project || '').trim();
       const pipelineID = String(meta.pipeline_id || '').trim();
+      let buildVersion = '';
       let earliest = '';
       jobs.forEach(job => {
+        if (!buildVersion) {
+          const version = String((job && job.metadata && job.metadata.build_version) || '').trim();
+          if (version) buildVersion = version;
+        }
         const ts = String(job.created_utc || '').trim();
         if (!ts) return;
         if (!earliest || ts < earliest) {
@@ -156,9 +161,11 @@ const uiIndexJobExecutionsJS = `
       if (projectName) parts.push(projectName);
       if (pipelineID) parts.push(pipelineID);
       const base = parts.join(' ');
-      if (base && when) return base + ' ' + when;
-      if (base) return base;
-      if (when) return when;
+      const titledParts = [];
+      if (base) titledParts.push(base);
+      if (when) titledParts.push(when);
+      if (buildVersion) titledParts.push(buildVersion);
+      if (titledParts.length > 0) return titledParts.join(' ');
       return 'job';
     }
 
