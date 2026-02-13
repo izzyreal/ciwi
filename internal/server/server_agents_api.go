@@ -154,7 +154,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	target := currentVersion()
+	target := resolveManualAgentUpdateTarget(currentVersion(), s.getAgentUpdateTarget())
 	if target == "" || target == "dev" {
 		http.Error(w, "server version is not a release version", http.StatusBadRequest)
 		return

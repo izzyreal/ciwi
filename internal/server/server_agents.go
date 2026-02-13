@@ -37,7 +37,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		delete(s.agentToolRefresh, hb.AgentID)
 	}
-	target := strings.TrimSpace(s.getAgentUpdateTarget())
+	target := resolveEffectiveAgentUpdateTarget(s.getAgentUpdateTarget(), currentVersion())
 	manualTarget := strings.TrimSpace(s.agentUpdates[hb.AgentID])
 	if manualTarget != "" {
 		target = manualTarget
