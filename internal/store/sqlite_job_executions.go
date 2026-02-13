@@ -58,7 +58,7 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
-		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
+		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, current_step_text
 		FROM job_executions
 		ORDER BY created_utc DESC
 	`)
@@ -151,7 +151,7 @@ func (s *Store) AgentHasActiveJobExecution(agentID string) (bool, error) {
 func (s *Store) ListQueuedJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
-		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
+		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, current_step_text
 		FROM job_executions WHERE status = ?
 		ORDER BY created_utc ASC
 	`, protocol.JobExecutionStatusQueued)
