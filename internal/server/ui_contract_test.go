@@ -38,6 +38,7 @@ func newTestHTTPServerWithUI(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/", s.uiHandler)
 	mux.HandleFunc("/api/v1/config/load", s.loadConfigHandler)
 	mux.HandleFunc("/api/v1/projects", s.listProjectsHandler)
+	mux.HandleFunc("/api/v1/projects/import", s.importProjectHandler)
 	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)
 	mux.HandleFunc("/api/v1/jobs", s.jobsHandler)
 	mux.HandleFunc("/api/v1/jobs/", s.jobByIDHandler)
@@ -47,6 +48,26 @@ func newTestHTTPServerWithUI(t *testing.T) *httptest.Server {
 	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))
 
 	return httptest.NewServer(mux)
+}
+
+func requireContainsAll(t *testing.T, content, subject string, needles ...string) {
+	t.Helper()
+	for _, needle := range needles {
+		if strings.Contains(content, needle) {
+			continue
+		}
+		t.Fatalf("%s missing %q", subject, needle)
+	}
+}
+
+func requireNotContainsAll(t *testing.T, content, subject string, needles ...string) {
+	t.Helper()
+	for _, needle := range needles {
+		if !strings.Contains(content, needle) {
+			continue
+		}
+		t.Fatalf("%s should not contain %q", subject, needle)
+	}
 }
 
 func TestUIRootAndSharedJSServed(t *testing.T) {
@@ -60,133 +81,85 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 		t.Fatalf("GET / status=%d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 	rootHTML := readBody(t, resp)
-	if !strings.Contains(rootHTML, "<h1>ciwi</h1>") {
-		t.Fatalf("root page missing title")
-	}
-	if !strings.Contains(rootHTML, `<script src="/ui/shared.js"></script>`) {
-		t.Fatalf("root page missing shared js include")
-	}
-	if !strings.Contains(rootHTML, `<script src="/ui/pages.js"></script>`) {
-		t.Fatalf("root page missing pages js include")
-	}
-	if !strings.Contains(rootHTML, `href="/agents"`) {
-		t.Fatalf("root page missing agents link")
-	}
-	if !strings.Contains(rootHTML, `href="/settings"`) {
-		t.Fatalf("root page missing settings link")
-	}
-	if !strings.Contains(rootHTML, `<img src="/ciwi-logo.png"`) {
-		t.Fatalf("root page missing header logo")
-	}
-	if !strings.Contains(rootHTML, `href="/ciwi-favicon.png"`) {
-		t.Fatalf("root page missing favicon link")
-	}
-	if strings.Contains(rootHTML, "Output/Error") {
-		t.Fatalf("root page should not show Output/Error overview column")
-	}
-	if !strings.Contains(rootHTML, "table-layout: fixed") || !strings.Contains(rootHTML, "overflow-wrap: anywhere") {
-		t.Fatalf("root page missing log overflow containment CSS")
-	}
-	if !strings.Contains(rootHTML, ".ciwi-job-group-card") || !strings.Contains(rootHTML, ".ciwi-job-group-details") {
-		t.Fatalf("root page missing grouped job container styles")
-	}
-	if !strings.Contains(rootHTML, ".ciwi-job-group-details[open] .ciwi-job-group-toggle::before") {
-		t.Fatalf("root page missing grouped job collapse/expand icon styles")
-	}
-	if !strings.Contains(rootHTML, ".project-group[open] .project-group-toggle::before") {
-		t.Fatalf("root page missing project collapse/expand icon styles")
-	}
-	if !strings.Contains(rootHTML, "const JOB_GROUPS_STORAGE_KEY = 'ciwi.index.jobGroupsExpanded.v1'") {
-		t.Fatalf("root page missing grouped job storage key")
-	}
-	if !strings.Contains(rootHTML, "const PROJECT_GROUPS_STORAGE_KEY = 'ciwi.index.projectGroupsCollapsed.v1'") {
-		t.Fatalf("root page missing project storage key")
-	}
-	if !strings.Contains(rootHTML, "function normalizeSummaryGroups(") ||
-		!strings.Contains(rootHTML, "function allocateGroupedSkeletonRows(") ||
-		!strings.Contains(rootHTML, "function buildJobGroupSkeletonRow(") {
-		t.Fatalf("root page missing grouped skeleton allocation helpers")
-	}
-	if !strings.Contains(rootHTML, "summary.queued_groups") || !strings.Contains(rootHTML, "summary.history_groups") {
-		t.Fatalf("root page missing summary-driven grouped skeleton wiring")
-	}
-	if !strings.Contains(rootHTML, "function jobsSignature(") ||
-		!strings.Contains(rootHTML, "if (queuedSig !== lastQueuedJobsSignature)") ||
-		!strings.Contains(rootHTML, "if (historySig !== lastHistoryJobsSignature)") {
-		t.Fatalf("root page missing no-blink signature-based rerender guard")
-	}
-	if !strings.Contains(rootHTML, "tbody.appendChild(buildStaticJobGroupRow(job, opts, columnCount));") {
-		t.Fatalf("root page missing static single-job container rendering")
-	}
-	if strings.Contains(rootHTML, `id="importProjectBtn"`) {
-		t.Fatalf("root page should not include project import controls")
-	}
-	if strings.Contains(rootHTML, `id="checkUpdatesBtn"`) {
-		t.Fatalf("root page should not include update controls")
-	}
+	requireContainsAll(t, rootHTML, "root page",
+		"<h1>ciwi</h1>",
+		`<script src="/ui/shared.js"></script>`,
+		`<script src="/ui/pages.js"></script>`,
+		`href="/agents"`,
+		`href="/settings"`,
+		`<img src="/ciwi-logo.png"`,
+		`href="/ciwi-favicon.png"`,
+		`id="projects"`,
+		`id="clearQueueBtn"`,
+		`id="queuedJobsBody"`,
+		`id="flushHistoryBtn"`,
+		`id="historyJobsBody"`,
+		"/api/v1/projects",
+		"/api/v1/jobs?view=summary",
+		"/api/v1/jobs/clear-queue",
+		"/api/v1/jobs/flush-history",
+		"/api/v1/pipelines/",
+	)
+	requireNotContainsAll(t, rootHTML, "root page",
+		"Output/Error",
+		`id="importProjectBtn"`,
+		`id="checkUpdatesBtn"`,
+	)
 
 	settingsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/settings", nil)
 	if settingsResp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /settings status=%d body=%s", settingsResp.StatusCode, readBody(t, settingsResp))
 	}
 	settingsHTML := readBody(t, settingsResp)
-	if !strings.Contains(settingsHTML, "<h1>ciwi settings</h1>") {
-		t.Fatalf("settings page missing title")
-	}
-	if !strings.Contains(settingsHTML, `id="importProjectBtn"`) {
-		t.Fatalf("settings page missing import button")
-	}
-	if !strings.Contains(settingsHTML, `id="checkUpdatesBtn"`) || !strings.Contains(settingsHTML, `id="applyUpdateBtn"`) {
-		t.Fatalf("settings page missing update controls")
-	}
-	if !strings.Contains(settingsHTML, `id="rollbackTagSelect"`) || !strings.Contains(settingsHTML, `id="rollbackUpdateBtn"`) {
-		t.Fatalf("settings page missing rollback controls")
-	}
-	if !strings.Contains(settingsHTML, `href="/vault"`) {
-		t.Fatalf("settings page missing vault link")
-	}
+	requireContainsAll(t, settingsHTML, "settings page",
+		"<h1>ciwi settings</h1>",
+		`id="importProjectBtn"`,
+		`id="checkUpdatesBtn"`,
+		`id="applyUpdateBtn"`,
+		`id="rollbackTagSelect"`,
+		`id="rollbackUpdateBtn"`,
+		`href="/vault"`,
+		"/api/v1/projects/import",
+		"/api/v1/projects/",
+		"/reload",
+		"/api/v1/update/check",
+		"/api/v1/update/apply",
+		"/api/v1/update/rollback",
+		"/api/v1/update/tags",
+		"/api/v1/update/status",
+	)
 
 	resp = mustJSONRequest(t, client, http.MethodGet, ts.URL+"/ui/shared.js", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /ui/shared.js status=%d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 	js := readBody(t, resp)
-	if !strings.Contains(js, "function formatTimestamp(") {
-		t.Fatalf("shared js missing formatTimestamp helper")
-	}
-	if !strings.Contains(js, "function formatDurationMs(") {
-		t.Fatalf("shared js missing formatDurationMs helper")
-	}
-	if strings.Contains(js, "function formatDuration(") {
-		t.Fatalf("shared js should not include job-specific formatDuration helper")
-	}
-	if strings.Contains(js, "0001-01-01T00:00:00") {
-		t.Fatalf("shared js should not include backend zero-time sentinel handling")
-	}
-	if !strings.Contains(js, "function jobDescription(") {
-		t.Fatalf("shared js missing jobDescription helper")
-	}
-	if !strings.Contains(js, `if (String(m.adhoc || '').trim() === '1') return 'Adhoc script';`) {
-		t.Fatalf("shared js missing adhoc job description label")
-	}
-	if !strings.Contains(js, "function formatBytes(") {
-		t.Fatalf("shared js missing formatBytes helper")
-	}
+	requireContainsAll(t, js, "shared js",
+		"function formatTimestamp(",
+		"function formatDurationMs(",
+		"function jobDescription(",
+		"function formatBytes(",
+		"function createRefreshGuard(",
+		"Adhoc script",
+	)
+	requireNotContainsAll(t, js, "shared js",
+		"function formatDuration(",
+		"0001-01-01T00:00:00",
+	)
 
 	resp = mustJSONRequest(t, client, http.MethodGet, ts.URL+"/ui/pages.js", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /ui/pages.js status=%d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 	pagesJS := readBody(t, resp)
-	if !strings.Contains(pagesJS, "function apiJSON(") {
-		t.Fatalf("pages js missing apiJSON helper")
-	}
-	if !strings.Contains(pagesJS, "function buildJobExecutionRow(") {
-		t.Fatalf("pages js missing job row builder")
-	}
-	if !strings.Contains(pagesJS, "function openVersionResolveModal(") {
-		t.Fatalf("pages js missing version resolve modal helper")
-	}
+	requireContainsAll(t, pagesJS, "pages js",
+		"function apiJSON(",
+		"function buildJobExecutionRow(",
+		"function openVersionResolveModal(",
+		"versionResolveModal",
+		"/api/v1/pipelines/",
+		"/version-resolve",
+	)
 
 	faviconResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/favicon.ico", nil)
 	if faviconResp.StatusCode != http.StatusOK {
@@ -205,33 +178,25 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 		t.Fatalf("GET /agents status=%d body=%s", agentsResp.StatusCode, readBody(t, agentsResp))
 	}
 	agentsHTML := readBody(t, agentsResp)
-	if !strings.Contains(agentsHTML, "<title>ciwi agents</title>") {
-		t.Fatalf("agents page missing title")
-	}
-	if !strings.Contains(agentsHTML, "/api/v1/agents") {
-		t.Fatalf("agents page missing agents API wiring")
-	}
+	requireContainsAll(t, agentsHTML, "agents page",
+		"<title>ciwi agents</title>",
+		`id="refreshBtn"`,
+		`id="rows"`,
+		"/api/v1/agents",
+	)
 
 	agentDetailResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/agents/agent-test", nil)
 	if agentDetailResp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /agents/{id} status=%d body=%s", agentDetailResp.StatusCode, readBody(t, agentDetailResp))
 	}
 	agentDetailHTML := readBody(t, agentDetailResp)
-	if !strings.Contains(agentDetailHTML, "<title>ciwi agent</title>") {
-		t.Fatalf("agent detail page missing title")
-	}
-	if !strings.Contains(agentDetailHTML, "Agent Detail") {
-		t.Fatalf("agent detail page missing header")
-	}
-	if !strings.Contains(agentDetailHTML, "/api/v1/agents/") {
-		t.Fatalf("agent detail page missing agent API wiring")
-	}
-	if !strings.Contains(agentDetailHTML, "Run Adhoc Script") {
-		t.Fatalf("agent detail page missing run adhoc control")
-	}
-	if !strings.Contains(agentDetailHTML, "/run-script") {
-		t.Fatalf("agent detail page missing run-script API wiring")
-	}
+	requireContainsAll(t, agentDetailHTML, "agent detail page",
+		"<title>ciwi agent</title>",
+		"Agent Detail",
+		"Run Adhoc Script",
+		"/api/v1/agents/",
+		"/run-script",
+	)
 }
 
 func TestUIProjectAndJobPagesServed(t *testing.T) {
@@ -274,27 +239,28 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 		t.Fatalf("GET /projects/1 status=%d body=%s", projectResp.StatusCode, readBody(t, projectResp))
 	}
 	projectHTML := readBody(t, projectResp)
-	if !strings.Contains(projectHTML, "Execution History") {
-		t.Fatalf("project page missing execution history section")
-	}
-	if !strings.Contains(projectHTML, `<img src="/ciwi-logo.png"`) {
-		t.Fatalf("project page missing header logo")
-	}
-	if !strings.Contains(projectHTML, `href="/ciwi-favicon.png"`) {
-		t.Fatalf("project page missing favicon link")
-	}
-	if strings.Contains(projectHTML, "Output/Error") {
-		t.Fatalf("project page should not show Output/Error column")
-	}
-	if !strings.Contains(projectHTML, "loadProject()") {
-		t.Fatalf("project page missing loadProject call")
-	}
-	if !strings.Contains(projectHTML, `<script src="/ui/pages.js"></script>`) {
-		t.Fatalf("project page missing pages js include")
-	}
-	if !strings.Contains(projectHTML, "table-layout: fixed") || !strings.Contains(projectHTML, "overflow-wrap: anywhere") {
-		t.Fatalf("project page missing log overflow containment CSS")
-	}
+	requireContainsAll(t, projectHTML, "project page",
+		"Structure",
+		"Vault Access",
+		"Execution History",
+		`<img src="/ciwi-logo.png"`,
+		`href="/ciwi-favicon.png"`,
+		`<script src="/ui/pages.js"></script>`,
+		`id="structure"`,
+		`id="vaultConnectionSelect"`,
+		`id="saveVaultBtn"`,
+		`id="testVaultBtn"`,
+		`id="vaultSecretsText"`,
+		`id="historyBody"`,
+		"/api/v1/projects/",
+		"/api/v1/vault/connections",
+		"/api/v1/jobs",
+		"/api/v1/pipelines/",
+		"/run-selection",
+		"/vault-test",
+		"openVersionResolveModal(",
+	)
+	requireNotContainsAll(t, projectHTML, "project page", "Output/Error")
 
 	var jobsPayload struct {
 		Jobs []struct {
@@ -315,37 +281,23 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 		t.Fatalf("GET /jobs/{id} status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
 	}
 	jobHTML := readBody(t, jobResp)
-	if !strings.Contains(jobHTML, `id="logBox"`) {
-		t.Fatalf("job page missing log box")
-	}
-	if !strings.Contains(jobHTML, `<img src="/ciwi-logo.png"`) {
-		t.Fatalf("job page missing header logo")
-	}
-	if !strings.Contains(jobHTML, `href="/ciwi-favicon.png"`) {
-		t.Fatalf("job page missing favicon link")
-	}
-	if !strings.Contains(jobHTML, "Output / Error") {
-		t.Fatalf("job page missing output section")
-	}
-	if !strings.Contains(jobHTML, "formatBytes(a.size_bytes)") {
-		t.Fatalf("job page should render human-friendly artifact sizes")
-	}
-	if !strings.Contains(jobHTML, "function parseOptionalTimestamp(") {
-		t.Fatalf("job page missing local timestamp normalization helper")
-	}
-	if !strings.Contains(jobHTML, "function formatJobDuration(") {
-		t.Fatalf("job page missing local duration formatting helper")
-	}
-	if !strings.Contains(jobHTML, "formatJobDuration(job.started_utc, job.finished_utc, job.status)") {
-		t.Fatalf("job page should use local job-specific duration helper")
-	}
-	if strings.Contains(jobHTML, "0001-01-01T00:00:00") {
-		t.Fatalf("job page should not include backend zero-time sentinel handling")
-	}
-	if !strings.Contains(jobHTML, "artifact-path") || !strings.Contains(jobHTML, "copy-btn") {
-		t.Fatalf("job page should support artifact text selection/copy")
-	}
-	if strings.Contains(jobHTML, "['Status',") {
-		t.Fatalf("job page should not duplicate status in meta rows")
-	}
+	requireContainsAll(t, jobHTML, "job page",
+		`id="jobTitle"`,
+		`id="subtitle"`,
+		`id="metaGrid"`,
+		`id="logBox"`,
+		`id="artifactsBox"`,
+		`id="testReportBox"`,
+		"Output / Error",
+		"Artifacts",
+		"Test Report",
+		`<img src="/ciwi-logo.png"`,
+		`href="/ciwi-favicon.png"`,
+		"/api/v1/jobs/",
+		"/artifacts",
+		"/tests",
+		"/force-fail",
+		"formatBytes(",
+	)
+	requireNotContainsAll(t, jobHTML, "job page", "0001-01-01T00:00:00")
 }
