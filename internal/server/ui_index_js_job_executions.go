@@ -22,7 +22,7 @@ const uiIndexJobExecutionsJS = `
     function buildJobGroupSkeletonRow(spec, viewKey, columnCount) {
       ensureJobSkeletonStyles();
       const tr = document.createElement('tr');
-      tr.className = 'ciwi-job-group-row';
+      tr.className = 'ciwi-job-group-row ciwi-job-skeleton-row';
       const td = document.createElement('td');
       td.colSpan = columnCount;
 
@@ -321,11 +321,13 @@ const uiIndexJobExecutionsJS = `
       if (epoch !== jobsRenderEpoch || queuedJobs === null || historyJobs === null) return;
       const queuedSig = jobsSignature(queuedJobs);
       const historySig = jobsSignature(historyJobs);
-      if (queuedSig !== lastQueuedJobsSignature) {
+      const queuedNeedsRender = !tbodyHasConcreteRows(queuedBody) || queuedSig !== lastQueuedJobsSignature;
+      const historyNeedsRender = !tbodyHasConcreteRows(historyBody) || historySig !== lastHistoryJobsSignature;
+      if (queuedNeedsRender) {
         renderGroupedJobs(queuedBody, queuedJobs, queuedOpts, 'queued', 8, 'No queued jobs.');
         lastQueuedJobsSignature = queuedSig;
       }
-      if (historySig !== lastHistoryJobsSignature) {
+      if (historyNeedsRender) {
         renderGroupedJobs(historyBody, historyJobs, historyOpts, 'history', 7, 'No job history yet.');
         lastHistoryJobsSignature = historySig;
       }
