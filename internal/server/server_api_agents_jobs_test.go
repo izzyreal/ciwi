@@ -119,6 +119,91 @@ func TestGetAgentByIDEndpoint(t *testing.T) {
 	_ = readBody(t, missingResp)
 }
 
+func TestAgentListAndDetailUseConsistentViewFields(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	hbResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-consistency",
+		"hostname":      "host-c",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.1.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:00Z",
+	})
+	if hbResp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
+	}
+	_ = readBody(t, hbResp)
+
+	updateResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-consistency/update", map[string]any{})
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("manual update status=%d body=%s", updateResp.StatusCode, readBody(t, updateResp))
+	}
+	_ = readBody(t, updateResp)
+
+	type agentCore struct {
+		AgentID         string `json:"agent_id"`
+		Hostname        string `json:"hostname"`
+		Version         string `json:"version"`
+		NeedsUpdate     bool   `json:"needs_update"`
+		UpdateRequested bool   `json:"update_requested"`
+		UpdateTarget    string `json:"update_target"`
+		UpdateAttempts  int    `json:"update_attempts"`
+	}
+
+	listResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents", nil)
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("agents list status=%d body=%s", listResp.StatusCode, readBody(t, listResp))
+	}
+	var listPayload struct {
+		Agents []agentCore `json:"agents"`
+	}
+	decodeJSONBody(t, listResp, &listPayload)
+	if len(listPayload.Agents) != 1 {
+		t.Fatalf("expected 1 agent in list, got %d", len(listPayload.Agents))
+	}
+
+	detailResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents/agent-consistency", nil)
+	if detailResp.StatusCode != http.StatusOK {
+		t.Fatalf("agent detail status=%d body=%s", detailResp.StatusCode, readBody(t, detailResp))
+	}
+	var detailPayload struct {
+		Agent agentCore `json:"agent"`
+	}
+	decodeJSONBody(t, detailResp, &detailPayload)
+
+	listAgent := listPayload.Agents[0]
+	detailAgent := detailPayload.Agent
+	if listAgent.AgentID != detailAgent.AgentID {
+		t.Fatalf("agent_id mismatch list=%q detail=%q", listAgent.AgentID, detailAgent.AgentID)
+	}
+	if listAgent.Hostname != detailAgent.Hostname {
+		t.Fatalf("hostname mismatch list=%q detail=%q", listAgent.Hostname, detailAgent.Hostname)
+	}
+	if listAgent.Version != detailAgent.Version {
+		t.Fatalf("version mismatch list=%q detail=%q", listAgent.Version, detailAgent.Version)
+	}
+	if listAgent.NeedsUpdate != detailAgent.NeedsUpdate {
+		t.Fatalf("needs_update mismatch list=%v detail=%v", listAgent.NeedsUpdate, detailAgent.NeedsUpdate)
+	}
+	if listAgent.UpdateRequested != detailAgent.UpdateRequested {
+		t.Fatalf("update_requested mismatch list=%v detail=%v", listAgent.UpdateRequested, detailAgent.UpdateRequested)
+	}
+	if listAgent.UpdateTarget != detailAgent.UpdateTarget {
+		t.Fatalf("update_target mismatch list=%q detail=%q", listAgent.UpdateTarget, detailAgent.UpdateTarget)
+	}
+	if listAgent.UpdateAttempts != detailAgent.UpdateAttempts {
+		t.Fatalf("update_attempts mismatch list=%d detail=%d", listAgent.UpdateAttempts, detailAgent.UpdateAttempts)
+	}
+}
+
 func TestManualAgentUpdateRequestTriggersHeartbeatUpdate(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"

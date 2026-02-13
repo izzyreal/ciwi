@@ -36,32 +36,9 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		serverVersion := currentVersion()
 		pendingTarget := strings.TrimSpace(s.agentUpdates[agentID])
-		needsUpdate := serverVersion != "" && isVersionNewer(serverVersion, strings.TrimSpace(a.Version))
-		updateTarget := serverVersion
-		if pendingTarget != "" {
-			updateTarget = pendingTarget
-		} else if strings.TrimSpace(a.UpdateTarget) != "" {
-			updateTarget = strings.TrimSpace(a.UpdateTarget)
-		}
-		updateRequested := pendingTarget != "" || (a.UpdateTarget != "" && isVersionDifferent(a.UpdateTarget, strings.TrimSpace(a.Version)))
-		info := map[string]any{
-			"agent_id":                agentID,
-			"hostname":                a.Hostname,
-			"os":                      a.OS,
-			"arch":                    a.Arch,
-			"version":                 a.Version,
-			"capabilities":            a.Capabilities,
-			"last_seen_utc":           a.LastSeenUTC,
-			"recent_log":              append([]string(nil), a.RecentLog...),
-			"needs_update":            needsUpdate,
-			"update_target":           updateTarget,
-			"update_requested":        updateRequested,
-			"update_attempts":         a.UpdateAttempts,
-			"update_last_request_utc": a.UpdateLastRequestUTC,
-			"update_next_retry_utc":   a.UpdateNextRetryUTC,
-		}
+		info := agentViewFromState(agentID, a, pendingTarget, serverVersion)
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, map[string]any{"agent": info})
+		writeJSON(w, http.StatusOK, agentViewResponse{Agent: info})
 		return
 	}
 	if len(parts) != 2 || (parts[1] != "update" && parts[1] != "refresh-tools" && parts[1] != "run-script") {
@@ -89,10 +66,10 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		a.RecentLog = appendAgentLog(a.RecentLog, "manual tools refresh requested")
 		s.agents[agentID] = a
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, map[string]any{
-			"requested": true,
-			"agent_id":  agentID,
-			"message":   "tools refresh requested",
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   "tools refresh requested",
 		})
 		return
 	}
@@ -167,12 +144,12 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mu.Unlock()
 
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"queued":          true,
-			"agent_id":        agentID,
-			"job_id":          job.ID,
-			"shell":           shell,
-			"timeout_seconds": timeout,
+		writeJSON(w, http.StatusCreated, agentRunScriptResponse{
+			Queued:         true,
+			AgentID:        agentID,
+			JobID:          job.ID,
+			Shell:          shell,
+			TimeoutSeconds: timeout,
 		})
 		return
 	}
@@ -193,7 +170,10 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		a.RecentLog = appendAgentLog(a.RecentLog, "manual update requested but agent is already at target version")
 		s.agents[agentID] = a
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, map[string]any{"requested": false, "message": "agent is already at target version"})
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: false,
+			Message:   "agent is already at target version",
+		})
 		return
 	}
 	s.agentUpdates[agentID] = target
@@ -205,10 +185,10 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 	s.agents[agentID] = a
 	s.mu.Unlock()
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"requested": true,
-		"agent_id":  agentID,
-		"target":    target,
+	writeJSON(w, http.StatusOK, agentActionResponse{
+		Requested: true,
+		AgentID:   agentID,
+		Target:    target,
 	})
 }
 

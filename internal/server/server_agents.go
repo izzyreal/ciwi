@@ -112,37 +112,14 @@ func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	agents := make([]protocol.AgentInfo, 0, len(s.agents))
+	agents := make([]agentView, 0, len(s.agents))
 	serverVersion := currentVersion()
 	for id, a := range s.agents {
 		pendingTarget := strings.TrimSpace(s.agentUpdates[id])
-		needsUpdate := serverVersion != "" && isVersionNewer(serverVersion, strings.TrimSpace(a.Version))
-		updateTarget := serverVersion
-		if pendingTarget != "" {
-			updateTarget = pendingTarget
-		} else if strings.TrimSpace(a.UpdateTarget) != "" {
-			updateTarget = strings.TrimSpace(a.UpdateTarget)
-		}
-		updateRequested := pendingTarget != "" || (a.UpdateTarget != "" && isVersionDifferent(a.UpdateTarget, strings.TrimSpace(a.Version)))
-		agents = append(agents, protocol.AgentInfo{
-			AgentID:              id,
-			Hostname:             a.Hostname,
-			OS:                   a.OS,
-			Arch:                 a.Arch,
-			Version:              a.Version,
-			Capabilities:         a.Capabilities,
-			LastSeenUTC:          a.LastSeenUTC,
-			RecentLog:            append([]string(nil), a.RecentLog...),
-			NeedsUpdate:          needsUpdate,
-			UpdateTarget:         updateTarget,
-			UpdateRequested:      updateRequested,
-			UpdateAttempts:       a.UpdateAttempts,
-			UpdateLastRequestUTC: a.UpdateLastRequestUTC,
-			UpdateNextRetryUTC:   a.UpdateNextRetryUTC,
-		})
+		agents = append(agents, agentViewFromState(id, a, pendingTarget, serverVersion))
 	}
 	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
+	writeJSON(w, http.StatusOK, agentsViewResponse{Agents: agents})
 }
 
 func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {

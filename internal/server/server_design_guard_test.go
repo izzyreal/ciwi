@@ -57,6 +57,23 @@ func TestDesignGuardUIJobsUseSharedStatusHelpers(t *testing.T) {
 	}
 }
 
+func TestDesignGuardAgentHandlersAvoidUntypedJSONMaps(t *testing.T) {
+	root := repoRootFromServerTests(t)
+	files := []string{
+		"internal/server/server_agents.go",
+		"internal/server/server_agents_api.go",
+	}
+
+	for _, rel := range files {
+		source := mustReadRepoFile(t, root, rel)
+		lines := literalLineNumbers(source, "map[string]any{")
+		if len(lines) == 0 {
+			continue
+		}
+		t.Errorf("%s contains untyped map JSON response literals at lines %v; use typed response DTOs", rel, lines)
+	}
+}
+
 func repoRootFromServerTests(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
