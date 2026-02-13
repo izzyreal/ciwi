@@ -21,6 +21,8 @@ type jobExecutionStore interface {
 	GetJobExecution(id string) (protocol.JobExecution, error)
 	UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error)
+	AppendJobExecutionEvents(jobID string, events []protocol.JobExecutionEvent) error
+	ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEvent, error)
 	DeleteQueuedJobExecution(jobID string) error
 	ClearQueuedJobExecutions() (int64, error)
 	FlushJobExecutionHistory() (int64, error)

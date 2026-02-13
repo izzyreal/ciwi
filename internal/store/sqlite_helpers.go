@@ -15,18 +15,18 @@ import (
 
 func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.JobExecution, error) {
 	var (
-		job                                                                protocol.JobExecution
-		envJSON, requiredJSON, artifactGlobsJSON, cachesJSON, metadataJSON string
-		sourceRepo, sourceRef                                              sql.NullString
-		createdUTC                                                         string
-		startedUTC, finishedUTC                                            sql.NullString
-		leasedByAgentID, leasedUTC                                         sql.NullString
-		exitCode                                                           sql.NullInt64
-		errorText, outputText, currentStepText                             sql.NullString
+		job                                                                              protocol.JobExecution
+		envJSON, requiredJSON, artifactGlobsJSON, cachesJSON, metadataJSON, stepPlanJSON string
+		sourceRepo, sourceRef                                                            sql.NullString
+		createdUTC                                                                       string
+		startedUTC, finishedUTC                                                          sql.NullString
+		leasedByAgentID, leasedUTC                                                       sql.NullString
+		exitCode                                                                         sql.NullInt64
+		errorText, outputText, currentStepText                                           sql.NullString
 	)
 
 	if err := scanner.Scan(
-		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON,
+		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON, &stepPlanJSON,
 		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText, &currentStepText,
 	); err != nil {
 		return protocol.JobExecution{}, err
@@ -37,6 +37,7 @@ func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.Jo
 	_ = json.Unmarshal([]byte(artifactGlobsJSON), &job.ArtifactGlobs)
 	_ = json.Unmarshal([]byte(cachesJSON), &job.Caches)
 	_ = json.Unmarshal([]byte(metadataJSON), &job.Metadata)
+	_ = json.Unmarshal([]byte(stepPlanJSON), &job.StepPlan)
 
 	if sourceRepo.Valid && sourceRepo.String != "" {
 		job.Source = &protocol.SourceSpec{Repo: sourceRepo.String, Ref: sourceRef.String}
@@ -205,6 +206,26 @@ func cloneSource(in *protocol.SourceSpec) *protocol.SourceSpec {
 		return nil
 	}
 	return &protocol.SourceSpec{Repo: in.Repo, Ref: in.Ref}
+}
+
+func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobStepPlanItem, 0, len(in))
+	for _, step := range in {
+		out = append(out, protocol.JobStepPlanItem{
+			Index:      step.Index,
+			Total:      step.Total,
+			Name:       step.Name,
+			Script:     step.Script,
+			Kind:       step.Kind,
+			TestName:   step.TestName,
+			TestFormat: step.TestFormat,
+			TestReport: step.TestReport,
+		})
+	}
+	return out
 }
 
 func (p PersistedPipeline) SortedJobs() []PersistedPipelineJob {

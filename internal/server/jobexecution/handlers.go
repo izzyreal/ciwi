@@ -19,6 +19,8 @@ type Store interface {
 	DeleteQueuedJobExecution(id string) error
 	UpdateJobExecutionStatus(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	MergeJobExecutionMetadata(id string, metadata map[string]string) (map[string]string, error)
+	AppendJobExecutionEvents(id string, events []protocol.JobExecutionEvent) error
+	ListJobExecutionEvents(id string) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error)
 	SaveJobExecutionArtifacts(id string, artifacts []protocol.JobExecutionArtifact) error
 	GetJobExecutionTestReport(id string) (protocol.JobExecutionTestReport, bool, error)
@@ -234,7 +236,10 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if patch := ParseBuildMetadataFromOutput(req.Output); len(patch) > 0 {
+		if len(req.Events) > 0 {
+			_ = deps.Store.AppendJobExecutionEvents(jobID, req.Events)
+		}
+		if patch := metadataPatchFromEvents(req.Events); len(patch) > 0 {
 			if merged, err := deps.Store.MergeJobExecutionMetadata(jobID, patch); err == nil {
 				job.Metadata = merged
 			}
@@ -260,6 +265,20 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 			)
 		}
 		httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "events" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		events, err := deps.Store.ListJobExecutionEvents(jobID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, EventsViewResponse{Events: events})
 		return
 	}
 

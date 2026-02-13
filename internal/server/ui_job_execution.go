@@ -237,7 +237,7 @@ const jobExecutionHTML = `<!doctype html>
         forceBtn.style.display = 'none';
       }
 
-        renderReleaseSummary(job, output);
+        renderReleaseSummary(job);
 
       try {
         const ares = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts', { cache: 'no-store' });
@@ -320,25 +320,14 @@ const jobExecutionHTML = `<!doctype html>
       }
     }
 
-    function parseReleaseSummary(output) {
-      const out = {};
-      (output || '').split('\n').forEach(line => {
-        const m = line.match(/^__CIWI_RELEASE_SUMMARY__\s+([a-zA-Z0-9_]+)=(.*)$/);
-        if (!m) return;
-        out[m[1]] = m[2];
-      });
-      return out;
-    }
-
-    function renderReleaseSummary(job, output) {
+    function renderReleaseSummary(job) {
       const card = document.getElementById('releaseSummaryCard');
       const box = document.getElementById('releaseSummaryBox');
       if (!card || !box) return;
 
       const m = (job && job.metadata) || {};
       const isReleasePipeline = (m.pipeline_id || '') === 'release';
-      const parsed = parseReleaseSummary(output);
-      if (!isReleasePipeline && Object.keys(parsed).length === 0) {
+      if (!isReleasePipeline) {
         card.style.display = 'none';
         box.innerHTML = '';
         return;
@@ -347,12 +336,13 @@ const jobExecutionHTML = `<!doctype html>
       const dryRun = (m.dry_run || '') === '1';
       const lines = [];
       lines.push('<div><strong>Mode:</strong> ' + (dryRun ? 'dry-run' : 'live') + '</div>');
-      if (parsed.version) lines.push('<div><strong>Version:</strong> ' + escapeHtml(parsed.version) + '</div>');
-      if (parsed.tag) lines.push('<div><strong>Tag:</strong> ' + escapeHtml(parsed.tag) + '</div>');
-      if (parsed.release_created) lines.push('<div><strong>GitHub release:</strong> ' + escapeHtml(parsed.release_created) + '</div>');
-      if (parsed.artifacts) lines.push('<div><strong>Assets:</strong> ' + escapeHtml(parsed.artifacts) + '</div>');
-      if (parsed.next_version) lines.push('<div><strong>Next version:</strong> ' + escapeHtml(parsed.next_version) + '</div>');
-      if (lines.length === 1) lines.push('<div class="label">No release markers emitted yet.</div>');
+      if (m.version) lines.push('<div><strong>Version:</strong> ' + escapeHtml(m.version) + '</div>');
+      if (m.tag) lines.push('<div><strong>Tag:</strong> ' + escapeHtml(m.tag) + '</div>');
+      if (m.release_created) lines.push('<div><strong>GitHub release:</strong> ' + escapeHtml(m.release_created) + '</div>');
+      if (m.artifacts) lines.push('<div><strong>Assets:</strong> ' + escapeHtml(m.artifacts) + '</div>');
+      if (m.next_version) lines.push('<div><strong>Next version:</strong> ' + escapeHtml(m.next_version) + '</div>');
+      if (m.auto_bump_branch) lines.push('<div><strong>Auto bump branch:</strong> ' + escapeHtml(m.auto_bump_branch) + '</div>');
+      if (lines.length === 1) lines.push('<div class="label">No release metadata reported yet.</div>');
 
       box.innerHTML = lines.join('');
       card.style.display = '';

@@ -8,7 +8,6 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
-	serverpipeline "github.com/izzyreal/ciwi/internal/server/pipeline"
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
@@ -37,6 +36,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 		sourceRepo     string
 		sourceRef      string
 		metadata       map[string]string
+		stepPlan       []protocol.JobStepPlanItem
 	}
 	pending := make([]pendingJob, 0)
 	for _, pj := range p.SortedJobs() {
@@ -73,7 +73,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			if runCtx.TagPrefix != "" {
 				renderVars["ciwi.tag_prefix"] = runCtx.TagPrefix
 			}
-			rendered := make([]string, 0, len(pj.Steps)*4)
+			rendered := make([]string, 0, len(pj.Steps))
 			stepBlocks := make([]string, 0, len(pj.Steps))
 			stepLabels := make([]string, 0, len(pj.Steps))
 			stepMarkerMeta := make([]map[string]string, 0, len(pj.Steps))
@@ -95,13 +95,13 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					if format == "" {
 						format = "go-test-json"
 					}
-					stepBlocks = append(stepBlocks, serverpipeline.BuildTestStepBlock(strings.TrimSpace(pj.RunsOn["shell"]), command))
+					stepBlocks = append(stepBlocks, command)
 					stepLabels = append(stepLabels, "test "+name)
 					stepMarkerMeta = append(stepMarkerMeta, map[string]string{
 						"kind":        "test",
-						"test_name":   serverpipeline.SanitizeMarkerToken(name),
-						"test_format": serverpipeline.SanitizeMarkerToken(format),
-						"test_report": serverpipeline.SanitizeMarkerToken(strings.TrimSpace(step.Test.Report)),
+						"test_name":   strings.TrimSpace(name),
+						"test_format": strings.TrimSpace(format),
+						"test_report": strings.TrimSpace(step.Test.Report),
 					})
 					continue
 				}
@@ -113,12 +113,25 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				stepLabels = append(stepLabels, fmt.Sprintf("step %d", idx+1))
 				stepMarkerMeta = append(stepMarkerMeta, nil)
 			}
-			for stepIndex := range stepBlocks {
-				rendered = append(rendered, serverpipeline.BuildStepMarkerCommand(strings.TrimSpace(pj.RunsOn["shell"]), stepIndex+1, len(stepBlocks), stepLabels[stepIndex], stepMarkerMeta[stepIndex]))
-				rendered = append(rendered, stepBlocks[stepIndex])
-			}
-			if len(rendered) == 0 {
+			if len(stepBlocks) == 0 {
 				return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q rendered empty script", pj.ID)
+			}
+			stepPlan := make([]protocol.JobStepPlanItem, 0, len(stepBlocks))
+			for stepIndex := range stepBlocks {
+				rendered = append(rendered, stepBlocks[stepIndex])
+				step := protocol.JobStepPlanItem{
+					Index:  stepIndex + 1,
+					Total:  len(stepBlocks),
+					Name:   stepLabels[stepIndex],
+					Script: stepBlocks[stepIndex],
+				}
+				if meta := stepMarkerMeta[stepIndex]; len(meta) > 0 {
+					step.Kind = strings.TrimSpace(meta["kind"])
+					step.TestName = strings.TrimSpace(meta["test_name"])
+					step.TestFormat = strings.TrimSpace(meta["test_format"])
+					step.TestReport = strings.TrimSpace(meta["test_report"])
+				}
+				stepPlan = append(stepPlan, step)
 			}
 
 			metadata := map[string]string{
@@ -196,6 +209,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				sourceRepo:     p.SourceRepo,
 				sourceRef:      sourceRef,
 				metadata:       metadata,
+				stepPlan:       stepPlan,
 			})
 		}
 	}
@@ -219,6 +233,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			Caches:               cloneProtocolJobCaches(spec.caches),
 			Source:               &protocol.SourceSpec{Repo: spec.sourceRepo, Ref: spec.sourceRef},
 			Metadata:             spec.metadata,
+			StepPlan:             cloneJobStepPlan(spec.stepPlan),
 		})
 		if err != nil {
 			return protocol.RunPipelineResponse{}, err
@@ -260,6 +275,26 @@ func cloneProtocolJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
 		Tools:   append([]string(nil), in.Tools...),
 		Env:     append([]string(nil), in.Env...),
 	}
+}
+
+func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobStepPlanItem, 0, len(in))
+	for _, step := range in {
+		out = append(out, protocol.JobStepPlanItem{
+			Index:      step.Index,
+			Total:      step.Total,
+			Name:       step.Name,
+			Script:     step.Script,
+			Kind:       step.Kind,
+			TestName:   step.TestName,
+			TestFormat: step.TestFormat,
+			TestReport: step.TestReport,
+		})
+	}
+	return out
 }
 
 func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.JobCacheSpec {

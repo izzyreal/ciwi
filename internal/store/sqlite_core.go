@@ -135,6 +135,7 @@ func (s *Store) migrate() error {
 			source_repo TEXT,
 			source_ref TEXT,
 			metadata_json TEXT NOT NULL,
+			step_plan_json TEXT NOT NULL DEFAULT '[]',
 			status TEXT NOT NULL,
 			created_utc TEXT NOT NULL,
 			started_utc TEXT,
@@ -161,7 +162,17 @@ func (s *Store) migrate() error {
 			created_utc TEXT NOT NULL,
 			FOREIGN KEY(job_execution_id) REFERENCES job_executions(id) ON DELETE CASCADE
 		);`,
+		`CREATE TABLE IF NOT EXISTS job_execution_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			job_execution_id TEXT NOT NULL,
+			event_type TEXT NOT NULL,
+			timestamp_utc TEXT NOT NULL,
+			payload_json TEXT NOT NULL DEFAULT '{}',
+			created_utc TEXT NOT NULL,
+			FOREIGN KEY(job_execution_id) REFERENCES job_executions(id) ON DELETE CASCADE
+		);`,
 		`CREATE INDEX IF NOT EXISTS idx_job_executions_status_created ON job_executions(status, created_utc);`,
+		`CREATE INDEX IF NOT EXISTS idx_job_execution_events_job_created ON job_execution_events(job_execution_id, created_utc);`,
 		`CREATE TABLE IF NOT EXISTS app_state (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -217,6 +228,9 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "current_step_text", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("job_executions", "step_plan_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	return nil

@@ -26,6 +26,7 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 	artifactGlobsJSON, _ := json.Marshal(req.ArtifactGlobs)
 	cachesJSON, _ := json.Marshal(req.Caches)
 	metadataJSON, _ := json.Marshal(req.Metadata)
+	stepPlanJSON, _ := json.Marshal(req.StepPlan)
 
 	var sourceRepo, sourceRef string
 	if req.Source != nil {
@@ -34,9 +35,9 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 	}
 
 	if _, err := s.db.Exec(`
-		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, status, created_utc)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), protocol.JobExecutionStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
+		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json, status, created_utc)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), string(stepPlanJSON), protocol.JobExecutionStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
 		return protocol.JobExecution{}, fmt.Errorf("insert job: %w", err)
 	}
 
@@ -50,6 +51,7 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 		Caches:               cloneJobCaches(req.Caches),
 		Source:               cloneSource(req.Source),
 		Metadata:             cloneMap(req.Metadata),
+		StepPlan:             cloneJobStepPlan(req.StepPlan),
 		Status:               protocol.JobExecutionStatusQueued,
 		CreatedUTC:           now,
 	}, nil
@@ -57,7 +59,7 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 
 func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, current_step_text
 		FROM job_executions
 		ORDER BY created_utc DESC
@@ -83,7 +85,7 @@ func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 
 func (s *Store) GetJobExecution(id string) (protocol.JobExecution, error) {
 	row := s.db.QueryRow(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
 		FROM job_executions WHERE id = ?
 	`, id)
@@ -150,7 +152,7 @@ func (s *Store) AgentHasActiveJobExecution(agentID string) (bool, error) {
 
 func (s *Store) ListQueuedJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, current_step_text
 		FROM job_executions WHERE status = ?
 		ORDER BY created_utc ASC
@@ -473,4 +475,100 @@ func (s *Store) GetJobExecutionTestReport(jobID string) (protocol.JobExecutionTe
 		return protocol.JobExecutionTestReport{}, false, fmt.Errorf("decode test report: %w", err)
 	}
 	return report, true, nil
+}
+
+func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExecutionEvent) error {
+	if strings.TrimSpace(jobID) == "" {
+		return fmt.Errorf("job id is required")
+	}
+	if len(events) == 0 {
+		return nil
+	}
+	return retrySQLiteBusy(func() error {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin tx: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		for _, event := range events {
+			eventType := strings.TrimSpace(event.Type)
+			if eventType == "" {
+				continue
+			}
+			ts := event.TimestampUTC
+			if ts.IsZero() {
+				ts = time.Now().UTC()
+			}
+			payload := map[string]any{}
+			if event.Step != nil {
+				payload["step"] = event.Step
+			}
+			if len(event.Metadata) > 0 {
+				payload["metadata"] = event.Metadata
+			}
+			payloadJSON, _ := json.Marshal(payload)
+			if _, err := tx.Exec(`
+				INSERT INTO job_execution_events (job_execution_id, event_type, timestamp_utc, payload_json, created_utc)
+				VALUES (?, ?, ?, ?, ?)
+			`, jobID, eventType, ts.UTC().Format(time.RFC3339Nano), string(payloadJSON), now); err != nil {
+				return fmt.Errorf("insert event: %w", err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit tx: %w", err)
+		}
+		return nil
+	})
+}
+
+func (s *Store) ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEvent, error) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, fmt.Errorf("job id is required")
+	}
+	rows, err := s.db.Query(`
+		SELECT event_type, timestamp_utc, payload_json
+		FROM job_execution_events
+		WHERE job_execution_id = ?
+		ORDER BY id ASC
+	`, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("list events: %w", err)
+	}
+	defer rows.Close()
+
+	out := []protocol.JobExecutionEvent{}
+	for rows.Next() {
+		var eventType, tsRaw, payloadRaw string
+		if err := rows.Scan(&eventType, &tsRaw, &payloadRaw); err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+		event := protocol.JobExecutionEvent{
+			Type: strings.TrimSpace(eventType),
+		}
+		if ts, err := time.Parse(time.RFC3339Nano, tsRaw); err == nil {
+			event.TimestampUTC = ts
+		}
+		payload := map[string]json.RawMessage{}
+		if err := json.Unmarshal([]byte(payloadRaw), &payload); err == nil {
+			if raw := payload["step"]; len(raw) > 0 {
+				var step protocol.JobStepPlanItem
+				if err := json.Unmarshal(raw, &step); err == nil {
+					event.Step = &step
+				}
+			}
+			if raw := payload["metadata"]; len(raw) > 0 {
+				var meta map[string]string
+				if err := json.Unmarshal(raw, &meta); err == nil && len(meta) > 0 {
+					event.Metadata = meta
+				}
+			}
+		}
+		out = append(out, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate events: %w", err)
+	}
+	return out, nil
 }

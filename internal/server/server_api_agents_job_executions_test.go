@@ -165,7 +165,7 @@ func TestQueuedJobExecutionIncludesUnmetRequirements(t *testing.T) {
 	}
 }
 
-func TestJobExecutionStatusParsesBuildSummaryIntoMetadata(t *testing.T) {
+func TestJobExecutionStatusAppliesMetadataPatchEvent(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()
 
@@ -188,7 +188,15 @@ func TestJobExecutionStatusParsesBuildSummaryIntoMetadata(t *testing.T) {
 	statusResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/status", map[string]any{
 		"agent_id": "agent-test",
 		"status":   "running",
-		"output":   "__CIWI_BUILD_SUMMARY__ target=darwin-arm64 version=v2.3.4 output=dist/ciwi-darwin-arm64\n",
+		"events": []map[string]any{
+			{
+				"type": "metadata.patch",
+				"metadata": map[string]string{
+					"build_target":  "darwin-arm64",
+					"build_version": "v2.3.4",
+				},
+			},
+		},
 	})
 	if statusResp.StatusCode != http.StatusOK {
 		t.Fatalf("status update status=%d body=%s", statusResp.StatusCode, readBody(t, statusResp))
@@ -210,5 +218,68 @@ func TestJobExecutionStatusParsesBuildSummaryIntoMetadata(t *testing.T) {
 	}
 	if payload.Job.Metadata["build_target"] != "darwin-arm64" {
 		t.Fatalf("unexpected build_target: %q", payload.Job.Metadata["build_target"])
+	}
+}
+
+func TestJobExecutionEventsEndpointReturnsStoredEvents(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	client := ts.Client()
+	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
+		"script":          "echo build",
+		"timeout_seconds": 60,
+	})
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
+	}
+	var createPayload struct {
+		Job struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, createResp, &createPayload)
+
+	statusResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/status", map[string]any{
+		"agent_id": "agent-test",
+		"status":   "running",
+		"events": []map[string]any{
+			{
+				"type": "step.started",
+				"step": map[string]any{
+					"index": 1,
+					"total": 2,
+					"name":  "build",
+				},
+			},
+		},
+	})
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("status update status=%d body=%s", statusResp.StatusCode, readBody(t, statusResp))
+	}
+	_ = readBody(t, statusResp)
+
+	eventsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/events", nil)
+	if eventsResp.StatusCode != http.StatusOK {
+		t.Fatalf("events status=%d body=%s", eventsResp.StatusCode, readBody(t, eventsResp))
+	}
+	var payload struct {
+		Events []struct {
+			Type string `json:"type"`
+			Step struct {
+				Index int    `json:"index"`
+				Name  string `json:"name"`
+			} `json:"step"`
+		} `json:"events"`
+	}
+	decodeJSONBody(t, eventsResp, &payload)
+	if len(payload.Events) != 1 {
+		t.Fatalf("expected one event, got %d", len(payload.Events))
+	}
+	if payload.Events[0].Type != "step.started" {
+		t.Fatalf("unexpected event type: %q", payload.Events[0].Type)
+	}
+	if payload.Events[0].Step.Index != 1 || payload.Events[0].Step.Name != "build" {
+		t.Fatalf("unexpected event step payload: %+v", payload.Events[0].Step)
 	}
 }

@@ -112,29 +112,49 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	fmt.Fprintf(&output, "[run] shell=%s\n", shell)
 
 	runEnv := withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
-	scriptSteps := splitJobScriptSteps(job.Script)
+	runEnv = mergeEnv(runEnv, map[string]string{
+		"CIWI_AGENT_ID":         strings.TrimSpace(agentID),
+		"CIWI_SERVER_URL":       strings.TrimSpace(serverURL),
+		"CIWI_JOB_EXECUTION_ID": strings.TrimSpace(job.ID),
+	})
+	scriptSteps := stepPlanToScriptSteps(job.StepPlan)
+	releaseSummary := newReleaseSummaryTracker()
 	collectedSuites := make([]protocol.TestSuiteReport, 0, len(scriptSteps))
 	if len(scriptSteps) > 0 {
 		fmt.Fprintf(&output, "[run] mode=stepwise steps=%d\n", len(scriptSteps))
 	}
 	runStart := time.Now()
 	if len(scriptSteps) == 0 {
-		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, runEnv, &output, "Running job script", job.SensitiveValues, traceShell)
+		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, runEnv, &output, "Running job script", job.SensitiveValues, traceShell, releaseSummary)
 	} else {
 		for _, step := range scriptSteps {
 			currentStep := formatCurrentStep(step.meta)
 			slog.Info("job step started", "job_execution_id", job.ID, "current_step", currentStep)
-			fmt.Fprintf(&output, "__CIWI_STEP_BEGIN__ index=%d total=%d name=%s\n", step.meta.index, step.meta.total, step.meta.name)
 			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:      agentID,
-				Status:       protocol.JobExecutionStatusRunning,
-				Output:       redactSensitive(trimOutput(output.String()), job.SensitiveValues),
-				CurrentStep:  currentStep,
+				AgentID:     agentID,
+				Status:      protocol.JobExecutionStatusRunning,
+				Output:      redactSensitive(trimOutput(output.String()), job.SensitiveValues),
+				CurrentStep: currentStep,
+				Events: []protocol.JobExecutionEvent{
+					{
+						Type: protocol.JobExecutionEventTypeStepStarted,
+						Step: &protocol.JobStepPlanItem{
+							Index:      step.meta.index,
+							Total:      step.meta.total,
+							Name:       step.meta.name,
+							Kind:       step.meta.kind,
+							TestName:   step.meta.testName,
+							TestFormat: step.meta.testFormat,
+							TestReport: step.meta.testReport,
+						},
+						TimestampUTC: time.Now().UTC(),
+					},
+				},
 				TimestampUTC: time.Now().UTC(),
 			}); err != nil {
 				return fmt.Errorf("report step status: %w", err)
 			}
-			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, runEnv, &output, currentStep, job.SensitiveValues, traceShell)
+			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, runEnv, &output, currentStep, job.SensitiveValues, traceShell, releaseSummary)
 			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
 				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)
 				if parseErr != nil {
@@ -168,9 +188,16 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		if uploadErr != nil {
 			fmt.Fprintf(&output, "[artifacts] upload_failed=%v\n", uploadErr)
-			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+			trimmedOutput, summaryEvents := sanitizeAndCollectMetadataEvents(trimOutput(output.String()), job.SensitiveValues, releaseSummary)
 			failMsg := "artifact upload failed: " + uploadErr.Error()
-			if reportErr := reportFailure(ctx, client, serverURL, agentID, job, nil, failMsg, trimmedOutput); reportErr != nil {
+			if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+				AgentID:      agentID,
+				Status:       protocol.JobExecutionStatusFailed,
+				Error:        failMsg,
+				Output:       trimmedOutput,
+				Events:       summaryEvents,
+				TimestampUTC: time.Now().UTC(),
+			}); reportErr != nil {
 				return reportErr
 			}
 			slog.Error("job failed", "job_execution_id", job.ID, "error", failMsg)
@@ -178,7 +205,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 	}
 
-	trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+	trimmedOutput, terminalSummaryEvents := sanitizeAndCollectMetadataEvents(trimOutput(output.String()), job.SensitiveValues, releaseSummary)
 	testReport := protocol.JobExecutionTestReport{Suites: collectedSuites}
 	for _, s := range collectedSuites {
 		testReport.Total += s.Total
@@ -195,7 +222,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		if err == nil && testReport.Failed > 0 {
 			err = fmt.Errorf("test report contains failures: failed=%d", testReport.Failed)
 		}
-		trimmedOutput = redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+		trimmedOutput, terminalSummaryEvents = sanitizeAndCollectMetadataEvents(trimOutput(output.String()), job.SensitiveValues, releaseSummary)
 	}
 
 	if err == nil {
@@ -205,6 +232,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			Status:       protocol.JobExecutionStatusSucceeded,
 			ExitCode:     &exitCode,
 			Output:       trimmedOutput,
+			Events:       terminalSummaryEvents,
 			CurrentStep:  "",
 			TimestampUTC: time.Now().UTC(),
 		}); reportErr != nil {
@@ -219,7 +247,16 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	if runCtx.Err() == context.DeadlineExceeded {
 		failMsg = "job timed out"
 	}
-	if reportErr := reportFailure(ctx, client, serverURL, agentID, job, exitCode, failMsg, trimmedOutput); reportErr != nil {
+	if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:      agentID,
+		Status:       protocol.JobExecutionStatusFailed,
+		ExitCode:     exitCode,
+		Error:        failMsg,
+		Output:       trimmedOutput,
+		Events:       terminalSummaryEvents,
+		CurrentStep:  "",
+		TimestampUTC: time.Now().UTC(),
+	}); reportErr != nil {
 		return reportErr
 	}
 	slog.Error("job failed", "job_execution_id", job.ID, "exit_code", exitCode, "error", failMsg)
@@ -276,6 +313,7 @@ func runJobScript(
 	defaultCurrentStep string,
 	sensitive []string,
 	traceShell bool,
+	releaseSummary *releaseSummaryTracker,
 ) error {
 	tracedScript := applyShellTracing(shell, script, traceShell)
 	bin, args, err := commandForScript(shell, tracedScript)
@@ -296,7 +334,7 @@ func runJobScript(
 	cmd.Stderr = output
 	cmd.Env = env
 
-	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, sensitive, defaultCurrentStep)
+	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, sensitive, defaultCurrentStep, releaseSummary)
 	defer stopStreaming()
 	return cmd.Run()
 }
@@ -306,77 +344,46 @@ type jobScriptStep struct {
 	script string
 }
 
-func splitJobScriptSteps(script string) []jobScriptStep {
-	lines := strings.Split(script, "\n")
-	steps := make([]jobScriptStep, 0)
-	buf := make([]string, 0, 64)
-	var meta stepMarkerMeta
-	active := false
-
-	flush := func() {
-		if !active {
-			return
-		}
-		steps = append(steps, jobScriptStep{
-			meta:   meta,
-			script: strings.Join(buf, "\n"),
-		})
-		buf = buf[:0]
+func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
+	if len(plan) == 0 {
+		return nil
 	}
-
-	for _, line := range lines {
-		m, ok := parseScriptStepMarkerLine(line)
-		if ok {
-			flush()
-			meta = m
-			active = true
+	steps := make([]jobScriptStep, 0, len(plan))
+	total := len(plan)
+	for i, step := range plan {
+		script := step.Script
+		if strings.TrimSpace(script) == "" {
 			continue
 		}
-		if active {
-			buf = append(buf, line)
+		index := step.Index
+		if index <= 0 {
+			index = i + 1
 		}
+		itemTotal := step.Total
+		if itemTotal <= 0 {
+			itemTotal = total
+		}
+		name := strings.TrimSpace(step.Name)
+		if name == "" {
+			name = fmt.Sprintf("step_%d", index)
+		}
+		steps = append(steps, jobScriptStep{
+			meta: stepMarkerMeta{
+				index:      index,
+				total:      itemTotal,
+				name:       name,
+				kind:       strings.TrimSpace(step.Kind),
+				testName:   strings.TrimSpace(step.TestName),
+				testFormat: strings.TrimSpace(step.TestFormat),
+				testReport: strings.TrimSpace(step.TestReport),
+			},
+			script: script,
+		})
 	}
-	flush()
 	if len(steps) == 0 {
 		return nil
 	}
-	total := len(steps)
-	for i := range steps {
-		if steps[i].meta.index <= 0 {
-			steps[i].meta.index = i + 1
-		}
-		if steps[i].meta.total <= 0 {
-			steps[i].meta.total = total
-		}
-		if strings.TrimSpace(steps[i].meta.name) == "" {
-			steps[i].meta.name = fmt.Sprintf("step_%d", steps[i].meta.index)
-		}
-	}
 	return steps
-}
-
-func parseScriptStepMarkerLine(line string) (stepMarkerMeta, bool) {
-	line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
-	if line == "" {
-		return stepMarkerMeta{}, false
-	}
-
-	candidates := []string{line}
-	lower := strings.ToLower(line)
-	switch {
-	case strings.HasPrefix(lower, "echo "):
-		candidates = append(candidates, strings.TrimSpace(line[len("echo "):]))
-	case strings.HasPrefix(lower, "@echo "):
-		candidates = append(candidates, strings.TrimSpace(line[len("@echo "):]))
-	case strings.HasPrefix(lower, "write-output "):
-		candidates = append(candidates, strings.TrimSpace(line[len("write-output "):]))
-	}
-	for _, candidate := range candidates {
-		if meta, ok := parseStepMarkerLine(candidate); ok {
-			return meta, true
-		}
-	}
-	return stepMarkerMeta{}, false
 }
 
 func commandForScript(shell, script string) (string, []string, error) {
@@ -481,6 +488,15 @@ type syncBuffer struct {
 	b  bytes.Buffer
 }
 
+type releaseSummaryTracker struct {
+	mu   sync.Mutex
+	seen map[string]string
+}
+
+func newReleaseSummaryTracker() *releaseSummaryTracker {
+	return &releaseSummaryTracker{seen: map[string]string{}}
+}
+
 func (s *syncBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -499,7 +515,80 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, sensitive []string, defaultCurrentStep string) func() {
+func sanitizeAndCollectMetadataEvents(rawOutput string, sensitive []string, tracker *releaseSummaryTracker) (string, []protocol.JobExecutionEvent) {
+	sanitized, patch := extractReleaseSummaryPatch(rawOutput, tracker)
+	snapshot := redactSensitive(sanitized, sensitive)
+	if len(patch) == 0 {
+		return snapshot, nil
+	}
+	return snapshot, []protocol.JobExecutionEvent{
+		{
+			Type:         protocol.JobExecutionEventTypeMetadataPatch,
+			Metadata:     patch,
+			TimestampUTC: time.Now().UTC(),
+		},
+	}
+}
+
+func extractReleaseSummaryPatch(rawOutput string, tracker *releaseSummaryTracker) (string, map[string]string) {
+	if strings.TrimSpace(rawOutput) == "" {
+		return rawOutput, nil
+	}
+	lines := strings.Split(strings.ReplaceAll(rawOutput, "\r\n", "\n"), "\n")
+	kept := make([]string, 0, len(lines))
+	patch := map[string]string{}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		idx := strings.Index(trimmed, "__CIWI_RELEASE_SUMMARY__")
+		if idx < 0 {
+			kept = append(kept, line)
+			continue
+		}
+		marker := strings.TrimSpace(trimmed[idx:])
+		if !strings.HasPrefix(marker, "__CIWI_RELEASE_SUMMARY__") {
+			kept = append(kept, line)
+			continue
+		}
+		metadata := strings.TrimSpace(strings.TrimPrefix(marker, "__CIWI_RELEASE_SUMMARY__"))
+		metadata = strings.Trim(metadata, `"'`)
+		if metadata == "" {
+			continue
+		}
+		eq := strings.IndexByte(metadata, '=')
+		if eq <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(metadata[:eq])
+		val := strings.TrimSpace(metadata[eq+1:])
+		val = strings.Trim(val, `"'`)
+		if key == "" || val == "" {
+			continue
+		}
+		patch[key] = val
+	}
+	if len(patch) == 0 {
+		return strings.Join(kept, "\n"), nil
+	}
+	if tracker != nil {
+		tracker.mu.Lock()
+		filtered := map[string]string{}
+		for key, val := range patch {
+			if prev, ok := tracker.seen[key]; ok && prev == val {
+				continue
+			}
+			tracker.seen[key] = val
+			filtered[key] = val
+		}
+		tracker.mu.Unlock()
+		patch = filtered
+	}
+	if len(patch) == 0 {
+		patch = nil
+	}
+	return strings.Join(kept, "\n"), patch
+}
+
+func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, sensitive []string, defaultCurrentStep string, releaseSummary *releaseSummaryTracker) func() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	done := make(chan struct{})
 	stopCh := make(chan struct{})
@@ -511,11 +600,8 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 		reportedEmptySnapshot := false
 		sendSnapshot := func() {
 			rawSnapshot := trimOutput(output.String())
-			snapshot := redactSensitive(rawSnapshot, sensitive)
-			currentStep := extractCurrentStepFromOutput(rawSnapshot)
-			if currentStep == "" {
-				currentStep = defaultCurrentStep
-			}
+			snapshot, summaryEvents := sanitizeAndCollectMetadataEvents(rawSnapshot, sensitive, releaseSummary)
+			currentStep := defaultCurrentStep
 			if strings.TrimSpace(snapshot) == "" && strings.TrimSpace(currentStep) != "" {
 				if !reportedEmptySnapshot {
 					slog.Warn("running update has empty output snapshot", "job_execution_id", jobID, "agent_id", agentID, "current_step", currentStep)
@@ -524,7 +610,7 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 			} else if strings.TrimSpace(snapshot) != "" {
 				reportedEmptySnapshot = false
 			}
-			if snapshot == lastSent && currentStep == lastStep {
+			if snapshot == lastSent && currentStep == lastStep && len(summaryEvents) == 0 {
 				return
 			}
 			lastSent = snapshot
@@ -534,6 +620,7 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 				Status:       protocol.JobExecutionStatusRunning,
 				Output:       snapshot,
 				CurrentStep:  currentStep,
+				Events:       summaryEvents,
 				TimestampUTC: time.Now().UTC(),
 			}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				slog.Error("stream running update failed", "job_execution_id", jobID, "error", err)

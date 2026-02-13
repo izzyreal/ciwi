@@ -280,17 +280,92 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 	}
 }
 
-func TestExtractCurrentStepFromOutput(t *testing.T) {
-	output := strings.Join([]string{
-		"[meta] job_execution_id=job-1",
-		`__CIWI_STEP_BEGIN__ index=1 total=3 name=checkout_source`,
-		"cloning...",
-		`"__CIWI_STEP_BEGIN__ index=2 total=3 name=build_app"`,
-		"building...",
+func TestExtractReleaseSummaryPatch(t *testing.T) {
+	tracker := newReleaseSummaryTracker()
+	input := strings.Join([]string{
+		"[run] starting",
+		"__CIWI_RELEASE_SUMMARY__ version=v1.2.3",
+		"__CIWI_RELEASE_SUMMARY__ release_created=no (dry-run)",
+		"[run] done",
 	}, "\n")
-	step := extractCurrentStepFromOutput(output)
-	if step != "Step 2/3: build app" {
-		t.Fatalf("unexpected current step: %q", step)
+	sanitized, patch := extractReleaseSummaryPatch(input, tracker)
+	if strings.Contains(sanitized, "__CIWI_RELEASE_SUMMARY__") {
+		t.Fatalf("expected release marker lines stripped, got:\n%s", sanitized)
+	}
+	if patch["version"] != "v1.2.3" {
+		t.Fatalf("unexpected version patch: %q", patch["version"])
+	}
+	if patch["release_created"] != "no (dry-run)" {
+		t.Fatalf("unexpected release_created patch: %q", patch["release_created"])
+	}
+}
+
+func TestExecuteLeasedJobMapsReleaseSummaryToMetadataEvent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell assertion test skipped on windows")
+	}
+
+	var (
+		mu       sync.Mutex
+		statuses []protocol.JobExecutionStatusUpdateRequest
+	)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-release/status" {
+				var req protocol.JobExecutionStatusUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode status: %v", err)
+				}
+				mu.Lock()
+				statuses = append(statuses, req)
+				mu.Unlock()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	job := protocol.JobExecution{
+		ID:             "job-release",
+		Script:         `echo "__CIWI_RELEASE_SUMMARY__ version=v1.2.3"`,
+		TimeoutSeconds: 30,
+		RequiredCapabilities: map[string]string{
+			"shell": shellPosix,
+		},
+	}
+	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", t.TempDir(), nil, job); err != nil {
+		t.Fatalf("executeLeasedJob: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) == 0 {
+		t.Fatalf("expected status updates")
+	}
+	foundPatch := false
+	for _, st := range statuses {
+		if strings.Contains(st.Output, "__CIWI_RELEASE_SUMMARY__") {
+			t.Fatalf("expected marker stripped from reported output, got:\n%s", st.Output)
+		}
+		for _, event := range st.Events {
+			if event.Type != protocol.JobExecutionEventTypeMetadataPatch {
+				continue
+			}
+			if event.Metadata["version"] == "v1.2.3" {
+				foundPatch = true
+			}
+		}
+	}
+	if !foundPatch {
+		t.Fatalf("expected metadata.patch event carrying version")
 	}
 }
 
@@ -462,19 +537,15 @@ func TestExecuteLeasedJobRunsPipelineStepsInSeparateShellProcesses(t *testing.T)
 		}),
 	}
 
-	script := strings.Join([]string{
-		`echo "__CIWI_STEP_BEGIN__ index=1 total=3 name=first"`,
-		`pwd > step1.txt`,
-		`echo "__CIWI_STEP_BEGIN__ index=2 total=3 name=second"`,
-		`cd "` + strings.ReplaceAll(otherDir, `"`, `\"`) + `"`,
-		`pwd > step2.txt`,
-		`echo "__CIWI_STEP_BEGIN__ index=3 total=3 name=third"`,
-		`pwd > step3.txt`,
-	}, "\n")
 	job := protocol.JobExecution{
 		ID:             jobID,
-		Script:         script,
+		Script:         strings.Join([]string{`pwd > step1.txt`, `cd "` + strings.ReplaceAll(otherDir, `"`, `\"`) + `"`, `pwd > step2.txt`, `pwd > step3.txt`}, "\n"),
 		TimeoutSeconds: 30,
+		StepPlan: []protocol.JobStepPlanItem{
+			{Index: 1, Total: 3, Name: "first", Script: `pwd > step1.txt`},
+			{Index: 2, Total: 3, Name: "second", Script: `cd "` + strings.ReplaceAll(otherDir, `"`, `\"`) + `"` + "\n" + `pwd > step2.txt`},
+			{Index: 3, Total: 3, Name: "third", Script: `pwd > step3.txt`},
+		},
 		RequiredCapabilities: map[string]string{
 			"shell": shellPosix,
 		},
@@ -537,15 +608,22 @@ func TestExecuteLeasedJobFailsWhenStepTestReportContainsFailures(t *testing.T) {
 		}),
 	}
 
-	script := strings.Join([]string{
-		`echo "__CIWI_STEP_BEGIN__ index=1 total=1 name=go_unit kind=test test_name=go-unit test_format=go-test-json test_report=out/report.json"`,
-		`mkdir -p out`,
-		`printf '%s\n' '{"Action":"run","Package":"p","Test":"TestA"}' '{"Action":"fail","Package":"p","Test":"TestA","Elapsed":0.01}' > out/report.json`,
-	}, "\n")
 	job := protocol.JobExecution{
 		ID:             "job-test-report",
-		Script:         script,
+		Script:         "mkdir -p out && printf '%s\\n' '{\"Action\":\"run\",\"Package\":\"p\",\"Test\":\"TestA\"}' '{\"Action\":\"fail\",\"Package\":\"p\",\"Test\":\"TestA\",\"Elapsed\":0.01}' > out/report.json",
 		TimeoutSeconds: 30,
+		StepPlan: []protocol.JobStepPlanItem{
+			{
+				Index:      1,
+				Total:      1,
+				Name:       "go_unit",
+				Script:     "mkdir -p out && printf '%s\\n' '{\"Action\":\"run\",\"Package\":\"p\",\"Test\":\"TestA\"}' '{\"Action\":\"fail\",\"Package\":\"p\",\"Test\":\"TestA\",\"Elapsed\":0.01}' > out/report.json",
+				Kind:       "test",
+				TestName:   "go-unit",
+				TestFormat: "go-test-json",
+				TestReport: "out/report.json",
+			},
+		},
 		RequiredCapabilities: map[string]string{
 			"shell": shellPosix,
 		},
@@ -601,14 +679,13 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 		}),
 	}
 
-	script := strings.Join([]string{
-		`echo "__CIWI_STEP_BEGIN__ index=1 total=1 name=compile"`,
-		`true`,
-	}, "\n")
 	job := protocol.JobExecution{
 		ID:             "job-step-output",
-		Script:         script,
+		Script:         "true",
 		TimeoutSeconds: 30,
+		StepPlan: []protocol.JobStepPlanItem{
+			{Index: 1, Total: 1, Name: "compile", Script: "true"},
+		},
 		RequiredCapabilities: map[string]string{
 			"shell": shellPosix,
 		},
@@ -623,6 +700,7 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 		t.Fatalf("expected status updates")
 	}
 	foundRunningStep := false
+	foundStepStartedEvent := false
 	for _, st := range statuses {
 		if st.Status != "running" {
 			continue
@@ -634,12 +712,18 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 		if strings.TrimSpace(st.Output) == "" {
 			t.Fatalf("expected running step status to include output snapshot")
 		}
-		if !strings.Contains(st.Output, "__CIWI_STEP_BEGIN__") {
-			t.Fatalf("expected running step output to include step marker, got:\n%s", st.Output)
+		for _, event := range st.Events {
+			if event.Type == protocol.JobExecutionEventTypeStepStarted {
+				foundStepStartedEvent = true
+				break
+			}
 		}
 	}
 	if !foundRunningStep {
 		t.Fatalf("expected running step status update")
+	}
+	if !foundStepStartedEvent {
+		t.Fatalf("expected at least one running status update with step.started event")
 	}
 }
 

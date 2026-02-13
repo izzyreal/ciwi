@@ -53,6 +53,7 @@ type CreateJobExecutionRequest struct {
 	Caches               []JobCacheSpec    `json:"caches,omitempty"`
 	Source               *SourceSpec       `json:"source,omitempty"`
 	Metadata             map[string]string `json:"metadata,omitempty"`
+	StepPlan             []JobStepPlanItem `json:"step_plan,omitempty"`
 }
 
 type JobExecution struct {
@@ -65,6 +66,7 @@ type JobExecution struct {
 	Caches               []JobCacheSpec           `json:"caches,omitempty"`
 	Source               *SourceSpec              `json:"source,omitempty"`
 	Metadata             map[string]string        `json:"metadata,omitempty"`
+	StepPlan             []JobStepPlanItem        `json:"step_plan,omitempty"`
 	CurrentStep          string                   `json:"current_step,omitempty"`
 	Status               string                   `json:"status"`
 	CreatedUTC           time.Time                `json:"created_utc"`
@@ -237,13 +239,37 @@ type UploadArtifactsRequest struct {
 }
 
 type JobExecutionStatusUpdateRequest struct {
-	AgentID      string    `json:"agent_id"`
-	Status       string    `json:"status"`
-	ExitCode     *int      `json:"exit_code,omitempty"`
-	Error        string    `json:"error,omitempty"`
-	Output       string    `json:"output,omitempty"`
-	CurrentStep  string    `json:"current_step,omitempty"`
-	TimestampUTC time.Time `json:"timestamp_utc,omitempty"`
+	AgentID      string              `json:"agent_id"`
+	Status       string              `json:"status"`
+	ExitCode     *int                `json:"exit_code,omitempty"`
+	Error        string              `json:"error,omitempty"`
+	Output       string              `json:"output,omitempty"`
+	CurrentStep  string              `json:"current_step,omitempty"`
+	Events       []JobExecutionEvent `json:"events,omitempty"`
+	TimestampUTC time.Time           `json:"timestamp_utc,omitempty"`
+}
+
+const (
+	JobExecutionEventTypeStepStarted   = "step.started"
+	JobExecutionEventTypeMetadataPatch = "metadata.patch"
+)
+
+type JobStepPlanItem struct {
+	Index      int    `json:"index"`
+	Total      int    `json:"total,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Script     string `json:"script,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	TestName   string `json:"test_name,omitempty"`
+	TestFormat string `json:"test_format,omitempty"`
+	TestReport string `json:"test_report,omitempty"`
+}
+
+type JobExecutionEvent struct {
+	Type         string            `json:"type"`
+	TimestampUTC time.Time         `json:"timestamp_utc,omitempty"`
+	Step         *JobStepPlanItem  `json:"step,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 type TestCase struct {

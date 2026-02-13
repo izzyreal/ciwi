@@ -210,15 +210,23 @@ func TestServerRunPipelineInjectsStepMarkers(t *testing.T) {
 	}
 	var jobsPayload struct {
 		JobExecutions []struct {
-			Script string `json:"script"`
+			Script   string `json:"script"`
+			StepPlan []struct {
+				Index int    `json:"index"`
+				Total int    `json:"total"`
+				Name  string `json:"name"`
+			} `json:"step_plan"`
 		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, jobsResp, &jobsPayload)
 	if len(jobsPayload.JobExecutions) == 0 {
 		t.Fatalf("expected at least one job execution")
 	}
-	if !strings.Contains(jobsPayload.JobExecutions[0].Script, "__CIWI_STEP_BEGIN__") {
-		t.Fatalf("expected script to include step marker, got:\n%s", jobsPayload.JobExecutions[0].Script)
+	if strings.Contains(jobsPayload.JobExecutions[0].Script, "STEP_BEGIN") {
+		t.Fatalf("expected script to exclude legacy step marker, got:\n%s", jobsPayload.JobExecutions[0].Script)
+	}
+	if len(jobsPayload.JobExecutions[0].StepPlan) == 0 {
+		t.Fatalf("expected step plan to be populated")
 	}
 }
 
@@ -282,21 +290,28 @@ pipelines:
 	}
 	var jobsPayload struct {
 		JobExecutions []struct {
-			Script string `json:"script"`
+			StepPlan []struct {
+				Kind       string `json:"kind"`
+				TestFormat string `json:"test_format"`
+				TestReport string `json:"test_report"`
+			} `json:"step_plan"`
 		} `json:"job_executions"`
 	}
 	decodeJSONBody(t, jobsResp, &jobsPayload)
 	if len(jobsPayload.JobExecutions) == 0 {
 		t.Fatalf("expected at least one job execution")
 	}
-	script := jobsPayload.JobExecutions[0].Script
-	if !strings.Contains(script, "kind=test") {
-		t.Fatalf("expected step marker to include kind=test metadata, got:\n%s", script)
+	if len(jobsPayload.JobExecutions[0].StepPlan) == 0 {
+		t.Fatalf("expected step plan to be populated")
 	}
-	if !strings.Contains(script, "test_format=junit-xml") {
-		t.Fatalf("expected step marker to include test format metadata, got:\n%s", script)
+	step := jobsPayload.JobExecutions[0].StepPlan[0]
+	if step.Kind != "test" {
+		t.Fatalf("expected test step kind, got %q", step.Kind)
 	}
-	if !strings.Contains(script, "test_report=test-results.xml") {
-		t.Fatalf("expected step marker to include test report metadata, got:\n%s", script)
+	if step.TestFormat != "junit-xml" {
+		t.Fatalf("expected step plan to include test format metadata, got %q", step.TestFormat)
+	}
+	if step.TestReport != "test-results.xml" {
+		t.Fatalf("expected step plan to include test report metadata, got %q", step.TestReport)
 	}
 }

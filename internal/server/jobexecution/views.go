@@ -16,6 +16,7 @@ type View struct {
 	Caches               []protocol.JobCacheSpec           `json:"caches,omitempty"`
 	Source               *protocol.SourceSpec              `json:"source,omitempty"`
 	Metadata             map[string]string                 `json:"metadata,omitempty"`
+	StepPlan             []protocol.JobStepPlanItem        `json:"step_plan,omitempty"`
 	CurrentStep          string                            `json:"current_step,omitempty"`
 	Status               string                            `json:"status"`
 	CreatedUTC           time.Time                         `json:"created_utc"`
@@ -82,6 +83,10 @@ type FlushHistoryViewResponse struct {
 	Flushed int64 `json:"flushed"`
 }
 
+type EventsViewResponse struct {
+	Events []protocol.JobExecutionEvent `json:"events"`
+}
+
 func ViewFromProtocol(job protocol.JobExecution) View {
 	view := View{
 		ID:                   job.ID,
@@ -93,6 +98,7 @@ func ViewFromProtocol(job protocol.JobExecution) View {
 		Caches:               job.Caches,
 		Source:               job.Source,
 		Metadata:             job.Metadata,
+		StepPlan:             job.StepPlan,
 		CurrentStep:          job.CurrentStep,
 		Status:               protocol.NormalizeJobExecutionStatus(job.Status),
 		CreatedUTC:           job.CreatedUTC,
