@@ -62,6 +62,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:      agentID,
 			Status:       protocol.JobExecutionStatusRunning,
+			Output:       redactSensitive(trimOutput(output.String()), job.SensitiveValues),
 			CurrentStep:  "Checking out source",
 			TimestampUTC: time.Now().UTC(),
 		}); err != nil {
@@ -120,6 +121,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 				AgentID:      agentID,
 				Status:       protocol.JobExecutionStatusRunning,
+				Output:       redactSensitive(trimOutput(output.String()), job.SensitiveValues),
 				CurrentStep:  currentStep,
 				TimestampUTC: time.Now().UTC(),
 			}); err != nil {
@@ -499,6 +501,30 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 		defer close(done)
 		lastSent := ""
 		lastStep := ""
+		sendSnapshot := func() {
+			rawSnapshot := trimOutput(output.String())
+			snapshot := redactSensitive(rawSnapshot, sensitive)
+			currentStep := extractCurrentStepFromOutput(rawSnapshot)
+			if currentStep == "" {
+				currentStep = defaultCurrentStep
+			}
+			if snapshot == lastSent && currentStep == lastStep {
+				return
+			}
+			lastSent = snapshot
+			lastStep = currentStep
+			if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobExecutionStatusUpdateRequest{
+				AgentID:      agentID,
+				Status:       protocol.JobExecutionStatusRunning,
+				Output:       snapshot,
+				CurrentStep:  currentStep,
+				TimestampUTC: time.Now().UTC(),
+			}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				slog.Error("stream running update failed", "job_execution_id", jobID, "error", err)
+			}
+		}
+		// Don't wait for the first ticker interval; publish an initial snapshot immediately.
+		sendSnapshot()
 		for {
 			select {
 			case <-stopCh:
@@ -506,26 +532,7 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				rawSnapshot := trimOutput(output.String())
-				snapshot := redactSensitive(rawSnapshot, sensitive)
-				currentStep := extractCurrentStepFromOutput(rawSnapshot)
-				if currentStep == "" {
-					currentStep = defaultCurrentStep
-				}
-				if snapshot == lastSent && currentStep == lastStep {
-					continue
-				}
-				lastSent = snapshot
-				lastStep = currentStep
-				if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobExecutionStatusUpdateRequest{
-					AgentID:      agentID,
-					Status:       protocol.JobExecutionStatusRunning,
-					Output:       snapshot,
-					CurrentStep:  currentStep,
-					TimestampUTC: time.Now().UTC(),
-				}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-					slog.Error("stream running update failed", "job_execution_id", jobID, "error", err)
-				}
+				sendSnapshot()
 			}
 		}
 	}()

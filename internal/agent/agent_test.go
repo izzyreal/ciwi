@@ -567,6 +567,81 @@ func TestExecuteLeasedJobFailsWhenStepTestReportContainsFailures(t *testing.T) {
 	}
 }
 
+func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell assertion test skipped on windows")
+	}
+
+	var (
+		mu       sync.Mutex
+		statuses []protocol.JobExecutionStatusUpdateRequest
+	)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-step-output/status" {
+				var req protocol.JobExecutionStatusUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode status: %v", err)
+				}
+				mu.Lock()
+				statuses = append(statuses, req)
+				mu.Unlock()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	script := strings.Join([]string{
+		`echo "__CIWI_STEP_BEGIN__ index=1 total=1 name=compile"`,
+		`true`,
+	}, "\n")
+	job := protocol.JobExecution{
+		ID:             "job-step-output",
+		Script:         script,
+		TimeoutSeconds: 30,
+		RequiredCapabilities: map[string]string{
+			"shell": shellPosix,
+		},
+	}
+	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", t.TempDir(), nil, job); err != nil {
+		t.Fatalf("executeLeasedJob: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) == 0 {
+		t.Fatalf("expected status updates")
+	}
+	foundRunningStep := false
+	for _, st := range statuses {
+		if st.Status != "running" {
+			continue
+		}
+		if !strings.HasPrefix(st.CurrentStep, "Step 1/1:") {
+			continue
+		}
+		foundRunningStep = true
+		if strings.TrimSpace(st.Output) == "" {
+			t.Fatalf("expected running step status to include output snapshot")
+		}
+		if !strings.Contains(st.Output, "__CIWI_STEP_BEGIN__") {
+			t.Fatalf("expected running step output to include step marker, got:\n%s", st.Output)
+		}
+	}
+	if !foundRunningStep {
+		t.Fatalf("expected running step status update")
+	}
+}
+
 func TestExecuteLeasedJobDisablesShellTraceForAdhoc(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix shell assertion test skipped on windows")
