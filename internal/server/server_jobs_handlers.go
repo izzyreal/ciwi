@@ -38,16 +38,16 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 		case "summary":
 			queuedGroups := summarizeJobDisplayGroups(queuedJobs)
 			historyGroups := summarizeJobDisplayGroups(historyJobs)
-			writeJSON(w, http.StatusOK, map[string]any{
-				"view":                "summary",
-				"max":                 maxJobs,
-				"total":               len(jobs),
-				"queued_count":        len(queuedJobs),
-				"history_count":       len(historyJobs),
-				"queued_group_count":  len(queuedGroups),
-				"history_group_count": len(historyGroups),
-				"queued_groups":       queuedGroups,
-				"history_groups":      historyGroups,
+			writeJSON(w, http.StatusOK, jobsSummaryViewResponse{
+				View:              "summary",
+				Max:               maxJobs,
+				Total:             len(jobs),
+				QueuedCount:       len(queuedJobs),
+				HistoryCount:      len(historyJobs),
+				QueuedGroupCount:  len(queuedGroups),
+				HistoryGroupCount: len(historyGroups),
+				QueuedGroups:      queuedGroups,
+				HistoryGroups:     historyGroups,
 			})
 			return
 		case "queued", "history":
@@ -61,13 +61,13 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 			s.attachTestSummaries(page)
 			s.attachUnmetRequirements(page)
 			pageViews := jobViewsFromProtocol(page)
-			writeJSON(w, http.StatusOK, map[string]any{
-				"view":           view,
-				"total":          len(source),
-				"offset":         offset,
-				"limit":          limit,
-				"job_executions": pageViews,
-				"jobs":           pageViews,
+			writeJSON(w, http.StatusOK, jobsPagedViewResponse{
+				View:          view,
+				Total:         len(source),
+				Offset:        offset,
+				Limit:         limit,
+				JobExecutions: pageViews,
+				Jobs:          pageViews,
 			})
 			return
 		}
@@ -75,7 +75,7 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 		s.attachTestSummaries(jobs)
 		s.attachUnmetRequirements(jobs)
 		jobsViews := jobViewsFromProtocol(jobs)
-		writeJSON(w, http.StatusOK, map[string]any{"job_executions": jobsViews, "jobs": jobsViews})
+		writeJSON(w, http.StatusOK, jobsListViewResponse{JobExecutions: jobsViews, Jobs: jobsViews})
 	case http.MethodPost:
 		var req protocol.CreateJobRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -198,7 +198,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			s.attachTestSummary(&job)
 			s.attachUnmetRequirementsToJob(&job)
 			jobResponse := jobViewFromProtocol(job)
-			writeJSON(w, http.StatusOK, map[string]any{"job_execution": jobResponse, "job": jobResponse})
+			writeJSON(w, http.StatusOK, jobPairViewResponse{JobExecution: jobResponse, Job: jobResponse})
 		case http.MethodDelete:
 			err := s.db.DeleteQueuedJob(jobID)
 			if err != nil {
@@ -209,7 +209,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "job_id": jobID})
+			writeJSON(w, http.StatusOK, deleteJobViewResponse{Deleted: true, JobID: jobID})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -251,7 +251,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		updatedResponse := jobViewFromProtocol(updated)
-		writeJSON(w, http.StatusOK, map[string]any{"job_execution": updatedResponse, "job": updatedResponse})
+		writeJSON(w, http.StatusOK, jobPairViewResponse{JobExecution: updatedResponse, Job: updatedResponse})
 		return
 	}
 
@@ -289,7 +289,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// Status updates are a liveness signal while an agent is busy.
 		s.markAgentSeen(req.AgentID, req.TimestampUTC)
-		writeJSON(w, http.StatusOK, map[string]any{"job": jobViewFromProtocol(job)})
+		writeJSON(w, http.StatusOK, jobSingleViewResponse{Job: jobViewFromProtocol(job)})
 		return
 	}
 
@@ -409,7 +409,7 @@ func (s *stateStore) clearQueueHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"cleared": n})
+	writeJSON(w, http.StatusOK, clearQueueViewResponse{Cleared: n})
 }
 
 func (s *stateStore) flushHistoryHandler(w http.ResponseWriter, r *http.Request) {
@@ -422,5 +422,5 @@ func (s *stateStore) flushHistoryHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"flushed": n})
+	writeJSON(w, http.StatusOK, flushHistoryViewResponse{Flushed: n})
 }

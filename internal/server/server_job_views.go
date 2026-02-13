@@ -35,10 +35,58 @@ type createJobViewResponse struct {
 	Job jobView `json:"job"`
 }
 
+type jobsSummaryViewResponse struct {
+	View              string                   `json:"view"`
+	Max               int                      `json:"max"`
+	Total             int                      `json:"total"`
+	QueuedCount       int                      `json:"queued_count"`
+	HistoryCount      int                      `json:"history_count"`
+	QueuedGroupCount  int                      `json:"queued_group_count"`
+	HistoryGroupCount int                      `json:"history_group_count"`
+	QueuedGroups      []jobDisplayGroupSummary `json:"queued_groups"`
+	HistoryGroups     []jobDisplayGroupSummary `json:"history_groups"`
+}
+
+type jobsPagedViewResponse struct {
+	View          string    `json:"view"`
+	Total         int       `json:"total"`
+	Offset        int       `json:"offset"`
+	Limit         int       `json:"limit"`
+	JobExecutions []jobView `json:"job_executions"`
+	Jobs          []jobView `json:"jobs"`
+}
+
+type jobsListViewResponse struct {
+	JobExecutions []jobView `json:"job_executions"`
+	Jobs          []jobView `json:"jobs"`
+}
+
+type jobPairViewResponse struct {
+	JobExecution jobView `json:"job_execution"`
+	Job          jobView `json:"job"`
+}
+
+type jobSingleViewResponse struct {
+	Job jobView `json:"job"`
+}
+
 type leaseJobViewResponse struct {
 	Assigned bool     `json:"assigned"`
 	Job      *jobView `json:"job,omitempty"`
 	Message  string   `json:"message,omitempty"`
+}
+
+type deleteJobViewResponse struct {
+	Deleted bool   `json:"deleted"`
+	JobID   string `json:"job_id"`
+}
+
+type clearQueueViewResponse struct {
+	Cleared int64 `json:"cleared"`
+}
+
+type flushHistoryViewResponse struct {
+	Flushed int64 `json:"flushed"`
 }
 
 func jobViewFromProtocol(job protocol.Job) jobView {
