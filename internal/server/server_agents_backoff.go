@@ -1,14 +1,13 @@
 package server
 
 import (
-	"hash/fnv"
-	"strings"
 	"time"
 )
 
 const (
-	agentUpdateInitialWarmupBase   = 12 * time.Second
-	agentUpdateInitialWarmupJitter = 8 * time.Second
+	agentUpdateFirstAttemptBaseDelay = 10 * time.Second
+	agentUpdateFirstAttemptStepDelay = 2 * time.Second
+	agentUpdateInProgressGrace       = 5 * time.Second
 )
 
 func agentUpdateBackoff(attempt int) time.Duration {
@@ -31,19 +30,9 @@ func agentUpdateBackoff(attempt int) time.Duration {
 	return d
 }
 
-func agentUpdateInitialWarmup(agentID, target string) time.Duration {
-	base := agentUpdateInitialWarmupBase
-	if base < 0 {
-		base = 0
+func agentUpdateFirstAttemptDelay(slot int) time.Duration {
+	if slot < 0 {
+		slot = 0
 	}
-	jitterWindow := agentUpdateInitialWarmupJitter
-	if jitterWindow <= 0 {
-		return base
-	}
-	key := strings.TrimSpace(agentID) + "|" + strings.TrimSpace(target)
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(key))
-	jitterSteps := uint32(jitterWindow/time.Millisecond) + 1
-	jitter := time.Duration(hasher.Sum32()%jitterSteps) * time.Millisecond
-	return base + jitter
+	return agentUpdateFirstAttemptBaseDelay + (time.Duration(slot) * agentUpdateFirstAttemptStepDelay)
 }

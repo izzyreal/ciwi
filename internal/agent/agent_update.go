@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -31,6 +34,10 @@ type githubRelease struct {
 	TagName string               `json:"tag_name"`
 	Assets  []githubReleaseAsset `json:"assets"`
 }
+
+const (
+	updateNetworkMaxAttempts = 3
+)
 
 func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBase string, restartArgs []string) error {
 	exePath, err := os.Executable()
@@ -169,49 +176,71 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 
 func fetchReleaseAssetsForTag(ctx context.Context, apiBase, repository, targetVersion, assetName, checksumName string) (githubReleaseAsset, githubReleaseAsset, error) {
 	url := apiBase + "/repos/" + repository + "/releases/tags/" + strings.TrimSpace(targetVersion)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "ciwi-agent-updater")
-	applyGitHubAuthHeader(req)
-
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-	if err != nil {
-		return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("request release for tag: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("release tag query failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var rel githubRelease
-	if err := json.Unmarshal(body, &rel); err != nil {
-		return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("decode release tag response: %w", err)
-	}
-
-	var asset githubReleaseAsset
-	var checksum githubReleaseAsset
-	for _, a := range rel.Assets {
-		if a.Name == assetName {
-			asset = a
+	client := updateHTTPClient(20 * time.Second)
+	var lastErr error
+	for attempt := 1; attempt <= updateNetworkMaxAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("create request: %w", err)
 		}
-		if a.Name == checksumName || a.Name == "checksums.txt" {
-			checksum = a
-		}
-	}
-	if asset.URL == "" {
-		return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("release tag %q has no asset %q", targetVersion, assetName)
-	}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "ciwi-agent-updater")
+		applyGitHubAuthHeader(req)
 
-	requireChecksum := strings.TrimSpace(envOrDefault("CIWI_UPDATE_REQUIRE_CHECKSUM", "true")) != "false"
-	if requireChecksum && checksum.URL == "" {
-		return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("release tag %q has no checksum asset (expected %q)", targetVersion, checksumName)
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request release for tag: %w", err)
+			if attempt < updateNetworkMaxAttempts && shouldRetryUpdateError(err) {
+				wait := updateRetryDelay(attempt)
+				slog.Warn("release tag request failed; retrying", "target_version", targetVersion, "attempt", attempt, "next_wait", wait, "error", err)
+				if !sleepWithContext(ctx, wait) {
+					return githubReleaseAsset{}, githubReleaseAsset{}, context.Cause(ctx)
+				}
+				continue
+			}
+			return githubReleaseAsset{}, githubReleaseAsset{}, lastErr
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+		_ = resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("release tag query failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+			if attempt < updateNetworkMaxAttempts && shouldRetryUpdateHTTPStatus(resp.StatusCode) {
+				wait := updateRetryDelay(attempt)
+				slog.Warn("release tag query returned retryable status; retrying", "target_version", targetVersion, "status", resp.StatusCode, "attempt", attempt, "next_wait", wait)
+				if !sleepWithContext(ctx, wait) {
+					return githubReleaseAsset{}, githubReleaseAsset{}, context.Cause(ctx)
+				}
+				continue
+			}
+			return githubReleaseAsset{}, githubReleaseAsset{}, lastErr
+		}
+
+		var rel githubRelease
+		if err := json.Unmarshal(body, &rel); err != nil {
+			return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("decode release tag response: %w", err)
+		}
+
+		var asset githubReleaseAsset
+		var checksum githubReleaseAsset
+		for _, a := range rel.Assets {
+			if a.Name == assetName {
+				asset = a
+			}
+			if a.Name == checksumName || a.Name == "checksums.txt" {
+				checksum = a
+			}
+		}
+		if asset.URL == "" {
+			return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("release tag %q has no asset %q", targetVersion, assetName)
+		}
+
+		requireChecksum := strings.TrimSpace(envOrDefault("CIWI_UPDATE_REQUIRE_CHECKSUM", "true")) != "false"
+		if requireChecksum && checksum.URL == "" {
+			return githubReleaseAsset{}, githubReleaseAsset{}, fmt.Errorf("release tag %q has no checksum asset (expected %q)", targetVersion, checksumName)
+		}
+		return asset, checksum, nil
 	}
-	return asset, checksum, nil
+	return githubReleaseAsset{}, githubReleaseAsset{}, lastErr
 }
 
 func startUpdateHelper(helperPath, targetPath, newBinaryPath string, parentPID int, restartArgs []string, serviceName string) error {
@@ -259,22 +288,46 @@ func isVersionDifferent(target, current string) bool {
 }
 
 func downloadUpdateAsset(ctx context.Context, assetURL, assetName string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-	req.Header.Set("User-Agent", "ciwi-agent-updater")
-	applyGitHubAuthHeader(req)
-	resp, err := (&http.Client{Timeout: 2 * time.Minute}).Do(req)
-	if err != nil {
-		return "", err
+	client := updateHTTPClient(2 * time.Minute)
+	var resp *http.Response
+	var err error
+	for attempt := 1; attempt <= updateNetworkMaxAttempts; attempt++ {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
+		if reqErr != nil {
+			return "", reqErr
+		}
+		req.Header.Set("Accept", "application/octet-stream")
+		req.Header.Set("User-Agent", "ciwi-agent-updater")
+		applyGitHubAuthHeader(req)
+		resp, err = client.Do(req)
+		if err != nil {
+			if attempt < updateNetworkMaxAttempts && shouldRetryUpdateError(err) {
+				wait := updateRetryDelay(attempt)
+				slog.Warn("update asset download request failed; retrying", "asset_url", assetURL, "attempt", attempt, "next_wait", wait, "error", err)
+				if !sleepWithContext(ctx, wait) {
+					return "", context.Cause(ctx)
+				}
+				continue
+			}
+			return "", err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+			_ = resp.Body.Close()
+			err = fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+			if attempt < updateNetworkMaxAttempts && shouldRetryUpdateHTTPStatus(resp.StatusCode) {
+				wait := updateRetryDelay(attempt)
+				slog.Warn("update asset download returned retryable status; retrying", "asset_url", assetURL, "status", resp.StatusCode, "attempt", attempt, "next_wait", wait)
+				if !sleepWithContext(ctx, wait) {
+					return "", context.Cause(ctx)
+				}
+				continue
+			}
+			return "", err
+		}
+		break
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		return "", fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
 
 	tmp := filepath.Join(os.TempDir(), "ciwi-agent-update-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
@@ -296,22 +349,46 @@ func downloadUpdateAsset(ctx context.Context, assetURL, assetName string) (strin
 }
 
 func downloadTextAsset(ctx context.Context, assetURL string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-	req.Header.Set("User-Agent", "ciwi-agent-updater")
-	applyGitHubAuthHeader(req)
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return "", err
+	client := updateHTTPClient(30 * time.Second)
+	var resp *http.Response
+	var err error
+	for attempt := 1; attempt <= updateNetworkMaxAttempts; attempt++ {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
+		if reqErr != nil {
+			return "", reqErr
+		}
+		req.Header.Set("Accept", "application/octet-stream")
+		req.Header.Set("User-Agent", "ciwi-agent-updater")
+		applyGitHubAuthHeader(req)
+		resp, err = client.Do(req)
+		if err != nil {
+			if attempt < updateNetworkMaxAttempts && shouldRetryUpdateError(err) {
+				wait := updateRetryDelay(attempt)
+				slog.Warn("checksum asset download request failed; retrying", "asset_url", assetURL, "attempt", attempt, "next_wait", wait, "error", err)
+				if !sleepWithContext(ctx, wait) {
+					return "", context.Cause(ctx)
+				}
+				continue
+			}
+			return "", err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+			_ = resp.Body.Close()
+			err = fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+			if attempt < updateNetworkMaxAttempts && shouldRetryUpdateHTTPStatus(resp.StatusCode) {
+				wait := updateRetryDelay(attempt)
+				slog.Warn("checksum asset download returned retryable status; retrying", "asset_url", assetURL, "status", resp.StatusCode, "attempt", attempt, "next_wait", wait)
+				if !sleepWithContext(ctx, wait) {
+					return "", context.Cause(ctx)
+				}
+				continue
+			}
+			return "", err
+		}
+		break
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		return "", fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	if err != nil {
 		return "", err
@@ -340,6 +417,84 @@ func applyGitHubAuthHeader(req *http.Request) {
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+}
+
+func updateHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:   false,
+			DisableKeepAlives:   true,
+			MaxIdleConns:        1,
+			MaxIdleConnsPerHost: 1,
+		},
+	}
+}
+
+func shouldRetryUpdateHTTPStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+func shouldRetryUpdateError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+		return true
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	if msg == "" {
+		return false
+	}
+	markers := []string{
+		"http/2 stream",
+		"stream was not closed cleanly",
+		"remote end hung up unexpectedly",
+		"unexpected eof",
+		"eof",
+		"connection reset",
+		"connection refused",
+		"connection timed out",
+		"tls handshake timeout",
+		"no such host",
+		"temporary failure",
+		"timeout",
+	}
+	for _, marker := range markers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func updateRetryDelay(attempt int) time.Duration {
+	if attempt <= 1 {
+		return time.Second
+	}
+	if attempt == 2 {
+		return 2 * time.Second
+	}
+	return 4 * time.Second
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return true
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func moveOrCopyFile(src, dst string, mode fs.FileMode) error {

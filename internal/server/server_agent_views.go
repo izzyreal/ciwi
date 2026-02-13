@@ -18,6 +18,7 @@ type agentView struct {
 	UpdateTarget         string            `json:"update_target,omitempty"`
 	UpdateRequested      bool              `json:"update_requested,omitempty"`
 	UpdateAttempts       int               `json:"update_attempts,omitempty"`
+	UpdateInProgress     bool              `json:"update_in_progress,omitempty"`
 	UpdateLastRequestUTC *time.Time        `json:"update_last_request_utc,omitempty"`
 	UpdateNextRetryUTC   *time.Time        `json:"update_next_retry_utc,omitempty"`
 }
@@ -71,6 +72,7 @@ func agentViewFromState(agentID string, state agentState, pendingTarget, serverV
 		UpdateTarget:         updateTarget,
 		UpdateRequested:      updateRequested,
 		UpdateAttempts:       state.UpdateAttempts,
+		UpdateInProgress:     state.UpdateInProgress,
 		UpdateLastRequestUTC: optionalTime(state.UpdateLastRequestUTC),
 		UpdateNextRetryUTC:   optionalTime(state.UpdateNextRetryUTC),
 	}

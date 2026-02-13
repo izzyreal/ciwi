@@ -12,6 +12,31 @@ import (
 	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 )
 
+func (s *stateStore) scheduleAutomaticUpdateFirstAttemptLocked(agentID, target string, now time.Time) (time.Time, int) {
+	agentID = strings.TrimSpace(agentID)
+	target = strings.TrimSpace(target)
+	if agentID == "" || target == "" {
+		return time.Time{}, -1
+	}
+	if s.agentRollout.Slots == nil {
+		s.agentRollout.Slots = make(map[string]int)
+	}
+	if s.agentRollout.Target != target {
+		s.agentRollout.Target = target
+		s.agentRollout.StartedUTC = now
+		s.agentRollout.NextSlot = 0
+		s.agentRollout.Slots = make(map[string]int)
+	}
+	slot, ok := s.agentRollout.Slots[agentID]
+	if !ok {
+		slot = s.agentRollout.NextSlot
+		s.agentRollout.Slots[agentID] = slot
+		s.agentRollout.NextSlot++
+	}
+	firstAttemptAt := s.agentRollout.StartedUTC.Add(agentUpdateFirstAttemptDelay(slot))
+	return firstAttemptAt, slot
+}
+
 func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -45,28 +70,39 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updateRequested := false
-	warmupDelay := time.Duration(0)
+	updateAttemptFailed := false
+	firstAttemptAt := time.Time{}
+	firstAttemptSlot := -1
 	needsUpdate := target != "" && isVersionDifferent(target, strings.TrimSpace(hb.Version))
 	if needsUpdate {
 		if strings.TrimSpace(prev.UpdateTarget) != target {
 			prev.UpdateTarget = target
 			prev.UpdateAttempts = 0
+			prev.UpdateInProgress = false
 			prev.UpdateLastRequestUTC = time.Time{}
 			prev.UpdateNextRetryUTC = time.Time{}
 			if manualTarget == "" {
-				// Give newly rolled out server versions a short warmup window before
-				// the first automatic agent update request.
-				warmupDelay = agentUpdateInitialWarmup(hb.AgentID, target)
-				if warmupDelay > 0 {
-					prev.UpdateNextRetryUTC = now.Add(warmupDelay)
+				firstAttemptAt, firstAttemptSlot = s.scheduleAutomaticUpdateFirstAttemptLocked(hb.AgentID, target, now)
+				if !firstAttemptAt.IsZero() {
+					prev.UpdateNextRetryUTC = firstAttemptAt
 				}
 			}
 		}
-		if prev.UpdateNextRetryUTC.IsZero() || !now.Before(prev.UpdateNextRetryUTC) {
+
+		if prev.UpdateInProgress {
+			if prev.UpdateLastRequestUTC.IsZero() || !now.Before(prev.UpdateLastRequestUTC.Add(agentUpdateInProgressGrace)) {
+				prev.UpdateInProgress = false
+				prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
+				updateAttemptFailed = true
+			}
+		}
+
+		if !prev.UpdateInProgress && (prev.UpdateNextRetryUTC.IsZero() || !now.Before(prev.UpdateNextRetryUTC)) {
 			updateRequested = true
 			prev.UpdateAttempts++
+			prev.UpdateInProgress = true
 			prev.UpdateLastRequestUTC = now
-			prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
+			prev.UpdateNextRetryUTC = time.Time{}
 		}
 	} else {
 		if manualTarget != "" {
@@ -74,6 +110,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		prev.UpdateTarget = ""
 		prev.UpdateAttempts = 0
+		prev.UpdateInProgress = false
 		prev.UpdateLastRequestUTC = time.Time{}
 		prev.UpdateNextRetryUTC = time.Time{}
 	}
@@ -88,6 +125,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		RecentLog:            append([]string(nil), prev.RecentLog...),
 		UpdateTarget:         prev.UpdateTarget,
 		UpdateAttempts:       prev.UpdateAttempts,
+		UpdateInProgress:     prev.UpdateInProgress,
 		UpdateLastRequestUTC: prev.UpdateLastRequestUTC,
 		UpdateNextRetryUTC:   prev.UpdateNextRetryUTC,
 	}
@@ -95,11 +133,18 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		state.RecentLog = appendAgentLog(state.RecentLog, "server requested tools refresh")
 	}
-	if warmupDelay > 0 {
-		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("scheduled automatic update to %s after warmup=%s", target, warmupDelay.Round(time.Second)))
+	if !firstAttemptAt.IsZero() {
+		delay := firstAttemptAt.Sub(now)
+		if delay < 0 {
+			delay = 0
+		}
+		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("scheduled automatic update to %s at %s (in=%s, slot=%d)", target, firstAttemptAt.Local().Format("15:04:05"), delay.Round(time.Second), firstAttemptSlot))
+	}
+	if updateAttemptFailed {
+		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("update attempt to %s did not complete; retry at %s (attempt=%d)", target, state.UpdateNextRetryUTC.Local().Format("15:04:05"), state.UpdateAttempts))
 	}
 	if updateRequested {
-		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("server requested update to %s (attempt=%d, next_retry=%s)", target, state.UpdateAttempts, state.UpdateNextRetryUTC.Local().Format("15:04:05")))
+		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("server requested update to %s (attempt=%d)", target, state.UpdateAttempts))
 	}
 	s.agents[hb.AgentID] = state
 	s.mu.Unlock()

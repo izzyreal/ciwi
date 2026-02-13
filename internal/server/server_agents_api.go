@@ -179,6 +179,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 	s.agentUpdates[agentID] = target
 	a.UpdateTarget = target
 	a.UpdateAttempts = 0
+	a.UpdateInProgress = false
 	a.UpdateLastRequestUTC = time.Time{}
 	a.UpdateNextRetryUTC = time.Time{}
 	a.RecentLog = appendAgentLog(a.RecentLog, "manual update requested to "+target)

@@ -23,6 +23,7 @@ const agentHTML = `<!doctype html>
       color: #26644b;
     }
     .badge-warn { background:#fff6e6; color:#8a5a00; }
+    .badge-error { background:#ffeded; color:#8f1f1f; }
     .grid { display:grid; grid-template-columns:180px minmax(0,1fr); gap:6px 10px; font-size:13px; }
     .label { color:var(--muted); font-weight:600; }
     .value { overflow-wrap:anywhere; word-break:break-word; }
@@ -161,6 +162,22 @@ const agentHTML = `<!doctype html>
     let adhocShells = [];
     let adhocActiveJobID = '';
     let adhocPollTimer = null;
+
+    function formatUpdatePrimaryText(a) {
+      if (!a || !a.update_requested) return '';
+      const target = escapeHtml(a.update_target || '');
+      if (a.update_in_progress) {
+        return '<span class="badge">Update → ' + target + ' in progress</span>';
+      }
+      return '<span class="badge">Update requested → ' + target + '</span>';
+    }
+
+    function formatUpdateRetryText(a) {
+      if (!a || !a.update_requested || a.update_in_progress || !a.update_next_retry_utc) return '';
+      const attempt = Number(a.update_attempts || 0);
+      if (attempt <= 0) return '';
+      return '<span class="badge badge-error">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(attempt) + ')</span>';
+    }
     let lastSuggestedScript = '';
 
     function metaRow(k, v) {
@@ -347,7 +364,7 @@ const agentHTML = `<!doctype html>
         const refreshToolsButton = document.getElementById('refreshToolsBtn');
         const runAdhocButton = document.getElementById('runAdhocBtn');
         adhocShells = parseAgentShells(a.capabilities || {});
-        const showUpdate = !!a.update_requested || (!!a.needs_update && s.label !== 'offline');
+        const showUpdate = (!a.update_in_progress) && (!!a.update_requested || (!!a.needs_update && s.label !== 'offline'));
         updateButton.style.display = showUpdate ? 'inline-block' : 'none';
         updateButton.textContent = a.update_requested ? 'Retry Now' : 'Update';
         refreshToolsButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
@@ -355,9 +372,10 @@ const agentHTML = `<!doctype html>
 
         let updateState = '';
         if (a.update_requested) {
-          updateState = '<span class="badge">Update requested → ' + escapeHtml(a.update_target || '') + '</span>';
-          if (a.update_next_retry_utc) {
-            updateState += ' <span class="badge badge-warn">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(a.update_attempts || 0) + ')</span>';
+          updateState = formatUpdatePrimaryText(a);
+          const retryText = formatUpdateRetryText(a);
+          if (retryText) {
+            updateState += ' ' + retryText;
           }
         }
 

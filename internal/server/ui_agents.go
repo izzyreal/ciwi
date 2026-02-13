@@ -41,6 +41,7 @@ const agentsHTML = `<!doctype html>
       margin-top: 4px;
     }
     .badge-warn { background:#fff6e6; color:#8a5a00; }
+    .badge-error { background:#ffeded; color:#8f1f1f; }
   </style>
 </head>
 <body>
@@ -72,6 +73,23 @@ const agentsHTML = `<!doctype html>
   <script>
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
+
+    function formatUpdatePrimaryText(a) {
+      if (!a || !a.update_requested) return '';
+      const target = escapeHtml(a.update_target || '');
+      if (a.update_in_progress) {
+        return '<div class="badge">Update → ' + target + ' in progress</div>';
+      }
+      return '<div class="badge">Update requested → ' + target + '</div>';
+    }
+
+    function formatUpdateRetryText(a) {
+      if (!a || !a.update_requested || a.update_in_progress || !a.update_next_retry_utc) return '';
+      const attempt = Number(a.update_attempts || 0);
+      if (attempt <= 0) return '';
+      return '<div class="badge badge-error">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(attempt) + ')</div>';
+    }
+
     async function refreshAgents() {
       if (refreshInFlight || refreshGuard.shouldPause()) {
         return;
@@ -94,7 +112,7 @@ const agentsHTML = `<!doctype html>
         for (const a of agents) {
           const s = statusForLastSeen(a.last_seen_utc || '');
           const tr = document.createElement('tr');
-          const updateBtn = (a.update_requested)
+          const updateBtn = (a.update_requested && !a.update_in_progress)
             ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Retry Now</button>'
             : ((a.needs_update && s.label !== 'offline')
               ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Update</button>'
@@ -102,11 +120,10 @@ const agentsHTML = `<!doctype html>
           const refreshBtn = (s.label !== 'offline')
             ? '<button data-action="refresh-tools" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Refresh Tools</button>'
             : '';
-          const retryText = (a.update_requested && a.update_next_retry_utc)
-            ? ('<div class="badge badge-warn">Backoff until ' + escapeHtml(formatTimestamp(a.update_next_retry_utc)) + ' (attempt ' + String(a.update_attempts || 0) + ')</div>')
-            : '';
+          const primaryUpdateText = formatUpdatePrimaryText(a);
+          const retryText = formatUpdateRetryText(a);
           const versionCell = escapeHtml(a.version || '') +
-            (a.update_requested ? ('<div class="badge">Update requested → ' + escapeHtml(a.update_target || '') + '</div>') : '') +
+            primaryUpdateText +
             retryText;
           tr.innerHTML =
             '<td><a href="/agents/' + encodeURIComponent(a.agent_id || '') + '">' + escapeHtml(a.agent_id || '') + '</a></td>' +
