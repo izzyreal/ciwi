@@ -240,13 +240,22 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 	}
 	args = append(args, jobID)
 
-	res, err := s.db.Exec(`
-		UPDATE job_executions
-		SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?, current_step_text = ?
-		WHERE `+where+`
-	`, args...)
-	if err != nil {
-		return protocol.Job{}, fmt.Errorf("update job status: %w", err)
+	var res sql.Result
+	var execErr error
+	for attempt := 0; ; attempt++ {
+		res, execErr = s.db.Exec(`
+			UPDATE job_executions
+			SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?, current_step_text = ?
+			WHERE `+where+`
+		`, args...)
+		if execErr == nil {
+			break
+		}
+		// SQLite can transiently reject writes under WAL contention; retry briefly.
+		if !isSQLiteBusyError(execErr) || attempt >= 2 {
+			return protocol.Job{}, fmt.Errorf("update job status: %w", execErr)
+		}
+		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		// Another concurrent writer won (typically terminal status); return latest state.
@@ -254,6 +263,14 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 	}
 
 	return s.GetJob(jobID)
+}
+
+func isSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "sqlite_busy")
 }
 
 func (s *Store) MergeJobMetadata(jobID string, patch map[string]string) (map[string]string, error) {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -358,5 +359,22 @@ func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 	}
 	if done.CurrentStep != "" {
 		t.Fatalf("expected current_step to clear on terminal status, got %q", done.CurrentStep)
+	}
+}
+
+func TestIsSQLiteBusyError(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{err: nil, want: false},
+		{err: errors.New("database is locked (5) (SQLITE_BUSY)"), want: true},
+		{err: errors.New("update failed: SQLITE_BUSY"), want: true},
+		{err: errors.New("constraint failed"), want: false},
+	}
+	for _, tc := range cases {
+		if got := isSQLiteBusyError(tc.err); got != tc.want {
+			t.Fatalf("isSQLiteBusyError(%v)=%v want=%v", tc.err, got, tc.want)
+		}
 	}
 }
