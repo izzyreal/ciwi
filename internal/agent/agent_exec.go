@@ -548,20 +548,28 @@ func checkoutSource(ctx context.Context, sourceDir string, source protocol.Sourc
 		return "", fmt.Errorf("prepare source parent directory: %w", err)
 	}
 
-	cloneOut, err := runCommandCapture(ctx, "", "git", "clone", "--depth", "1", source.Repo, sourceDir)
-	output.WriteString(cloneOut)
-	if err != nil {
-		return output.String(), fmt.Errorf("git clone: %w", err)
+	cloneAttempts := [][]string{
+		{"clone", "--depth", "1", source.Repo, sourceDir},
+		{"-c", "http.version=HTTP/1.1", "clone", "--depth", "1", source.Repo, sourceDir},
+		{"-c", "http.version=HTTP/1.1", "clone", "--depth", "1", source.Repo, sourceDir},
+	}
+	if err := runGitWithRetry(ctx, &output, "clone", cloneAttempts, func() {
+		_ = os.RemoveAll(sourceDir)
+	}); err != nil {
+		return output.String(), err
 	}
 
 	if strings.TrimSpace(source.Ref) == "" {
 		return output.String(), nil
 	}
 
-	fetchOut, err := runCommandCapture(ctx, "", "git", "-C", sourceDir, "fetch", "--depth", "1", "origin", source.Ref)
-	output.WriteString(fetchOut)
-	if err != nil {
-		return output.String(), fmt.Errorf("git fetch ref %q: %w", source.Ref, err)
+	fetchAttempts := [][]string{
+		{"-C", sourceDir, "fetch", "--depth", "1", "origin", source.Ref},
+		{"-C", sourceDir, "-c", "http.version=HTTP/1.1", "fetch", "--depth", "1", "origin", source.Ref},
+		{"-C", sourceDir, "-c", "http.version=HTTP/1.1", "fetch", "--depth", "1", "origin", source.Ref},
+	}
+	if err := runGitWithRetry(ctx, &output, fmt.Sprintf("fetch ref %q", source.Ref), fetchAttempts, nil); err != nil {
+		return output.String(), err
 	}
 
 	checkoutOut, err := runCommandCapture(ctx, "", "git", "-C", sourceDir, "checkout", "--force", "FETCH_HEAD")
@@ -571,6 +579,72 @@ func checkoutSource(ctx context.Context, sourceDir string, source protocol.Sourc
 	}
 
 	return output.String(), nil
+}
+
+func runGitWithRetry(ctx context.Context, output *strings.Builder, phase string, attempts [][]string, onRetry func()) error {
+	for i, args := range attempts {
+		runOut, err := runCommandCapture(ctx, "", "git", args...)
+		output.WriteString(runOut)
+		if err == nil {
+			return nil
+		}
+		if i == len(attempts)-1 || !isRetryableGitTransportError(runOut, err) {
+			return fmt.Errorf("git %s: %w", phase, err)
+		}
+		if onRetry != nil {
+			onRetry()
+		}
+		output.WriteString(fmt.Sprintf("[checkout] transient git %s failure; retrying (%d/%d)\n", phase, i+2, len(attempts)))
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("git %s: %w", phase, ctx.Err())
+		case <-time.After(time.Duration(i+1) * time.Second):
+		}
+	}
+	return fmt.Errorf("git %s: no attempts configured", phase)
+}
+
+func isRetryableGitTransportError(runOutput string, err error) bool {
+	if err == nil {
+		return false
+	}
+	combined := strings.ToLower(strings.TrimSpace(runOutput + "\n" + err.Error()))
+	if combined == "" {
+		return false
+	}
+	nonRetryable := []string{
+		"authentication failed",
+		"repository not found",
+		"could not read username",
+		"permission denied",
+		"access denied",
+		"invalid username or password",
+	}
+	for _, marker := range nonRetryable {
+		if strings.Contains(combined, marker) {
+			return false
+		}
+	}
+	retryable := []string{
+		"http/2 stream",
+		"stream was not closed cleanly",
+		"remote end hung up unexpectedly",
+		"early eof",
+		"unexpected eof",
+		"connection reset by peer",
+		"connection timed out",
+		"tls handshake timeout",
+		"failed to connect",
+		"network is unreachable",
+		"temporary failure",
+		"timeout",
+	}
+	for _, marker := range retryable {
+		if strings.Contains(combined, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func runCommandCapture(ctx context.Context, dir, name string, args ...string) (string, error) {

@@ -64,6 +64,54 @@ func TestBoolEnv(t *testing.T) {
 	}
 }
 
+func TestIsRetryableGitTransportError(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		err    error
+		want   bool
+	}{
+		{
+			name:   "retryable http2 stream reset",
+			output: "fatal: unable to access 'https://github.com/izzyreal/ciwi.git/': HTTP/2 stream 1 was not closed cleanly before end of the underlying stream",
+			err:    errors.New("exit status 128"),
+			want:   true,
+		},
+		{
+			name:   "retryable remote hung up",
+			output: "fatal: the remote end hung up unexpectedly",
+			err:    errors.New("exit status 128"),
+			want:   true,
+		},
+		{
+			name:   "non retryable auth failure",
+			output: "remote: Invalid username or password.\nfatal: Authentication failed for 'https://github.com/izzyreal/ciwi.git/'",
+			err:    errors.New("exit status 128"),
+			want:   false,
+		},
+		{
+			name:   "non retryable repo missing",
+			output: "remote: Repository not found.\nfatal: repository 'https://github.com/izzyreal/ciwi.git/' not found",
+			err:    errors.New("exit status 128"),
+			want:   false,
+		},
+		{
+			name:   "retryable timeout from error text",
+			output: "",
+			err:    errors.New("connection timed out"),
+			want:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isRetryableGitTransportError(tt.output, tt.err)
+			if got != tt.want {
+				t.Fatalf("isRetryableGitTransportError()=%v want=%v output=%q err=%v", got, tt.want, tt.output, tt.err)
+			}
+		})
+	}
+}
+
 func TestTrimOutput(t *testing.T) {
 	short := "hello"
 	if trimOutput(short) != short {
