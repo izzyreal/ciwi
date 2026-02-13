@@ -121,8 +121,8 @@ const uiIndexJobsJS = `
       let inProgress = 0;
       jobs.forEach(job => {
         const status = normalizedJobStatus(job.status);
-        if (status === 'succeeded') succeeded += 1;
-        else if (status === 'failed') failed += 1;
+        if (isSucceededJobStatus(status)) succeeded += 1;
+        else if (isFailedJobStatus(status)) failed += 1;
         else if (isActiveJobStatus(status)) inProgress += 1;
       });
       if (failed > 0) {

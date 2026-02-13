@@ -19,12 +19,19 @@ function isActiveJobStatus(status) {
 }
 
 function isTerminalJobStatus(status) {
-  const normalized = normalizedJobStatus(status);
-  return normalized === 'succeeded' || normalized === 'failed';
+  return isSucceededJobStatus(status) || isFailedJobStatus(status);
 }
 
 function isRunningJobStatus(status) {
   return normalizedJobStatus(status) === 'running';
+}
+
+function isSucceededJobStatus(status) {
+  return normalizedJobStatus(status) === 'succeeded';
+}
+
+function isFailedJobStatus(status) {
+  return normalizedJobStatus(status) === 'failed';
 }
 
 function statusClass(status) {

@@ -268,16 +268,9 @@ func TestJobJSONOmitsZeroStartedAndFinishedTimestamps(t *testing.T) {
 	if jobResp.StatusCode != http.StatusOK {
 		t.Fatalf("get queued job status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
 	}
-	queuedBody := readBody(t, jobResp)
-	if strings.Contains(queuedBody, `"started_utc"`) {
-		t.Fatalf("queued job should omit started_utc, body=%s", queuedBody)
-	}
-	if strings.Contains(queuedBody, `"finished_utc"`) {
-		t.Fatalf("queued job should omit finished_utc, body=%s", queuedBody)
-	}
-	if strings.Contains(queuedBody, "0001-01-01T00:00:00Z") {
-		t.Fatalf("queued job should not expose zero-time sentinel, body=%s", queuedBody)
-	}
+	queuedJob := decodeJobByIDPayload(t, jobResp)
+	assertTimestampOmitted(t, queuedJob, "started_utc")
+	assertTimestampOmitted(t, queuedJob, "finished_utc")
 
 	runningResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/status", map[string]any{
 		"agent_id": "agent-a",
@@ -293,16 +286,9 @@ func TestJobJSONOmitsZeroStartedAndFinishedTimestamps(t *testing.T) {
 	if jobResp.StatusCode != http.StatusOK {
 		t.Fatalf("get running job status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
 	}
-	runningBody := readBody(t, jobResp)
-	if !strings.Contains(runningBody, `"started_utc":"`) {
-		t.Fatalf("running job should include started_utc, body=%s", runningBody)
-	}
-	if strings.Contains(runningBody, `"finished_utc"`) {
-		t.Fatalf("running job should omit finished_utc, body=%s", runningBody)
-	}
-	if strings.Contains(runningBody, "0001-01-01T00:00:00Z") {
-		t.Fatalf("running job should not expose zero-time sentinel, body=%s", runningBody)
-	}
+	runningJob := decodeJobByIDPayload(t, jobResp)
+	assertTimestampPresent(t, runningJob, "started_utc")
+	assertTimestampOmitted(t, runningJob, "finished_utc")
 
 	doneResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/status", map[string]any{
 		"agent_id": "agent-a",
@@ -318,15 +304,54 @@ func TestJobJSONOmitsZeroStartedAndFinishedTimestamps(t *testing.T) {
 	if jobResp.StatusCode != http.StatusOK {
 		t.Fatalf("get succeeded job status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
 	}
-	doneBody := readBody(t, jobResp)
-	if !strings.Contains(doneBody, `"started_utc":"`) {
-		t.Fatalf("succeeded job should include started_utc, body=%s", doneBody)
+	doneJob := decodeJobByIDPayload(t, jobResp)
+	assertTimestampPresent(t, doneJob, "started_utc")
+	assertTimestampPresent(t, doneJob, "finished_utc")
+}
+
+func decodeJobByIDPayload(t *testing.T, resp *http.Response) map[string]any {
+	t.Helper()
+	var payload struct {
+		Job          map[string]any `json:"job"`
+		JobExecution map[string]any `json:"job_execution"`
 	}
-	if !strings.Contains(doneBody, `"finished_utc":"`) {
-		t.Fatalf("succeeded job should include finished_utc, body=%s", doneBody)
+	decodeJSONBody(t, resp, &payload)
+	if payload.Job != nil {
+		return payload.Job
 	}
-	if strings.Contains(doneBody, "0001-01-01T00:00:00Z") {
-		t.Fatalf("succeeded job should not expose zero-time sentinel, body=%s", doneBody)
+	if payload.JobExecution != nil {
+		return payload.JobExecution
+	}
+	t.Fatalf("job-by-id payload missing both job and job_execution")
+	return nil
+}
+
+func assertTimestampOmitted(t *testing.T, job map[string]any, key string) {
+	t.Helper()
+	if value, ok := job[key]; ok {
+		t.Fatalf("expected %s omitted, got %v", key, value)
+	}
+}
+
+func assertTimestampPresent(t *testing.T, job map[string]any, key string) {
+	t.Helper()
+	value, ok := job[key]
+	if !ok {
+		t.Fatalf("expected %s present", key)
+	}
+	if value == nil {
+		t.Fatalf("expected %s non-null", key)
+	}
+	text, ok := value.(string)
+	if !ok {
+		t.Fatalf("expected %s to be string, got %T", key, value)
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		t.Fatalf("expected %s non-empty", key)
+	}
+	if text == "0001-01-01T00:00:00Z" {
+		t.Fatalf("expected %s to be non-zero timestamp", key)
 	}
 }
 
