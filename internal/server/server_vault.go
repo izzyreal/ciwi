@@ -17,7 +17,7 @@ func (s *stateStore) vaultConnectionsHandler(w http.ResponseWriter, r *http.Requ
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"connections": items})
+		writeJSON(w, http.StatusOK, vaultConnectionsResponse{Connections: items})
 	case http.MethodPost:
 		var req protocol.UpsertVaultConnectionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -33,7 +33,7 @@ func (s *stateStore) vaultConnectionsHandler(w http.ResponseWriter, r *http.Requ
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]any{"connection": item})
+		writeJSON(w, http.StatusCreated, vaultConnectionResponse{Connection: item})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -60,7 +60,7 @@ func (s *stateStore) vaultConnectionByIDHandler(w http.ResponseWriter, r *http.R
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
+		writeJSON(w, http.StatusOK, vaultConnectionDeleteResponse{Deleted: true, ID: id})
 		return
 	}
 	if len(parts) != 2 || parts[1] != "test" || r.Method != http.MethodPost {
@@ -99,7 +99,7 @@ func (s *stateStore) projectVaultHandler(w http.ResponseWriter, r *http.Request,
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+		writeJSON(w, http.StatusOK, projectVaultSettingsResponse{Settings: settings})
 	case http.MethodPut:
 		var req protocol.UpdateProjectVaultRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -117,7 +117,7 @@ func (s *stateStore) projectVaultHandler(w http.ResponseWriter, r *http.Request,
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+		writeJSON(w, http.StatusOK, projectVaultSettingsResponse{Settings: settings})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
