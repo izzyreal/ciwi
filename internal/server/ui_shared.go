@@ -24,10 +24,15 @@ function formatTimestamp(ts) {
 }
 
 function formatDuration(startTs, finishTs, status) {
-  if (!startTs) return '';
-  const start = new Date(startTs);
+  const startRaw = String(startTs || '');
+  const hasRealStart = startRaw && !startRaw.startsWith('0001-01-01T00:00:00');
+  if (!hasRealStart) return '';
+  const start = new Date(startRaw);
   if (Number.isNaN(start.getTime())) return '';
-  const end = finishTs ? new Date(finishTs) : new Date();
+  const normalizedStatus = String(status || '').toLowerCase();
+  const finishRaw = String(finishTs || '');
+  const hasRealFinish = finishRaw && !finishRaw.startsWith('0001-01-01T00:00:00');
+  const end = (normalizedStatus === 'running' || !hasRealFinish) ? new Date() : new Date(finishRaw);
   if (Number.isNaN(end.getTime())) return '';
   let ms = end.getTime() - start.getTime();
   if (ms < 0) ms = 0;
