@@ -157,6 +157,7 @@ type PipelineStep struct {
 	TestName    string            `json:"test_name,omitempty"`
 	TestCommand string            `json:"test_command,omitempty"`
 	TestFormat  string            `json:"test_format,omitempty"`
+	TestReport  string            `json:"test_report,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
 }
 

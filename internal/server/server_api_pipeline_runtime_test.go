@@ -221,3 +221,82 @@ func TestServerRunPipelineInjectsStepMarkers(t *testing.T) {
 		t.Fatalf("expected script to include step marker, got:\n%s", jobsPayload.JobExecutions[0].Script)
 	}
 }
+
+func TestServerRunPipelineCmdTestStepCarriesReportMetadata(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	const cfg = `
+version: 1
+project:
+  name: test
+pipelines:
+  - id: p1
+    trigger: manual
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: win-tests
+        runs_on:
+          executor: script
+          shell: cmd
+        steps:
+          - test:
+              name: windows-suite
+              command: ctest --output-on-failure --output-junit test-results.xml
+              format: junit-xml
+              report: test-results.xml
+`
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{
+		"config_path": "ciwi.yaml",
+	})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/1/run", map[string]any{})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("run status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	_ = readBody(t, runResp)
+
+	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
+	if jobsResp.StatusCode != http.StatusOK {
+		t.Fatalf("jobs status=%d body=%s", jobsResp.StatusCode, readBody(t, jobsResp))
+	}
+	var jobsPayload struct {
+		JobExecutions []struct {
+			Script string `json:"script"`
+		} `json:"job_executions"`
+	}
+	decodeJSONBody(t, jobsResp, &jobsPayload)
+	if len(jobsPayload.JobExecutions) == 0 {
+		t.Fatalf("expected at least one job execution")
+	}
+	script := jobsPayload.JobExecutions[0].Script
+	if !strings.Contains(script, "kind=test") {
+		t.Fatalf("expected step marker to include kind=test metadata, got:\n%s", script)
+	}
+	if !strings.Contains(script, "test_format=junit-xml") {
+		t.Fatalf("expected step marker to include test format metadata, got:\n%s", script)
+	}
+	if !strings.Contains(script, "test_report=test-results.xml") {
+		t.Fatalf("expected step marker to include test report metadata, got:\n%s", script)
+	}
+}

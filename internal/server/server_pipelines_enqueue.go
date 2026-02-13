@@ -75,6 +75,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			rendered := make([]string, 0, len(pj.Steps)*4)
 			stepBlocks := make([]string, 0, len(pj.Steps))
 			stepLabels := make([]string, 0, len(pj.Steps))
+			stepMarkerMeta := make([]map[string]string, 0, len(pj.Steps))
 			env := make(map[string]string)
 			for idx, step := range pj.Steps {
 				for k, v := range step.Env {
@@ -93,12 +94,14 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					if format == "" {
 						format = "go-test-json"
 					}
-					stepBlocks = append(stepBlocks, strings.Join([]string{
-						fmt.Sprintf("echo \"__CIWI_TEST_BEGIN__ name=%s format=%s\"", sanitizeMarkerToken(name), sanitizeMarkerToken(format)),
-						command,
-						`echo "__CIWI_TEST_END__"`,
-					}, "\n"))
+					stepBlocks = append(stepBlocks, buildTestStepBlock(strings.TrimSpace(pj.RunsOn["shell"]), command))
 					stepLabels = append(stepLabels, "test "+name)
+					stepMarkerMeta = append(stepMarkerMeta, map[string]string{
+						"kind":        "test",
+						"test_name":   sanitizeMarkerToken(name),
+						"test_format": sanitizeMarkerToken(format),
+						"test_report": sanitizeMarkerToken(strings.TrimSpace(step.Test.Report)),
+					})
 					continue
 				}
 				line := renderTemplate(step.Run, renderVars)
@@ -107,9 +110,10 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				}
 				stepBlocks = append(stepBlocks, line)
 				stepLabels = append(stepLabels, fmt.Sprintf("step %d", idx+1))
+				stepMarkerMeta = append(stepMarkerMeta, nil)
 			}
 			for stepIndex := range stepBlocks {
-				rendered = append(rendered, buildStepMarkerCommand(strings.TrimSpace(pj.RunsOn["shell"]), stepIndex+1, len(stepBlocks), stepLabels[stepIndex]))
+				rendered = append(rendered, buildStepMarkerCommand(strings.TrimSpace(pj.RunsOn["shell"]), stepIndex+1, len(stepBlocks), stepLabels[stepIndex], stepMarkerMeta[stepIndex]))
 				rendered = append(rendered, stepBlocks[stepIndex])
 			}
 			if len(rendered) == 0 {
@@ -282,12 +286,26 @@ func cloneJobCachesFromPersisted(in []config.JobCache) []protocol.JobCacheSpec {
 	return out
 }
 
-func buildStepMarkerCommand(shell string, index, total int, label string) string {
+func buildStepMarkerCommand(shell string, index, total int, label string, meta map[string]string) string {
 	label = sanitizeMarkerToken(label)
 	if label == "" {
 		label = fmt.Sprintf("step_%d", index)
 	}
 	payload := fmt.Sprintf("__CIWI_STEP_BEGIN__ index=%d total=%d name=%s", index, total, label)
+	if len(meta) > 0 {
+		if v := sanitizeMarkerToken(meta["kind"]); v != "" {
+			payload += " kind=" + v
+		}
+		if v := sanitizeMarkerToken(meta["test_name"]); v != "" {
+			payload += " test_name=" + v
+		}
+		if v := sanitizeMarkerToken(meta["test_format"]); v != "" {
+			payload += " test_format=" + v
+		}
+		if v := sanitizeMarkerToken(meta["test_report"]); v != "" {
+			payload += " test_report=" + v
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(shell)) {
 	case "cmd":
 		return "echo " + payload
@@ -295,5 +313,16 @@ func buildStepMarkerCommand(shell string, index, total int, label string) string
 		return `Write-Output "` + payload + `"`
 	default:
 		return `echo "` + payload + `"`
+	}
+}
+
+func buildTestStepBlock(shell, command string) string {
+	switch strings.ToLower(strings.TrimSpace(shell)) {
+	case "cmd":
+		return command
+	case "powershell":
+		return command
+	default:
+		return command
 	}
 }

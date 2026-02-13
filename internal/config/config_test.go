@@ -45,6 +45,7 @@ pipelines:
               name: go-unit
               command: go test -json ./...
               format: go-test-json
+              report: out/go-unit.json
 `), "test-step")
 	if err != nil {
 		t.Fatalf("parse config: %v", err)
@@ -56,7 +57,7 @@ pipelines:
 	if step.Test == nil {
 		t.Fatal("expected test step to be parsed")
 	}
-	if step.Test.Name != "go-unit" || step.Test.Command != "go test -json ./..." || step.Test.Format != "go-test-json" {
+	if step.Test.Name != "go-unit" || step.Test.Command != "go test -json ./..." || step.Test.Format != "go-test-json" || step.Test.Report != "out/go-unit.json" {
 		t.Fatalf("unexpected test step: %+v", step.Test)
 	}
 }
@@ -76,6 +77,7 @@ pipelines:
               name: cpp-unit
               command: ./tests --reporter junit
               format: junit-xml
+              report: out/junit.xml
 `), "test-step-junit")
 	if err != nil {
 		t.Fatalf("parse config: %v", err)
@@ -244,9 +246,30 @@ pipelines:
           - test:
               command: ./tests
               format: tap
+              report: out/tests.tap
 `), "test-step-format")
 	if err == nil || !strings.Contains(err.Error(), "test.format unsupported") {
 		t.Fatalf("expected unsupported test.format error, got: %v", err)
+	}
+}
+
+func TestParseRejectsMissingTestReport(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: test
+    jobs:
+      - id: unit
+        timeout_seconds: 60
+        steps:
+          - test:
+              command: go test -json ./...
+              format: go-test-json
+`), "test-step-report")
+	if err == nil || !strings.Contains(err.Error(), "test.report is required") {
+		t.Fatalf("expected missing test.report error, got: %v", err)
 	}
 }
 

@@ -100,33 +100,49 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	if err != nil {
 		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("resolve job shell: %v", err), "")
 	}
-	tracedScript := applyShellTracing(shell, job.Script, traceShell)
 
 	fmt.Fprintf(&output, "[run] shell_trace=%t go_build_verbose=%t\n", traceShell, verboseGo)
 	fmt.Fprintf(&output, "[run] shell=%s\n", shell)
 
-	bin, args, err := commandForScript(shell, tracedScript)
-	if err == nil && runtime.GOOS == "windows" && shell == shellCmd {
-		stagedCmd, stageErr := stageCmdScript(execDir, tracedScript)
-		if stageErr != nil {
-			return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("stage cmd script: %v", stageErr), "")
-		}
-		bin, args, err = commandForScript(shell, stagedCmd)
+	runEnv := withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
+	scriptSteps := splitJobScriptSteps(job.Script)
+	collectedSuites := make([]protocol.TestSuiteReport, 0, len(scriptSteps))
+	if len(scriptSteps) > 0 {
+		fmt.Fprintf(&output, "[run] mode=stepwise steps=%d\n", len(scriptSteps))
 	}
-	if err != nil {
-		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("build shell command: %v", err), "")
-	}
-	cmd := exec.CommandContext(runCtx, bin, args...)
-	cmd.Dir = execDir
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-	cmd.Env = withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
-
-	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output, job.SensitiveValues, "Running job script")
-	defer stopStreaming()
-
 	runStart := time.Now()
-	err = cmd.Run()
+	if len(scriptSteps) == 0 {
+		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, runEnv, &output, "Running job script", job.SensitiveValues, traceShell)
+	} else {
+		for _, step := range scriptSteps {
+			currentStep := formatCurrentStep(step.meta)
+			fmt.Fprintf(&output, "__CIWI_STEP_BEGIN__ index=%d total=%d name=%s\n", step.meta.index, step.meta.total, step.meta.name)
+			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+				AgentID:      agentID,
+				Status:       "running",
+				CurrentStep:  currentStep,
+				TimestampUTC: time.Now().UTC(),
+			}); err != nil {
+				return fmt.Errorf("report step status: %w", err)
+			}
+			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, runEnv, &output, currentStep, job.SensitiveValues, traceShell)
+			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
+				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)
+				if parseErr != nil {
+					fmt.Fprintf(&output, "[tests] parse_failed suite=%s path=%s err=%v\n", step.meta.testName, step.meta.testReport, parseErr)
+					if stepErr == nil {
+						stepErr = parseErr
+					}
+				} else {
+					collectedSuites = append(collectedSuites, suite)
+				}
+			}
+			if stepErr != nil {
+				err = stepErr
+				break
+			}
+		}
+	}
 	duration := time.Since(runStart).Round(time.Millisecond)
 	fmt.Fprintf(&output, "\n[run] duration=%s\n", duration)
 
@@ -154,12 +170,21 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 
 	trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-	testReport := parseJobTestReport(output.String())
+	testReport := protocol.JobTestReport{Suites: collectedSuites}
+	for _, s := range collectedSuites {
+		testReport.Total += s.Total
+		testReport.Passed += s.Passed
+		testReport.Failed += s.Failed
+		testReport.Skipped += s.Skipped
+	}
 	if testReport.Total > 0 {
 		if err := uploadTestReport(ctx, client, serverURL, agentID, job.ID, testReport); err != nil {
 			fmt.Fprintf(&output, "[tests] upload_failed=%v\n", err)
 		} else {
 			fmt.Fprintf(&output, "%s\n", testReportSummary(testReport))
+		}
+		if err == nil && testReport.Failed > 0 {
+			err = fmt.Errorf("test report contains failures: failed=%d", testReport.Failed)
 		}
 		trimmedOutput = redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 	}
@@ -190,6 +215,159 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	slog.Error("job failed", "job_execution_id", job.ID, "exit_code", exitCode, "error", failMsg)
 	return nil
+}
+
+func parseStepTestSuiteFromFile(execDir string, meta stepMarkerMeta) (protocol.TestSuiteReport, error) {
+	path := strings.TrimSpace(meta.testReport)
+	if path == "" {
+		return protocol.TestSuiteReport{}, fmt.Errorf("test report path is required")
+	}
+	format := strings.TrimSpace(meta.testFormat)
+	if format == "" {
+		format = "go-test-json"
+	}
+	if format == "junit" {
+		format = "junit-xml"
+	}
+	suiteName := strings.TrimSpace(meta.testName)
+	if suiteName == "" {
+		suiteName = strings.TrimSpace(meta.name)
+	}
+
+	full := filepath.Join(execDir, filepath.FromSlash(path))
+	raw, err := os.ReadFile(full)
+	if err != nil {
+		return protocol.TestSuiteReport{}, fmt.Errorf("read report %q: %w", path, err)
+	}
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
+	var suite protocol.TestSuiteReport
+	switch format {
+	case "go-test-json":
+		suite = parseGoTestJSONSuite(suiteName, lines)
+	case "junit-xml":
+		suite = parseJUnitXMLSuite(suiteName, lines)
+	default:
+		return protocol.TestSuiteReport{}, fmt.Errorf("unsupported test format %q", format)
+	}
+	if suite.Format == "" {
+		suite.Format = format
+	}
+	if strings.TrimSpace(suite.Name) == "" {
+		suite.Name = suiteName
+	}
+	return suite, nil
+}
+
+func runJobScript(
+	runCtx context.Context,
+	client *http.Client,
+	serverURL, agentID, jobID, shell, execDir, script string,
+	env []string,
+	output *syncBuffer,
+	defaultCurrentStep string,
+	sensitive []string,
+	traceShell bool,
+) error {
+	tracedScript := applyShellTracing(shell, script, traceShell)
+	bin, args, err := commandForScript(shell, tracedScript)
+	if err == nil && runtime.GOOS == "windows" && shell == shellCmd {
+		stagedCmd, stageErr := stageCmdScript(execDir, tracedScript)
+		if stageErr != nil {
+			return fmt.Errorf("stage cmd script: %w", stageErr)
+		}
+		bin, args, err = commandForScript(shell, stagedCmd)
+	}
+	if err != nil {
+		return fmt.Errorf("build shell command: %w", err)
+	}
+
+	cmd := exec.CommandContext(runCtx, bin, args...)
+	cmd.Dir = execDir
+	cmd.Stdout = output
+	cmd.Stderr = output
+	cmd.Env = env
+
+	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, sensitive, defaultCurrentStep)
+	defer stopStreaming()
+	return cmd.Run()
+}
+
+type jobScriptStep struct {
+	meta   stepMarkerMeta
+	script string
+}
+
+func splitJobScriptSteps(script string) []jobScriptStep {
+	lines := strings.Split(script, "\n")
+	steps := make([]jobScriptStep, 0)
+	buf := make([]string, 0, 64)
+	var meta stepMarkerMeta
+	active := false
+
+	flush := func() {
+		if !active {
+			return
+		}
+		steps = append(steps, jobScriptStep{
+			meta:   meta,
+			script: strings.Join(buf, "\n"),
+		})
+		buf = buf[:0]
+	}
+
+	for _, line := range lines {
+		m, ok := parseScriptStepMarkerLine(line)
+		if ok {
+			flush()
+			meta = m
+			active = true
+			continue
+		}
+		if active {
+			buf = append(buf, line)
+		}
+	}
+	flush()
+	if len(steps) == 0 {
+		return nil
+	}
+	total := len(steps)
+	for i := range steps {
+		if steps[i].meta.index <= 0 {
+			steps[i].meta.index = i + 1
+		}
+		if steps[i].meta.total <= 0 {
+			steps[i].meta.total = total
+		}
+		if strings.TrimSpace(steps[i].meta.name) == "" {
+			steps[i].meta.name = fmt.Sprintf("step_%d", steps[i].meta.index)
+		}
+	}
+	return steps
+}
+
+func parseScriptStepMarkerLine(line string) (stepMarkerMeta, bool) {
+	line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+	if line == "" {
+		return stepMarkerMeta{}, false
+	}
+
+	candidates := []string{line}
+	lower := strings.ToLower(line)
+	switch {
+	case strings.HasPrefix(lower, "echo "):
+		candidates = append(candidates, strings.TrimSpace(line[len("echo "):]))
+	case strings.HasPrefix(lower, "@echo "):
+		candidates = append(candidates, strings.TrimSpace(line[len("@echo "):]))
+	case strings.HasPrefix(lower, "write-output "):
+		candidates = append(candidates, strings.TrimSpace(line[len("write-output "):]))
+	}
+	for _, candidate := range candidates {
+		if meta, ok := parseStepMarkerLine(candidate); ok {
+			return meta, true
+		}
+	}
+	return stepMarkerMeta{}, false
 }
 
 func commandForScript(shell, script string) (string, []string, error) {

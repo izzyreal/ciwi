@@ -231,93 +231,6 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 	}
 }
 
-func TestParseJobTestReport(t *testing.T) {
-	output := strings.Join([]string{
-		"random line",
-		"__CIWI_TEST_BEGIN__ name=go-unit format=go-test-json",
-		`{"Time":"2026-01-01T00:00:00Z","Action":"run","Package":"p","Test":"TestA"}`,
-		`{"Time":"2026-01-01T00:00:00Z","Action":"pass","Package":"p","Test":"TestA","Elapsed":0.01}`,
-		`{"Time":"2026-01-01T00:00:00Z","Action":"run","Package":"p","Test":"TestB"}`,
-		`{"Time":"2026-01-01T00:00:00Z","Action":"fail","Package":"p","Test":"TestB","Elapsed":0.02}`,
-		"__CIWI_TEST_END__",
-	}, "\n")
-
-	report := parseJobTestReport(output)
-	if report.Total != 2 || report.Passed != 1 || report.Failed != 1 || report.Skipped != 0 {
-		t.Fatalf("unexpected aggregate report: %+v", report)
-	}
-	if len(report.Suites) != 1 {
-		t.Fatalf("expected 1 suite, got %d", len(report.Suites))
-	}
-	s := report.Suites[0]
-	if s.Name != "go-unit" || s.Format != "go-test-json" {
-		t.Fatalf("unexpected suite metadata: %+v", s)
-	}
-	if len(s.Cases) != 2 {
-		t.Fatalf("expected 2 cases, got %d", len(s.Cases))
-	}
-}
-
-func TestParseJobTestReportJUnitXML(t *testing.T) {
-	output := strings.Join([]string{
-		"noise",
-		"__CIWI_TEST_BEGIN__ name=cpp-unit format=junit-xml",
-		`<?xml version="1.0" encoding="UTF-8"?>`,
-		`<testsuites>`,
-		`  <testsuite name="suite-a" tests="3" failures="1" errors="0" skipped="1">`,
-		`    <testcase classname="math" name="adds" time="0.001"></testcase>`,
-		`    <testcase classname="math" name="divides" time="0.002"><failure message="expected 2">stack</failure></testcase>`,
-		`    <testcase classname="io" name="loads"><skipped message="todo"/></testcase>`,
-		`  </testsuite>`,
-		`</testsuites>`,
-		"__CIWI_TEST_END__",
-	}, "\n")
-
-	report := parseJobTestReport(output)
-	if report.Total != 3 || report.Passed != 1 || report.Failed != 1 || report.Skipped != 1 {
-		t.Fatalf("unexpected aggregate report: %+v", report)
-	}
-	if len(report.Suites) != 1 {
-		t.Fatalf("expected 1 suite, got %d", len(report.Suites))
-	}
-	s := report.Suites[0]
-	if s.Name != "cpp-unit" || s.Format != "junit-xml" {
-		t.Fatalf("unexpected suite metadata: %+v", s)
-	}
-	if len(s.Cases) != 3 {
-		t.Fatalf("expected 3 cases, got %d", len(s.Cases))
-	}
-	if s.Cases[1].Status != "fail" {
-		t.Fatalf("expected second case fail, got %+v", s.Cases[1])
-	}
-	if !strings.Contains(s.Cases[1].Output, "failure message=expected 2") {
-		t.Fatalf("expected failure output to include message, got: %q", s.Cases[1].Output)
-	}
-}
-
-func TestParseJobTestReportJUnitXMLSuiteTotals(t *testing.T) {
-	output := strings.Join([]string{
-		"__CIWI_TEST_BEGIN__ name=cpp-summary format=junit",
-		`<testsuite name="suite-a" tests="2" failures="1" skipped="1"></testsuite>`,
-		"__CIWI_TEST_END__",
-	}, "\n")
-
-	report := parseJobTestReport(output)
-	if report.Total != 2 || report.Passed != 0 || report.Failed != 1 || report.Skipped != 1 {
-		t.Fatalf("unexpected aggregate report: %+v", report)
-	}
-	if len(report.Suites) != 1 {
-		t.Fatalf("expected 1 suite, got %d", len(report.Suites))
-	}
-	s := report.Suites[0]
-	if s.Format != "junit-xml" {
-		t.Fatalf("unexpected suite format: %q", s.Format)
-	}
-	if len(s.Cases) != 0 {
-		t.Fatalf("expected no cases when junit testcase nodes are absent, got %d", len(s.Cases))
-	}
-}
-
 func TestExtractCurrentStepFromOutput(t *testing.T) {
 	output := strings.Join([]string{
 		"[meta] job_id=job-1",
@@ -470,6 +383,139 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	}
 	if !strings.Contains(last.Error, "artifact upload failed") {
 		t.Fatalf("expected artifact upload failure in error, got %q", last.Error)
+	}
+}
+
+func TestExecuteLeasedJobRunsPipelineStepsInSeparateShellProcesses(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell assertion test skipped on windows")
+	}
+
+	workDir := t.TempDir()
+	otherDir := t.TempDir()
+	jobID := "job-steps"
+	execDir := filepath.Join(workDir, jobID)
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/"+jobID+"/status" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	script := strings.Join([]string{
+		`echo "__CIWI_STEP_BEGIN__ index=1 total=3 name=first"`,
+		`pwd > step1.txt`,
+		`echo "__CIWI_STEP_BEGIN__ index=2 total=3 name=second"`,
+		`cd "` + strings.ReplaceAll(otherDir, `"`, `\"`) + `"`,
+		`pwd > step2.txt`,
+		`echo "__CIWI_STEP_BEGIN__ index=3 total=3 name=third"`,
+		`pwd > step3.txt`,
+	}, "\n")
+	job := protocol.Job{
+		ID:             jobID,
+		Script:         script,
+		TimeoutSeconds: 30,
+		RequiredCapabilities: map[string]string{
+			"shell": shellPosix,
+		},
+	}
+	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", workDir, nil, job); err != nil {
+		t.Fatalf("executeLeasedJob: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(execDir, "step1.txt")); err != nil {
+		t.Fatalf("expected step1 output in exec dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(execDir, "step3.txt")); err != nil {
+		t.Fatalf("expected step3 output in exec dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(otherDir, "step2.txt")); err != nil {
+		t.Fatalf("expected step2 output in alternate dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(otherDir, "step3.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no step3 output in alternate dir, got err=%v", err)
+	}
+}
+
+func TestExecuteLeasedJobFailsWhenStepTestReportContainsFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell assertion test skipped on windows")
+	}
+
+	var (
+		mu       sync.Mutex
+		statuses []protocol.JobStatusUpdateRequest
+	)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-test-report/status" {
+				var req protocol.JobStatusUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode status: %v", err)
+				}
+				mu.Lock()
+				statuses = append(statuses, req)
+				mu.Unlock()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-test-report/tests" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	script := strings.Join([]string{
+		`echo "__CIWI_STEP_BEGIN__ index=1 total=1 name=go_unit kind=test test_name=go-unit test_format=go-test-json test_report=out/report.json"`,
+		`mkdir -p out`,
+		`printf '%s\n' '{"Action":"run","Package":"p","Test":"TestA"}' '{"Action":"fail","Package":"p","Test":"TestA","Elapsed":0.01}' > out/report.json`,
+	}, "\n")
+	job := protocol.Job{
+		ID:             "job-test-report",
+		Script:         script,
+		TimeoutSeconds: 30,
+		RequiredCapabilities: map[string]string{
+			"shell": shellPosix,
+		},
+	}
+	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", t.TempDir(), nil, job); err != nil {
+		t.Fatalf("executeLeasedJob: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) == 0 {
+		t.Fatalf("expected status updates")
+	}
+	last := statuses[len(statuses)-1]
+	if last.Status != "failed" {
+		t.Fatalf("expected failed status, got %q", last.Status)
+	}
+	if !strings.Contains(last.Error, "test report contains failures") {
+		t.Fatalf("expected failure from parsed test report, got %q", last.Error)
 	}
 }
 

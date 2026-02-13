@@ -200,6 +200,7 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 						TestName:    step.Test.Name,
 						TestCommand: step.Test.Command,
 						TestFormat:  step.Test.Format,
+						TestReport:  step.Test.Report,
 						Env:         cloneMap(step.Env),
 					})
 					continue

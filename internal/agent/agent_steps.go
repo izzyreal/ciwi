@@ -19,9 +19,13 @@ func extractCurrentStepFromOutput(output string) string {
 }
 
 type stepMarkerMeta struct {
-	index int
-	total int
-	name  string
+	index      int
+	total      int
+	name       string
+	kind       string
+	testName   string
+	testFormat string
+	testReport string
 }
 
 func parseStepMarkerLine(line string) (stepMarkerMeta, bool) {
@@ -44,6 +48,14 @@ func parseStepMarkerLine(line string) (stepMarkerMeta, bool) {
 			meta.total, _ = strconv.Atoi(strings.TrimSpace(kv[1]))
 		case "name":
 			meta.name = strings.TrimSpace(kv[1])
+		case "kind":
+			meta.kind = strings.TrimSpace(kv[1])
+		case "test_name":
+			meta.testName = strings.TrimSpace(kv[1])
+		case "test_format":
+			meta.testFormat = strings.TrimSpace(kv[1])
+		case "test_report":
+			meta.testReport = strings.TrimSpace(kv[1])
 		}
 	}
 	if meta.index <= 0 {

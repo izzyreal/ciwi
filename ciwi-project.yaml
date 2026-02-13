@@ -31,8 +31,9 @@ pipelines:
         steps:
           - test:
               name: go-unit
-              command: go test -json ./...
+              command: mkdir -p dist && go test -json ./... > dist/go-unit.json
               format: go-test-json
+              report: dist/go-unit.json
       - id: build-cross-platform
         runs_on:
           executor: script
