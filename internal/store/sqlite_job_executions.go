@@ -251,21 +251,16 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	}
 
 	var res sql.Result
-	var execErr error
-	for attempt := 0; ; attempt++ {
+	if err := retrySQLiteBusy(func() error {
+		var execErr error
 		res, execErr = s.db.Exec(`
 			UPDATE job_executions
 			SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?, current_step_text = ?
 			WHERE `+where+`
 		`, args...)
-		if execErr == nil {
-			break
-		}
-		// SQLite can transiently reject writes under WAL contention; retry briefly.
-		if !isSQLiteBusyError(execErr) || attempt >= 2 {
-			return protocol.JobExecution{}, fmt.Errorf("update job status: %w", execErr)
-		}
-		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+		return execErr
+	}); err != nil {
+		return protocol.JobExecution{}, fmt.Errorf("update job status: %w", err)
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		// Another concurrent writer won (typically terminal status); return latest state.
@@ -281,6 +276,19 @@ func isSQLiteBusyError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "sqlite_busy")
+}
+
+func retrySQLiteBusy(fn func() error) error {
+	for attempt := 0; ; attempt++ {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if !isSQLiteBusyError(err) || attempt >= 2 {
+			return err
+		}
+		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+	}
 }
 
 func (s *Store) MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error) {
@@ -373,6 +381,12 @@ func (s *Store) FlushJobExecutionHistory() (int64, error) {
 }
 
 func (s *Store) SaveJobExecutionArtifacts(jobID string, artifacts []protocol.JobExecutionArtifact) error {
+	return retrySQLiteBusy(func() error {
+		return s.saveJobExecutionArtifactsOnce(jobID, artifacts)
+	})
+}
+
+func (s *Store) saveJobExecutionArtifactsOnce(jobID string, artifacts []protocol.JobExecutionArtifact) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -431,11 +445,14 @@ func (s *Store) SaveJobExecutionTestReport(jobID string, report protocol.JobExec
 		return fmt.Errorf("marshal test report: %w", err)
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := s.db.Exec(`
-		INSERT INTO job_execution_test_reports (job_execution_id, report_json, created_utc)
-		VALUES (?, ?, ?)
-		ON CONFLICT(job_execution_id) DO UPDATE SET report_json=excluded.report_json, created_utc=excluded.created_utc
-	`, jobID, string(reportJSON), now); err != nil {
+	if err := retrySQLiteBusy(func() error {
+		_, err := s.db.Exec(`
+			INSERT INTO job_execution_test_reports (job_execution_id, report_json, created_utc)
+			VALUES (?, ?, ?)
+			ON CONFLICT(job_execution_id) DO UPDATE SET report_json=excluded.report_json, created_utc=excluded.created_utc
+		`, jobID, string(reportJSON), now)
+		return err
+	}); err != nil {
 		return fmt.Errorf("save test report: %w", err)
 	}
 	return nil

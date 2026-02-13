@@ -47,6 +47,10 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
 	}
+	// SQLite allows one writer at a time. Keep a single pooled connection so
+	// per-connection PRAGMAs (for example busy_timeout) are applied consistently.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
