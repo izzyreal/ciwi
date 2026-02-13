@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/store"
@@ -72,6 +73,7 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v1/server-info", serverInfoHandler)
 	mux.HandleFunc("/api/v1/config/load", s.loadConfigHandler)
 	mux.HandleFunc("/api/v1/projects", s.listProjectsHandler)
+	mux.HandleFunc("/api/v1/projects/import", s.importProjectHandler)
 	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)
 	mux.HandleFunc("/api/v1/heartbeat", s.heartbeatHandler)
 	mux.HandleFunc("/api/v1/agents", s.listAgentsHandler)
@@ -104,6 +106,20 @@ func mustJSONRequest(t *testing.T, client *http.Client, method, url string, body
 		reader = bytes.NewReader(data)
 	}
 	req, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	return resp
+}
+
+func mustRawJSONRequest(t *testing.T, client *http.Client, method, url, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}

@@ -405,11 +405,18 @@ func TestServerRunSelectionQueuesSingleMatrixEntry(t *testing.T) {
 		t.Fatalf("run selection status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
 	}
 	var runPayload struct {
-		Enqueued int `json:"enqueued"`
+		Enqueued int      `json:"enqueued"`
+		JobIDs   []string `json:"job_ids"`
 	}
 	decodeJSONBody(t, runResp, &runPayload)
 	if runPayload.Enqueued != 1 {
 		t.Fatalf("expected enqueued=1, got %d", runPayload.Enqueued)
+	}
+	if len(runPayload.JobIDs) != runPayload.Enqueued {
+		t.Fatalf("expected job_ids to match enqueued=%d, got %d", runPayload.Enqueued, len(runPayload.JobIDs))
+	}
+	if strings.TrimSpace(runPayload.JobIDs[0]) == "" {
+		t.Fatalf("expected non-empty job_id in run-selection response")
 	}
 
 	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)

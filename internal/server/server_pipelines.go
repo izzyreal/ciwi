@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -127,8 +128,9 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 	}
 	var req protocol.RunPipelineSelectionRequest
 	if parts[1] == "run" {
-		if r.Body != nil {
-			_ = json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
 		}
 		resp, err := s.enqueuePersistedPipeline(p, &req)
 		if err != nil {

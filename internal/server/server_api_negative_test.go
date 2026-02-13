@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -126,6 +127,14 @@ func TestServerStatusAndRunSelectionValidation(t *testing.T) {
 	}
 	decodeJSONBody(t, projectsResp, &projectsPayload)
 	pipelineDBID := projectsPayload.Projects[0].Pipelines[0].ID
+
+	resp = mustRawJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineDBID)+"/run", "{")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed run body, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	if body := readBody(t, resp); !strings.Contains(body, "invalid JSON body") {
+		t.Fatalf("expected invalid JSON body error for run endpoint, got %q", body)
+	}
 
 	resp = mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineDBID)+"/run-selection", map[string]any{
 		"pipeline_job_id": "compile",
