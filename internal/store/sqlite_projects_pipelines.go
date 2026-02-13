@@ -217,22 +217,25 @@ func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []pro
 					TestCommand: step.Test.Command,
 					TestFormat:  step.Test.Format,
 					TestReport:  step.Test.Report,
+					SkipDryRun:  step.SkipDryRun,
 					Env:         cloneMap(step.Env),
 				})
 				continue
 			}
 			if step.Metadata != nil {
 				d.Steps = append(d.Steps, protocol.PipelineStep{
-					Type:     "metadata",
-					Metadata: cloneMap(step.Metadata.Values),
-					Env:      cloneMap(step.Env),
+					Type:       "metadata",
+					Metadata:   cloneMap(step.Metadata.Values),
+					SkipDryRun: step.SkipDryRun,
+					Env:        cloneMap(step.Env),
 				})
 				continue
 			}
 			d.Steps = append(d.Steps, protocol.PipelineStep{
-				Type: "run",
-				Run:  step.Run,
-				Env:  cloneMap(step.Env),
+				Type:       "run",
+				Run:        step.Run,
+				SkipDryRun: step.SkipDryRun,
+				Env:        cloneMap(step.Env),
 			})
 		}
 		for idx, vars := range j.MatrixInclude {

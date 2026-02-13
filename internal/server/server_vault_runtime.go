@@ -21,6 +21,16 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 	if job == nil || len(job.Env) == 0 {
 		return nil
 	}
+	needsSecrets := false
+	for _, value := range job.Env {
+		if len(secretPlaceholderRE.FindAllStringSubmatch(value, -1)) > 0 {
+			needsSecrets = true
+			break
+		}
+	}
+	if !needsSecrets {
+		return nil
+	}
 	projectName := strings.TrimSpace(job.Metadata["project"])
 	if projectName == "" {
 		return nil
@@ -57,13 +67,11 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 
 	resolved := cloneMap(job.Env)
 	sensitive := []string{}
-	needsSecrets := false
 	for key, value := range resolved {
 		matches := secretPlaceholderRE.FindAllStringSubmatch(value, -1)
 		if len(matches) == 0 {
 			continue
 		}
-		needsSecrets = true
 		out := value
 		for _, m := range matches {
 			if len(m) < 2 {

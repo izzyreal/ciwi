@@ -163,6 +163,7 @@ type PipelineStep struct {
 	TestFormat  string            `json:"test_format,omitempty"`
 	TestReport  string            `json:"test_report,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	SkipDryRun  bool              `json:"skip_dry_run,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
 }
 

@@ -259,6 +259,57 @@ pipelines:
 	}
 }
 
+func TestParseStepSkipDryRun(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - run: echo always
+          - run: echo live-only
+            skip_dry_run: true
+`), "test-step-skip-dry-run")
+	if err != nil {
+		t.Fatalf("parse step skip_dry_run: %v", err)
+	}
+	steps := cfg.Pipelines[0].Jobs[0].Steps
+	if len(steps) != 2 {
+		t.Fatalf("unexpected step count: %d", len(steps))
+	}
+	if steps[0].SkipDryRun {
+		t.Fatalf("expected first step skip_dry_run=false")
+	}
+	if !steps[1].SkipDryRun {
+		t.Fatalf("expected second step skip_dry_run=true")
+	}
+}
+
+func TestParseRejectsMetadataStepEnv(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - metadata:
+              version: "v1.2.3"
+            env:
+              TOKEN: "{{ secret.token }}"
+`), "test-metadata-step-env")
+	if err == nil || !strings.Contains(err.Error(), "metadata must not define env") {
+		t.Fatalf("expected metadata env validation error, got: %v", err)
+	}
+}
+
 func TestParseRejectsUnsupportedTestFormat(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 1

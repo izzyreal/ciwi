@@ -81,11 +81,18 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			rendered := make([]string, 0, len(pj.Steps))
 			stepPlan := make([]protocol.JobStepPlanItem, 0, len(pj.Steps))
 			env := make(map[string]string)
-			for _, step := range pj.Steps {
-				for k, v := range step.Env {
-					env[k] = renderTemplate(v, renderVars)
+			for idx, step := range pj.Steps {
+				if selection != nil && selection.DryRun && step.SkipDryRun {
+					stepPlan = append(stepPlan, protocol.JobStepPlanItem{
+						Name: describePipelineStep(step, idx, pj.ID),
+						Kind: "dryrun_skip",
+					})
+					continue
 				}
 				if step.Test != nil {
+					for k, v := range step.Env {
+						env[k] = renderTemplate(v, renderVars)
+					}
 					command := renderTemplate(step.Test.Command, renderVars)
 					if strings.TrimSpace(command) == "" {
 						continue
@@ -125,13 +132,16 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					})
 					continue
 				}
+				for k, v := range step.Env {
+					env[k] = renderTemplate(v, renderVars)
+				}
 				line := renderTemplate(step.Run, renderVars)
 				if strings.TrimSpace(line) == "" {
 					continue
 				}
 				rendered = append(rendered, line)
 				stepPlan = append(stepPlan, protocol.JobStepPlanItem{
-					Name:   fmt.Sprintf("step %d", len(stepPlan)+1),
+					Name:   describePipelineStep(step, idx, pj.ID),
 					Script: line,
 				})
 			}
@@ -398,6 +408,20 @@ func deriveAutoBumpBranch(sourceRef string) string {
 		}
 	}
 	return ref
+}
+
+func describePipelineStep(step config.PipelineJobStep, idx int, jobID string) string {
+	if step.Test != nil {
+		name := strings.TrimSpace(step.Test.Name)
+		if name == "" {
+			name = fmt.Sprintf("%s-test-%d", jobID, idx+1)
+		}
+		return "test " + name
+	}
+	if step.Metadata != nil {
+		return "metadata"
+	}
+	return fmt.Sprintf("step %d", idx+1)
 }
 
 func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.JobCacheSpec {

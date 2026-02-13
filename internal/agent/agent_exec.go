@@ -124,6 +124,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		for _, step := range scriptSteps {
 			currentStep := formatCurrentStep(step.meta)
 			slog.Info("job step started", "job_execution_id", job.ID, "current_step", currentStep)
+			if step.meta.kind == "dryrun_skip" {
+				fmt.Fprintf(&output, "[dry-run] skipped step: %s\n", strings.TrimSpace(step.meta.name))
+			}
 			events := []protocol.JobExecutionEvent{
 				{
 					Type: protocol.JobExecutionEventTypeStepStarted,
@@ -158,6 +161,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				return fmt.Errorf("report step status: %w", err)
 			}
 			if step.meta.kind == "metadata" {
+				continue
+			}
+			if step.meta.kind == "dryrun_skip" {
 				continue
 			}
 			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, runEnv, &output, currentStep, job.SensitiveValues, traceShell)
@@ -355,7 +361,7 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 	for i, step := range plan {
 		script := step.Script
 		kind := strings.TrimSpace(step.Kind)
-		if strings.TrimSpace(script) == "" && kind != "metadata" {
+		if strings.TrimSpace(script) == "" && kind != "metadata" && kind != "dryrun_skip" {
 			continue
 		}
 		index := step.Index

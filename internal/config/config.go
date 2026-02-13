@@ -92,10 +92,11 @@ type PipelineJobMatrix struct {
 }
 
 type PipelineJobStep struct {
-	Run      string                   `yaml:"run,omitempty" json:"run,omitempty"`
-	Test     *PipelineJobTestStep     `yaml:"test,omitempty" json:"test,omitempty"`
-	Metadata *PipelineJobMetadataStep `yaml:"metadata,omitempty" json:"metadata,omitempty"`
-	Env      map[string]string        `yaml:"env,omitempty" json:"env,omitempty"`
+	Run        string                   `yaml:"run,omitempty" json:"run,omitempty"`
+	Test       *PipelineJobTestStep     `yaml:"test,omitempty" json:"test,omitempty"`
+	Metadata   *PipelineJobMetadataStep `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	SkipDryRun bool                     `yaml:"skip_dry_run,omitempty" json:"skip_dry_run,omitempty"`
+	Env        map[string]string        `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 type PipelineJobTestStep struct {
@@ -347,6 +348,9 @@ func (cfg File) Validate() []string {
 						if strings.TrimSpace(mk) == "" {
 							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].metadata contains empty key", i, j, k))
 						}
+					}
+					if len(st.Env) > 0 {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].metadata must not define env", i, j, k))
 					}
 				}
 				for envK := range st.Env {

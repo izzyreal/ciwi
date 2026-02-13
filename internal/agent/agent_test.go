@@ -715,6 +715,65 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 	}
 }
 
+func TestExecuteLeasedJobIncludesDryRunSkippedStepNoteInOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell assertion test skipped on windows")
+	}
+
+	var (
+		mu       sync.Mutex
+		statuses []protocol.JobExecutionStatusUpdateRequest
+	)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-dry-skip/status" {
+				var req protocol.JobExecutionStatusUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode status: %v", err)
+				}
+				mu.Lock()
+				statuses = append(statuses, req)
+				mu.Unlock()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	job := protocol.JobExecution{
+		ID:             "job-dry-skip",
+		Script:         ":",
+		TimeoutSeconds: 30,
+		StepPlan: []protocol.JobStepPlanItem{
+			{Index: 1, Total: 1, Name: "step 2", Kind: "dryrun_skip"},
+		},
+		RequiredCapabilities: map[string]string{
+			"shell": shellPosix,
+		},
+	}
+	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", t.TempDir(), nil, job); err != nil {
+		t.Fatalf("executeLeasedJob: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) == 0 {
+		t.Fatalf("expected status updates")
+	}
+	last := statuses[len(statuses)-1]
+	if !strings.Contains(last.Output, "[dry-run] skipped step: step 2") {
+		t.Fatalf("expected dry-run skipped step note in output, got:\n%s", last.Output)
+	}
+}
+
 func TestExecuteLeasedJobDisablesShellTraceForAdhoc(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix shell assertion test skipped on windows")

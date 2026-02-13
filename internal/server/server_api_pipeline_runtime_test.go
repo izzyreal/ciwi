@@ -394,3 +394,164 @@ pipelines:
 		t.Fatalf("unexpected release_created metadata render: %q", plan[0].Metadata["release_created"])
 	}
 }
+
+func TestServerRunPipelineSkipsMarkedStepsDuringDryRun(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	const cfg = `
+version: 1
+project:
+  name: test
+pipelines:
+  - id: release
+    trigger: manual
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: publish
+        runs_on:
+          executor: script
+          shell: posix
+        steps:
+          - run: echo always
+          - run: echo live-only
+            skip_dry_run: true
+`
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{
+		"config_path": "ciwi.yaml",
+	})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/1/run", map[string]any{"dry_run": true})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("run status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	_ = readBody(t, runResp)
+
+	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
+	if jobsResp.StatusCode != http.StatusOK {
+		t.Fatalf("jobs status=%d body=%s", jobsResp.StatusCode, readBody(t, jobsResp))
+	}
+	var jobsPayload struct {
+		JobExecutions []struct {
+			StepPlan []struct {
+				Script string `json:"script"`
+				Kind   string `json:"kind"`
+			} `json:"step_plan"`
+		} `json:"job_executions"`
+	}
+	decodeJSONBody(t, jobsResp, &jobsPayload)
+	if len(jobsPayload.JobExecutions) == 0 {
+		t.Fatalf("expected at least one job execution")
+	}
+	plan := jobsPayload.JobExecutions[0].StepPlan
+	if len(plan) != 2 {
+		t.Fatalf("expected two steps during dry-run (including skip note), got %d", len(plan))
+	}
+	if strings.TrimSpace(plan[0].Script) != "echo always" {
+		t.Fatalf("unexpected dry-run step script: %q", plan[0].Script)
+	}
+	if plan[1].Kind != "dryrun_skip" {
+		t.Fatalf("expected second step kind dryrun_skip, got %q", plan[1].Kind)
+	}
+}
+
+func TestServerRunPipelineDryRunDoesNotRequireSecretsFromSkippedSteps(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	const cfg = `
+version: 1
+project:
+  name: release
+  vault:
+    connection: home-vault
+    secrets:
+      - name: github-secret
+        path: ciwi
+        key: token
+pipelines:
+  - id: release
+    trigger: manual
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: publish
+        runs_on:
+          executor: script
+          shell: posix
+        steps:
+          - run: echo always
+          - run: echo live-only
+            skip_dry_run: true
+            env:
+              GITHUB_TOKEN: "{{ secret.github-secret }}"
+`
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{
+		"config_path": "ciwi.yaml",
+	})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/1/run", map[string]any{"dry_run": true})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("run status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	_ = readBody(t, runResp)
+
+	leaseResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-test",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseResp.StatusCode != http.StatusOK {
+		t.Fatalf("lease status=%d body=%s", leaseResp.StatusCode, readBody(t, leaseResp))
+	}
+	var payload struct {
+		Assigned     bool `json:"assigned"`
+		JobExecution struct {
+			Env map[string]string `json:"env"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, leaseResp, &payload)
+	if !payload.Assigned {
+		t.Fatalf("expected dry-run job to lease successfully")
+	}
+	if _, exists := payload.JobExecution.Env["GITHUB_TOKEN"]; exists {
+		t.Fatalf("expected skipped-step secret env to be absent from leased job")
+	}
+}

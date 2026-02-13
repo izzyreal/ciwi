@@ -138,43 +138,35 @@ pipelines:
               TAG="${CIWI_PIPELINE_TAG}"
               git config user.name "ciwi-agent"
               git config user.email "ciwi-agent@local"
-              if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
-                echo "[dry-run] skipping git tag/push"
-              else
-                git tag -a "$TAG" -m "ciwi $TAG"
-                git push origin "$TAG"
-              fi
           - run: |
               TAG="${CIWI_PIPELINE_TAG}"
-              RELEASE_CREATED="yes"
-              if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
-                echo "[dry-run] skipping gh release create"
-                RELEASE_CREATED="no (dry-run)"
-              else
-                gh release create "$TAG" \
-                  --repo izzyreal/ciwi \
-                  --title "ciwi $TAG" \
-                  --notes "Release $TAG"
+              git tag -a "$TAG" -m "ciwi $TAG"
+              git push origin "$TAG"
+            skip_dry_run: true
+          - run: |
+              TAG="${CIWI_PIPELINE_TAG}"
+              gh release create "$TAG" \
+                --repo izzyreal/ciwi \
+                --title "ciwi $TAG" \
+                --notes "Release $TAG"
 
-                set -- \
-                  dist/ciwi-linux-amd64 \
-                  dist/ciwi-darwin-amd64 \
-                  dist/ciwi-darwin-arm64 \
-                  dist/ciwi-windows-amd64.exe \
-                  dist/ciwi-checksums.txt
-                TOTAL="$#"
-                IDX=0
-                for FILE in "$@"; do
-                  IDX=$((IDX + 1))
-                  SIZE="$(wc -c < "$FILE" | tr -d ' ')"
-                  START="$(date +%s)"
-                  echo "[release] Uploading ${IDX}/${TOTAL}: ${FILE} (${SIZE} bytes)"
-                  gh release upload "$TAG" "$FILE" --repo izzyreal/ciwi --clobber
-                  END="$(date +%s)"
-                  echo "[release] Uploaded ${IDX}/${TOTAL}: ${FILE} in $((END-START))s"
-                done
-              fi
+              set -- \
+                dist/ciwi-linux-amd64 \
+                dist/ciwi-darwin-amd64 \
+                dist/ciwi-darwin-arm64 \
+                dist/ciwi-windows-amd64.exe \
+                dist/ciwi-checksums.txt
+              TOTAL="$#"
+              IDX=0
+              for FILE in "$@"; do
+                IDX=$((IDX + 1))
+                SIZE="$(wc -c < "$FILE" | tr -d ' ')"
+                START="$(date +%s)"
+                echo "[release] Uploading ${IDX}/${TOTAL}: ${FILE} (${SIZE} bytes)"
+                gh release upload "$TAG" "$FILE" --repo izzyreal/ciwi --clobber
+                END="$(date +%s)"
+                echo "[release] Uploaded ${IDX}/${TOTAL}: ${FILE} in $((END-START))s"
+              done
+            skip_dry_run: true
           - metadata:
               release_created: "{{ciwi.release_created}}"
-            env:
-              GITHUB_TOKEN: "{{ secret.github-secret }}"
