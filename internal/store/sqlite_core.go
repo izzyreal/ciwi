@@ -139,7 +139,8 @@ func (s *Store) migrate() error {
 			leased_utc TEXT,
 			exit_code INTEGER,
 			error_text TEXT,
-			output_text TEXT
+			output_text TEXT,
+			current_step_text TEXT NOT NULL DEFAULT ''
 		);`,
 		`CREATE TABLE IF NOT EXISTS job_execution_artifacts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,6 +210,9 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "env_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("job_executions", "current_step_text", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return nil

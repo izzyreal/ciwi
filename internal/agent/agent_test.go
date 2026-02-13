@@ -318,6 +318,20 @@ func TestParseJobTestReportJUnitXMLSuiteTotals(t *testing.T) {
 	}
 }
 
+func TestExtractCurrentStepFromOutput(t *testing.T) {
+	output := strings.Join([]string{
+		"[meta] job_id=job-1",
+		`__CIWI_STEP_BEGIN__ index=1 total=3 name=checkout_source`,
+		"cloning...",
+		`"__CIWI_STEP_BEGIN__ index=2 total=3 name=build_app"`,
+		"building...",
+	}, "\n")
+	step := extractCurrentStepFromOutput(output)
+	if step != "Step 2/3: build app" {
+		t.Fatalf("unexpected current step: %q", step)
+	}
+}
+
 func TestResolveJobCacheEnvMissThenHit(t *testing.T) {
 	workDir := t.TempDir()
 	execDir := t.TempDir()

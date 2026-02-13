@@ -29,6 +29,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 		AgentID:      agentID,
 		Status:       "running",
+		CurrentStep:  "Preparing execution",
 		TimestampUTC: time.Now().UTC(),
 	}); err != nil {
 		return fmt.Errorf("report running status: %w", err)
@@ -58,6 +59,14 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		sourceDir := filepath.Join(jobDir, "src")
 		checkoutStart := time.Now()
 		fmt.Fprintf(&output, "[checkout] repo=%s ref=%s\n", job.Source.Repo, job.Source.Ref)
+		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
+			AgentID:      agentID,
+			Status:       "running",
+			CurrentStep:  "Checking out source",
+			TimestampUTC: time.Now().UTC(),
+		}); err != nil {
+			return fmt.Errorf("report checkout status: %w", err)
+		}
 		checkoutOutput, checkoutErr := checkoutSource(runCtx, sourceDir, *job.Source)
 		output.WriteString(checkoutOutput)
 		fmt.Fprintf(&output, "[checkout] duration=%s\n", time.Since(checkoutStart).Round(time.Millisecond))
@@ -113,7 +122,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	cmd.Stderr = &output
 	cmd.Env = withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
 
-	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output, job.SensitiveValues)
+	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output, job.SensitiveValues, "Running job script")
 	defer stopStreaming()
 
 	runStart := time.Now()
@@ -162,6 +171,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			Status:       "succeeded",
 			ExitCode:     &exitCode,
 			Output:       trimmedOutput,
+			CurrentStep:  "",
 			TimestampUTC: time.Now().UTC(),
 		}); reportErr != nil {
 			return fmt.Errorf("report succeeded status: %w", reportErr)
@@ -302,7 +312,7 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, sensitive []string) func() {
+func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, sensitive []string, defaultCurrentStep string) func() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	done := make(chan struct{})
 	stopCh := make(chan struct{})
@@ -310,6 +320,7 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 	go func() {
 		defer close(done)
 		lastSent := ""
+		lastStep := ""
 		for {
 			select {
 			case <-stopCh:
@@ -317,15 +328,22 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				snapshot := redactSensitive(trimOutput(output.String()), sensitive)
-				if snapshot == lastSent {
+				rawSnapshot := trimOutput(output.String())
+				snapshot := redactSensitive(rawSnapshot, sensitive)
+				currentStep := extractCurrentStepFromOutput(rawSnapshot)
+				if currentStep == "" {
+					currentStep = defaultCurrentStep
+				}
+				if snapshot == lastSent && currentStep == lastStep {
 					continue
 				}
 				lastSent = snapshot
+				lastStep = currentStep
 				if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobStatusUpdateRequest{
 					AgentID:      agentID,
 					Status:       "running",
 					Output:       snapshot,
+					CurrentStep:  currentStep,
 					TimestampUTC: time.Now().UTC(),
 				}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 					slog.Error("stream running update failed", "job_execution_id", jobID, "error", err)

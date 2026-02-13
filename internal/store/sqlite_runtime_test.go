@@ -323,3 +323,40 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 		t.Fatalf("expected finished timestamp to be set")
 	}
 }
+
+func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJob(protocol.CreateJobRequest{
+		Script:         "echo hi",
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	running, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+		AgentID:     "agent-1",
+		Status:      "running",
+		Output:      "stream-1",
+		CurrentStep: "Step 1/3: checkout source",
+	})
+	if err != nil {
+		t.Fatalf("mark running: %v", err)
+	}
+	if running.CurrentStep != "Step 1/3: checkout source" {
+		t.Fatalf("unexpected running current_step: %q", running.CurrentStep)
+	}
+
+	done, err := s.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  "succeeded",
+		Output:  "done",
+	})
+	if err != nil {
+		t.Fatalf("mark succeeded: %v", err)
+	}
+	if done.CurrentStep != "" {
+		t.Fatalf("expected current_step to clear on terminal status, got %q", done.CurrentStep)
+	}
+}

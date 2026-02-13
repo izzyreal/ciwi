@@ -22,12 +22,12 @@ func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error)
 		startedUTC, finishedUTC                                            sql.NullString
 		leasedByAgentID, leasedUTC                                         sql.NullString
 		exitCode                                                           sql.NullInt64
-		errorText, outputText                                              sql.NullString
+		errorText, outputText, currentStepText                             sql.NullString
 	)
 
 	if err := scanner.Scan(
 		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON,
-		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText,
+		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText, &currentStepText,
 	); err != nil {
 		return protocol.Job{}, err
 	}
@@ -73,6 +73,9 @@ func scanJob(scanner interface{ Scan(dest ...any) error }) (protocol.Job, error)
 	}
 	if outputText.Valid {
 		job.Output = outputText.String
+	}
+	if currentStepText.Valid {
+		job.CurrentStep = strings.TrimSpace(currentStepText.String)
 	}
 
 	return job, nil

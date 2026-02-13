@@ -72,7 +72,9 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			if runCtx.TagPrefix != "" {
 				renderVars["ciwi.tag_prefix"] = runCtx.TagPrefix
 			}
-			rendered := make([]string, 0, len(pj.Steps)*3)
+			rendered := make([]string, 0, len(pj.Steps)*4)
+			stepBlocks := make([]string, 0, len(pj.Steps))
+			stepLabels := make([]string, 0, len(pj.Steps))
 			env := make(map[string]string)
 			for idx, step := range pj.Steps {
 				for k, v := range step.Env {
@@ -91,18 +93,24 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					if format == "" {
 						format = "go-test-json"
 					}
-					rendered = append(rendered,
+					stepBlocks = append(stepBlocks, strings.Join([]string{
 						fmt.Sprintf("echo \"__CIWI_TEST_BEGIN__ name=%s format=%s\"", sanitizeMarkerToken(name), sanitizeMarkerToken(format)),
 						command,
 						`echo "__CIWI_TEST_END__"`,
-					)
+					}, "\n"))
+					stepLabels = append(stepLabels, "test "+name)
 					continue
 				}
 				line := renderTemplate(step.Run, renderVars)
 				if strings.TrimSpace(line) == "" {
 					continue
 				}
-				rendered = append(rendered, line)
+				stepBlocks = append(stepBlocks, line)
+				stepLabels = append(stepLabels, fmt.Sprintf("step %d", idx+1))
+			}
+			for stepIndex := range stepBlocks {
+				rendered = append(rendered, buildStepMarkerCommand(strings.TrimSpace(pj.RunsOn["shell"]), stepIndex+1, len(stepBlocks), stepLabels[stepIndex]))
+				rendered = append(rendered, stepBlocks[stepIndex])
 			}
 			if len(rendered) == 0 {
 				return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q rendered empty script", pj.ID)
@@ -272,4 +280,20 @@ func cloneJobCachesFromPersisted(in []config.JobCache) []protocol.JobCacheSpec {
 		})
 	}
 	return out
+}
+
+func buildStepMarkerCommand(shell string, index, total int, label string) string {
+	label = sanitizeMarkerToken(label)
+	if label == "" {
+		label = fmt.Sprintf("step_%d", index)
+	}
+	payload := fmt.Sprintf("__CIWI_STEP_BEGIN__ index=%d total=%d name=%s", index, total, label)
+	switch strings.ToLower(strings.TrimSpace(shell)) {
+	case "cmd":
+		return "echo " + payload
+	case "powershell":
+		return `Write-Output "` + payload + `"`
+	default:
+		return `echo "` + payload + `"`
+	}
 }

@@ -63,6 +63,7 @@ type Job struct {
 	Caches               []JobCacheSpec    `json:"caches,omitempty"`
 	Source               *SourceSpec       `json:"source,omitempty"`
 	Metadata             map[string]string `json:"metadata,omitempty"`
+	CurrentStep          string            `json:"current_step,omitempty"`
 	Status               string            `json:"status"`
 	CreatedUTC           time.Time         `json:"created_utc"`
 	StartedUTC           time.Time         `json:"started_utc,omitempty"`
@@ -238,6 +239,7 @@ type JobStatusUpdateRequest struct {
 	ExitCode     *int      `json:"exit_code,omitempty"`
 	Error        string    `json:"error,omitempty"`
 	Output       string    `json:"output,omitempty"`
+	CurrentStep  string    `json:"current_step,omitempty"`
 	TimestampUTC time.Time `json:"timestamp_utc,omitempty"`
 }
 

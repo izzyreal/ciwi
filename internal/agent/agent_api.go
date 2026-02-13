@@ -125,6 +125,7 @@ func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID 
 		ExitCode:     exitCode,
 		Error:        failMsg,
 		Output:       output,
+		CurrentStep:  "",
 		TimestampUTC: time.Now().UTC(),
 	})
 }

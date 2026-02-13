@@ -92,27 +92,7 @@ const jobHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script>
     let refreshInFlight = false;
-    let liveDuration = null;
-    let liveDurationTicker = null;
     const refreshGuard = createRefreshGuard(5000);
-
-    function renderLiveDuration() {
-      const cell = document.getElementById('durationValue');
-      if (!cell || !liveDuration) return;
-      cell.textContent = formatDuration(liveDuration.started, liveDuration.finished, liveDuration.status);
-    }
-
-    function setLiveDuration(job) {
-      liveDuration = {
-        started: (job && job.started_utc) || '',
-        finished: (job && job.finished_utc) || '',
-        status: String((job && job.status) || '').toLowerCase(),
-      };
-      renderLiveDuration();
-      if (!liveDurationTicker) {
-        liveDurationTicker = setInterval(renderLiveDuration, 1000);
-      }
-    }
 
     function jobIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
@@ -156,7 +136,6 @@ const jobHTML = `<!doctype html>
 
         const desc = jobDescription(job);
         document.getElementById('jobTitle').textContent = desc;
-        document.getElementById('subtitle').innerHTML = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
 
         const pipeline = (job.metadata && job.metadata.pipeline_id) || '';
         const buildVersion = buildVersionLabel(job);
@@ -167,7 +146,7 @@ const jobHTML = `<!doctype html>
           { label: 'Agent', value: escapeHtml(job.leased_by_agent_id || '') },
           { label: 'Created', value: escapeHtml(formatTimestamp(job.created_utc)) },
           { label: 'Started', value: escapeHtml(formatTimestamp(job.started_utc)) },
-          { label: 'Duration', value: escapeHtml(formatDuration(job.started_utc, job.finished_utc, job.status)), valueId: 'durationValue' },
+          { label: 'Duration', value: escapeHtml(formatDuration(job.started_utc, job.finished_utc, job.status)) },
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
 
@@ -175,10 +154,15 @@ const jobHTML = `<!doctype html>
         meta.innerHTML = rows.map(r =>
           '<div class="label">' + r.label + '</div><div' + (r.valueId ? ' id="' + r.valueId + '"' : '') + '>' + r.value + '</div>'
         ).join('');
-        setLiveDuration(job);
 
         const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
         document.getElementById('logBox').value = output || '<no output yet>';
+        const stepDescription = String(job.current_step || '').trim();
+        let subtitle = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
+        if (stepDescription) {
+          subtitle += ' <span class="label"> - ' + escapeHtml(stepDescription) + '</span>';
+        }
+        document.getElementById('subtitle').innerHTML = subtitle;
 
       const forceBtn = document.getElementById('forceFailBtn');
       const active = ['queued', 'leased', 'running'].includes((job.status || '').toLowerCase());

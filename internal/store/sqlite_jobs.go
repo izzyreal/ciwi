@@ -58,7 +58,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 func (s *Store) ListJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
-		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
+		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
 		FROM job_executions
 		ORDER BY created_utc DESC
 	`)
@@ -84,7 +84,7 @@ func (s *Store) ListJobs() ([]protocol.Job, error) {
 func (s *Store) GetJob(id string) (protocol.Job, error) {
 	row := s.db.QueryRow(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
-		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
+		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
 		FROM job_executions WHERE id = ?
 	`, id)
 	job, err := scanJob(row)
@@ -151,7 +151,7 @@ func (s *Store) AgentHasActiveJob(agentID string) (bool, error) {
 func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
-		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text
+		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
 		FROM job_executions WHERE status = 'queued'
 		ORDER BY created_utc ASC
 	`)
@@ -206,6 +206,10 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 	errorText := req.Error
 	output := req.Output
 	exitCode := nullableInt(req.ExitCode)
+	currentStep := strings.TrimSpace(req.CurrentStep)
+	if currentStep == "" {
+		currentStep = strings.TrimSpace(job.CurrentStep)
+	}
 
 	if status == "running" && !job.StartedUTC.IsZero() {
 		started = nullableTime(job.StartedUTC)
@@ -222,10 +226,11 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 		if status == "succeeded" {
 			errorText = ""
 		}
+		currentStep = ""
 	}
 
 	where := "id = ?"
-	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output}
+	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output, currentStep}
 	if status == "running" {
 		// Never allow a running heartbeat/log-stream update to overwrite a terminal state.
 		where = "id = ? AND status NOT IN ('succeeded', 'failed')"
@@ -237,7 +242,7 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 
 	res, err := s.db.Exec(`
 		UPDATE job_executions
-		SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?
+		SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?, current_step_text = ?
 		WHERE `+where+`
 	`, args...)
 	if err != nil {

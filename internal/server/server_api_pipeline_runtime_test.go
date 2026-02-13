@@ -171,3 +171,53 @@ func TestServerRunPipelineDryRunSetsMetadata(t *testing.T) {
 		t.Fatalf("expected env CIWI_DRY_RUN=1, got %q", jobsPayload.JobExecutions[0].Env["CIWI_DRY_RUN"])
 	}
 }
+
+func TestServerRunPipelineInjectsStepMarkers(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(testConfigYAML), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{
+		"config_path": "ciwi.yaml",
+	})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/1/run", map[string]any{})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("run status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	_ = readBody(t, runResp)
+
+	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
+	if jobsResp.StatusCode != http.StatusOK {
+		t.Fatalf("jobs status=%d body=%s", jobsResp.StatusCode, readBody(t, jobsResp))
+	}
+	var jobsPayload struct {
+		JobExecutions []struct {
+			Script string `json:"script"`
+		} `json:"job_executions"`
+	}
+	decodeJSONBody(t, jobsResp, &jobsPayload)
+	if len(jobsPayload.JobExecutions) == 0 {
+		t.Fatalf("expected at least one job execution")
+	}
+	if !strings.Contains(jobsPayload.JobExecutions[0].Script, "__CIWI_STEP_BEGIN__") {
+		t.Fatalf("expected script to include step marker, got:\n%s", jobsPayload.JobExecutions[0].Script)
+	}
+}
