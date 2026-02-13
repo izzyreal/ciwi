@@ -44,6 +44,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updateRequested := false
+	warmupDelay := time.Duration(0)
 	needsUpdate := target != "" && isVersionDifferent(target, strings.TrimSpace(hb.Version))
 	if needsUpdate {
 		if strings.TrimSpace(prev.UpdateTarget) != target {
@@ -51,6 +52,14 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 			prev.UpdateAttempts = 0
 			prev.UpdateLastRequestUTC = time.Time{}
 			prev.UpdateNextRetryUTC = time.Time{}
+			if manualTarget == "" {
+				// Give newly rolled out server versions a short warmup window before
+				// the first automatic agent update request.
+				warmupDelay = agentUpdateInitialWarmup(hb.AgentID, target)
+				if warmupDelay > 0 {
+					prev.UpdateNextRetryUTC = now.Add(warmupDelay)
+				}
+			}
 		}
 		if prev.UpdateNextRetryUTC.IsZero() || !now.Before(prev.UpdateNextRetryUTC) {
 			updateRequested = true
@@ -84,6 +93,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("heartbeat version=%s platform=%s/%s", strings.TrimSpace(hb.Version), strings.TrimSpace(hb.OS), strings.TrimSpace(hb.Arch)))
 	if refreshTools {
 		state.RecentLog = appendAgentLog(state.RecentLog, "server requested tools refresh")
+	}
+	if warmupDelay > 0 {
+		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("scheduled automatic update to %s after warmup=%s", target, warmupDelay.Round(time.Second)))
 	}
 	if updateRequested {
 		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("server requested update to %s (attempt=%d, next_retry=%s)", target, state.UpdateAttempts, state.UpdateNextRetryUTC.Local().Format("15:04:05")))
