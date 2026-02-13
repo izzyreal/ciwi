@@ -244,6 +244,92 @@ func TestServerLoadListRunAndQueueHistoryEndpoints(t *testing.T) {
 	}
 }
 
+func TestJobJSONOmitsZeroStartedAndFinishedTimestamps(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	client := ts.Client()
+
+	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
+		"script":          "echo timestamps",
+		"timeout_seconds": 30,
+	})
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
+	}
+	var createPayload struct {
+		Job struct {
+			ID string `json:"id"`
+		} `json:"job"`
+	}
+	decodeJSONBody(t, createResp, &createPayload)
+
+	jobResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID, nil)
+	if jobResp.StatusCode != http.StatusOK {
+		t.Fatalf("get queued job status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
+	}
+	queuedBody := readBody(t, jobResp)
+	if strings.Contains(queuedBody, `"started_utc"`) {
+		t.Fatalf("queued job should omit started_utc, body=%s", queuedBody)
+	}
+	if strings.Contains(queuedBody, `"finished_utc"`) {
+		t.Fatalf("queued job should omit finished_utc, body=%s", queuedBody)
+	}
+	if strings.Contains(queuedBody, "0001-01-01T00:00:00Z") {
+		t.Fatalf("queued job should not expose zero-time sentinel, body=%s", queuedBody)
+	}
+
+	runningResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/status", map[string]any{
+		"agent_id": "agent-a",
+		"status":   "running",
+		"output":   "working",
+	})
+	if runningResp.StatusCode != http.StatusOK {
+		t.Fatalf("mark running status=%d body=%s", runningResp.StatusCode, readBody(t, runningResp))
+	}
+	_ = readBody(t, runningResp)
+
+	jobResp = mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID, nil)
+	if jobResp.StatusCode != http.StatusOK {
+		t.Fatalf("get running job status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
+	}
+	runningBody := readBody(t, jobResp)
+	if !strings.Contains(runningBody, `"started_utc":"`) {
+		t.Fatalf("running job should include started_utc, body=%s", runningBody)
+	}
+	if strings.Contains(runningBody, `"finished_utc"`) {
+		t.Fatalf("running job should omit finished_utc, body=%s", runningBody)
+	}
+	if strings.Contains(runningBody, "0001-01-01T00:00:00Z") {
+		t.Fatalf("running job should not expose zero-time sentinel, body=%s", runningBody)
+	}
+
+	doneResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/status", map[string]any{
+		"agent_id": "agent-a",
+		"status":   "succeeded",
+		"output":   "done",
+	})
+	if doneResp.StatusCode != http.StatusOK {
+		t.Fatalf("mark succeeded status=%d body=%s", doneResp.StatusCode, readBody(t, doneResp))
+	}
+	_ = readBody(t, doneResp)
+
+	jobResp = mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID, nil)
+	if jobResp.StatusCode != http.StatusOK {
+		t.Fatalf("get succeeded job status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
+	}
+	doneBody := readBody(t, jobResp)
+	if !strings.Contains(doneBody, `"started_utc":"`) {
+		t.Fatalf("succeeded job should include started_utc, body=%s", doneBody)
+	}
+	if !strings.Contains(doneBody, `"finished_utc":"`) {
+		t.Fatalf("succeeded job should include finished_utc, body=%s", doneBody)
+	}
+	if strings.Contains(doneBody, "0001-01-01T00:00:00Z") {
+		t.Fatalf("succeeded job should not expose zero-time sentinel, body=%s", doneBody)
+	}
+}
+
 func TestServerRunSelectionQueuesSingleMatrixEntry(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()

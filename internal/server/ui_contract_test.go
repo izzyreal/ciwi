@@ -154,8 +154,14 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	if !strings.Contains(js, "function formatTimestamp(") {
 		t.Fatalf("shared js missing formatTimestamp helper")
 	}
-	if !strings.Contains(js, "function formatDuration(") {
-		t.Fatalf("shared js missing formatDuration helper")
+	if !strings.Contains(js, "function formatDurationMs(") {
+		t.Fatalf("shared js missing formatDurationMs helper")
+	}
+	if strings.Contains(js, "function formatDuration(") {
+		t.Fatalf("shared js should not include job-specific formatDuration helper")
+	}
+	if strings.Contains(js, "0001-01-01T00:00:00") {
+		t.Fatalf("shared js should not include backend zero-time sentinel handling")
 	}
 	if !strings.Contains(js, "function jobDescription(") {
 		t.Fatalf("shared js missing jobDescription helper")
@@ -323,6 +329,18 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 	}
 	if !strings.Contains(jobHTML, "formatBytes(a.size_bytes)") {
 		t.Fatalf("job page should render human-friendly artifact sizes")
+	}
+	if !strings.Contains(jobHTML, "function parseOptionalTimestamp(") {
+		t.Fatalf("job page missing local timestamp normalization helper")
+	}
+	if !strings.Contains(jobHTML, "function formatJobDuration(") {
+		t.Fatalf("job page missing local duration formatting helper")
+	}
+	if !strings.Contains(jobHTML, "formatJobDuration(job.started_utc, job.finished_utc, job.status)") {
+		t.Fatalf("job page should use local job-specific duration helper")
+	}
+	if strings.Contains(jobHTML, "0001-01-01T00:00:00") {
+		t.Fatalf("job page should not include backend zero-time sentinel handling")
 	}
 	if !strings.Contains(jobHTML, "artifact-path") || !strings.Contains(jobHTML, "copy-btn") {
 		t.Fatalf("job page should support artifact text selection/copy")

@@ -23,30 +23,16 @@ function formatTimestamp(ts) {
   });
 }
 
-function formatDuration(startTs, finishTs, status) {
-  const startRaw = String(startTs || '');
-  const hasRealStart = startRaw && !startRaw.startsWith('0001-01-01T00:00:00');
-  if (!hasRealStart) return '';
-  const start = new Date(startRaw);
-  if (Number.isNaN(start.getTime())) return '';
-  const normalizedStatus = String(status || '').toLowerCase();
-  const finishRaw = String(finishTs || '');
-  const hasRealFinish = finishRaw && !finishRaw.startsWith('0001-01-01T00:00:00');
-  const end = (normalizedStatus === 'running' || !hasRealFinish) ? new Date() : new Date(finishRaw);
-  if (Number.isNaN(end.getTime())) return '';
-  let ms = end.getTime() - start.getTime();
-  if (ms < 0) ms = 0;
-  const totalSec = Math.floor(ms / 1000);
+function formatDurationMs(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value < 0) return '';
+  const totalSec = Math.floor(value / 1000);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-  const core = h > 0
+  return h > 0
     ? String(h) + 'h ' + String(m).padStart(2, '0') + 'm ' + String(s).padStart(2, '0') + 's'
     : String(m).padStart(2, '0') + 'm ' + String(s).padStart(2, '0') + 's';
-  if (!finishTs && status === 'running') {
-    return core + ' (running)';
-  }
-  return core;
 }
 
 function jobDescription(job) {

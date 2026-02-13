@@ -99,6 +99,38 @@ const jobHTML = `<!doctype html>
       return parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
     }
 
+    function parseOptionalTimestamp(ts) {
+      const raw = String(ts || '').trim();
+      if (!raw) return null;
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed;
+    }
+
+    function computeJobDuration(startTs, finishTs, status) {
+      const start = parseOptionalTimestamp(startTs);
+      if (!start) return null;
+      const normalizedStatus = String(status || '').toLowerCase();
+      const finish = parseOptionalTimestamp(finishTs);
+      const end = (normalizedStatus === 'running' || !finish) ? new Date() : finish;
+      if (Number.isNaN(end.getTime())) return null;
+      let ms = end.getTime() - start.getTime();
+      if (ms < 0) ms = 0;
+      return {
+        ms: ms,
+        isRunningWithoutFinish: normalizedStatus === 'running' && !finish,
+      };
+    }
+
+    function formatJobDuration(startTs, finishTs, status) {
+      const duration = computeJobDuration(startTs, finishTs, status);
+      if (!duration) return '';
+      const core = formatDurationMs(duration.ms);
+      if (!core) return '';
+      if (duration.isRunningWithoutFinish) return core + ' (running)';
+      return core;
+    }
+
     function setBackLink() {
       const link = document.getElementById('backLink');
       if (!link) return;
@@ -146,7 +178,7 @@ const jobHTML = `<!doctype html>
           { label: 'Agent', value: escapeHtml(job.leased_by_agent_id || '') },
           { label: 'Created', value: escapeHtml(formatTimestamp(job.created_utc)) },
           { label: 'Started', value: escapeHtml(formatTimestamp(job.started_utc)) },
-          { label: 'Duration', value: escapeHtml(formatDuration(job.started_utc, job.finished_utc, job.status)) },
+          { label: 'Duration', value: escapeHtml(formatJobDuration(job.started_utc, job.finished_utc, job.status)) },
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
 
