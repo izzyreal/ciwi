@@ -51,7 +51,7 @@ function buildJobExecutionRow(job, opts = {}) {
     if (fixedLines > 0) {
       actionTd.className = 'ciwi-job-actions-cell';
     }
-    if (['queued', 'leased'].includes((job.status || '').toLowerCase())) {
+    if (isPendingJobStatus(job.status)) {
       const btn = document.createElement('button');
       btn.className = 'secondary';
       btn.textContent = 'Remove';

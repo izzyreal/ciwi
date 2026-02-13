@@ -110,15 +110,15 @@ const jobHTML = `<!doctype html>
     function computeJobDuration(startTs, finishTs, status) {
       const start = parseOptionalTimestamp(startTs);
       if (!start) return null;
-      const normalizedStatus = String(status || '').toLowerCase();
+      const running = isRunningJobStatus(status);
       const finish = parseOptionalTimestamp(finishTs);
-      const end = (normalizedStatus === 'running' || !finish) ? new Date() : finish;
+      const end = (running || !finish) ? new Date() : finish;
       if (Number.isNaN(end.getTime())) return null;
       let ms = end.getTime() - start.getTime();
       if (ms < 0) ms = 0;
       return {
         ms: ms,
-        isRunningWithoutFinish: normalizedStatus === 'running' && !finish,
+        isRunningWithoutFinish: running && !finish,
       };
     }
 
@@ -197,7 +197,7 @@ const jobHTML = `<!doctype html>
         document.getElementById('subtitle').innerHTML = subtitle;
 
       const forceBtn = document.getElementById('forceFailBtn');
-      const active = ['queued', 'leased', 'running'].includes((job.status || '').toLowerCase());
+      const active = isActiveJobStatus(job.status);
       if (active) {
         forceBtn.style.display = 'inline-block';
         forceBtn.disabled = false;

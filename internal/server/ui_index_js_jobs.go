@@ -120,10 +120,10 @@ const uiIndexJobsJS = `
       let failed = 0;
       let inProgress = 0;
       jobs.forEach(job => {
-        const status = String(job.status || '').toLowerCase();
+        const status = normalizedJobStatus(job.status);
         if (status === 'succeeded') succeeded += 1;
         else if (status === 'failed') failed += 1;
-        else if (status === 'queued' || status === 'leased' || status === 'running') inProgress += 1;
+        else if (isActiveJobStatus(status)) inProgress += 1;
       });
       if (failed > 0) {
         return { emoji: '❌', cls: 'status-failed', text: succeeded + '/' + total + ' successful, ' + failed + ' failed' };

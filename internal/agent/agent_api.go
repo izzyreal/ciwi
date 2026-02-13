@@ -121,7 +121,7 @@ func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID strin
 func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID string, job protocol.Job, exitCode *int, failMsg, output string) error {
 	return reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 		AgentID:      agentID,
-		Status:       "failed",
+		Status:       protocol.JobStatusFailed,
 		ExitCode:     exitCode,
 		Error:        failMsg,
 		Output:       output,

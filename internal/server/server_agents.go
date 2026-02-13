@@ -196,7 +196,7 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		failMsg := fmt.Sprintf("secret resolution failed before execution: %v", err)
 		_, _ = s.db.UpdateJobStatus(job.ID, protocol.JobStatusUpdateRequest{
 			AgentID: req.AgentID,
-			Status:  "failed",
+			Status:  protocol.JobStatusFailed,
 			Error:   failMsg,
 		})
 		writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{Assigned: false, Message: failMsg})

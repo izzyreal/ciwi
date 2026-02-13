@@ -10,15 +10,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func isValidUpdateStatus(status string) bool {
-	switch status {
-	case jobStatusRunning, jobStatusSucceeded, jobStatusFailed:
-		return true
-	default:
-		return false
-	}
+	return protocol.IsValidJobUpdateStatus(status)
 }
 
 func resolveConfigPath(path string) (string, error) {

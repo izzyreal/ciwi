@@ -92,7 +92,7 @@ func verifyDependencyRun(jobs []protocol.Job, projectName, pipelineID string) (p
 		if j.CreatedUTC.After(st.lastCreated) {
 			st.lastCreated = j.CreatedUTC
 		}
-		st.statuses = append(st.statuses, strings.ToLower(strings.TrimSpace(j.Status)))
+		st.statuses = append(st.statuses, protocol.NormalizeJobStatus(j.Status))
 		if st.metadata == nil {
 			st.metadata = map[string]string{}
 		}
@@ -117,10 +117,10 @@ func verifyDependencyRun(jobs []protocol.Job, projectName, pipelineID string) (p
 	}
 	statuses := byRun[latestRunID].statuses
 	for _, st := range statuses {
-		if st == "queued" || st == "leased" || st == "running" {
+		if protocol.IsActiveJobStatus(st) {
 			return pipelineDependencyContext{}, fmt.Errorf("latest run is still in progress")
 		}
-		if st == "failed" {
+		if st == protocol.JobStatusFailed {
 			return pipelineDependencyContext{}, fmt.Errorf("latest run failed")
 		}
 	}

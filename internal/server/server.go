@@ -13,12 +13,6 @@ import (
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
-const (
-	jobStatusRunning   = "running"
-	jobStatusSucceeded = "succeeded"
-	jobStatusFailed    = "failed"
-)
-
 type agentState struct {
 	Hostname             string            `json:"hostname"`
 	OS                   string            `json:"os"`

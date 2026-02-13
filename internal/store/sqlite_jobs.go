@@ -36,7 +36,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 	if _, err := s.db.Exec(`
 		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, status, created_utc)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), "queued", now.Format(time.RFC3339Nano)); err != nil {
+	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), protocol.JobStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
 		return protocol.Job{}, fmt.Errorf("insert job: %w", err)
 	}
 
@@ -50,7 +50,7 @@ func (s *Store) CreateJob(req protocol.CreateJobRequest) (protocol.Job, error) {
 		Caches:               cloneJobCaches(req.Caches),
 		Source:               cloneSource(req.Source),
 		Metadata:             cloneMap(req.Metadata),
-		Status:               "queued",
+		Status:               protocol.JobStatusQueued,
 		CreatedUTC:           now,
 	}, nil
 }
@@ -110,9 +110,9 @@ func (s *Store) LeaseJob(agentID string, agentCaps map[string]string) (*protocol
 
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		res, err := s.db.Exec(`
-			UPDATE job_executions SET status = 'leased', leased_by_agent_id = ?, leased_utc = ?
-			WHERE id = ? AND status = 'queued'
-		`, agentID, now, job.ID)
+			UPDATE job_executions SET status = ?, leased_by_agent_id = ?, leased_utc = ?
+			WHERE id = ? AND status = ?
+		`, protocol.JobStatusLeased, agentID, now, job.ID, protocol.JobStatusQueued)
 		if err != nil {
 			return nil, fmt.Errorf("lease job: %w", err)
 		}
@@ -141,8 +141,8 @@ func (s *Store) AgentHasActiveJob(agentID string) (bool, error) {
 		SELECT COUNT(1)
 		FROM job_executions
 		WHERE leased_by_agent_id = ?
-		  AND status IN ('leased', 'running')
-	`, agentID).Scan(&count); err != nil {
+		  AND status IN (?, ?)
+	`, agentID, protocol.JobStatusLeased, protocol.JobStatusRunning).Scan(&count); err != nil {
 		return false, fmt.Errorf("check active jobs for agent: %w", err)
 	}
 	return count > 0, nil
@@ -152,9 +152,9 @@ func (s *Store) ListQueuedJobs() ([]protocol.Job, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, current_step_text
-		FROM job_executions WHERE status = 'queued'
+		FROM job_executions WHERE status = ?
 		ORDER BY created_utc ASC
-	`)
+	`, protocol.JobStatusQueued)
 	if err != nil {
 		return nil, fmt.Errorf("list queued jobs: %w", err)
 	}
@@ -180,13 +180,15 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 		return protocol.Job{}, err
 	}
 
+	reqStatus := protocol.NormalizeJobStatus(req.Status)
+
 	// Terminal status is sticky. Ignore late running updates (for example
 	// periodic log-stream updates racing with final succeeded/failed update).
-	if isTerminalStatus(job.Status) {
-		if req.Status == "running" {
+	if protocol.IsTerminalJobStatus(job.Status) {
+		if reqStatus == protocol.JobStatusRunning {
 			return job, nil
 		}
-		if isTerminalStatus(req.Status) && req.Status != job.Status {
+		if protocol.IsTerminalJobStatus(reqStatus) && reqStatus != protocol.NormalizeJobStatus(job.Status) {
 			return job, nil
 		}
 	}
@@ -200,7 +202,7 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 		now = time.Now().UTC()
 	}
 
-	status := req.Status
+	status := reqStatus
 	started := nullableTime(job.StartedUTC)
 	finished := nullableTime(job.FinishedUTC)
 	errorText := req.Error
@@ -211,19 +213,19 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 		currentStep = strings.TrimSpace(job.CurrentStep)
 	}
 
-	if status == "running" && !job.StartedUTC.IsZero() {
+	if status == protocol.JobStatusRunning && !job.StartedUTC.IsZero() {
 		started = nullableTime(job.StartedUTC)
 	}
-	if status == "running" && job.StartedUTC.IsZero() {
+	if status == protocol.JobStatusRunning && job.StartedUTC.IsZero() {
 		started = sql.NullString{String: now.Format(time.RFC3339Nano), Valid: true}
 	}
 
-	if status == "succeeded" || status == "failed" {
+	if protocol.IsTerminalJobStatus(status) {
 		if job.StartedUTC.IsZero() {
 			started = sql.NullString{String: now.Format(time.RFC3339Nano), Valid: true}
 		}
 		finished = sql.NullString{String: now.Format(time.RFC3339Nano), Valid: true}
-		if status == "succeeded" {
+		if status == protocol.JobStatusSucceeded {
 			errorText = ""
 		}
 		currentStep = ""
@@ -231,14 +233,17 @@ func (s *Store) UpdateJobStatus(jobID string, req protocol.JobStatusUpdateReques
 
 	where := "id = ?"
 	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output, currentStep}
-	if status == "running" {
+	if status == protocol.JobStatusRunning {
 		// Never allow a running heartbeat/log-stream update to overwrite a terminal state.
-		where = "id = ? AND status NOT IN ('succeeded', 'failed')"
-	} else if status == "succeeded" || status == "failed" {
+		where = "id = ? AND status NOT IN (?, ?)"
+		args = append(args, jobID, protocol.JobStatusSucceeded, protocol.JobStatusFailed)
+	} else if protocol.IsTerminalJobStatus(status) {
 		// First terminal status wins under races; later terminal writes become no-ops.
-		where = "id = ? AND status NOT IN ('succeeded', 'failed')"
+		where = "id = ? AND status NOT IN (?, ?)"
+		args = append(args, jobID, protocol.JobStatusSucceeded, protocol.JobStatusFailed)
+	} else {
+		args = append(args, jobID)
 	}
-	args = append(args, jobID)
 
 	var res sql.Result
 	var execErr error
@@ -325,12 +330,8 @@ func (s *Store) MergeJobMetadata(jobID string, patch map[string]string) (map[str
 	return cloneMap(meta), nil
 }
 
-func isTerminalStatus(status string) bool {
-	return status == "succeeded" || status == "failed"
-}
-
 func (s *Store) DeleteQueuedJob(jobID string) error {
-	res, err := s.db.Exec(`DELETE FROM job_executions WHERE id = ? AND status IN ('queued', 'leased')`, jobID)
+	res, err := s.db.Exec(`DELETE FROM job_executions WHERE id = ? AND status IN (?, ?)`, jobID, protocol.JobStatusQueued, protocol.JobStatusLeased)
 	if err != nil {
 		return fmt.Errorf("delete queued job: %w", err)
 	}
@@ -346,7 +347,7 @@ func (s *Store) DeleteQueuedJob(jobID string) error {
 }
 
 func (s *Store) ClearQueuedJobs() (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM job_executions WHERE status IN ('queued', 'leased')`)
+	res, err := s.db.Exec(`DELETE FROM job_executions WHERE status IN (?, ?)`, protocol.JobStatusQueued, protocol.JobStatusLeased)
 	if err != nil {
 		return 0, fmt.Errorf("clear queued jobs: %w", err)
 	}
@@ -357,8 +358,8 @@ func (s *Store) ClearQueuedJobs() (int64, error) {
 func (s *Store) FlushJobHistory() (int64, error) {
 	res, err := s.db.Exec(`
 		DELETE FROM job_executions
-		WHERE status NOT IN ('queued', 'leased', 'running')
-	`)
+		WHERE status NOT IN (?, ?, ?)
+	`, protocol.JobStatusQueued, protocol.JobStatusLeased, protocol.JobStatusRunning)
 	if err != nil {
 		return 0, fmt.Errorf("flush job history: %w", err)
 	}

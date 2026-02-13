@@ -267,8 +267,7 @@ const agentHTML = `<!doctype html>
         const data = await res.json();
         const job = data.job || data.job_execution || {};
         renderJobOutput(job);
-        const status = String(job.status || '').toLowerCase();
-        const terminal = status === 'succeeded' || status === 'failed';
+        const terminal = isTerminalJobStatus(job.status);
         if (terminal) {
           adhocRunBtn.disabled = false;
           adhocRunBtn.textContent = 'Run';

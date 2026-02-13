@@ -55,7 +55,7 @@ func (s *stateStore) attachUnmetRequirements(jobs []protocol.Job) {
 	}
 	s.mu.Unlock()
 	for i := range jobs {
-		if strings.ToLower(strings.TrimSpace(jobs[i].Status)) != "queued" {
+		if !protocol.IsQueuedJobStatus(jobs[i].Status) {
 			continue
 		}
 		jobs[i].UnmetRequirements = diagnoseUnmetRequirements(jobs[i].RequiredCapabilities, agents)
@@ -66,7 +66,7 @@ func (s *stateStore) attachUnmetRequirementsToJob(job *protocol.Job) {
 	if job == nil {
 		return
 	}
-	if strings.ToLower(strings.TrimSpace(job.Status)) != "queued" {
+	if !protocol.IsQueuedJobStatus(job.Status) {
 		return
 	}
 	s.mu.Lock()

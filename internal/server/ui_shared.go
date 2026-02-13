@@ -4,8 +4,31 @@ const uiSharedJS = `function escapeHtml(s) {
   return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function normalizedJobStatus(status) {
+  return String(status || '').trim().toLowerCase();
+}
+
+function isPendingJobStatus(status) {
+  const normalized = normalizedJobStatus(status);
+  return normalized === 'queued' || normalized === 'leased';
+}
+
+function isActiveJobStatus(status) {
+  const normalized = normalizedJobStatus(status);
+  return normalized === 'queued' || normalized === 'leased' || normalized === 'running';
+}
+
+function isTerminalJobStatus(status) {
+  const normalized = normalizedJobStatus(status);
+  return normalized === 'succeeded' || normalized === 'failed';
+}
+
+function isRunningJobStatus(status) {
+  return normalizedJobStatus(status) === 'running';
+}
+
 function statusClass(status) {
-  return 'status-' + (status || '').toLowerCase();
+  return 'status-' + normalizedJobStatus(status);
 }
 
 function formatTimestamp(ts) {

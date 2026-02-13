@@ -28,7 +28,7 @@ const (
 func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.Job) error {
 	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 		AgentID:      agentID,
-		Status:       "running",
+		Status:       protocol.JobStatusRunning,
 		CurrentStep:  "Preparing execution",
 		TimestampUTC: time.Now().UTC(),
 	}); err != nil {
@@ -61,7 +61,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		fmt.Fprintf(&output, "[checkout] repo=%s ref=%s\n", job.Source.Repo, job.Source.Ref)
 		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 			AgentID:      agentID,
-			Status:       "running",
+			Status:       protocol.JobStatusRunning,
 			CurrentStep:  "Checking out source",
 			TimestampUTC: time.Now().UTC(),
 		}); err != nil {
@@ -119,7 +119,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			fmt.Fprintf(&output, "__CIWI_STEP_BEGIN__ index=%d total=%d name=%s\n", step.meta.index, step.meta.total, step.meta.name)
 			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 				AgentID:      agentID,
-				Status:       "running",
+				Status:       protocol.JobStatusRunning,
 				CurrentStep:  currentStep,
 				TimestampUTC: time.Now().UTC(),
 			}); err != nil {
@@ -193,7 +193,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		exitCode := 0
 		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobStatusUpdateRequest{
 			AgentID:      agentID,
-			Status:       "succeeded",
+			Status:       protocol.JobStatusSucceeded,
 			ExitCode:     &exitCode,
 			Output:       trimmedOutput,
 			CurrentStep:  "",
@@ -519,7 +519,7 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 				lastStep = currentStep
 				if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobStatusUpdateRequest{
 					AgentID:      agentID,
-					Status:       "running",
+					Status:       protocol.JobStatusRunning,
 					Output:       snapshot,
 					CurrentStep:  currentStep,
 					TimestampUTC: time.Now().UTC(),

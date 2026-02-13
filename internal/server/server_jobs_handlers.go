@@ -113,12 +113,11 @@ func splitJobsByState(jobs []protocol.Job) (queued []protocol.Job, history []pro
 	queued = make([]protocol.Job, 0, len(jobs))
 	history = make([]protocol.Job, 0, len(jobs))
 	for _, job := range jobs {
-		switch strings.ToLower(strings.TrimSpace(job.Status)) {
-		case "queued", "leased", "running":
+		if protocol.IsActiveJobStatus(job.Status) {
 			queued = append(queued, job)
-		default:
-			history = append(history, job)
+			continue
 		}
+		history = append(history, job)
 	}
 	return queued, history
 }
@@ -224,10 +223,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "job not found", http.StatusNotFound)
 			return
 		}
-		status := strings.ToLower(strings.TrimSpace(job.Status))
-		switch status {
-		case "queued", "leased", "running":
-		default:
+		if !protocol.IsActiveJobStatus(job.Status) {
 			http.Error(w, "job is not active", http.StatusConflict)
 			return
 		}
@@ -242,7 +238,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 		output += "[control] job force-failed from UI"
 		updated, err := s.db.UpdateJobStatus(jobID, protocol.JobStatusUpdateRequest{
 			AgentID:      agentID,
-			Status:       "failed",
+			Status:       protocol.JobStatusFailed,
 			Error:        "force-failed from UI",
 			Output:       output,
 			TimestampUTC: time.Now().UTC(),
