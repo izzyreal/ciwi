@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func Run(ctx context.Context) error {
@@ -35,7 +37,7 @@ func runLoop(ctx context.Context) error {
 	defer slog.Info("ciwi agent stopped", "agent_id", agentID)
 
 	client := &http.Client{Timeout: 10 * time.Minute}
-	heartbeatTicker := time.NewTicker(10 * time.Second)
+	heartbeatTicker := time.NewTicker(protocol.AgentHeartbeatInterval)
 	defer heartbeatTicker.Stop()
 	leaseTicker := time.NewTicker(3 * time.Second)
 	defer leaseTicker.Stop()

@@ -76,6 +76,16 @@ func TestAgentUpdateFirstAttemptDelayBySlot(t *testing.T) {
 	}
 }
 
+func TestAgentUpdateInProgressGraceDerivedFromHeartbeatInterval(t *testing.T) {
+	minGrace := (2 * protocol.AgentHeartbeatInterval) + agentUpdateRestartAllowance
+	if got := agentUpdateInProgressGrace; got != minGrace {
+		t.Fatalf("unexpected in-progress grace=%s want=%s", got, minGrace)
+	}
+	if agentUpdateInProgressGrace <= protocol.AgentHeartbeatInterval {
+		t.Fatalf("in-progress grace must exceed heartbeat interval: grace=%s heartbeat=%s", agentUpdateInProgressGrace, protocol.AgentHeartbeatInterval)
+	}
+}
+
 func TestHeartbeatAutomaticUpdateSchedulesThenDispatchesInProgressAttempt(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"

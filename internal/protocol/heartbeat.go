@@ -2,6 +2,10 @@ package protocol
 
 import "time"
 
+const (
+	AgentHeartbeatInterval = 10 * time.Second
+)
+
 type HeartbeatRequest struct {
 	AgentID       string            `json:"agent_id"`
 	Hostname      string            `json:"hostname"`

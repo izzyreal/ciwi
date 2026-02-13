@@ -2,12 +2,15 @@ package server
 
 import (
 	"time"
+
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 const (
 	agentUpdateFirstAttemptBaseDelay = 10 * time.Second
 	agentUpdateFirstAttemptStepDelay = 2 * time.Second
-	agentUpdateInProgressGrace       = 5 * time.Second
+	agentUpdateRestartAllowance      = 20 * time.Second
+	agentUpdateInProgressGrace       = (2 * protocol.AgentHeartbeatInterval) + agentUpdateRestartAllowance
 )
 
 func agentUpdateBackoff(attempt int) time.Duration {
