@@ -91,6 +91,16 @@ func TestDesignGuardProjectAndPipelineHandlersAvoidUntypedJSONMaps(t *testing.T)
 	}
 }
 
+func TestDesignGuardUpdateHandlersAvoidUntypedJSONMaps(t *testing.T) {
+	root := repoRootFromServerTests(t)
+	source := mustReadRepoFile(t, root, "internal/server/server_update_handlers.go")
+	lines := literalLineNumbers(source, "map[string]any{")
+	if len(lines) == 0 {
+		return
+	}
+	t.Errorf("internal/server/server_update_handlers.go contains untyped map JSON response literals at lines %v; use typed response DTOs", lines)
+}
+
 func repoRootFromServerTests(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

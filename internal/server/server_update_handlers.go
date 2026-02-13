@@ -116,9 +116,9 @@ func (s *stateStore) updateTagsHandler(w http.ResponseWriter, r *http.Request) {
 			tags = append([]string{current}, tags...)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"tags":            tags,
-		"current_version": current,
+	writeJSON(w, http.StatusOK, updateTagsResponse{
+		Tags:           tags,
+		CurrentVersion: current,
 	})
 }
 
@@ -179,10 +179,10 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 			"update_latest_version":    info.TagName,
 		})
 		_ = s.setAgentUpdateTarget(currentVersion())
-		writeJSON(w, http.StatusOK, map[string]any{
-			"updated": false,
-			"message": msg,
-			"target":  info.TagName,
+		writeJSON(w, http.StatusOK, updateApplyResponse{
+			Updated: false,
+			Message: msg,
+			Target:  info.TagName,
 		})
 		return
 	}
@@ -239,12 +239,12 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 			"update_latest_version":    info.TagName,
 		})
 		_ = s.setAgentUpdateTarget(info.TagName)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"updated":         true,
-			"message":         updateApplyMessage(rollback, true),
-			"target_version":  info.TagName,
-			"current_version": currentVersion(),
-			"staged":          true,
+		writeJSON(w, http.StatusOK, updateApplyResponse{
+			Updated:        true,
+			Message:        updateApplyMessage(rollback, true),
+			TargetVersion:  info.TagName,
+			CurrentVersion: currentVersion(),
+			Staged:         true,
 		})
 		return
 	}
@@ -274,11 +274,11 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 	})
 	_ = s.setAgentUpdateTarget(info.TagName)
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"updated":         true,
-		"message":         updateApplyMessage(rollback, false),
-		"target_version":  info.TagName,
-		"current_version": currentVersion(),
+	writeJSON(w, http.StatusOK, updateApplyResponse{
+		Updated:        true,
+		Message:        updateApplyMessage(rollback, false),
+		TargetVersion:  info.TagName,
+		CurrentVersion: currentVersion(),
 	})
 
 	go func() {
@@ -312,7 +312,7 @@ func (s *stateStore) updateStatusHandler(w http.ResponseWriter, r *http.Request)
 	}
 	// Always expose live runtime version; persisted status can be stale across restarts.
 	state["update_current_version"] = currentVersion()
-	writeJSON(w, http.StatusOK, map[string]any{"status": state})
+	writeJSON(w, http.StatusOK, updateStatusResponse{Status: state})
 }
 
 func (s *stateStore) persistUpdateStatus(values map[string]string) error {

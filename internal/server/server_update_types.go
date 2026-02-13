@@ -18,6 +18,24 @@ type updateCheckResponse struct {
 	Message         string `json:"message,omitempty"`
 }
 
+type updateTagsResponse struct {
+	Tags           []string `json:"tags"`
+	CurrentVersion string   `json:"current_version"`
+}
+
+type updateApplyResponse struct {
+	Updated        bool   `json:"updated"`
+	Message        string `json:"message,omitempty"`
+	Target         string `json:"target,omitempty"`
+	TargetVersion  string `json:"target_version,omitempty"`
+	CurrentVersion string `json:"current_version,omitempty"`
+	Staged         bool   `json:"staged,omitempty"`
+}
+
+type updateStatusResponse struct {
+	Status map[string]string `json:"status"`
+}
+
 type githubLatestRelease struct {
 	TagName string               `json:"tag_name"`
 	HTMLURL string               `json:"html_url"`
