@@ -26,6 +26,12 @@ const (
 )
 
 func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.JobExecution) error {
+	slog.Info("job execution started",
+		"job_execution_id", job.ID,
+		"agent_id", agentID,
+		"timeout_seconds", job.TimeoutSeconds,
+		"has_source", job.Source != nil && strings.TrimSpace(job.Source.Repo) != "",
+	)
 	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:      agentID,
 		Status:       protocol.JobExecutionStatusRunning,
@@ -117,6 +123,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	} else {
 		for _, step := range scriptSteps {
 			currentStep := formatCurrentStep(step.meta)
+			slog.Info("job step started", "job_execution_id", job.ID, "current_step", currentStep)
 			fmt.Fprintf(&output, "__CIWI_STEP_BEGIN__ index=%d total=%d name=%s\n", step.meta.index, step.meta.total, step.meta.name)
 			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 				AgentID:      agentID,
@@ -501,12 +508,21 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 		defer close(done)
 		lastSent := ""
 		lastStep := ""
+		reportedEmptySnapshot := false
 		sendSnapshot := func() {
 			rawSnapshot := trimOutput(output.String())
 			snapshot := redactSensitive(rawSnapshot, sensitive)
 			currentStep := extractCurrentStepFromOutput(rawSnapshot)
 			if currentStep == "" {
 				currentStep = defaultCurrentStep
+			}
+			if strings.TrimSpace(snapshot) == "" && strings.TrimSpace(currentStep) != "" {
+				if !reportedEmptySnapshot {
+					slog.Warn("running update has empty output snapshot", "job_execution_id", jobID, "agent_id", agentID, "current_step", currentStep)
+					reportedEmptySnapshot = true
+				}
+			} else if strings.TrimSpace(snapshot) != "" {
+				reportedEmptySnapshot = false
 			}
 			if snapshot == lastSent && currentStep == lastStep {
 				return

@@ -2,6 +2,7 @@ package jobexecution
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -240,6 +241,23 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		}
 		if deps.MarkAgentSeen != nil {
 			deps.MarkAgentSeen(req.AgentID, req.TimestampUTC)
+		}
+		if protocol.NormalizeJobExecutionStatus(job.Status) == protocol.JobExecutionStatusRunning &&
+			strings.TrimSpace(job.CurrentStep) != "" && strings.TrimSpace(job.Output) == "" {
+			slog.Warn("job running without output snapshot",
+				"job_execution_id", jobID,
+				"agent_id", req.AgentID,
+				"current_step", job.CurrentStep,
+			)
+		}
+		if protocol.IsTerminalJobExecutionStatus(job.Status) {
+			slog.Info("job terminal status recorded",
+				"job_execution_id", jobID,
+				"agent_id", req.AgentID,
+				"status", job.Status,
+				"exit_code", job.ExitCode,
+				"error", strings.TrimSpace(job.Error),
+			)
 		}
 		httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
 		return

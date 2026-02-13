@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -182,6 +183,7 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{Assigned: false, Message: "no matching queued job"})
 		return
 	}
+	slog.Info("job leased to agent", "job_execution_id", job.ID, "agent_id", req.AgentID)
 	if err := s.resolveJobSecrets(r.Context(), job); err != nil {
 		failMsg := fmt.Sprintf("secret resolution failed before execution: %v", err)
 		_, _ = s.agentJobExecutionStore().UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
