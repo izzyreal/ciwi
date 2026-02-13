@@ -176,7 +176,7 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if hasActive {
-		writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{
+		writeJSON(w, http.StatusOK, leaseJobViewResponse{
 			Assigned: false,
 			Message:  "agent already has an active job",
 		})
@@ -189,7 +189,7 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if job == nil {
-		writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{Assigned: false, Message: "no matching queued job"})
+		writeJSON(w, http.StatusOK, leaseJobViewResponse{Assigned: false, Message: "no matching queued job"})
 		return
 	}
 	if err := s.resolveJobSecrets(r.Context(), job); err != nil {
@@ -199,8 +199,9 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 			Status:  protocol.JobStatusFailed,
 			Error:   failMsg,
 		})
-		writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{Assigned: false, Message: failMsg})
+		writeJSON(w, http.StatusOK, leaseJobViewResponse{Assigned: false, Message: failMsg})
 		return
 	}
-	writeJSON(w, http.StatusOK, protocol.LeaseJobResponse{Assigned: true, Job: job})
+	jobResponse := jobViewFromProtocol(*job)
+	writeJSON(w, http.StatusOK, leaseJobViewResponse{Assigned: true, Job: &jobResponse})
 }

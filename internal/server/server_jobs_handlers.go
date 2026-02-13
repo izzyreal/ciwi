@@ -60,20 +60,22 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 			page := paginateJobs(source, offset, limit)
 			s.attachTestSummaries(page)
 			s.attachUnmetRequirements(page)
+			pageViews := jobViewsFromProtocol(page)
 			writeJSON(w, http.StatusOK, map[string]any{
 				"view":           view,
 				"total":          len(source),
 				"offset":         offset,
 				"limit":          limit,
-				"job_executions": page,
-				"jobs":           page,
+				"job_executions": pageViews,
+				"jobs":           pageViews,
 			})
 			return
 		}
 
 		s.attachTestSummaries(jobs)
 		s.attachUnmetRequirements(jobs)
-		writeJSON(w, http.StatusOK, map[string]any{"job_executions": jobs, "jobs": jobs})
+		jobsViews := jobViewsFromProtocol(jobs)
+		writeJSON(w, http.StatusOK, map[string]any{"job_executions": jobsViews, "jobs": jobsViews})
 	case http.MethodPost:
 		var req protocol.CreateJobRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -85,7 +87,7 @@ func (s *stateStore) jobsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, protocol.CreateJobResponse{Job: job})
+		writeJSON(w, http.StatusCreated, createJobViewResponse{Job: jobViewFromProtocol(job)})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -195,7 +197,8 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			s.attachTestSummary(&job)
 			s.attachUnmetRequirementsToJob(&job)
-			writeJSON(w, http.StatusOK, map[string]any{"job_execution": job, "job": job})
+			jobResponse := jobViewFromProtocol(job)
+			writeJSON(w, http.StatusOK, map[string]any{"job_execution": jobResponse, "job": jobResponse})
 		case http.MethodDelete:
 			err := s.db.DeleteQueuedJob(jobID)
 			if err != nil {
@@ -247,7 +250,8 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"job_execution": updated, "job": updated})
+		updatedResponse := jobViewFromProtocol(updated)
+		writeJSON(w, http.StatusOK, map[string]any{"job_execution": updatedResponse, "job": updatedResponse})
 		return
 	}
 
@@ -285,7 +289,7 @@ func (s *stateStore) jobByIDHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// Status updates are a liveness signal while an agent is busy.
 		s.markAgentSeen(req.AgentID, req.TimestampUTC)
-		writeJSON(w, http.StatusOK, map[string]any{"job": job})
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobViewFromProtocol(job)})
 		return
 	}
 

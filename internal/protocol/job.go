@@ -1,9 +1,6 @@
 package protocol
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 type AgentInfo struct {
 	AgentID              string            `json:"agent_id"`
@@ -79,36 +76,6 @@ type Job struct {
 	TestSummary          *JobTestSummary   `json:"test_summary,omitempty"`
 	UnmetRequirements    []string          `json:"unmet_requirements,omitempty"`
 	SensitiveValues      []string          `json:"sensitive_values,omitempty"`
-}
-
-func (j Job) MarshalJSON() ([]byte, error) {
-	type jobAlias Job
-	var startedUTC *time.Time
-	if !j.StartedUTC.IsZero() {
-		ts := j.StartedUTC
-		startedUTC = &ts
-	}
-	var finishedUTC *time.Time
-	if !j.FinishedUTC.IsZero() {
-		ts := j.FinishedUTC
-		finishedUTC = &ts
-	}
-	var leasedUTC *time.Time
-	if !j.LeasedUTC.IsZero() {
-		ts := j.LeasedUTC
-		leasedUTC = &ts
-	}
-	return json.Marshal(struct {
-		jobAlias
-		StartedUTC  *time.Time `json:"started_utc,omitempty"`
-		FinishedUTC *time.Time `json:"finished_utc,omitempty"`
-		LeasedUTC   *time.Time `json:"leased_utc,omitempty"`
-	}{
-		jobAlias:    jobAlias(j),
-		StartedUTC:  startedUTC,
-		FinishedUTC: finishedUTC,
-		LeasedUTC:   leasedUTC,
-	})
 }
 
 type CreateJobResponse struct {
