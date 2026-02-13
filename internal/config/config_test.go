@@ -227,8 +227,35 @@ pipelines:
             test:
               command: go test ./...
 `), "test-step-shape")
-	if err == nil || !strings.Contains(err.Error(), "must set exactly one of run or test") {
+	if err == nil || !strings.Contains(err.Error(), "must set exactly one of run, test or metadata") {
 		t.Fatalf("expected step shape validation error, got: %v", err)
+	}
+}
+
+func TestParseMetadataStep(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - metadata:
+              version: "{{ ciwi.version_raw }}"
+              tag: "{{ ciwi.version }}"
+`), "test-metadata-step")
+	if err != nil {
+		t.Fatalf("parse metadata step: %v", err)
+	}
+	step := cfg.Pipelines[0].Jobs[0].Steps[0]
+	if step.Metadata == nil || len(step.Metadata.Values) != 2 {
+		t.Fatalf("unexpected metadata step: %+v", step.Metadata)
+	}
+	if step.Metadata.Values["version"] != "{{ ciwi.version_raw }}" {
+		t.Fatalf("unexpected metadata version value: %q", step.Metadata.Values["version"])
 	}
 }
 

@@ -223,6 +223,7 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 			TestName:   step.TestName,
 			TestFormat: step.TestFormat,
 			TestReport: step.TestReport,
+			Metadata:   cloneMap(step.Metadata),
 		})
 	}
 	return out

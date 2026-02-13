@@ -106,11 +106,9 @@ pipelines:
           - run: GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-darwin-amd64 ./cmd/ciwi
           - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-darwin-arm64 ./cmd/ciwi
           - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
-          - run: |
-              VERSION="${CIWI_PIPELINE_VERSION_RAW}"
-              TAG="${CIWI_PIPELINE_TAG}"
-              echo "__CIWI_RELEASE_SUMMARY__ version=${VERSION}"
-              echo "__CIWI_RELEASE_SUMMARY__ tag=$TAG"
+          - metadata:
+              version: "{{ciwi.version_raw}}"
+              tag: "{{ciwi.version}}"
           - run: |
               TAG="${CIWI_PIPELINE_TAG}"
               if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -134,7 +132,8 @@ pipelines:
                 shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
               done > dist/ciwi-checksums.txt
               test -f dist/ciwi-checksums.txt
-              echo "__CIWI_RELEASE_SUMMARY__ artifacts=ciwi-linux-amd64,ciwi-darwin-amd64,ciwi-darwin-arm64,ciwi-windows-amd64.exe,ciwi-checksums.txt"
+          - metadata:
+              artifacts: ciwi-linux-amd64,ciwi-darwin-amd64,ciwi-darwin-arm64,ciwi-windows-amd64.exe,ciwi-checksums.txt
           - run: |
               TAG="${CIWI_PIPELINE_TAG}"
               git config user.name "ciwi-agent"
@@ -147,9 +146,10 @@ pipelines:
               fi
           - run: |
               TAG="${CIWI_PIPELINE_TAG}"
+              RELEASE_CREATED="yes"
               if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
                 echo "[dry-run] skipping gh release create"
-                echo "__CIWI_RELEASE_SUMMARY__ release_created=no (dry-run)"
+                RELEASE_CREATED="no (dry-run)"
               else
                 gh release create "$TAG" \
                   --repo izzyreal/ciwi \
@@ -173,7 +173,8 @@ pipelines:
                   END="$(date +%s)"
                   echo "[release] Uploaded ${IDX}/${TOTAL}: ${FILE} in $((END-START))s"
                 done
-                echo "__CIWI_RELEASE_SUMMARY__ release_created=yes"
               fi
+          - metadata:
+              release_created: "{{ciwi.release_created}}"
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"

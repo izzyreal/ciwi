@@ -92,9 +92,10 @@ type PipelineJobMatrix struct {
 }
 
 type PipelineJobStep struct {
-	Run  string               `yaml:"run,omitempty" json:"run,omitempty"`
-	Test *PipelineJobTestStep `yaml:"test,omitempty" json:"test,omitempty"`
-	Env  map[string]string    `yaml:"env,omitempty" json:"env,omitempty"`
+	Run      string                   `yaml:"run,omitempty" json:"run,omitempty"`
+	Test     *PipelineJobTestStep     `yaml:"test,omitempty" json:"test,omitempty"`
+	Metadata *PipelineJobMetadataStep `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	Env      map[string]string        `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 type PipelineJobTestStep struct {
@@ -102,6 +103,10 @@ type PipelineJobTestStep struct {
 	Command string `yaml:"command" json:"command"`
 	Format  string `yaml:"format,omitempty" json:"format,omitempty"`
 	Report  string `yaml:"report,omitempty" json:"report,omitempty"`
+}
+
+type PipelineJobMetadataStep struct {
+	Values map[string]string `yaml:",inline" json:"values"`
 }
 
 func Load(path string) (File, error) {
@@ -302,8 +307,19 @@ func (cfg File) Validate() []string {
 			for k, st := range job.Steps {
 				runSet := strings.TrimSpace(st.Run) != ""
 				testSet := st.Test != nil
-				if runSet == testSet {
-					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d] must set exactly one of run or test", i, j, k))
+				metadataSet := st.Metadata != nil
+				stepModeCount := 0
+				if runSet {
+					stepModeCount++
+				}
+				if testSet {
+					stepModeCount++
+				}
+				if metadataSet {
+					stepModeCount++
+				}
+				if stepModeCount != 1 {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d] must set exactly one of run, test or metadata", i, j, k))
 				}
 				if st.Test != nil {
 					if strings.TrimSpace(st.Test.Command) == "" {
@@ -321,6 +337,16 @@ func (cfg File) Validate() []string {
 						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.report is required", i, j, k))
 					} else if hasUnsafePath(report) {
 						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.report must be a relative in-repo path", i, j, k))
+					}
+				}
+				if st.Metadata != nil {
+					if len(st.Metadata.Values) == 0 {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].metadata must define at least one key", i, j, k))
+					}
+					for mk := range st.Metadata.Values {
+						if strings.TrimSpace(mk) == "" {
+							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].metadata contains empty key", i, j, k))
+						}
 					}
 				}
 				for envK := range st.Env {

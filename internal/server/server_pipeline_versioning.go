@@ -218,7 +218,5 @@ EOF
     echo "auto bump push failed; branch $BRANCH advanced during release"
     exit 1
   fi
-  echo "__CIWI_RELEASE_SUMMARY__ auto_bump_branch=$BRANCH"
-  echo "__CIWI_RELEASE_SUMMARY__ next_version=$NEXT_VERSION"
 fi`, mode, mode, mode)
 }

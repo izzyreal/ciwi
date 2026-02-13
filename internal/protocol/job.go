@@ -162,6 +162,7 @@ type PipelineStep struct {
 	TestCommand string            `json:"test_command,omitempty"`
 	TestFormat  string            `json:"test_format,omitempty"`
 	TestReport  string            `json:"test_report,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
 }
 
@@ -255,14 +256,15 @@ const (
 )
 
 type JobStepPlanItem struct {
-	Index      int    `json:"index"`
-	Total      int    `json:"total,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Script     string `json:"script,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	TestName   string `json:"test_name,omitempty"`
-	TestFormat string `json:"test_format,omitempty"`
-	TestReport string `json:"test_report,omitempty"`
+	Index      int               `json:"index"`
+	Total      int               `json:"total,omitempty"`
+	Name       string            `json:"name,omitempty"`
+	Script     string            `json:"script,omitempty"`
+	Kind       string            `json:"kind,omitempty"`
+	TestName   string            `json:"test_name,omitempty"`
+	TestFormat string            `json:"test_format,omitempty"`
+	TestReport string            `json:"test_report,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 type JobExecutionEvent struct {

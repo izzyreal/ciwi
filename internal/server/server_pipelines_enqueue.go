@@ -73,12 +73,15 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			if runCtx.TagPrefix != "" {
 				renderVars["ciwi.tag_prefix"] = runCtx.TagPrefix
 			}
+			if selection != nil && selection.DryRun {
+				renderVars["ciwi.release_created"] = "no (dry-run)"
+			} else {
+				renderVars["ciwi.release_created"] = "yes"
+			}
 			rendered := make([]string, 0, len(pj.Steps))
-			stepBlocks := make([]string, 0, len(pj.Steps))
-			stepLabels := make([]string, 0, len(pj.Steps))
-			stepMarkerMeta := make([]map[string]string, 0, len(pj.Steps))
+			stepPlan := make([]protocol.JobStepPlanItem, 0, len(pj.Steps))
 			env := make(map[string]string)
-			for idx, step := range pj.Steps {
+			for _, step := range pj.Steps {
 				for k, v := range step.Env {
 					env[k] = renderTemplate(v, renderVars)
 				}
@@ -89,19 +92,36 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					}
 					name := strings.TrimSpace(step.Test.Name)
 					if name == "" {
-						name = fmt.Sprintf("%s-test-%d", pj.ID, idx+1)
+						name = fmt.Sprintf("%s-test-%d", pj.ID, len(stepPlan)+1)
 					}
 					format := strings.TrimSpace(step.Test.Format)
 					if format == "" {
 						format = "go-test-json"
 					}
-					stepBlocks = append(stepBlocks, command)
-					stepLabels = append(stepLabels, "test "+name)
-					stepMarkerMeta = append(stepMarkerMeta, map[string]string{
-						"kind":        "test",
-						"test_name":   strings.TrimSpace(name),
-						"test_format": strings.TrimSpace(format),
-						"test_report": strings.TrimSpace(step.Test.Report),
+					rendered = append(rendered, command)
+					stepPlan = append(stepPlan, protocol.JobStepPlanItem{
+						Name:       "test " + name,
+						Script:     command,
+						Kind:       "test",
+						TestName:   strings.TrimSpace(name),
+						TestFormat: strings.TrimSpace(format),
+						TestReport: strings.TrimSpace(step.Test.Report),
+					})
+					continue
+				}
+				if step.Metadata != nil {
+					values := map[string]string{}
+					for k, v := range step.Metadata.Values {
+						key := strings.TrimSpace(k)
+						if key == "" {
+							continue
+						}
+						values[key] = strings.TrimSpace(renderTemplate(v, renderVars))
+					}
+					stepPlan = append(stepPlan, protocol.JobStepPlanItem{
+						Name:     "metadata",
+						Kind:     "metadata",
+						Metadata: values,
 					})
 					continue
 				}
@@ -109,29 +129,31 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				if strings.TrimSpace(line) == "" {
 					continue
 				}
-				stepBlocks = append(stepBlocks, line)
-				stepLabels = append(stepLabels, fmt.Sprintf("step %d", idx+1))
-				stepMarkerMeta = append(stepMarkerMeta, nil)
+				rendered = append(rendered, line)
+				stepPlan = append(stepPlan, protocol.JobStepPlanItem{
+					Name:   fmt.Sprintf("step %d", len(stepPlan)+1),
+					Script: line,
+				})
 			}
-			if len(stepBlocks) == 0 {
-				return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q rendered empty script", pj.ID)
+			if len(stepPlan) == 0 {
+				return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q has no executable or metadata steps after rendering", pj.ID)
 			}
-			stepPlan := make([]protocol.JobStepPlanItem, 0, len(stepBlocks))
-			for stepIndex := range stepBlocks {
-				rendered = append(rendered, stepBlocks[stepIndex])
-				step := protocol.JobStepPlanItem{
-					Index:  stepIndex + 1,
-					Total:  len(stepBlocks),
-					Name:   stepLabels[stepIndex],
-					Script: stepBlocks[stepIndex],
+			for stepIndex := range stepPlan {
+				stepPlan[stepIndex].Index = stepIndex + 1
+				stepPlan[stepIndex].Total = len(stepPlan)
+				if strings.TrimSpace(stepPlan[stepIndex].Name) == "" {
+					stepPlan[stepIndex].Name = fmt.Sprintf("step %d", stepIndex+1)
 				}
-				if meta := stepMarkerMeta[stepIndex]; len(meta) > 0 {
-					step.Kind = strings.TrimSpace(meta["kind"])
-					step.TestName = strings.TrimSpace(meta["test_name"])
-					step.TestFormat = strings.TrimSpace(meta["test_format"])
-					step.TestReport = strings.TrimSpace(meta["test_report"])
+			}
+			if len(rendered) == 0 {
+				switch strings.TrimSpace(strings.ToLower(pj.RunsOn["shell"])) {
+				case "cmd":
+					rendered = append(rendered, "rem ciwi metadata-only job")
+				case "powershell":
+					rendered = append(rendered, "$null = 1")
+				default:
+					rendered = append(rendered, ":")
 				}
-				stepPlan = append(stepPlan, step)
 			}
 
 			metadata := map[string]string{
@@ -221,7 +243,34 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 		if len(pending) != 1 {
 			return protocol.RunPipelineResponse{}, fmt.Errorf("versioning.auto_bump requires exactly one job execution in the pipeline run")
 		}
-		pending[0].script = pending[0].script + "\n" + buildAutoBumpStepScript(runCtx.AutoBump)
+		autoBumpScript := buildAutoBumpStepScript(runCtx.AutoBump)
+		pending[0].script = pending[0].script + "\n" + autoBumpScript
+		pending[0].stepPlan = append(pending[0].stepPlan, protocol.JobStepPlanItem{
+			Index:  len(pending[0].stepPlan) + 1,
+			Total:  len(pending[0].stepPlan) + 1,
+			Name:   "auto bump",
+			Script: autoBumpScript,
+		})
+		meta := map[string]string{}
+		if next := buildAutoBumpNextVersion(runCtx.VersionRaw, runCtx.AutoBump); next != "" {
+			meta["next_version"] = next
+		}
+		if branch := deriveAutoBumpBranch(strings.TrimSpace(p.SourceRef)); branch != "" {
+			meta["auto_bump_branch"] = branch
+		}
+		if len(meta) > 0 {
+			pending[0].stepPlan = append(pending[0].stepPlan, protocol.JobStepPlanItem{
+				Index:    len(pending[0].stepPlan) + 1,
+				Total:    len(pending[0].stepPlan) + 1,
+				Name:     "auto bump metadata",
+				Kind:     "metadata",
+				Metadata: meta,
+			})
+		}
+		for i := range pending[0].stepPlan {
+			pending[0].stepPlan[i].Index = i + 1
+			pending[0].stepPlan[i].Total = len(pending[0].stepPlan)
+		}
 	}
 	for _, spec := range pending {
 		job, err := s.pipelineStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
@@ -292,9 +341,63 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 			TestName:   step.TestName,
 			TestFormat: step.TestFormat,
 			TestReport: step.TestReport,
+			Metadata:   cloneMap(step.Metadata),
 		})
 	}
 	return out
+}
+
+func buildAutoBumpNextVersion(versionRaw, mode string) string {
+	parts := strings.Split(strings.TrimSpace(versionRaw), ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	major, err1 := strconv.Atoi(parts[0])
+	minor, err2 := strconv.Atoi(parts[1])
+	patch, err3 := strconv.Atoi(parts[2])
+	if err1 != nil || err2 != nil || err3 != nil {
+		return ""
+	}
+	switch strings.TrimSpace(mode) {
+	case "patch":
+		patch++
+	case "minor":
+		minor++
+		patch = 0
+	case "major":
+		major++
+		minor = 0
+		patch = 0
+	default:
+		return ""
+	}
+	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
+}
+
+func deriveAutoBumpBranch(sourceRef string) string {
+	ref := strings.TrimSpace(sourceRef)
+	if ref == "" {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(ref, "refs/heads/"):
+		return strings.TrimSpace(strings.TrimPrefix(ref, "refs/heads/"))
+	case strings.HasPrefix(ref, "refs/"):
+		return ""
+	}
+	if len(ref) >= 7 && len(ref) <= 40 {
+		isHex := true
+		for _, r := range ref {
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+				isHex = false
+				break
+			}
+		}
+		if isHex {
+			return ""
+		}
+	}
+	return ref
 }
 
 func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.JobCacheSpec {

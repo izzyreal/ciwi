@@ -280,27 +280,7 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 	}
 }
 
-func TestExtractReleaseSummaryPatch(t *testing.T) {
-	tracker := newReleaseSummaryTracker()
-	input := strings.Join([]string{
-		"[run] starting",
-		"__CIWI_RELEASE_SUMMARY__ version=v1.2.3",
-		"__CIWI_RELEASE_SUMMARY__ release_created=no (dry-run)",
-		"[run] done",
-	}, "\n")
-	sanitized, patch := extractReleaseSummaryPatch(input, tracker)
-	if strings.Contains(sanitized, "__CIWI_RELEASE_SUMMARY__") {
-		t.Fatalf("expected release marker lines stripped, got:\n%s", sanitized)
-	}
-	if patch["version"] != "v1.2.3" {
-		t.Fatalf("unexpected version patch: %q", patch["version"])
-	}
-	if patch["release_created"] != "no (dry-run)" {
-		t.Fatalf("unexpected release_created patch: %q", patch["release_created"])
-	}
-}
-
-func TestExecuteLeasedJobMapsReleaseSummaryToMetadataEvent(t *testing.T) {
+func TestExecuteLeasedJobEmitsMetadataStepPatchEvent(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix shell assertion test skipped on windows")
 	}
@@ -335,8 +315,19 @@ func TestExecuteLeasedJobMapsReleaseSummaryToMetadataEvent(t *testing.T) {
 
 	job := protocol.JobExecution{
 		ID:             "job-release",
-		Script:         `echo "__CIWI_RELEASE_SUMMARY__ version=v1.2.3"`,
+		Script:         `:`,
 		TimeoutSeconds: 30,
+		StepPlan: []protocol.JobStepPlanItem{
+			{
+				Index: 1,
+				Total: 1,
+				Name:  "metadata",
+				Kind:  "metadata",
+				Metadata: map[string]string{
+					"version": "v1.2.3",
+				},
+			},
+		},
 		RequiredCapabilities: map[string]string{
 			"shell": shellPosix,
 		},
@@ -352,9 +343,6 @@ func TestExecuteLeasedJobMapsReleaseSummaryToMetadataEvent(t *testing.T) {
 	}
 	foundPatch := false
 	for _, st := range statuses {
-		if strings.Contains(st.Output, "__CIWI_RELEASE_SUMMARY__") {
-			t.Fatalf("expected marker stripped from reported output, got:\n%s", st.Output)
-		}
 		for _, event := range st.Events {
 			if event.Type != protocol.JobExecutionEventTypeMetadataPatch {
 				continue
