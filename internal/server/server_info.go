@@ -13,10 +13,10 @@ func serverInfoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	host, _ := os.Hostname()
 	host = strings.TrimSpace(host)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"name":        "ciwi",
-		"api_version": 1,
-		"version":     currentVersion(),
-		"hostname":    host,
+	writeJSON(w, http.StatusOK, serverInfoResponse{
+		Name:       "ciwi",
+		APIVersion: 1,
+		Version:    currentVersion(),
+		Hostname:   host,
 	})
 }

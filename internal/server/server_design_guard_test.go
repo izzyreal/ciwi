@@ -111,6 +111,24 @@ func TestDesignGuardVaultHandlersAvoidUntypedJSONMaps(t *testing.T) {
 	t.Errorf("internal/server/server_vault.go contains untyped map JSON response literals at lines %v; use typed response DTOs", lines)
 }
 
+func TestDesignGuardInfoHandlersAvoidInlineMapResponses(t *testing.T) {
+	root := repoRootFromServerTests(t)
+	files := []string{
+		"internal/server/server_info.go",
+		"internal/server/server_helpers.go",
+	}
+	pattern := regexp.MustCompile(`writeJSON\s*\(.*map\[[^\]]+\]`)
+
+	for _, rel := range files {
+		source := mustReadRepoFile(t, root, rel)
+		lines := regexLineNumbers(source, pattern)
+		if len(lines) == 0 {
+			continue
+		}
+		t.Errorf("%s contains inline map response at lines %v; use typed response DTOs", rel, lines)
+	}
+}
+
 func repoRootFromServerTests(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

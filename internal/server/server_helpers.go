@@ -71,7 +71,7 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, healthzResponse{Status: "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
