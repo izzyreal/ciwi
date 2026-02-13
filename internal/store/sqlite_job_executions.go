@@ -212,6 +212,11 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	if currentStep == "" {
 		currentStep = strings.TrimSpace(job.CurrentStep)
 	}
+	// Treat status updates as partial patches: when output is omitted by the caller,
+	// keep the latest persisted log snapshot instead of clearing it.
+	if output == "" {
+		output = job.Output
+	}
 
 	if status == protocol.JobExecutionStatusRunning && !job.StartedUTC.IsZero() {
 		started = nullableTime(job.StartedUTC)

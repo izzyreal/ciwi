@@ -123,10 +123,6 @@ function createRefreshGuard(holdMs) {
 
   return {
     shouldPause: function() {
-      if (hasActiveTextSelection()) {
-        pausedUntil = Date.now() + pauseMs;
-        return true;
-      }
       return Date.now() < pausedUntil;
     },
     bindSelectionListener: function() {

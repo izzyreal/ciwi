@@ -60,6 +60,9 @@ func TestJobExecutionsViewSummaryAndPagedLists(t *testing.T) {
 	if summaryResp.StatusCode != http.StatusOK {
 		t.Fatalf("summary status=%d body=%s", summaryResp.StatusCode, readBody(t, summaryResp))
 	}
+	if cacheControl := strings.ToLower(summaryResp.Header.Get("Cache-Control")); !strings.Contains(cacheControl, "no-store") {
+		t.Fatalf("expected summary response to disable caching, got cache-control=%q", summaryResp.Header.Get("Cache-Control"))
+	}
 	var summary struct {
 		Total             int `json:"total"`
 		QueuedCount       int `json:"queued_count"`

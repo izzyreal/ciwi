@@ -1,7 +1,14 @@
 package server
 
 const uiPagesJS = `function apiJSON(path, opts = {}) {
-  return fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts })
+  const baseHeaders = { 'Content-Type': 'application/json' };
+  const extraHeaders = (opts && opts.headers) || {};
+  const request = {
+    ...opts,
+    cache: 'no-store',
+    headers: { ...baseHeaders, ...extraHeaders },
+  };
+  return fetch(path, request)
     .then(async (res) => {
       if (!res.ok) {
         const text = await res.text();

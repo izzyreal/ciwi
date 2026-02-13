@@ -362,6 +362,46 @@ func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 	}
 }
 
+func TestStorePreservesOutputWhenRunningUpdateOmitsOutput(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo hi",
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	first, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:     "agent-1",
+		Status:      "running",
+		Output:      "line-1\nline-2",
+		CurrentStep: "Step 1/3: checkout",
+	})
+	if err != nil {
+		t.Fatalf("mark first running: %v", err)
+	}
+	if first.Output == "" {
+		t.Fatalf("expected initial running output to be set")
+	}
+
+	second, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:     "agent-1",
+		Status:      "running",
+		CurrentStep: "Step 2/3: build",
+	})
+	if err != nil {
+		t.Fatalf("mark second running: %v", err)
+	}
+	if second.Output != first.Output {
+		t.Fatalf("expected running output to be preserved, got=%q want=%q", second.Output, first.Output)
+	}
+	if second.CurrentStep != "Step 2/3: build" {
+		t.Fatalf("expected current_step to update, got %q", second.CurrentStep)
+	}
+}
+
 func TestIsSQLiteBusyError(t *testing.T) {
 	cases := []struct {
 		err  error

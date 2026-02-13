@@ -158,7 +158,7 @@ const jobExecutionHTML = `<!doctype html>
       }
 
       try {
-        const res = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId));
+        const res = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId), { cache: 'no-store' });
         if (!res.ok) {
           document.getElementById('subtitle').textContent = 'Failed to load job';
           return;
@@ -227,7 +227,7 @@ const jobExecutionHTML = `<!doctype html>
         renderReleaseSummary(job, output);
 
       try {
-        const ares = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts');
+        const ares = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts', { cache: 'no-store' });
         if (!ares.ok) {
           throw new Error('artifact request failed');
         }
@@ -268,7 +268,7 @@ const jobExecutionHTML = `<!doctype html>
       }
 
       try {
-        const tres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/tests');
+        const tres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/tests', { cache: 'no-store' });
         if (!tres.ok) throw new Error('test report request failed');
         const tdata = await tres.json();
         const report = tdata.report || {};

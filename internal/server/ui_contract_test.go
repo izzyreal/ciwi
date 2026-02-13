@@ -154,6 +154,7 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 	pagesJS := readBody(t, resp)
 	requireContainsAll(t, pagesJS, "pages js",
 		"function apiJSON(",
+		"cache: 'no-store'",
 		"function buildJobExecutionRow(",
 		"function openVersionResolveModal(",
 		"versionResolveModal",
@@ -297,6 +298,7 @@ func TestUIProjectAndJobPagesServed(t *testing.T) {
 		"/artifacts",
 		"/tests",
 		"/force-fail",
+		"cache: 'no-store'",
 		"formatBytes(",
 	)
 	requireNotContainsAll(t, jobExecutionHTML, "job page", "0001-01-01T00:00:00")
