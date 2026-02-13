@@ -14,6 +14,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	serverproject "github.com/izzyreal/ciwi/internal/server/project"
 )
 
 func (s *stateStore) loadConfigHandler(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +41,7 @@ func (s *stateStore) loadConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.db.LoadConfig(cfg, fullPath, "", "", filepath.Base(fullPath)); err != nil {
+	if err := s.projectStore().LoadConfig(cfg, fullPath, "", "", filepath.Base(fullPath)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -86,7 +87,7 @@ func (s *stateStore) importProjectHandler(w http.ResponseWriter, r *http.Request
 	importCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 
-	cfgContent, err := fetchConfigFileFromRepo(importCtx, tmpDir, req.RepoURL, req.RepoRef, req.ConfigFile)
+	cfgContent, err := serverproject.FetchConfigFileFromRepo(importCtx, tmpDir, req.RepoURL, req.RepoRef, req.ConfigFile)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -118,7 +119,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		detail, err := s.db.GetProjectDetail(projectID)
+		detail, err := s.projectStore().GetProjectDetail(projectID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -138,7 +139,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		project, err := s.db.GetProjectByID(projectID)
+		project, err := s.projectStore().GetProjectByID(projectID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -162,7 +163,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		reloadCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 		defer cancel()
 
-		cfgContent, err := fetchConfigFileFromRepo(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
+		cfgContent, err := serverproject.FetchConfigFileFromRepo(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -188,37 +189,12 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func fetchConfigFileFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (string, error) {
-	if out, err := runCmd(ctx, "", "git", "init", "-q", tmpDir); err != nil {
-		return "", fmt.Errorf("git init failed: %v\n%s", err, out)
-	}
-	if out, err := runCmd(ctx, "", "git", "-C", tmpDir, "remote", "add", "origin", repoURL); err != nil {
-		return "", fmt.Errorf("git remote add failed: %v\n%s", err, out)
-	}
-
-	ref := strings.TrimSpace(repoRef)
-	if ref == "" {
-		ref = "HEAD"
-	}
-
-	if out, err := runCmd(ctx, "", "git", "-C", tmpDir, "fetch", "-q", "--depth", "1", "origin", ref); err != nil {
-		return "", fmt.Errorf("git fetch failed: %v\n%s", err, out)
-	}
-
-	out, err := runCmd(ctx, "", "git", "-C", tmpDir, "show", "FETCH_HEAD:"+configFile)
-	if err != nil {
-		return "", fmt.Errorf("repo is not a valid ciwi project: missing root file %q", configFile)
-	}
-
-	return out, nil
-}
-
 func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	projects, err := s.db.ListProjects()
+	projects, err := s.projectStore().ListProjects()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -245,7 +221,7 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	if req.RepoRef != "" {
 		configPath = fmt.Sprintf("%s@%s:%s", req.RepoURL, req.RepoRef, req.ConfigFile)
 	}
-	if err := s.db.LoadConfig(cfg, configPath, req.RepoURL, req.RepoRef, req.ConfigFile); err != nil {
+	if err := s.projectStore().LoadConfig(cfg, configPath, req.RepoURL, req.RepoRef, req.ConfigFile); err != nil {
 		return protocol.ImportProjectResponse{}, err
 	}
 

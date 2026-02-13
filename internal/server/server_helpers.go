@@ -2,9 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/server/httpx"
 )
 
 func isValidUpdateStatus(status string) bool {
@@ -75,11 +74,7 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("encode JSON response", "error", err)
-	}
+	httpx.WriteJSON(w, status, v)
 }
 
 func envOrDefault(key, fallback string) string {
@@ -94,12 +89,4 @@ func runCmd(ctx context.Context, dir, name string, args ...string) (string, erro
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
-}
-
-func sanitizeMarkerToken(v string) string {
-	v = strings.TrimSpace(v)
-	v = strings.ReplaceAll(v, " ", "_")
-	v = strings.ReplaceAll(v, "\t", "_")
-	v = strings.ReplaceAll(v, "\"", "")
-	return v
 }

@@ -13,7 +13,7 @@ func TestDesignGuardGoCodeAvoidsRawJobStatusLiterals(t *testing.T) {
 	root := repoRootFromServerTests(t)
 	files := []string{
 		"internal/server/server_agents.go",
-		"internal/server/server_job_execution_views.go",
+		"internal/server/jobexecution/views.go",
 		"internal/agent/agent_exec.go",
 		"internal/store/sqlite_job_executions.go",
 	}

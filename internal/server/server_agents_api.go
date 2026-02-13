@@ -118,7 +118,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		if timeout <= 0 {
 			timeout = 600
 		}
-		job, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		job, err := s.agentJobExecutionStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
 			Script: script,
 			RequiredCapabilities: map[string]string{
 				"agent_id": agentID,

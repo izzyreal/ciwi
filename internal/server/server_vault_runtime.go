@@ -7,30 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
+	servervault "github.com/izzyreal/ciwi/internal/server/vault"
 )
 
 var secretPlaceholderRE = regexp.MustCompile(`\{\{\s*secret\.([a-zA-Z0-9_\-]+)\s*\}\}`)
-
-type vaultTokenCache struct {
-	mu     sync.Mutex
-	byConn map[int64]vaultTokenState
-}
-
-type vaultTokenState struct {
-	Token     string
-	ExpiresAt time.Time
-}
-
-func newVaultTokenCache() *vaultTokenCache {
-	return &vaultTokenCache{byConn: map[int64]vaultTokenState{}}
-}
 
 func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExecution) error {
 	if job == nil || len(job.Env) == 0 {
@@ -41,11 +26,11 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 		return nil
 	}
 
-	project, err := s.db.GetProjectByName(projectName)
+	project, err := s.vaultStore().GetProjectByName(projectName)
 	if err != nil {
 		return nil
 	}
-	settings, err := s.db.GetProjectVaultSettings(project.ID)
+	settings, err := s.vaultStore().GetProjectVaultSettings(project.ID)
 	if err != nil || len(settings.Secrets) == 0 {
 		return nil
 	}
@@ -55,12 +40,12 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 
 	var conn protocol.VaultConnection
 	if settings.VaultConnectionID > 0 {
-		conn, err = s.db.GetVaultConnectionByID(settings.VaultConnectionID)
+		conn, err = s.vaultStore().GetVaultConnectionByID(settings.VaultConnectionID)
 		if err != nil {
 			return err
 		}
 	} else {
-		conn, err = s.db.GetVaultConnectionByName(settings.VaultConnectionName)
+		conn, err = s.vaultStore().GetVaultConnectionByName(settings.VaultConnectionName)
 		if err != nil {
 			return err
 		}
@@ -105,25 +90,9 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 			job.Metadata = map[string]string{}
 		}
 		job.Metadata["has_secrets"] = "1"
-		job.SensitiveValues = dedupeStrings(sensitive)
+		job.SensitiveValues = servervault.DedupeStrings(sensitive)
 	}
 	return nil
-}
-
-func dedupeStrings(in []string) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if strings.TrimSpace(s) == "" {
-			continue
-		}
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
 }
 
 func (s *stateStore) readVaultSecret(ctx context.Context, conn protocol.VaultConnection, spec protocol.ProjectSecretSpec) (string, error) {
@@ -191,10 +160,10 @@ func (s *stateStore) readVaultSecret(ctx context.Context, conn protocol.VaultCon
 
 func (s *stateStore) getVaultToken(ctx context.Context, conn protocol.VaultConnection, secretIDOverride string) (string, error) {
 	if s.vaultTokens == nil {
-		s.vaultTokens = newVaultTokenCache()
+		s.vaultTokens = servervault.NewTokenCache()
 	}
 	if strings.TrimSpace(secretIDOverride) == "" {
-		if tok := s.vaultTokens.get(conn.ID); tok != "" {
+		if tok := s.vaultTokens.Get(conn.ID); tok != "" {
 			return tok, nil
 		}
 	}
@@ -202,7 +171,7 @@ func (s *stateStore) getVaultToken(ctx context.Context, conn protocol.VaultConne
 	secretID := strings.TrimSpace(secretIDOverride)
 	if secretID == "" {
 		var err error
-		secretID, err = readSecretID(conn)
+		secretID, err = servervault.ReadSecretID(conn)
 		if err != nil {
 			return "", err
 		}
@@ -232,17 +201,8 @@ func (s *stateStore) getVaultToken(ctx context.Context, conn protocol.VaultConne
 	if d, ok := auth["lease_duration"].(float64); ok && d > 0 {
 		leaseDur = d
 	}
-	s.vaultTokens.set(conn.ID, clientToken, time.Now().Add(time.Duration(leaseDur*0.8)*time.Second))
+	s.vaultTokens.Set(conn.ID, clientToken, time.Now().Add(time.Duration(leaseDur*0.8)*time.Second))
 	return clientToken, nil
-}
-
-func readSecretID(conn protocol.VaultConnection) (string, error) {
-	if env := strings.TrimSpace(conn.SecretIDEnv); env != "" {
-		if v := strings.TrimSpace(os.Getenv(env)); v != "" {
-			return v, nil
-		}
-	}
-	return "", fmt.Errorf("vault secret id not available (configure secret_id_env and set it in process environment)")
 }
 
 func (s *stateStore) vaultRequest(ctx context.Context, conn protocol.VaultConnection, token, method, path string, payload any) (string, int, error) {
@@ -277,20 +237,4 @@ func (s *stateStore) vaultRequest(ctx context.Context, conn protocol.VaultConnec
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	return string(respBody), resp.StatusCode, nil
-}
-
-func (c *vaultTokenCache) get(connID int64) string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	st, ok := c.byConn[connID]
-	if !ok || strings.TrimSpace(st.Token) == "" || time.Now().After(st.ExpiresAt) {
-		return ""
-	}
-	return st.Token
-}
-
-func (c *vaultTokenCache) set(connID int64, token string, exp time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.byConn[connID] = vaultTokenState{Token: token, ExpiresAt: exp}
 }

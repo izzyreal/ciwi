@@ -19,7 +19,7 @@ func (s *stateStore) checkPipelineDependenciesWithReporter(p store.PersistedPipe
 	if report != nil {
 		report("dependencies", "running", fmt.Sprintf("checking %d dependency pipeline(s)", len(p.DependsOn)))
 	}
-	jobs, err := s.db.ListJobExecutions()
+	jobs, err := s.pipelineStore().ListJobExecutions()
 	if err != nil {
 		if report != nil {
 			report("dependencies", "error", "failed to read job history: "+err.Error())

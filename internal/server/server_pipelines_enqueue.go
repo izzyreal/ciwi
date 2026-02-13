@@ -8,6 +8,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	serverpipeline "github.com/izzyreal/ciwi/internal/server/pipeline"
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
@@ -94,13 +95,13 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					if format == "" {
 						format = "go-test-json"
 					}
-					stepBlocks = append(stepBlocks, buildTestStepBlock(strings.TrimSpace(pj.RunsOn["shell"]), command))
+					stepBlocks = append(stepBlocks, serverpipeline.BuildTestStepBlock(strings.TrimSpace(pj.RunsOn["shell"]), command))
 					stepLabels = append(stepLabels, "test "+name)
 					stepMarkerMeta = append(stepMarkerMeta, map[string]string{
 						"kind":        "test",
-						"test_name":   sanitizeMarkerToken(name),
-						"test_format": sanitizeMarkerToken(format),
-						"test_report": sanitizeMarkerToken(strings.TrimSpace(step.Test.Report)),
+						"test_name":   serverpipeline.SanitizeMarkerToken(name),
+						"test_format": serverpipeline.SanitizeMarkerToken(format),
+						"test_report": serverpipeline.SanitizeMarkerToken(strings.TrimSpace(step.Test.Report)),
 					})
 					continue
 				}
@@ -113,7 +114,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				stepMarkerMeta = append(stepMarkerMeta, nil)
 			}
 			for stepIndex := range stepBlocks {
-				rendered = append(rendered, buildStepMarkerCommand(strings.TrimSpace(pj.RunsOn["shell"]), stepIndex+1, len(stepBlocks), stepLabels[stepIndex], stepMarkerMeta[stepIndex]))
+				rendered = append(rendered, serverpipeline.BuildStepMarkerCommand(strings.TrimSpace(pj.RunsOn["shell"]), stepIndex+1, len(stepBlocks), stepLabels[stepIndex], stepMarkerMeta[stepIndex]))
 				rendered = append(rendered, stepBlocks[stepIndex])
 			}
 			if len(rendered) == 0 {
@@ -209,7 +210,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 		pending[0].script = pending[0].script + "\n" + buildAutoBumpStepScript(runCtx.AutoBump)
 	}
 	for _, spec := range pending {
-		job, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		job, err := s.pipelineStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
 			Script:               spec.script,
 			Env:                  cloneMap(spec.env),
 			RequiredCapabilities: spec.requiredCaps,
@@ -284,45 +285,4 @@ func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.Jo
 		})
 	}
 	return out
-}
-
-func buildStepMarkerCommand(shell string, index, total int, label string, meta map[string]string) string {
-	label = sanitizeMarkerToken(label)
-	if label == "" {
-		label = fmt.Sprintf("step_%d", index)
-	}
-	payload := fmt.Sprintf("__CIWI_STEP_BEGIN__ index=%d total=%d name=%s", index, total, label)
-	if len(meta) > 0 {
-		if v := sanitizeMarkerToken(meta["kind"]); v != "" {
-			payload += " kind=" + v
-		}
-		if v := sanitizeMarkerToken(meta["test_name"]); v != "" {
-			payload += " test_name=" + v
-		}
-		if v := sanitizeMarkerToken(meta["test_format"]); v != "" {
-			payload += " test_format=" + v
-		}
-		if v := sanitizeMarkerToken(meta["test_report"]); v != "" {
-			payload += " test_report=" + v
-		}
-	}
-	switch strings.ToLower(strings.TrimSpace(shell)) {
-	case "cmd":
-		return "echo " + payload
-	case "powershell":
-		return `Write-Output "` + payload + `"`
-	default:
-		return `echo "` + payload + `"`
-	}
-}
-
-func buildTestStepBlock(shell, command string) string {
-	switch strings.ToLower(strings.TrimSpace(shell)) {
-	case "cmd":
-		return command
-	case "powershell":
-		return command
-	default:
-		return command
-	}
 }

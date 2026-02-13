@@ -58,11 +58,11 @@ func (s *stateStore) runPipelineFromConfigHandler(w http.ResponseWriter, r *http
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.db.LoadConfig(cfg, fullPath, "", "", filepath.Base(fullPath)); err != nil {
+	if err := s.pipelineStore().LoadConfig(cfg, fullPath, "", "", filepath.Base(fullPath)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	p, err := s.db.GetPipelineByProjectAndID(cfg.Project.Name, req.PipelineID)
+	p, err := s.pipelineStore().GetPipelineByProjectAndID(cfg.Project.Name, req.PipelineID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -91,7 +91,7 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid pipeline id", http.StatusBadRequest)
 		return
 	}
-	p, err := s.db.GetPipelineByDBID(pipelineDBID)
+	p, err := s.pipelineStore().GetPipelineByDBID(pipelineDBID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return

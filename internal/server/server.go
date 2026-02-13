@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	servervault "github.com/izzyreal/ciwi/internal/server/vault"
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
@@ -34,7 +35,7 @@ type stateStore struct {
 	agentToolRefresh map[string]bool
 	db               *store.Store
 	artifactsDir     string
-	vaultTokens      *vaultTokenCache
+	vaultTokens      *servervault.TokenCache
 	update           updateState
 }
 
@@ -59,7 +60,7 @@ func Run(ctx context.Context) error {
 		agentToolRefresh: make(map[string]bool),
 		db:               db,
 		artifactsDir:     artifactsDir,
-		vaultTokens:      newVaultTokenCache(),
+		vaultTokens:      servervault.NewTokenCache(),
 	}
 	if target, ok, err := db.GetAppState("agent_update_target"); err == nil && ok {
 		s.update.mu.Lock()

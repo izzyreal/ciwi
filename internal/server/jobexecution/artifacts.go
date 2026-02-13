@@ -1,4 +1,4 @@
-package server
+package jobexecution
 
 import (
 	"encoding/base64"
@@ -12,13 +12,13 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-const jobExecutionTestReportArtifactPath = "test-report.json"
+const testReportArtifactPath = "test-report.json"
 
-func (s *stateStore) persistJobExecutionArtifacts(jobID string, incoming []protocol.UploadArtifact) ([]protocol.JobExecutionArtifact, error) {
+func PersistArtifacts(artifactsDir, jobID string, incoming []protocol.UploadArtifact) ([]protocol.JobExecutionArtifact, error) {
 	if len(incoming) == 0 {
 		return nil, nil
 	}
-	base := filepath.Join(s.artifactsDir, jobID)
+	base := filepath.Join(artifactsDir, jobID)
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return nil, fmt.Errorf("create artifact dir: %w", err)
 	}
@@ -54,12 +54,12 @@ func (s *stateStore) persistJobExecutionArtifacts(jobID string, incoming []proto
 	return artifacts, nil
 }
 
-func (s *stateStore) persistJobExecutionTestReportArtifact(jobID string, report protocol.JobExecutionTestReport) error {
-	base := filepath.Join(s.artifactsDir, jobID)
+func PersistTestReportArtifact(artifactsDir, jobID string, report protocol.JobExecutionTestReport) error {
+	base := filepath.Join(artifactsDir, jobID)
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return fmt.Errorf("create test report artifact dir: %w", err)
 	}
-	dst := filepath.Join(base, filepath.FromSlash(jobExecutionTestReportArtifactPath))
+	dst := filepath.Join(base, filepath.FromSlash(testReportArtifactPath))
 	payload, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal test report artifact: %w", err)
@@ -70,21 +70,21 @@ func (s *stateStore) persistJobExecutionTestReportArtifact(jobID string, report 
 	return nil
 }
 
-func appendSyntheticJobExecutionTestReportArtifact(artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact) []protocol.JobExecutionArtifact {
-	testReportFull := filepath.Join(artifactsDir, jobID, filepath.FromSlash(jobExecutionTestReportArtifactPath))
+func AppendSyntheticTestReportArtifact(artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact) []protocol.JobExecutionArtifact {
+	testReportFull := filepath.Join(artifactsDir, jobID, filepath.FromSlash(testReportArtifactPath))
 	info, err := os.Stat(testReportFull)
 	if err != nil || info.IsDir() {
 		return artifacts
 	}
 	for _, a := range artifacts {
-		if a.Path == jobExecutionTestReportArtifactPath {
+		if a.Path == testReportArtifactPath {
 			return artifacts
 		}
 	}
 	artifacts = append(artifacts, protocol.JobExecutionArtifact{
 		JobExecutionID: jobID,
-		Path:           jobExecutionTestReportArtifactPath,
-		URL:            filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(jobExecutionTestReportArtifactPath))),
+		Path:           testReportArtifactPath,
+		URL:            filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(testReportArtifactPath))),
 		SizeBytes:      info.Size(),
 	})
 	sort.SliceStable(artifacts, func(i, j int) bool { return artifacts[i].Path < artifacts[j].Path })

@@ -12,7 +12,7 @@ import (
 func (s *stateStore) vaultConnectionsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		items, err := s.db.ListVaultConnections()
+		items, err := s.vaultStore().ListVaultConnections()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -28,7 +28,7 @@ func (s *stateStore) vaultConnectionsHandler(w http.ResponseWriter, r *http.Requ
 			http.Error(w, "name, url, role_id and secret_id_env are required", http.StatusBadRequest)
 			return
 		}
-		item, err := s.db.UpsertVaultConnection(req)
+		item, err := s.vaultStore().UpsertVaultConnection(req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -56,7 +56,7 @@ func (s *stateStore) vaultConnectionByIDHandler(w http.ResponseWriter, r *http.R
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if err := s.db.DeleteVaultConnection(id); err != nil {
+		if err := s.vaultStore().DeleteVaultConnection(id); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
@@ -72,7 +72,7 @@ func (s *stateStore) vaultConnectionByIDHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	conn, err := s.db.GetVaultConnectionByID(id)
+	conn, err := s.vaultStore().GetVaultConnectionByID(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -94,7 +94,7 @@ func (s *stateStore) vaultConnectionByIDHandler(w http.ResponseWriter, r *http.R
 func (s *stateStore) projectVaultHandler(w http.ResponseWriter, r *http.Request, projectID int64) {
 	switch r.Method {
 	case http.MethodGet:
-		settings, err := s.db.GetProjectVaultSettings(projectID)
+		settings, err := s.vaultStore().GetProjectVaultSettings(projectID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -112,7 +112,7 @@ func (s *stateStore) projectVaultHandler(w http.ResponseWriter, r *http.Request,
 				return
 			}
 		}
-		settings, err := s.db.UpdateProjectVaultSettings(projectID, req)
+		settings, err := s.vaultStore().UpdateProjectVaultSettings(projectID, req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -133,7 +133,7 @@ func (s *stateStore) projectVaultTestHandler(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	settings, err := s.db.GetProjectVaultSettings(projectID)
+	settings, err := s.vaultStore().GetProjectVaultSettings(projectID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -146,13 +146,13 @@ func (s *stateStore) projectVaultTestHandler(w http.ResponseWriter, r *http.Requ
 	}
 	var conn protocol.VaultConnection
 	if settings.VaultConnectionID > 0 {
-		conn, err = s.db.GetVaultConnectionByID(settings.VaultConnectionID)
+		conn, err = s.vaultStore().GetVaultConnectionByID(settings.VaultConnectionID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
 	} else {
-		conn, err = s.db.GetVaultConnectionByName(settings.VaultConnectionName)
+		conn, err = s.vaultStore().GetVaultConnectionByName(settings.VaultConnectionName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

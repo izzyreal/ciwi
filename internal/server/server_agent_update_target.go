@@ -13,5 +13,5 @@ func (s *stateStore) setAgentUpdateTarget(target string) error {
 	s.update.mu.Lock()
 	s.update.agentTarget = target
 	s.update.mu.Unlock()
-	return s.db.SetAppState("agent_update_target", target)
+	return s.updateStateStore().SetAppState("agent_update_target", target)
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 )
 
 func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
@@ -147,38 +148,38 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		agentCaps = map[string]string{}
 	}
 	agentCaps["agent_id"] = req.AgentID
-	hasActive, err := s.db.AgentHasActiveJobExecution(req.AgentID)
+	hasActive, err := s.agentJobExecutionStore().AgentHasActiveJobExecution(req.AgentID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if hasActive {
-		writeJSON(w, http.StatusOK, leaseJobExecutionViewResponse{
+		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{
 			Assigned: false,
 			Message:  "agent already has an active job",
 		})
 		return
 	}
 
-	job, err := s.db.LeaseJobExecution(req.AgentID, agentCaps)
+	job, err := s.agentJobExecutionStore().LeaseJobExecution(req.AgentID, agentCaps)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if job == nil {
-		writeJSON(w, http.StatusOK, leaseJobExecutionViewResponse{Assigned: false, Message: "no matching queued job"})
+		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{Assigned: false, Message: "no matching queued job"})
 		return
 	}
 	if err := s.resolveJobSecrets(r.Context(), job); err != nil {
 		failMsg := fmt.Sprintf("secret resolution failed before execution: %v", err)
-		_, _ = s.db.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		_, _ = s.agentJobExecutionStore().UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID: req.AgentID,
 			Status:  protocol.JobExecutionStatusFailed,
 			Error:   failMsg,
 		})
-		writeJSON(w, http.StatusOK, leaseJobExecutionViewResponse{Assigned: false, Message: failMsg})
+		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{Assigned: false, Message: failMsg})
 		return
 	}
-	jobResponse := jobExecutionViewFromProtocol(*job)
-	writeJSON(w, http.StatusOK, leaseJobExecutionViewResponse{Assigned: true, JobExecution: &jobResponse})
+	jobResponse := jobexecution.ViewFromProtocol(*job)
+	writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{Assigned: true, JobExecution: &jobResponse})
 }

@@ -1,8 +1,8 @@
-package server
+package jobexecution
 
 import "strings"
 
-func parseJobExecutionBuildMetadataFromOutput(output string) map[string]string {
+func ParseBuildMetadataFromOutput(output string) map[string]string {
 	output = strings.TrimSpace(output)
 	if output == "" {
 		return nil

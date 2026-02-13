@@ -1,0 +1,398 @@
+package jobexecution
+
+import (
+	"encoding/json"
+	"net/http"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/server/httpx"
+)
+
+type Store interface {
+	ListJobExecutions() ([]protocol.JobExecution, error)
+	CreateJobExecution(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
+	GetJobExecution(id string) (protocol.JobExecution, error)
+	DeleteQueuedJobExecution(id string) error
+	UpdateJobExecutionStatus(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
+	MergeJobExecutionMetadata(id string, metadata map[string]string) (map[string]string, error)
+	ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error)
+	SaveJobExecutionArtifacts(id string, artifacts []protocol.JobExecutionArtifact) error
+	GetJobExecutionTestReport(id string) (protocol.JobExecutionTestReport, bool, error)
+	SaveJobExecutionTestReport(id string, report protocol.JobExecutionTestReport) error
+	ClearQueuedJobExecutions() (int64, error)
+	FlushJobExecutionHistory() (int64, error)
+}
+
+type HandlerDeps struct {
+	Store                              Store
+	ArtifactsDir                       string
+	AttachTestSummaries                func([]protocol.JobExecution)
+	AttachUnmetRequirements            func([]protocol.JobExecution)
+	AttachTestSummary                  func(*protocol.JobExecution)
+	AttachUnmetRequirementsToExecution func(*protocol.JobExecution)
+	MarkAgentSeen                      func(agentID string, ts time.Time)
+	Now                                func() time.Time
+}
+
+func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
+	if deps.Store == nil {
+		http.Error(w, "job execution store unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		view := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("view")))
+		maxJobs := ParseQueryInt(r, "max", 150, 1, 2000)
+
+		jobs, err := deps.Store.ListJobExecutions()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if maxJobs > 0 && len(jobs) > maxJobs {
+			jobs = jobs[:maxJobs]
+		}
+
+		queuedJobs, historyJobs := SplitByState(jobs)
+		switch view {
+		case "summary":
+			queuedGroups := SummarizeDisplayGroups(queuedJobs)
+			historyGroups := SummarizeDisplayGroups(historyJobs)
+			httpx.WriteJSON(w, http.StatusOK, SummaryViewResponse{
+				View:              "summary",
+				Max:               maxJobs,
+				Total:             len(jobs),
+				QueuedCount:       len(queuedJobs),
+				HistoryCount:      len(historyJobs),
+				QueuedGroupCount:  len(queuedGroups),
+				HistoryGroupCount: len(historyGroups),
+				QueuedGroups:      queuedGroups,
+				HistoryGroups:     historyGroups,
+			})
+			return
+		case "queued", "history":
+			source := queuedJobs
+			if view == "history" {
+				source = historyJobs
+			}
+			offset := ParseQueryInt(r, "offset", 0, 0, 1_000_000)
+			limit := ParseQueryInt(r, "limit", 25, 1, 200)
+			page := Paginate(source, offset, limit)
+			if deps.AttachTestSummaries != nil {
+				deps.AttachTestSummaries(page)
+			}
+			if deps.AttachUnmetRequirements != nil {
+				deps.AttachUnmetRequirements(page)
+			}
+			pageViews := ViewsFromProtocol(page)
+			httpx.WriteJSON(w, http.StatusOK, PagedViewResponse{
+				View:          view,
+				Total:         len(source),
+				Offset:        offset,
+				Limit:         limit,
+				JobExecutions: pageViews,
+			})
+			return
+		}
+
+		if deps.AttachTestSummaries != nil {
+			deps.AttachTestSummaries(jobs)
+		}
+		if deps.AttachUnmetRequirements != nil {
+			deps.AttachUnmetRequirements(jobs)
+		}
+		httpx.WriteJSON(w, http.StatusOK, ListViewResponse{JobExecutions: ViewsFromProtocol(jobs)})
+	case http.MethodPost:
+		var req protocol.CreateJobExecutionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		job, err := deps.Store.CreateJobExecution(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(job)})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
+	if deps.Store == nil {
+		http.Error(w, "job execution store unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	rel := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
+	if rel == "" {
+		http.NotFound(w, r)
+		return
+	}
+	parts := strings.Split(rel, "/")
+	jobID := parts[0]
+
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			job, err := deps.Store.GetJobExecution(jobID)
+			if err != nil {
+				http.Error(w, "job not found", http.StatusNotFound)
+				return
+			}
+			if deps.AttachTestSummary != nil {
+				deps.AttachTestSummary(&job)
+			}
+			if deps.AttachUnmetRequirementsToExecution != nil {
+				deps.AttachUnmetRequirementsToExecution(&job)
+			}
+			httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
+		case http.MethodDelete:
+			if err := deps.Store.DeleteQueuedJobExecution(jobID); err != nil {
+				if strings.Contains(err.Error(), "not found") {
+					http.Error(w, err.Error(), http.StatusNotFound)
+					return
+				}
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			httpx.WriteJSON(w, http.StatusOK, DeleteViewResponse{Deleted: true, JobExecutionID: jobID})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "force-fail" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		job, err := deps.Store.GetJobExecution(jobID)
+		if err != nil {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+		if !protocol.IsActiveJobExecutionStatus(job.Status) {
+			http.Error(w, "job is not active", http.StatusConflict)
+			return
+		}
+		agentID := strings.TrimSpace(job.LeasedByAgentID)
+		if agentID == "" {
+			agentID = "server-control"
+		}
+		output := strings.TrimSpace(job.Output)
+		if output != "" {
+			output += "\n"
+		}
+		output += "[control] job force-failed from UI"
+		updated, err := deps.Store.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID:      agentID,
+			Status:       protocol.JobExecutionStatusFailed,
+			Error:        "force-failed from UI",
+			Output:       output,
+			TimestampUTC: nowUTC(deps),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(updated)})
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "status" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req protocol.JobExecutionStatusUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if req.AgentID == "" {
+			http.Error(w, "agent_id is required", http.StatusBadRequest)
+			return
+		}
+		if !protocol.IsValidJobExecutionUpdateStatus(req.Status) {
+			http.Error(w, "status must be running, succeeded or failed", http.StatusBadRequest)
+			return
+		}
+		job, err := deps.Store.UpdateJobExecutionStatus(jobID, req)
+		if err != nil {
+			if strings.Contains(err.Error(), "another agent") {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if patch := ParseBuildMetadataFromOutput(req.Output); len(patch) > 0 {
+			if merged, err := deps.Store.MergeJobExecutionMetadata(jobID, patch); err == nil {
+				job.Metadata = merged
+			}
+		}
+		if deps.MarkAgentSeen != nil {
+			deps.MarkAgentSeen(req.AgentID, req.TimestampUTC)
+		}
+		httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "artifacts" {
+		switch r.Method {
+		case http.MethodGet:
+			artifacts, err := deps.Store.ListJobExecutionArtifacts(jobID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			artifacts = AppendSyntheticTestReportArtifact(deps.ArtifactsDir, jobID, artifacts)
+			for i := range artifacts {
+				artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
+			}
+			httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
+		case http.MethodPost:
+			var req protocol.UploadArtifactsRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			if req.AgentID == "" {
+				http.Error(w, "agent_id is required", http.StatusBadRequest)
+				return
+			}
+			job, err := deps.Store.GetJobExecution(jobID)
+			if err != nil {
+				http.Error(w, "job not found", http.StatusNotFound)
+				return
+			}
+			if job.LeasedByAgentID != "" && job.LeasedByAgentID != req.AgentID {
+				http.Error(w, "job is leased by another agent", http.StatusConflict)
+				return
+			}
+
+			artifacts, err := PersistArtifacts(deps.ArtifactsDir, jobID, req.Artifacts)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := deps.Store.SaveJobExecutionArtifacts(jobID, artifacts); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			for i := range artifacts {
+				artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
+			}
+			if deps.MarkAgentSeen != nil {
+				deps.MarkAgentSeen(req.AgentID, nowUTC(deps))
+			}
+			httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "tests" {
+		switch r.Method {
+		case http.MethodGet:
+			report, found, err := deps.Store.GetJobExecutionTestReport(jobID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !found {
+				httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionTestReportResponse{})
+				return
+			}
+			httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionTestReportResponse{Report: report})
+		case http.MethodPost:
+			var req protocol.UploadTestReportRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			if strings.TrimSpace(req.AgentID) == "" {
+				http.Error(w, "agent_id is required", http.StatusBadRequest)
+				return
+			}
+			job, err := deps.Store.GetJobExecution(jobID)
+			if err != nil {
+				http.Error(w, "job not found", http.StatusNotFound)
+				return
+			}
+			if job.LeasedByAgentID != "" && job.LeasedByAgentID != req.AgentID {
+				http.Error(w, "job is leased by another agent", http.StatusConflict)
+				return
+			}
+			if err := deps.Store.SaveJobExecutionTestReport(jobID, req.Report); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if err := PersistTestReportArtifact(deps.ArtifactsDir, jobID, req.Report); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if deps.MarkAgentSeen != nil {
+				deps.MarkAgentSeen(req.AgentID, nowUTC(deps))
+			}
+			httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionTestReportResponse{Report: req.Report})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+func HandleClearQueue(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
+	if deps.Store == nil {
+		http.Error(w, "job execution store unavailable", http.StatusInternalServerError)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	n, err := deps.Store.ClearQueuedJobExecutions()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, ClearQueueViewResponse{Cleared: n})
+}
+
+func HandleFlushHistory(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
+	if deps.Store == nil {
+		http.Error(w, "job execution store unavailable", http.StatusInternalServerError)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	n, err := deps.Store.FlushJobExecutionHistory()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, FlushHistoryViewResponse{Flushed: n})
+}
+
+func nowUTC(deps HandlerDeps) time.Time {
+	if deps.Now != nil {
+		ts := deps.Now()
+		if !ts.IsZero() {
+			return ts.UTC()
+		}
+	}
+	return time.Now().UTC()
+}

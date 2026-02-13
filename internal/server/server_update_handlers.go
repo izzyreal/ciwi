@@ -305,7 +305,7 @@ func (s *stateStore) updateStatusHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	state, err := s.db.ListAppState()
+	state, err := s.updateStateStore().ListAppState()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -320,7 +320,7 @@ func (s *stateStore) persistUpdateStatus(values map[string]string) error {
 		if strings.TrimSpace(k) == "" {
 			continue
 		}
-		if err := s.db.SetAppState(k, v); err != nil {
+		if err := s.updateStateStore().SetAppState(k, v); err != nil {
 			return err
 		}
 	}

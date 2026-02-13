@@ -35,7 +35,7 @@ func (s *stateStore) attachJobExecutionTestSummary(job *protocol.JobExecution) {
 	if job == nil || strings.TrimSpace(job.ID) == "" {
 		return
 	}
-	report, found, err := s.db.GetJobExecutionTestReport(job.ID)
+	report, found, err := s.jobExecutionStore().GetJobExecutionTestReport(job.ID)
 	if err != nil || !found {
 		return
 	}

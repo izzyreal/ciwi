@@ -1,4 +1,4 @@
-package server
+package jobexecution
 
 import (
 	"time"
@@ -6,7 +6,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-type jobExecutionView struct {
+type View struct {
 	ID                   string                            `json:"id"`
 	Script               string                            `json:"script"`
 	Env                  map[string]string                 `json:"env,omitempty"`
@@ -31,59 +31,59 @@ type jobExecutionView struct {
 	SensitiveValues      []string                          `json:"sensitive_values,omitempty"`
 }
 
-type createJobExecutionViewResponse struct {
-	JobExecution jobExecutionView `json:"job_execution"`
+type CreateViewResponse struct {
+	JobExecution View `json:"job_execution"`
 }
 
-type jobExecutionsSummaryViewResponse struct {
-	View              string                            `json:"view"`
-	Max               int                               `json:"max"`
-	Total             int                               `json:"total"`
-	QueuedCount       int                               `json:"queued_count"`
-	HistoryCount      int                               `json:"history_count"`
-	QueuedGroupCount  int                               `json:"queued_group_count"`
-	HistoryGroupCount int                               `json:"history_group_count"`
-	QueuedGroups      []jobExecutionDisplayGroupSummary `json:"queued_groups"`
-	HistoryGroups     []jobExecutionDisplayGroupSummary `json:"history_groups"`
+type SummaryViewResponse struct {
+	View              string                `json:"view"`
+	Max               int                   `json:"max"`
+	Total             int                   `json:"total"`
+	QueuedCount       int                   `json:"queued_count"`
+	HistoryCount      int                   `json:"history_count"`
+	QueuedGroupCount  int                   `json:"queued_group_count"`
+	HistoryGroupCount int                   `json:"history_group_count"`
+	QueuedGroups      []DisplayGroupSummary `json:"queued_groups"`
+	HistoryGroups     []DisplayGroupSummary `json:"history_groups"`
 }
 
-type jobExecutionsPagedViewResponse struct {
-	View          string             `json:"view"`
-	Total         int                `json:"total"`
-	Offset        int                `json:"offset"`
-	Limit         int                `json:"limit"`
-	JobExecutions []jobExecutionView `json:"job_executions"`
+type PagedViewResponse struct {
+	View          string `json:"view"`
+	Total         int    `json:"total"`
+	Offset        int    `json:"offset"`
+	Limit         int    `json:"limit"`
+	JobExecutions []View `json:"job_executions"`
 }
 
-type jobExecutionsListViewResponse struct {
-	JobExecutions []jobExecutionView `json:"job_executions"`
+type ListViewResponse struct {
+	JobExecutions []View `json:"job_executions"`
 }
 
-type jobExecutionViewResponse struct {
-	JobExecution jobExecutionView `json:"job_execution"`
+type SingleViewResponse struct {
+	JobExecution View `json:"job_execution"`
 }
 
-type leaseJobExecutionViewResponse struct {
-	Assigned     bool              `json:"assigned"`
-	JobExecution *jobExecutionView `json:"job_execution,omitempty"`
-	Message      string            `json:"message,omitempty"`
+type LeaseViewResponse struct {
+	Assigned     bool   `json:"assigned"`
+	JobExecution *View  `json:"job_execution,omitempty"`
+	Message      string `json:"message,omitempty"`
 }
 
-type deleteJobExecutionViewResponse struct {
+type DeleteViewResponse struct {
 	Deleted        bool   `json:"deleted"`
 	JobExecutionID string `json:"job_execution_id"`
 }
 
-type clearJobExecutionQueueViewResponse struct {
+type ClearQueueViewResponse struct {
 	Cleared int64 `json:"cleared"`
 }
 
-type flushJobExecutionHistoryViewResponse struct {
+type FlushHistoryViewResponse struct {
 	Flushed int64 `json:"flushed"`
 }
 
-func jobExecutionViewFromProtocol(job protocol.JobExecution) jobExecutionView {
-	view := jobExecutionView{
+func ViewFromProtocol(job protocol.JobExecution) View {
+	view := View{
 		ID:                   job.ID,
 		Script:               job.Script,
 		Env:                  job.Env,
@@ -119,10 +119,10 @@ func jobExecutionViewFromProtocol(job protocol.JobExecution) jobExecutionView {
 	return view
 }
 
-func jobExecutionViewsFromProtocol(jobs []protocol.JobExecution) []jobExecutionView {
-	out := make([]jobExecutionView, len(jobs))
+func ViewsFromProtocol(jobs []protocol.JobExecution) []View {
+	out := make([]View, len(jobs))
 	for i := range jobs {
-		out[i] = jobExecutionViewFromProtocol(jobs[i])
+		out[i] = ViewFromProtocol(jobs[i])
 	}
 	return out
 }

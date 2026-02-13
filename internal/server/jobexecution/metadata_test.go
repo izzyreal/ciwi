@@ -1,14 +1,14 @@
-package server
+package jobexecution
 
 import "testing"
 
-func TestParseJobExecutionBuildMetadataFromOutput(t *testing.T) {
+func TestParseBuildMetadataFromOutput(t *testing.T) {
 	out := `
 noise
 __CIWI_BUILD_SUMMARY__ target=linux-amd64 version=v1.2.3 output=dist/ciwi-linux-amd64
 more noise
 `
-	meta := parseJobExecutionBuildMetadataFromOutput(out)
+	meta := ParseBuildMetadataFromOutput(out)
 	if meta["build_target"] != "linux-amd64" {
 		t.Fatalf("unexpected build_target: %q", meta["build_target"])
 	}
