@@ -123,7 +123,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"project": detail})
+		writeJSON(w, http.StatusOK, projectDetailViewResponse{Project: detail})
 		return
 	}
 
@@ -223,7 +223,7 @@ func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"projects": projects})
+	writeJSON(w, http.StatusOK, projectListViewResponse{Projects: projects})
 }
 
 func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent string) (protocol.ImportProjectResponse, error) {

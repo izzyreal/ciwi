@@ -110,29 +110,15 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		}
 		depCtx, depErr := s.checkPipelineDependenciesWithReporter(p, nil)
 		if depErr != nil {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"ok":      false,
-				"message": depErr.Error(),
-			})
+			writeJSON(w, http.StatusOK, buildPipelineVersionPreviewErrorResponse(depErr.Error()))
 			return
 		}
 		runCtx, runErr := resolvePipelineRunContextWithReporter(p, depCtx, nil)
 		if runErr != nil {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"ok":      false,
-				"message": runErr.Error(),
-			})
+			writeJSON(w, http.StatusOK, buildPipelineVersionPreviewErrorResponse(runErr.Error()))
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":                   true,
-			"pipeline_version":     strings.TrimSpace(runCtx.Version),
-			"pipeline_version_raw": strings.TrimSpace(runCtx.VersionRaw),
-			"source_ref_resolved":  strings.TrimSpace(runCtx.SourceRefResolved),
-			"version_file":         strings.TrimSpace(runCtx.VersionFile),
-			"tag_prefix":           strings.TrimSpace(runCtx.TagPrefix),
-			"auto_bump":            strings.TrimSpace(runCtx.AutoBump),
-		})
+		writeJSON(w, http.StatusOK, buildPipelineVersionPreviewSuccessResponse(runCtx))
 		return
 	}
 	if r.Method != http.MethodPost {

@@ -301,6 +301,101 @@ pipelines:
 	}
 }
 
+func TestServerPipelineVersionPreviewDependencyError(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	cfg := `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    jobs:
+      - id: build-job
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 60
+        steps:
+          - run: echo build
+  - id: release
+    trigger: manual
+    depends_on:
+      - build
+    jobs:
+      - id: release-job
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 60
+        steps:
+          - run: echo release
+`
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{"config_path": "ciwi.yaml"})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	var projectsPayload struct {
+		Projects []struct {
+			Pipelines []struct {
+				ID         int64  `json:"id"`
+				PipelineID string `json:"pipeline_id"`
+			} `json:"pipelines"`
+		} `json:"projects"`
+	}
+	projectsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/projects", nil)
+	if projectsResp.StatusCode != http.StatusOK {
+		t.Fatalf("list projects status=%d body=%s", projectsResp.StatusCode, readBody(t, projectsResp))
+	}
+	decodeJSONBody(t, projectsResp, &projectsPayload)
+
+	var releaseID int64
+	for _, p := range projectsPayload.Projects[0].Pipelines {
+		if p.PipelineID == "release" {
+			releaseID = p.ID
+			break
+		}
+	}
+	if releaseID == 0 {
+		t.Fatalf("missing release pipeline id")
+	}
+
+	previewResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/pipelines/"+int64ToString(releaseID)+"/version-preview", nil)
+	if previewResp.StatusCode != http.StatusOK {
+		t.Fatalf("preview status=%d body=%s", previewResp.StatusCode, readBody(t, previewResp))
+	}
+	var payload struct {
+		OK      bool   `json:"ok"`
+		Message string `json:"message"`
+	}
+	decodeJSONBody(t, previewResp, &payload)
+	if payload.OK {
+		t.Fatalf("expected preview to fail when dependency has not succeeded")
+	}
+	if !strings.Contains(strings.ToLower(payload.Message), "dependency") {
+		t.Fatalf("expected dependency error message, got %q", payload.Message)
+	}
+}
+
 func TestServerPipelineVersionResolveStream(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found")
