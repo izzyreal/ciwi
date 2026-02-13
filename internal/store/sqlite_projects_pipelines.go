@@ -160,7 +160,6 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 	if err != nil {
 		return protocol.ProjectDetail{}, fmt.Errorf("list pipelines: %w", err)
 	}
-	defer rows.Close()
 
 	detail := protocol.ProjectDetail{
 		ID:         project.ID,
@@ -178,56 +177,67 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 		}
 		_ = json.Unmarshal([]byte(dependsOnJSON), &p.DependsOn)
 		_ = json.Unmarshal([]byte(versioningJSON), &p.Versioning)
-		persistedJobs, err := s.listPipelineJobs(p.ID)
-		if err != nil {
-			return protocol.ProjectDetail{}, err
-		}
-		p.Jobs = make([]protocol.PipelineJobDetail, 0, len(persistedJobs))
-		for _, j := range persistedJobs {
-			d := protocol.PipelineJobDetail{
-				ID:             j.ID,
-				TimeoutSeconds: j.TimeoutSeconds,
-				RunsOn:         cloneMap(j.RunsOn),
-				RequiresTools:  cloneMap(j.RequiresTools),
-				Artifacts:      append([]string(nil), j.Artifacts...),
-				Caches:         cloneJobCachesFromConfig(j.Caches),
-			}
-			d.Steps = make([]protocol.PipelineStep, 0, len(j.Steps))
-			for _, step := range j.Steps {
-				if step.Test != nil {
-					d.Steps = append(d.Steps, protocol.PipelineStep{
-						Type:        "test",
-						TestName:    step.Test.Name,
-						TestCommand: step.Test.Command,
-						TestFormat:  step.Test.Format,
-						TestReport:  step.Test.Report,
-						Env:         cloneMap(step.Env),
-					})
-					continue
-				}
-				d.Steps = append(d.Steps, protocol.PipelineStep{
-					Type: "run",
-					Run:  step.Run,
-					Env:  cloneMap(step.Env),
-				})
-			}
-			for idx, vars := range j.MatrixInclude {
-				v := cloneMap(vars)
-				d.MatrixIncludes = append(d.MatrixIncludes, protocol.MatrixInclude{
-					Index: idx,
-					Name:  v["name"],
-					Vars:  v,
-				})
-			}
-			p.Jobs = append(p.Jobs, d)
-		}
 		detail.Pipelines = append(detail.Pipelines, p)
 	}
 	if err := rows.Err(); err != nil {
 		return protocol.ProjectDetail{}, fmt.Errorf("iterate pipelines: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return protocol.ProjectDetail{}, fmt.Errorf("close pipelines rows: %w", err)
+	}
+
+	for i := range detail.Pipelines {
+		persistedJobs, err := s.listPipelineJobs(detail.Pipelines[i].ID)
+		if err != nil {
+			return protocol.ProjectDetail{}, err
+		}
+		detail.Pipelines[i].Jobs = pipelineJobDetailsFromPersisted(persistedJobs)
+	}
 
 	return detail, nil
+}
+
+func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []protocol.PipelineJobDetail {
+	out := make([]protocol.PipelineJobDetail, 0, len(persistedJobs))
+	for _, j := range persistedJobs {
+		d := protocol.PipelineJobDetail{
+			ID:             j.ID,
+			TimeoutSeconds: j.TimeoutSeconds,
+			RunsOn:         cloneMap(j.RunsOn),
+			RequiresTools:  cloneMap(j.RequiresTools),
+			Artifacts:      append([]string(nil), j.Artifacts...),
+			Caches:         cloneJobCachesFromConfig(j.Caches),
+		}
+		d.Steps = make([]protocol.PipelineStep, 0, len(j.Steps))
+		for _, step := range j.Steps {
+			if step.Test != nil {
+				d.Steps = append(d.Steps, protocol.PipelineStep{
+					Type:        "test",
+					TestName:    step.Test.Name,
+					TestCommand: step.Test.Command,
+					TestFormat:  step.Test.Format,
+					TestReport:  step.Test.Report,
+					Env:         cloneMap(step.Env),
+				})
+				continue
+			}
+			d.Steps = append(d.Steps, protocol.PipelineStep{
+				Type: "run",
+				Run:  step.Run,
+				Env:  cloneMap(step.Env),
+			})
+		}
+		for idx, vars := range j.MatrixInclude {
+			v := cloneMap(vars)
+			d.MatrixIncludes = append(d.MatrixIncludes, protocol.MatrixInclude{
+				Index: idx,
+				Name:  v["name"],
+				Vars:  v,
+			})
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 func (s *Store) GetPipelineByDBID(id int64) (PersistedPipeline, error) {
