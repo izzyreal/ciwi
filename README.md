@@ -16,6 +16,10 @@ go run ./cmd/ciwi agent
 go run ./cmd/ciwi all-in-one
 ```
 
+## Terminology
+
+Canonical domain terminology lives in `terminology.md`.
+
 ## Environment variables
 
 - `CIWI_SERVER_ADDR`: server bind address (default `:8112`)
