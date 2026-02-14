@@ -57,6 +57,7 @@ const uiIndexCSS = `
       display: flex;
       justify-content: center;
       align-items: center;
+      align-self: center;
       min-height: 72px;
     }
     .project-icon {
