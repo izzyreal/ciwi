@@ -23,6 +23,7 @@ type agentState struct {
 	LastSeenUTC          time.Time         `json:"last_seen_utc"`
 	RecentLog            []string          `json:"recent_log,omitempty"`
 	UpdateTarget         string            `json:"update_target,omitempty"`
+	UpdateSource         string            `json:"update_source,omitempty"`
 	UpdateAttempts       int               `json:"update_attempts,omitempty"`
 	UpdateInProgress     bool              `json:"update_in_progress,omitempty"`
 	UpdateLastRequestUTC time.Time         `json:"update_last_request_utc,omitempty"`

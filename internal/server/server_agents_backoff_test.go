@@ -424,3 +424,73 @@ func TestHeartbeatManualUpdateBypassesFirstAttemptSchedule(t *testing.T) {
 		t.Fatalf("expected no retry schedule while manual update is in progress")
 	}
 }
+
+func TestHeartbeatManualUpdateOverridesExistingAutomaticSchedule(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	s := newAgentUpdateTestStateStore(t)
+	if err := s.setAgentUpdateTarget("v1.2.0"); err != nil {
+		t.Fatalf("set agent update target: %v", err)
+	}
+
+	// First heartbeat creates an automatic first-attempt schedule.
+	first := heartbeatForTest(t, s, protocol.HeartbeatRequest{
+		AgentID:      "agent-override",
+		Hostname:     "host-o",
+		OS:           "linux",
+		Arch:         "amd64",
+		Version:      "v1.1.0",
+		Capabilities: map[string]string{"executor": "script", "shells": "posix"},
+		TimestampUTC: time.Now().UTC(),
+	})
+	if first.UpdateRequested {
+		t.Fatalf("expected automatic update to be scheduled first, not dispatched immediately")
+	}
+
+	s.mu.Lock()
+	before := s.agents["agent-override"]
+	s.agentUpdates["agent-override"] = "v1.1.5"
+	s.mu.Unlock()
+
+	if before.UpdateSource != updateSourceAutomatic {
+		t.Fatalf("expected automatic update source before manual override, got %q", before.UpdateSource)
+	}
+	if before.UpdateNextRetryUTC.IsZero() {
+		t.Fatalf("expected automatic retry schedule before manual override")
+	}
+
+	// Manual target should replace the scheduled automatic slot on next heartbeat.
+	second := heartbeatForTest(t, s, protocol.HeartbeatRequest{
+		AgentID:      "agent-override",
+		Hostname:     "host-o",
+		OS:           "linux",
+		Arch:         "amd64",
+		Version:      "v1.1.0",
+		Capabilities: map[string]string{"executor": "script", "shells": "posix"},
+		TimestampUTC: time.Now().UTC().Add(5 * time.Second),
+	})
+	if !second.UpdateRequested {
+		t.Fatalf("expected manual override update to be dispatched immediately")
+	}
+	if second.UpdateTarget != "v1.1.5" {
+		t.Fatalf("unexpected override target: %q", second.UpdateTarget)
+	}
+
+	s.mu.Lock()
+	after := s.agents["agent-override"]
+	s.mu.Unlock()
+	if after.UpdateSource != updateSourceManual {
+		t.Fatalf("expected manual update source after override, got %q", after.UpdateSource)
+	}
+	if after.UpdateTarget != "v1.1.5" {
+		t.Fatalf("expected manual target after override, got %q", after.UpdateTarget)
+	}
+	if after.UpdateAttempts != 1 || !after.UpdateInProgress {
+		t.Fatalf("expected manual override to reset and dispatch immediately, attempts=%d in_progress=%v", after.UpdateAttempts, after.UpdateInProgress)
+	}
+	if !after.UpdateNextRetryUTC.IsZero() {
+		t.Fatalf("expected no backoff schedule while overridden manual update is in progress")
+	}
+}

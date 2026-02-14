@@ -13,6 +13,10 @@ import (
 )
 
 const maxReportedUpdateFailureLength = 240
+const (
+	updateSourceAutomatic = "automatic"
+	updateSourceManual    = "manual"
+)
 
 func (s *stateStore) scheduleAutomaticUpdateFirstAttemptLocked(agentID, target string, now time.Time) (time.Time, int) {
 	agentID = strings.TrimSpace(agentID)
@@ -67,8 +71,10 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	target := resolveEffectiveAgentUpdateTarget(s.getAgentUpdateTarget(), currentVersion())
 	manualTarget := strings.TrimSpace(s.agentUpdates[hb.AgentID])
+	updateSource := updateSourceAutomatic
 	if manualTarget != "" {
 		target = manualTarget
+		updateSource = updateSourceManual
 	}
 
 	updateRequested := false
@@ -79,20 +85,39 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	reportedUpdateFailure := summarizeUpdateFailure(hb.UpdateFailure)
 	needsUpdate := target != "" && isVersionDifferent(target, strings.TrimSpace(hb.Version))
 	if needsUpdate {
-		if strings.TrimSpace(prev.UpdateTarget) != target {
+		prevTarget := strings.TrimSpace(prev.UpdateTarget)
+		prevSource := strings.TrimSpace(prev.UpdateSource)
+		if prevSource == "" {
+			prevSource = updateSourceAutomatic
+			if manualTarget != "" && prevTarget == target {
+				prevSource = updateSourceManual
+			}
+		}
+		overrideScheduled := false
+		if prevTarget != target {
+			overrideScheduled = true
+		} else if prevSource != updateSource {
+			// Keep rollback/manual intent stable; allow manual requests to replace
+			// automatic schedules, but not vice versa.
+			overrideScheduled = updateSource == updateSourceManual
+		}
+		if overrideScheduled {
 			prev.UpdateTarget = target
+			prev.UpdateSource = updateSource
 			prev.UpdateAttempts = 0
 			prev.UpdateInProgress = false
 			prev.UpdateLastRequestUTC = time.Time{}
 			prev.UpdateNextRetryUTC = time.Time{}
 			prev.UpdateLastError = ""
 			prev.UpdateLastErrorUTC = time.Time{}
-			if manualTarget == "" {
+			if updateSource == updateSourceAutomatic {
 				firstAttemptAt, firstAttemptSlot = s.scheduleAutomaticUpdateFirstAttemptLocked(hb.AgentID, target, now)
 				if !firstAttemptAt.IsZero() {
 					prev.UpdateNextRetryUTC = firstAttemptAt
 				}
 			}
+		} else if prev.UpdateSource == "" {
+			prev.UpdateSource = updateSource
 		}
 		if reportedUpdateFailure != "" {
 			prev.UpdateLastError = reportedUpdateFailure
@@ -124,6 +149,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 			delete(s.agentUpdates, hb.AgentID)
 		}
 		prev.UpdateTarget = ""
+		prev.UpdateSource = ""
 		prev.UpdateAttempts = 0
 		prev.UpdateInProgress = false
 		prev.UpdateLastRequestUTC = time.Time{}
@@ -141,6 +167,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		LastSeenUTC:          hb.TimestampUTC,
 		RecentLog:            append([]string(nil), prev.RecentLog...),
 		UpdateTarget:         prev.UpdateTarget,
+		UpdateSource:         prev.UpdateSource,
 		UpdateAttempts:       prev.UpdateAttempts,
 		UpdateInProgress:     prev.UpdateInProgress,
 		UpdateLastRequestUTC: prev.UpdateLastRequestUTC,

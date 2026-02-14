@@ -182,6 +182,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	s.agentUpdates[agentID] = target
 	a.UpdateTarget = target
+	a.UpdateSource = updateSourceManual
 	a.UpdateAttempts = 0
 	a.UpdateInProgress = false
 	a.UpdateLastRequestUTC = time.Time{}
