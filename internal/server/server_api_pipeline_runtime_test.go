@@ -523,3 +523,129 @@ pipelines:
 		t.Fatalf("expected skipped-step secret env to be absent from leased job")
 	}
 }
+
+func TestServerRunPipelineInjectsDependencyArtifactJobID(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	const cfg = `
+version: 1
+project:
+  name: dep-artifacts
+pipelines:
+  - id: build
+    trigger: manual
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: linux-amd64
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        artifacts:
+          - dist/**
+        steps:
+          - run: mkdir -p dist
+          - run: echo ok > dist/app-linux-amd64
+  - id: release
+    trigger: manual
+    depends_on:
+      - build
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: release-linux-amd64
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: test -n "$CIWI_DEP_ARTIFACT_JOB_ID"
+`
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{
+		"config_path": "ciwi.yaml",
+	})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	buildResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/1/run", map[string]any{})
+	if buildResp.StatusCode != http.StatusCreated {
+		t.Fatalf("build run status=%d body=%s", buildResp.StatusCode, readBody(t, buildResp))
+	}
+	_ = readBody(t, buildResp)
+
+	leaseBuild := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-build",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseBuild.StatusCode != http.StatusOK {
+		t.Fatalf("lease build status=%d body=%s", leaseBuild.StatusCode, readBody(t, leaseBuild))
+	}
+	var leasedBuild struct {
+		Assigned     bool `json:"assigned"`
+		JobExecution struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, leaseBuild, &leasedBuild)
+	if !leasedBuild.Assigned || strings.TrimSpace(leasedBuild.JobExecution.ID) == "" {
+		t.Fatalf("expected build job lease")
+	}
+	doneResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+leasedBuild.JobExecution.ID+"/status", map[string]any{
+		"agent_id":  "agent-build",
+		"status":    "succeeded",
+		"exit_code": 0,
+		"output":    "[run] done",
+	})
+	if doneResp.StatusCode != http.StatusOK {
+		t.Fatalf("complete build status=%d body=%s", doneResp.StatusCode, readBody(t, doneResp))
+	}
+	_ = readBody(t, doneResp)
+
+	releaseResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/2/run", map[string]any{})
+	if releaseResp.StatusCode != http.StatusCreated {
+		t.Fatalf("release run status=%d body=%s", releaseResp.StatusCode, readBody(t, releaseResp))
+	}
+	_ = readBody(t, releaseResp)
+
+	leaseRelease := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-release",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseRelease.StatusCode != http.StatusOK {
+		t.Fatalf("lease release status=%d body=%s", leaseRelease.StatusCode, readBody(t, leaseRelease))
+	}
+	var leasedRelease struct {
+		Assigned     bool `json:"assigned"`
+		JobExecution struct {
+			Env map[string]string `json:"env"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, leaseRelease, &leasedRelease)
+	if !leasedRelease.Assigned {
+		t.Fatalf("expected release job lease")
+	}
+	if strings.TrimSpace(leasedRelease.JobExecution.Env["CIWI_DEP_ARTIFACT_JOB_ID"]) == "" {
+		t.Fatalf("expected CIWI_DEP_ARTIFACT_JOB_ID env on dependent release job")
+	}
+	if strings.TrimSpace(leasedRelease.JobExecution.Env["CIWI_DEP_ARTIFACT_JOB_IDS"]) == "" {
+		t.Fatalf("expected CIWI_DEP_ARTIFACT_JOB_IDS env on dependent release job")
+	}
+}

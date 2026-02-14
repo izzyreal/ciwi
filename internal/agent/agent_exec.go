@@ -89,6 +89,29 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		execDir = sourceDir
 	}
+	depJobIDs := dependencyArtifactJobIDs(job.Env)
+	if len(depJobIDs) > 0 {
+		fmt.Fprintf(&output, "[dep-artifacts] source_jobs=%s\n", strings.Join(depJobIDs, ","))
+		for _, depJobID := range depJobIDs {
+			note, depErr := downloadDependencyArtifacts(runCtx, client, serverURL, depJobID, execDir)
+			if note != "" {
+				output.WriteString(note)
+				if !strings.HasSuffix(note, "\n") {
+					output.WriteString("\n")
+				}
+			}
+			if depErr != nil {
+				exitCode := exitCodeFromErr(depErr)
+				failMsg := "dependency artifact download failed: " + depErr.Error()
+				trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+				if reportErr := reportFailure(ctx, client, serverURL, agentID, job, exitCode, failMsg, trimmedOutput); reportErr != nil {
+					return reportErr
+				}
+				slog.Error("job failed during dependency artifact download", "job_execution_id", job.ID, "error", failMsg)
+				return nil
+			}
+		}
+	}
 	cacheEnv, cacheLogs := resolveJobCacheEnv(workDir, execDir, job, agentCapabilities)
 	for _, line := range cacheLogs {
 		fmt.Fprintf(&output, "[cache] %s\n", line)

@@ -84,7 +84,6 @@ pipelines:
         requires:
           tools:
             git: "*"
-            go: ">=1.24"
             gh: "*"
         timeout_seconds: 1200
         steps:
@@ -102,11 +101,6 @@ pipelines:
                 echo "working tree is not clean"
                 exit 1
               fi
-          - run: mkdir -p dist
-          - run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-linux-amd64 ./cmd/ciwi
-          - run: GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-darwin-amd64 ./cmd/ciwi
-          - run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-darwin-arm64 ./cmd/ciwi
-          - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-windows-amd64.exe ./cmd/ciwi
           - run: |
               TAG="${CIWI_PIPELINE_TAG}"
               if git rev-parse "$TAG" >/dev/null 2>&1; then

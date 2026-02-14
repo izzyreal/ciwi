@@ -182,6 +182,13 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				env["CIWI_PIPELINE_SOURCE_REF_RAW"] = strings.TrimSpace(p.SourceRef)
 			}
 			env["CIWI_PIPELINE_SOURCE_REPO"] = p.SourceRepo
+			depJobID := resolveDependencyArtifactJobID(p.DependsOn, depCtx.ArtifactJobIDs, pj.ID, vars)
+			if depJobID != "" {
+				env["CIWI_DEP_ARTIFACT_JOB_ID"] = depJobID
+			}
+			if depJobIDs := resolveDependencyArtifactJobIDs(p.DependsOn, depCtx.ArtifactJobIDsAll, depJobID); len(depJobIDs) > 0 {
+				env["CIWI_DEP_ARTIFACT_JOB_IDS"] = strings.Join(depJobIDs, ",")
+			}
 
 			requiredCaps := cloneMap(pj.RunsOn)
 			for tool, constraint := range pj.RequiresTools {
@@ -280,6 +287,72 @@ func cloneProtocolJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec 
 			TTLDays:     c.TTLDays,
 			MaxSizeMB:   c.MaxSizeMB,
 		})
+	}
+	return out
+}
+
+func resolveDependencyArtifactJobID(dependsOn []string, depArtifactJobIDs map[string]string, jobID string, vars map[string]string) string {
+	if len(dependsOn) == 0 || len(depArtifactJobIDs) == 0 {
+		return ""
+	}
+	candidates := []string{
+		strings.TrimSpace(vars["name"]),
+		strings.TrimSpace(vars["build_target"]),
+		strings.TrimSpace(jobID),
+	}
+	if strings.HasPrefix(jobID, "release-") {
+		candidates = append(candidates, strings.TrimSpace(strings.TrimPrefix(jobID, "release-")))
+	}
+	for _, depID := range dependsOn {
+		depID = strings.TrimSpace(depID)
+		if depID == "" {
+			continue
+		}
+		for _, c := range candidates {
+			c = strings.TrimSpace(c)
+			if c == "" {
+				continue
+			}
+			if v := strings.TrimSpace(depArtifactJobIDs[depID+":"+c]); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+func resolveDependencyArtifactJobIDs(dependsOn []string, depArtifactJobIDsAll map[string][]string, preferred string) []string {
+	if len(dependsOn) == 0 || len(depArtifactJobIDsAll) == 0 {
+		if strings.TrimSpace(preferred) == "" {
+			return nil
+		}
+		return []string{strings.TrimSpace(preferred)}
+	}
+	out := make([]string, 0)
+	seen := map[string]struct{}{}
+	if p := strings.TrimSpace(preferred); p != "" {
+		out = append(out, p)
+		seen[p] = struct{}{}
+	}
+	for _, depID := range dependsOn {
+		depID = strings.TrimSpace(depID)
+		if depID == "" {
+			continue
+		}
+		for _, id := range depArtifactJobIDsAll[depID] {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			out = append(out, id)
+			seen[id] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

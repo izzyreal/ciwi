@@ -55,6 +55,49 @@ func (s *stateStore) checkPipelineDependenciesWithReporter(p store.PersistedPipe
 			}
 			out.SourceRefResolved = ctx.SourceRefResolved
 		}
+		if len(ctx.ArtifactJobIDs) > 0 {
+			if out.ArtifactJobIDs == nil {
+				out.ArtifactJobIDs = map[string]string{}
+			}
+			for k, v := range ctx.ArtifactJobIDs {
+				key := depID + ":" + strings.TrimSpace(k)
+				if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+					continue
+				}
+				out.ArtifactJobIDs[key] = strings.TrimSpace(v)
+			}
+		}
+		if len(ctx.ArtifactJobIDsAll) > 0 {
+			if out.ArtifactJobIDsAll == nil {
+				out.ArtifactJobIDsAll = map[string][]string{}
+			}
+			for ctxDepID, ids := range ctx.ArtifactJobIDsAll {
+				targetDepID := strings.TrimSpace(ctxDepID)
+				if targetDepID == "" {
+					targetDepID = depID
+				}
+				existing := out.ArtifactJobIDsAll[targetDepID]
+				seen := map[string]struct{}{}
+				for _, v := range existing {
+					if strings.TrimSpace(v) == "" {
+						continue
+					}
+					seen[strings.TrimSpace(v)] = struct{}{}
+				}
+				for _, v := range ids {
+					v = strings.TrimSpace(v)
+					if v == "" {
+						continue
+					}
+					if _, ok := seen[v]; ok {
+						continue
+					}
+					existing = append(existing, v)
+					seen[v] = struct{}{}
+				}
+				out.ArtifactJobIDsAll[targetDepID] = existing
+			}
+		}
 	}
 	if report != nil {
 		if out.Version != "" {
@@ -75,6 +118,7 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 		lastCreated time.Time
 		statuses    []string
 		metadata    map[string]string
+		jobs        []protocol.JobExecution
 	}
 	byRun := map[string]runState{}
 	for _, j := range jobs {
@@ -93,6 +137,7 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 			st.lastCreated = j.CreatedUTC
 		}
 		st.statuses = append(st.statuses, protocol.NormalizeJobExecutionStatus(j.Status))
+		st.jobs = append(st.jobs, j)
 		if st.metadata == nil {
 			st.metadata = map[string]string{}
 		}
@@ -125,9 +170,38 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 		}
 	}
 	meta := byRun[latestRunID].metadata
+	artifactJobIDs := map[string]string{}
+	artifactJobIDsAll := make([]string, 0)
+	artifactJobSeen := map[string]struct{}{}
+	for _, j := range byRun[latestRunID].jobs {
+		jobID := strings.TrimSpace(j.ID)
+		if jobID == "" {
+			continue
+		}
+		if len(j.ArtifactGlobs) > 0 {
+			if _, exists := artifactJobSeen[jobID]; !exists {
+				artifactJobIDsAll = append(artifactJobIDsAll, jobID)
+				artifactJobSeen[jobID] = struct{}{}
+			}
+		}
+		for _, key := range []string{
+			strings.TrimSpace(j.Metadata["build_target"]),
+			strings.TrimSpace(j.Metadata["matrix_name"]),
+			strings.TrimSpace(j.Metadata["pipeline_job_id"]),
+		} {
+			if key == "" {
+				continue
+			}
+			if _, exists := artifactJobIDs[key]; !exists {
+				artifactJobIDs[key] = jobID
+			}
+		}
+	}
 	return pipelineDependencyContext{
 		VersionRaw:        strings.TrimSpace(meta["pipeline_version_raw"]),
 		Version:           strings.TrimSpace(meta["pipeline_version"]),
 		SourceRefResolved: strings.TrimSpace(meta["pipeline_source_ref_resolved"]),
+		ArtifactJobIDs:    artifactJobIDs,
+		ArtifactJobIDsAll: map[string][]string{pipelineID: artifactJobIDsAll},
 	}, nil
 }

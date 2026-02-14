@@ -18,6 +18,8 @@ type pipelineDependencyContext struct {
 	VersionRaw        string
 	Version           string
 	SourceRefResolved string
+	ArtifactJobIDs    map[string]string
+	ArtifactJobIDsAll map[string][]string
 }
 
 type pipelineRunContext struct {
