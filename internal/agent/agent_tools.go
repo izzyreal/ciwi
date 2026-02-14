@@ -22,6 +22,9 @@ func detectAgentCapabilities() map[string]string {
 		"os":       runtime.GOOS,
 		"arch":     runtime.GOARCH,
 	}
+	if hasXorgDev() {
+		caps["xorg-dev"] = "1"
+	}
 	for tool, version := range detectToolVersions() {
 		if strings.TrimSpace(version) == "" {
 			continue
@@ -29,6 +32,25 @@ func detectAgentCapabilities() map[string]string {
 		caps["tool."+tool] = version
 	}
 	return caps
+}
+
+func hasXorgDev() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	if _, err := exec.LookPath("pkg-config"); err != nil {
+		return false
+	}
+	modules := []string{"x11", "xext", "xrandr", "xi", "xcursor", "xinerama", "xfixes", "xscrnsaver"}
+	for _, module := range modules {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := exec.CommandContext(ctx, "pkg-config", "--exists", module).Run()
+		cancel()
+		if err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func detectToolVersions() map[string]string {

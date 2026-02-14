@@ -155,10 +155,12 @@ const projectHTML = `<!doctype html>
           jb.className = 'jobbox';
           const runsOn = Object.entries(j.runs_on || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
           const requiresTools = Object.entries(j.requires_tools || {}).map(kv => kv[0] + '=' + (kv[1] || '*')).join(', ');
+          const requiresCaps = Object.entries(j.requires_capabilities || {}).map(kv => kv[0] + '=' + (kv[1] || '*')).join(', ');
           jb.innerHTML =
             '<div><strong>Job: ' + escapeHtml(j.id || '') + '</strong> <span class="muted">timeout=' + (j.timeout_seconds || 0) + 's</span></div>' +
             '<div class="muted">runs_on: ' + escapeHtml(runsOn) + '</div>' +
-            '<div class="muted">requires.tools: ' + escapeHtml(requiresTools) + '</div>';
+            '<div class="muted">requires.tools: ' + escapeHtml(requiresTools) + '</div>' +
+            '<div class="muted">requires.capabilities: ' + escapeHtml(requiresCaps) + '</div>';
 
           const matrixList = document.createElement('div');
           matrixList.className = 'matrix-list';

@@ -42,6 +42,7 @@ type PersistedPipelineJob struct {
 	ID             string
 	RunsOn         map[string]string
 	RequiresTools  map[string]string
+	RequiresCaps   map[string]string
 	TimeoutSeconds int
 	Artifacts      []string
 	Caches         []config.PipelineJobCacheSpec
@@ -135,6 +136,7 @@ func (s *Store) migrate() error {
 			position INTEGER NOT NULL,
 			runs_on_json TEXT NOT NULL,
 			requires_tools_json TEXT NOT NULL DEFAULT '{}',
+			requires_capabilities_json TEXT NOT NULL DEFAULT '{}',
 			timeout_seconds INTEGER NOT NULL,
 			artifacts_json TEXT NOT NULL DEFAULT '[]',
 			caches_json TEXT NOT NULL DEFAULT '[]',
@@ -230,6 +232,9 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("pipeline_jobs", "requires_tools_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
 		return err
 	}
+	if err := s.addColumnIfMissing("pipeline_jobs", "requires_capabilities_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
 	if err := s.addColumnIfMissing("pipelines", "depends_on_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
@@ -292,15 +297,16 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 		for i, j := range p.Jobs {
 			runsOnJSON, _ := json.Marshal(j.RunsOn)
 			requiresToolsJSON, _ := json.Marshal(j.Requires.Tools)
+			requiresCapsJSON, _ := json.Marshal(j.Requires.Capabilities)
 			artifactsJSON, _ := json.Marshal(j.Artifacts)
 			cachesJSON, _ := json.Marshal(j.Caches)
 			matrixJSON, _ := json.Marshal(j.Matrix.Include)
 			stepsJSON, _ := json.Marshal(j.Steps)
 
 			if _, err := tx.Exec(`
-				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, runs_on_json, requires_tools_json, timeout_seconds, artifacts_json, caches_json, matrix_json, steps_json)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, pipelineDBID, j.ID, i, string(runsOnJSON), string(requiresToolsJSON), j.TimeoutSeconds, string(artifactsJSON), string(cachesJSON), string(matrixJSON), string(stepsJSON)); err != nil {
+				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, runs_on_json, requires_tools_json, requires_capabilities_json, timeout_seconds, artifacts_json, caches_json, matrix_json, steps_json)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, pipelineDBID, j.ID, i, string(runsOnJSON), string(requiresToolsJSON), string(requiresCapsJSON), j.TimeoutSeconds, string(artifactsJSON), string(cachesJSON), string(matrixJSON), string(stepsJSON)); err != nil {
 				return fmt.Errorf("insert pipeline job: %w", err)
 			}
 		}
