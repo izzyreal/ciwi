@@ -96,6 +96,36 @@ Constraint syntax supports:
 
 From `/agents`, use **Refresh Tools** to request an on-demand re-scan on an agent.
 
+## Job History actions
+
+UI actions map to these server behaviors:
+- **Run Again** clones an existing job execution into a new queued job with the same script, env, capabilities, source repo/ref metadata and step plan.
+- **Run Again** does not resolve branch HEAD again; it reuses the original job execution's resolved source context.
+- **Flush History** deletes job executions whose status is not `queued`, `leased`, or `running`.
+- **Flush History** removes execution logs/status payloads in sqlite for flushed jobs.
+- **Flush History** does not remove artifact files from disk (`CIWI_ARTIFACTS_DIR`); it is history cleanup, not artifact GC.
+
+## FetchContent cache usage
+
+ciwi cache entries are generic directory caches. ciwi does not implement CMake FetchContent semantics.
+
+- `caches[].env` points to a directory path exported to the job environment.
+- If you use `FETCHCONTENT_BASE_DIR`, ciwi restores/saves that directory as-is.
+- For CMake projects this can include path-sensitive subbuild/cache files, not only downloaded sources.
+- For cross-job reuse with fewer path conflicts, prefer project-level CMake wiring of `FETCHCONTENT_SOURCE_DIR_<DEP>` and keep build/subbuild dirs job-local.
+
+## Project icon auto-discovery
+
+When importing/reloading a git project, ciwi tries to auto-discover and store one project icon:
+
+- scans files from `FETCH_HEAD` and keeps candidates whose basename contains `icon` or `logo`
+- supports `.png`, `.jpg`, `.jpeg`, `.bmp`
+- size guard: `>0` and `<=500KB`
+- ranking: larger file first, then shallower path depth, then path lexicographically
+- validates bytes via MIME detection and stores `image/png`, `image/jpeg`, or `image/bmp`
+
+Stored icon is served at `/api/v1/projects/{projectId}/icon` and shown in project/job UI when present.
+
 # Automated installation scripts
 
 ## macOS agent installer (LaunchAgent)
@@ -336,7 +366,8 @@ sudo journalctl -u ciwi-agent -f
 - `GET /api/v1/jobs/{id}` returns one job execution
 - `DELETE /api/v1/jobs/{id}` removes a queued/leased job execution
 - `POST /api/v1/jobs/clear-queue` removes all queued/leased job executions
-- `POST /api/v1/jobs/flush-history` removes all finished job executions from history
+- `POST /api/v1/jobs/flush-history` removes non-active job executions from history (`status` not in `queued`,`leased`,`running`)
+- `POST /api/v1/jobs/{id}/rerun` clones an existing started job execution into a new queued job
 - `POST /api/v1/jobs/{id}/status` updates job execution status (`running`, `succeeded`, `failed`)
 - `GET /api/v1/jobs/{id}/artifacts` lists uploaded artifacts for a job execution
 - `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job execution (agent use)
@@ -489,5 +520,4 @@ curl -s http://127.0.0.1:8112/api/v1/jobs
 <img width="1089" height="715" alt="image" src="https://github.com/user-attachments/assets/f0c9f1ab-5a5b-44b9-9207-c7fb295b09a0" />
 <img width="1095" height="699" alt="image" src="https://github.com/user-attachments/assets/1515fc10-466f-478e-bc3a-b2669e612c90" />
 <img width="1096" height="710" alt="image" src="https://github.com/user-attachments/assets/c4d6ccda-bc09-4645-8372-e80fd02290f4" />
-
 
