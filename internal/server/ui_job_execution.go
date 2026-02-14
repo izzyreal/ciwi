@@ -213,12 +213,26 @@ const jobExecutionHTML = `<!doctype html>
       return '';
     }
 
-    function highlightInline(rawLine) {
-      let out = escapeHtml(rawLine);
+    function highlightTextTokens(rawText) {
+      let out = escapeHtml(rawText);
       out = out.replace(/\b(v\d+\.\d+\.\d+)\b/g, '<span class="tok-version">$1</span>');
       out = out.replace(/\b([0-9a-fA-F]{7,40})\b/g, '<span class="tok-sha">$1</span>');
       out = out.replace(/\bduration=([0-9]+(?:\.[0-9]+)?s)\b/g, 'duration=<span class="tok-duration">$1</span>');
-      out = out.replace(/(https:\/\/[^\s"']+)/g, '<span class="tok-url">$1</span>');
+      return out;
+    }
+
+    function highlightInline(rawLine) {
+      const src = String(rawLine || '');
+      const urlRE = /https:\/\/[^\s"']+/g;
+      let out = '';
+      let last = 0;
+      let match;
+      while ((match = urlRE.exec(src)) !== null) {
+        out += highlightTextTokens(src.slice(last, match.index));
+        out += '<span class="tok-url">' + escapeHtml(match[0]) + '</span>';
+        last = match.index + match[0].length;
+      }
+      out += highlightTextTokens(src.slice(last));
       return out;
     }
 
