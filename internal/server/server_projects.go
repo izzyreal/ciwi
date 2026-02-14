@@ -87,13 +87,13 @@ func (s *stateStore) importProjectHandler(w http.ResponseWriter, r *http.Request
 	importCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 
-	cfgContent, err := serverproject.FetchConfigFileFromRepo(importCtx, tmpDir, req.RepoURL, req.RepoRef, req.ConfigFile)
+	fetchRes, err := serverproject.FetchConfigAndIconFromRepo(importCtx, tmpDir, req.RepoURL, req.RepoRef, req.ConfigFile)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	resp, err := s.persistImportedProject(req, cfgContent)
+	resp, err := s.persistImportedProject(req, fetchRes.ConfigContent, fetchRes.IconContentType, fetchRes.IconContentBytes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -133,6 +133,20 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	switch parts[1] {
+	case "icon":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		icon, ok := s.getProjectIcon(projectID)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", icon.ContentType)
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(icon.Data)
+		return
 	case "reload":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -163,7 +177,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		reloadCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 		defer cancel()
 
-		cfgContent, err := serverproject.FetchConfigFileFromRepo(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
+		fetchRes, err := serverproject.FetchConfigAndIconFromRepo(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -173,7 +187,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			RepoURL:    project.RepoURL,
 			RepoRef:    project.RepoRef,
 			ConfigFile: configFile,
-		}, cfgContent)
+		}, fetchRes.ConfigContent, fetchRes.IconContentType, fetchRes.IconContentBytes)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -202,7 +216,7 @@ func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, projectListViewResponse{Projects: projects})
 }
 
-func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent string) (protocol.ImportProjectResponse, error) {
+func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent, iconContentType string, iconContent []byte) (protocol.ImportProjectResponse, error) {
 	cfg, err := config.Parse([]byte(cfgContent), req.ConfigFile)
 	if err != nil {
 		return protocol.ImportProjectResponse{}, err
@@ -223,6 +237,9 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	}
 	if err := s.projectStore().LoadConfig(cfg, configPath, req.RepoURL, req.RepoRef, req.ConfigFile); err != nil {
 		return protocol.ImportProjectResponse{}, err
+	}
+	if project, err := s.projectStore().GetProjectByName(cfg.Project.Name); err == nil {
+		s.setProjectIcon(project.ID, iconContentType, iconContent)
 	}
 
 	return protocol.ImportProjectResponse{

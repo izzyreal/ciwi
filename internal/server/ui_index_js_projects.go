@@ -10,6 +10,8 @@ const uiIndexProjectsJS = `
       }
       root.innerHTML = '';
       data.projects.forEach(project => {
+        const projectIconURL = '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon';
+        projectIconURLByName[String(project.name || '').trim()] = projectIconURL;
         const projectKey = String(project.id || project.name || '');
         const details = document.createElement('details');
         details.className = 'project-group';
@@ -32,6 +34,18 @@ const uiIndexProjectsJS = `
 
         const body = document.createElement('div');
         body.className = 'project-body';
+        const layout = document.createElement('div');
+        layout.className = 'project-body-layout';
+        const iconCol = document.createElement('div');
+        iconCol.className = 'project-icon-col';
+        const icon = document.createElement('img');
+        icon.className = 'project-icon';
+        icon.alt = '';
+        icon.src = projectIconURL;
+        icon.onerror = () => { icon.style.display = 'none'; };
+        iconCol.appendChild(icon);
+        const listCol = document.createElement('div');
+        listCol.className = 'project-pipelines-col';
         (project.pipelines || []).forEach(p => {
           const row = document.createElement('div');
           row.className = 'pipeline';
@@ -88,7 +102,7 @@ const uiIndexProjectsJS = `
           btnRow.appendChild(resolveBtn);
           actions.appendChild(btnRow);
           row.appendChild(actions);
-          body.appendChild(row);
+          listCol.appendChild(row);
         });
 
         (project.pipeline_chains || []).forEach(c => {
@@ -150,9 +164,12 @@ const uiIndexProjectsJS = `
           actions.appendChild(btnRow);
           row.appendChild(info);
           row.appendChild(actions);
-          body.appendChild(row);
+          listCol.appendChild(row);
         });
 
+        layout.appendChild(iconCol);
+        layout.appendChild(listCol);
+        body.appendChild(layout);
         details.appendChild(body);
         details.addEventListener('toggle', () => {
           if (details.open) {

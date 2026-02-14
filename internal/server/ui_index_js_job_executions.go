@@ -297,6 +297,7 @@ const uiIndexJobExecutionsJS = `
         fixedLines: 2,
         backPath: window.location.pathname || '/',
         linkClass: 'job-link',
+        projectIconURL: projectIconURLForJob,
         onRemove: async (j) => {
           try {
             await apiJSON('/api/v1/jobs/' + j.id, { method: 'DELETE' });
@@ -311,7 +312,8 @@ const uiIndexJobExecutionsJS = `
         includeReason: true,
         fixedLines: 2,
         backPath: window.location.pathname || '/',
-        linkClass: 'job-link'
+        linkClass: 'job-link',
+        projectIconURL: projectIconURLForJob
       };
 
       const [queuedJobs, historyJobs] = await Promise.all([

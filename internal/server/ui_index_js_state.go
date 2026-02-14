@@ -31,4 +31,16 @@ const uiIndexStateJS = `
     const expandedJobGroups = loadStringSet(JOB_GROUPS_STORAGE_KEY);
     const JOBS_WINDOW = 150;
     const JOBS_BATCH_SIZE = 5;
+    const projectIconURLByName = Object.create(null);
+
+    function projectIconURLForJob(job) {
+      const m = (job && job.metadata) || {};
+      const projectID = String(m.project_id || '').trim();
+      if (projectID) {
+        return '/api/v1/projects/' + encodeURIComponent(projectID) + '/icon';
+      }
+      const projectName = String(m.project || '').trim();
+      if (!projectName) return '';
+      return String(projectIconURLByName[projectName] || '');
+    }
 `

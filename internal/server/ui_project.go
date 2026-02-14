@@ -24,12 +24,21 @@ const projectHTML = `<!doctype html>
     .jobbox { margin: 8px 0 0 8px; padding: 8px; border-left: 2px solid var(--line); }
     .matrix-list { display:flex; flex-wrap:wrap; gap:6px; margin-top: 6px; }
     .matrix-item { border:1px solid var(--line); border-radius:8px; padding:6px; background:#fbfefd; }
+    .project-header-icon {
+      width: 100px;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #f7fcf9;
+    }
   </style>
 </head>
 <body>
   <main>
     <div class="card top">
       <div class="brand">
+        <img id="projectIcon" class="project-header-icon" alt="" style="display:none;" />
         <img src="/ciwi-logo.png" alt="ciwi logo" />
         <div>
           <div id="title" style="font-size:22px;font-weight:700;">Project</div>
@@ -91,6 +100,10 @@ const projectHTML = `<!doctype html>
       document.getElementById('subtitle').innerHTML =
         '<span class="pill">' + escapeHtml(p.repo_url || '') + '</span> ' +
         '<span class="pill">' + escapeHtml(p.config_file || '') + '</span>';
+      const icon = document.getElementById('projectIcon');
+      icon.src = '/api/v1/projects/' + encodeURIComponent(String(p.id || '')) + '/icon';
+      icon.onload = () => { icon.style.display = 'inline-block'; };
+      icon.onerror = () => { icon.style.display = 'none'; };
 
       const structure = document.getElementById('structure');
       if (!p.pipelines || p.pipelines.length === 0) {

@@ -25,6 +25,7 @@ function buildJobExecutionRow(job, opts = {}) {
   const backPath = opts.backPath || (window.location.pathname || '/');
   const onRemove = opts.onRemove || null;
   const linkClass = opts.linkClass || '';
+  const projectIconURLFn = (typeof opts.projectIconURL === 'function') ? opts.projectIconURL : null;
 
   const tr = document.createElement('tr');
   if (fixedLines > 0) {
@@ -39,9 +40,13 @@ function buildJobExecutionRow(job, opts = {}) {
     return '<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '">' + text + '</span>';
   };
   const linkClasses = fixedLines > 0 ? ((linkClass ? linkClass + ' ' : '') + 'ciwi-job-cell-link') : linkClass;
+  const iconURL = projectIconURLFn ? String(projectIconURLFn(job) || '').trim() : '';
+  const iconHTML = iconURL
+    ? '<img class="ciwi-project-mini-icon" src="' + escapeHtml(iconURL) + '" alt="" onerror="this.style.display=\\'none\\'" />'
+    : '';
 
   tr.innerHTML =
-    '<td><a class="' + linkClasses + '" href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + cellText(description) + '</a></td>' +
+    '<td><span class="ciwi-job-desc">' + iconHTML + '<a class="' + linkClasses + '" href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + cellText(description) + '</a></span></td>' +
     '<td class="' + statusClass(job.status) + '">' + cellText(formatJobStatus(job)) + '</td>' +
     '<td>' + cellText(pipeline) + '</td>' +
     '<td>' + cellText(buildVersionLabel(job)) + '</td>' +

@@ -44,10 +44,16 @@ type stateStore struct {
 	agentUpdates     map[string]string
 	agentToolRefresh map[string]bool
 	agentRollout     agentUpdateRolloutState
+	projectIcons     map[int64]projectIconState
 	db               *store.Store
 	artifactsDir     string
 	vaultTokens      *servervault.TokenCache
 	update           updateState
+}
+
+type projectIconState struct {
+	ContentType string
+	Data        []byte
 }
 
 func Run(ctx context.Context) error {
@@ -72,6 +78,7 @@ func Run(ctx context.Context) error {
 		agentRollout: agentUpdateRolloutState{
 			Slots: make(map[string]int),
 		},
+		projectIcons: make(map[int64]projectIconState),
 		db:           db,
 		artifactsDir: artifactsDir,
 		vaultTokens:  servervault.NewTokenCache(),

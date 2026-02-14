@@ -159,6 +159,7 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			}
 			metadata := map[string]string{
 				"project":            p.ProjectName,
+				"project_id":         strconv.FormatInt(p.ProjectID, 10),
 				"pipeline_id":        p.PipelineID,
 				"pipeline_run_id":    runID,
 				"pipeline_job_id":    pj.ID,

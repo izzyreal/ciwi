@@ -47,6 +47,27 @@ const uiIndexCSS = `
       padding: 8px 12px 10px;
       border-top: 1px solid var(--line);
     }
+    .project-body-layout {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .project-icon-col {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 72px;
+    }
+    .project-icon {
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #f7fcf9;
+    }
+    .project-pipelines-col { min-width: 0; }
     .pipeline { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; }
     .pipeline-actions { display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
@@ -110,6 +131,21 @@ const uiIndexCSS = `
     }
     .ciwi-job-group-emoji { font-size: 15px; line-height: 1; }
     .ciwi-job-group-status { font-size: 12px; white-space: nowrap; flex: 0 0 auto; }
+    .ciwi-job-desc {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .ciwi-project-mini-icon {
+      width: 16px;
+      height: 16px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      flex: 0 0 auto;
+      background: #f7fcf9;
+    }
     .ciwi-job-group-table { width: 100%; border-collapse: collapse; }
     .ciwi-job-group-card {
       margin: 0;
@@ -141,5 +177,10 @@ const uiIndexCSS = `
       gap: 8px;
     }
     a.job-link { color: var(--accent); }
-    @media (max-width: 760px) { table { font-size: 12px; } }
+    @media (max-width: 760px) {
+      table { font-size: 12px; }
+      .project-body-layout { grid-template-columns: 1fr; }
+      .project-icon-col { justify-content: flex-start; }
+      .project-icon { width: 56px; height: 56px; }
+    }
 `

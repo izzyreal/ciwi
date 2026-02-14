@@ -98,12 +98,21 @@ const jobExecutionHTML = `<!doctype html>
       background: #f7f2e8;
       color: #614f2c;
     }
+    .job-header-icon {
+      width: 100px;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #f7fcf9;
+    }
   </style>
 </head>
 <body>
   <main>
     <div class="card top">
       <div class="brand">
+        <img id="jobProjectIcon" class="job-header-icon" alt="" style="display:none;" />
         <img src="/ciwi-logo.png" alt="ciwi logo" />
         <div>
           <div style="font-size:20px;font-weight:700;" id="jobTitle">Job Execution</div>
@@ -151,6 +160,7 @@ const jobExecutionHTML = `<!doctype html>
     let lastOutputRaw = '';
     let tailingEnabled = true;
     let suppressLogScrollEvent = false;
+    let projectIDByNameCache = null;
     const refreshGuard = createRefreshGuard(5000);
 
     function jobExecutionIdFromPath() {
@@ -202,6 +212,39 @@ const jobExecutionHTML = `<!doctype html>
       }
       link.href = '/';
       link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
+    }
+
+    async function resolveProjectIDByName(projectName) {
+      const name = String(projectName || '').trim();
+      if (!name) return '';
+      if (!projectIDByNameCache) {
+        projectIDByNameCache = Object.create(null);
+        try {
+          const data = await apiJSON('/api/v1/projects');
+          (data.projects || []).forEach(p => {
+            const n = String((p && p.name) || '').trim();
+            const id = String((p && p.id) || '').trim();
+            if (n && id) projectIDByNameCache[n] = id;
+          });
+        } catch (_) {}
+      }
+      return String(projectIDByNameCache[name] || '');
+    }
+
+    async function renderProjectIcon(projectID, projectName) {
+      const icon = document.getElementById('jobProjectIcon');
+      if (!icon) return;
+      let id = String(projectID || '').trim();
+      if (!id) {
+        id = await resolveProjectIDByName(projectName);
+      }
+      if (!id) {
+        icon.style.display = 'none';
+        return;
+      }
+      icon.src = '/api/v1/projects/' + encodeURIComponent(id) + '/icon';
+      icon.onload = () => { icon.style.display = 'inline-block'; };
+      icon.onerror = () => { icon.style.display = 'none'; };
     }
 
     function classifyLine(rawLine) {
@@ -388,6 +431,7 @@ const jobExecutionHTML = `<!doctype html>
         const desc = jobDescription(job);
         const metaSource = (job && job.metadata) || {};
         const projectName = String(metaSource.project || '').trim();
+        const projectID = String(metaSource.project_id || '').trim();
         const pipelineJobID = String(metaSource.pipeline_job_id || '').trim();
         const matrixName = String(metaSource.matrix_name || '').trim();
         let title = pipelineJobID || desc;
@@ -398,6 +442,7 @@ const jobExecutionHTML = `<!doctype html>
           title = projectName + ' / ' + title;
         }
         document.getElementById('jobTitle').textContent = title;
+        await renderProjectIcon(projectID, projectName);
 
         const pipeline = String(metaSource.pipeline_id || '').trim();
         const buildVersion = buildVersionLabel(job);
