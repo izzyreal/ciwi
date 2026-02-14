@@ -63,6 +63,10 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
+	hasActiveJob := false
+	if active, err := s.agentJobExecutionStore().AgentHasActiveJobExecution(hb.AgentID); err == nil {
+		hasActiveJob = active
+	}
 	s.mu.Lock()
 	prev := s.agents[hb.AgentID]
 	refreshTools := s.agentToolRefresh[hb.AgentID]
@@ -132,12 +136,18 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 				updateAttemptFailureReason = reportedUpdateFailure
 			} else if prev.UpdateLastRequestUTC.IsZero() || !now.Before(prev.UpdateLastRequestUTC.Add(agentUpdateInProgressGrace)) {
 				prev.UpdateInProgress = false
-				prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
-				updateAttemptFailed = true
+				// If the agent is still busy with a job, treat stale in-progress as deferred
+				// instead of failed so we don't enter unnecessary backoff loops.
+				if hasActiveJob {
+					prev.UpdateNextRetryUTC = time.Time{}
+				} else {
+					prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
+					updateAttemptFailed = true
+				}
 			}
 		}
 
-		if !prev.UpdateInProgress && (prev.UpdateNextRetryUTC.IsZero() || !now.Before(prev.UpdateNextRetryUTC)) {
+		if !hasActiveJob && !prev.UpdateInProgress && (prev.UpdateNextRetryUTC.IsZero() || !now.Before(prev.UpdateNextRetryUTC)) {
 			updateRequested = true
 			prev.UpdateAttempts++
 			prev.UpdateInProgress = true

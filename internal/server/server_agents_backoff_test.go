@@ -494,3 +494,71 @@ func TestHeartbeatManualUpdateOverridesExistingAutomaticSchedule(t *testing.T) {
 		t.Fatalf("expected no backoff schedule while overridden manual update is in progress")
 	}
 }
+
+func TestHeartbeatStaleInProgressWhileAgentBusyDoesNotBackoff(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	s := newAgentUpdateTestStateStore(t)
+	if err := s.setAgentUpdateTarget("v1.2.0"); err != nil {
+		t.Fatalf("set agent update target: %v", err)
+	}
+
+	job, err := s.agentJobExecutionStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:               "echo busy",
+		RequiredCapabilities: map[string]string{"agent_id": "agent-busy"},
+		TimeoutSeconds:       60,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	leased, err := s.agentJobExecutionStore().LeaseJobExecution("agent-busy", map[string]string{"agent_id": "agent-busy"})
+	if err != nil {
+		t.Fatalf("lease job: %v", err)
+	}
+	if leased == nil || leased.ID != job.ID {
+		t.Fatalf("expected leased job %q", job.ID)
+	}
+
+	s.mu.Lock()
+	s.agents["agent-busy"] = agentState{
+		Hostname:             "host-b",
+		OS:                   "linux",
+		Arch:                 "amd64",
+		Version:              "v1.1.0",
+		Capabilities:         map[string]string{"executor": "script", "shells": "posix"},
+		UpdateTarget:         "v1.2.0",
+		UpdateSource:         updateSourceAutomatic,
+		UpdateAttempts:       1,
+		UpdateInProgress:     true,
+		UpdateLastRequestUTC: time.Now().UTC().Add(-agentUpdateInProgressGrace - time.Second),
+	}
+	s.mu.Unlock()
+
+	resp := heartbeatForTest(t, s, protocol.HeartbeatRequest{
+		AgentID:      "agent-busy",
+		Hostname:     "host-b",
+		OS:           "linux",
+		Arch:         "amd64",
+		Version:      "v1.1.0",
+		Capabilities: map[string]string{"executor": "script", "shells": "posix"},
+		TimestampUTC: time.Now().UTC(),
+	})
+	if resp.UpdateRequested {
+		t.Fatalf("expected no update dispatch while agent has active job")
+	}
+
+	s.mu.Lock()
+	state := s.agents["agent-busy"]
+	s.mu.Unlock()
+	if state.UpdateInProgress {
+		t.Fatalf("expected stale in-progress state to clear while busy")
+	}
+	if !state.UpdateNextRetryUTC.IsZero() {
+		t.Fatalf("expected no backoff schedule while agent remains busy, got %s", state.UpdateNextRetryUTC)
+	}
+	if state.UpdateAttempts != 1 {
+		t.Fatalf("expected attempts to remain unchanged, got %d", state.UpdateAttempts)
+	}
+}
