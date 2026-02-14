@@ -90,9 +90,11 @@ pipelines:
         steps:
           - run: command -v gh >/dev/null 2>&1 || { echo "gh CLI is required"; exit 1; }
           - run: test -n "$GITHUB_TOKEN"
+            skip_dry_run: true
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
           - run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/izzyreal/ciwi.git"
+            skip_dry_run: true
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
           - run: test -f VERSION
