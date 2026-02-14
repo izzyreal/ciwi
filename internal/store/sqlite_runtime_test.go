@@ -418,3 +418,101 @@ func TestIsSQLiteBusyError(t *testing.T) {
 		}
 	}
 }
+
+func TestStoreRequeueStaleLeasedJobExecutions(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:               "echo hi",
+		RequiredCapabilities: map[string]string{"os": "linux"},
+		TimeoutSeconds:       30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	leased, err := s.LeaseJobExecution("agent-a", map[string]string{"os": "linux"})
+	if err != nil {
+		t.Fatalf("lease: %v", err)
+	}
+	if leased == nil || leased.ID != job.ID {
+		t.Fatalf("expected leased job %q", job.ID)
+	}
+
+	staleNow := leased.LeasedUTC.Add(2 * time.Minute)
+	requeued, err := s.RequeueStaleLeasedJobExecutions(staleNow, 30*time.Second)
+	if err != nil {
+		t.Fatalf("requeue stale leased jobs: %v", err)
+	}
+	if requeued != 1 {
+		t.Fatalf("expected 1 requeued job, got %d", requeued)
+	}
+
+	got, err := s.GetJobExecution(job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if got.Status != protocol.JobExecutionStatusQueued {
+		t.Fatalf("expected queued status, got %q", got.Status)
+	}
+	if got.LeasedByAgentID != "" {
+		t.Fatalf("expected lease owner to clear, got %q", got.LeasedByAgentID)
+	}
+}
+
+func TestStoreFailTimedOutRunningJobExecutions(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:               "echo hi",
+		RequiredCapabilities: map[string]string{"os": "linux"},
+		TimeoutSeconds:       5,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	leased, err := s.LeaseJobExecution("agent-a", map[string]string{"os": "linux"})
+	if err != nil {
+		t.Fatalf("lease: %v", err)
+	}
+	if leased == nil || leased.ID != job.ID {
+		t.Fatalf("expected leased job %q", job.ID)
+	}
+
+	startedAt := time.Now().UTC().Add(-20 * time.Second)
+	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:      "agent-a",
+		Status:       protocol.JobExecutionStatusRunning,
+		CurrentStep:  "Checking out source",
+		Output:       "[checkout] repo=example ref=abc",
+		TimestampUTC: startedAt,
+	}); err != nil {
+		t.Fatalf("mark running: %v", err)
+	}
+
+	failed, err := s.FailTimedOutRunningJobExecutions(startedAt.Add(20*time.Second), 2*time.Second, "job timed out while running (server maintenance)")
+	if err != nil {
+		t.Fatalf("fail timed-out running jobs: %v", err)
+	}
+	if failed != 1 {
+		t.Fatalf("expected 1 failed timed-out job, got %d", failed)
+	}
+
+	got, err := s.GetJobExecution(job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if got.Status != protocol.JobExecutionStatusFailed {
+		t.Fatalf("expected failed status, got %q", got.Status)
+	}
+	if got.FinishedUTC.IsZero() {
+		t.Fatalf("expected finished timestamp to be set")
+	}
+	if !strings.Contains(got.Error, "timed out") {
+		t.Fatalf("expected timeout error, got %q", got.Error)
+	}
+	if !strings.Contains(got.Output, "[control] job timed out while running (server maintenance)") {
+		t.Fatalf("expected timeout control marker in output, got %q", got.Output)
+	}
+}

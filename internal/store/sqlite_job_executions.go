@@ -437,6 +437,100 @@ func (s *Store) FlushJobExecutionHistory() (int64, error) {
 	return affected, nil
 }
 
+func (s *Store) RequeueStaleLeasedJobExecutions(now time.Time, maxAge time.Duration) (int64, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if maxAge <= 0 {
+		return 0, fmt.Errorf("maxAge must be > 0")
+	}
+	jobs, err := s.ListJobExecutions()
+	if err != nil {
+		return 0, fmt.Errorf("list jobs: %w", err)
+	}
+	var requeued int64
+	for _, job := range jobs {
+		if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusLeased {
+			continue
+		}
+		if !job.LeasedUTC.IsZero() && now.Sub(job.LeasedUTC) < maxAge {
+			continue
+		}
+		var res sql.Result
+		if err := retrySQLiteBusy(func() error {
+			var execErr error
+			res, execErr = s.db.Exec(`
+				UPDATE job_executions
+				SET status = ?, leased_by_agent_id = '', leased_utc = NULL, current_step_text = ''
+				WHERE id = ? AND status = ?
+			`, protocol.JobExecutionStatusQueued, job.ID, protocol.JobExecutionStatusLeased)
+			return execErr
+		}); err != nil {
+			return requeued, fmt.Errorf("requeue stale leased job %s: %w", job.ID, err)
+		}
+		affected, _ := res.RowsAffected()
+		requeued += affected
+	}
+	return requeued, nil
+}
+
+func (s *Store) FailTimedOutRunningJobExecutions(now time.Time, grace time.Duration, reason string) (int64, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if grace < 0 {
+		grace = 0
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "job timed out while running (server maintenance)"
+	}
+	jobs, err := s.ListJobExecutions()
+	if err != nil {
+		return 0, fmt.Errorf("list jobs: %w", err)
+	}
+	var failed int64
+	for _, job := range jobs {
+		if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusRunning {
+			continue
+		}
+		if job.TimeoutSeconds <= 0 {
+			continue
+		}
+		started := job.StartedUTC
+		if started.IsZero() {
+			continue
+		}
+		deadline := started.Add(time.Duration(job.TimeoutSeconds)*time.Second + grace)
+		if now.Before(deadline) {
+			continue
+		}
+		marker := "[control] " + reason
+		var res sql.Result
+		if err := retrySQLiteBusy(func() error {
+			var execErr error
+			res, execErr = s.db.Exec(`
+				UPDATE job_executions
+				SET status = ?,
+				    finished_utc = ?,
+				    error_text = ?,
+				    current_step_text = '',
+				    output_text = CASE
+				      WHEN TRIM(COALESCE(output_text, '')) = '' THEN ?
+				      ELSE output_text || CHAR(10) || ?
+				    END
+				WHERE id = ? AND status = ?
+			`, protocol.JobExecutionStatusFailed, now.Format(time.RFC3339Nano), reason, marker, marker, job.ID, protocol.JobExecutionStatusRunning)
+			return execErr
+		}); err != nil {
+			return failed, fmt.Errorf("fail timed-out running job %s: %w", job.ID, err)
+		}
+		affected, _ := res.RowsAffected()
+		failed += affected
+	}
+	return failed, nil
+}
+
 func (s *Store) SaveJobExecutionArtifacts(jobID string, artifacts []protocol.JobExecutionArtifact) error {
 	return retrySQLiteBusy(func() error {
 		return s.saveJobExecutionArtifactsOnce(jobID, artifacts)

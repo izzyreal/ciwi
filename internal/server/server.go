@@ -88,6 +88,10 @@ func Run(ctx context.Context) error {
 		s.update.agentTarget = target
 		s.update.mu.Unlock()
 	}
+	if err := s.runJobExecutionMaintenancePass(time.Now().UTC()); err != nil {
+		slog.Error("initial job execution maintenance pass failed", "error", err)
+	}
+	go s.runJobExecutionMaintenanceLoop(ctx)
 	srv := &http.Server{Addr: addr, Handler: buildRouter(s, artifactsDir), ReadHeaderTimeout: 10 * time.Second}
 	stopMDNS := startMDNSAdvertiser(addr)
 	defer stopMDNS()
