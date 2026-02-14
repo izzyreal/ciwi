@@ -71,7 +71,7 @@ Build-time version embedding:
 ## Tool capabilities and requirements
 
 Agents automatically detect common shell tools and report versions in heartbeats:
-- `git`, `go`, `gh`, `cmake`, `gcc`, `clang`, `xcodebuild`, `msvc`, `xorg-dev` (when present)
+- `git`, `go`, `gh`, `cmake`, `ninja`, `gcc`, `clang`, `xcodebuild`, `msvc`, `xorg-dev` (when present)
 
 Use `requires.tools` in pipeline jobs to constrain tool presence/version:
 
@@ -489,7 +489,6 @@ curl -s http://127.0.0.1:8112/api/v1/jobs
 <img width="1089" height="715" alt="image" src="https://github.com/user-attachments/assets/f0c9f1ab-5a5b-44b9-9207-c7fb295b09a0" />
 <img width="1095" height="699" alt="image" src="https://github.com/user-attachments/assets/1515fc10-466f-478e-bc3a-b2669e612c90" />
 <img width="1096" height="710" alt="image" src="https://github.com/user-attachments/assets/c4d6ccda-bc09-4645-8372-e80fd02290f4" />
-
 
 
 

@@ -75,12 +75,14 @@ func TestCapabilitiesMatchToolConstraints(t *testing.T) {
 		"tool.go":    "1.25.7",
 		"tool.git":   "2.44.0",
 		"tool.cmake": "3.28.1",
+		"tool.ninja": "1.12.1",
 	}
 	req := map[string]string{
 		"os":                  "linux",
 		"requires.tool.go":    ">=1.24",
 		"requires.tool.git":   ">=2.30",
 		"requires.tool.cmake": "*",
+		"requires.tool.ninja": "*",
 		"requires.tool.clang": "",
 	}
 	if capabilitiesMatch(agentCaps, req) {
