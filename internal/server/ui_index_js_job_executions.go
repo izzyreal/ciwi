@@ -119,8 +119,14 @@ const uiIndexJobExecutionsJS = `
         out.push(...jobs);
         const nextSignature = jobsSignature(out);
         if (progressive && (!tbodyHasConcreteRows(tbody) || nextSignature !== signature)) {
-          renderGroupedJobs(tbody, out, opts, viewKey, columnCount, emptyText);
-          appendGroupedSkeletonTail(tbody, skeletonGroups, countRenderedGroups(out), viewKey, columnCount);
+          const groups = collectOrderedJobGroups(out);
+          if (!tbodyHasConcreteRows(tbody)) {
+            tbody.innerHTML = '';
+          }
+          const renderedGroups = countConcreteGroupRows(tbody);
+          appendProgressiveGroups(tbody, groups, renderedGroups, opts, viewKey, columnCount);
+          removeSkeletonRows(tbody);
+          appendGroupedSkeletonTail(tbody, skeletonGroups, groups.length, viewKey, columnCount);
           signature = nextSignature;
         }
       }
@@ -217,6 +223,99 @@ const uiIndexJobExecutionsJS = `
       return tr;
     }
 
+    function collectOrderedJobGroups(jobs) {
+      const out = [];
+      if (!Array.isArray(jobs) || jobs.length === 0) return out;
+      const jobsByRun = new Map();
+      jobs.forEach(job => {
+        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
+        if (!runID) return;
+        if (!jobsByRun.has(runID)) jobsByRun.set(runID, []);
+        jobsByRun.get(runID).push(job);
+      });
+
+      const consumed = new Set();
+      jobs.forEach(job => {
+        const jobID = String(job.id || '');
+        if (consumed.has(jobID)) return;
+
+        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
+        const runJobs = runID ? jobsByRun.get(runID) : null;
+        if (!runID || !runJobs || runJobs.length <= 1) {
+          consumed.add(jobID);
+          out.push({
+            kind: 'single',
+            key: 'single:' + jobID,
+            jobs: [job],
+          });
+          return;
+        }
+
+        runJobs.forEach(j => consumed.add(String(j.id || '')));
+        out.push({
+          kind: 'run',
+          key: 'run:' + runID,
+          runID: runID,
+          jobs: runJobs,
+        });
+      });
+      return out;
+    }
+
+    function buildRunGroupRow(group, opts, viewKey, columnCount) {
+      const runJobs = group.jobs || [];
+      const groupTitle = jobGroupLabel(runJobs);
+      const status = summarizeJobGroup(runJobs);
+      const groupKey = viewKey + ':' + String(group.runID || '').trim();
+
+      const tr = document.createElement('tr');
+      tr.className = 'ciwi-job-group-row';
+      tr.dataset.ciwiGroupKey = String(group.key || '');
+      const td = document.createElement('td');
+      td.colSpan = columnCount;
+      const details = document.createElement('details');
+      details.className = 'ciwi-job-group-details';
+      if (expandedJobGroups.has(groupKey)) {
+        details.open = true;
+      }
+      const summary = document.createElement('summary');
+      summary.innerHTML = '<span class="ciwi-job-group-main"><span class="ciwi-job-group-emoji" aria-hidden="true">' + status.emoji +
+        '</span><span class="ciwi-job-group-title">' + escapeHtml(groupTitle) +
+        '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span><span class="ciwi-job-group-toggle" aria-hidden="true"></span>';
+      details.appendChild(summary);
+
+      const innerTable = document.createElement('table');
+      innerTable.className = 'ciwi-job-group-table';
+      const innerBody = document.createElement('tbody');
+      runJobs.forEach(j => {
+        innerBody.appendChild(buildJobExecutionRow(j, opts));
+      });
+      innerTable.appendChild(innerBody);
+      details.appendChild(innerTable);
+      details.addEventListener('toggle', () => {
+        if (details.open) {
+          expandedJobGroups.add(groupKey);
+        } else {
+          expandedJobGroups.delete(groupKey);
+        }
+        saveStringSet(JOB_GROUPS_STORAGE_KEY, expandedJobGroups);
+      });
+
+      td.appendChild(details);
+      tr.appendChild(td);
+      return tr;
+    }
+
+    function buildJobGroupRow(group, opts, viewKey, columnCount) {
+      if (!group || !Array.isArray(group.jobs) || group.jobs.length === 0) return null;
+      if (group.kind === 'run' && group.jobs.length > 1) {
+        return buildRunGroupRow(group, opts, viewKey, columnCount);
+      }
+      const row = buildStaticJobGroupRow(group.jobs[0], opts, columnCount);
+      row.dataset.ciwiGroupKey = String(group.key || '');
+      return row;
+    }
+
     function renderGroupedJobs(tbody, jobs, opts, viewKey, columnCount, emptyText) {
       tbody.innerHTML = '';
       if (!jobs || jobs.length === 0) {
@@ -226,95 +325,15 @@ const uiIndexJobExecutionsJS = `
         tbody.appendChild(tr);
         return;
       }
-      const jobsByRun = new Map();
-      jobs.forEach(job => {
-        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
-        if (!runID) return;
-        if (!jobsByRun.has(runID)) jobsByRun.set(runID, []);
-        jobsByRun.get(runID).push(job);
-      });
-
-      const consumed = new Set();
-      jobs.forEach(job => {
-        const jobID = String(job.id || '');
-        if (consumed.has(jobID)) return;
-
-        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
-        const runJobs = runID ? jobsByRun.get(runID) : null;
-        if (!runID || !runJobs || runJobs.length <= 1) {
-          consumed.add(jobID);
-          tbody.appendChild(buildStaticJobGroupRow(job, opts, columnCount));
-          return;
-        }
-
-        runJobs.forEach(j => consumed.add(String(j.id || '')));
-        const groupTitle = jobGroupLabel(runJobs);
-        const status = summarizeJobGroup(runJobs);
-        const groupKey = viewKey + ':' + runID;
-
-        const tr = document.createElement('tr');
-        tr.className = 'ciwi-job-group-row';
-        const td = document.createElement('td');
-        td.colSpan = columnCount;
-        const details = document.createElement('details');
-        details.className = 'ciwi-job-group-details';
-        if (expandedJobGroups.has(groupKey)) {
-          details.open = true;
-        }
-        const summary = document.createElement('summary');
-        summary.innerHTML = '<span class="ciwi-job-group-main"><span class="ciwi-job-group-emoji" aria-hidden="true">' + status.emoji +
-          '</span><span class="ciwi-job-group-title">' + escapeHtml(groupTitle) +
-          '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span><span class="ciwi-job-group-toggle" aria-hidden="true"></span>';
-        details.appendChild(summary);
-
-        const innerTable = document.createElement('table');
-        innerTable.className = 'ciwi-job-group-table';
-        const innerBody = document.createElement('tbody');
-        runJobs.forEach(j => {
-          innerBody.appendChild(buildJobExecutionRow(j, opts));
-        });
-        innerTable.appendChild(innerBody);
-        details.appendChild(innerTable);
-        details.addEventListener('toggle', () => {
-          if (details.open) {
-            expandedJobGroups.add(groupKey);
-          } else {
-            expandedJobGroups.delete(groupKey);
-          }
-          saveStringSet(JOB_GROUPS_STORAGE_KEY, expandedJobGroups);
-        });
-
-        td.appendChild(details);
-        tr.appendChild(td);
-        tbody.appendChild(tr);
+      const groups = collectOrderedJobGroups(jobs);
+      groups.forEach(group => {
+        const row = buildJobGroupRow(group, opts, viewKey, columnCount);
+        if (row) tbody.appendChild(row);
       });
     }
 
     function countRenderedGroups(jobs) {
-      if (!Array.isArray(jobs) || jobs.length === 0) return 0;
-      const jobsByRun = new Map();
-      jobs.forEach(job => {
-        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
-        if (!runID) return;
-        if (!jobsByRun.has(runID)) jobsByRun.set(runID, []);
-        jobsByRun.get(runID).push(job);
-      });
-      const consumed = new Set();
-      let groups = 0;
-      jobs.forEach(job => {
-        const jobID = String(job.id || '');
-        if (consumed.has(jobID)) return;
-        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
-        const runJobs = runID ? jobsByRun.get(runID) : null;
-        if (!runID || !runJobs || runJobs.length <= 1) {
-          consumed.add(jobID);
-          groups += 1;
-          return;
-        }
-        runJobs.forEach(j => consumed.add(String(j.id || '')));
-        groups += 1;
-      });
-      return groups;
+      return collectOrderedJobGroups(jobs).length;
     }
 
     function appendGroupedSkeletonTail(tbody, groups, renderedGroupCount, viewKey, columnCount) {
@@ -324,6 +343,27 @@ const uiIndexJobExecutionsJS = `
       for (let i = start; i < specs.length; i += 1) {
         tbody.appendChild(buildJobGroupSkeletonRow(specs[i], viewKey, columnCount));
       }
+    }
+
+    function removeSkeletonRows(tbody) {
+      const rows = Array.from(tbody.querySelectorAll('.ciwi-job-skeleton-row'));
+      rows.forEach(row => row.remove());
+    }
+
+    function countConcreteGroupRows(tbody) {
+      if (!tbody) return 0;
+      const rows = Array.from(tbody.children || []);
+      return rows.filter(row => row && row.classList && row.classList.contains('ciwi-job-group-row') && !row.classList.contains('ciwi-job-skeleton-row')).length;
+    }
+
+    function appendProgressiveGroups(tbody, groups, renderedGroupCount, opts, viewKey, columnCount) {
+      const total = Array.isArray(groups) ? groups.length : 0;
+      const start = Math.max(0, Math.min(total, Number(renderedGroupCount || 0)));
+      for (let i = start; i < total; i += 1) {
+        const row = buildJobGroupRow(groups[i], opts, viewKey, columnCount);
+        if (row) tbody.appendChild(row);
+      }
+      return total;
     }
 
     async function refreshJobs() {
