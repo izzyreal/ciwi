@@ -82,6 +82,22 @@ const jobExecutionHTML = `<!doctype html>
     .copy-btn {
       font-weight: 600;
     }
+    .log-toolbar {
+      display: flex;
+      gap: 8px;
+      margin: 0 0 10px;
+      flex-wrap: wrap;
+    }
+    .tail-on {
+      border-color: #3f7a5a;
+      background: #e9f6ef;
+      color: #1f4e37;
+    }
+    .tail-off {
+      border-color: #8a7448;
+      background: #f7f2e8;
+      color: #614f2c;
+    }
   </style>
 </head>
 <body>
@@ -110,6 +126,10 @@ const jobExecutionHTML = `<!doctype html>
 
     <div class="card">
       <h3 style="margin:0 0 10px;">Output / Error</h3>
+      <div class="log-toolbar">
+        <button id="tailToggleBtn" class="copy-btn tail-on" type="button">Tailing: On</button>
+        <button id="copyOutputBtn" class="copy-btn" type="button">Copy Output</button>
+      </div>
       <div id="logBox" class="log"></div>
     </div>
 
@@ -127,6 +147,9 @@ const jobExecutionHTML = `<!doctype html>
   <script>
     let refreshInFlight = false;
     let lastRenderedOutput = null;
+    let lastOutputRaw = '';
+    let tailingEnabled = true;
+    let suppressLogScrollEvent = false;
     const refreshGuard = createRefreshGuard(5000);
 
     function jobExecutionIdFromPath() {
@@ -259,6 +282,73 @@ const jobExecutionHTML = `<!doctype html>
       return html.join('');
     }
 
+    function isNearLogBottom() {
+      const el = document.getElementById('logBox');
+      if (!el) return true;
+      const leewayPx = 48;
+      return (el.scrollTop + el.clientHeight) >= (el.scrollHeight - leewayPx);
+    }
+
+    function scrollLogToBottom() {
+      const el = document.getElementById('logBox');
+      if (!el) return;
+      suppressLogScrollEvent = true;
+      el.scrollTop = el.scrollHeight;
+      setTimeout(() => { suppressLogScrollEvent = false; }, 0);
+    }
+
+    function setTailingEnabled(enabled) {
+      tailingEnabled = !!enabled;
+      const btn = document.getElementById('tailToggleBtn');
+      if (!btn) return;
+      btn.textContent = tailingEnabled ? 'Tailing: On' : 'Tailing: Off';
+      btn.classList.toggle('tail-on', tailingEnabled);
+      btn.classList.toggle('tail-off', !tailingEnabled);
+    }
+
+    function wireLogControls() {
+      const logBox = document.getElementById('logBox');
+      if (logBox && !logBox.__ciwiTailingBound) {
+        logBox.__ciwiTailingBound = true;
+        logBox.addEventListener('scroll', () => {
+          if (suppressLogScrollEvent) return;
+          if (isNearLogBottom()) {
+            setTailingEnabled(true);
+          } else {
+            setTailingEnabled(false);
+          }
+        });
+      }
+
+      const tailBtn = document.getElementById('tailToggleBtn');
+      if (tailBtn && !tailBtn.__ciwiBound) {
+        tailBtn.__ciwiBound = true;
+        tailBtn.addEventListener('click', () => {
+          setTailingEnabled(!tailingEnabled);
+          if (tailingEnabled) {
+            scrollLogToBottom();
+          }
+        });
+      }
+
+      const copyBtn = document.getElementById('copyOutputBtn');
+      if (copyBtn && !copyBtn.__ciwiBound) {
+        copyBtn.__ciwiBound = true;
+        copyBtn.addEventListener('click', async () => {
+          const text = String(lastOutputRaw || '');
+          const old = copyBtn.textContent;
+          try {
+            await navigator.clipboard.writeText(text);
+            copyBtn.textContent = 'Copied';
+          } catch (_) {
+            copyBtn.textContent = 'Copy failed';
+          }
+          setTimeout(() => { copyBtn.textContent = old; }, 1200);
+        });
+      }
+      setTailingEnabled(tailingEnabled);
+    }
+
     async function loadJobExecution(force) {
       if (refreshInFlight || (!force && refreshGuard.shouldPause())) {
         return;
@@ -315,9 +405,13 @@ const jobExecutionHTML = `<!doctype html>
         ).join('');
 
         const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
+        lastOutputRaw = output;
         if (output !== lastRenderedOutput) {
           document.getElementById('logBox').innerHTML = renderOutputLog(output);
           lastRenderedOutput = output;
+          if (tailingEnabled) {
+            requestAnimationFrame(scrollLogToBottom);
+          }
         }
         const stepDescription = String(job.current_step || '').trim();
         let subtitle = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
@@ -467,6 +561,7 @@ const jobExecutionHTML = `<!doctype html>
     }
 
     setBackLink();
+    wireLogControls();
     refreshGuard.bindSelectionListener();
     loadJobExecution(true);
     setInterval(() => loadJobExecution(false), 500);
