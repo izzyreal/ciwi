@@ -73,6 +73,10 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		delete(s.agentToolRefresh, hb.AgentID)
 	}
+	restartRequested := s.agentRestarts[hb.AgentID]
+	if restartRequested {
+		delete(s.agentRestarts, hb.AgentID)
+	}
 	target := resolveEffectiveAgentUpdateTarget(s.getAgentUpdateTarget(), currentVersion())
 	manualTarget := strings.TrimSpace(s.agentUpdates[hb.AgentID])
 	updateSource := updateSourceAutomatic
@@ -189,6 +193,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		state.RecentLog = appendAgentLog(state.RecentLog, "server requested tools refresh")
 	}
+	if restartRequested {
+		state.RecentLog = appendAgentLog(state.RecentLog, "server requested restart")
+	}
 	if !firstAttemptAt.IsZero() {
 		delay := firstAttemptAt.Sub(now)
 		if delay < 0 {
@@ -216,6 +223,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if refreshTools {
 		resp.RefreshToolsRequested = true
+	}
+	if restartRequested {
+		resp.RestartRequested = true
 	}
 	if updateRequested {
 		resp.UpdateRequested = true

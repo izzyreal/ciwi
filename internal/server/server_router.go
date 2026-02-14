@@ -58,6 +58,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.Post("/api/v1/update/check", s.updateCheckHandler)
 	r.Post("/api/v1/update/apply", s.updateApplyHandler)
 	r.Post("/api/v1/update/rollback", s.updateRollbackHandler)
+	r.Post("/api/v1/server/restart", s.serverRestartHandler)
 	r.Get("/api/v1/update/tags", s.updateTagsHandler)
 	r.Get("/api/v1/update/status", s.updateStatusHandler)
 

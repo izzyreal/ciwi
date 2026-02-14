@@ -44,12 +44,14 @@ type stateStore struct {
 	agents           map[string]agentState
 	agentUpdates     map[string]string
 	agentToolRefresh map[string]bool
+	agentRestarts    map[string]bool
 	agentRollout     agentUpdateRolloutState
 	projectIcons     map[int64]projectIconState
 	db               *store.Store
 	artifactsDir     string
 	vaultTokens      *servervault.TokenCache
 	update           updateState
+	restartServerFn  func()
 }
 
 type projectIconState struct {
@@ -76,6 +78,7 @@ func Run(ctx context.Context) error {
 		agents:           make(map[string]agentState),
 		agentUpdates:     make(map[string]string),
 		agentToolRefresh: make(map[string]bool),
+		agentRestarts:    make(map[string]bool),
 		agentRollout: agentUpdateRolloutState{
 			Slots: make(map[string]int),
 		},
@@ -83,6 +86,9 @@ func Run(ctx context.Context) error {
 		db:           db,
 		artifactsDir: artifactsDir,
 		vaultTokens:  servervault.NewTokenCache(),
+		restartServerFn: func() {
+			os.Exit(0)
+		},
 	}
 	if target, ok, err := db.GetAppState("agent_update_target"); err == nil && ok {
 		s.update.mu.Lock()

@@ -44,6 +44,7 @@ func runLoop(ctx context.Context) error {
 	capabilities := detectAgentCapabilities()
 	pendingUpdateFailure := ""
 	jobInProgress := false
+	pendingRestart := false
 	type pendingUpdateRequest struct {
 		target     string
 		repository string
@@ -76,6 +77,15 @@ func runLoop(ctx context.Context) error {
 			pendingUpdateFailure = err.Error()
 		}
 	}
+	runOrDeferRestart := func() {
+		if jobInProgress {
+			pendingRestart = true
+			slog.Info("server requested agent restart; deferring until current job completes")
+			return
+		}
+		slog.Info("server requested agent restart")
+		restartAgentProcess()
+	}
 
 	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure); err != nil {
 		slog.Error("initial heartbeat failed", "error", err)
@@ -93,6 +103,9 @@ func runLoop(ctx context.Context) error {
 		if hb.UpdateRequested {
 			runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
 		}
+		if hb.RestartRequested {
+			runOrDeferRestart()
+		}
 	}
 
 	for {
@@ -108,6 +121,10 @@ func runLoop(ctx context.Context) error {
 				req := *pendingUpdate
 				pendingUpdate = nil
 				runOrDeferUpdate(req.target, req.repository, req.apiBase)
+			}
+			if pendingRestart {
+				pendingRestart = false
+				runOrDeferRestart()
 			}
 		case <-heartbeatTicker.C:
 			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure)
@@ -126,6 +143,9 @@ func runLoop(ctx context.Context) error {
 				}
 				if hb.UpdateRequested {
 					runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
+				}
+				if hb.RestartRequested {
+					runOrDeferRestart()
 				}
 			}
 		case <-leaseTicker.C:
