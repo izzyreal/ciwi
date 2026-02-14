@@ -79,7 +79,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			for idx, step := range pj.Steps {
 				if selection != nil && selection.DryRun && step.SkipDryRun {
 					stepPlan = append(stepPlan, protocol.JobStepPlanItem{
-						Name: describePipelineStep(step, idx, pj.ID),
+						Name: describeSkippedPipelineStepLiteral(step, idx, pj.ID),
 						Kind: "dryrun_skip",
 					})
 					continue
@@ -376,6 +376,19 @@ func describePipelineStep(step config.PipelineJobStep, idx int, jobID string) st
 		return "test " + name
 	}
 	return fmt.Sprintf("step %d", idx+1)
+}
+
+func describeSkippedPipelineStepLiteral(step config.PipelineJobStep, idx int, jobID string) string {
+	if strings.TrimSpace(step.Run) != "" {
+		return strings.TrimSpace(step.Run)
+	}
+	if step.Test != nil {
+		command := strings.TrimSpace(step.Test.Command)
+		if command != "" {
+			return command
+		}
+	}
+	return describePipelineStep(step, idx, jobID)
 }
 
 func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.JobCacheSpec {
