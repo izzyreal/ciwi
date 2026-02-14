@@ -160,20 +160,40 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 			latest = st.lastCreated
 		}
 	}
-	statuses := byRun[latestRunID].statuses
+	latestRun := byRun[latestRunID]
+	statuses := latestRun.statuses
 	for _, st := range statuses {
 		if protocol.IsActiveJobExecutionStatus(st) {
 			return pipelineDependencyContext{}, fmt.Errorf("latest run is still in progress")
 		}
-		if st == protocol.JobExecutionStatusFailed {
-			return pipelineDependencyContext{}, fmt.Errorf("latest run failed")
+	}
+
+	targetVersionRaw := strings.TrimSpace(latestRun.metadata["pipeline_version_raw"])
+	targetVersion := strings.TrimSpace(latestRun.metadata["pipeline_version"])
+
+	selectedRunID := ""
+	selectedCreated := time.Time{}
+	for runID, st := range byRun {
+		if !dependencyRunIsSuccessful(st.statuses) {
+			continue
+		}
+		if !dependencyRunVersionMatches(st.metadata, targetVersionRaw, targetVersion) {
+			continue
+		}
+		if selectedRunID == "" || st.lastCreated.After(selectedCreated) {
+			selectedRunID = runID
+			selectedCreated = st.lastCreated
 		}
 	}
-	meta := byRun[latestRunID].metadata
+	if selectedRunID == "" {
+		return pipelineDependencyContext{}, fmt.Errorf("no successful run found for latest dependency version")
+	}
+
+	meta := byRun[selectedRunID].metadata
 	artifactJobIDs := map[string]string{}
 	artifactJobIDsAll := make([]string, 0)
 	artifactJobSeen := map[string]struct{}{}
-	for _, j := range byRun[latestRunID].jobs {
+	for _, j := range byRun[selectedRunID].jobs {
 		jobID := strings.TrimSpace(j.ID)
 		if jobID == "" {
 			continue
@@ -204,6 +224,33 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 		ArtifactJobIDs:    artifactJobIDs,
 		ArtifactJobIDsAll: map[string][]string{pipelineID: artifactJobIDsAll},
 	}, nil
+}
+
+func dependencyRunIsSuccessful(statuses []string) bool {
+	if len(statuses) == 0 {
+		return false
+	}
+	for _, st := range statuses {
+		if protocol.NormalizeJobExecutionStatus(st) != protocol.JobExecutionStatusSucceeded {
+			return false
+		}
+	}
+	return true
+}
+
+func dependencyRunVersionMatches(meta map[string]string, targetVersionRaw, targetVersion string) bool {
+	runRaw := strings.TrimSpace(meta["pipeline_version_raw"])
+	runTagged := strings.TrimSpace(meta["pipeline_version"])
+	targetVersionRaw = strings.TrimSpace(targetVersionRaw)
+	targetVersion = strings.TrimSpace(targetVersion)
+
+	if targetVersionRaw != "" {
+		return runRaw == targetVersionRaw
+	}
+	if targetVersion != "" {
+		return runTagged == targetVersion
+	}
+	return runRaw == "" && runTagged == ""
 }
 
 func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID, projectName, pipelineID string) (pipelineDependencyContext, bool, error) {
