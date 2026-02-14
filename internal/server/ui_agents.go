@@ -77,6 +77,9 @@ const agentsHTML = `<!doctype html>
     function formatUpdatePrimaryText(a) {
       if (!a || !a.update_requested) return '';
       const target = escapeHtml(a.update_target || '');
+      if (a.job_in_progress) {
+        return '<div class="badge badge-warn">Pending update → ' + target + ' (agent busy)</div>';
+      }
       if (a.update_in_progress) {
         return '<div class="badge">Update → ' + target + ' in progress</div>';
       }
@@ -84,7 +87,7 @@ const agentsHTML = `<!doctype html>
     }
 
     function formatUpdateRetryText(a) {
-      if (!a || !a.update_requested || a.update_in_progress || !a.update_next_retry_utc) return '';
+      if (!a || !a.update_requested || a.job_in_progress || a.update_in_progress || !a.update_next_retry_utc) return '';
       const attempt = Number(a.update_attempts || 0);
       if (attempt <= 0) return '';
       const reason = String(a.update_last_error || '').trim();

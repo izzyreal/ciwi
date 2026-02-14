@@ -36,8 +36,12 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		serverVersion := currentVersion()
 		pendingTarget := strings.TrimSpace(s.agentUpdates[agentID])
-		info := agentViewFromState(agentID, a, pendingTarget, serverVersion)
 		s.mu.Unlock()
+		jobInProgress, err := s.agentJobExecutionStore().AgentHasActiveJobExecution(agentID)
+		if err != nil {
+			jobInProgress = false
+		}
+		info := agentViewFromState(agentID, a, pendingTarget, serverVersion, jobInProgress)
 		writeJSON(w, http.StatusOK, agentViewResponse{Agent: info})
 		return
 	}

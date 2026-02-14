@@ -10,6 +10,7 @@ type agentView struct {
 	Hostname             string            `json:"hostname"`
 	OS                   string            `json:"os"`
 	Arch                 string            `json:"arch"`
+	JobInProgress        bool              `json:"job_in_progress,omitempty"`
 	Version              string            `json:"version,omitempty"`
 	Capabilities         map[string]string `json:"capabilities"`
 	LastSeenUTC          time.Time         `json:"last_seen_utc"`
@@ -48,7 +49,7 @@ type agentRunScriptResponse struct {
 	TimeoutSeconds int    `json:"timeout_seconds"`
 }
 
-func agentViewFromState(agentID string, state agentState, pendingTarget, serverVersion string) agentView {
+func agentViewFromState(agentID string, state agentState, pendingTarget, serverVersion string, jobInProgress bool) agentView {
 	version := strings.TrimSpace(state.Version)
 	trimmedPendingTarget := strings.TrimSpace(pendingTarget)
 	trimmedStateTarget := strings.TrimSpace(state.UpdateTarget)
@@ -66,6 +67,7 @@ func agentViewFromState(agentID string, state agentState, pendingTarget, serverV
 		Hostname:             state.Hostname,
 		OS:                   state.OS,
 		Arch:                 state.Arch,
+		JobInProgress:        jobInProgress,
 		Version:              state.Version,
 		Capabilities:         cloneMap(state.Capabilities),
 		LastSeenUTC:          state.LastSeenUTC,

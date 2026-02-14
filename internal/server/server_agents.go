@@ -210,13 +210,29 @@ func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	agents := make([]agentView, 0, len(s.agents))
+	type snapshot struct {
+		id      string
+		state   agentState
+		pending string
+	}
+	snapshots := make([]snapshot, 0, len(s.agents))
 	serverVersion := currentVersion()
 	for id, a := range s.agents {
-		pendingTarget := strings.TrimSpace(s.agentUpdates[id])
-		agents = append(agents, agentViewFromState(id, a, pendingTarget, serverVersion))
+		snapshots = append(snapshots, snapshot{
+			id:      id,
+			state:   a,
+			pending: strings.TrimSpace(s.agentUpdates[id]),
+		})
 	}
 	s.mu.Unlock()
+	agents := make([]agentView, 0, len(snapshots))
+	for _, snap := range snapshots {
+		jobInProgress, err := s.agentJobExecutionStore().AgentHasActiveJobExecution(snap.id)
+		if err != nil {
+			jobInProgress = false
+		}
+		agents = append(agents, agentViewFromState(snap.id, snap.state, snap.pending, serverVersion, jobInProgress))
+	}
 	writeJSON(w, http.StatusOK, agentsViewResponse{Agents: agents})
 }
 
