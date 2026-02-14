@@ -334,10 +334,12 @@ const jobExecutionHTML = `<!doctype html>
       }
 
       const dryRun = (m.dry_run || '') === '1';
+      const versionLabel = String(m.version || m.pipeline_version_raw || '').trim();
+      const tagLabel = String(m.tag || m.pipeline_version || '').trim();
       const lines = [];
       lines.push('<div><strong>Mode:</strong> ' + (dryRun ? 'dry-run' : 'live') + '</div>');
-      if (m.version) lines.push('<div><strong>Version:</strong> ' + escapeHtml(m.version) + '</div>');
-      if (m.tag) lines.push('<div><strong>Tag:</strong> ' + escapeHtml(m.tag) + '</div>');
+      if (versionLabel) lines.push('<div><strong>Version:</strong> ' + escapeHtml(versionLabel) + '</div>');
+      if (tagLabel) lines.push('<div><strong>Tag:</strong> ' + escapeHtml(tagLabel) + '</div>');
       if (m.release_created) lines.push('<div><strong>GitHub release:</strong> ' + escapeHtml(m.release_created) + '</div>');
       if (m.artifacts) lines.push('<div><strong>Assets:</strong> ' + escapeHtml(m.artifacts) + '</div>');
       if (m.next_version) lines.push('<div><strong>Next version:</strong> ' + escapeHtml(m.next_version) + '</div>');
