@@ -13,6 +13,7 @@ type agentJobExecutionStore interface {
 	LeaseJobExecution(agentID string, agentCaps map[string]string) (*protocol.JobExecution, error)
 	AgentHasActiveJobExecution(agentID string) (bool, error)
 	UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
+	MergeJobExecutionEnv(jobID string, patch map[string]string) (map[string]string, error)
 }
 
 type jobExecutionStore interface {
@@ -39,6 +40,7 @@ type pipelineStore interface {
 	GetPipelineChainByDBID(id int64) (store.PersistedPipelineChain, error)
 	ListJobExecutions() ([]protocol.JobExecution, error)
 	CreateJobExecution(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
+	MergeJobExecutionEnv(jobID string, patch map[string]string) (map[string]string, error)
 	MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error)
 	UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 }

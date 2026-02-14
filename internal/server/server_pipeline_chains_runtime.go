@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +65,21 @@ func (s *stateStore) onJobExecutionUpdated(job protocol.JobExecution) {
 			if strings.TrimSpace(candidate.Metadata["chain_blocked"]) != "1" {
 				continue
 			}
+			if err := s.bindQueuedChainJobDependencyArtifacts(candidate, all); err != nil {
+				reason := "cancelled: " + err.Error()
+				_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
+					"chain_cancelled": "1",
+					"chain_blocked":   "",
+				})
+				_, _ = s.pipelineStore().UpdateJobExecutionStatus(candidate.ID, protocol.JobExecutionStatusUpdateRequest{
+					AgentID:      "server-chain",
+					Status:       protocol.JobExecutionStatusFailed,
+					Error:        reason,
+					Output:       "[chain] " + reason,
+					TimestampUTC: time.Now().UTC(),
+				})
+				continue
+			}
 			_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
 				"chain_blocked": "",
 			})
@@ -98,4 +114,100 @@ func (s *stateStore) onJobExecutionUpdated(job protocol.JobExecution) {
 			TimestampUTC: time.Now().UTC(),
 		})
 	}
+}
+
+func (s *stateStore) bindQueuedChainJobDependencyArtifacts(job protocol.JobExecution, all []protocol.JobExecution) error {
+	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
+	projectName := strings.TrimSpace(job.Metadata["project"])
+	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	if chainRunID == "" || projectName == "" || pipelineID == "" {
+		return nil
+	}
+	p, err := s.pipelineStore().GetPipelineByProjectAndID(projectName, pipelineID)
+	if err != nil {
+		return fmt.Errorf("load pipeline %q: %w", pipelineID, err)
+	}
+	if len(p.DependsOn) == 0 {
+		return nil
+	}
+
+	depCtx := pipelineDependencyContext{}
+	for _, depID := range p.DependsOn {
+		depID = strings.TrimSpace(depID)
+		if depID == "" {
+			continue
+		}
+		ctx, foundInChain, err := verifyDependencyRunInChain(all, chainRunID, projectName, depID)
+		if err != nil {
+			return fmt.Errorf("dependency %q not satisfied in chain run: %w", depID, err)
+		}
+		if !foundInChain {
+			ctx, err = verifyDependencyRun(all, projectName, depID)
+			if err != nil {
+				return fmt.Errorf("dependency %q not satisfied: %w", depID, err)
+			}
+		}
+		if len(ctx.ArtifactJobIDs) > 0 {
+			if depCtx.ArtifactJobIDs == nil {
+				depCtx.ArtifactJobIDs = map[string]string{}
+			}
+			for k, v := range ctx.ArtifactJobIDs {
+				key := depID + ":" + strings.TrimSpace(k)
+				if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+					continue
+				}
+				depCtx.ArtifactJobIDs[key] = strings.TrimSpace(v)
+			}
+		}
+		if len(ctx.ArtifactJobIDsAll) > 0 {
+			if depCtx.ArtifactJobIDsAll == nil {
+				depCtx.ArtifactJobIDsAll = map[string][]string{}
+			}
+			for ctxDepID, ids := range ctx.ArtifactJobIDsAll {
+				targetDepID := strings.TrimSpace(ctxDepID)
+				if targetDepID == "" {
+					targetDepID = depID
+				}
+				existing := depCtx.ArtifactJobIDsAll[targetDepID]
+				seen := map[string]struct{}{}
+				for _, v := range existing {
+					if strings.TrimSpace(v) == "" {
+						continue
+					}
+					seen[strings.TrimSpace(v)] = struct{}{}
+				}
+				for _, v := range ids {
+					v = strings.TrimSpace(v)
+					if v == "" {
+						continue
+					}
+					if _, ok := seen[v]; ok {
+						continue
+					}
+					existing = append(existing, v)
+					seen[v] = struct{}{}
+				}
+				depCtx.ArtifactJobIDsAll[targetDepID] = existing
+			}
+		}
+	}
+
+	vars := map[string]string{
+		"name":         strings.TrimSpace(job.Metadata["matrix_name"]),
+		"build_target": strings.TrimSpace(job.Metadata["build_target"]),
+	}
+	depJobID := resolveDependencyArtifactJobID(p.DependsOn, depCtx.ArtifactJobIDs, strings.TrimSpace(job.Metadata["pipeline_job_id"]), vars)
+	depJobIDs := resolveDependencyArtifactJobIDs(p.DependsOn, depCtx.ArtifactJobIDsAll, depJobID)
+	if depJobID == "" && len(depJobIDs) == 0 {
+		return nil
+	}
+
+	envPatch := map[string]string{
+		"CIWI_DEP_ARTIFACT_JOB_ID":  depJobID,
+		"CIWI_DEP_ARTIFACT_JOB_IDS": strings.Join(depJobIDs, ","),
+	}
+	if _, err := s.pipelineStore().MergeJobExecutionEnv(job.ID, envPatch); err != nil {
+		return fmt.Errorf("persist dependency artifact env: %w", err)
+	}
+	return nil
 }

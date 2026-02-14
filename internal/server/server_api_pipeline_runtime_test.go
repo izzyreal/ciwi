@@ -999,3 +999,176 @@ pipeline_chains:
 		t.Fatalf("release should become leaseable after all build jobs succeed")
 	}
 }
+
+func TestPipelineChainBindsDependencyArtifactsFromSameChainRun(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	const cfg = `
+version: 1
+project:
+  name: chain-artifacts
+pipelines:
+  - id: build
+    trigger: manual
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: build-job
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        artifacts:
+          - dist/out-${{matrix.name}}.txt
+        matrix:
+          include:
+            - name: linux
+            - name: darwin
+        steps:
+          - run: echo build
+  - id: release
+    trigger: manual
+    depends_on:
+      - build
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: release-job
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: test -n "$CIWI_DEP_ARTIFACT_JOB_IDS"
+pipeline_chains:
+  - id: build-release
+    pipelines:
+      - build
+      - release
+`
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{
+		"config_path": "ciwi.yaml",
+	})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	projectsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/projects", nil)
+	if projectsResp.StatusCode != http.StatusOK {
+		t.Fatalf("projects status=%d body=%s", projectsResp.StatusCode, readBody(t, projectsResp))
+	}
+	var projectsPayload struct {
+		Projects []struct {
+			PipelineChains []struct {
+				ID int64 `json:"id"`
+			} `json:"pipeline_chains"`
+		} `json:"projects"`
+	}
+	decodeJSONBody(t, projectsResp, &projectsPayload)
+	if len(projectsPayload.Projects) == 0 || len(projectsPayload.Projects[0].PipelineChains) == 0 {
+		t.Fatalf("expected pipeline chain in projects response")
+	}
+	chainID := projectsPayload.Projects[0].PipelineChains[0].ID
+
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/run", map[string]any{})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("chain run status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	_ = readBody(t, runResp)
+
+	leaseBuildA := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-build-a",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseBuildA.StatusCode != http.StatusOK {
+		t.Fatalf("lease build-a status=%d body=%s", leaseBuildA.StatusCode, readBody(t, leaseBuildA))
+	}
+	var leaseBuildAPayload struct {
+		Assigned     bool `json:"assigned"`
+		JobExecution struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, leaseBuildA, &leaseBuildAPayload)
+	if !leaseBuildAPayload.Assigned {
+		t.Fatalf("expected first build job to be leaseable")
+	}
+
+	leaseBuildB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-build-b",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseBuildB.StatusCode != http.StatusOK {
+		t.Fatalf("lease build-b status=%d body=%s", leaseBuildB.StatusCode, readBody(t, leaseBuildB))
+	}
+	var leaseBuildBPayload struct {
+		Assigned     bool `json:"assigned"`
+		JobExecution struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, leaseBuildB, &leaseBuildBPayload)
+	if !leaseBuildBPayload.Assigned {
+		t.Fatalf("expected second build job to be leaseable")
+	}
+
+	doneA := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+leaseBuildAPayload.JobExecution.ID+"/status", map[string]any{
+		"agent_id": "agent-build-a",
+		"status":   "succeeded",
+		"output":   "ok",
+	})
+	if doneA.StatusCode != http.StatusOK {
+		t.Fatalf("build-a done status=%d body=%s", doneA.StatusCode, readBody(t, doneA))
+	}
+	_ = readBody(t, doneA)
+	doneB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+leaseBuildBPayload.JobExecution.ID+"/status", map[string]any{
+		"agent_id": "agent-build-b",
+		"status":   "succeeded",
+		"output":   "ok",
+	})
+	if doneB.StatusCode != http.StatusOK {
+		t.Fatalf("build-b done status=%d body=%s", doneB.StatusCode, readBody(t, doneB))
+	}
+	_ = readBody(t, doneB)
+
+	leaseRelease := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-release",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseRelease.StatusCode != http.StatusOK {
+		t.Fatalf("lease release status=%d body=%s", leaseRelease.StatusCode, readBody(t, leaseRelease))
+	}
+	var leaseReleasePayload struct {
+		Assigned     bool `json:"assigned"`
+		JobExecution struct {
+			Env map[string]string `json:"env"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, leaseRelease, &leaseReleasePayload)
+	if !leaseReleasePayload.Assigned {
+		t.Fatalf("expected release job to lease")
+	}
+	gotIDs := strings.TrimSpace(leaseReleasePayload.JobExecution.Env["CIWI_DEP_ARTIFACT_JOB_IDS"])
+	if gotIDs == "" {
+		t.Fatalf("expected CIWI_DEP_ARTIFACT_JOB_IDS on release job")
+	}
+	if !strings.Contains(gotIDs, leaseBuildAPayload.JobExecution.ID) || !strings.Contains(gotIDs, leaseBuildBPayload.JobExecution.ID) {
+		t.Fatalf("expected release dependency artifacts from same chain run, got %q", gotIDs)
+	}
+}

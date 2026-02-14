@@ -205,3 +205,28 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 		ArtifactJobIDsAll: map[string][]string{pipelineID: artifactJobIDsAll},
 	}, nil
 }
+
+func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID, projectName, pipelineID string) (pipelineDependencyContext, bool, error) {
+	chainRunID = strings.TrimSpace(chainRunID)
+	if chainRunID == "" {
+		return pipelineDependencyContext{}, false, fmt.Errorf("chain run id is required")
+	}
+	filtered := make([]protocol.JobExecution, 0)
+	for _, j := range jobs {
+		if strings.TrimSpace(j.Metadata["project"]) != projectName {
+			continue
+		}
+		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
+			continue
+		}
+		if strings.TrimSpace(j.Metadata["chain_run_id"]) != chainRunID {
+			continue
+		}
+		filtered = append(filtered, j)
+	}
+	if len(filtered) == 0 {
+		return pipelineDependencyContext{}, false, nil
+	}
+	ctx, err := verifyDependencyRun(filtered, projectName, pipelineID)
+	return ctx, true, err
+}
