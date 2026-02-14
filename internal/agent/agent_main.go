@@ -43,6 +43,39 @@ func runLoop(ctx context.Context) error {
 	defer leaseTicker.Stop()
 	capabilities := detectAgentCapabilities()
 	pendingUpdateFailure := ""
+	jobInProgress := false
+	type pendingUpdateRequest struct {
+		target     string
+		repository string
+		apiBase    string
+	}
+	type jobResult struct {
+		jobID string
+		err   error
+	}
+	var pendingUpdate *pendingUpdateRequest
+	jobDoneCh := make(chan jobResult, 1)
+
+	runOrDeferUpdate := func(target, repository, apiBase string) {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			return
+		}
+		if jobInProgress {
+			pendingUpdate = &pendingUpdateRequest{
+				target:     target,
+				repository: repository,
+				apiBase:    apiBase,
+			}
+			slog.Info("server requested agent update; deferring until current job completes", "target_version", target)
+			return
+		}
+		slog.Info("server requested agent update", "target_version", target)
+		if err := selfUpdateAndRestart(ctx, target, repository, apiBase, os.Args[1:]); err != nil {
+			slog.Error("agent self-update failed", "error", err)
+			pendingUpdateFailure = err.Error()
+		}
+	}
 
 	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure); err != nil {
 		slog.Error("initial heartbeat failed", "error", err)
@@ -58,11 +91,7 @@ func runLoop(ctx context.Context) error {
 			}
 		}
 		if hb.UpdateRequested {
-			slog.Info("server requested agent update", "target_version", hb.UpdateTarget)
-			if err := selfUpdateAndRestart(ctx, hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase, os.Args[1:]); err != nil {
-				slog.Error("agent self-update failed", "error", err)
-				pendingUpdateFailure = err.Error()
-			}
+			runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
 		}
 	}
 
@@ -70,6 +99,16 @@ func runLoop(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case done := <-jobDoneCh:
+			jobInProgress = false
+			if done.err != nil {
+				slog.Error("execute job failed", "job_execution_id", done.jobID, "error", done.err)
+			}
+			if pendingUpdate != nil {
+				req := *pendingUpdate
+				pendingUpdate = nil
+				runOrDeferUpdate(req.target, req.repository, req.apiBase)
+			}
 		case <-heartbeatTicker.C:
 			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure)
 			if err != nil {
@@ -86,14 +125,13 @@ func runLoop(ctx context.Context) error {
 					}
 				}
 				if hb.UpdateRequested {
-					slog.Info("server requested agent update", "target_version", hb.UpdateTarget)
-					if err := selfUpdateAndRestart(ctx, hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase, os.Args[1:]); err != nil {
-						slog.Error("agent self-update failed", "error", err)
-						pendingUpdateFailure = err.Error()
-					}
+					runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
 				}
 			}
 		case <-leaseTicker.C:
+			if jobInProgress {
+				continue
+			}
 			job, err := leaseJob(ctx, client, serverURL, agentID, capabilities)
 			if err != nil {
 				slog.Error("lease failed", "error", err)
@@ -102,9 +140,14 @@ func runLoop(ctx context.Context) error {
 			if job == nil {
 				continue
 			}
-			if err := executeLeasedJob(ctx, client, serverURL, agentID, workDir, capabilities, *job); err != nil {
-				slog.Error("execute job failed", "job_execution_id", job.ID, "error", err)
-			}
+			jobInProgress = true
+			jobCaps := cloneMap(capabilities)
+			go func(leased protocol.JobExecution, caps map[string]string) {
+				jobDoneCh <- jobResult{
+					jobID: leased.ID,
+					err:   executeLeasedJob(ctx, client, serverURL, agentID, workDir, caps, leased),
+				}
+			}(*job, jobCaps)
 		}
 	}
 }
