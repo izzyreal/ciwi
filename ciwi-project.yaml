@@ -97,7 +97,8 @@ pipelines:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
           - run: test -f VERSION
           - run: |
-              if [ -n "$(git status --porcelain)" ]; then
+              DIRTY="$(git status --porcelain | grep -vE '^\?\? dist/' || true)"
+              if [ -n "$DIRTY" ]; then
                 echo "working tree is not clean"
                 exit 1
               fi
