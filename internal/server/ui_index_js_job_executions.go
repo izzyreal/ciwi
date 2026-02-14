@@ -98,8 +98,15 @@ const uiIndexJobExecutionsJS = `
       }).join('\x1f');
     }
 
-    async function fetchJobList(view, total, epoch) {
-      if (total <= 0) return [];
+    async function fetchAndRenderJobList(view, total, epoch, tbody, opts, viewKey, columnCount, emptyText, previousSignature, skeletonGroups, progressive) {
+      let signature = String(previousSignature || '');
+      if (total <= 0) {
+        if (signature !== '' || !tbodyHasConcreteRows(tbody)) {
+          renderGroupedJobs(tbody, [], opts, viewKey, columnCount, emptyText);
+          signature = '';
+        }
+        return signature;
+      }
       const out = [];
       for (let offset = 0; offset < total; offset += JOBS_BATCH_SIZE) {
         if (epoch !== jobsRenderEpoch) return null;
@@ -110,8 +117,20 @@ const uiIndexJobExecutionsJS = `
         if (epoch !== jobsRenderEpoch) return null;
         const jobs = data.job_executions || [];
         out.push(...jobs);
+        const nextSignature = jobsSignature(out);
+        if (progressive && (!tbodyHasConcreteRows(tbody) || nextSignature !== signature)) {
+          renderGroupedJobs(tbody, out, opts, viewKey, columnCount, emptyText);
+          appendGroupedSkeletonTail(tbody, skeletonGroups, countRenderedGroups(out), viewKey, columnCount);
+          signature = nextSignature;
+        }
       }
-      return out;
+      if (epoch !== jobsRenderEpoch) return null;
+      const finalSignature = jobsSignature(out);
+      if (!tbodyHasConcreteRows(tbody) || finalSignature !== signature) {
+        renderGroupedJobs(tbody, out, opts, viewKey, columnCount, emptyText);
+      }
+      signature = finalSignature;
+      return signature;
     }
 
     function summarizeJobGroup(jobs) {
@@ -271,10 +290,48 @@ const uiIndexJobExecutionsJS = `
       });
     }
 
+    function countRenderedGroups(jobs) {
+      if (!Array.isArray(jobs) || jobs.length === 0) return 0;
+      const jobsByRun = new Map();
+      jobs.forEach(job => {
+        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
+        if (!runID) return;
+        if (!jobsByRun.has(runID)) jobsByRun.set(runID, []);
+        jobsByRun.get(runID).push(job);
+      });
+      const consumed = new Set();
+      let groups = 0;
+      jobs.forEach(job => {
+        const jobID = String(job.id || '');
+        if (consumed.has(jobID)) return;
+        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
+        const runJobs = runID ? jobsByRun.get(runID) : null;
+        if (!runID || !runJobs || runJobs.length <= 1) {
+          consumed.add(jobID);
+          groups += 1;
+          return;
+        }
+        runJobs.forEach(j => consumed.add(String(j.id || '')));
+        groups += 1;
+      });
+      return groups;
+    }
+
+    function appendGroupedSkeletonTail(tbody, groups, renderedGroupCount, viewKey, columnCount) {
+      const specs = Array.isArray(groups) ? groups : [];
+      if (specs.length === 0) return;
+      const start = Math.max(0, Math.min(specs.length, Number(renderedGroupCount || 0)));
+      for (let i = start; i < specs.length; i += 1) {
+        tbody.appendChild(buildJobGroupSkeletonRow(specs[i], viewKey, columnCount));
+      }
+    }
+
     async function refreshJobs() {
       const epoch = ++jobsRenderEpoch;
       const queuedBody = document.getElementById('queuedJobsBody');
       const historyBody = document.getElementById('historyJobsBody');
+      const queuedHadConcreteRows = tbodyHasConcreteRows(queuedBody);
+      const historyHadConcreteRows = tbodyHasConcreteRows(historyBody);
       const summary = await apiJSON('/api/v1/jobs?view=summary&max=' + String(JOBS_WINDOW));
       if (epoch !== jobsRenderEpoch) return;
 
@@ -316,21 +373,15 @@ const uiIndexJobExecutionsJS = `
         projectIconURL: projectIconURLForJob
       };
 
-      const [queuedJobs, historyJobs] = await Promise.all([
-        fetchJobList('queued', queuedTotal, epoch),
-        fetchJobList('history', historyTotal, epoch),
+      const [queuedSig, historySig] = await Promise.all([
+        fetchAndRenderJobList('queued', queuedTotal, epoch, queuedBody, queuedOpts, 'queued', 8, 'No queued jobs.', lastQueuedJobsSignature, queuedGroups, !queuedHadConcreteRows),
+        fetchAndRenderJobList('history', historyTotal, epoch, historyBody, historyOpts, 'history', 7, 'No job history yet.', lastHistoryJobsSignature, historyGroups, !historyHadConcreteRows),
       ]);
-      if (epoch !== jobsRenderEpoch || queuedJobs === null || historyJobs === null) return;
-      const queuedSig = jobsSignature(queuedJobs);
-      const historySig = jobsSignature(historyJobs);
-      const queuedNeedsRender = !tbodyHasConcreteRows(queuedBody) || queuedSig !== lastQueuedJobsSignature;
-      const historyNeedsRender = !tbodyHasConcreteRows(historyBody) || historySig !== lastHistoryJobsSignature;
-      if (queuedNeedsRender) {
-        renderGroupedJobs(queuedBody, queuedJobs, queuedOpts, 'queued', 8, 'No queued jobs.');
+      if (epoch !== jobsRenderEpoch || queuedSig === null || historySig === null) return;
+      if (!tbodyHasConcreteRows(queuedBody) || queuedSig !== lastQueuedJobsSignature) {
         lastQueuedJobsSignature = queuedSig;
       }
-      if (historyNeedsRender) {
-        renderGroupedJobs(historyBody, historyJobs, historyOpts, 'history', 7, 'No job history yet.');
+      if (!tbodyHasConcreteRows(historyBody) || historySig !== lastHistoryJobsSignature) {
         lastHistoryJobsSignature = historySig;
       }
     }
