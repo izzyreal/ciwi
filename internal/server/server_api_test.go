@@ -244,6 +244,123 @@ func TestServerLoadListRunAndQueueHistoryEndpoints(t *testing.T) {
 	}
 }
 
+func TestJobRerunClonesStartedExecution(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
+		"script": "echo rerun",
+		"env": map[string]any{
+			"FOO": "BAR",
+		},
+		"required_capabilities": map[string]any{
+			"os": "linux",
+		},
+		"timeout_seconds": 31,
+		"artifact_globs":  []string{"dist/**"},
+		"metadata": map[string]any{
+			"project":     "ciwi",
+			"pipeline_id": "build",
+		},
+	})
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
+	}
+	var createPayload struct {
+		Job struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, createResp, &createPayload)
+	origID := createPayload.Job.ID
+	if origID == "" {
+		t.Fatalf("missing original job id")
+	}
+
+	startResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+origID+"/status", map[string]any{
+		"agent_id": "agent-test",
+		"status":   "running",
+		"output":   "started",
+	})
+	if startResp.StatusCode != http.StatusOK {
+		t.Fatalf("mark running status=%d body=%s", startResp.StatusCode, readBody(t, startResp))
+	}
+	_ = readBody(t, startResp)
+
+	rerunResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+origID+"/rerun", map[string]any{})
+	if rerunResp.StatusCode != http.StatusCreated {
+		t.Fatalf("rerun status=%d body=%s", rerunResp.StatusCode, readBody(t, rerunResp))
+	}
+	var rerunPayload struct {
+		Job struct {
+			ID                   string            `json:"id"`
+			Script               string            `json:"script"`
+			Env                  map[string]string `json:"env"`
+			RequiredCapabilities map[string]string `json:"required_capabilities"`
+			TimeoutSeconds       int               `json:"timeout_seconds"`
+			ArtifactGlobs        []string          `json:"artifact_globs"`
+			Metadata             map[string]string `json:"metadata"`
+			Status               string            `json:"status"`
+			StartedUTC           any               `json:"started_utc"`
+			FinishedUTC          any               `json:"finished_utc"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, rerunResp, &rerunPayload)
+	if rerunPayload.Job.ID == "" || rerunPayload.Job.ID == origID {
+		t.Fatalf("expected new rerun job id, got %q (orig=%q)", rerunPayload.Job.ID, origID)
+	}
+	if rerunPayload.Job.Script != "echo rerun" {
+		t.Fatalf("unexpected rerun script: %q", rerunPayload.Job.Script)
+	}
+	if rerunPayload.Job.Env["FOO"] != "BAR" {
+		t.Fatalf("unexpected rerun env: %+v", rerunPayload.Job.Env)
+	}
+	if rerunPayload.Job.RequiredCapabilities["os"] != "linux" {
+		t.Fatalf("unexpected rerun capabilities: %+v", rerunPayload.Job.RequiredCapabilities)
+	}
+	if rerunPayload.Job.TimeoutSeconds != 31 {
+		t.Fatalf("unexpected rerun timeout: %d", rerunPayload.Job.TimeoutSeconds)
+	}
+	if len(rerunPayload.Job.ArtifactGlobs) != 1 || rerunPayload.Job.ArtifactGlobs[0] != "dist/**" {
+		t.Fatalf("unexpected rerun artifact globs: %+v", rerunPayload.Job.ArtifactGlobs)
+	}
+	if rerunPayload.Job.Metadata["project"] != "ciwi" || rerunPayload.Job.Metadata["pipeline_id"] != "build" {
+		t.Fatalf("unexpected rerun metadata: %+v", rerunPayload.Job.Metadata)
+	}
+	if rerunPayload.Job.Status != "queued" {
+		t.Fatalf("expected rerun status queued, got %q", rerunPayload.Job.Status)
+	}
+	if rerunPayload.Job.StartedUTC != nil || rerunPayload.Job.FinishedUTC != nil {
+		t.Fatalf("expected rerun timestamps to be empty, got started=%v finished=%v", rerunPayload.Job.StartedUTC, rerunPayload.Job.FinishedUTC)
+	}
+}
+
+func TestJobRerunRejectsUnstartedExecution(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
+		"script":          "echo not-started",
+		"timeout_seconds": 30,
+	})
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
+	}
+	var createPayload struct {
+		Job struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, createResp, &createPayload)
+
+	rerunResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/rerun", map[string]any{})
+	if rerunResp.StatusCode != http.StatusConflict {
+		t.Fatalf("expected rerun conflict for unstarted job, got status=%d body=%s", rerunResp.StatusCode, readBody(t, rerunResp))
+	}
+}
+
 func TestJobJSONOmitsZeroStartedAndFinishedTimestamps(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()

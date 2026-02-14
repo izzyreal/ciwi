@@ -327,6 +327,7 @@ const agentHTML = `<!doctype html>
         const jobID = String(data.job_execution_id || '').trim();
         if (!jobID) throw new Error('server response missing job_execution_id');
         adhocActiveJobID = jobID;
+        showJobStartedSnackbar('Adhoc script started', jobID);
         adhocOutput.textContent = '[queued] job_execution_id=' + jobID + '\n[poll] waiting for agent output...';
         pollAdhocJob(jobID);
       } catch (e) {

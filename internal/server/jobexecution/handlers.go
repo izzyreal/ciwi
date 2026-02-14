@@ -209,6 +209,39 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "rerun" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		job, err := deps.Store.GetJobExecution(jobID)
+		if err != nil {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+		if job.StartedUTC.IsZero() {
+			http.Error(w, "job has not started yet", http.StatusConflict)
+			return
+		}
+		clone, err := deps.Store.CreateJobExecution(protocol.CreateJobExecutionRequest{
+			Script:               job.Script,
+			Env:                  cloneStringMap(job.Env),
+			RequiredCapabilities: cloneStringMap(job.RequiredCapabilities),
+			TimeoutSeconds:       job.TimeoutSeconds,
+			ArtifactGlobs:        append([]string(nil), job.ArtifactGlobs...),
+			Caches:               cloneJobCaches(job.Caches),
+			Source:               cloneSource(job.Source),
+			Metadata:             cloneStringMap(job.Metadata),
+			StepPlan:             cloneJobStepPlan(job.StepPlan),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(clone)})
+		return
+	}
+
 	if len(parts) == 2 && parts[1] == "status" {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -420,6 +453,76 @@ func HandleFlushHistory(w http.ResponseWriter, r *http.Request, deps HandlerDeps
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, FlushHistoryViewResponse{Flushed: n})
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobCacheSpec, 0, len(in))
+	for _, c := range in {
+		out = append(out, protocol.JobCacheSpec{
+			ID:          c.ID,
+			Env:         c.Env,
+			Key:         cloneJobCacheKey(c.Key),
+			RestoreKeys: append([]string(nil), c.RestoreKeys...),
+			Policy:      c.Policy,
+			TTLDays:     c.TTLDays,
+			MaxSizeMB:   c.MaxSizeMB,
+		})
+	}
+	return out
+}
+
+func cloneJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
+	return protocol.JobCacheKey{
+		Prefix:  in.Prefix,
+		Files:   append([]string(nil), in.Files...),
+		Runtime: append([]string(nil), in.Runtime...),
+		Tools:   append([]string(nil), in.Tools...),
+		Env:     append([]string(nil), in.Env...),
+	}
+}
+
+func cloneSource(in *protocol.SourceSpec) *protocol.SourceSpec {
+	if in == nil {
+		return nil
+	}
+	return &protocol.SourceSpec{
+		Repo: in.Repo,
+		Ref:  in.Ref,
+	}
+}
+
+func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobStepPlanItem, 0, len(in))
+	for _, step := range in {
+		out = append(out, protocol.JobStepPlanItem{
+			Index:      step.Index,
+			Total:      step.Total,
+			Name:       step.Name,
+			Script:     step.Script,
+			Kind:       step.Kind,
+			TestName:   step.TestName,
+			TestFormat: step.TestFormat,
+			TestReport: step.TestReport,
+		})
+	}
+	return out
 }
 
 func nowUTC(deps HandlerDeps) time.Time {

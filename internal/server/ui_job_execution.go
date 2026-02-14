@@ -112,6 +112,7 @@ const jobExecutionHTML = `<!doctype html>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button id="forceFailBtn" class="copy-btn" style="display:none;">Force Fail</button>
+        <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
         <a id="backLink" class="nav-btn" href="/">Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span></a>
       </div>
     </div>
@@ -447,6 +448,40 @@ const jobExecutionHTML = `<!doctype html>
       } else {
         forceBtn.style.display = 'none';
       }
+
+      const rerunBtn = document.getElementById('rerunBtn');
+      const hasStarted = !!String(job.started_utc || '').trim();
+      rerunBtn.disabled = !hasStarted;
+      rerunBtn.title = hasStarted ? '' : 'Job must have started at least once';
+      rerunBtn.onclick = async () => {
+        if (rerunBtn.disabled) return;
+        rerunBtn.disabled = true;
+        const old = rerunBtn.textContent;
+        rerunBtn.textContent = 'Queueing...';
+        try {
+          const res = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/rerun', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          });
+          if (!res.ok) {
+            throw new Error(await res.text() || ('HTTP ' + res.status));
+          }
+          const data = await res.json();
+          const enqueuedID = String((((data || {}).job_execution || {}).id) || '').trim();
+          const metaSource = job.metadata || {};
+          const projectName = String(metaSource.project || '').trim() || 'Project';
+          const matrixName = String(metaSource.matrix_name || '').trim();
+          const pipelineName = String(metaSource.pipeline_id || '').trim();
+          const shortName = matrixName || pipelineName || 'job';
+          showJobStartedSnackbar(projectName + ' ' + shortName + ' started', enqueuedID);
+        } catch (e) {
+          alert('Run again failed: ' + String(e.message || e));
+        } finally {
+          rerunBtn.textContent = old;
+          rerunBtn.disabled = !hasStarted;
+        }
+      };
 
         renderReleaseSummary(job);
 

@@ -119,7 +119,9 @@ const projectHTML = `<!doctype html>
         runAll.onclick = async () => {
           runAll.disabled = true;
           try {
-            await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: '{}' });
+            const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: '{}' });
+            const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
+            showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started', firstJobID);
             await loadHistory();
           } catch (e) {
             alert('Run failed: ' + e.message);
@@ -133,7 +135,9 @@ const projectHTML = `<!doctype html>
         dryAll.onclick = async () => {
           dryAll.disabled = true;
           try {
-            await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+            const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+            const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
+            showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started', firstJobID);
             await loadHistory();
           } catch (e) {
             alert('Dry run failed: ' + e.message);
@@ -178,10 +182,13 @@ const projectHTML = `<!doctype html>
             btn.onclick = async () => {
               btn.disabled = true;
               try {
-                await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
+                const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
                   method: 'POST',
                   body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index })
                 });
+                const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
+                const matrixName = (mi.name || '').trim() || (j.id || 'matrix');
+                showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + matrixName + ' started', firstJobID);
                 await loadHistory();
               } catch (e) {
                 alert('Run selection failed: ' + e.message);
@@ -196,10 +203,13 @@ const projectHTML = `<!doctype html>
             dryBtn.onclick = async () => {
               dryBtn.disabled = true;
               try {
-                await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
+                const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
                   method: 'POST',
                   body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true })
                 });
+                const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
+                const matrixName = (mi.name || '').trim() || (j.id || 'matrix');
+                showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + matrixName + ' started', firstJobID);
                 await loadHistory();
               } catch (e) {
                 alert('Dry run selection failed: ' + e.message);
