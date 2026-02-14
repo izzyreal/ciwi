@@ -123,8 +123,7 @@ const projectHTML = `<!doctype html>
           runAll.disabled = true;
           try {
             const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: '{}' });
-            const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
-            showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started', firstJobID);
+            showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
             await loadHistory();
           } catch (e) {
             alert('Run failed: ' + e.message);
@@ -139,8 +138,7 @@ const projectHTML = `<!doctype html>
           dryAll.disabled = true;
           try {
             const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
-            const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
-            showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started', firstJobID);
+            showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
             await loadHistory();
           } catch (e) {
             alert('Dry run failed: ' + e.message);
@@ -192,9 +190,8 @@ const projectHTML = `<!doctype html>
                   method: 'POST',
                   body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index })
                 });
-                const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
                 const matrixName = (mi.name || '').trim() || (j.id || 'matrix');
-                showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + matrixName + ' started', firstJobID);
+                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + matrixName + ' started');
                 await loadHistory();
               } catch (e) {
                 alert('Run selection failed: ' + e.message);
@@ -213,9 +210,8 @@ const projectHTML = `<!doctype html>
                   method: 'POST',
                   body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true })
                 });
-                const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
                 const matrixName = (mi.name || '').trim() || (j.id || 'matrix');
-                showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + matrixName + ' started', firstJobID);
+                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + matrixName + ' started');
                 await loadHistory();
               } catch (e) {
                 alert('Dry run selection failed: ' + e.message);

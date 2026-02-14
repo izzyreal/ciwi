@@ -47,8 +47,7 @@ const uiIndexProjectsJS = `
             btn.disabled = true;
             try {
               const resp = await apiJSON('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: '{}' });
-              const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
-              showJobStartedSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started', firstJobID);
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
               await refreshJobs();
             } catch (e) {
               alert('Run failed: ' + e.message);
@@ -65,8 +64,7 @@ const uiIndexProjectsJS = `
             dryBtn.disabled = true;
             try {
               const resp = await apiJSON('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
-              const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
-              showJobStartedSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started', firstJobID);
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
               await refreshJobs();
             } catch (e) {
               alert('Dry run failed: ' + e.message);
@@ -107,8 +105,7 @@ const uiIndexProjectsJS = `
             runBtn.disabled = true;
             try {
               const resp = await apiJSON('/api/v1/pipeline-chains/' + c.id + '/run', { method: 'POST', body: '{}' });
-              const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
-              showJobStartedSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started', firstJobID);
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started');
               await refreshJobs();
             } catch (e) {
               alert('Run failed: ' + e.message);
@@ -124,8 +121,7 @@ const uiIndexProjectsJS = `
             dryBtn.disabled = true;
             try {
               const resp = await apiJSON('/api/v1/pipeline-chains/' + c.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
-              const firstJobID = String(((resp || {}).job_execution_ids || [])[0] || '').trim();
-              showJobStartedSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started', firstJobID);
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started');
               await refreshJobs();
             } catch (e) {
               alert('Dry run failed: ' + e.message);

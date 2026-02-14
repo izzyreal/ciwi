@@ -281,4 +281,14 @@ function showJobStartedSnackbar(message, jobExecutionID) {
       window.location.href = '/jobs/' + encodeURIComponent(jobID);
     },
   });
+}
+
+function showQueuedJobsSnackbar(message) {
+  showSnackbar({
+    message: message,
+    actionLabel: 'Show queued jobs',
+    onAction: () => {
+      window.location.href = '/#queued-jobs';
+    },
+  });
 }`

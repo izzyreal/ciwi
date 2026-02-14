@@ -33,7 +33,7 @@ const indexHTML = `<!doctype html>
       <div id="projects"></div>
     </div>
     <div class="card">
-      <h2>Queued Job Executions</h2>
+      <h2 id="queued-jobs">Queued Job Executions</h2>
       <div class="row" style="margin-bottom:10px;">
         <button id="clearQueueBtn" class="secondary">Clear Queue</button>
       </div>
