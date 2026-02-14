@@ -234,9 +234,10 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_apply_status": "staged",
-			"update_message":           updateApplyMessage(rollback, true),
-			"update_latest_version":    info.TagName,
+			"update_last_apply_status":       "staged",
+			"update_message":                 updateApplyMessage(rollback, true),
+			"update_latest_version":          info.TagName,
+			"update_reload_projects_pending": "1",
 		})
 		_ = s.setAgentUpdateTarget(info.TagName)
 		writeJSON(w, http.StatusOK, updateApplyResponse{
@@ -268,9 +269,10 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	_ = s.persistUpdateStatus(map[string]string{
-		"update_last_apply_status": "success",
-		"update_message":           updateApplyMessage(rollback, false),
-		"update_latest_version":    info.TagName,
+		"update_last_apply_status":       "success",
+		"update_message":                 updateApplyMessage(rollback, false),
+		"update_latest_version":          info.TagName,
+		"update_reload_projects_pending": "1",
 	})
 	_ = s.setAgentUpdateTarget(info.TagName)
 

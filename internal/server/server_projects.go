@@ -17,6 +17,8 @@ import (
 	serverproject "github.com/izzyreal/ciwi/internal/server/project"
 )
 
+var fetchProjectConfigAndIcon = serverproject.FetchConfigAndIconFromRepo
+
 func (s *stateStore) loadConfigHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -87,7 +89,7 @@ func (s *stateStore) importProjectHandler(w http.ResponseWriter, r *http.Request
 	importCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 
-	fetchRes, err := serverproject.FetchConfigAndIconFromRepo(importCtx, tmpDir, req.RepoURL, req.RepoRef, req.ConfigFile)
+	fetchRes, err := fetchProjectConfigAndIcon(importCtx, tmpDir, req.RepoURL, req.RepoRef, req.ConfigFile)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -177,7 +179,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		reloadCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 		defer cancel()
 
-		fetchRes, err := serverproject.FetchConfigAndIconFromRepo(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
+		fetchRes, err := fetchProjectConfigAndIcon(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -201,6 +203,36 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (s *stateStore) reloadProjectFromRepo(ctx context.Context, project protocol.ProjectSummary) error {
+	if strings.TrimSpace(project.RepoURL) == "" {
+		return fmt.Errorf("project has no repo_url configured")
+	}
+	configFile := strings.TrimSpace(project.ConfigFile)
+	if configFile == "" {
+		configFile = "ciwi-project.yaml"
+	}
+
+	tmpDir, err := os.MkdirTemp("", "ciwi-reload-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	reloadCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	fetchRes, err := fetchProjectConfigAndIcon(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
+	if err != nil {
+		return err
+	}
+	_, err = s.persistImportedProject(protocol.ImportProjectRequest{
+		RepoURL:    project.RepoURL,
+		RepoRef:    project.RepoRef,
+		ConfigFile: configFile,
+	}, fetchRes.ConfigContent, fetchRes.IconContentType, fetchRes.IconContentBytes)
+	return err
 }
 
 func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request) {
