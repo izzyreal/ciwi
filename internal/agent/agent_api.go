@@ -20,7 +20,7 @@ const (
 	terminalStatusAttemptTTL  = 30 * time.Second
 )
 
-func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string, capabilities map[string]string, updateFailure string) (protocol.HeartbeatResponse, error) {
+func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string, capabilities map[string]string, updateFailure, restartStatus string) (protocol.HeartbeatResponse, error) {
 	payload := protocol.HeartbeatRequest{
 		AgentID:       agentID,
 		Hostname:      hostname,
@@ -29,6 +29,7 @@ func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID,
 		Version:       currentVersion(),
 		Capabilities:  cloneMap(capabilities),
 		UpdateFailure: strings.TrimSpace(updateFailure),
+		RestartStatus: strings.TrimSpace(restartStatus),
 		TimestampUTC:  time.Now().UTC(),
 	}
 

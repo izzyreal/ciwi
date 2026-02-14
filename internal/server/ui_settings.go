@@ -59,6 +59,7 @@ const settingsHTML = `<!doctype html>
       <div class="row">
         <button id="checkUpdatesBtn" class="secondary">Check for updates</button>
         <button id="applyUpdateBtn" class="secondary">Update now</button>
+        <button id="restartServerBtn" class="secondary">Restart server</button>
         <select id="rollbackTagSelect" style="min-width:220px;"></select>
         <button id="refreshRollbackTagsBtn" class="secondary">Refresh tags</button>
         <button id="rollbackUpdateBtn" class="secondary">Rollback</button>
@@ -312,6 +313,24 @@ const settingsHTML = `<!doctype html>
         }
       }
       await refreshUpdateStatus();
+    };
+
+    document.getElementById('restartServerBtn').onclick = async () => {
+      const result = document.getElementById('updateResult');
+      if (!confirm('Restart ciwi server now?')) return;
+      result.textContent = 'Restart requested...';
+      try {
+        const r = await postJSONWithTimeout('/api/v1/server/restart', '{}', 10000);
+        result.textContent = r.message || 'Server restarting...';
+        waitForServerRestartAndReload();
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          result.textContent = 'Restart request timed out; waiting for server restart...';
+          waitForServerRestartAndReload();
+        } else {
+          result.textContent = 'Restart failed: ' + e.message;
+        }
+      }
     };
 
     document.getElementById('refreshRollbackTagsBtn').onclick = async () => {

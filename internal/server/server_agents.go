@@ -73,6 +73,10 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		delete(s.agentToolRefresh, hb.AgentID)
 	}
+	restartRequested := s.agentRestarts[hb.AgentID]
+	if restartRequested {
+		delete(s.agentRestarts, hb.AgentID)
+	}
 	target := resolveEffectiveAgentUpdateTarget(s.getAgentUpdateTarget(), currentVersion())
 	manualTarget := strings.TrimSpace(s.agentUpdates[hb.AgentID])
 	updateSource := updateSourceAutomatic
@@ -87,6 +91,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	firstAttemptAt := time.Time{}
 	firstAttemptSlot := -1
 	reportedUpdateFailure := summarizeUpdateFailure(hb.UpdateFailure)
+	reportedRestartStatus := summarizeRestartStatus(hb.RestartStatus)
 	needsUpdate := target != "" && isVersionDifferent(target, strings.TrimSpace(hb.Version))
 	if needsUpdate {
 		prevTarget := strings.TrimSpace(prev.UpdateTarget)
@@ -189,6 +194,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		state.RecentLog = appendAgentLog(state.RecentLog, "server requested tools refresh")
 	}
+	if restartRequested {
+		state.RecentLog = appendAgentLog(state.RecentLog, "server requested restart")
+	}
 	if !firstAttemptAt.IsZero() {
 		delay := firstAttemptAt.Sub(now)
 		if delay < 0 {
@@ -205,6 +213,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	} else if reportedUpdateFailure != "" {
 		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("agent reported update failure: %s", reportedUpdateFailure))
 	}
+	if reportedRestartStatus != "" {
+		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("agent restart status: %s", reportedRestartStatus))
+	}
 	if updateRequested {
 		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("server requested update to %s (attempt=%d)", target, state.UpdateAttempts))
 	}
@@ -217,6 +228,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		resp.RefreshToolsRequested = true
 	}
+	if restartRequested {
+		resp.RestartRequested = true
+	}
 	if updateRequested {
 		resp.UpdateRequested = true
 		resp.UpdateTarget = target
@@ -228,6 +242,20 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func summarizeUpdateFailure(raw string) string {
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if normalized == "" {
+		return ""
+	}
+	if len(normalized) <= maxReportedUpdateFailureLength {
+		return normalized
+	}
+	if maxReportedUpdateFailureLength <= 3 {
+		return normalized[:maxReportedUpdateFailureLength]
+	}
+	return strings.TrimSpace(normalized[:maxReportedUpdateFailureLength-3]) + "..."
+}
+
+func summarizeRestartStatus(raw string) string {
 	normalized := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
 	if normalized == "" {
 		return ""

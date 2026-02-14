@@ -182,3 +182,36 @@ func TestServerRollbackRequiresTargetVersion(t *testing.T) {
 		t.Fatalf("rollback status=%d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 }
+
+func TestServerRestartEndpoint(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/server/restart", map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("server restart status=%d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		Restarting bool   `json:"restarting"`
+		Message    string `json:"message"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if !payload.Restarting {
+		t.Fatalf("expected restarting=true")
+	}
+	if payload.Message == "" {
+		t.Fatalf("expected restart message")
+	}
+
+	statusResp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/update/status", nil)
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("update status status=%d body=%s", statusResp.StatusCode, readBody(t, statusResp))
+	}
+	var statusPayload struct {
+		Status map[string]string `json:"status"`
+	}
+	decodeJSONBody(t, statusResp, &statusPayload)
+	if statusPayload.Status["update_message"] != payload.Message {
+		t.Fatalf("unexpected update_message: %q", statusPayload.Status["update_message"])
+	}
+}

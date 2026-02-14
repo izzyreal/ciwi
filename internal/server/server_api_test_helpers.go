@@ -65,6 +65,7 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 		agents:           make(map[string]agentState),
 		agentUpdates:     make(map[string]string),
 		agentToolRefresh: make(map[string]bool),
+		agentRestarts:    make(map[string]bool),
 		db:               db,
 		artifactsDir:     artifactsDir,
 	}
@@ -90,6 +91,7 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v1/update/check", s.updateCheckHandler)
 	mux.HandleFunc("/api/v1/update/apply", s.updateApplyHandler)
 	mux.HandleFunc("/api/v1/update/rollback", s.updateRollbackHandler)
+	mux.HandleFunc("/api/v1/server/restart", s.serverRestartHandler)
 	mux.HandleFunc("/api/v1/update/tags", s.updateTagsHandler)
 	mux.HandleFunc("/api/v1/update/status", s.updateStatusHandler)
 

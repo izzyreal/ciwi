@@ -113,6 +113,7 @@ const agentHTML = `<!doctype html>
         <div id="statusText" class="muted"></div>
         <div>
           <button id="updateBtn" style="display:none;">Update</button>
+          <button id="restartBtn" style="display:none;">Restart Agent</button>
           <button id="refreshToolsBtn" style="display:none;">Refresh Tools</button>
           <button id="runAdhocBtn" style="display:none;">Run Adhoc Script</button>
         </div>
@@ -367,12 +368,14 @@ const agentHTML = `<!doctype html>
         document.getElementById('statusText').innerHTML = 'Health: <span class="' + s.cls + '">' + s.label + '</span>';
 
         const updateButton = document.getElementById('updateBtn');
+        const restartButton = document.getElementById('restartBtn');
         const refreshToolsButton = document.getElementById('refreshToolsBtn');
         const runAdhocButton = document.getElementById('runAdhocBtn');
         adhocShells = parseAgentShells(a.capabilities || {});
         const showUpdate = (!a.update_in_progress) && (!!a.update_requested || (!!a.needs_update && s.label !== 'offline'));
         updateButton.style.display = showUpdate ? 'inline-block' : 'none';
         updateButton.textContent = a.update_requested ? 'Retry Now' : 'Update';
+        restartButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
         refreshToolsButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
         runAdhocButton.style.display = adhocShells.length > 0 ? 'inline-block' : 'none';
 
@@ -410,6 +413,15 @@ const agentHTML = `<!doctype html>
         await refreshAgent(true);
       } catch (e) {
         alert('Update request failed: ' + e.message);
+      }
+    };
+    document.getElementById('restartBtn').onclick = async () => {
+      if (!confirm('Request restart for this agent?')) return;
+      try {
+        await postAction('restart');
+        await refreshAgent(true);
+      } catch (e) {
+        alert('Restart request failed: ' + e.message);
       }
     };
     document.getElementById('refreshToolsBtn').onclick = async () => {

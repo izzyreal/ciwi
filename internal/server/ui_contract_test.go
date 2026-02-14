@@ -29,9 +29,12 @@ func newTestHTTPServerWithUI(t *testing.T) *httptest.Server {
 	}
 
 	s := &stateStore{
-		agents:       make(map[string]agentState),
-		db:           db,
-		artifactsDir: artifactsDir,
+		agents:           make(map[string]agentState),
+		agentUpdates:     make(map[string]string),
+		agentToolRefresh: make(map[string]bool),
+		agentRestarts:    make(map[string]bool),
+		db:               db,
+		artifactsDir:     artifactsDir,
 	}
 
 	mux := http.NewServeMux()
@@ -117,6 +120,7 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 		`id="importProjectBtn"`,
 		`id="checkUpdatesBtn"`,
 		`id="applyUpdateBtn"`,
+		`id="restartServerBtn"`,
 		`id="rollbackTagSelect"`,
 		`id="rollbackUpdateBtn"`,
 		`id="openVaultConnectionsBtn"`,
@@ -126,6 +130,7 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 		"/reload",
 		"/api/v1/update/check",
 		"/api/v1/update/apply",
+		"/api/v1/server/restart",
 		"/api/v1/update/rollback",
 		"/api/v1/update/tags",
 		"/api/v1/update/status",
@@ -198,6 +203,7 @@ func TestUIRootAndSharedJSServed(t *testing.T) {
 		"Agent Detail",
 		"Run Adhoc Script",
 		"/api/v1/agents/",
+		"postAction('restart')",
 		"/run-script",
 	)
 }

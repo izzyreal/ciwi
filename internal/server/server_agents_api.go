@@ -45,7 +45,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, agentViewResponse{Agent: info})
 		return
 	}
-	if len(parts) != 2 || (parts[1] != "update" && parts[1] != "refresh-tools" && parts[1] != "run-script") {
+	if len(parts) != 2 || (parts[1] != "update" && parts[1] != "refresh-tools" && parts[1] != "restart" && parts[1] != "run-script") {
 		http.NotFound(w, r)
 		return
 	}
@@ -74,6 +74,25 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 			Requested: true,
 			AgentID:   agentID,
 			Message:   "tools refresh requested",
+		})
+		return
+	}
+	if parts[1] == "restart" {
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		s.agentRestarts[agentID] = true
+		a.RecentLog = appendAgentLog(a.RecentLog, "manual restart requested")
+		s.agents[agentID] = a
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   "agent restart requested",
 		})
 		return
 	}

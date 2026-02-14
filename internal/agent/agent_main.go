@@ -43,7 +43,9 @@ func runLoop(ctx context.Context) error {
 	defer leaseTicker.Stop()
 	capabilities := detectAgentCapabilities()
 	pendingUpdateFailure := ""
+	pendingRestartStatus := ""
 	jobInProgress := false
+	pendingRestart := false
 	type pendingUpdateRequest struct {
 		target     string
 		repository string
@@ -76,22 +78,45 @@ func runLoop(ctx context.Context) error {
 			pendingUpdateFailure = err.Error()
 		}
 	}
+	runOrDeferRestart := func() {
+		if jobInProgress {
+			pendingRestart = true
+			pendingRestartStatus = "restart deferred: agent busy with active job"
+			slog.Info("server requested agent restart; deferring until current job completes")
+			return
+		}
+		slog.Info("server requested agent restart")
+		pendingRestartStatus = requestAgentRestart()
+		if pendingRestartStatus != "" {
+			if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
+				slog.Error("heartbeat failed while reporting restart status", "error", err)
+			} else {
+				pendingUpdateFailure = ""
+				pendingRestartStatus = ""
+			}
+		}
+	}
 
-	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure); err != nil {
+	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
 		slog.Error("initial heartbeat failed", "error", err)
 	} else {
 		pendingUpdateFailure = ""
+		pendingRestartStatus = ""
 		if hb.RefreshToolsRequested {
 			capabilities = detectAgentCapabilities()
 			slog.Info("server requested tools refresh")
-			if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure); err != nil {
+			if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
 				slog.Error("heartbeat failed", "error", err)
 			} else {
 				pendingUpdateFailure = ""
+				pendingRestartStatus = ""
 			}
 		}
 		if hb.UpdateRequested {
 			runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
+		}
+		if hb.RestartRequested {
+			runOrDeferRestart()
 		}
 	}
 
@@ -109,23 +134,32 @@ func runLoop(ctx context.Context) error {
 				pendingUpdate = nil
 				runOrDeferUpdate(req.target, req.repository, req.apiBase)
 			}
+			if pendingRestart {
+				pendingRestart = false
+				runOrDeferRestart()
+			}
 		case <-heartbeatTicker.C:
-			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure)
+			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus)
 			if err != nil {
 				slog.Error("heartbeat failed", "error", err)
 			} else {
 				pendingUpdateFailure = ""
+				pendingRestartStatus = ""
 				if hb.RefreshToolsRequested {
 					capabilities = detectAgentCapabilities()
 					slog.Info("server requested tools refresh")
-					if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure); err != nil {
+					if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
 						slog.Error("heartbeat failed", "error", err)
 					} else {
 						pendingUpdateFailure = ""
+						pendingRestartStatus = ""
 					}
 				}
 				if hb.UpdateRequested {
 					runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
+				}
+				if hb.RestartRequested {
+					runOrDeferRestart()
 				}
 			}
 		case <-leaseTicker.C:

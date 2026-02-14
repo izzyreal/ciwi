@@ -324,3 +324,69 @@ func TestManualRefreshToolsRequest(t *testing.T) {
 		t.Fatalf("expected refresh_tools_requested=true")
 	}
 }
+
+func TestManualAgentRestartRequest(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	firstHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-restart",
+		"hostname":      "host-rs",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:00Z",
+	})
+	if firstHB.StatusCode != http.StatusOK {
+		t.Fatalf("first heartbeat status=%d body=%s", firstHB.StatusCode, readBody(t, firstHB))
+	}
+	_ = readBody(t, firstHB)
+
+	restartResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-restart/restart", map[string]any{})
+	if restartResp.StatusCode != http.StatusOK {
+		t.Fatalf("restart request status=%d body=%s", restartResp.StatusCode, readBody(t, restartResp))
+	}
+	_ = readBody(t, restartResp)
+
+	secondHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-restart",
+		"hostname":      "host-rs",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:10Z",
+	})
+	if secondHB.StatusCode != http.StatusOK {
+		t.Fatalf("second heartbeat status=%d body=%s", secondHB.StatusCode, readBody(t, secondHB))
+	}
+	var secondPayload struct {
+		RestartRequested bool `json:"restart_requested"`
+	}
+	decodeJSONBody(t, secondHB, &secondPayload)
+	if !secondPayload.RestartRequested {
+		t.Fatalf("expected restart_requested=true")
+	}
+
+	thirdHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-restart",
+		"hostname":      "host-rs",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:20Z",
+	})
+	if thirdHB.StatusCode != http.StatusOK {
+		t.Fatalf("third heartbeat status=%d body=%s", thirdHB.StatusCode, readBody(t, thirdHB))
+	}
+	var thirdPayload struct {
+		RestartRequested bool `json:"restart_requested"`
+	}
+	decodeJSONBody(t, thirdHB, &thirdPayload)
+	if thirdPayload.RestartRequested {
+		t.Fatalf("expected restart_requested=false after delivery")
+	}
+}

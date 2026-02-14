@@ -14,6 +14,7 @@ type HeartbeatRequest struct {
 	Version       string            `json:"version,omitempty"`
 	Capabilities  map[string]string `json:"capabilities"`
 	UpdateFailure string            `json:"update_failure,omitempty"`
+	RestartStatus string            `json:"restart_status,omitempty"`
 	TimestampUTC  time.Time         `json:"timestamp_utc"`
 }
 
@@ -25,4 +26,5 @@ type HeartbeatResponse struct {
 	UpdateRepository      string `json:"update_repository,omitempty"`
 	UpdateAPIBase         string `json:"update_api_base,omitempty"`
 	RefreshToolsRequested bool   `json:"refresh_tools_requested,omitempty"`
+	RestartRequested      bool   `json:"restart_requested,omitempty"`
 }
