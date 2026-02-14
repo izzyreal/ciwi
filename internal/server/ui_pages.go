@@ -42,7 +42,7 @@ function buildJobExecutionRow(job, opts = {}) {
   const linkClasses = fixedLines > 0 ? ((linkClass ? linkClass + ' ' : '') + 'ciwi-job-cell-link') : linkClass;
   const iconURL = projectIconURLFn ? String(projectIconURLFn(job) || '').trim() : '';
   const iconHTML = iconURL
-    ? '<img class="ciwi-project-mini-icon" src="' + escapeHtml(iconURL) + '" alt="" onerror="this.style.display=\\'none\\'" />'
+    ? '<img class="ciwi-project-mini-icon" src="' + escapeHtml(iconURL) + '" alt="" onerror="this.style.display=\'none\'" />'
     : '';
 
   tr.innerHTML =

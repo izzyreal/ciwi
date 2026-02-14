@@ -56,16 +56,15 @@ const uiIndexCSS = `
     .project-icon-col {
       display: flex;
       justify-content: center;
-      align-items: flex-start;
+      align-items: center;
       min-height: 72px;
     }
     .project-icon {
       width: 72px;
       height: 72px;
-      object-fit: cover;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: #f7fcf9;
+      object-fit: contain;
+      border: none;
+      background: transparent;
     }
     .project-pipelines-col { min-width: 0; }
     .pipeline { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; }
@@ -140,11 +139,10 @@ const uiIndexCSS = `
     .ciwi-project-mini-icon {
       width: 16px;
       height: 16px;
-      object-fit: cover;
-      border-radius: 4px;
-      border: 1px solid var(--line);
+      object-fit: contain;
+      border: none;
       flex: 0 0 auto;
-      background: #f7fcf9;
+      background: transparent;
     }
     .ciwi-job-group-table { width: 100%; border-collapse: collapse; }
     .ciwi-job-group-card {

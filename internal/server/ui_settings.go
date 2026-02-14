@@ -76,24 +76,6 @@ const settingsHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script src="/ui/pages.js"></script>
   <script>
-    if (typeof window.apiJSON !== 'function') {
-      window.apiJSON = async function(path, opts = {}) {
-        const baseHeaders = { 'Content-Type': 'application/json' };
-        const extraHeaders = (opts && opts.headers) || {};
-        const request = {
-          ...opts,
-          cache: 'no-store',
-          headers: { ...baseHeaders, ...extraHeaders },
-        };
-        const res = await fetch(path, request);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || ('HTTP ' + res.status));
-        }
-        return res.json();
-      };
-    }
-
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
     const projectReloadState = new Map();

@@ -101,10 +101,9 @@ const jobExecutionHTML = `<!doctype html>
     .job-header-icon {
       width: 100px;
       height: 100px;
-      object-fit: cover;
-      border-radius: 14px;
-      border: 1px solid var(--line);
-      background: #f7fcf9;
+      object-fit: contain;
+      border: none;
+      background: transparent;
     }
   </style>
 </head>

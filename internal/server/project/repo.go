@@ -97,18 +97,18 @@ func fetchProjectIconBytes(ctx context.Context, tmpDir string) (string, []byte) 
 			continue
 		}
 		size, parseErr := strconv.ParseInt(strings.TrimSpace(sizeOut), 10, 64)
-		if parseErr != nil || size <= 0 || size > 1024*1024 {
+		if parseErr != nil || size <= 0 || size > 500*1024 {
 			continue
 		}
 		depth := strings.Count(strings.ReplaceAll(path, "\\", "/"), "/")
 		candidates = append(candidates, candidate{path: path, size: size, depth: depth})
 	}
 	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].size != candidates[j].size {
+			return candidates[i].size > candidates[j].size
+		}
 		if candidates[i].depth != candidates[j].depth {
 			return candidates[i].depth < candidates[j].depth
-		}
-		if candidates[i].size != candidates[j].size {
-			return candidates[i].size < candidates[j].size
 		}
 		return candidates[i].path < candidates[j].path
 	})
