@@ -159,3 +159,9 @@ pipelines:
                 echo "[release] Uploaded ${IDX}/${TOTAL}: ${FILE} in $((END-START))s"
               done
             skip_dry_run: true
+
+pipeline_chains:
+  - id: build-release
+    pipelines:
+      - build
+      - release
