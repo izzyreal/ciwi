@@ -2,12 +2,26 @@
 
 ![ciwi logo](internal/server/assets/ciwi-logo.png)
 
-Simple CI/CD and build automation system.</br>
+Simple, portable, single binary CI/CD server and agent.</br>
 WIP.</br>
 NOT SUITABLE FOR PUBLIC SERVERS.</br>
 ONLY FOR PRIVATE NETWORKS AND HOMELAB STYLE PROJECTS.</br>
 
+## Background
+
+When OpenAI released Codex I decided to give it a try. In about 3 days I had a Jenkins and TeamCity alternative that worked well enough to suit some of my basic needs. In the next few weeks I'll see if becomes a project I will keep maintaining.
+
+The nice thing about ciwi is that it's open source, free, has portable binaries of about 13MB, uses the same binary just in a different mode for agent, server or both. Memory usages is looking pretty good, with my home server instance reporting 72MB and my agents 10-21MB.
+
 ## Getting started
+
+Check out the [automated installation scripts](#automated-installation-scripts). They set up a systemd persistent server or agent on Linux, agent service for Windows, or LaunchAgent for macOS. All of them are capable of self-updating. Go to the Global Settings ⚙️ (top-right on main page) to check for updates and roll back.
+
+Check out the example `ciwi-project.yaml` files:
+* [`ciwi-project.yaml`](https://github.com/izzyreal/cupuacu/blob/main/ciwi-project.yaml) for building and publishing cupuacu (a C++ SDL3 audio editor).
+* [`ciwi-project.yaml`](ciwi-project.yaml) for building ciwi itself.
+
+If do prefer not having the persistent server or agent that the installer scripts give you, you can run the binaries manually, giving you these options:
 
 ```bash
 go run ./cmd/ciwi --help
@@ -15,12 +29,15 @@ go run ./cmd/ciwi server
 go run ./cmd/ciwi agent
 go run ./cmd/ciwi all-in-one
 ```
+This comes with notably less zero-config-ness, so you'll have to read up on [environment variables](#environment-variables) below.
 
 ## Terminology
 
-Canonical domain terminology lives in `terminology.md`.
+Canonical domain terminology lives in [`terminology.md`](terminology.md).
 
 ## Environment variables
+
+Prefer the [automated installation scripts](#automated-installation-scripts), but if you wish to tinker, here are a few options:
 
 - `CIWI_SERVER_ADDR`: server bind address (default `:8112`)
 - `CIWI_DB_PATH`: sqlite database path (default `ciwi.db`)
@@ -54,7 +71,7 @@ Build-time version embedding:
 ## Tool capabilities and requirements
 
 Agents automatically detect common shell tools and report versions in heartbeats:
-- `git`, `go`, `gh`, `cmake`, `gcc`, `clang`, `xcodebuild`, `msvc` (when present)
+- `git`, `go`, `gh`, `cmake`, `gcc`, `clang`, `xcodebuild`, `msvc`, `xorg-dev` (when present)
 
 Use `requires.tools` in pipeline jobs to constrain tool presence/version:
 
@@ -78,6 +95,8 @@ Constraint syntax supports:
 - version compare: `>=`, `>`, `<=`, `<`, `=`, `==`
 
 From `/agents`, use **Refresh Tools** to request an on-demand re-scan on an agent.
+
+# Automated installation scripts
 
 ## macOS agent installer (LaunchAgent)
 
@@ -299,7 +318,7 @@ sudo systemctl status ciwi-agent
 sudo journalctl -u ciwi-agent -f
 ```
 
-## First functional API slice
+## Backend API
 
 - `GET /` minimal web UI (projects/pipelines/jobs)
 - `GET /projects/{projectId}` project page with structure, per-matrix run buttons and execution history
@@ -462,3 +481,15 @@ curl -s -X POST http://127.0.0.1:8112/api/v1/pipelines/1/run -d '{}'
 # 6) Check jobs:
 curl -s http://127.0.0.1:8112/api/v1/jobs
 ```
+
+## Screenshots
+
+<img width="1091" height="702" alt="image" src="https://github.com/user-attachments/assets/f6ae903c-40a0-47f5-b961-8ec0611f5e3c" />
+<img width="1101" height="712" alt="image" src="https://github.com/user-attachments/assets/35a88fd3-b612-4781-b306-ff476df75f31" />
+<img width="1089" height="715" alt="image" src="https://github.com/user-attachments/assets/f0c9f1ab-5a5b-44b9-9207-c7fb295b09a0" />
+<img width="1095" height="699" alt="image" src="https://github.com/user-attachments/assets/1515fc10-466f-478e-bc3a-b2669e612c90" />
+<img width="1096" height="710" alt="image" src="https://github.com/user-attachments/assets/c4d6ccda-bc09-4645-8372-e80fd02290f4" />
+
+
+
+
