@@ -55,10 +55,14 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		runCtx, cancel = context.WithTimeout(ctx, time.Duration(job.TimeoutSeconds)*time.Second)
 	}
 	defer cancel()
+	runCtx, cancelRun := context.WithCancel(runCtx)
+	defer cancelRun()
 
 	var output syncBuffer
 	fmt.Fprintf(&output, "[meta] agent=%s os=%s arch=%s\n", agentID, runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&output, "[meta] job_execution_id=%s timeout_seconds=%d\n", job.ID, job.TimeoutSeconds)
+	stopControlMonitor := monitorServerTerminalJobState(runCtx, client, serverURL, agentID, job.ID, &output, cancelRun)
+	defer stopControlMonitor()
 
 	execDir := jobDir
 	if job.Source != nil && strings.TrimSpace(job.Source.Repo) != "" {
@@ -291,6 +295,63 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	slog.Error("job failed", "job_execution_id", job.ID, "exit_code", exitCode, "error", failMsg)
 	return nil
+}
+
+func monitorServerTerminalJobState(
+	ctx context.Context,
+	client *http.Client,
+	serverURL, agentID, jobID string,
+	output *syncBuffer,
+	cancel context.CancelFunc,
+) func() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	done := make(chan struct{})
+	stopCh := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		check := func() bool {
+			state, err := getJobExecutionState(ctx, client, serverURL, jobID)
+			if err != nil {
+				return false
+			}
+			status := protocol.NormalizeJobExecutionStatus(state.Status)
+			if !protocol.IsTerminalJobExecutionStatus(status) {
+				return false
+			}
+			msg := "job marked " + status + " on server"
+			if reason := strings.TrimSpace(state.Error); reason != "" {
+				msg += ": " + reason
+			}
+			if output != nil {
+				_, _ = output.WriteString("[control] " + msg + "\n")
+			}
+			slog.Warn("server marked job terminal during execution; cancelling local process", "job_execution_id", jobID, "agent_id", agentID, "status", status)
+			cancel()
+			return true
+		}
+		if check() {
+			return
+		}
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if check() {
+					return
+				}
+			}
+		}
+	}()
+
+	return func() {
+		ticker.Stop()
+		close(stopCh)
+		<-done
+	}
 }
 
 func parseStepTestSuiteFromFile(execDir string, meta stepMarkerMeta) (protocol.TestSuiteReport, error) {

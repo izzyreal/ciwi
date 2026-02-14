@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
@@ -418,6 +419,91 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	}
 	if !strings.Contains(last.Error, "artifact upload failed") {
 		t.Fatalf("expected artifact upload failure in error, got %q", last.Error)
+	}
+}
+
+func TestExecuteLeasedJobCancelsWhenServerForceFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix shell assertion test skipped on windows")
+	}
+
+	var (
+		stateChecks int32
+		mu          sync.Mutex
+		statuses    []protocol.JobExecutionStatusUpdateRequest
+	)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/api/v1/jobs/job-force-fail":
+				check := atomic.AddInt32(&stateChecks, 1)
+				status := "running"
+				errText := ""
+				if check >= 2 {
+					status = "failed"
+					errText = "force-failed from UI"
+				}
+				body := `{"job_execution":{"id":"job-force-fail","status":"` + status + `","error":"` + errText + `"}}`
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Header:     make(http.Header),
+				}, nil
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-force-fail/status":
+				var req protocol.JobExecutionStatusUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode status: %v", err)
+				}
+				mu.Lock()
+				statuses = append(statuses, req)
+				mu.Unlock()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+					Header:     make(http.Header),
+				}, nil
+			default:
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(strings.NewReader("not found")),
+					Header:     make(http.Header),
+				}, nil
+			}
+		}),
+	}
+
+	job := protocol.JobExecution{
+		ID:             "job-force-fail",
+		Script:         "sleep 30",
+		TimeoutSeconds: 120,
+		RequiredCapabilities: map[string]string{
+			"shell": shellPosix,
+		},
+	}
+
+	start := time.Now()
+	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", t.TempDir(), nil, job); err != nil {
+		t.Fatalf("executeLeasedJob: %v", err)
+	}
+	elapsed := time.Since(start)
+	if elapsed > 6*time.Second {
+		t.Fatalf("expected force-failed job to stop quickly, took %s", elapsed)
+	}
+	if atomic.LoadInt32(&stateChecks) < 2 {
+		t.Fatalf("expected job state polling checks, got %d", atomic.LoadInt32(&stateChecks))
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) == 0 {
+		t.Fatalf("expected status updates")
+	}
+	last := statuses[len(statuses)-1]
+	if last.Status != "failed" {
+		t.Fatalf("expected final status failed, got %q", last.Status)
+	}
+	if !strings.Contains(last.Output, "[control] job marked failed on server: force-failed from UI") {
+		t.Fatalf("expected control cancel marker in output, got:\n%s", last.Output)
 	}
 }
 

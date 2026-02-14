@@ -187,3 +187,37 @@ func cloneMap(in map[string]string) map[string]string {
 	}
 	return out
 }
+
+type jobExecutionState struct {
+	Status string
+	Error  string
+}
+
+func getJobExecutionState(ctx context.Context, client *http.Client, serverURL, jobID string) (jobExecutionState, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+"/api/v1/jobs/"+jobID, nil)
+	if err != nil {
+		return jobExecutionState{}, fmt.Errorf("create job state request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return jobExecutionState{}, fmt.Errorf("send job state request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
+		return jobExecutionState{}, fmt.Errorf("job state rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(body))
+	}
+	var payload struct {
+		JobExecution struct {
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		} `json:"job_execution"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return jobExecutionState{}, fmt.Errorf("decode job state response: %w", err)
+	}
+	return jobExecutionState{
+		Status: strings.TrimSpace(payload.JobExecution.Status),
+		Error:  strings.TrimSpace(payload.JobExecution.Error),
+	}, nil
+}
