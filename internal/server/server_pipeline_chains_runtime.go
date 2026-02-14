@@ -29,6 +29,27 @@ func (s *stateStore) onJobExecutionUpdated(job protocol.JobExecution) {
 		return
 	}
 	if status == protocol.JobExecutionStatusSucceeded {
+		currentPosJobs := make([]protocol.JobExecution, 0)
+		for _, candidate := range all {
+			if strings.TrimSpace(candidate.Metadata["chain_run_id"]) != chainRunID {
+				continue
+			}
+			cpos, err := strconv.Atoi(strings.TrimSpace(candidate.Metadata["pipeline_chain_position"]))
+			if err != nil || cpos != pos {
+				continue
+			}
+			currentPosJobs = append(currentPosJobs, candidate)
+		}
+		if len(currentPosJobs) == 0 {
+			return
+		}
+		for _, current := range currentPosJobs {
+			cstatus := protocol.NormalizeJobExecutionStatus(current.Status)
+			if cstatus != protocol.JobExecutionStatusSucceeded {
+				// Wait until every job in this chain position has succeeded.
+				return
+			}
+		}
 		nextPos := strconv.Itoa(pos + 1)
 		for _, candidate := range all {
 			if protocol.NormalizeJobExecutionStatus(candidate.Status) != protocol.JobExecutionStatusQueued {
