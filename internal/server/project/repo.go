@@ -85,11 +85,11 @@ func fetchProjectIconBytes(ctx context.Context, tmpDir string) (string, []byte) 
 			continue
 		}
 		base := strings.ToLower(filepath.Base(path))
-		if !strings.Contains(base, "icon") {
+		if !strings.Contains(base, "icon") && !strings.Contains(base, "logo") {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(base))
-		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" {
+		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".bmp" {
 			continue
 		}
 		sizeOut, sizeErr := runCmd(ctx, "", "git", "-C", tmpDir, "cat-file", "-s", "FETCH_HEAD:"+path)
@@ -123,6 +123,9 @@ func fetchProjectIconBytes(ctx context.Context, tmpDir string) (string, []byte) 
 		}
 		if strings.HasPrefix(mime, "image/jpeg") {
 			return "image/jpeg", raw
+		}
+		if strings.HasPrefix(mime, "image/bmp") || strings.HasPrefix(mime, "image/x-ms-bmp") {
+			return "image/bmp", raw
 		}
 	}
 	return "", nil

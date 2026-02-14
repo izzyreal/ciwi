@@ -65,6 +65,8 @@ const uiIndexCSS = `
       object-fit: contain;
       border: none;
       background: transparent;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
     }
     .project-pipelines-col { min-width: 0; }
     .pipeline { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; }
@@ -143,6 +145,8 @@ const uiIndexCSS = `
       border: none;
       flex: 0 0 auto;
       background: transparent;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
     }
     .ciwi-job-group-table { width: 100%; border-collapse: collapse; }
     .ciwi-job-group-card {

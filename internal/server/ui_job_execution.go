@@ -104,6 +104,8 @@ const jobExecutionHTML = `<!doctype html>
       object-fit: contain;
       border: none;
       background: transparent;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
     }
   </style>
 </head>
