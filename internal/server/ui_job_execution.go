@@ -16,7 +16,7 @@ const jobExecutionHTML = `<!doctype html>
     .status-failed { color: var(--bad); font-weight: 700; }
     .status-running { color: #a56a00; font-weight: 700; }
     .status-queued, .status-leased { color: var(--muted); font-weight: 700; }
-    textarea.log {
+    .log {
       margin: 0;
       background: #0f1412;
       color: #cde7dc;
@@ -29,9 +29,43 @@ const jobExecutionHTML = `<!doctype html>
       overflow: auto;
       font-size: 12px;
       line-height: 1.35;
-      resize: vertical;
+      white-space: pre-wrap;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
+    .log-line { display:block; }
+    .log-line.phase-meta { color: #8fd8ff; }
+    .log-line.phase-checkout { color: #a6e3a1; }
+    .log-line.phase-run { color: #f9d88d; }
+    .log-line.shell-trace { color: #c2d7cc; }
+    .log-line.risky-cmd { color: #ffd7a8; }
+    .log-dryskip {
+      border-left: 3px solid #b48a47;
+      background: rgba(180, 138, 71, 0.1);
+      padding: 6px 8px;
+      margin: 4px 0;
+      border-radius: 4px;
+    }
+    .log-dryskip-head { color: #ffd68c; font-weight: 700; }
+    .log-dryskip-body { margin-top: 3px; color: #f3dfba; white-space: pre-wrap; }
+    details.log-fold {
+      margin: 6px 0;
+      border-left: 3px solid #365547;
+      background: rgba(54, 85, 71, 0.2);
+      border-radius: 4px;
+      padding: 4px 8px;
+    }
+    details.log-fold > summary { cursor: pointer; color: #9bc4b1; }
+    details.log-fold pre {
+      margin: 8px 0 2px;
+      white-space: pre-wrap;
+      color: #b7d3c7;
+      font: inherit;
+    }
+    .tok-version { color: #ffd68c; font-weight: 700; }
+    .tok-sha { color: #8fd8ff; }
+    .tok-duration { color: #a6e3a1; font-weight: 700; }
+    .tok-url { color: #87c7ff; }
+    .log-empty { color: #8ea89d; }
     .artifact-row {
       display: flex;
       align-items: center;
@@ -76,7 +110,7 @@ const jobExecutionHTML = `<!doctype html>
 
     <div class="card">
       <h3 style="margin:0 0 10px;">Output / Error</h3>
-      <textarea id="logBox" class="log" readonly spellcheck="false"></textarea>
+      <div id="logBox" class="log"></div>
     </div>
 
     <div class="card">
@@ -92,6 +126,7 @@ const jobExecutionHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script>
     let refreshInFlight = false;
+    let lastRenderedOutput = null;
     const refreshGuard = createRefreshGuard(5000);
 
     function jobExecutionIdFromPath() {
@@ -143,6 +178,85 @@ const jobExecutionHTML = `<!doctype html>
       }
       link.href = '/';
       link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
+    }
+
+    function classifyLine(rawLine) {
+      if (/^\[meta\]/.test(rawLine)) return 'phase-meta';
+      if (/^\[checkout\]/.test(rawLine)) return 'phase-checkout';
+      if (/^\[run\]/.test(rawLine)) return 'phase-run';
+      if (/^[+]{1,2}\s/.test(rawLine)) return 'shell-trace';
+      if (/^[+]{1,2}\s*(git push|gh release create|gh release upload)\b/.test(rawLine)) return 'shell-trace risky-cmd';
+      return '';
+    }
+
+    function highlightInline(rawLine) {
+      let out = escapeHtml(rawLine);
+      out = out.replace(/\b(v\d+\.\d+\.\d+)\b/g, '<span class="tok-version">$1</span>');
+      out = out.replace(/\b([0-9a-fA-F]{7,40})\b/g, '<span class="tok-sha">$1</span>');
+      out = out.replace(/\bduration=([0-9]+(?:\.[0-9]+)?s)\b/g, 'duration=<span class="tok-duration">$1</span>');
+      out = out.replace(/(https:\/\/[^\s"']+)/g, '<span class="tok-url">$1</span>');
+      return out;
+    }
+
+    function renderDryRunSkippedBlock(lines) {
+      const cleaned = lines.filter(l => String(l || '').trim() !== '');
+      if (!cleaned.length) return '';
+      const head = '<div class="log-dryskip-head">[dry-run] skipped step</div>';
+      const body = '<div class="log-dryskip-body">' + cleaned.map(highlightInline).join('\n') + '</div>';
+      return '<div class="log-dryskip">' + head + body + '</div>';
+    }
+
+    function renderDetachedHeadFold(lines) {
+      const text = lines.join('\n');
+      return '<details class="log-fold"><summary>git detached HEAD advice (collapsed)</summary><pre>' + escapeHtml(text) + '</pre></details>';
+    }
+
+    function renderOutputLog(raw) {
+      const text = String(raw || '');
+      if (!text) return '<span class="log-empty">&lt;no output yet&gt;</span>';
+      const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+      const html = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^\[dry-run\]\s+skipped step:/.test(line)) {
+          const skipped = [line.replace(/^\[dry-run\]\s+skipped step:\s*/, '')];
+          for (let j = i + 1; j < lines.length; j++) {
+            const next = lines[j];
+            if (/^\[(meta|checkout|run|dry-run)\]/.test(next) || /^[+]{1,2}\s/.test(next)) {
+              i = j - 1;
+              break;
+            }
+            if (j === lines.length - 1) i = j;
+            if (next.trim() === '') {
+              i = j;
+              break;
+            }
+            skipped.push(next);
+          }
+          html.push(renderDryRunSkippedBlock(skipped));
+          continue;
+        }
+
+        if (line.indexOf("You are in 'detached HEAD' state.") === 0) {
+          const folded = [line];
+          for (let j = i + 1; j < lines.length; j++) {
+            const next = lines[j];
+            folded.push(next);
+            if (next.indexOf("Turn off this advice by setting config variable advice.detachedHead to false") === 0) {
+              i = j;
+              break;
+            }
+            if (j === lines.length - 1) i = j;
+          }
+          html.push(renderDetachedHeadFold(folded));
+          continue;
+        }
+
+        const cls = classifyLine(line);
+        const classAttr = cls ? ' class="log-line ' + cls + '"' : ' class="log-line"';
+        html.push('<div' + classAttr + '>' + highlightInline(line) + '</div>');
+      }
+      return html.join('');
     }
 
     async function loadJobExecution(force) {
@@ -201,7 +315,10 @@ const jobExecutionHTML = `<!doctype html>
         ).join('');
 
         const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
-        document.getElementById('logBox').value = output || '<no output yet>';
+        if (output !== lastRenderedOutput) {
+          document.getElementById('logBox').innerHTML = renderOutputLog(output);
+          lastRenderedOutput = output;
+        }
         const stepDescription = String(job.current_step || '').trim();
         let subtitle = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
         if (stepDescription) {
