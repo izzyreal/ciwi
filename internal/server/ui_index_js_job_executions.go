@@ -98,8 +98,15 @@ const uiIndexJobExecutionsJS = `
       }).join('\x1f');
     }
 
-    async function fetchJobList(view, total, epoch) {
-      if (total <= 0) return [];
+    async function fetchAndRenderJobList(view, total, epoch, tbody, opts, viewKey, columnCount, emptyText, previousSignature) {
+      let signature = String(previousSignature || '');
+      if (total <= 0) {
+        if (signature !== '' || !tbodyHasConcreteRows(tbody)) {
+          renderGroupedJobs(tbody, [], opts, viewKey, columnCount, emptyText);
+          signature = '';
+        }
+        return signature;
+      }
       const out = [];
       for (let offset = 0; offset < total; offset += JOBS_BATCH_SIZE) {
         if (epoch !== jobsRenderEpoch) return null;
@@ -110,8 +117,13 @@ const uiIndexJobExecutionsJS = `
         if (epoch !== jobsRenderEpoch) return null;
         const jobs = data.job_executions || [];
         out.push(...jobs);
+        const nextSignature = jobsSignature(out);
+        if (!tbodyHasConcreteRows(tbody) || nextSignature !== signature) {
+          renderGroupedJobs(tbody, out, opts, viewKey, columnCount, emptyText);
+          signature = nextSignature;
+        }
       }
-      return out;
+      return signature;
     }
 
     function summarizeJobGroup(jobs) {
@@ -316,21 +328,15 @@ const uiIndexJobExecutionsJS = `
         projectIconURL: projectIconURLForJob
       };
 
-      const [queuedJobs, historyJobs] = await Promise.all([
-        fetchJobList('queued', queuedTotal, epoch),
-        fetchJobList('history', historyTotal, epoch),
+      const [queuedSig, historySig] = await Promise.all([
+        fetchAndRenderJobList('queued', queuedTotal, epoch, queuedBody, queuedOpts, 'queued', 8, 'No queued jobs.', lastQueuedJobsSignature),
+        fetchAndRenderJobList('history', historyTotal, epoch, historyBody, historyOpts, 'history', 7, 'No job history yet.', lastHistoryJobsSignature),
       ]);
-      if (epoch !== jobsRenderEpoch || queuedJobs === null || historyJobs === null) return;
-      const queuedSig = jobsSignature(queuedJobs);
-      const historySig = jobsSignature(historyJobs);
-      const queuedNeedsRender = !tbodyHasConcreteRows(queuedBody) || queuedSig !== lastQueuedJobsSignature;
-      const historyNeedsRender = !tbodyHasConcreteRows(historyBody) || historySig !== lastHistoryJobsSignature;
-      if (queuedNeedsRender) {
-        renderGroupedJobs(queuedBody, queuedJobs, queuedOpts, 'queued', 8, 'No queued jobs.');
+      if (epoch !== jobsRenderEpoch || queuedSig === null || historySig === null) return;
+      if (!tbodyHasConcreteRows(queuedBody) || queuedSig !== lastQueuedJobsSignature) {
         lastQueuedJobsSignature = queuedSig;
       }
-      if (historyNeedsRender) {
-        renderGroupedJobs(historyBody, historyJobs, historyOpts, 'history', 7, 'No job history yet.');
+      if (!tbodyHasConcreteRows(historyBody) || historySig !== lastHistoryJobsSignature) {
         lastHistoryJobsSignature = historySig;
       }
     }
