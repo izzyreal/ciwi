@@ -222,15 +222,6 @@ func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []pro
 				})
 				continue
 			}
-			if step.Metadata != nil {
-				d.Steps = append(d.Steps, protocol.PipelineStep{
-					Type:       "metadata",
-					Metadata:   cloneMap(step.Metadata.Values),
-					SkipDryRun: step.SkipDryRun,
-					Env:        cloneMap(step.Env),
-				})
-				continue
-			}
 			d.Steps = append(d.Steps, protocol.PipelineStep{
 				Type:       "run",
 				Run:        step.Run,

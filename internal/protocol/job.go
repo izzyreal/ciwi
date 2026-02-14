@@ -162,7 +162,6 @@ type PipelineStep struct {
 	TestCommand string            `json:"test_command,omitempty"`
 	TestFormat  string            `json:"test_format,omitempty"`
 	TestReport  string            `json:"test_report,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
 	SkipDryRun  bool              `json:"skip_dry_run,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
 }
@@ -252,27 +251,24 @@ type JobExecutionStatusUpdateRequest struct {
 }
 
 const (
-	JobExecutionEventTypeStepStarted   = "step.started"
-	JobExecutionEventTypeMetadataPatch = "metadata.patch"
+	JobExecutionEventTypeStepStarted = "step.started"
 )
 
 type JobStepPlanItem struct {
-	Index      int               `json:"index"`
-	Total      int               `json:"total,omitempty"`
-	Name       string            `json:"name,omitempty"`
-	Script     string            `json:"script,omitempty"`
-	Kind       string            `json:"kind,omitempty"`
-	TestName   string            `json:"test_name,omitempty"`
-	TestFormat string            `json:"test_format,omitempty"`
-	TestReport string            `json:"test_report,omitempty"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
+	Index      int    `json:"index"`
+	Total      int    `json:"total,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Script     string `json:"script,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	TestName   string `json:"test_name,omitempty"`
+	TestFormat string `json:"test_format,omitempty"`
+	TestReport string `json:"test_report,omitempty"`
 }
 
 type JobExecutionEvent struct {
-	Type         string            `json:"type"`
-	TimestampUTC time.Time         `json:"timestamp_utc,omitempty"`
-	Step         *JobStepPlanItem  `json:"step,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	Type         string           `json:"type"`
+	TimestampUTC time.Time        `json:"timestamp_utc,omitempty"`
+	Step         *JobStepPlanItem `json:"step,omitempty"`
 }
 
 type TestCase struct {

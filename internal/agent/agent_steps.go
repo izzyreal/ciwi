@@ -13,7 +13,6 @@ type stepMarkerMeta struct {
 	testName   string
 	testFormat string
 	testReport string
-	metadata   map[string]string
 }
 
 func formatCurrentStep(meta stepMarkerMeta) string {

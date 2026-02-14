@@ -73,11 +73,6 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			if runCtx.TagPrefix != "" {
 				renderVars["ciwi.tag_prefix"] = runCtx.TagPrefix
 			}
-			if selection != nil && selection.DryRun {
-				renderVars["ciwi.release_created"] = "no (dry-run)"
-			} else {
-				renderVars["ciwi.release_created"] = "yes"
-			}
 			rendered := make([]string, 0, len(pj.Steps))
 			stepPlan := make([]protocol.JobStepPlanItem, 0, len(pj.Steps))
 			env := make(map[string]string)
@@ -116,22 +111,6 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					})
 					continue
 				}
-				if step.Metadata != nil {
-					values := map[string]string{}
-					for k, v := range step.Metadata.Values {
-						key := strings.TrimSpace(k)
-						if key == "" {
-							continue
-						}
-						values[key] = strings.TrimSpace(renderTemplate(v, renderVars))
-					}
-					stepPlan = append(stepPlan, protocol.JobStepPlanItem{
-						Name:     "metadata",
-						Kind:     "metadata",
-						Metadata: values,
-					})
-					continue
-				}
 				for k, v := range step.Env {
 					env[k] = renderTemplate(v, renderVars)
 				}
@@ -146,7 +125,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				})
 			}
 			if len(stepPlan) == 0 {
-				return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q has no executable or metadata steps after rendering", pj.ID)
+				return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q has no executable steps after rendering", pj.ID)
 			}
 			for stepIndex := range stepPlan {
 				stepPlan[stepIndex].Index = stepIndex + 1
@@ -155,17 +134,6 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 					stepPlan[stepIndex].Name = fmt.Sprintf("step %d", stepIndex+1)
 				}
 			}
-			if len(rendered) == 0 {
-				switch strings.TrimSpace(strings.ToLower(pj.RunsOn["shell"])) {
-				case "cmd":
-					rendered = append(rendered, "rem ciwi metadata-only job")
-				case "powershell":
-					rendered = append(rendered, "$null = 1")
-				default:
-					rendered = append(rendered, ":")
-				}
-			}
-
 			metadata := map[string]string{
 				"project":            p.ProjectName,
 				"pipeline_id":        p.PipelineID,
@@ -261,21 +229,11 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 			Name:   "auto bump",
 			Script: autoBumpScript,
 		})
-		meta := map[string]string{}
 		if next := buildAutoBumpNextVersion(runCtx.VersionRaw, runCtx.AutoBump); next != "" {
-			meta["next_version"] = next
+			pending[0].metadata["next_version"] = next
 		}
 		if branch := deriveAutoBumpBranch(strings.TrimSpace(p.SourceRef)); branch != "" {
-			meta["auto_bump_branch"] = branch
-		}
-		if len(meta) > 0 {
-			pending[0].stepPlan = append(pending[0].stepPlan, protocol.JobStepPlanItem{
-				Index:    len(pending[0].stepPlan) + 1,
-				Total:    len(pending[0].stepPlan) + 1,
-				Name:     "auto bump metadata",
-				Kind:     "metadata",
-				Metadata: meta,
-			})
+			pending[0].metadata["auto_bump_branch"] = branch
 		}
 		for i := range pending[0].stepPlan {
 			pending[0].stepPlan[i].Index = i + 1
@@ -351,7 +309,6 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 			TestName:   step.TestName,
 			TestFormat: step.TestFormat,
 			TestReport: step.TestReport,
-			Metadata:   cloneMap(step.Metadata),
 		})
 	}
 	return out
@@ -417,9 +374,6 @@ func describePipelineStep(step config.PipelineJobStep, idx int, jobID string) st
 			name = fmt.Sprintf("%s-test-%d", jobID, idx+1)
 		}
 		return "test " + name
-	}
-	if step.Metadata != nil {
-		return "metadata"
 	}
 	return fmt.Sprintf("step %d", idx+1)
 }

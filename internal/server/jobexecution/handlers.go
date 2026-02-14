@@ -18,7 +18,6 @@ type Store interface {
 	GetJobExecution(id string) (protocol.JobExecution, error)
 	DeleteQueuedJobExecution(id string) error
 	UpdateJobExecutionStatus(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
-	MergeJobExecutionMetadata(id string, metadata map[string]string) (map[string]string, error)
 	AppendJobExecutionEvents(id string, events []protocol.JobExecutionEvent) error
 	ListJobExecutionEvents(id string) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error)
@@ -238,11 +237,6 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		}
 		if len(req.Events) > 0 {
 			_ = deps.Store.AppendJobExecutionEvents(jobID, req.Events)
-		}
-		if patch := metadataPatchFromEvents(req.Events); len(patch) > 0 {
-			if merged, err := deps.Store.MergeJobExecutionMetadata(jobID, patch); err == nil {
-				job.Metadata = merged
-			}
 		}
 		if deps.MarkAgentSeen != nil {
 			deps.MarkAgentSeen(req.AgentID, req.TimestampUTC)

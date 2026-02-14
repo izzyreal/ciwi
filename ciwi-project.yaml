@@ -88,7 +88,6 @@ pipelines:
             gh: "*"
         timeout_seconds: 1200
         steps:
-          - run: command -v gh >/dev/null 2>&1 || { echo "gh CLI is required"; exit 1; }
           - run: test -n "$GITHUB_TOKEN"
             skip_dry_run: true
             env:
@@ -131,8 +130,6 @@ pipelines:
                 shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
               done > dist/ciwi-checksums.txt
               test -f dist/ciwi-checksums.txt
-          - metadata:
-              artifacts: ciwi-linux-amd64,ciwi-darwin-amd64,ciwi-darwin-arm64,ciwi-windows-amd64.exe,ciwi-checksums.txt
           - run: |
               TAG="${CIWI_PIPELINE_TAG}"
               git config user.name "ciwi-agent"
@@ -167,5 +164,3 @@ pipelines:
                 echo "[release] Uploaded ${IDX}/${TOTAL}: ${FILE} in $((END-START))s"
               done
             skip_dry_run: true
-          - metadata:
-              release_created: "{{ciwi.release_created}}"

@@ -227,13 +227,13 @@ pipelines:
             test:
               command: go test ./...
 `), "test-step-shape")
-	if err == nil || !strings.Contains(err.Error(), "must set exactly one of run, test or metadata") {
+	if err == nil || !strings.Contains(err.Error(), "must set exactly one of run or test") {
 		t.Fatalf("expected step shape validation error, got: %v", err)
 	}
 }
 
-func TestParseMetadataStep(t *testing.T) {
-	cfg, err := Parse([]byte(`
+func TestParseRejectsMetadataStep(t *testing.T) {
+	_, err := Parse([]byte(`
 version: 1
 project:
   name: ciwi
@@ -247,15 +247,8 @@ pipelines:
               version: "{{ ciwi.version_raw }}"
               tag: "{{ ciwi.version }}"
 `), "test-metadata-step")
-	if err != nil {
-		t.Fatalf("parse metadata step: %v", err)
-	}
-	step := cfg.Pipelines[0].Jobs[0].Steps[0]
-	if step.Metadata == nil || len(step.Metadata.Values) != 2 {
-		t.Fatalf("unexpected metadata step: %+v", step.Metadata)
-	}
-	if step.Metadata.Values["version"] != "{{ ciwi.version_raw }}" {
-		t.Fatalf("unexpected metadata version value: %q", step.Metadata.Values["version"])
+	if err == nil || !strings.Contains(err.Error(), "field metadata not found") {
+		t.Fatalf("expected metadata rejection, got: %v", err)
 	}
 }
 
@@ -286,27 +279,6 @@ pipelines:
 	}
 	if !steps[1].SkipDryRun {
 		t.Fatalf("expected second step skip_dry_run=true")
-	}
-}
-
-func TestParseRejectsMetadataStepEnv(t *testing.T) {
-	_, err := Parse([]byte(`
-version: 1
-project:
-  name: ciwi
-pipelines:
-  - id: release
-    jobs:
-      - id: publish
-        timeout_seconds: 60
-        steps:
-          - metadata:
-              version: "v1.2.3"
-            env:
-              TOKEN: "{{ secret.token }}"
-`), "test-metadata-step-env")
-	if err == nil || !strings.Contains(err.Error(), "metadata must not define env") {
-		t.Fatalf("expected metadata env validation error, got: %v", err)
 	}
 }
 

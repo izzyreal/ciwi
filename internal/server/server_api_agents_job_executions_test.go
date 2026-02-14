@@ -165,62 +165,6 @@ func TestQueuedJobExecutionIncludesUnmetRequirements(t *testing.T) {
 	}
 }
 
-func TestJobExecutionStatusAppliesMetadataPatchEvent(t *testing.T) {
-	ts := newTestHTTPServer(t)
-	defer ts.Close()
-
-	client := ts.Client()
-
-	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
-		"script":          "echo build",
-		"timeout_seconds": 60,
-	})
-	if createResp.StatusCode != http.StatusCreated {
-		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
-	}
-	var createPayload struct {
-		Job struct {
-			ID string `json:"id"`
-		} `json:"job_execution"`
-	}
-	decodeJSONBody(t, createResp, &createPayload)
-
-	statusResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/status", map[string]any{
-		"agent_id": "agent-test",
-		"status":   "running",
-		"events": []map[string]any{
-			{
-				"type": "metadata.patch",
-				"metadata": map[string]string{
-					"build_target":  "darwin-arm64",
-					"build_version": "v2.3.4",
-				},
-			},
-		},
-	})
-	if statusResp.StatusCode != http.StatusOK {
-		t.Fatalf("status update status=%d body=%s", statusResp.StatusCode, readBody(t, statusResp))
-	}
-	_ = readBody(t, statusResp)
-
-	jobResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID, nil)
-	if jobResp.StatusCode != http.StatusOK {
-		t.Fatalf("get job status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
-	}
-	var payload struct {
-		Job struct {
-			Metadata map[string]string `json:"metadata"`
-		} `json:"job_execution"`
-	}
-	decodeJSONBody(t, jobResp, &payload)
-	if payload.Job.Metadata["build_version"] != "v2.3.4" {
-		t.Fatalf("unexpected build_version: %q", payload.Job.Metadata["build_version"])
-	}
-	if payload.Job.Metadata["build_target"] != "darwin-arm64" {
-		t.Fatalf("unexpected build_target: %q", payload.Job.Metadata["build_target"])
-	}
-}
-
 func TestJobExecutionEventsEndpointReturnsStoredEvents(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()

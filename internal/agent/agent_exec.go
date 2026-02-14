@@ -138,17 +138,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 						TestName:   step.meta.testName,
 						TestFormat: step.meta.testFormat,
 						TestReport: step.meta.testReport,
-						Metadata:   cloneMap(step.meta.metadata),
 					},
 					TimestampUTC: time.Now().UTC(),
 				},
-			}
-			if step.meta.kind == "metadata" && len(step.meta.metadata) > 0 {
-				events = append(events, protocol.JobExecutionEvent{
-					Type:         protocol.JobExecutionEventTypeMetadataPatch,
-					Metadata:     cloneMap(step.meta.metadata),
-					TimestampUTC: time.Now().UTC(),
-				})
 			}
 			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 				AgentID:      agentID,
@@ -159,9 +151,6 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				TimestampUTC: time.Now().UTC(),
 			}); err != nil {
 				return fmt.Errorf("report step status: %w", err)
-			}
-			if step.meta.kind == "metadata" {
-				continue
 			}
 			if step.meta.kind == "dryrun_skip" {
 				continue
@@ -361,7 +350,7 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 	for i, step := range plan {
 		script := step.Script
 		kind := strings.TrimSpace(step.Kind)
-		if strings.TrimSpace(script) == "" && kind != "metadata" && kind != "dryrun_skip" {
+		if strings.TrimSpace(script) == "" && kind != "dryrun_skip" {
 			continue
 		}
 		index := step.Index
@@ -385,7 +374,6 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 				testName:   strings.TrimSpace(step.TestName),
 				testFormat: strings.TrimSpace(step.TestFormat),
 				testReport: strings.TrimSpace(step.TestReport),
-				metadata:   cloneMap(step.Metadata),
 			},
 			script: script,
 		})

@@ -505,9 +505,6 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 			if event.Step != nil {
 				payload["step"] = event.Step
 			}
-			if len(event.Metadata) > 0 {
-				payload["metadata"] = event.Metadata
-			}
 			payloadJSON, _ := json.Marshal(payload)
 			if _, err := tx.Exec(`
 				INSERT INTO job_execution_events (job_execution_id, event_type, timestamp_utc, payload_json, created_utc)
@@ -556,12 +553,6 @@ func (s *Store) ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEve
 				var step protocol.JobStepPlanItem
 				if err := json.Unmarshal(raw, &step); err == nil {
 					event.Step = &step
-				}
-			}
-			if raw := payload["metadata"]; len(raw) > 0 {
-				var meta map[string]string
-				if err := json.Unmarshal(raw, &meta); err == nil && len(meta) > 0 {
-					event.Metadata = meta
 				}
 			}
 		}

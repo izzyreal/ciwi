@@ -316,7 +316,7 @@ pipelines:
 	}
 }
 
-func TestServerRunPipelineMetadataStepCarriesRenderedValues(t *testing.T) {
+func TestServerLoadConfigRejectsMetadataStep(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()
 
@@ -330,14 +330,13 @@ pipelines:
     source:
       repo: https://example.com/repo.git
     jobs:
-      - id: meta-only
+      - id: invalid
         runs_on:
           executor: script
           shell: posix
         steps:
           - metadata:
               version: "{{ciwi.version_raw}}"
-              release_created: "{{ciwi.release_created}}"
 `
 	tmp := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
@@ -356,42 +355,11 @@ pipelines:
 	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{
 		"config_path": "ciwi.yaml",
 	})
-	if loadResp.StatusCode != http.StatusOK {
-		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	if loadResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected config load rejection, status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
 	}
-	_ = readBody(t, loadResp)
-
-	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipelines/1/run", map[string]any{"dry_run": true})
-	if runResp.StatusCode != http.StatusCreated {
-		t.Fatalf("run status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
-	}
-	_ = readBody(t, runResp)
-
-	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
-	if jobsResp.StatusCode != http.StatusOK {
-		t.Fatalf("jobs status=%d body=%s", jobsResp.StatusCode, readBody(t, jobsResp))
-	}
-	var jobsPayload struct {
-		JobExecutions []struct {
-			StepPlan []struct {
-				Kind     string            `json:"kind"`
-				Metadata map[string]string `json:"metadata"`
-			} `json:"step_plan"`
-		} `json:"job_executions"`
-	}
-	decodeJSONBody(t, jobsResp, &jobsPayload)
-	if len(jobsPayload.JobExecutions) == 0 {
-		t.Fatalf("expected at least one job execution")
-	}
-	plan := jobsPayload.JobExecutions[0].StepPlan
-	if len(plan) != 1 {
-		t.Fatalf("expected exactly one step in plan, got %d", len(plan))
-	}
-	if plan[0].Kind != "metadata" {
-		t.Fatalf("expected metadata step kind, got %q", plan[0].Kind)
-	}
-	if plan[0].Metadata["release_created"] != "no (dry-run)" {
-		t.Fatalf("unexpected release_created metadata render: %q", plan[0].Metadata["release_created"])
+	if body := readBody(t, loadResp); !strings.Contains(body, "field metadata not found") {
+		t.Fatalf("expected metadata parse error, got: %s", body)
 	}
 }
 
