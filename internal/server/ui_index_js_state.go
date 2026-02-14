@@ -4,6 +4,7 @@ const uiIndexStateJS = `
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
     let jobsRenderEpoch = 0;
+    let lastProjectsSignature = '';
     let lastQueuedJobsSignature = '';
     let lastHistoryJobsSignature = '';
     const PROJECT_GROUPS_STORAGE_KEY = 'ciwi.index.projectGroupsCollapsed.v1';

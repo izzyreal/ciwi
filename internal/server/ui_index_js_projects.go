@@ -1,13 +1,44 @@
 package server
 
 const uiIndexProjectsJS = `
+    function projectListSignature(projects) {
+      const list = Array.isArray(projects) ? projects : [];
+      return JSON.stringify(list.map(project => ({
+        id: project.id,
+        name: project.name,
+        repo_url: project.repo_url,
+        config_file: project.config_file || project.config_path || '',
+        pipelines: (project.pipelines || []).map(p => ({
+          id: p.id,
+          pipeline_id: p.pipeline_id,
+          trigger: p.trigger || '',
+          depends_on: p.depends_on || [],
+          source_repo: p.source_repo || '',
+          supports_dry_run: !!p.supports_dry_run,
+        })),
+        pipeline_chains: (project.pipeline_chains || []).map(c => ({
+          id: c.id,
+          chain_id: c.chain_id,
+          pipelines: c.pipelines || [],
+          supports_dry_run: !!c.supports_dry_run,
+          version_pipeline_id: c.version_pipeline_id || 0,
+        })),
+      })));
+    }
+
     async function refreshProjects() {
       const data = await apiJSON('/api/v1/projects');
       const root = document.getElementById('projects');
       if (!data.projects || data.projects.length === 0) {
+        lastProjectsSignature = '';
         root.innerHTML = '<p>No projects loaded yet.</p>';
         return;
       }
+      const signature = projectListSignature(data.projects);
+      if (signature === lastProjectsSignature) {
+        return;
+      }
+      lastProjectsSignature = signature;
       root.innerHTML = '';
       data.projects.forEach(project => {
         const projectIconURL = '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon';
