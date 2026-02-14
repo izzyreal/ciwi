@@ -100,6 +100,9 @@ const projectHTML = `<!doctype html>
 
       structure.innerHTML = '';
       p.pipelines.forEach(pl => {
+        const pipelineSupportsDryRun = (pl.jobs || []).some(job =>
+          (job.steps || []).some(step => !!step.skip_dry_run)
+        );
         const container = document.createElement('div');
         container.className = 'pipeline';
         const head = document.createElement('div');
@@ -150,11 +153,14 @@ const projectHTML = `<!doctype html>
         resolveBtn.className = 'secondary';
         resolveBtn.onclick = () => openVersionResolveModal(pl.id, pl.pipeline_id);
         head.appendChild(runAll);
-        head.appendChild(dryAll);
+        if (pipelineSupportsDryRun) {
+          head.appendChild(dryAll);
+        }
         head.appendChild(resolveBtn);
         container.appendChild(head);
 
         (pl.jobs || []).forEach(j => {
+          const jobSupportsDryRun = (j.steps || []).some(step => !!step.skip_dry_run);
           const jb = document.createElement('div');
           jb.className = 'jobbox';
           const runsOn = Object.entries(j.runs_on || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
@@ -218,7 +224,9 @@ const projectHTML = `<!doctype html>
               }
             };
             item.appendChild(btn);
-            item.appendChild(dryBtn);
+            if (jobSupportsDryRun) {
+              item.appendChild(dryBtn);
+            }
             matrixList.appendChild(item);
           });
           jb.appendChild(matrixList);

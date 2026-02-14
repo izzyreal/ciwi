@@ -70,7 +70,7 @@ const settingsHTML = `<!doctype html>
     <div class="card">
       <h2>Vault Connections</h2>
       <p>Manage global Vault AppRole connections and test connectivity.</p>
-      <a class="job-link" href="/vault">Open Vault Connections</a>
+      <button id="openVaultConnectionsBtn" class="secondary" type="button">Open Vault Connections</button>
     </div>
   </main>
   <script src="/ui/shared.js"></script>
@@ -169,6 +169,10 @@ const settingsHTML = `<!doctype html>
       } catch (e) {
         result.textContent = 'Error: ' + e.message;
       }
+    };
+
+    document.getElementById('openVaultConnectionsBtn').onclick = () => {
+      window.location.href = '/vault';
     };
 
     document.getElementById('checkUpdatesBtn').onclick = async () => {
