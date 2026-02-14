@@ -191,7 +191,12 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				}
 			}
 			if stepErr != nil {
-				err = stepErr
+				if code := exitCodeFromErr(stepErr); code != nil {
+					fmt.Fprintf(&output, "[run] step failed: %s (exit=%d)\n", currentStep, *code)
+				} else {
+					fmt.Fprintf(&output, "[run] step failed: %s (%v)\n", currentStep, stepErr)
+				}
+				err = fmt.Errorf("%s: %w", currentStep, stepErr)
 				break
 			}
 		}
