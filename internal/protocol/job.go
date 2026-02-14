@@ -120,22 +120,32 @@ type LoadConfigResponse struct {
 }
 
 type ProjectSummary struct {
-	ID         int64             `json:"id"`
-	Name       string            `json:"name"`
-	ConfigPath string            `json:"config_path,omitempty"`
-	RepoURL    string            `json:"repo_url,omitempty"`
-	RepoRef    string            `json:"repo_ref,omitempty"`
-	ConfigFile string            `json:"config_file,omitempty"`
-	Pipelines  []PipelineSummary `json:"pipelines"`
+	ID             int64                  `json:"id"`
+	Name           string                 `json:"name"`
+	ConfigPath     string                 `json:"config_path,omitempty"`
+	RepoURL        string                 `json:"repo_url,omitempty"`
+	RepoRef        string                 `json:"repo_ref,omitempty"`
+	ConfigFile     string                 `json:"config_file,omitempty"`
+	Pipelines      []PipelineSummary      `json:"pipelines"`
+	PipelineChains []PipelineChainSummary `json:"pipeline_chains,omitempty"`
 }
 
 type PipelineSummary struct {
-	ID         int64    `json:"id"`
-	PipelineID string   `json:"pipeline_id"`
-	Trigger    string   `json:"trigger,omitempty"`
-	DependsOn  []string `json:"depends_on,omitempty"`
-	SourceRepo string   `json:"source_repo,omitempty"`
-	SourceRef  string   `json:"source_ref,omitempty"`
+	ID             int64    `json:"id"`
+	PipelineID     string   `json:"pipeline_id"`
+	Trigger        string   `json:"trigger,omitempty"`
+	DependsOn      []string `json:"depends_on,omitempty"`
+	SourceRepo     string   `json:"source_repo,omitempty"`
+	SourceRef      string   `json:"source_ref,omitempty"`
+	SupportsDryRun bool     `json:"supports_dry_run,omitempty"`
+}
+
+type PipelineChainSummary struct {
+	ID                int64    `json:"id"`
+	ChainID           string   `json:"chain_id"`
+	Pipelines         []string `json:"pipelines"`
+	SupportsDryRun    bool     `json:"supports_dry_run,omitempty"`
+	VersionPipelineID int64    `json:"version_pipeline_id,omitempty"`
 }
 
 type MatrixInclude struct {
@@ -184,12 +194,13 @@ type PipelineVersioning struct {
 }
 
 type ProjectDetail struct {
-	ID         int64            `json:"id"`
-	Name       string           `json:"name"`
-	RepoURL    string           `json:"repo_url,omitempty"`
-	RepoRef    string           `json:"repo_ref,omitempty"`
-	ConfigFile string           `json:"config_file,omitempty"`
-	Pipelines  []PipelineDetail `json:"pipelines,omitempty"`
+	ID             int64                  `json:"id"`
+	Name           string                 `json:"name"`
+	RepoURL        string                 `json:"repo_url,omitempty"`
+	RepoRef        string                 `json:"repo_ref,omitempty"`
+	ConfigFile     string                 `json:"config_file,omitempty"`
+	Pipelines      []PipelineDetail       `json:"pipelines,omitempty"`
+	PipelineChains []PipelineChainSummary `json:"pipeline_chains,omitempty"`
 }
 
 type RunPersistedPipelineRequest struct {

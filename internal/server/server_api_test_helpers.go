@@ -83,6 +83,7 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v1/jobs/clear-queue", s.clearJobExecutionQueueHandler)
 	mux.HandleFunc("/api/v1/jobs/flush-history", s.flushJobExecutionHistoryHandler)
 	mux.HandleFunc("/api/v1/pipelines/", s.pipelineByIDHandler)
+	mux.HandleFunc("/api/v1/pipeline-chains/", s.pipelineChainByIDHandler)
 	mux.HandleFunc("/api/v1/agent/lease", s.leaseJobHandler)
 	mux.HandleFunc("/api/v1/vault/connections", s.vaultConnectionsHandler)
 	mux.HandleFunc("/api/v1/vault/connections/", s.vaultConnectionByIDHandler)

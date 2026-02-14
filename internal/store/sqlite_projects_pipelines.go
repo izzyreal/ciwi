@@ -108,7 +108,43 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 
 	projects := make([]protocol.ProjectSummary, 0, len(order))
 	for _, id := range order {
-		projects = append(projects, *projectsByID[id])
+		project := projectsByID[id]
+		pipelineSupports := map[string]bool{}
+		pipelineIDByName := map[string]int64{}
+		for i := range project.Pipelines {
+			supports, err := s.pipelineSupportsDryRun(project.Pipelines[i].ID)
+			if err != nil {
+				return nil, err
+			}
+			project.Pipelines[i].SupportsDryRun = supports
+			pipelineSupports[project.Pipelines[i].PipelineID] = supports
+			pipelineIDByName[project.Pipelines[i].PipelineID] = project.Pipelines[i].ID
+		}
+		chains, err := s.listPipelineChainsByProjectID(id)
+		if err != nil {
+			return nil, err
+		}
+		project.PipelineChains = make([]protocol.PipelineChainSummary, 0, len(chains))
+		for _, ch := range chains {
+			supports := false
+			var versionPipelineID int64
+			for _, pid := range ch.Pipelines {
+				if versionPipelineID == 0 {
+					versionPipelineID = pipelineIDByName[pid]
+				}
+				if pipelineSupports[pid] {
+					supports = true
+				}
+			}
+			project.PipelineChains = append(project.PipelineChains, protocol.PipelineChainSummary{
+				ID:                ch.DBID,
+				ChainID:           ch.ChainID,
+				Pipelines:         append([]string(nil), ch.Pipelines...),
+				SupportsDryRun:    supports,
+				VersionPipelineID: versionPipelineID,
+			})
+		}
+		projects = append(projects, *project)
 	}
 	return projects, nil
 }
@@ -193,8 +229,93 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 		}
 		detail.Pipelines[i].Jobs = pipelineJobDetailsFromPersisted(persistedJobs)
 	}
+	chains, err := s.listPipelineChainsByProjectID(id)
+	if err != nil {
+		return protocol.ProjectDetail{}, err
+	}
+	pipelineSupports := map[string]bool{}
+	pipelineIDByName := map[string]int64{}
+	for _, p := range detail.Pipelines {
+		supports := false
+		for _, j := range p.Jobs {
+			for _, st := range j.Steps {
+				if st.SkipDryRun {
+					supports = true
+					break
+				}
+			}
+			if supports {
+				break
+			}
+		}
+		pipelineSupports[p.PipelineID] = supports
+		pipelineIDByName[p.PipelineID] = p.ID
+	}
+	detail.PipelineChains = make([]protocol.PipelineChainSummary, 0, len(chains))
+	for _, ch := range chains {
+		supports := false
+		var versionPipelineID int64
+		for _, pid := range ch.Pipelines {
+			if versionPipelineID == 0 {
+				versionPipelineID = pipelineIDByName[pid]
+			}
+			if pipelineSupports[pid] {
+				supports = true
+			}
+		}
+		detail.PipelineChains = append(detail.PipelineChains, protocol.PipelineChainSummary{
+			ID:                ch.DBID,
+			ChainID:           ch.ChainID,
+			Pipelines:         append([]string(nil), ch.Pipelines...),
+			SupportsDryRun:    supports,
+			VersionPipelineID: versionPipelineID,
+		})
+	}
 
 	return detail, nil
+}
+
+func (s *Store) pipelineSupportsDryRun(pipelineDBID int64) (bool, error) {
+	jobs, err := s.listPipelineJobs(pipelineDBID)
+	if err != nil {
+		return false, err
+	}
+	for _, job := range jobs {
+		for _, step := range job.Steps {
+			if step.SkipDryRun {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (s *Store) listPipelineChainsByProjectID(projectID int64) ([]PersistedPipelineChain, error) {
+	rows, err := s.db.Query(`
+		SELECT pc.id, pc.project_id, p.name, pc.chain_id, pc.pipelines_json
+		FROM pipeline_chains pc
+		JOIN projects p ON p.id = pc.project_id
+		WHERE pc.project_id = ?
+		ORDER BY pc.chain_id
+	`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list pipeline chains: %w", err)
+	}
+	defer rows.Close()
+	out := make([]PersistedPipelineChain, 0)
+	for rows.Next() {
+		var ch PersistedPipelineChain
+		var pipelinesJSON string
+		if err := rows.Scan(&ch.DBID, &ch.ProjectID, &ch.ProjectName, &ch.ChainID, &pipelinesJSON); err != nil {
+			return nil, fmt.Errorf("scan pipeline chain: %w", err)
+		}
+		_ = json.Unmarshal([]byte(pipelinesJSON), &ch.Pipelines)
+		out = append(out, ch)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pipeline chains: %w", err)
+	}
+	return out, nil
 }
 
 func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []protocol.PipelineJobDetail {
@@ -283,6 +404,25 @@ func (s *Store) GetPipelineByProjectAndID(projectName, pipelineID string) (Persi
 		return PersistedPipeline{}, fmt.Errorf("find pipeline: %w", err)
 	}
 	return s.GetPipelineByDBID(id)
+}
+
+func (s *Store) GetPipelineChainByDBID(id int64) (PersistedPipelineChain, error) {
+	var ch PersistedPipelineChain
+	row := s.db.QueryRow(`
+		SELECT pc.id, pc.project_id, p.name, pc.chain_id, pc.pipelines_json
+		FROM pipeline_chains pc
+		JOIN projects p ON p.id = pc.project_id
+		WHERE pc.id = ?
+	`, id)
+	var pipelinesJSON string
+	if err := row.Scan(&ch.DBID, &ch.ProjectID, &ch.ProjectName, &ch.ChainID, &pipelinesJSON); err != nil {
+		if err == sql.ErrNoRows {
+			return ch, fmt.Errorf("pipeline chain not found")
+		}
+		return ch, fmt.Errorf("get pipeline chain: %w", err)
+	}
+	_ = json.Unmarshal([]byte(pipelinesJSON), &ch.Pipelines)
+	return ch, nil
 }
 
 func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, error) {

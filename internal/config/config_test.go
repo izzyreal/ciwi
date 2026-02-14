@@ -558,3 +558,29 @@ pipelines:
 		t.Fatalf("expected cache validation error, got: %v", err)
 	}
 }
+
+func TestParsePipelineChainsValidation(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+pipeline_chains:
+  - id: build-release
+    pipelines:
+      - build
+      - release
+`), "test-pipeline-chains")
+	if err == nil || !strings.Contains(err.Error(), `references unknown pipeline "release"`) {
+		t.Fatalf("expected pipeline chain validation error, got: %v", err)
+	}
+}

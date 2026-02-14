@@ -30,6 +30,14 @@ type PersistedPipeline struct {
 	Jobs        []PersistedPipelineJob
 }
 
+type PersistedPipelineChain struct {
+	DBID        int64
+	ProjectID   int64
+	ProjectName string
+	ChainID     string
+	Pipelines   []string
+}
+
 type PersistedPipelineJob struct {
 	ID             string
 	RunsOn         map[string]string
@@ -108,6 +116,16 @@ func (s *Store) migrate() error {
 			created_utc TEXT NOT NULL,
 			updated_utc TEXT NOT NULL,
 			UNIQUE(project_id, pipeline_id),
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+		);`,
+		`CREATE TABLE IF NOT EXISTS pipeline_chains (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id INTEGER NOT NULL,
+			chain_id TEXT NOT NULL,
+			pipelines_json TEXT NOT NULL DEFAULT '[]',
+			created_utc TEXT NOT NULL,
+			updated_utc TEXT NOT NULL,
+			UNIQUE(project_id, chain_id),
 			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 		);`,
 		`CREATE TABLE IF NOT EXISTS pipeline_jobs (
@@ -285,6 +303,18 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 			`, pipelineDBID, j.ID, i, string(runsOnJSON), string(requiresToolsJSON), j.TimeoutSeconds, string(artifactsJSON), string(cachesJSON), string(matrixJSON), string(stepsJSON)); err != nil {
 				return fmt.Errorf("insert pipeline job: %w", err)
 			}
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM pipeline_chains WHERE project_id = ?`, projectID); err != nil {
+		return fmt.Errorf("clear pipeline chains: %w", err)
+	}
+	for _, ch := range cfg.PipelineChains {
+		pipelinesJSON, _ := json.Marshal(ch.Pipelines)
+		if _, err := tx.Exec(`
+			INSERT INTO pipeline_chains (project_id, chain_id, pipelines_json, created_utc, updated_utc)
+			VALUES (?, ?, ?, ?, ?)
+		`, projectID, ch.ID, string(pipelinesJSON), now, now); err != nil {
+			return fmt.Errorf("insert pipeline chain: %w", err)
 		}
 	}
 

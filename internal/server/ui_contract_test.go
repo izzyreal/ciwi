@@ -43,6 +43,7 @@ func newTestHTTPServerWithUI(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v1/jobs", s.jobExecutionsHandler)
 	mux.HandleFunc("/api/v1/jobs/", s.jobExecutionByIDHandler)
 	mux.HandleFunc("/api/v1/pipelines/", s.pipelineByIDHandler)
+	mux.HandleFunc("/api/v1/pipeline-chains/", s.pipelineChainByIDHandler)
 	mux.HandleFunc("/api/v1/vault/connections", s.vaultConnectionsHandler)
 	mux.HandleFunc("/api/v1/vault/connections/", s.vaultConnectionByIDHandler)
 	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))

@@ -11,9 +11,10 @@ import (
 )
 
 type File struct {
-	Version   int        `yaml:"version" json:"version"`
-	Project   Project    `yaml:"project" json:"project"`
-	Pipelines []Pipeline `yaml:"pipelines" json:"pipelines"`
+	Version        int             `yaml:"version" json:"version"`
+	Project        Project         `yaml:"project" json:"project"`
+	Pipelines      []Pipeline      `yaml:"pipelines" json:"pipelines"`
+	PipelineChains []PipelineChain `yaml:"pipeline_chains,omitempty" json:"pipeline_chains,omitempty"`
 }
 
 type Project struct {
@@ -41,6 +42,11 @@ type Pipeline struct {
 	Source     Source              `yaml:"source" json:"source"`
 	Versioning *PipelineVersioning `yaml:"versioning,omitempty" json:"versioning,omitempty"`
 	Jobs       []PipelineJobSpec   `yaml:"jobs" json:"jobs"`
+}
+
+type PipelineChain struct {
+	ID        string   `yaml:"id" json:"id"`
+	Pipelines []string `yaml:"pipelines" json:"pipelines"`
 }
 
 type PipelineVersioning struct {
@@ -349,6 +355,38 @@ func (cfg File) Validate() []string {
 			if _, ok := pipelineIDs[dep]; !ok {
 				errs = append(errs, fmt.Sprintf("pipelines[%d].depends_on[%d] references unknown pipeline %q", i, j, dep))
 			}
+		}
+	}
+
+	chainIDs := map[string]struct{}{}
+	for i, ch := range cfg.PipelineChains {
+		chainID := strings.TrimSpace(ch.ID)
+		if chainID == "" {
+			errs = append(errs, fmt.Sprintf("pipeline_chains[%d].id is required", i))
+		} else {
+			if _, exists := chainIDs[chainID]; exists {
+				errs = append(errs, fmt.Sprintf("pipeline_chains[%d].id duplicate %q", i, chainID))
+			}
+			chainIDs[chainID] = struct{}{}
+		}
+		if len(ch.Pipelines) == 0 {
+			errs = append(errs, fmt.Sprintf("pipeline_chains[%d].pipelines must contain at least one pipeline id", i))
+			continue
+		}
+		seen := map[string]struct{}{}
+		for j, pid := range ch.Pipelines {
+			pid = strings.TrimSpace(pid)
+			if pid == "" {
+				errs = append(errs, fmt.Sprintf("pipeline_chains[%d].pipelines[%d] must not be empty", i, j))
+				continue
+			}
+			if _, ok := pipelineIDs[pid]; !ok {
+				errs = append(errs, fmt.Sprintf("pipeline_chains[%d].pipelines[%d] references unknown pipeline %q", i, j, pid))
+			}
+			if _, ok := seen[pid]; ok {
+				errs = append(errs, fmt.Sprintf("pipeline_chains[%d].pipelines[%d] duplicate pipeline %q", i, j, pid))
+			}
+			seen[pid] = struct{}{}
 		}
 	}
 

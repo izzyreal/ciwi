@@ -55,6 +55,7 @@ const uiIndexProjectsJS = `
             }
           };
 
+          const supportsDryRun = !!p.supports_dry_run;
           const dryBtn = document.createElement('button');
           dryBtn.className = 'secondary';
           dryBtn.textContent = 'Dry Run';
@@ -81,9 +82,69 @@ const uiIndexProjectsJS = `
           const btnRow = document.createElement('div');
           btnRow.className = 'row';
           btnRow.appendChild(btn);
-          btnRow.appendChild(dryBtn);
+          if (supportsDryRun) btnRow.appendChild(dryBtn);
           btnRow.appendChild(resolveBtn);
           actions.appendChild(btnRow);
+          row.appendChild(actions);
+          body.appendChild(row);
+        });
+
+        (project.pipeline_chains || []).forEach(c => {
+          const row = document.createElement('div');
+          row.className = 'pipeline';
+          const info = document.createElement('div');
+          const chainPipes = (c.pipelines || []).join(' -> ');
+          info.innerHTML = '<div><span class="muted">Chain:</span> <code>' + c.chain_id + '</code></div><div style="color:#5f6f67;font-size:12px;">' + chainPipes + '</div>';
+
+          const runBtn = document.createElement('button');
+          runBtn.className = 'secondary';
+          runBtn.textContent = 'Run';
+          runBtn.onclick = async () => {
+            runBtn.disabled = true;
+            try {
+              await apiJSON('/api/v1/pipeline-chains/' + c.id + '/run', { method: 'POST', body: '{}' });
+              await refreshJobs();
+            } catch (e) {
+              alert('Run failed: ' + e.message);
+            } finally {
+              runBtn.disabled = false;
+            }
+          };
+
+          const dryBtn = document.createElement('button');
+          dryBtn.className = 'secondary';
+          dryBtn.textContent = 'Dry Run';
+          dryBtn.onclick = async () => {
+            dryBtn.disabled = true;
+            try {
+              await apiJSON('/api/v1/pipeline-chains/' + c.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+              await refreshJobs();
+            } catch (e) {
+              alert('Dry run failed: ' + e.message);
+            } finally {
+              dryBtn.disabled = false;
+            }
+          };
+
+          const resolveBtn = document.createElement('button');
+          resolveBtn.className = 'secondary';
+          resolveBtn.textContent = 'Resolve Upcoming Build Version';
+          const versionPipelineID = Number(c.version_pipeline_id || 0);
+          if (versionPipelineID > 0) {
+            resolveBtn.onclick = () => openVersionResolveModal(versionPipelineID, c.chain_id);
+          } else {
+            resolveBtn.disabled = true;
+          }
+
+          const actions = document.createElement('div');
+          actions.className = 'pipeline-actions';
+          const btnRow = document.createElement('div');
+          btnRow.className = 'row';
+          btnRow.appendChild(runBtn);
+          if (c.supports_dry_run) btnRow.appendChild(dryBtn);
+          btnRow.appendChild(resolveBtn);
+          actions.appendChild(btnRow);
+          row.appendChild(info);
           row.appendChild(actions);
           body.appendChild(row);
         });

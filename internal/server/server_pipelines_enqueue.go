@@ -11,17 +11,40 @@ import (
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
+type enqueuePipelineOptions struct {
+	forcedDep *pipelineDependencyContext
+	forcedRun *pipelineRunContext
+	metaPatch map[string]string
+	blocked   bool
+}
+
 func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest) (protocol.RunPipelineResponse, error) {
+	return s.enqueuePersistedPipelineWithOptions(p, selection, enqueuePipelineOptions{})
+}
+
+func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest, opts enqueuePipelineOptions) (protocol.RunPipelineResponse, error) {
 	if strings.TrimSpace(p.SourceRepo) == "" {
 		return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline source.repo is required")
 	}
-	depCtx, err := s.checkPipelineDependenciesWithReporter(p, nil)
-	if err != nil {
-		return protocol.RunPipelineResponse{}, err
+	depCtx := pipelineDependencyContext{}
+	if opts.forcedDep != nil {
+		depCtx = *opts.forcedDep
+	} else {
+		var err error
+		depCtx, err = s.checkPipelineDependenciesWithReporter(p, nil)
+		if err != nil {
+			return protocol.RunPipelineResponse{}, err
+		}
 	}
-	runCtx, err := resolvePipelineRunContextWithReporter(p, depCtx, nil)
-	if err != nil {
-		return protocol.RunPipelineResponse{}, err
+	runCtx := pipelineRunContext{}
+	if opts.forcedRun != nil {
+		runCtx = *opts.forcedRun
+	} else {
+		var err error
+		runCtx, err = resolvePipelineRunContextWithReporter(p, depCtx, nil)
+		if err != nil {
+			return protocol.RunPipelineResponse{}, err
+		}
 	}
 
 	jobIDs := make([]string, 0)
@@ -159,6 +182,15 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 				metadata["pipeline_source_ref_resolved"] = runCtx.SourceRefResolved
 			}
 			metadata["pipeline_source_repo"] = p.SourceRepo
+			for k, v := range opts.metaPatch {
+				if strings.TrimSpace(k) == "" {
+					continue
+				}
+				metadata[k] = strings.TrimSpace(v)
+			}
+			if opts.blocked {
+				metadata["chain_blocked"] = "1"
+			}
 			if selection != nil && selection.DryRun {
 				env["CIWI_DRY_RUN"] = "1"
 			}

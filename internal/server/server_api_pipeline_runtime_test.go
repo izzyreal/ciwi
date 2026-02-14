@@ -649,3 +649,163 @@ pipelines:
 		t.Fatalf("expected CIWI_DEP_ARTIFACT_JOB_IDS env on dependent release job")
 	}
 }
+
+func TestPipelineChainBlocksAndCancelsDownstreamOnFailure(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	const cfg = `
+version: 1
+project:
+  name: chain-test
+pipelines:
+  - id: build
+    trigger: manual
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: build-job
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: echo build
+  - id: release
+    trigger: manual
+    source:
+      repo: https://example.com/repo.git
+    jobs:
+      - id: release-job
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: echo release
+pipeline_chains:
+  - id: build-release
+    pipelines:
+      - build
+      - release
+`
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "ciwi.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	client := ts.Client()
+	loadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/config/load", map[string]any{
+		"config_path": "ciwi.yaml",
+	})
+	if loadResp.StatusCode != http.StatusOK {
+		t.Fatalf("load status=%d body=%s", loadResp.StatusCode, readBody(t, loadResp))
+	}
+	_ = readBody(t, loadResp)
+
+	projectsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/projects", nil)
+	if projectsResp.StatusCode != http.StatusOK {
+		t.Fatalf("projects status=%d body=%s", projectsResp.StatusCode, readBody(t, projectsResp))
+	}
+	var projectsPayload struct {
+		Projects []struct {
+			PipelineChains []struct {
+				ID int64 `json:"id"`
+			} `json:"pipeline_chains"`
+		} `json:"projects"`
+	}
+	decodeJSONBody(t, projectsResp, &projectsPayload)
+	if len(projectsPayload.Projects) == 0 || len(projectsPayload.Projects[0].PipelineChains) == 0 {
+		t.Fatalf("expected pipeline chain in projects response")
+	}
+	chainID := projectsPayload.Projects[0].PipelineChains[0].ID
+
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/run", map[string]any{})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("chain run status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	var runPayload struct {
+		JobExecutionIDs []string `json:"job_execution_ids"`
+	}
+	decodeJSONBody(t, runResp, &runPayload)
+	if len(runPayload.JobExecutionIDs) < 2 {
+		t.Fatalf("expected at least two enqueued jobs, got %d", len(runPayload.JobExecutionIDs))
+	}
+
+	leaseBuild := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-build",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseBuild.StatusCode != http.StatusOK {
+		t.Fatalf("lease build status=%d body=%s", leaseBuild.StatusCode, readBody(t, leaseBuild))
+	}
+	var leaseBuildPayload struct {
+		Assigned     bool `json:"assigned"`
+		JobExecution struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, leaseBuild, &leaseBuildPayload)
+	if !leaseBuildPayload.Assigned {
+		t.Fatalf("expected first chain pipeline job to be leaseable")
+	}
+
+	leaseBlocked := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-release",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseBlocked.StatusCode != http.StatusOK {
+		t.Fatalf("lease blocked status=%d body=%s", leaseBlocked.StatusCode, readBody(t, leaseBlocked))
+	}
+	var leaseBlockedPayload struct {
+		Assigned bool `json:"assigned"`
+	}
+	decodeJSONBody(t, leaseBlocked, &leaseBlockedPayload)
+	if leaseBlockedPayload.Assigned {
+		t.Fatalf("expected downstream chain job to remain blocked before upstream completion")
+	}
+
+	failResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+leaseBuildPayload.JobExecution.ID+"/status", map[string]any{
+		"agent_id": "agent-build",
+		"status":   "failed",
+		"error":    "build failed",
+		"output":   "boom",
+	})
+	if failResp.StatusCode != http.StatusOK {
+		t.Fatalf("build fail status=%d body=%s", failResp.StatusCode, readBody(t, failResp))
+	}
+	_ = readBody(t, failResp)
+
+	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
+	if jobsResp.StatusCode != http.StatusOK {
+		t.Fatalf("jobs status=%d body=%s", jobsResp.StatusCode, readBody(t, jobsResp))
+	}
+	var jobsPayload struct {
+		JobExecutions []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		} `json:"job_executions"`
+	}
+	decodeJSONBody(t, jobsResp, &jobsPayload)
+	seenCancelled := false
+	for _, j := range jobsPayload.JobExecutions {
+		if strings.Contains(j.Error, "cancelled: upstream pipeline build failed") {
+			if protocol.NormalizeJobExecutionStatus(j.Status) != protocol.JobExecutionStatusFailed {
+				t.Fatalf("expected cancelled downstream job to be failed, got %q", j.Status)
+			}
+			seenCancelled = true
+		}
+	}
+	if !seenCancelled {
+		t.Fatalf("expected at least one downstream cancelled chain job")
+	}
+}

@@ -36,6 +36,7 @@ type HandlerDeps struct {
 	AttachTestSummary                  func(*protocol.JobExecution)
 	AttachUnmetRequirementsToExecution func(*protocol.JobExecution)
 	MarkAgentSeen                      func(agentID string, ts time.Time)
+	OnJobUpdated                       func(job protocol.JobExecution)
 	Now                                func() time.Time
 }
 
@@ -257,6 +258,9 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 				"exit_code", job.ExitCode,
 				"error", strings.TrimSpace(job.Error),
 			)
+		}
+		if deps.OnJobUpdated != nil {
+			deps.OnJobUpdated(job)
 		}
 		httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
 		return

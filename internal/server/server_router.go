@@ -42,6 +42,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.HandleFunc("/api/v1/projects/*", s.projectByIDHandler)
 	r.Post("/api/v1/pipelines/run", s.runPipelineFromConfigHandler)
 	r.HandleFunc("/api/v1/pipelines/*", s.pipelineByIDHandler)
+	r.HandleFunc("/api/v1/pipeline-chains/*", s.pipelineChainByIDHandler)
 
 	// Vault APIs
 	r.HandleFunc("/api/v1/vault/connections", s.vaultConnectionsHandler)
