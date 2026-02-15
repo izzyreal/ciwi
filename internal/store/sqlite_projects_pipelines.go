@@ -334,13 +334,15 @@ func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []pro
 		for _, step := range j.Steps {
 			if step.Test != nil {
 				d.Steps = append(d.Steps, protocol.PipelineStep{
-					Type:        "test",
-					TestName:    step.Test.Name,
-					TestCommand: step.Test.Command,
-					TestFormat:  step.Test.Format,
-					TestReport:  step.Test.Report,
-					SkipDryRun:  step.SkipDryRun,
-					Env:         cloneMap(step.Env),
+					Type:           "test",
+					TestName:       step.Test.Name,
+					TestCommand:    step.Test.Command,
+					TestFormat:     step.Test.Format,
+					TestReport:     step.Test.Report,
+					CoverageFormat: step.Test.CoverageFormat,
+					CoverageReport: step.Test.CoverageReport,
+					SkipDryRun:     step.SkipDryRun,
+					Env:            cloneMap(step.Env),
 				})
 				continue
 			}

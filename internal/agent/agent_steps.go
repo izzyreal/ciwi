@@ -6,13 +6,15 @@ import (
 )
 
 type stepMarkerMeta struct {
-	index      int
-	total      int
-	name       string
-	kind       string
-	testName   string
-	testFormat string
-	testReport string
+	index          int
+	total          int
+	name           string
+	kind           string
+	testName       string
+	testFormat     string
+	testReport     string
+	coverageFormat string
+	coverageReport string
 }
 
 func formatCurrentStep(meta stepMarkerMeta) string {

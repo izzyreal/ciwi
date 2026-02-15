@@ -295,6 +295,7 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 				return
 			}
 			artifacts = AppendSyntheticTestReportArtifact(deps.ArtifactsDir, jobID, artifacts)
+			artifacts = AppendSyntheticCoverageReportArtifact(deps.ArtifactsDir, jobID, artifacts)
 			for i := range artifacts {
 				artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
 			}
@@ -378,6 +379,10 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 				return
 			}
 			if err := PersistTestReportArtifact(deps.ArtifactsDir, jobID, req.Report); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if err := PersistCoverageReportArtifact(deps.ArtifactsDir, jobID, req.Report); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -485,14 +490,16 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 	out := make([]protocol.JobStepPlanItem, 0, len(in))
 	for _, step := range in {
 		out = append(out, protocol.JobStepPlanItem{
-			Index:      step.Index,
-			Total:      step.Total,
-			Name:       step.Name,
-			Script:     step.Script,
-			Kind:       step.Kind,
-			TestName:   step.TestName,
-			TestFormat: step.TestFormat,
-			TestReport: step.TestReport,
+			Index:          step.Index,
+			Total:          step.Total,
+			Name:           step.Name,
+			Script:         step.Script,
+			Kind:           step.Kind,
+			TestName:       step.TestName,
+			TestFormat:     step.TestFormat,
+			TestReport:     step.TestReport,
+			CoverageFormat: step.CoverageFormat,
+			CoverageReport: step.CoverageReport,
 		})
 	}
 	return out

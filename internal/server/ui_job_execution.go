@@ -152,6 +152,10 @@ const jobExecutionHTML = `<!doctype html>
       <h3 style="margin:0 0 10px;">Test Report</h3>
       <div id="testReportBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
     </div>
+    <div class="card">
+      <h3 style="margin:0 0 10px;">Coverage Report</h3>
+      <div id="coverageReportBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
+    </div>
   </main>
 
   <script src="/ui/shared.js"></script>
@@ -162,6 +166,8 @@ const jobExecutionHTML = `<!doctype html>
     let tailingEnabled = true;
     let suppressLogScrollEvent = false;
     let projectIDByNameCache = null;
+    let lastCoverageSignature = '';
+    let lastTestReportSignature = '';
     const refreshGuard = createRefreshGuard(5000);
 
     function jobExecutionIdFromPath() {
@@ -213,6 +219,190 @@ const jobExecutionHTML = `<!doctype html>
       }
       link.href = '/';
       link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
+    }
+
+    function coverageTotals(c) {
+      const total = Number(c.total_statements || c.total_lines || 0);
+      const covered = Number(c.covered_statements || c.covered_lines || 0);
+      return { total: total, covered: covered };
+    }
+
+    function coverageFileTotals(f) {
+      const total = Number(f.total_statements || f.total_lines || 0);
+      const covered = Number(f.covered_statements || f.covered_lines || 0);
+      return { total: total, covered: covered };
+    }
+
+    function pct(covered, total) {
+      if (!total) return 0;
+      return (100 * covered) / total;
+    }
+
+    function renderCoverageReport(coverage) {
+      const box = document.getElementById('coverageReportBox');
+      if (!box) return;
+      const openState = {};
+      box.querySelectorAll('details[data-cov-key]').forEach(d => {
+        const key = String(d.getAttribute('data-cov-key') || '');
+        if (key) openState[key] = !!d.open;
+      });
+      if (!coverage) {
+        box.textContent = 'No parsed coverage report';
+        return;
+      }
+      const files = Array.isArray(coverage.files) ? coverage.files.slice() : [];
+      const overall = coverageTotals(coverage);
+      const overallPct = Number(coverage.percent || pct(overall.covered, overall.total) || 0);
+
+      const modules = new Map();
+      files.forEach(f => {
+        const path = String(f.path || '').trim();
+        const slash = path.lastIndexOf('/');
+        const moduleName = slash > 0 ? path.slice(0, slash) : '.';
+        const t = coverageFileTotals(f);
+        const prev = modules.get(moduleName) || { total: 0, covered: 0, files: 0 };
+        prev.total += t.total;
+        prev.covered += t.covered;
+        prev.files += 1;
+        modules.set(moduleName, prev);
+      });
+      const moduleRows = Array.from(modules.entries())
+        .sort((a, b) => pct(a[1].covered, a[1].total) - pct(b[1].covered, b[1].total))
+        .map(([name, m]) =>
+          '<tr>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;"><code>' + escapeHtml(name) + '</code></td>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;">' + m.files + '</td>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;">' + m.covered + '/' + m.total + '</td>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;"><strong>' + pct(m.covered, m.total).toFixed(2) + '%</strong></td>' +
+          '</tr>'
+        ).join('');
+
+      const fileRows = files
+        .slice()
+        .sort((a, b) => pct(coverageFileTotals(a).covered, coverageFileTotals(a).total) - pct(coverageFileTotals(b).covered, coverageFileTotals(b).total))
+        .map(f => {
+          const t = coverageFileTotals(f);
+          return '<tr>' +
+            '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;"><code>' + escapeHtml(String(f.path || '')) + '</code></td>' +
+            '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;">' + t.covered + '/' + t.total + '</td>' +
+            '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;"><strong>' + pct(t.covered, t.total).toFixed(2) + '%</strong></td>' +
+            '</tr>';
+        }).join('');
+
+      const root = { name: '/', children: new Map(), total: 0, covered: 0, isFile: false };
+      files.forEach(f => {
+        const path = String(f.path || '').trim();
+        if (!path) return;
+        const t = coverageFileTotals(f);
+        const parts = path.split('/').filter(Boolean);
+        let node = root;
+        node.total += t.total;
+        node.covered += t.covered;
+        parts.forEach((part, idx) => {
+          const key = idx === parts.length - 1 ? 'f:' + part : 'd:' + part;
+          if (!node.children.has(key)) {
+            node.children.set(key, { name: part, children: new Map(), total: 0, covered: 0, isFile: idx === parts.length - 1 });
+          }
+          node = node.children.get(key);
+          node.total += t.total;
+          node.covered += t.covered;
+        });
+      });
+
+      function nodeHtml(node, prefix) {
+        const nodeKey = prefix ? (prefix + '/' + node.name) : node.name;
+        const children = Array.from(node.children.values())
+          .sort((a, b) => {
+            if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
+            return a.name.localeCompare(b.name);
+          })
+          .map(ch => nodeHtml(ch, nodeKey))
+          .join('');
+        const label = escapeHtml(node.name) + ' - ' + node.covered + '/' + node.total + ' (' + pct(node.covered, node.total).toFixed(2) + '%)';
+        if (!children) {
+          return '<li><code>' + label + '</code></li>';
+        }
+        const isOpen = Object.prototype.hasOwnProperty.call(openState, 'tree:' + nodeKey) ? !!openState['tree:' + nodeKey] : false;
+        return '<li><details data-cov-key="tree:' + escapeHtml(nodeKey) + '"' + (isOpen ? ' open' : '') + '><summary><code>' + label + '</code></summary><ul style="margin:6px 0 0 18px;padding:0 0 0 12px;">' + children + '</ul></details></li>';
+      }
+      const tree = '<ul style="margin:6px 0 0 0;padding:0 0 0 12px;">' + Array.from(root.children.values()).map(ch => nodeHtml(ch, '')).join('') + '</ul>';
+      const openModules = Object.prototype.hasOwnProperty.call(openState, 'modules') ? !!openState.modules : true;
+      const openFiles = Object.prototype.hasOwnProperty.call(openState, 'files') ? !!openState.files : false;
+      const openTree = Object.prototype.hasOwnProperty.call(openState, 'tree') ? !!openState.tree : false;
+
+      box.innerHTML =
+        '<div style="margin:0 0 10px;padding:8px;border:1px solid #c4ddd0;border-radius:6px;background:#f6fbf8;">' +
+          '<div><strong>Format:</strong> ' + escapeHtml(String(coverage.format || '')) + '</div>' +
+          '<div><strong>Overall:</strong> ' + overallPct.toFixed(2) + '% (' + overall.covered + '/' + overall.total + ')</div>' +
+          '<div><strong>Files:</strong> ' + files.length + '</div>' +
+        '</div>' +
+        '<details data-cov-key="modules"' + (openModules ? ' open' : '') + '><summary><strong>By Module</strong></summary>' +
+          '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
+          '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Module</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Files</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Covered/Total</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Coverage</th></tr></thead>' +
+          '<tbody>' + moduleRows + '</tbody></table>' +
+        '</details>' +
+        '<details data-cov-key="files"' + (openFiles ? ' open' : '') + '><summary><strong>By File</strong></summary>' +
+          '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
+          '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">File</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Covered/Total</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Coverage</th></tr></thead>' +
+          '<tbody>' + fileRows + '</tbody></table>' +
+        '</details>' +
+        '<details data-cov-key="tree"' + (openTree ? ' open' : '') + '><summary><strong>Tree View</strong></summary>' + tree + '</details>';
+    }
+
+    function renderTestReport(report) {
+      const box = document.getElementById('testReportBox');
+      if (!box) return;
+      const suites = report && Array.isArray(report.suites) ? report.suites : [];
+      if (!suites.length) {
+        box.textContent = 'No parsed test report';
+        return;
+      }
+      const header = '<div><strong>Total:</strong> ' + (report.total || 0) +
+        ' | <strong>Passed:</strong> ' + (report.passed || 0) +
+        ' | <strong>Failed:</strong> ' + (report.failed || 0) +
+        ' | <strong>Skipped:</strong> ' + (report.skipped || 0) + '</div>';
+
+      const suiteHtml = suites.map((s, suiteIdx) => {
+        const cases = Array.isArray(s.cases) ? s.cases : [];
+        const modules = new Map();
+        cases.forEach(c => {
+          const mod = String(c.package || '').trim() || '(root)';
+          if (!modules.has(mod)) modules.set(mod, []);
+          modules.get(mod).push(c);
+        });
+        const moduleHtml = Array.from(modules.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([mod, moduleCases], modIdx) => {
+            let mPass = 0;
+            let mFail = 0;
+            let mSkip = 0;
+            moduleCases.forEach(c => {
+              const st = String(c.status || '').toLowerCase();
+              if (st === 'pass') mPass++;
+              else if (st === 'fail') mFail++;
+              else if (st === 'skip') mSkip++;
+            });
+            const rows = moduleCases.map(c =>
+              '<tr>' +
+              '<td>' + escapeHtml(c.name || '') + '</td>' +
+              '<td>' + escapeHtml(c.status || '') + '</td>' +
+              '<td>' + (c.duration_seconds || 0).toFixed(3) + 's</td>' +
+              '</tr>'
+            ).join('');
+            return '<details data-test-key="suite:' + suiteIdx + ':mod:' + modIdx + '">' +
+              '<summary><code>' + escapeHtml(mod) + '</code> - total=' + moduleCases.length + ', passed=' + mPass + ', failed=' + mFail + ', skipped=' + mSkip + '</summary>' +
+              '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
+              '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Test</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Status</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Duration</th></tr></thead>' +
+              '<tbody>' + rows + '</tbody></table>' +
+              '</details>';
+          }).join('');
+        return '<div style="margin-top:10px;">' +
+          '<div><strong>' + escapeHtml(s.name || 'suite') + '</strong> (' + escapeHtml(s.format || '') + ')</div>' +
+          '<div style="font-size:13px;color:#5f6f67;">total=' + (s.total || 0) + ', passed=' + (s.passed || 0) + ', failed=' + (s.failed || 0) + ', skipped=' + (s.skipped || 0) + '</div>' +
+          '<div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">' + moduleHtml + '</div>' +
+          '</div>';
+      }).join('');
+      box.innerHTML = header + suiteHtml;
     }
 
     async function resolveProjectIDByName(projectName) {
@@ -591,35 +781,22 @@ const jobExecutionHTML = `<!doctype html>
         if (!tres.ok) throw new Error('test report request failed');
         const tdata = await tres.json();
         const report = tdata.report || {};
-        const box = document.getElementById('testReportBox');
-        const suites = report.suites || [];
-        if (!suites.length) {
-          box.textContent = 'No parsed test report';
-        } else {
-          const header = '<div><strong>Total:</strong> ' + (report.total || 0) +
-            ' | <strong>Passed:</strong> ' + (report.passed || 0) +
-            ' | <strong>Failed:</strong> ' + (report.failed || 0) +
-            ' | <strong>Skipped:</strong> ' + (report.skipped || 0) + '</div>';
-          const suiteHtml = suites.map(s => {
-            const cases = (s.cases || []).map(c =>
-              '<tr>' +
-              '<td>' + escapeHtml(c.package || '') + '</td>' +
-              '<td>' + escapeHtml(c.name || '') + '</td>' +
-              '<td>' + escapeHtml(c.status || '') + '</td>' +
-              '<td>' + (c.duration_seconds || 0).toFixed(3) + 's</td>' +
-              '</tr>'
-            ).join('');
-            return '<div style="margin-top:10px;">' +
-              '<div><strong>' + escapeHtml(s.name || 'suite') + '</strong> (' + escapeHtml(s.format || '') + ')</div>' +
-              '<div style="font-size:13px;color:#5f6f67;">total=' + (s.total || 0) + ', passed=' + (s.passed || 0) + ', failed=' + (s.failed || 0) + ', skipped=' + (s.skipped || 0) + '</div>' +
-              '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
-              '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Package</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Test</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Status</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Duration</th></tr></thead>' +
-              '<tbody>' + cases + '</tbody></table></div>';
-          }).join('');
-          box.innerHTML = header + suiteHtml;
+        const coverage = report.coverage || null;
+        const coverageSignature = coverage ? JSON.stringify(coverage) : '';
+        if (coverageSignature !== lastCoverageSignature) {
+          renderCoverageReport(coverage);
+          lastCoverageSignature = coverageSignature;
+        }
+        const testSignature = JSON.stringify(report);
+        if (testSignature !== lastTestReportSignature) {
+          renderTestReport(report);
+          lastTestReportSignature = testSignature;
         }
       } catch (_) {
         document.getElementById('testReportBox').textContent = 'Could not load test report';
+        document.getElementById('coverageReportBox').textContent = 'Could not load coverage report';
+        lastCoverageSignature = '';
+        lastTestReportSignature = '';
       }
       } finally {
         refreshInFlight = false;

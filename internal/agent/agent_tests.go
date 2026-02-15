@@ -40,10 +40,17 @@ func uploadTestReport(ctx context.Context, client *http.Client, serverURL, agent
 
 func testReportSummary(report protocol.JobExecutionTestReport) string {
 	if report.Total == 0 {
+		if report.Coverage != nil {
+			return fmt.Sprintf("[coverage] format=%s coverage=%.2f%%", report.Coverage.Format, report.Coverage.Percent)
+		}
 		return "[tests] none"
 	}
-	return "[tests] total=" + strconv.Itoa(report.Total) +
+	line := "[tests] total=" + strconv.Itoa(report.Total) +
 		" passed=" + strconv.Itoa(report.Passed) +
 		" failed=" + strconv.Itoa(report.Failed) +
 		" skipped=" + strconv.Itoa(report.Skipped)
+	if report.Coverage != nil {
+		line += fmt.Sprintf(" | coverage=%s %.2f%%", report.Coverage.Format, report.Coverage.Percent)
+	}
+	return line
 }

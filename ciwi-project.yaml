@@ -31,9 +31,11 @@ pipelines:
         steps:
           - test:
               name: go-unit
-              command: mkdir -p dist && go test -json ./... > dist/go-unit.json
+              command: mkdir -p dist && go test -json -coverprofile=dist/go-unit.cover ./... > dist/go-unit.json
               format: go-test-json
               report: dist/go-unit.json
+              coverage_format: go-coverprofile
+              coverage_report: dist/go-unit.cover
       - id: build-cross-platform
         runs_on:
           executor: script

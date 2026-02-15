@@ -68,24 +68,24 @@ func TestStoreLeaseJobConcurrencySingleWinner(t *testing.T) {
 
 func TestCapabilitiesMatchToolConstraints(t *testing.T) {
 	agentCaps := map[string]string{
-		"os":         "linux",
-		"arch":       "amd64",
-		"executor":   "script",
-		"shells":     "posix",
-		"tool.go":    "1.25.7",
-		"tool.git":   "2.44.0",
-		"tool.cmake": "3.28.1",
-		"tool.ninja": "1.12.1",
+		"os":          "linux",
+		"arch":        "amd64",
+		"executor":    "script",
+		"shells":      "posix",
+		"tool.go":     "1.25.7",
+		"tool.git":    "2.44.0",
+		"tool.cmake":  "3.28.1",
+		"tool.ninja":  "1.12.1",
 		"tool.docker": "27.0.3",
 	}
 	req := map[string]string{
-		"os":                  "linux",
-		"requires.tool.go":    ">=1.24",
-		"requires.tool.git":   ">=2.30",
-		"requires.tool.cmake": "*",
-		"requires.tool.ninja": "*",
+		"os":                   "linux",
+		"requires.tool.go":     ">=1.24",
+		"requires.tool.git":    ">=2.30",
+		"requires.tool.cmake":  "*",
+		"requires.tool.ninja":  "*",
 		"requires.tool.docker": "*",
-		"requires.tool.clang": "",
+		"requires.tool.clang":  "",
 	}
 	if capabilitiesMatch(agentCaps, req) {
 		t.Fatalf("expected missing clang tool to fail")
@@ -133,6 +133,12 @@ func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 		Passed:  1,
 		Failed:  1,
 		Skipped: 0,
+		Coverage: &protocol.CoverageReport{
+			Format:            "go-coverprofile",
+			TotalStatements:   10,
+			CoveredStatements: 8,
+			Percent:           80,
+		},
 		Suites: []protocol.TestSuiteReport{
 			{
 				Name:    "go-unit",
@@ -161,6 +167,9 @@ func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 	}
 	if got.Total != 2 || got.Failed != 1 || len(got.Suites) != 1 {
 		t.Fatalf("unexpected test report: %+v", got)
+	}
+	if got.Coverage == nil || got.Coverage.Format != "go-coverprofile" || got.Coverage.TotalStatements != 10 {
+		t.Fatalf("unexpected coverage report: %+v", got.Coverage)
 	}
 }
 

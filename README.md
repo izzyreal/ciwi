@@ -431,7 +431,7 @@ Config parsing uses strict YAML field validation (`KnownFields`), so unknown key
 `steps` supports two step types:
 - `run`: executes a script line in the shell defined by `runs_on.shell`.
 - `test`: executes a dedicated test command and enables parsed test reports in job UI/API.
-  - fields: `name` (optional), `command` (required), `format` (optional, supports `go-test-json` and `junit-xml`).
+  - fields: `name` (optional), `command` (required), `format` (optional, supports `go-test-json` and `junit-xml`), `report` (required), `coverage_format` (optional, supports `go-coverprofile` and `lcov`), `coverage_report` (optional).
 
 Executor model:
 - `runs_on.executor` must be `script`.

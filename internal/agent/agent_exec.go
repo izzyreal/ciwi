@@ -141,6 +141,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	runEnv := withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
 	scriptSteps := stepPlanToScriptSteps(job.StepPlan)
 	collectedSuites := make([]protocol.TestSuiteReport, 0, len(scriptSteps))
+	var collectedCoverage *protocol.CoverageReport
 	if len(scriptSteps) > 0 {
 		fmt.Fprintf(&output, "[run] mode=stepwise steps=%d\n", len(scriptSteps))
 	}
@@ -158,13 +159,15 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				{
 					Type: protocol.JobExecutionEventTypeStepStarted,
 					Step: &protocol.JobStepPlanItem{
-						Index:      step.meta.index,
-						Total:      step.meta.total,
-						Name:       step.meta.name,
-						Kind:       step.meta.kind,
-						TestName:   step.meta.testName,
-						TestFormat: step.meta.testFormat,
-						TestReport: step.meta.testReport,
+						Index:          step.meta.index,
+						Total:          step.meta.total,
+						Name:           step.meta.name,
+						Kind:           step.meta.kind,
+						TestName:       step.meta.testName,
+						TestFormat:     step.meta.testFormat,
+						TestReport:     step.meta.testReport,
+						CoverageFormat: step.meta.coverageFormat,
+						CoverageReport: step.meta.coverageReport,
 					},
 					TimestampUTC: time.Now().UTC(),
 				},
@@ -192,6 +195,18 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 					}
 				} else {
 					collectedSuites = append(collectedSuites, suite)
+				}
+			}
+			if step.meta.kind == "test" && strings.TrimSpace(step.meta.coverageReport) != "" {
+				coverage, parseErr := parseStepCoverageFromFile(execDir, step.meta)
+				if parseErr != nil {
+					fmt.Fprintf(&output, "[coverage] parse_failed suite=%s path=%s err=%v\n", step.meta.testName, step.meta.coverageReport, parseErr)
+					if stepErr == nil {
+						stepErr = parseErr
+					}
+				} else if coverage != nil {
+					collectedCoverage = coverage
+					fmt.Fprintf(&output, "[coverage] format=%s coverage=%.2f%%\n", coverage.Format, coverage.Percent)
 				}
 			}
 			if stepErr != nil {
@@ -242,14 +257,14 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 
 	trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-	testReport := protocol.JobExecutionTestReport{Suites: collectedSuites}
+	testReport := protocol.JobExecutionTestReport{Suites: collectedSuites, Coverage: collectedCoverage}
 	for _, s := range collectedSuites {
 		testReport.Total += s.Total
 		testReport.Passed += s.Passed
 		testReport.Failed += s.Failed
 		testReport.Skipped += s.Skipped
 	}
-	if testReport.Total > 0 {
+	if testReport.Total > 0 || testReport.Coverage != nil {
 		if err := uploadTestReport(ctx, client, serverURL, agentID, job.ID, testReport); err != nil {
 			fmt.Fprintf(&output, "[tests] upload_failed=%v\n", err)
 		} else {
@@ -460,13 +475,15 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 		}
 		steps = append(steps, jobScriptStep{
 			meta: stepMarkerMeta{
-				index:      index,
-				total:      itemTotal,
-				name:       name,
-				kind:       kind,
-				testName:   strings.TrimSpace(step.TestName),
-				testFormat: strings.TrimSpace(step.TestFormat),
-				testReport: strings.TrimSpace(step.TestReport),
+				index:          index,
+				total:          itemTotal,
+				name:           name,
+				kind:           kind,
+				testName:       strings.TrimSpace(step.TestName),
+				testFormat:     strings.TrimSpace(step.TestFormat),
+				testReport:     strings.TrimSpace(step.TestReport),
+				coverageFormat: strings.TrimSpace(step.CoverageFormat),
+				coverageReport: strings.TrimSpace(step.CoverageReport),
 			},
 			script: script,
 		})

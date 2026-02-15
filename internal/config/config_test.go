@@ -46,6 +46,8 @@ pipelines:
               command: go test -json ./...
               format: go-test-json
               report: out/go-unit.json
+              coverage_format: go-coverprofile
+              coverage_report: out/go-unit.cover
 `), "test-step")
 	if err != nil {
 		t.Fatalf("parse config: %v", err)
@@ -57,7 +59,7 @@ pipelines:
 	if step.Test == nil {
 		t.Fatal("expected test step to be parsed")
 	}
-	if step.Test.Name != "go-unit" || step.Test.Command != "go test -json ./..." || step.Test.Format != "go-test-json" || step.Test.Report != "out/go-unit.json" {
+	if step.Test.Name != "go-unit" || step.Test.Command != "go test -json ./..." || step.Test.Format != "go-test-json" || step.Test.Report != "out/go-unit.json" || step.Test.CoverageFormat != "go-coverprofile" || step.Test.CoverageReport != "out/go-unit.cover" {
 		t.Fatalf("unexpected test step: %+v", step.Test)
 	}
 }
@@ -88,6 +90,29 @@ pipelines:
 	}
 	if step.Test.Format != "junit-xml" {
 		t.Fatalf("unexpected test format: %q", step.Test.Format)
+	}
+}
+
+func TestParseRejectsUnsupportedCoverageFormat(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: test
+    jobs:
+      - id: unit
+        timeout_seconds: 60
+        steps:
+          - test:
+              command: go test -json ./...
+              format: go-test-json
+              report: out/go-unit.json
+              coverage_format: cobertura-xml
+              coverage_report: out/coverage.xml
+`), "test-coverage-format")
+	if err == nil || !strings.Contains(err.Error(), "coverage_format unsupported") {
+		t.Fatalf("expected unsupported coverage_format error, got: %v", err)
 	}
 }
 

@@ -106,10 +106,12 @@ type PipelineJobStep struct {
 }
 
 type PipelineJobTestStep struct {
-	Name    string `yaml:"name,omitempty" json:"name,omitempty"`
-	Command string `yaml:"command" json:"command"`
-	Format  string `yaml:"format,omitempty" json:"format,omitempty"`
-	Report  string `yaml:"report,omitempty" json:"report,omitempty"`
+	Name           string `yaml:"name,omitempty" json:"name,omitempty"`
+	Command        string `yaml:"command" json:"command"`
+	Format         string `yaml:"format,omitempty" json:"format,omitempty"`
+	Report         string `yaml:"report,omitempty" json:"report,omitempty"`
+	CoverageFormat string `yaml:"coverage_format,omitempty" json:"coverage_format,omitempty"`
+	CoverageReport string `yaml:"coverage_report,omitempty" json:"coverage_report,omitempty"`
 }
 
 func Load(path string) (File, error) {
@@ -347,6 +349,23 @@ func (cfg File) Validate() []string {
 						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.report is required", i, j, k))
 					} else if hasUnsafePath(report) {
 						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.report must be a relative in-repo path", i, j, k))
+					}
+					coverageReport := strings.TrimSpace(st.Test.CoverageReport)
+					coverageFormat := strings.TrimSpace(st.Test.CoverageFormat)
+					if coverageReport != "" {
+						if hasUnsafePath(coverageReport) {
+							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.coverage_report must be a relative in-repo path", i, j, k))
+						}
+					}
+					if coverageFormat != "" {
+						switch coverageFormat {
+						case "go-coverprofile", "lcov":
+						default:
+							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.coverage_format unsupported %q", i, j, k, st.Test.CoverageFormat))
+						}
+					}
+					if coverageReport == "" && coverageFormat != "" {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].test.coverage_report is required when coverage_format is set", i, j, k))
 					}
 				}
 				for envK := range st.Env {

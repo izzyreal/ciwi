@@ -13,6 +13,7 @@ import (
 )
 
 const testReportArtifactPath = "test-report.json"
+const coverageReportArtifactPath = "coverage-report.json"
 
 func PersistArtifacts(artifactsDir, jobID string, incoming []protocol.UploadArtifact) ([]protocol.JobExecutionArtifact, error) {
 	if len(incoming) == 0 {
@@ -70,6 +71,28 @@ func PersistTestReportArtifact(artifactsDir, jobID string, report protocol.JobEx
 	return nil
 }
 
+func PersistCoverageReportArtifact(artifactsDir, jobID string, report protocol.JobExecutionTestReport) error {
+	base := filepath.Join(artifactsDir, jobID)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return fmt.Errorf("create coverage report artifact dir: %w", err)
+	}
+	dst := filepath.Join(base, filepath.FromSlash(coverageReportArtifactPath))
+	if report.Coverage == nil {
+		if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove coverage report artifact: %w", err)
+		}
+		return nil
+	}
+	payload, err := json.MarshalIndent(report.Coverage, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal coverage report artifact: %w", err)
+	}
+	if err := os.WriteFile(dst, payload, 0o644); err != nil {
+		return fmt.Errorf("write coverage report artifact: %w", err)
+	}
+	return nil
+}
+
 func AppendSyntheticTestReportArtifact(artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact) []protocol.JobExecutionArtifact {
 	testReportFull := filepath.Join(artifactsDir, jobID, filepath.FromSlash(testReportArtifactPath))
 	info, err := os.Stat(testReportFull)
@@ -85,6 +108,27 @@ func AppendSyntheticTestReportArtifact(artifactsDir, jobID string, artifacts []p
 		JobExecutionID: jobID,
 		Path:           testReportArtifactPath,
 		URL:            filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(testReportArtifactPath))),
+		SizeBytes:      info.Size(),
+	})
+	sort.SliceStable(artifacts, func(i, j int) bool { return artifacts[i].Path < artifacts[j].Path })
+	return artifacts
+}
+
+func AppendSyntheticCoverageReportArtifact(artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact) []protocol.JobExecutionArtifact {
+	coverageReportFull := filepath.Join(artifactsDir, jobID, filepath.FromSlash(coverageReportArtifactPath))
+	info, err := os.Stat(coverageReportFull)
+	if err != nil || info.IsDir() {
+		return artifacts
+	}
+	for _, a := range artifacts {
+		if a.Path == coverageReportArtifactPath {
+			return artifacts
+		}
+	}
+	artifacts = append(artifacts, protocol.JobExecutionArtifact{
+		JobExecutionID: jobID,
+		Path:           coverageReportArtifactPath,
+		URL:            filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(coverageReportArtifactPath))),
 		SizeBytes:      info.Size(),
 	})
 	sort.SliceStable(artifacts, func(i, j int) bool { return artifacts[i].Path < artifacts[j].Path })

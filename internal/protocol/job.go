@@ -167,14 +167,16 @@ type PipelineJobDetail struct {
 }
 
 type PipelineStep struct {
-	Type        string            `json:"type"`
-	Run         string            `json:"run,omitempty"`
-	TestName    string            `json:"test_name,omitempty"`
-	TestCommand string            `json:"test_command,omitempty"`
-	TestFormat  string            `json:"test_format,omitempty"`
-	TestReport  string            `json:"test_report,omitempty"`
-	SkipDryRun  bool              `json:"skip_dry_run,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
+	Type           string            `json:"type"`
+	Run            string            `json:"run,omitempty"`
+	TestName       string            `json:"test_name,omitempty"`
+	TestCommand    string            `json:"test_command,omitempty"`
+	TestFormat     string            `json:"test_format,omitempty"`
+	TestReport     string            `json:"test_report,omitempty"`
+	CoverageFormat string            `json:"coverage_format,omitempty"`
+	CoverageReport string            `json:"coverage_report,omitempty"`
+	SkipDryRun     bool              `json:"skip_dry_run,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
 }
 
 type PipelineDetail struct {
@@ -267,14 +269,16 @@ const (
 )
 
 type JobStepPlanItem struct {
-	Index      int    `json:"index"`
-	Total      int    `json:"total,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Script     string `json:"script,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	TestName   string `json:"test_name,omitempty"`
-	TestFormat string `json:"test_format,omitempty"`
-	TestReport string `json:"test_report,omitempty"`
+	Index          int    `json:"index"`
+	Total          int    `json:"total,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Script         string `json:"script,omitempty"`
+	Kind           string `json:"kind,omitempty"`
+	TestName       string `json:"test_name,omitempty"`
+	TestFormat     string `json:"test_format,omitempty"`
+	TestReport     string `json:"test_report,omitempty"`
+	CoverageFormat string `json:"coverage_format,omitempty"`
+	CoverageReport string `json:"coverage_report,omitempty"`
 }
 
 type JobExecutionEvent struct {
@@ -301,12 +305,32 @@ type TestSuiteReport struct {
 	Cases   []TestCase `json:"cases,omitempty"`
 }
 
+type CoverageFileReport struct {
+	Path              string  `json:"path,omitempty"`
+	TotalLines        int     `json:"total_lines,omitempty"`
+	CoveredLines      int     `json:"covered_lines,omitempty"`
+	TotalStatements   int     `json:"total_statements,omitempty"`
+	CoveredStatements int     `json:"covered_statements,omitempty"`
+	Percent           float64 `json:"percent,omitempty"`
+}
+
+type CoverageReport struct {
+	Format            string               `json:"format"`
+	TotalLines        int                  `json:"total_lines,omitempty"`
+	CoveredLines      int                  `json:"covered_lines,omitempty"`
+	TotalStatements   int                  `json:"total_statements,omitempty"`
+	CoveredStatements int                  `json:"covered_statements,omitempty"`
+	Percent           float64              `json:"percent,omitempty"`
+	Files             []CoverageFileReport `json:"files,omitempty"`
+}
+
 type JobExecutionTestReport struct {
-	Total   int               `json:"total"`
-	Passed  int               `json:"passed"`
-	Failed  int               `json:"failed"`
-	Skipped int               `json:"skipped"`
-	Suites  []TestSuiteReport `json:"suites,omitempty"`
+	Total    int               `json:"total"`
+	Passed   int               `json:"passed"`
+	Failed   int               `json:"failed"`
+	Skipped  int               `json:"skipped"`
+	Suites   []TestSuiteReport `json:"suites,omitempty"`
+	Coverage *CoverageReport   `json:"coverage,omitempty"`
 }
 
 type JobExecutionTestSummary struct {

@@ -215,14 +215,16 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 	out := make([]protocol.JobStepPlanItem, 0, len(in))
 	for _, step := range in {
 		out = append(out, protocol.JobStepPlanItem{
-			Index:      step.Index,
-			Total:      step.Total,
-			Name:       step.Name,
-			Script:     step.Script,
-			Kind:       step.Kind,
-			TestName:   step.TestName,
-			TestFormat: step.TestFormat,
-			TestReport: step.TestReport,
+			Index:          step.Index,
+			Total:          step.Total,
+			Name:           step.Name,
+			Script:         step.Script,
+			Kind:           step.Kind,
+			TestName:       step.TestName,
+			TestFormat:     step.TestFormat,
+			TestReport:     step.TestReport,
+			CoverageFormat: step.CoverageFormat,
+			CoverageReport: step.CoverageReport,
 		})
 	}
 	return out
