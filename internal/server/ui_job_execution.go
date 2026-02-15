@@ -166,7 +166,7 @@ const jobExecutionHTML = `<!doctype html>
     let tailingEnabled = true;
     let suppressLogScrollEvent = false;
     let projectIDByNameCache = null;
-    let lastCoverageSignature = '';
+    let lastCoverageSignature = null;
     let lastTestReportSignature = '';
     const refreshGuard = createRefreshGuard(5000);
 
@@ -795,7 +795,7 @@ const jobExecutionHTML = `<!doctype html>
       } catch (_) {
         document.getElementById('testReportBox').textContent = 'Could not load test report';
         document.getElementById('coverageReportBox').textContent = 'Could not load coverage report';
-        lastCoverageSignature = '';
+        lastCoverageSignature = null;
         lastTestReportSignature = '';
       }
       } finally {
