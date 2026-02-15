@@ -19,7 +19,6 @@ type Store interface {
 	DeleteQueuedJobExecution(id string) error
 	UpdateJobExecutionStatus(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	AppendJobExecutionEvents(id string, events []protocol.JobExecutionEvent) error
-	ListJobExecutionEvents(id string) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error)
 	SaveJobExecutionArtifacts(id string, artifacts []protocol.JobExecutionArtifact) error
 	GetJobExecutionTestReport(id string) (protocol.JobExecutionTestReport, bool, error)
@@ -109,18 +108,6 @@ func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 			deps.AttachUnmetRequirements(jobs)
 		}
 		httpx.WriteJSON(w, http.StatusOK, ListViewResponse{JobExecutions: ViewsFromProtocol(jobs)})
-	case http.MethodPost:
-		var req protocol.CreateJobExecutionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
-			return
-		}
-		job, err := deps.Store.CreateJobExecution(req)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(job)})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -296,20 +283,6 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 			deps.OnJobUpdated(job)
 		}
 		httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
-		return
-	}
-
-	if len(parts) == 2 && parts[1] == "events" {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		events, err := deps.Store.ListJobExecutionEvents(jobID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		httpx.WriteJSON(w, http.StatusOK, EventsViewResponse{Events: events})
 		return
 	}
 

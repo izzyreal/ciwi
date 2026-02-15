@@ -91,7 +91,7 @@ const uiIndexProjectsJS = `
           btn.onclick = async () => {
             btn.disabled = true;
             try {
-              const resp = await apiJSON('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: '{}' });
+              const resp = await apiJSON('/api/v1/pipelines/' + p.id + '/run-selection', { method: 'POST', body: '{}' });
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
               await refreshJobs();
             } catch (e) {
@@ -108,7 +108,7 @@ const uiIndexProjectsJS = `
           dryBtn.onclick = async () => {
             dryBtn.disabled = true;
             try {
-              const resp = await apiJSON('/api/v1/pipelines/' + p.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+              const resp = await apiJSON('/api/v1/pipelines/' + p.id + '/run-selection', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
               await refreshJobs();
             } catch (e) {

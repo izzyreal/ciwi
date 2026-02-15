@@ -350,40 +350,61 @@ sudo journalctl -u ciwi-agent -f
 
 ## Backend API
 
-- `GET /` minimal web UI (projects/pipelines/jobs)
-- `GET /projects/{projectId}` project page with structure, per-matrix run buttons and execution history
-- `GET /healthz` returns `{"status":"ok"}`
-- `POST /api/v1/heartbeat` accepts agent heartbeats in JSON
-- `GET /api/v1/agents` returns known agents
-- `POST /api/v1/agents/{agentId}/refresh-tools` requests agent tool re-scan
-- `POST /api/v1/agents/{agentId}/update` requests agent update to current server version
-- `POST /api/v1/projects/import` imports a project from git (`ciwi-project.yaml` by default)
-- `POST /api/v1/projects/{projectId}/reload` reloads project definition from saved VCS settings
-- `GET/PUT /api/v1/projects/{projectId}/vault` gets/updates project Vault settings
-- `POST /api/v1/projects/{projectId}/vault-test` tests project Vault access + mapped secrets
-- `POST /api/v1/jobs` enqueues a job execution
-- `GET /api/v1/jobs` returns all job executions
-- `GET /api/v1/jobs/{id}` returns one job execution
-- `DELETE /api/v1/jobs/{id}` removes a queued/leased job execution
-- `POST /api/v1/jobs/clear-queue` removes all queued/leased job executions
-- `POST /api/v1/jobs/flush-history` removes non-active job executions from history (`status` not in `queued`,`leased`,`running`)
-- `POST /api/v1/jobs/{id}/rerun` clones an existing started job execution into a new queued job
-- `POST /api/v1/jobs/{id}/status` updates job execution status (`running`, `succeeded`, `failed`)
-- `GET /api/v1/jobs/{id}/artifacts` lists uploaded artifacts for a job execution
-- `POST /api/v1/jobs/{id}/artifacts` uploads artifacts for a job execution (agent use)
-- `GET /api/v1/jobs/{id}/tests` returns parsed test report for a job execution
-- `POST /api/v1/jobs/{id}/tests` uploads parsed test report for a job execution (agent use)
-- `GET/POST /api/v1/vault/connections` lists/upserts Vault AppRole connections
-- `DELETE /api/v1/vault/connections/{id}` deletes a Vault connection
-- `POST /api/v1/vault/connections/{id}/test` tests Vault connection auth and optional read
-- `POST /api/v1/agent/lease` leases a matching queued job to an agent
-- `GET /api/v1/projects` returns persisted projects with pipelines
-- `GET /api/v1/projects/{projectId}` returns full project structure (pipelines/jobs/matrix)
-- `POST /api/v1/pipelines/run` loads `ciwi.yaml` and enqueues pipeline jobs
-- `POST /api/v1/pipelines/{pipelineDbId}/run` runs a persisted pipeline from sqlite (optional `{ "dry_run": true }`)
-- `POST /api/v1/pipelines/{pipelineDbId}/run-selection` runs a selected job/matrix include (optional `{ "dry_run": true }`)
-- `POST /api/v1/update/check` checks latest GitHub release compatibility/version
-- `POST /api/v1/update/apply` downloads latest compatible binary, starts helper, and restarts process
+### Shared across consumers
+
+- Agent + Frontend:
+  - `GET /api/v1/jobs/{id}`
+  - `GET /api/v1/jobs/{id}/artifacts`
+- Frontend + Installer:
+  - `GET /healthz`
+
+### Consumed by agent runtime
+
+- `POST /api/v1/heartbeat`
+- `POST /api/v1/agent/lease`
+- `POST /api/v1/jobs/{id}/status`
+- `POST /api/v1/jobs/{id}/artifacts`
+- `POST /api/v1/jobs/{id}/tests`
+
+### Consumed by frontend UI
+
+- `GET /healthz`
+- `GET /api/v1/agents`
+- `GET /api/v1/agents/{agentId}`
+- `POST /api/v1/agents/{agentId}/actions` (`action`: `update`, `refresh-tools`, `restart`, `run-script`)
+- `GET /api/v1/projects`
+- `POST /api/v1/projects/import`
+- `GET /api/v1/projects/{projectId}`
+- `GET /api/v1/projects/{projectId}/icon`
+- `POST /api/v1/projects/{projectId}/reload`
+- `GET /api/v1/projects/{projectId}/vault`
+- `PUT /api/v1/projects/{projectId}/vault`
+- `POST /api/v1/projects/{projectId}/vault-test`
+- `POST /api/v1/pipelines/{pipelineDbId}/run-selection`
+- `GET /api/v1/pipelines/{pipelineDbId}/version-resolve` (SSE)
+- `POST /api/v1/pipeline-chains/{chainDbId}/run`
+- `GET /api/v1/vault/connections`
+- `POST /api/v1/vault/connections`
+- `DELETE /api/v1/vault/connections/{id}`
+- `POST /api/v1/vault/connections/{id}/test`
+- `GET /api/v1/jobs`
+- `DELETE /api/v1/jobs/{id}`
+- `POST /api/v1/jobs/clear-queue`
+- `POST /api/v1/jobs/flush-history`
+- `POST /api/v1/jobs/{id}/force-fail`
+- `POST /api/v1/jobs/{id}/rerun`
+- `GET /api/v1/jobs/{id}/tests`
+- `POST /api/v1/update/check`
+- `POST /api/v1/update/apply`
+- `POST /api/v1/update/rollback`
+- `POST /api/v1/server/restart`
+- `GET /api/v1/update/tags`
+- `GET /api/v1/update/status`
+
+### Consumed by installer/provisioning scripts
+
+- `GET /healthz`
+- `GET /api/v1/server-info`
 
 Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps
@@ -507,7 +528,7 @@ curl -s http://127.0.0.1:8112/api/v1/projects
 curl -s -X POST http://127.0.0.1:8112/api/v1/projects/1/reload -d '{}'
 
 # 5) Run a persisted pipeline by DB ID.
-curl -s -X POST http://127.0.0.1:8112/api/v1/pipelines/1/run -d '{}'
+curl -s -X POST http://127.0.0.1:8112/api/v1/pipelines/1/run-selection -d '{}'
 
 # 6) Check jobs:
 curl -s http://127.0.0.1:8112/api/v1/jobs
@@ -520,4 +541,3 @@ curl -s http://127.0.0.1:8112/api/v1/jobs
 <img width="1089" height="715" alt="image" src="https://github.com/user-attachments/assets/f0c9f1ab-5a5b-44b9-9207-c7fb295b09a0" />
 <img width="1095" height="699" alt="image" src="https://github.com/user-attachments/assets/1515fc10-466f-478e-bc3a-b2669e612c90" />
 <img width="1096" height="710" alt="image" src="https://github.com/user-attachments/assets/c4d6ccda-bc09-4645-8372-e80fd02290f4" />
-

@@ -21,38 +21,6 @@ import (
 
 var fetchProjectConfigAndIcon = serverproject.FetchConfigAndIconFromRepo
 
-func (s *stateStore) loadConfigHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req protocol.LoadConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	if req.ConfigPath == "" {
-		req.ConfigPath = "ciwi.yaml"
-	}
-
-	fullPath, err := resolveConfigPath(req.ConfigPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	cfg, err := config.Load(fullPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := s.projectStore().LoadConfig(cfg, fullPath, "", "", filepath.Base(fullPath)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, protocol.LoadConfigResponse{ProjectName: cfg.Project.Name, ConfigPath: fullPath, Pipelines: len(cfg.Pipelines)})
-}
-
 func (s *stateStore) importProjectHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

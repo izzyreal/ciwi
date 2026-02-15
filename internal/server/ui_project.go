@@ -136,7 +136,7 @@ const projectHTML = `<!doctype html>
         runAll.onclick = async () => {
           runAll.disabled = true;
           try {
-            const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: '{}' });
+            const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', { method: 'POST', body: '{}' });
             showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
             await loadHistory();
           } catch (e) {
@@ -151,7 +151,7 @@ const projectHTML = `<!doctype html>
         dryAll.onclick = async () => {
           dryAll.disabled = true;
           try {
-            const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+            const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
             showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
             await loadHistory();
           } catch (e) {

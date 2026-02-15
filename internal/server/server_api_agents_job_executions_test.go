@@ -25,7 +25,8 @@ func TestAgentRunScriptQueuesTargetedJobExecution(t *testing.T) {
 	}
 	_ = readBody(t, hbResp)
 
-	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-run/run-script", map[string]any{
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-run/actions", map[string]any{
+		"action":          "run-script",
 		"shell":           "posix",
 		"script":          "echo hello",
 		"timeout_seconds": 120,
@@ -117,7 +118,8 @@ func TestAgentRunScriptRejectsUnsupportedShellForJobExecution(t *testing.T) {
 	}
 	_ = readBody(t, hbResp)
 
-	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-run-2/run-script", map[string]any{
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-run-2/actions", map[string]any{
+		"action": "run-script",
 		"shell":  "powershell",
 		"script": "Write-Host hi",
 	})
@@ -126,104 +128,5 @@ func TestAgentRunScriptRejectsUnsupportedShellForJobExecution(t *testing.T) {
 	}
 	if body := readBody(t, runResp); !strings.Contains(body, "does not support requested shell") {
 		t.Fatalf("unexpected unsupported shell response: %s", body)
-	}
-}
-
-func TestQueuedJobExecutionIncludesUnmetRequirements(t *testing.T) {
-	ts := newTestHTTPServer(t)
-	defer ts.Close()
-	client := ts.Client()
-
-	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
-		"script": "echo hi",
-		"required_capabilities": map[string]string{
-			"requires.tool.go": ">=9.0",
-		},
-		"timeout_seconds": 30,
-	})
-	if createResp.StatusCode != http.StatusCreated {
-		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
-	}
-	_ = readBody(t, createResp)
-
-	jobsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs", nil)
-	if jobsResp.StatusCode != http.StatusOK {
-		t.Fatalf("jobs status=%d body=%s", jobsResp.StatusCode, readBody(t, jobsResp))
-	}
-	var payload struct {
-		Jobs []struct {
-			ID                string   `json:"id"`
-			UnmetRequirements []string `json:"unmet_requirements"`
-		} `json:"job_executions"`
-	}
-	decodeJSONBody(t, jobsResp, &payload)
-	if len(payload.Jobs) == 0 {
-		t.Fatalf("expected at least one job")
-	}
-	if len(payload.Jobs[0].UnmetRequirements) == 0 {
-		t.Fatalf("expected unmet requirements on queued job")
-	}
-}
-
-func TestJobExecutionEventsEndpointReturnsStoredEvents(t *testing.T) {
-	ts := newTestHTTPServer(t)
-	defer ts.Close()
-
-	client := ts.Client()
-	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs", map[string]any{
-		"script":          "echo build",
-		"timeout_seconds": 60,
-	})
-	if createResp.StatusCode != http.StatusCreated {
-		t.Fatalf("create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
-	}
-	var createPayload struct {
-		Job struct {
-			ID string `json:"id"`
-		} `json:"job_execution"`
-	}
-	decodeJSONBody(t, createResp, &createPayload)
-
-	statusResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/status", map[string]any{
-		"agent_id": "agent-test",
-		"status":   "running",
-		"events": []map[string]any{
-			{
-				"type": "step.started",
-				"step": map[string]any{
-					"index": 1,
-					"total": 2,
-					"name":  "build",
-				},
-			},
-		},
-	})
-	if statusResp.StatusCode != http.StatusOK {
-		t.Fatalf("status update status=%d body=%s", statusResp.StatusCode, readBody(t, statusResp))
-	}
-	_ = readBody(t, statusResp)
-
-	eventsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+createPayload.Job.ID+"/events", nil)
-	if eventsResp.StatusCode != http.StatusOK {
-		t.Fatalf("events status=%d body=%s", eventsResp.StatusCode, readBody(t, eventsResp))
-	}
-	var payload struct {
-		Events []struct {
-			Type string `json:"type"`
-			Step struct {
-				Index int    `json:"index"`
-				Name  string `json:"name"`
-			} `json:"step"`
-		} `json:"events"`
-	}
-	decodeJSONBody(t, eventsResp, &payload)
-	if len(payload.Events) != 1 {
-		t.Fatalf("expected one event, got %d", len(payload.Events))
-	}
-	if payload.Events[0].Type != "step.started" {
-		t.Fatalf("unexpected event type: %q", payload.Events[0].Type)
-	}
-	if payload.Events[0].Step.Index != 1 || payload.Events[0].Step.Name != "build" {
-		t.Fatalf("unexpected event step payload: %+v", payload.Events[0].Step)
 	}
 }

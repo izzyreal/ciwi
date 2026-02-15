@@ -36,11 +36,9 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.Post("/api/v1/agent/lease", s.leaseJobHandler)
 
 	// Project/pipeline APIs
-	r.Post("/api/v1/config/load", s.loadConfigHandler)
 	r.Post("/api/v1/projects/import", s.importProjectHandler)
 	r.HandleFunc("/api/v1/projects", s.listProjectsHandler)
 	r.HandleFunc("/api/v1/projects/*", s.projectByIDHandler)
-	r.Post("/api/v1/pipelines/run", s.runPipelineFromConfigHandler)
 	r.HandleFunc("/api/v1/pipelines/*", s.pipelineByIDHandler)
 	r.HandleFunc("/api/v1/pipeline-chains/*", s.pipelineChainByIDHandler)
 

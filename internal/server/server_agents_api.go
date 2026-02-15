@@ -45,7 +45,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, agentViewResponse{Agent: info})
 		return
 	}
-	if len(parts) != 2 || (parts[1] != "update" && parts[1] != "refresh-tools" && parts[1] != "restart" && parts[1] != "run-script") {
+	if len(parts) != 2 || parts[1] != "actions" {
 		http.NotFound(w, r)
 		return
 	}
@@ -58,7 +58,22 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent id is required", http.StatusBadRequest)
 		return
 	}
-	if parts[1] == "refresh-tools" {
+	var req struct {
+		Action         string `json:"action"`
+		Script         string `json:"script"`
+		Shell          string `json:"shell"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action == "" {
+		http.Error(w, "action is required", http.StatusBadRequest)
+		return
+	}
+	if action == "refresh-tools" {
 		s.mu.Lock()
 		a, ok := s.agents[agentID]
 		if !ok {
@@ -77,7 +92,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if parts[1] == "restart" {
+	if action == "restart" {
 		s.mu.Lock()
 		a, ok := s.agents[agentID]
 		if !ok {
@@ -96,16 +111,7 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if parts[1] == "run-script" {
-		var req struct {
-			Script         string `json:"script"`
-			Shell          string `json:"shell"`
-			TimeoutSeconds int    `json:"timeout_seconds"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
-			return
-		}
+	if action == "run-script" {
 		script := strings.TrimSpace(req.Script)
 		shell := strings.ToLower(strings.TrimSpace(req.Shell))
 		if script == "" {
@@ -174,6 +180,10 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 			Shell:          shell,
 			TimeoutSeconds: timeout,
 		})
+		return
+	}
+	if action != "update" {
+		http.Error(w, "unsupported action", http.StatusBadRequest)
 		return
 	}
 

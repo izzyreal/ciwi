@@ -321,10 +321,10 @@ const agentHTML = `<!doctype html>
       clearAdhocPoll();
       adhocActiveJobID = '';
       try {
-        const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID) + '/run-script', {
+        const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID) + '/actions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shell: shell, script: script, timeout_seconds: 600 }),
+          body: JSON.stringify({ action: 'run-script', shell: shell, script: script, timeout_seconds: 600 }),
         });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
@@ -341,11 +341,11 @@ const agentHTML = `<!doctype html>
       }
     }
 
-    async function postAction(suffix) {
-      const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID) + '/' + suffix, {
+    async function postAction(action) {
+      const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID) + '/actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify({ action: action }),
       });
       if (!res.ok) throw new Error(await res.text());
     }

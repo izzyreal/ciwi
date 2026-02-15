@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -34,52 +32,6 @@ type pipelineRunContext struct {
 	AutoBump          string
 }
 
-func (s *stateStore) runPipelineFromConfigHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req protocol.RunPipelineRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	if req.ConfigPath == "" {
-		req.ConfigPath = "ciwi.yaml"
-	}
-	if req.PipelineID == "" {
-		http.Error(w, "pipeline_id is required", http.StatusBadRequest)
-		return
-	}
-
-	fullPath, err := resolveConfigPath(req.ConfigPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	cfg, err := config.Load(fullPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := s.pipelineStore().LoadConfig(cfg, fullPath, "", "", filepath.Base(fullPath)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	p, err := s.pipelineStore().GetPipelineByProjectAndID(cfg.Project.Name, req.PipelineID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-	resp, err := s.enqueuePersistedPipeline(p, nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, http.StatusCreated, resp)
-}
-
 func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request) {
 	rel := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/pipelines/"), "/")
 	if rel == "" {
@@ -87,7 +39,7 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "run-selection" && parts[1] != "version-preview" && parts[1] != "version-resolve") {
+	if len(parts) != 2 || (parts[1] != "run-selection" && parts[1] != "version-resolve") {
 		http.NotFound(w, r)
 		return
 	}
@@ -109,43 +61,11 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		s.streamVersionResolve(w, p)
 		return
 	}
-	if parts[1] == "version-preview" {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		depCtx, depErr := s.checkPipelineDependenciesWithReporter(p, nil)
-		if depErr != nil {
-			writeJSON(w, http.StatusOK, buildPipelineVersionPreviewErrorResponse(depErr.Error()))
-			return
-		}
-		runCtx, runErr := resolvePipelineRunContextWithReporter(p, depCtx, nil)
-		if runErr != nil {
-			writeJSON(w, http.StatusOK, buildPipelineVersionPreviewErrorResponse(runErr.Error()))
-			return
-		}
-		writeJSON(w, http.StatusOK, buildPipelineVersionPreviewSuccessResponse(runCtx))
-		return
-	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req protocol.RunPipelineSelectionRequest
-	if parts[1] == "run" {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
-			return
-		}
-		resp, err := s.enqueuePersistedPipeline(p, &req)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		writeJSON(w, http.StatusCreated, resp)
-		return
-	}
-
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
@@ -165,7 +85,7 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "version-preview" && parts[1] != "version-resolve") {
+	if len(parts) != 2 || parts[1] != "run" {
 		http.NotFound(w, r)
 		return
 	}
@@ -183,54 +103,21 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 		http.Error(w, "pipeline chain has no pipelines", http.StatusBadRequest)
 		return
 	}
-	first, err := s.pipelineStore().GetPipelineByProjectAndID(ch.ProjectName, strings.TrimSpace(ch.Pipelines[0]))
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req protocol.RunPipelineSelectionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	resp, err := s.enqueuePersistedPipelineChain(ch, &req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	switch parts[1] {
-	case "version-resolve":
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.streamVersionResolve(w, first)
-		return
-	case "version-preview":
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		depCtx, depErr := s.checkPipelineDependenciesWithReporter(first, nil)
-		if depErr != nil {
-			writeJSON(w, http.StatusOK, buildPipelineVersionPreviewErrorResponse(depErr.Error()))
-			return
-		}
-		runCtx, runErr := resolvePipelineRunContextWithReporter(first, depCtx, nil)
-		if runErr != nil {
-			writeJSON(w, http.StatusOK, buildPipelineVersionPreviewErrorResponse(runErr.Error()))
-			return
-		}
-		writeJSON(w, http.StatusOK, buildPipelineVersionPreviewSuccessResponse(runCtx))
-		return
-	default:
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var req protocol.RunPipelineSelectionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
-			return
-		}
-		resp, err := s.enqueuePersistedPipelineChain(ch, &req)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		writeJSON(w, http.StatusCreated, resp)
-	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineChain, selection *protocol.RunPipelineSelectionRequest) (protocol.RunPipelineResponse, error) {

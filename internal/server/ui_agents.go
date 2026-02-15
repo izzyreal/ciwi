@@ -149,8 +149,8 @@ const agentsHTML = `<!doctype html>
             const action = btn.getAttribute('data-action') || '';
             btn.disabled = true;
             try {
-              const suffix = action === 'refresh-tools' ? 'refresh-tools' : 'update';
-              const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/' + suffix, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+              const reqAction = action === 'refresh-tools' ? 'refresh-tools' : 'update';
+              const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/actions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: reqAction }) });
               if (!res.ok) throw new Error(await res.text());
               await refreshAgents();
             } catch (e) {

@@ -141,7 +141,7 @@ func TestAgentListAndDetailUseConsistentViewFields(t *testing.T) {
 	}
 	_ = readBody(t, hbResp)
 
-	updateResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-consistency/update", map[string]any{})
+	updateResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-consistency/actions", map[string]any{"action": "update"})
 	if updateResp.StatusCode != http.StatusOK {
 		t.Fatalf("manual update status=%d body=%s", updateResp.StatusCode, readBody(t, updateResp))
 	}
@@ -226,7 +226,7 @@ func TestManualAgentUpdateRequestTriggersHeartbeatUpdate(t *testing.T) {
 	}
 	_ = readBody(t, firstHB)
 
-	manualResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-a/update", map[string]any{})
+	manualResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-a/actions", map[string]any{"action": "update"})
 	if manualResp.StatusCode != http.StatusOK {
 		t.Fatalf("manual update status=%d body=%s", manualResp.StatusCode, readBody(t, manualResp))
 	}
@@ -298,7 +298,7 @@ func TestManualRefreshToolsRequest(t *testing.T) {
 	}
 	_ = readBody(t, firstHB)
 
-	refreshResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-refresh/refresh-tools", map[string]any{})
+	refreshResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-refresh/actions", map[string]any{"action": "refresh-tools"})
 	if refreshResp.StatusCode != http.StatusOK {
 		t.Fatalf("refresh-tools status=%d body=%s", refreshResp.StatusCode, readBody(t, refreshResp))
 	}
@@ -344,7 +344,7 @@ func TestManualAgentRestartRequest(t *testing.T) {
 	}
 	_ = readBody(t, firstHB)
 
-	restartResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-restart/restart", map[string]any{})
+	restartResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-restart/actions", map[string]any{"action": "restart"})
 	if restartResp.StatusCode != http.StatusOK {
 		t.Fatalf("restart request status=%d body=%s", restartResp.StatusCode, readBody(t, restartResp))
 	}
