@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -145,8 +147,17 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			http.NotFound(w, r)
 			return
 		}
+		sum := sha256.Sum256(icon.Data)
+		etag := `"` + hex.EncodeToString(sum[:]) + `"`
+		if matchesETag(r.Header.Get("If-None-Match"), etag) {
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		w.Header().Set("Content-Type", icon.ContentType)
-		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "public, max-age=300")
 		_, _ = w.Write(icon.Data)
 		return
 	case "reload":
@@ -203,6 +214,27 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func matchesETag(ifNoneMatch, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	raw := strings.TrimSpace(ifNoneMatch)
+	if raw == "" {
+		return false
+	}
+	if raw == "*" {
+		return true
+	}
+	for _, part := range strings.Split(raw, ",") {
+		candidate := strings.TrimSpace(part)
+		if candidate == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *stateStore) reloadProjectFromRepo(ctx context.Context, project protocol.ProjectSummary) error {
