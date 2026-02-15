@@ -95,6 +95,7 @@ func Run(ctx context.Context) error {
 		s.update.agentTarget = target
 		s.update.mu.Unlock()
 	}
+	go s.warmProjectIconsOnStartup(ctx)
 	s.maybeRunPostUpdateProjectReload(ctx)
 	if err := s.runJobExecutionMaintenancePass(time.Now().UTC()); err != nil {
 		slog.Error("initial job execution maintenance pass failed", "error", err)
