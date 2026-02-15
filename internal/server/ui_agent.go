@@ -43,6 +43,23 @@ const agentHTML = `<!doctype html>
       border-radius:8px;
       padding:10px;
     }
+    .agent-history-table {
+      width:100%;
+      border-collapse:collapse;
+      font-size:13px;
+      table-layout:fixed;
+    }
+    .agent-history-table th,
+    .agent-history-table td {
+      border-bottom:1px solid var(--line);
+      padding:8px 6px;
+      vertical-align:top;
+      text-align:left;
+      overflow-wrap:anywhere;
+      word-break:break-word;
+    }
+    .agent-history-table th { color:var(--muted); font-weight:600; }
+    .agent-history-empty { color:var(--muted); font-size:13px; padding:8px 0; }
     .adhoc-modal-body {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -124,6 +141,27 @@ const agentHTML = `<!doctype html>
     <div class="card">
       <div style="font-weight:600; margin-bottom:8px;">Recent Log</div>
       <pre id="logBox" class="logbox"></pre>
+    </div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom:8px;">
+        <div style="font-weight:600;">Job History</div>
+        <div id="jobHistoryMeta" class="muted">Loading...</div>
+      </div>
+      <div id="jobHistoryEmpty" class="agent-history-empty" style="display:none;"></div>
+      <table id="jobHistoryTable" class="agent-history-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Status</th>
+            <th>Pipeline</th>
+            <th>Build</th>
+            <th>Created</th>
+            <th>Finished</th>
+          </tr>
+        </thead>
+        <tbody id="jobHistoryBody"></tbody>
+      </table>
     </div>
   </main>
 
@@ -236,6 +274,57 @@ const agentHTML = `<!doctype html>
         clearTimeout(adhocPollTimer);
         adhocPollTimer = null;
       }
+    }
+
+    function isJobForAgent(job) {
+      const leased = String((job && job.leased_by_agent_id) || '').trim();
+      if (leased === agentID) return true;
+      const meta = (job && job.metadata) || {};
+      return String(meta.adhoc_agent_id || '').trim() === agentID;
+    }
+
+    function renderAgentJobHistory(jobs, loadError) {
+      const metaEl = document.getElementById('jobHistoryMeta');
+      const emptyEl = document.getElementById('jobHistoryEmpty');
+      const tableEl = document.getElementById('jobHistoryTable');
+      const bodyEl = document.getElementById('jobHistoryBody');
+      if (!metaEl || !emptyEl || !tableEl || !bodyEl) return;
+
+      if (loadError) {
+        metaEl.textContent = 'Failed to load';
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'Job history could not be loaded: ' + String(loadError);
+        tableEl.style.display = 'none';
+        bodyEl.innerHTML = '';
+        return;
+      }
+
+      const list = Array.isArray(jobs) ? jobs : [];
+      metaEl.textContent = list.length + ' job(s)';
+      if (list.length === 0) {
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'No finished jobs executed by this agent yet.';
+        tableEl.style.display = 'none';
+        bodyEl.innerHTML = '';
+        return;
+      }
+
+      const backTo = encodeURIComponent(window.location.pathname || '/');
+      const rows = list.map(job => {
+        const id = String(job.id || '').trim();
+        const href = '/jobs/' + encodeURIComponent(id) + '?back=' + backTo;
+        return '<tr>' +
+          '<td><a href="' + href + '">' + escapeHtml(jobDescription(job)) + '</a></td>' +
+          '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
+          '<td>' + escapeHtml((job.metadata && job.metadata.pipeline_id) || '') + '</td>' +
+          '<td>' + escapeHtml(buildVersionLabel(job)) + '</td>' +
+          '<td>' + escapeHtml(formatTimestamp(job.created_utc || '')) + '</td>' +
+          '<td>' + escapeHtml(formatTimestamp(job.finished_utc || '')) + '</td>' +
+        '</tr>';
+      }).join('');
+      bodyEl.innerHTML = rows;
+      emptyEl.style.display = 'none';
+      tableEl.style.display = 'table';
     }
 
     function openAdhocModal() {
@@ -363,6 +452,19 @@ const agentHTML = `<!doctype html>
         }
         const data = await res.json();
         const a = data.agent || {};
+        let historyLoadError = '';
+        let agentHistoryJobs = [];
+        try {
+          const jobRes = await fetch('/api/v1/jobs?view=history&max=150&offset=0&limit=150');
+          if (!jobRes.ok) {
+            throw new Error('HTTP ' + jobRes.status);
+          }
+          const jobData = await jobRes.json();
+          const allJobs = Array.isArray(jobData.job_executions) ? jobData.job_executions : [];
+          agentHistoryJobs = allJobs.filter(isJobForAgent);
+        } catch (e) {
+          historyLoadError = String((e && e.message) || e || 'unknown error');
+        }
         const s = statusForLastSeen(a.last_seen_utc || '');
         document.getElementById('subtitle').textContent = a.agent_id || agentID;
         document.getElementById('statusText').innerHTML = 'Health: <span class="' + s.cls + '">' + s.label + '</span>';
@@ -398,9 +500,11 @@ const agentHTML = `<!doctype html>
           metaRow('Update', updateState || '<span class="muted">none</span>');
         document.getElementById('meta').innerHTML = metaHTML;
         document.getElementById('logBox').textContent = (a.recent_log || []).join('\n');
+        renderAgentJobHistory(agentHistoryJobs, historyLoadError);
       } catch (e) {
         document.getElementById('subtitle').textContent = String(e.message || e);
         document.getElementById('statusText').textContent = 'Failed to load agent';
+        renderAgentJobHistory([], String((e && e.message) || e || 'unknown error'));
       } finally {
         refreshInFlight = false;
       }
