@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/config"
@@ -67,6 +68,42 @@ func openTestStore(t *testing.T) *Store {
 		_ = s.Close()
 	})
 	return s
+}
+
+func TestListJobExecutionsDeterministicOrderWhenTimestampsTie(t *testing.T) {
+	s := openTestStore(t)
+
+	createdIDs := make([]string, 0, 6)
+	for i := 0; i < 6; i++ {
+		job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+			Script:         "echo test",
+			TimeoutSeconds: 30,
+		})
+		if err != nil {
+			t.Fatalf("create job %d: %v", i, err)
+		}
+		createdIDs = append(createdIDs, job.ID)
+	}
+
+	if _, err := s.db.Exec(`UPDATE job_executions SET created_utc = ?`, "2026-02-15T00:00:00Z"); err != nil {
+		t.Fatalf("set tied timestamps: %v", err)
+	}
+
+	jobs, err := s.ListJobExecutions()
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	if len(jobs) != len(createdIDs) {
+		t.Fatalf("expected %d jobs, got %d", len(createdIDs), len(jobs))
+	}
+
+	expected := append([]string(nil), createdIDs...)
+	sort.Sort(sort.Reverse(sort.StringSlice(expected)))
+	for i := range jobs {
+		if jobs[i].ID != expected[i] {
+			t.Fatalf("unexpected order at index %d: got %q want %q", i, jobs[i].ID, expected[i])
+		}
+	}
 }
 
 func parseTestConfig(t *testing.T) config.File {

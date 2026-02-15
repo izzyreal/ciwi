@@ -62,7 +62,7 @@ func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, current_step_text
 		FROM job_executions
-		ORDER BY created_utc DESC
+		ORDER BY created_utc DESC, id DESC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
@@ -158,7 +158,7 @@ func (s *Store) ListQueuedJobExecutions() ([]protocol.JobExecution, error) {
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, current_step_text
 		FROM job_executions WHERE status = ?
-		ORDER BY created_utc ASC
+		ORDER BY created_utc ASC, id ASC
 	`, protocol.JobExecutionStatusQueued)
 	if err != nil {
 		return nil, fmt.Errorf("list queued jobs: %w", err)
