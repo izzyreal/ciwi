@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -111,6 +112,66 @@ func TestIsRetryableGitTransportError(t *testing.T) {
 				t.Fatalf("isRetryableGitTransportError()=%v want=%v output=%q err=%v", got, tt.want, tt.output, tt.err)
 			}
 		})
+	}
+}
+
+func TestCheckoutSourceWithCommitHashRef(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git not available: %v", err)
+	}
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	work := filepath.Join(root, "work")
+	target := filepath.Join(root, "checkout")
+
+	runGit := func(dir string, args ...string) string {
+		cmd := exec.Command("git", args...)
+		if dir != "" {
+			cmd.Dir = dir
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, string(out))
+		}
+		return string(out)
+	}
+
+	runGit("", "init", "--bare", remote)
+	runGit("", "clone", remote, work)
+	runGit(work, "config", "user.email", "ciwi@example.local")
+	runGit(work, "config", "user.name", "ciwi")
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	runGit(work, "add", "README.md")
+	runGit(work, "commit", "-m", "init")
+	runGit(work, "push", "origin", "HEAD")
+
+	if err := os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatalf("write feature: %v", err)
+	}
+	runGit(work, "add", "feature.txt")
+	runGit(work, "commit", "-m", "feature")
+	sha := strings.TrimSpace(runGit(work, "rev-parse", "HEAD"))
+	runGit(work, "push", "origin", "HEAD")
+
+	out, err := checkoutSource(context.Background(), target, protocol.SourceSpec{
+		Repo: remote,
+		Ref:  sha,
+	})
+	if err != nil {
+		t.Fatalf("checkoutSource failed: %v\noutput:\n%s", err, out)
+	}
+	if !strings.Contains(out, "FETCH_HEAD") {
+		t.Fatalf("expected checkout output to mention FETCH_HEAD, got:\n%s", out)
+	}
+	data, err := os.ReadFile(filepath.Join(target, "feature.txt"))
+	if err != nil {
+		t.Fatalf("read checked out file: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != "feature" {
+		t.Fatalf("unexpected checked out content: %q", string(data))
 	}
 }
 

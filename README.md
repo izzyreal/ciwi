@@ -408,7 +408,8 @@ sudo journalctl -u ciwi-agent -f
 
 Pipeline configs (for example root `ciwi-project.yaml`) require:
 - `pipelines[].source.repo`: git URL to clone before running job steps
-- `pipelines[].source.ref` (optional): branch/tag/ref to checkout
+- `pipelines[].source.ref` (optional): branch/tag/ref/commit SHA to checkout
+  - Agent behavior: clone default branch, then `git fetch origin <ref>` and `git checkout --force FETCH_HEAD`
 - `pipelines[].depends_on` (optional): list of pipeline IDs that must have latest successful run before enqueue
 
 Optional pipeline versioning:
