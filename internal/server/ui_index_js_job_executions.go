@@ -93,9 +93,17 @@ const uiIndexJobExecutionsJS = `
     function jobsSignature(jobs) {
       if (!Array.isArray(jobs) || jobs.length === 0) return '';
       return jobs.map(job => {
-        const runID = String((job && job.metadata && job.metadata.pipeline_run_id) || '').trim();
-        return jobRowRenderKey(job) + '\x1e' + runID;
+        return jobRowRenderKey(job) + '\x1e' + pipelineRunGroupID(job);
       }).join('\x1f');
+    }
+
+    function pipelineRunGroupID(job) {
+      const m = (job && job.metadata) || {};
+      const runID = String(m.pipeline_run_id || '').trim();
+      if (!runID) return '';
+      const projectID = String(m.project_id || m.project || '').trim();
+      const pipelineID = String(m.pipeline_id || '').trim();
+      return runID + '|' + projectID + '|' + pipelineID;
     }
 
     async function fetchAndRenderJobList(view, totalHint, epoch, tbody, opts, viewKey, columnCount, emptyText, previousSignature, skeletonGroups, progressive) {
@@ -143,7 +151,10 @@ const uiIndexJobExecutionsJS = `
       }
       if (epoch !== jobsRenderEpoch) return null;
       const finalSignature = jobsSignature(out);
-      if (!tbodyHasConcreteRows(tbody) || finalSignature !== signature) {
+      // Progressive mode can render a group before all its jobs are loaded
+      // (for example first 5 rows of a 6-row history). Always do one final
+      // full render at the end to avoid preserving partial grouped rows.
+      if (progressive || !tbodyHasConcreteRows(tbody) || finalSignature !== signature) {
         renderGroupedJobs(tbody, out, opts, viewKey, columnCount, emptyText);
       }
       signature = finalSignature;
@@ -239,7 +250,7 @@ const uiIndexJobExecutionsJS = `
       if (!Array.isArray(jobs) || jobs.length === 0) return out;
       const jobsByRun = new Map();
       jobs.forEach(job => {
-        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
+        const runID = pipelineRunGroupID(job);
         if (!runID) return;
         if (!jobsByRun.has(runID)) jobsByRun.set(runID, []);
         jobsByRun.get(runID).push(job);
@@ -250,7 +261,7 @@ const uiIndexJobExecutionsJS = `
         const jobID = String(job.id || '');
         if (consumed.has(jobID)) return;
 
-        const runID = String((job.metadata && job.metadata.pipeline_run_id) || '').trim();
+        const runID = pipelineRunGroupID(job);
         const runJobs = runID ? jobsByRun.get(runID) : null;
         if (!runID || !runJobs || runJobs.length <= 1) {
           consumed.add(jobID);

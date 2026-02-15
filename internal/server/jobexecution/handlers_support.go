@@ -15,6 +15,19 @@ type DisplayGroupSummary struct {
 	Collapsible bool   `json:"collapsible"`
 }
 
+func displayRunGroupID(job protocol.JobExecution) string {
+	runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
+	if runID == "" {
+		return ""
+	}
+	projectID := strings.TrimSpace(job.Metadata["project_id"])
+	if projectID == "" {
+		projectID = strings.TrimSpace(job.Metadata["project"])
+	}
+	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	return runID + "|" + projectID + "|" + pipelineID
+}
+
 func ParseQueryInt(r *http.Request, key string, fallback, min, max int) int {
 	raw := strings.TrimSpace(r.URL.Query().Get(key))
 	if raw == "" {
@@ -50,21 +63,64 @@ func CapDisplayJobs(jobs []protocol.JobExecution, maxJobs int) []protocol.JobExe
 	if maxJobs <= 0 || len(jobs) <= maxJobs {
 		return jobs
 	}
-	out := make([]protocol.JobExecution, 0, maxJobs)
-	includedRunIDs := map[string]struct{}{}
+	runSizes := map[string]int{}
 	for _, job := range jobs {
-		runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
-		if len(out) < maxJobs {
-			out = append(out, job)
-			if runID != "" {
-				includedRunIDs[runID] = struct{}{}
+		runGroupID := displayRunGroupID(job)
+		if runGroupID == "" {
+			continue
+		}
+		runSizes[runGroupID]++
+	}
+
+	includedRunIDs := map[string]struct{}{}
+	includedJobIDs := map[string]struct{}{}
+	size := 0
+	for _, job := range jobs {
+		jobID := strings.TrimSpace(job.ID)
+		runGroupID := displayRunGroupID(job)
+		if runGroupID == "" {
+			if size >= maxJobs && size > 0 {
+				break
+			}
+			if jobID != "" {
+				if _, exists := includedJobIDs[jobID]; exists {
+					continue
+				}
+				includedJobIDs[jobID] = struct{}{}
+			}
+			size++
+			continue
+		}
+
+		if _, ok := includedRunIDs[runGroupID]; ok {
+			continue
+		}
+
+		groupSize := runSizes[runGroupID]
+		if groupSize <= 0 {
+			groupSize = 1
+		}
+		if size > 0 && size+groupSize > maxJobs {
+			break
+		}
+		includedRunIDs[runGroupID] = struct{}{}
+		size += groupSize
+	}
+
+	out := make([]protocol.JobExecution, 0, size)
+	for _, job := range jobs {
+		jobID := strings.TrimSpace(job.ID)
+		runGroupID := displayRunGroupID(job)
+		if runGroupID != "" {
+			if _, ok := includedRunIDs[runGroupID]; ok {
+				out = append(out, job)
 			}
 			continue
 		}
-		if runID == "" {
+		if jobID == "" {
 			continue
 		}
-		if _, ok := includedRunIDs[runID]; ok {
+		if _, ok := includedJobIDs[jobID]; ok {
 			out = append(out, job)
 		}
 	}
@@ -77,19 +133,19 @@ func SummarizeDisplayGroups(jobs []protocol.JobExecution) []DisplayGroupSummary 
 	}
 	byRunCount := map[string]int{}
 	for _, job := range jobs {
-		runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
-		if runID == "" {
+		runGroupID := displayRunGroupID(job)
+		if runGroupID == "" {
 			continue
 		}
-		byRunCount[runID]++
+		byRunCount[runGroupID]++
 	}
 
 	out := make([]DisplayGroupSummary, 0, len(jobs))
 	seenRunIDs := map[string]struct{}{}
 	for _, job := range jobs {
 		jobID := strings.TrimSpace(job.ID)
-		runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
-		if runID == "" || byRunCount[runID] <= 1 {
+		runGroupID := displayRunGroupID(job)
+		if runGroupID == "" || byRunCount[runGroupID] <= 1 {
 			if jobID == "" {
 				continue
 			}
@@ -100,14 +156,14 @@ func SummarizeDisplayGroups(jobs []protocol.JobExecution) []DisplayGroupSummary 
 			})
 			continue
 		}
-		if _, ok := seenRunIDs[runID]; ok {
+		if _, ok := seenRunIDs[runGroupID]; ok {
 			continue
 		}
-		seenRunIDs[runID] = struct{}{}
+		seenRunIDs[runGroupID] = struct{}{}
 		out = append(out, DisplayGroupSummary{
-			Key:         "run:" + runID,
-			RunID:       runID,
-			JobCount:    byRunCount[runID],
+			Key:         "run:" + runGroupID,
+			RunID:       runGroupID,
+			JobCount:    byRunCount[runGroupID],
 			Collapsible: true,
 		})
 	}
