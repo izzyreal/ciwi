@@ -46,6 +46,31 @@ func SplitByState(jobs []protocol.JobExecution) (queued []protocol.JobExecution,
 	return queued, history
 }
 
+func CapDisplayJobs(jobs []protocol.JobExecution, maxJobs int) []protocol.JobExecution {
+	if maxJobs <= 0 || len(jobs) <= maxJobs {
+		return jobs
+	}
+	out := make([]protocol.JobExecution, 0, maxJobs)
+	includedRunIDs := map[string]struct{}{}
+	for _, job := range jobs {
+		runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
+		if len(out) < maxJobs {
+			out = append(out, job)
+			if runID != "" {
+				includedRunIDs[runID] = struct{}{}
+			}
+			continue
+		}
+		if runID == "" {
+			continue
+		}
+		if _, ok := includedRunIDs[runID]; ok {
+			out = append(out, job)
+		}
+	}
+	return out
+}
+
 func SummarizeDisplayGroups(jobs []protocol.JobExecution) []DisplayGroupSummary {
 	if len(jobs) == 0 {
 		return nil

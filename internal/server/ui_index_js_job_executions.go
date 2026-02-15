@@ -98,8 +98,9 @@ const uiIndexJobExecutionsJS = `
       }).join('\x1f');
     }
 
-    async function fetchAndRenderJobList(view, total, epoch, tbody, opts, viewKey, columnCount, emptyText, previousSignature, skeletonGroups, progressive) {
+    async function fetchAndRenderJobList(view, totalHint, epoch, tbody, opts, viewKey, columnCount, emptyText, previousSignature, skeletonGroups, progressive) {
       let signature = String(previousSignature || '');
+      const total = Math.max(0, Number(totalHint || 0));
       if (total <= 0) {
         if (signature !== '' || !tbodyHasConcreteRows(tbody)) {
           renderGroupedJobs(tbody, [], opts, viewKey, columnCount, emptyText);
@@ -108,15 +109,22 @@ const uiIndexJobExecutionsJS = `
         return signature;
       }
       const out = [];
-      for (let offset = 0; offset < total; offset += JOBS_BATCH_SIZE) {
+      const seenJobIDs = new Set();
+      for (let offset = 0; offset < JOBS_WINDOW; offset += JOBS_BATCH_SIZE) {
         if (epoch !== jobsRenderEpoch) return null;
         const data = await apiJSON('/api/v1/jobs?view=' + encodeURIComponent(view) +
           '&max=' + String(JOBS_WINDOW) +
           '&offset=' + String(offset) +
           '&limit=' + String(JOBS_BATCH_SIZE));
         if (epoch !== jobsRenderEpoch) return null;
-        const jobs = data.job_executions || [];
-        out.push(...jobs);
+        const jobs = Array.isArray(data.job_executions) ? data.job_executions : [];
+        if (jobs.length === 0) break;
+        jobs.forEach(job => {
+          const jobID = String((job && job.id) || '').trim();
+          if (jobID && seenJobIDs.has(jobID)) return;
+          if (jobID) seenJobIDs.add(jobID);
+          out.push(job);
+        });
         const nextSignature = jobsSignature(out);
         if (progressive && (!tbodyHasConcreteRows(tbody) || nextSignature !== signature)) {
           const groups = collectOrderedJobGroups(out);
@@ -129,6 +137,9 @@ const uiIndexJobExecutionsJS = `
           appendGroupedSkeletonTail(tbody, skeletonGroups, groups.length, viewKey, columnCount);
           signature = nextSignature;
         }
+        const sourceTotal = Math.max(0, Number(data.total || 0));
+        if (jobs.length < JOBS_BATCH_SIZE) break;
+        if (sourceTotal > 0 && offset+JOBS_BATCH_SIZE >= sourceTotal) break;
       }
       if (epoch !== jobsRenderEpoch) return null;
       const finalSignature = jobsSignature(out);

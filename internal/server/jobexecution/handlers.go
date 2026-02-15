@@ -55,9 +55,7 @@ func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if maxJobs > 0 && len(jobs) > maxJobs {
-			jobs = jobs[:maxJobs]
-		}
+		jobs = CapDisplayJobs(jobs, maxJobs)
 
 		queuedJobs, historyJobs := SplitByState(jobs)
 		switch view {
