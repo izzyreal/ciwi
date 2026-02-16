@@ -1,10 +1,15 @@
 package jobexecution
 
 import (
+	"archive/zip"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -287,13 +292,11 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 	if len(parts) == 2 && parts[1] == "artifacts" {
 		switch r.Method {
 		case http.MethodGet:
-			artifacts, err := deps.Store.ListJobExecutionArtifacts(jobID)
+			artifacts, err := listArtifactsWithSynthetic(deps, jobID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			artifacts = AppendSyntheticTestReportArtifact(deps.ArtifactsDir, jobID, artifacts)
-			artifacts = AppendSyntheticCoverageReportArtifact(deps.ArtifactsDir, jobID, artifacts)
 			for i := range artifacts {
 				artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
 			}
@@ -336,6 +339,22 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 			httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	if len(parts) == 3 && parts[1] == "artifacts" && parts[2] == "download-all" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		artifacts, err := listArtifactsWithSynthetic(deps, jobID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := writeArtifactsZIP(w, deps.ArtifactsDir, jobID, artifacts); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
 	}
@@ -395,6 +414,120 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 	}
 
 	http.NotFound(w, r)
+}
+
+func listArtifactsWithSynthetic(deps HandlerDeps, jobID string) ([]protocol.JobExecutionArtifact, error) {
+	artifacts, err := deps.Store.ListJobExecutionArtifacts(jobID)
+	if err != nil {
+		return nil, err
+	}
+	artifacts = AppendSyntheticTestReportArtifact(deps.ArtifactsDir, jobID, artifacts)
+	artifacts = AppendSyntheticCoverageReportArtifact(deps.ArtifactsDir, jobID, artifacts)
+	return artifacts, nil
+}
+
+func writeArtifactsZIP(w http.ResponseWriter, artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact) error {
+	zipPrefix := sanitizeZIPName(jobID)
+	if zipPrefix == "" {
+		zipPrefix = "job"
+	}
+	tmp, err := os.CreateTemp("", "ciwi-"+zipPrefix+"-artifacts-*.zip")
+	if err != nil {
+		return fmt.Errorf("create temp zip: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	zw := zip.NewWriter(tmp)
+	// Deterministic order yields stable archive listing in the UI.
+	sort.SliceStable(artifacts, func(i, j int) bool { return artifacts[i].Path < artifacts[j].Path })
+	for _, a := range artifacts {
+		rel := filepath.ToSlash(filepath.Clean(strings.TrimSpace(a.Path)))
+		if rel == "" || rel == "." || strings.HasPrefix(rel, "/") || strings.Contains(rel, "..") {
+			continue
+		}
+		full := filepath.Join(artifactsDir, jobID, filepath.FromSlash(rel))
+		info, err := os.Stat(full)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		fh, err := zip.FileInfoHeader(info)
+		if err != nil {
+			_ = zw.Close()
+			_ = tmp.Close()
+			return fmt.Errorf("build zip header for %q: %w", rel, err)
+		}
+		fh.Name = rel
+		fh.Method = zip.Deflate
+		entry, err := zw.CreateHeader(fh)
+		if err != nil {
+			_ = zw.Close()
+			_ = tmp.Close()
+			return fmt.Errorf("create zip entry for %q: %w", rel, err)
+		}
+		f, err := os.Open(full)
+		if err != nil {
+			_ = zw.Close()
+			_ = tmp.Close()
+			return fmt.Errorf("open artifact %q: %w", rel, err)
+		}
+		_, copyErr := io.Copy(entry, f)
+		closeErr := f.Close()
+		if copyErr != nil {
+			_ = zw.Close()
+			_ = tmp.Close()
+			return fmt.Errorf("zip artifact %q: %w", rel, copyErr)
+		}
+		if closeErr != nil {
+			_ = zw.Close()
+			_ = tmp.Close()
+			return fmt.Errorf("close artifact %q: %w", rel, closeErr)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("finalize zip: %w", err)
+	}
+	if _, err := tmp.Seek(0, 0); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("rewind zip: %w", err)
+	}
+	defer tmp.Close()
+
+	fileName := sanitizeZIPName(jobID) + "-artifacts.zip"
+	if strings.TrimSpace(fileName) == "-artifacts.zip" {
+		fileName = "job-artifacts.zip"
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fileName+`"`)
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, tmp); err != nil {
+		return fmt.Errorf("stream zip: %w", err)
+	}
+	return nil
+}
+
+func sanitizeZIPName(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range v {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return strings.Trim(strings.TrimSpace(b.String()), "-.")
 }
 
 func HandleClearQueue(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {

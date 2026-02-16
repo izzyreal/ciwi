@@ -82,6 +82,29 @@ const jobExecutionHTML = `<!doctype html>
     .copy-btn {
       font-weight: 600;
     }
+    .artifacts-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin: 0 0 10px;
+    }
+    .artifact-tree,
+    .artifact-tree ul {
+      list-style: none;
+      margin: 0;
+      padding-left: 14px;
+    }
+    .artifact-tree {
+      padding-left: 0;
+    }
+    .artifact-tree summary {
+      cursor: pointer;
+      user-select: none;
+      color: #1f2a24;
+      font-weight: 600;
+    }
+    .artifact-leaf {
+      margin: 4px 0;
+    }
     .log-toolbar {
       display: flex;
       gap: 8px;
@@ -168,6 +191,8 @@ const jobExecutionHTML = `<!doctype html>
     let projectIDByNameCache = null;
     let lastCoverageSignature = null;
     let lastTestReportSignature = '';
+    let lastArtifactsSignature = '';
+    let artifactExpandedPaths = null;
     const refreshGuard = createRefreshGuard(5000);
 
     function jobExecutionIdFromPath() {
@@ -219,6 +244,116 @@ const jobExecutionHTML = `<!doctype html>
       }
       link.href = '/';
       link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
+    }
+
+    function buildArtifactTree(items) {
+      const root = { dirs: {}, files: [] };
+      items.forEach((a, idx) => {
+        const raw = String((a && a.path) || '').trim();
+        if (!raw) return;
+        const parts = raw.split('/').filter(Boolean);
+        if (parts.length === 0) return;
+        let node = root;
+        for (let i = 0; i < parts.length - 1; i += 1) {
+          const seg = parts[i];
+          if (!node.dirs[seg]) node.dirs[seg] = { dirs: {}, files: [] };
+          node = node.dirs[seg];
+        }
+        node.files.push({ name: parts[parts.length - 1], item: a, idx: idx });
+      });
+      return root;
+    }
+
+    function collectArtifactExpandedPaths(box) {
+      const out = new Set();
+      if (!box) return out;
+      box.querySelectorAll('details[data-artifact-dir]').forEach(d => {
+        const p = String(d.getAttribute('data-artifact-dir') || '').trim();
+        if (d.open && p) out.add(p);
+      });
+      return out;
+    }
+
+    function renderArtifactTreeNode(node, parentPath, depth, expanded) {
+      const dirNames = Object.keys(node.dirs).sort((a, b) => a.localeCompare(b));
+      const files = (node.files || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+      let html = '<ul class="artifact-tree">';
+      dirNames.forEach(name => {
+        const path = parentPath ? (parentPath + '/' + name) : name;
+        const open = expanded.has(path);
+        html += '<li><details data-artifact-dir="' + escapeHtml(path) + '"' + (open ? ' open' : '') + '><summary>' + escapeHtml(name) + '</summary>' + renderArtifactTreeNode(node.dirs[name], path, depth + 1, expanded) + '</details></li>';
+      });
+      files.forEach(entry => {
+        const a = entry.item || {};
+        html += '' +
+          '<li class="artifact-leaf">' +
+            '<div class="artifact-row">' +
+              '<span class="artifact-path">' + escapeHtml(entry.name) + '</span>' +
+              '<span>(' + formatBytes(a.size_bytes) + ')</span>' +
+              '<a href=\"' + a.url + '\" target=\"_blank\" rel=\"noopener\">Download</a>' +
+              '<button class="copy-btn" data-artifact-index="' + String(entry.idx) + '">Copy</button>' +
+            '</div>' +
+          '</li>';
+      });
+      html += '</ul>';
+      return html;
+    }
+
+    function renderArtifacts(box, jobId, items) {
+      const signature = JSON.stringify(items.map(a => [String(a.path || ''), Number(a.size_bytes || 0), String(a.url || '')]));
+      if (signature === lastArtifactsSignature) {
+        return;
+      }
+      const previousExpanded = collectArtifactExpandedPaths(box);
+      if (previousExpanded.size > 0) {
+        artifactExpandedPaths = previousExpanded;
+      }
+      if (items.length === 0) {
+        box.textContent = 'No artifacts';
+        lastArtifactsSignature = signature;
+        return;
+      }
+      const tree = buildArtifactTree(items);
+      const expanded = (artifactExpandedPaths && artifactExpandedPaths.size > 0)
+        ? new Set(artifactExpandedPaths)
+        : new Set();
+      if (expanded.size === 0) {
+        // Default expansion is one directory level from root.
+        Object.keys(tree.dirs || {}).forEach(name => expanded.add(name));
+      }
+      box.innerHTML =
+        '<div class="artifacts-toolbar">' +
+          '<a class="copy-btn nav-btn" href="/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts/download-all">Download All (.zip)</a>' +
+        '</div>' +
+        renderArtifactTreeNode(tree, '', 0, expanded);
+      box.querySelectorAll('button.copy-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const idx = Number(btn.getAttribute('data-artifact-index') || '-1');
+          const path = (items[idx] && items[idx].path) || '';
+          if (!path) return;
+          try {
+            await navigator.clipboard.writeText(path);
+            const old = btn.textContent;
+            btn.textContent = 'Copied';
+            setTimeout(() => { btn.textContent = old; }, 1000);
+          } catch (_) {
+            const old = btn.textContent;
+            btn.textContent = 'Copy failed';
+            setTimeout(() => { btn.textContent = old; }, 1200);
+          }
+        });
+      });
+      box.querySelectorAll('details[data-artifact-dir]').forEach(d => {
+        d.addEventListener('toggle', () => {
+          const path = String(d.getAttribute('data-artifact-dir') || '').trim();
+          if (!path) return;
+          if (artifactExpandedPaths == null) artifactExpandedPaths = new Set();
+          if (d.open) artifactExpandedPaths.add(path);
+          else artifactExpandedPaths.delete(path);
+        });
+      });
+      artifactExpandedPaths = collectArtifactExpandedPaths(box);
+      lastArtifactsSignature = signature;
     }
 
     function coverageTotals(c) {
@@ -743,35 +878,7 @@ const jobExecutionHTML = `<!doctype html>
         const adata = await ares.json();
         const box = document.getElementById('artifactsBox');
         const items = adata.artifacts || [];
-        if (items.length === 0) {
-          box.textContent = 'No artifacts';
-        } else {
-          box.innerHTML = items.map((a, idx) =>
-            '<div class="artifact-row">' +
-              '<span class="artifact-path">' + escapeHtml(a.path) + '</span>' +
-              '<span>(' + formatBytes(a.size_bytes) + ')</span>' +
-              '<a href=\"' + a.url + '\" target=\"_blank\" rel=\"noopener\">Download</a>' +
-              '<button class="copy-btn" data-artifact-index="' + String(idx) + '">Copy</button>' +
-            '</div>'
-          ).join('');
-          box.querySelectorAll('button.copy-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-              const idx = Number(btn.getAttribute('data-artifact-index') || '-1');
-              const path = (items[idx] && items[idx].path) || '';
-              if (!path) return;
-              try {
-                await navigator.clipboard.writeText(path);
-                const old = btn.textContent;
-                btn.textContent = 'Copied';
-                setTimeout(() => { btn.textContent = old; }, 1000);
-              } catch (_) {
-                const old = btn.textContent;
-                btn.textContent = 'Copy failed';
-                setTimeout(() => { btn.textContent = old; }, 1200);
-              }
-            });
-          });
-        }
+        renderArtifacts(box, jobId, items);
       } catch (_) {
         document.getElementById('artifactsBox').textContent = 'Could not load artifacts';
       }
