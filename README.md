@@ -174,6 +174,25 @@ launchctl print gui/$(id -u)/nl.izmar.ciwi.agent-updater
 tail -f "$HOME/Library/Logs/ciwi/agent.out.log" "$HOME/Library/Logs/ciwi/agent.err.log"
 ```
 
+Manage agent lifecycle (run as the logged-in user, no sudo):
+
+```bash
+# Disable auto-start at login
+launchctl disable gui/$(id -u)/nl.izmar.ciwi.agent
+
+# Re-enable auto-start at login
+launchctl enable gui/$(id -u)/nl.izmar.ciwi.agent
+
+# Restart the running agent process
+launchctl kickstart -k gui/$(id -u)/nl.izmar.ciwi.agent
+
+# Stop now (boot out from current GUI session)
+launchctl bootout gui/$(id -u)/nl.izmar.ciwi.agent
+
+# Start now (bootstrap from plist)
+launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/nl.izmar.ciwi.agent.plist
+```
+
 ### macOS agent uninstall
 
 One-line uninstall (no options):
