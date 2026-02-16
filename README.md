@@ -105,14 +105,57 @@ UI actions map to these server behaviors:
 - **Flush History** removes execution logs/status payloads in sqlite for flushed jobs.
 - **Flush History** does not remove artifact files from disk (`CIWI_ARTIFACTS_DIR`); it is history cleanup, not artifact GC.
 
-## FetchContent cache usage
+## FetchContent source caching
 
-ciwi cache entries are generic directory caches. ciwi does not implement CMake FetchContent semantics.
+ciwi cache entries are generic directory caches. For CMake FetchContent, the supported use case is:
+- cache dependency **sources** across jobs/runs
+- keep build/subbuild output job-local
 
-- `caches[].env` points to a directory path exported to the job environment.
-- If you use `FETCHCONTENT_BASE_DIR`, ciwi restores/saves that directory as-is.
-- For CMake projects this can include path-sensitive subbuild/cache files, not only downloaded sources.
-- For cross-job reuse with fewer path conflicts, prefer project-level CMake wiring of `FETCHCONTENT_SOURCE_DIR_<DEP>` and keep build/subbuild dirs job-local.
+Recommended pattern:
+- choose a ciwi-owned cache env var name, for example `CIWI_FETCHCONTENT_SOURCES_DIR`
+- configure `caches[].env` to that variable
+- pass one project-level CMake switch, for example `-DVMPC_FETCHCONTENT_SOURCES_DIR="$CIWI_FETCHCONTENT_SOURCES_DIR"`
+- in `CMakeLists.txt`, resolve all FetchContent source dirs from that one switch
+
+Example:
+
+```yaml
+jobs:
+  - id: build
+    caches:
+      - id: fetchcontent
+        env: CIWI_FETCHCONTENT_SOURCES_DIR
+        key:
+          prefix: fetchcontent-v1
+          files:
+            - CMakeLists.txt
+    steps:
+      - run: mkdir -p "$CIWI_FETCHCONTENT_SOURCES_DIR"
+      - run: >
+          cmake -S . -B build
+          -DVMPC_FETCHCONTENT_SOURCES_DIR="$CIWI_FETCHCONTENT_SOURCES_DIR"
+```
+
+Notes:
+- `CIWI_FETCHCONTENT_SOURCES_DIR` is just an env var name you define in ciwi config; CMake does not know it directly.
+- `VMPC_FETCHCONTENT_SOURCES_DIR` is a project-defined CMake variable (example name), not a ciwi built-in.
+- Your `CMakeLists.txt` should map that variable to per-dependency FetchContent source dirs internally.
+
+Cache key behavior:
+- ciwi stores cache entries by computed key (`key.prefix` + hash payload).
+- `key.files`: hashes file contents from the job checkout for matched paths/globs.
+- `key.runtime`: includes selected runtime tokens (currently `os`, `arch`).
+- `key.tools`: includes detected agent tool capability values for listed tools.
+- `key.env`: includes values of listed env vars (job env first, then process env fallback).
+- `restore_keys`: allows prefix fallback when the exact key misses; for each restore prefix, ciwi selects the newest matching cache entry.
+
+Moving-target caveat:
+- if dependencies track moving refs (for example `master`) and your key only uses `CMakeLists.txt`, cache can stay stale until key inputs change.
+- best fix is pinning dependencies to immutable tags/SHAs.
+- if moving refs are required, include extra invalidation signals in the key:
+- add more files to `key.files` (dependency manifest/lock files, config that changes with dependency revisions).
+- add a manual epoch variable in `key.env` (for example `FETCHCONTENT_CACHE_EPOCH`) and bump it when you want a forced refresh.
+- rotate `key.prefix` (for example `fetchcontent-v1` -> `fetchcontent-v2`) for explicit cache cutovers.
 
 ## Project icon auto-discovery
 

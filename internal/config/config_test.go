@@ -566,7 +566,7 @@ pipelines:
         timeout_seconds: 60
         caches:
           - id: fetchcontent
-            env: FETCHCONTENT_BASE_DIR
+            env: CIWI_FETCHCONTENT_SOURCES_DIR
             key:
               prefix: fetchcontent-v1
               files:
