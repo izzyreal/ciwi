@@ -104,6 +104,7 @@ UI actions map to these server behaviors:
 - **Flush History** deletes job executions whose status is not `queued`, `leased`, or `running`.
 - **Flush History** removes execution logs/status payloads in sqlite for flushed jobs.
 - **Flush History** does not remove artifact files from disk (`CIWI_ARTIFACTS_DIR`); it is history cleanup, not artifact GC.
+- Artifact upload limits (agent defaults): at most `2500` files per job, max `50MB` per file.
 
 ## FetchContent source caching
 
