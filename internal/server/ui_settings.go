@@ -5,7 +5,7 @@ const settingsHTML = `<!doctype html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ciwi settings</title>
+  <title>ciwi global settings</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
 ` + uiPageChromeCSS + `
@@ -32,8 +32,7 @@ const settingsHTML = `<!doctype html>
       <div class="brand">
         <img src="/ciwi-logo.png" alt="ciwi logo" />
         <div>
-          <h1>ciwi settings</h1>
-          <p>Global configuration</p>
+          <h1>ciwi global settings</h1>
         </div>
       </div>
       <div class="row">

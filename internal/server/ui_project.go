@@ -40,7 +40,6 @@ const projectHTML = `<!doctype html>
     <div class="card top">
       <div class="brand">
         <img id="projectIcon" class="project-header-icon" alt="" style="display:none;" />
-        <img src="/ciwi-logo.png" alt="ciwi logo" />
         <div>
           <div id="title" style="font-size:22px;font-weight:700;">Project</div>
           <div id="subtitle" class="muted">Loading...</div>

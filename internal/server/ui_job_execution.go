@@ -137,7 +137,6 @@ const jobExecutionHTML = `<!doctype html>
     <div class="card top">
       <div class="brand">
         <img id="jobProjectIcon" class="job-header-icon" alt="" style="display:none;" />
-        <img src="/ciwi-logo.png" alt="ciwi logo" />
         <div>
           <div style="font-size:20px;font-weight:700;" id="jobTitle">Job Execution</div>
           <div style="color:#5f6f67;" id="subtitle">Loading...</div>
