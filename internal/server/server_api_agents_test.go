@@ -2,8 +2,11 @@ package server
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/version"
 )
 
@@ -455,4 +458,112 @@ func TestManualAgentCacheWipeRequest(t *testing.T) {
 	if thirdPayload.WipeCacheRequested {
 		t.Fatalf("expected wipe_cache_requested=false after delivery")
 	}
+}
+
+func TestManualAgentFlushJobHistory(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	firstHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-flush-history",
+		"hostname":      "host-fh",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:00Z",
+	})
+	if firstHB.StatusCode != http.StatusOK {
+		t.Fatalf("first heartbeat status=%d body=%s", firstHB.StatusCode, readBody(t, firstHB))
+	}
+	_ = readBody(t, firstHB)
+
+	createSucceededAdhocJob := func(agentID, name string) string {
+		t.Helper()
+		job, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+			Script:         "echo " + name,
+			TimeoutSeconds: 60,
+			Metadata: map[string]string{
+				"adhoc":          "1",
+				"adhoc_agent_id": agentID,
+				"adhoc_shell":    "posix",
+			},
+		})
+		if err != nil {
+			t.Fatalf("create job failed: %v", err)
+		}
+		jobID := job.ID
+		if jobID == "" {
+			t.Fatalf("created job id missing")
+		}
+		if _, err := s.db.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID: agentID,
+			Status:  protocol.JobExecutionStatusSucceeded,
+		}); err != nil {
+			t.Fatalf("update job status failed: %v", err)
+		}
+		artifactPath := filepath.Join(s.artifactsDir, jobID, "dist")
+		if err := os.MkdirAll(artifactPath, 0o755); err != nil {
+			t.Fatalf("mkdir artifact dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(artifactPath, "result-"+name+".txt"), []byte("artifact:"+name), 0o644); err != nil {
+			t.Fatalf("write artifact file: %v", err)
+		}
+		return jobID
+	}
+
+	flushJobID := createSucceededAdhocJob("agent-flush-history", "flush")
+	keepJobID := createSucceededAdhocJob("agent-other", "keep")
+
+	preFlushArtifactResp, err := client.Get(ts.URL + "/artifacts/" + flushJobID + "/dist/result-flush.txt")
+	if err != nil {
+		t.Fatalf("get pre-flush artifact: %v", err)
+	}
+	if preFlushArtifactResp.StatusCode != http.StatusOK {
+		t.Fatalf("pre-flush artifact status=%d body=%s", preFlushArtifactResp.StatusCode, readBody(t, preFlushArtifactResp))
+	}
+	_ = readBody(t, preFlushArtifactResp)
+
+	flushResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-flush-history/actions", map[string]any{"action": "flush-job-history"})
+	if flushResp.StatusCode != http.StatusOK {
+		t.Fatalf("flush-job-history status=%d body=%s", flushResp.StatusCode, readBody(t, flushResp))
+	}
+	_ = readBody(t, flushResp)
+
+	flushedJobResp, err := client.Get(ts.URL + "/api/v1/jobs/" + flushJobID)
+	if err != nil {
+		t.Fatalf("get flushed job: %v", err)
+	}
+	if flushedJobResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected flushed job to be 404, got %d body=%s", flushedJobResp.StatusCode, readBody(t, flushedJobResp))
+	}
+	_ = readBody(t, flushedJobResp)
+
+	keptJobResp, err := client.Get(ts.URL + "/api/v1/jobs/" + keepJobID)
+	if err != nil {
+		t.Fatalf("get kept job: %v", err)
+	}
+	if keptJobResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected kept job to be 200, got %d body=%s", keptJobResp.StatusCode, readBody(t, keptJobResp))
+	}
+	_ = readBody(t, keptJobResp)
+
+	flushedArtifactResp, err := client.Get(ts.URL + "/artifacts/" + flushJobID + "/dist/result-flush.txt")
+	if err != nil {
+		t.Fatalf("get flushed artifact: %v", err)
+	}
+	if flushedArtifactResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected flushed artifact to be 404, got %d body=%s", flushedArtifactResp.StatusCode, readBody(t, flushedArtifactResp))
+	}
+	_ = readBody(t, flushedArtifactResp)
+
+	keptArtifactResp, err := client.Get(ts.URL + "/artifacts/" + keepJobID + "/dist/result-keep.txt")
+	if err != nil {
+		t.Fatalf("get kept artifact: %v", err)
+	}
+	if keptArtifactResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected kept artifact to be 200, got %d body=%s", keptArtifactResp.StatusCode, readBody(t, keptArtifactResp))
+	}
+	_ = readBody(t, keptArtifactResp)
 }

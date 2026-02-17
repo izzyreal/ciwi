@@ -3,7 +3,10 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,6 +130,39 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 			Requested: true,
 			AgentID:   agentID,
 			Message:   "agent cache wipe requested",
+		})
+		return
+	}
+	if action == "flush-job-history" {
+		s.mu.Lock()
+		_, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		s.mu.Unlock()
+		deletedIDs, err := s.db.FlushJobExecutionHistoryByAgent(agentID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		removed := 0
+		for _, jobID := range deletedIDs {
+			if err := os.RemoveAll(filepath.Join(s.artifactsDir, jobID)); err == nil {
+				removed++
+			}
+		}
+		s.mu.Lock()
+		if a, ok := s.agents[agentID]; ok {
+			a.RecentLog = appendAgentLog(a.RecentLog, "manual agent job history flush requested")
+			s.agents[agentID] = a
+		}
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   "agent job history flushed: sqlite=" + strconv.Itoa(len(deletedIDs)) + ", disk=" + strconv.Itoa(removed),
 		})
 		return
 	}

@@ -45,6 +45,11 @@ pipelines:
 `
 
 func newTestHTTPServer(t *testing.T) *httptest.Server {
+	ts, _ := newTestHTTPServerWithState(t)
+	return ts
+}
+
+func newTestHTTPServerWithState(t *testing.T) (*httptest.Server, *stateStore) {
 	t.Helper()
 
 	tmp := t.TempDir()
@@ -94,8 +99,9 @@ func newTestHTTPServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v1/server/restart", s.serverRestartHandler)
 	mux.HandleFunc("/api/v1/update/tags", s.updateTagsHandler)
 	mux.HandleFunc("/api/v1/update/status", s.updateStatusHandler)
+	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))
 
-	return httptest.NewServer(mux)
+	return httptest.NewServer(mux), s
 }
 
 func mustJSONRequest(t *testing.T, client *http.Client, method, url string, body any) *http.Response {

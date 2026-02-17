@@ -27,7 +27,7 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map
 		if cacheID == "" || envName == "" {
 			continue
 		}
-		cacheDir, source, err := resolveSingleJobCacheDir(cacheRoot, execDir, spec)
+		cacheDir, source, err := resolveSingleJobCacheDir(cacheRoot, spec)
 		if err != nil {
 			fallback := filepath.Join(execDir, ".ciwi-cache", sanitizeCacheSegment(cacheID))
 			if mkErr := os.MkdirAll(fallback, 0o755); mkErr != nil {
@@ -48,7 +48,7 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map
 	return cacheEnv, logs
 }
 
-func resolveSingleJobCacheDir(cacheRoot, execDir string, spec protocol.JobCacheSpec) (string, string, error) {
+func resolveSingleJobCacheDir(cacheRoot string, spec protocol.JobCacheSpec) (string, string, error) {
 	cacheID := sanitizeCacheSegment(spec.ID)
 	cacheBase := filepath.Join(cacheRoot, cacheID)
 	targetExists := isDir(cacheBase)

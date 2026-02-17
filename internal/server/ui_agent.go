@@ -132,6 +132,7 @@ const agentHTML = `<!doctype html>
           <button id="updateBtn" style="display:none;">Update</button>
           <button id="restartBtn" style="display:none;">Restart Agent</button>
           <button id="wipeCacheBtn" style="display:none;">Wipe Cache</button>
+          <button id="flushAgentHistoryBtn">Flush Job History</button>
           <button id="refreshToolsBtn" style="display:none;">Refresh Tools</button>
           <button id="runAdhocBtn" style="display:none;">Run Adhoc Script</button>
         </div>
@@ -473,6 +474,7 @@ const agentHTML = `<!doctype html>
         const updateButton = document.getElementById('updateBtn');
         const restartButton = document.getElementById('restartBtn');
         const wipeCacheButton = document.getElementById('wipeCacheBtn');
+        const flushAgentHistoryButton = document.getElementById('flushAgentHistoryBtn');
         const refreshToolsButton = document.getElementById('refreshToolsBtn');
         const runAdhocButton = document.getElementById('runAdhocBtn');
         adhocShells = parseAgentShells(a.capabilities || {});
@@ -481,6 +483,7 @@ const agentHTML = `<!doctype html>
         updateButton.textContent = a.update_requested ? 'Retry Now' : 'Update';
         restartButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
         wipeCacheButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
+        flushAgentHistoryButton.style.display = 'inline-block';
         refreshToolsButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
         runAdhocButton.style.display = adhocShells.length > 0 ? 'inline-block' : 'none';
 
@@ -538,6 +541,15 @@ const agentHTML = `<!doctype html>
         await refreshAgent(true);
       } catch (e) {
         alert('Cache wipe request failed: ' + e.message);
+      }
+    };
+    document.getElementById('flushAgentHistoryBtn').onclick = async () => {
+      if (!confirm('Flush job history for this agent? This deletes historical job records and artifact files for this agent.')) return;
+      try {
+        await postAction('flush-job-history');
+        await refreshAgent(true);
+      } catch (e) {
+        alert('Agent job history flush failed: ' + e.message);
       }
     };
     document.getElementById('refreshToolsBtn').onclick = async () => {

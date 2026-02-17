@@ -437,6 +437,67 @@ func (s *Store) FlushJobExecutionHistory() (int64, error) {
 	return affected, nil
 }
 
+func (s *Store) FlushJobExecutionHistoryByAgent(agentID string) ([]string, error) {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return nil, fmt.Errorf("agent id is required")
+	}
+	jobs, err := s.ListJobExecutions()
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	candidates := make([]string, 0)
+	for _, job := range jobs {
+		status := protocol.NormalizeJobExecutionStatus(job.Status)
+		if status == protocol.JobExecutionStatusQueued || status == protocol.JobExecutionStatusLeased || status == protocol.JobExecutionStatusRunning {
+			continue
+		}
+		leasedBy := strings.TrimSpace(job.LeasedByAgentID)
+		adhocAgent := strings.TrimSpace(job.Metadata["adhoc_agent_id"])
+		if leasedBy == agentID || adhocAgent == agentID {
+			candidates = append(candidates, job.ID)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	var deleted []string
+	if err := retrySQLiteBusy(func() error {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin tx: %w", err)
+		}
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+		attemptDeleted := make([]string, 0, len(candidates))
+		for _, id := range candidates {
+			res, err := tx.Exec(`
+				DELETE FROM job_executions
+				WHERE id = ? AND status NOT IN (?, ?, ?)
+			`, id, protocol.JobExecutionStatusQueued, protocol.JobExecutionStatusLeased, protocol.JobExecutionStatusRunning)
+			if err != nil {
+				return fmt.Errorf("delete job %q: %w", id, err)
+			}
+			if affected, _ := res.RowsAffected(); affected > 0 {
+				attemptDeleted = append(attemptDeleted, id)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit tx: %w", err)
+		}
+		committed = true
+		deleted = attemptDeleted
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("flush job history by agent: %w", err)
+	}
+	return deleted, nil
+}
+
 func (s *Store) RequeueStaleLeasedJobExecutions(now time.Time, maxAge time.Duration) (int64, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
