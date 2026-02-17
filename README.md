@@ -44,7 +44,7 @@ Prefer the [automated installation scripts](#automated-installation-scripts), bu
 - `CIWI_ARTIFACTS_DIR`: server artifact storage directory (default `ciwi-artifacts`)
 - `CIWI_SERVER_URL`: agent target base URL (default `http://127.0.0.1:8112`)
 - `CIWI_AGENT_ID`: override agent ID (default `agent-<hostname>`)
-- `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent`)
+- `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent/work`)
 - `CIWI_AGENT_ENV_FILE`: Windows-only env file auto-loaded by agent startup (default `%ProgramData%\\ciwi-agent\\agent.env`)
 - `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` for `posix`, `@echo on` for `cmd`, `Set-PSDebug -Trace 1` for `powershell`) (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
@@ -242,7 +242,7 @@ Uninstaller behavior:
 - Removes `~/Library/LaunchAgents/nl.izmar.ciwi.agent.plist` and `~/Library/LaunchAgents/nl.izmar.ciwi.agent-updater.plist`
 - Removes ciwi binary from `~/.local/bin/ciwi` and `/usr/local/bin/ciwi` (with sudo if needed)
 - Removes `/etc/newsyslog.d/ciwi-<user>.conf` (with sudo when available)
-- Leaves logs/workdir by default (`~/Library/Logs/ciwi`, `~/.ciwi-agent`) and prints cleanup command
+- Leaves logs/workdir by default (`~/Library/Logs/ciwi`, `~/.ciwi-agent/work`) and prints cleanup command
 
 ## Windows agent installer (Service)
 

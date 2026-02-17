@@ -566,4 +566,44 @@ func TestManualAgentFlushJobHistory(t *testing.T) {
 		t.Fatalf("expected kept artifact to be 200, got %d body=%s", keptArtifactResp.StatusCode, readBody(t, keptArtifactResp))
 	}
 	_ = readBody(t, keptArtifactResp)
+
+	secondHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-flush-history",
+		"hostname":      "host-fh",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:10Z",
+	})
+	if secondHB.StatusCode != http.StatusOK {
+		t.Fatalf("second heartbeat status=%d body=%s", secondHB.StatusCode, readBody(t, secondHB))
+	}
+	var secondPayload struct {
+		FlushJobHistoryRequested bool `json:"flush_job_history_requested"`
+	}
+	decodeJSONBody(t, secondHB, &secondPayload)
+	if !secondPayload.FlushJobHistoryRequested {
+		t.Fatalf("expected flush_job_history_requested=true")
+	}
+
+	thirdHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-flush-history",
+		"hostname":      "host-fh",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:20Z",
+	})
+	if thirdHB.StatusCode != http.StatusOK {
+		t.Fatalf("third heartbeat status=%d body=%s", thirdHB.StatusCode, readBody(t, thirdHB))
+	}
+	var thirdPayload struct {
+		FlushJobHistoryRequested bool `json:"flush_job_history_requested"`
+	}
+	decodeJSONBody(t, thirdHB, &thirdPayload)
+	if thirdPayload.FlushJobHistoryRequested {
+		t.Fatalf("expected flush_job_history_requested=false after delivery")
+	}
 }

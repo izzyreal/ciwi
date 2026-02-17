@@ -24,7 +24,7 @@ func runLoop(ctx context.Context) error {
 	serverURL := envOrDefault("CIWI_SERVER_URL", "http://127.0.0.1:8112")
 	agentID := envOrDefault("CIWI_AGENT_ID", defaultAgentID())
 	hostname, _ := os.Hostname()
-	workDir := envOrDefault("CIWI_AGENT_WORKDIR", ".ciwi-agent")
+	workDir := envOrDefault("CIWI_AGENT_WORKDIR", ".ciwi-agent/work")
 
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return fmt.Errorf("create agent workdir: %w", err)
@@ -47,6 +47,7 @@ func runLoop(ctx context.Context) error {
 	jobInProgress := false
 	pendingRestart := false
 	pendingCacheWipe := false
+	pendingJobHistoryWipe := false
 	type pendingUpdateRequest struct {
 		target     string
 		repository string
@@ -111,6 +112,20 @@ func runLoop(ctx context.Context) error {
 		}
 		slog.Info(msg)
 	}
+	runOrDeferJobHistoryWipe := func() {
+		if jobInProgress {
+			pendingJobHistoryWipe = true
+			slog.Info("server requested local job history wipe; deferring until current job completes")
+			return
+		}
+		slog.Info("server requested local job history wipe")
+		msg, err := wipeAgentJobHistory(workDir)
+		if err != nil {
+			slog.Error("agent local job history wipe failed", "error", err)
+			return
+		}
+		slog.Info(msg)
+	}
 
 	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
 		slog.Error("initial heartbeat failed", "error", err)
@@ -136,6 +151,9 @@ func runLoop(ctx context.Context) error {
 		if hb.WipeCacheRequested {
 			runOrDeferCacheWipe()
 		}
+		if hb.FlushJobHistoryRequested {
+			runOrDeferJobHistoryWipe()
+		}
 	}
 
 	for {
@@ -159,6 +177,10 @@ func runLoop(ctx context.Context) error {
 			if pendingCacheWipe {
 				pendingCacheWipe = false
 				runOrDeferCacheWipe()
+			}
+			if pendingJobHistoryWipe {
+				pendingJobHistoryWipe = false
+				runOrDeferJobHistoryWipe()
 			}
 		case <-heartbeatTicker.C:
 			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus)
@@ -185,6 +207,9 @@ func runLoop(ctx context.Context) error {
 				}
 				if hb.WipeCacheRequested {
 					runOrDeferCacheWipe()
+				}
+				if hb.FlushJobHistoryRequested {
+					runOrDeferJobHistoryWipe()
 				}
 			}
 		case <-leaseTicker.C:

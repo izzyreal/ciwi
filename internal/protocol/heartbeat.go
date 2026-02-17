@@ -19,13 +19,14 @@ type HeartbeatRequest struct {
 }
 
 type HeartbeatResponse struct {
-	Accepted              bool   `json:"accepted"`
-	Message               string `json:"message,omitempty"`
-	UpdateRequested       bool   `json:"update_requested,omitempty"`
-	UpdateTarget          string `json:"update_target,omitempty"`
-	UpdateRepository      string `json:"update_repository,omitempty"`
-	UpdateAPIBase         string `json:"update_api_base,omitempty"`
-	RefreshToolsRequested bool   `json:"refresh_tools_requested,omitempty"`
-	RestartRequested      bool   `json:"restart_requested,omitempty"`
-	WipeCacheRequested    bool   `json:"wipe_cache_requested,omitempty"`
+	Accepted                 bool   `json:"accepted"`
+	Message                  string `json:"message,omitempty"`
+	UpdateRequested          bool   `json:"update_requested,omitempty"`
+	UpdateTarget             string `json:"update_target,omitempty"`
+	UpdateRepository         string `json:"update_repository,omitempty"`
+	UpdateAPIBase            string `json:"update_api_base,omitempty"`
+	RefreshToolsRequested    bool   `json:"refresh_tools_requested,omitempty"`
+	RestartRequested         bool   `json:"restart_requested,omitempty"`
+	WipeCacheRequested       bool   `json:"wipe_cache_requested,omitempty"`
+	FlushJobHistoryRequested bool   `json:"flush_job_history_requested,omitempty"`
 }

@@ -77,6 +77,10 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if wipeCache {
 		delete(s.agentCacheWipes, hb.AgentID)
 	}
+	wipeHistory := s.agentHistoryWipes[hb.AgentID]
+	if wipeHistory {
+		delete(s.agentHistoryWipes, hb.AgentID)
+	}
 	restartRequested := s.agentRestarts[hb.AgentID]
 	if restartRequested {
 		delete(s.agentRestarts, hb.AgentID)
@@ -201,6 +205,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if wipeCache {
 		state.RecentLog = appendAgentLog(state.RecentLog, "server requested cache wipe")
 	}
+	if wipeHistory {
+		state.RecentLog = appendAgentLog(state.RecentLog, "server requested local job history wipe")
+	}
 	if restartRequested {
 		state.RecentLog = appendAgentLog(state.RecentLog, "server requested restart")
 	}
@@ -237,6 +244,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if wipeCache {
 		resp.WipeCacheRequested = true
+	}
+	if wipeHistory {
+		resp.FlushJobHistoryRequested = true
 	}
 	if restartRequested {
 		resp.RestartRequested = true

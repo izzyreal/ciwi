@@ -158,11 +158,12 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 			a.RecentLog = appendAgentLog(a.RecentLog, "manual agent job history flush requested")
 			s.agents[agentID] = a
 		}
+		s.agentHistoryWipes[agentID] = true
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, agentActionResponse{
 			Requested: true,
 			AgentID:   agentID,
-			Message:   "agent job history flushed: sqlite=" + strconv.Itoa(len(deletedIDs)) + ", disk=" + strconv.Itoa(removed),
+			Message:   "agent job history flushed: sqlite=" + strconv.Itoa(len(deletedIDs)) + ", disk=" + strconv.Itoa(removed) + ", local=queued",
 		})
 		return
 	}

@@ -40,19 +40,20 @@ type agentUpdateRolloutState struct {
 }
 
 type stateStore struct {
-	mu               sync.Mutex
-	agents           map[string]agentState
-	agentUpdates     map[string]string
-	agentToolRefresh map[string]bool
-	agentRestarts    map[string]bool
-	agentCacheWipes  map[string]bool
-	agentRollout     agentUpdateRolloutState
-	projectIcons     map[int64]projectIconState
-	db               *store.Store
-	artifactsDir     string
-	vaultTokens      *servervault.TokenCache
-	update           updateState
-	restartServerFn  func()
+	mu                sync.Mutex
+	agents            map[string]agentState
+	agentUpdates      map[string]string
+	agentToolRefresh  map[string]bool
+	agentRestarts     map[string]bool
+	agentCacheWipes   map[string]bool
+	agentHistoryWipes map[string]bool
+	agentRollout      agentUpdateRolloutState
+	projectIcons      map[int64]projectIconState
+	db                *store.Store
+	artifactsDir      string
+	vaultTokens       *servervault.TokenCache
+	update            updateState
+	restartServerFn   func()
 }
 
 type projectIconState struct {
@@ -76,11 +77,12 @@ func Run(ctx context.Context) error {
 	}
 
 	s := &stateStore{
-		agents:           make(map[string]agentState),
-		agentUpdates:     make(map[string]string),
-		agentToolRefresh: make(map[string]bool),
-		agentRestarts:    make(map[string]bool),
-		agentCacheWipes:  make(map[string]bool),
+		agents:            make(map[string]agentState),
+		agentUpdates:      make(map[string]string),
+		agentToolRefresh:  make(map[string]bool),
+		agentRestarts:     make(map[string]bool),
+		agentCacheWipes:   make(map[string]bool),
+		agentHistoryWipes: make(map[string]bool),
 		agentRollout: agentUpdateRolloutState{
 			Slots: make(map[string]int),
 		},

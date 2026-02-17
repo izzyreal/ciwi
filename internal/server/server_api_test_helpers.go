@@ -67,13 +67,14 @@ func newTestHTTPServerWithState(t *testing.T) (*httptest.Server, *stateStore) {
 	}
 
 	s := &stateStore{
-		agents:           make(map[string]agentState),
-		agentUpdates:     make(map[string]string),
-		agentToolRefresh: make(map[string]bool),
-		agentRestarts:    make(map[string]bool),
-		agentCacheWipes:  make(map[string]bool),
-		db:               db,
-		artifactsDir:     artifactsDir,
+		agents:            make(map[string]agentState),
+		agentUpdates:      make(map[string]string),
+		agentToolRefresh:  make(map[string]bool),
+		agentRestarts:     make(map[string]bool),
+		agentCacheWipes:   make(map[string]bool),
+		agentHistoryWipes: make(map[string]bool),
+		db:                db,
+		artifactsDir:      artifactsDir,
 	}
 
 	mux := http.NewServeMux()
