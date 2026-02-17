@@ -88,10 +88,38 @@ func restartAgentViaWindowsService() (string, error, bool) {
 	if !active || name == "" {
 		return "", nil, false
 	}
-	command := "ping -n 2 127.0.0.1 >NUL & sc.exe stop \"" + name + "\" >NUL & ping -n 2 127.0.0.1 >NUL & sc.exe start \"" + name + "\" >NUL"
-	cmd := exec.Command("cmd.exe", "/C", command)
+
+	// Run restart logic in a detached process so it survives this service instance
+	// being stopped.
+	psName := escapePowerShellSingleQuoted(name)
+	script := "$name='" + psName + "'; " +
+		"sc.exe stop \"$name\" *> $null; " +
+		"$deadline=(Get-Date).AddSeconds(45); " +
+		"do { $q = sc.exe query \"$name\" 2>$null; " +
+		"if ($q -match 'STATE\\s+:\\s+1\\s+STOPPED') { break }; " +
+		"Start-Sleep -Seconds 1 } while ((Get-Date) -lt $deadline); " +
+		"sc.exe start \"$name\" *> $null"
+
+	cmd := exec.Command(
+		"cmd.exe",
+		"/C",
+		"start",
+		"\"\"",
+		"/min",
+		"powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-ExecutionPolicy",
+		"Bypass",
+		"-Command",
+		script,
+	)
 	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("cmd.exe /C %q: %w", command, err), true
+		return "", fmt.Errorf("start detached windows restart helper for %q: %w", name, err), true
 	}
 	return "restart via windows service requested (" + name + ")", nil, true
+}
+
+func escapePowerShellSingleQuoted(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
 }
