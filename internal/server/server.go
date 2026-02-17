@@ -45,6 +45,7 @@ type stateStore struct {
 	agentUpdates     map[string]string
 	agentToolRefresh map[string]bool
 	agentRestarts    map[string]bool
+	agentCacheWipes  map[string]bool
 	agentRollout     agentUpdateRolloutState
 	projectIcons     map[int64]projectIconState
 	db               *store.Store
@@ -79,6 +80,7 @@ func Run(ctx context.Context) error {
 		agentUpdates:     make(map[string]string),
 		agentToolRefresh: make(map[string]bool),
 		agentRestarts:    make(map[string]bool),
+		agentCacheWipes:  make(map[string]bool),
 		agentRollout: agentUpdateRolloutState{
 			Slots: make(map[string]int),
 		},

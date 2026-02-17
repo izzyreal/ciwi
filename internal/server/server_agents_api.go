@@ -111,6 +111,25 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if action == "wipe-cache" {
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		s.agentCacheWipes[agentID] = true
+		a.RecentLog = appendAgentLog(a.RecentLog, "manual cache wipe requested")
+		s.agents[agentID] = a
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   "agent cache wipe requested",
+		})
+		return
+	}
 	if action == "run-script" {
 		script := strings.TrimSpace(req.Script)
 		shell := strings.ToLower(strings.TrimSpace(req.Shell))

@@ -27,4 +27,5 @@ type HeartbeatResponse struct {
 	UpdateAPIBase         string `json:"update_api_base,omitempty"`
 	RefreshToolsRequested bool   `json:"refresh_tools_requested,omitempty"`
 	RestartRequested      bool   `json:"restart_requested,omitempty"`
+	WipeCacheRequested    bool   `json:"wipe_cache_requested,omitempty"`
 }

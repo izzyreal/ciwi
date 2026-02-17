@@ -73,6 +73,10 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		delete(s.agentToolRefresh, hb.AgentID)
 	}
+	wipeCache := s.agentCacheWipes[hb.AgentID]
+	if wipeCache {
+		delete(s.agentCacheWipes, hb.AgentID)
+	}
 	restartRequested := s.agentRestarts[hb.AgentID]
 	if restartRequested {
 		delete(s.agentRestarts, hb.AgentID)
@@ -194,6 +198,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	if refreshTools {
 		state.RecentLog = appendAgentLog(state.RecentLog, "server requested tools refresh")
 	}
+	if wipeCache {
+		state.RecentLog = appendAgentLog(state.RecentLog, "server requested cache wipe")
+	}
 	if restartRequested {
 		state.RecentLog = appendAgentLog(state.RecentLog, "server requested restart")
 	}
@@ -227,6 +234,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if refreshTools {
 		resp.RefreshToolsRequested = true
+	}
+	if wipeCache {
+		resp.WipeCacheRequested = true
 	}
 	if restartRequested {
 		resp.RestartRequested = true

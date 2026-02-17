@@ -46,6 +46,7 @@ func runLoop(ctx context.Context) error {
 	pendingRestartStatus := ""
 	jobInProgress := false
 	pendingRestart := false
+	pendingCacheWipe := false
 	type pendingUpdateRequest struct {
 		target     string
 		repository string
@@ -96,6 +97,20 @@ func runLoop(ctx context.Context) error {
 			}
 		}
 	}
+	runOrDeferCacheWipe := func() {
+		if jobInProgress {
+			pendingCacheWipe = true
+			slog.Info("server requested cache wipe; deferring until current job completes")
+			return
+		}
+		slog.Info("server requested cache wipe")
+		msg, err := wipeAgentCache(workDir)
+		if err != nil {
+			slog.Error("agent cache wipe failed", "error", err)
+			return
+		}
+		slog.Info(msg)
+	}
 
 	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
 		slog.Error("initial heartbeat failed", "error", err)
@@ -118,6 +133,9 @@ func runLoop(ctx context.Context) error {
 		if hb.RestartRequested {
 			runOrDeferRestart()
 		}
+		if hb.WipeCacheRequested {
+			runOrDeferCacheWipe()
+		}
 	}
 
 	for {
@@ -137,6 +155,10 @@ func runLoop(ctx context.Context) error {
 			if pendingRestart {
 				pendingRestart = false
 				runOrDeferRestart()
+			}
+			if pendingCacheWipe {
+				pendingCacheWipe = false
+				runOrDeferCacheWipe()
 			}
 		case <-heartbeatTicker.C:
 			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus)
@@ -160,6 +182,9 @@ func runLoop(ctx context.Context) error {
 				}
 				if hb.RestartRequested {
 					runOrDeferRestart()
+				}
+				if hb.WipeCacheRequested {
+					runOrDeferCacheWipe()
 				}
 			}
 		case <-leaseTicker.C:
