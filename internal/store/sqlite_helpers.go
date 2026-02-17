@@ -181,6 +181,7 @@ func cloneJobCachesFromConfig(in []config.PipelineJobCacheSpec) []protocol.JobCa
 				Runtime: append([]string(nil), c.Key.Runtime...),
 				Tools:   append([]string(nil), c.Key.Tools...),
 				Env:     append([]string(nil), c.Key.Env...),
+				GitRefs: cloneJobCacheKeyGitRefsFromConfig(c.Key.GitRefs),
 			},
 			RestoreKeys: append([]string(nil), c.RestoreKeys...),
 			Policy:      c.Policy,
@@ -198,7 +199,38 @@ func cloneJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
 		Runtime: append([]string(nil), in.Runtime...),
 		Tools:   append([]string(nil), in.Tools...),
 		Env:     append([]string(nil), in.Env...),
+		GitRefs: cloneJobCacheKeyGitRefs(in.GitRefs),
 	}
+}
+
+func cloneJobCacheKeyGitRefs(in []protocol.JobCacheKeyGitRef) []protocol.JobCacheKeyGitRef {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobCacheKeyGitRef, 0, len(in))
+	for _, ref := range in {
+		out = append(out, protocol.JobCacheKeyGitRef{
+			Name:       ref.Name,
+			Repository: ref.Repository,
+			Ref:        ref.Ref,
+		})
+	}
+	return out
+}
+
+func cloneJobCacheKeyGitRefsFromConfig(in []config.PipelineJobCacheKeyGitRefSpec) []protocol.JobCacheKeyGitRef {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.JobCacheKeyGitRef, 0, len(in))
+	for _, ref := range in {
+		out = append(out, protocol.JobCacheKeyGitRef{
+			Name:       ref.Name,
+			Repository: ref.Repository,
+			Ref:        ref.Ref,
+		})
+	}
+	return out
 }
 
 func cloneSource(in *protocol.SourceSpec) *protocol.SourceSpec {
