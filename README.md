@@ -71,7 +71,7 @@ Build-time version embedding:
 ## Tool capabilities and requirements
 
 Agents automatically detect common shell tools and report versions in heartbeats:
-- `git`, `go`, `gh`, `cmake`, `ninja`, `docker`, `gcc`, `clang`, `xcodebuild`, `msvc`, `xorg-dev` (when present)
+- `git`, `go`, `gh`, `cmake`, `sccache`, `ninja`, `docker`, `gcc`, `clang`, `xcodebuild`, `msvc`, `xorg-dev` (when present)
 
 Use `requires.tools` in pipeline jobs to constrain tool presence/version:
 

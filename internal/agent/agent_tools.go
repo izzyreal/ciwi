@@ -63,6 +63,7 @@ func detectToolVersions() map[string]string {
 		{name: "go", cmd: "go", args: []string{"version"}},
 		{name: "gh", cmd: "gh", args: []string{"--version"}},
 		{name: "cmake", cmd: "cmake", args: []string{"--version"}},
+		{name: "sccache", cmd: "sccache", args: []string{"--version"}},
 		{name: "ninja", cmd: "ninja", args: []string{"--version"}},
 		{name: "docker", cmd: "docker", args: []string{"--version"}},
 		{name: "gcc", cmd: "gcc", args: []string{"--version"}},
