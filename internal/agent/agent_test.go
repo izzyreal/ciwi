@@ -416,6 +416,17 @@ func TestResolveJobCacheEnvUsesRestoreKey(t *testing.T) {
 	}
 }
 
+func TestCacheEnvPathForGOOS(t *testing.T) {
+	windowsIn := `C:\ProgramData\ciwi-agent\work\cache\fetchcontent\fetchcontent-v1-abc\mpc`
+	if got := cacheEnvPathForGOOS("windows", windowsIn); got != "C:/ProgramData/ciwi-agent/work/cache/fetchcontent/fetchcontent-v1-abc/mpc" {
+		t.Fatalf("unexpected windows cache env path: %q", got)
+	}
+	linuxIn := "/var/lib/ciwi-agent/work/cache/fetchcontent/fetchcontent-v1-abc/mpc"
+	if got := cacheEnvPathForGOOS("linux", linuxIn); got != linuxIn {
+		t.Fatalf("unexpected linux cache env path: %q", got)
+	}
+}
+
 func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell-script assertion test skipped on windows")

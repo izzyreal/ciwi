@@ -50,7 +50,7 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution, agen
 			source = "fallback"
 			logs = append(logs, fmt.Sprintf("id=%s env=%s source=%s warning=%v", cacheID, envName, source, err))
 		}
-		cacheEnv[envName] = cacheDir
+			cacheEnv[envName] = cacheEnvPath(cacheDir)
 		msg := fmt.Sprintf("id=%s env=%s key=%s source=%s dir=%s", cacheID, envName, keyName, source, filepath.ToSlash(cacheDir))
 		if pruneCount > 0 {
 			msg += fmt.Sprintf(" pruned=%d", pruneCount)
@@ -521,4 +521,15 @@ func samePath(a, b string) bool {
 		return strings.EqualFold(aa, bb)
 	}
 	return aa == bb
+}
+
+func cacheEnvPath(path string) string {
+	return cacheEnvPathForGOOS(runtime.GOOS, path)
+}
+
+func cacheEnvPathForGOOS(goos, path string) string {
+	if strings.EqualFold(strings.TrimSpace(goos), "windows") {
+		return strings.ReplaceAll(path, "\\", "/")
+	}
+	return path
 }
