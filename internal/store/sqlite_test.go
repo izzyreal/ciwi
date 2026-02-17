@@ -30,13 +30,6 @@ pipelines:
         caches:
           - id: fetchcontent
             env: CIWI_FETCHCONTENT_SOURCES_DIR
-            key:
-              prefix: fetchcontent-v1
-            restore_keys:
-              - fetchcontent-v1
-            policy: pull-push
-            ttl_days: 14
-            max_size_mb: 1024
         matrix:
           include:
             - name: linux-amd64

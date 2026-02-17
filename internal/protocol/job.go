@@ -27,17 +27,8 @@ type SourceSpec struct {
 }
 
 type JobCacheSpec struct {
-	ID          string      `json:"id"`
-	Env         string      `json:"env,omitempty"`
-	Key         JobCacheKey `json:"key,omitempty"`
-	RestoreKeys []string    `json:"restore_keys,omitempty"`
-	Policy      string      `json:"policy,omitempty"`
-	TTLDays     int         `json:"ttl_days,omitempty"`
-	MaxSizeMB   int         `json:"max_size_mb,omitempty"`
-}
-
-type JobCacheKey struct {
-	Prefix string `json:"prefix,omitempty"`
+	ID  string `json:"id"`
+	Env string `json:"env,omitempty"`
 }
 
 type CreateJobExecutionRequest struct {

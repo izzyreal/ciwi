@@ -354,9 +354,6 @@ func TestResolveJobCacheEnvMissThenHit(t *testing.T) {
 			{
 				ID:  "sharedcache",
 				Env: "CACHE_DIR",
-				Key: protocol.JobCacheKey{
-					Prefix: "cache-v1",
-				},
 			},
 		},
 	}
@@ -380,37 +377,6 @@ func TestResolveJobCacheEnvMissThenHit(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(logs2, "\n"), "source=hit") {
 		t.Fatalf("expected hit log, logs=%v", logs2)
-	}
-}
-
-func TestResolveJobCacheEnvUsesRestoreKey(t *testing.T) {
-	workDir := t.TempDir()
-	execDir := t.TempDir()
-	cacheBase := filepath.Join(workDir, "cache", "sharedcache")
-	restored := filepath.Join(cacheBase, "cache-v1-old")
-	if err := os.MkdirAll(restored, 0o755); err != nil {
-		t.Fatalf("mkdir restore cache: %v", err)
-	}
-
-	job := protocol.JobExecution{
-		Caches: []protocol.JobCacheSpec{
-			{
-				ID:          "sharedcache",
-				Env:         "CACHE_DIR",
-				RestoreKeys: []string{"cache-v1"},
-				Key: protocol.JobCacheKey{
-					Prefix: "cache-v1",
-				},
-			},
-		},
-	}
-	env, logs := resolveJobCacheEnv(workDir, execDir, job)
-	got := env["CACHE_DIR"]
-	if !samePath(got, restored) {
-		t.Fatalf("expected restore dir %q, got %q (logs=%v)", restored, got, logs)
-	}
-	if !strings.Contains(strings.Join(logs, "\n"), "source=restore:cache-v1-old") {
-		t.Fatalf("expected restore source in logs, logs=%v", logs)
 	}
 }
 

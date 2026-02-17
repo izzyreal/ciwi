@@ -126,8 +126,6 @@ jobs:
     caches:
       - id: fetchcontent
         env: CIWI_FETCHCONTENT_SOURCES_DIR
-        key:
-          prefix: fetchcontent-v1
     steps:
       - run: mkdir -p "$CIWI_FETCHCONTENT_SOURCES_DIR"
       - run: >
@@ -140,16 +138,15 @@ Notes:
 - `FETCHCONTENT_CACHE_ROOT` is a project-defined CMake variable (example name), not a ciwi built-in.
 - Your `CMakeLists.txt` should map that variable to per-dependency FetchContent source dirs internally.
 
-Cache key behavior:
-- ciwi stores cache entries by a stable key name.
-- key name = `key.prefix` when set, otherwise `caches[].id`.
-- `restore_keys`: allows prefix fallback when the exact key misses; for each restore prefix, ciwi selects the newest matching cache entry.
+Cache behavior:
+- ciwi cache directory path is stable and based on `caches[].id`.
+- for FetchContent use, put hash-specific dependency subdirectories under `FETCHCONTENT_CACHE_ROOT` in CMake helper logic.
 
 Moving-target caveat:
 - if dependencies track moving refs (for example `main`), use per-dependency hash subdirs in your CMake helper under `FETCHCONTENT_CACHE_ROOT`.
 - best fix is still pinning dependencies to immutable tags/SHAs where possible.
-- fallback invalidation options remain valid:
-- rotate `key.prefix` (for example `fetchcontent-v1` -> `fetchcontent-v2`) for explicit cache cutovers.
+- fallback invalidation option:
+- rotate `caches[].id` (for example `fetchcontent` -> `fetchcontent-v2`) for explicit cache cutovers.
 
 ## Project icon auto-discovery
 

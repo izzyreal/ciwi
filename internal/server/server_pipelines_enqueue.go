@@ -324,13 +324,8 @@ func cloneProtocolJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec 
 	out := make([]protocol.JobCacheSpec, 0, len(in))
 	for _, c := range in {
 		out = append(out, protocol.JobCacheSpec{
-			ID:          c.ID,
-			Env:         c.Env,
-			Key:         cloneProtocolJobCacheKey(c.Key),
-			RestoreKeys: append([]string(nil), c.RestoreKeys...),
-			Policy:      c.Policy,
-			TTLDays:     c.TTLDays,
-			MaxSizeMB:   c.MaxSizeMB,
+			ID:  c.ID,
+			Env: c.Env,
 		})
 	}
 	return out
@@ -400,12 +395,6 @@ func resolveDependencyArtifactJobIDs(dependsOn []string, depArtifactJobIDsAll ma
 		return nil
 	}
 	return out
-}
-
-func cloneProtocolJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
-	return protocol.JobCacheKey{
-		Prefix: in.Prefix,
-	}
 }
 
 func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem {
@@ -516,13 +505,6 @@ func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.Jo
 		out = append(out, protocol.JobCacheSpec{
 			ID:  c.ID,
 			Env: c.Env,
-			Key: protocol.JobCacheKey{
-				Prefix: c.Key.Prefix,
-			},
-			RestoreKeys: append([]string(nil), c.RestoreKeys...),
-			Policy:      c.Policy,
-			TTLDays:     c.TTLDays,
-			MaxSizeMB:   c.MaxSizeMB,
 		})
 	}
 	return out

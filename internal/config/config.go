@@ -72,17 +72,8 @@ type PipelineJobSpec struct {
 }
 
 type PipelineJobCacheSpec struct {
-	ID          string                  `yaml:"id" json:"id"`
-	Env         string                  `yaml:"env,omitempty" json:"env,omitempty"`
-	Key         PipelineJobCacheKeySpec `yaml:"key,omitempty" json:"key,omitempty"`
-	RestoreKeys []string                `yaml:"restore_keys,omitempty" json:"restore_keys,omitempty"`
-	Policy      string                  `yaml:"policy,omitempty" json:"policy,omitempty"`
-	TTLDays     int                     `yaml:"ttl_days,omitempty" json:"ttl_days,omitempty"`
-	MaxSizeMB   int                     `yaml:"max_size_mb,omitempty" json:"max_size_mb,omitempty"`
-}
-
-type PipelineJobCacheKeySpec struct {
-	Prefix string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
+	ID  string `yaml:"id" json:"id"`
+	Env string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 type PipelineJobRequirements struct {
@@ -270,23 +261,6 @@ func (cfg File) Validate() []string {
 				cacheEnv := strings.TrimSpace(c.Env)
 				if cacheEnv == "" {
 					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].env is required", i, j, cIdx))
-				}
-				policy := strings.ToLower(strings.TrimSpace(c.Policy))
-				switch policy {
-				case "", "pull-push", "pull", "push":
-				default:
-					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].policy must be one of pull-push,pull,push", i, j, cIdx))
-				}
-				if c.TTLDays < 0 {
-					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].ttl_days must be >= 0", i, j, cIdx))
-				}
-				if c.MaxSizeMB < 0 {
-					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].max_size_mb must be >= 0", i, j, cIdx))
-				}
-				for k, restore := range c.RestoreKeys {
-					if strings.TrimSpace(restore) == "" {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].restore_keys[%d] must not be empty", i, j, cIdx, k))
-					}
 				}
 			}
 			for k, st := range job.Steps {

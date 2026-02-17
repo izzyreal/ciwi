@@ -2,21 +2,14 @@ package agent
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
-
-type cachePolicy struct {
-	pull bool
-	push bool
-}
 
 func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map[string]string, []string) {
 	if len(job.Caches) == 0 {
@@ -34,7 +27,7 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map
 		if cacheID == "" || envName == "" {
 			continue
 		}
-		cacheDir, keyName, source, pruneCount, err := resolveSingleJobCacheDir(cacheRoot, execDir, spec)
+		cacheDir, source, err := resolveSingleJobCacheDir(cacheRoot, execDir, spec)
 		if err != nil {
 			fallback := filepath.Join(execDir, ".ciwi-cache", sanitizeCacheSegment(cacheID))
 			if mkErr := os.MkdirAll(fallback, 0o755); mkErr != nil {
@@ -46,10 +39,7 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map
 			logs = append(logs, fmt.Sprintf("id=%s env=%s source=%s warning=%v", cacheID, envName, source, err))
 		}
 		cacheEnv[envName] = cacheEnvPath(cacheDir)
-		msg := fmt.Sprintf("id=%s env=%s key=%s source=%s dir=%s", cacheID, envName, keyName, source, filepath.ToSlash(cacheDir))
-		if pruneCount > 0 {
-			msg += fmt.Sprintf(" pruned=%d", pruneCount)
-		}
+		msg := fmt.Sprintf("id=%s env=%s source=%s dir=%s", cacheID, envName, source, filepath.ToSlash(cacheDir))
 		logs = append(logs, msg)
 	}
 	if len(cacheEnv) == 0 {
@@ -58,212 +48,25 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map
 	return cacheEnv, logs
 }
 
-func resolveSingleJobCacheDir(cacheRoot, execDir string, spec protocol.JobCacheSpec) (string, string, string, int, error) {
+func resolveSingleJobCacheDir(cacheRoot, execDir string, spec protocol.JobCacheSpec) (string, string, error) {
 	cacheID := sanitizeCacheSegment(spec.ID)
 	cacheBase := filepath.Join(cacheRoot, cacheID)
+	targetExists := isDir(cacheBase)
 	if err := os.MkdirAll(cacheBase, 0o755); err != nil {
-		return "", "", "", 0, fmt.Errorf("create cache base: %w", err)
+		return "", "", fmt.Errorf("create cache base: %w", err)
 	}
 
-	keyName := computeJobCacheKey(spec)
-
-	policy := normalizeCachePolicy(spec.Policy)
-	target := filepath.Join(cacheBase, keyName)
-	selected := target
+	selected := cacheBase
 	source := "miss"
-
-	if policy.pull {
-		if isDir(target) {
-			source = "hit"
-		} else if restorePath, restoreName := findRestoreCache(cacheBase, spec.RestoreKeys); restorePath != "" {
-			selected = restorePath
-			source = "restore:" + restoreName
-		}
-	}
-	if source == "miss" && !policy.push {
-		selected = filepath.Join(execDir, ".ciwi-cache", cacheID)
-		source = "miss-ephemeral"
+	if targetExists {
+		source = "hit"
 	}
 
 	if err := os.MkdirAll(selected, 0o755); err != nil {
-		return "", keyName, source, 0, fmt.Errorf("create cache dir: %w", err)
+		return "", source, fmt.Errorf("create cache dir: %w", err)
 	}
 	_ = touchCacheDir(selected)
-	pruned := 0
-	if policy.push {
-		count, err := pruneCacheEntries(cacheBase, spec, selected)
-		if err != nil {
-			return selected, keyName, source, 0, fmt.Errorf("prune cache: %w", err)
-		}
-		pruned = count
-	}
-	return selected, keyName, source, pruned, nil
-}
-
-func normalizeCachePolicy(raw string) cachePolicy {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "pull":
-		return cachePolicy{pull: true}
-	case "push":
-		return cachePolicy{push: true}
-	case "pull-push", "":
-		return cachePolicy{pull: true, push: true}
-	default:
-		return cachePolicy{pull: true, push: true}
-	}
-}
-
-func computeJobCacheKey(spec protocol.JobCacheSpec) string {
-	prefix := strings.TrimSpace(spec.Key.Prefix)
-	if prefix == "" {
-		prefix = strings.TrimSpace(spec.ID)
-	}
-	if prefix == "" {
-		prefix = "cache"
-	}
-	return sanitizeCacheSegment(prefix)
-}
-
-func findRestoreCache(baseDir string, restoreKeys []string) (string, string) {
-	entries, err := os.ReadDir(baseDir)
-	if err != nil {
-		return "", ""
-	}
-	for _, restore := range restoreKeys {
-		prefix := sanitizeCacheSegment(strings.TrimSpace(restore))
-		if prefix == "" {
-			continue
-		}
-		bestPath := ""
-		bestName := ""
-		bestMod := time.Time{}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			if !strings.HasPrefix(name, prefix) {
-				continue
-			}
-			info, err := entry.Info()
-			if err != nil {
-				continue
-			}
-			if bestPath == "" || info.ModTime().After(bestMod) {
-				bestPath = filepath.Join(baseDir, name)
-				bestName = name
-				bestMod = info.ModTime()
-			}
-		}
-		if bestPath != "" {
-			return bestPath, bestName
-		}
-	}
-	return "", ""
-}
-
-func pruneCacheEntries(baseDir string, spec protocol.JobCacheSpec, keepPath string) (int, error) {
-	if spec.TTLDays <= 0 && spec.MaxSizeMB <= 0 {
-		return 0, nil
-	}
-	type cacheEntry struct {
-		path    string
-		modTime time.Time
-		size    int64
-	}
-
-	loadEntries := func() ([]cacheEntry, error) {
-		items, err := os.ReadDir(baseDir)
-		if err != nil {
-			return nil, err
-		}
-		out := make([]cacheEntry, 0, len(items))
-		for _, item := range items {
-			if !item.IsDir() {
-				continue
-			}
-			path := filepath.Join(baseDir, item.Name())
-			if samePath(path, keepPath) {
-				continue
-			}
-			info, err := item.Info()
-			if err != nil {
-				continue
-			}
-			size, err := dirSizeBytes(path)
-			if err != nil {
-				continue
-			}
-			out = append(out, cacheEntry{path: path, modTime: info.ModTime(), size: size})
-		}
-		return out, nil
-	}
-
-	pruned := 0
-	entries, err := loadEntries()
-	if err != nil {
-		return 0, err
-	}
-
-	if spec.TTLDays > 0 {
-		cutoff := time.Now().Add(-time.Duration(spec.TTLDays) * 24 * time.Hour)
-		for _, entry := range entries {
-			if entry.modTime.Before(cutoff) {
-				if err := os.RemoveAll(entry.path); err != nil {
-					return pruned, err
-				}
-				pruned++
-			}
-		}
-		entries, err = loadEntries()
-		if err != nil {
-			return pruned, err
-		}
-	}
-
-	if spec.MaxSizeMB > 0 {
-		var total int64
-		for _, entry := range entries {
-			total += entry.size
-		}
-		limit := int64(spec.MaxSizeMB) * 1024 * 1024
-		if total > limit {
-			sort.Slice(entries, func(i, j int) bool {
-				return entries[i].modTime.Before(entries[j].modTime)
-			})
-			for _, entry := range entries {
-				if total <= limit {
-					break
-				}
-				if err := os.RemoveAll(entry.path); err != nil {
-					return pruned, err
-				}
-				total -= entry.size
-				pruned++
-			}
-		}
-	}
-
-	return pruned, nil
-}
-
-func dirSizeBytes(root string) (int64, error) {
-	var total int64
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		total += info.Size()
-		return nil
-	})
-	return total, err
+	return selected, source, nil
 }
 
 func touchCacheDir(dir string) error {

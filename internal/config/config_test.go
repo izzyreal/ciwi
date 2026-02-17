@@ -567,13 +567,6 @@ pipelines:
         caches:
           - id: fetchcontent
             env: CIWI_FETCHCONTENT_SOURCES_DIR
-            key:
-              prefix: fetchcontent-v1
-            restore_keys:
-              - fetchcontent-v1
-            policy: pull-push
-            ttl_days: 14
-            max_size_mb: 2048
         steps:
           - run: cmake -S . -B build
 `), "test-caches")
@@ -598,11 +591,6 @@ pipelines:
         caches:
           - id: ""
             env: ""
-            policy: invalid
-            ttl_days: -1
-            max_size_mb: -5
-            restore_keys:
-              - ""
         steps:
           - run: cmake -S . -B build
 `), "test-invalid-cache")

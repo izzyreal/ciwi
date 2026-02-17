@@ -582,22 +582,11 @@ func cloneJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
 	out := make([]protocol.JobCacheSpec, 0, len(in))
 	for _, c := range in {
 		out = append(out, protocol.JobCacheSpec{
-			ID:          c.ID,
-			Env:         c.Env,
-			Key:         cloneJobCacheKey(c.Key),
-			RestoreKeys: append([]string(nil), c.RestoreKeys...),
-			Policy:      c.Policy,
-			TTLDays:     c.TTLDays,
-			MaxSizeMB:   c.MaxSizeMB,
+			ID:  c.ID,
+			Env: c.Env,
 		})
 	}
 	return out
-}
-
-func cloneJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
-	return protocol.JobCacheKey{
-		Prefix: in.Prefix,
-	}
 }
 
 func cloneSource(in *protocol.SourceSpec) *protocol.SourceSpec {
