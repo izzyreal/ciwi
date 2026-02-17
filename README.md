@@ -367,6 +367,15 @@ curl -fsSL -o /tmp/install_ciwi_agent_linux.sh \
 sh /tmp/install_ciwi_agent_linux.sh
 ```
 
+Install with GitHub API token (recommended to avoid rate limits):
+
+```bash
+export CIWI_GITHUB_TOKEN="<your-token>"
+curl -fsSL -o /tmp/install_ciwi_agent_linux.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_linux.sh && \
+sh /tmp/install_ciwi_agent_linux.sh
+```
+
 One-line uninstall (no options):
 
 ```bash
@@ -386,6 +395,7 @@ Installer behavior:
   - `CIWI_SERVER_URL` (default `http://127.0.0.1:8112`)
   - `CIWI_AGENT_ID`
   - `CIWI_AGENT_WORKDIR`
+  - `CIWI_GITHUB_TOKEN` (if provided during install)
 
 Default paths:
 - Binary: `/usr/local/bin/ciwi`
