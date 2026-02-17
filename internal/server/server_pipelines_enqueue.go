@@ -404,12 +404,7 @@ func resolveDependencyArtifactJobIDs(dependsOn []string, depArtifactJobIDsAll ma
 
 func cloneProtocolJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
 	return protocol.JobCacheKey{
-		Prefix:  in.Prefix,
-		Files:   append([]string(nil), in.Files...),
-		Runtime: append([]string(nil), in.Runtime...),
-		Tools:   append([]string(nil), in.Tools...),
-		Env:     append([]string(nil), in.Env...),
-		GitRefs: append([]protocol.JobCacheKeyGitRef(nil), in.GitRefs...),
+		Prefix: in.Prefix,
 	}
 }
 
@@ -522,32 +517,12 @@ func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.Jo
 			ID:  c.ID,
 			Env: c.Env,
 			Key: protocol.JobCacheKey{
-				Prefix:  c.Key.Prefix,
-				Files:   append([]string(nil), c.Key.Files...),
-				Runtime: append([]string(nil), c.Key.Runtime...),
-				Tools:   append([]string(nil), c.Key.Tools...),
-				Env:     append([]string(nil), c.Key.Env...),
-				GitRefs: cloneProtocolJobCacheKeyGitRefsFromConfig(c.Key.GitRefs),
+				Prefix: c.Key.Prefix,
 			},
 			RestoreKeys: append([]string(nil), c.RestoreKeys...),
 			Policy:      c.Policy,
 			TTLDays:     c.TTLDays,
 			MaxSizeMB:   c.MaxSizeMB,
-		})
-	}
-	return out
-}
-
-func cloneProtocolJobCacheKeyGitRefsFromConfig(in []config.PipelineJobCacheKeyGitRefSpec) []protocol.JobCacheKeyGitRef {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]protocol.JobCacheKeyGitRef, 0, len(in))
-	for _, ref := range in {
-		out = append(out, protocol.JobCacheKeyGitRef{
-			Name:       ref.Name,
-			Repository: ref.Repository,
-			Ref:        ref.Ref,
 		})
 	}
 	return out

@@ -569,23 +569,6 @@ pipelines:
             env: CIWI_FETCHCONTENT_SOURCES_DIR
             key:
               prefix: fetchcontent-v1
-              files:
-                - CMakeLists.txt
-                - cmake/**/*.cmake
-              runtime:
-                - os
-                - arch
-              tools:
-                - cmake
-              env:
-                - CMAKE_TOOLCHAIN_FILE
-              git_refs:
-                - name: mpc
-                  repository: https://github.com/izzyreal/mpc.git
-                  ref: master
-                - name: melatonin_blur
-                  repository: https://github.com/sudara/melatonin_blur.git
-                  ref: main
             restore_keys:
               - fetchcontent-v1
             policy: pull-push
@@ -615,19 +598,6 @@ pipelines:
         caches:
           - id: ""
             env: ""
-            key:
-              files:
-                - ../outside
-              runtime:
-                - kernel
-              tools:
-                - "bad tool"
-              env:
-                - "bad env"
-              git_refs:
-                - name: ""
-                  repository: ""
-                  ref: ""
             policy: invalid
             ttl_days: -1
             max_size_mb: -5

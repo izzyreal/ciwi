@@ -1,18 +1,10 @@
 package agent
 
 import (
-	"bytes"
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -26,14 +18,7 @@ type cachePolicy struct {
 	push bool
 }
 
-type resolvedCacheGitRef struct {
-	Name       string `json:"name"`
-	Repository string `json:"repository"`
-	Ref        string `json:"ref"`
-	Hash       string `json:"hash"`
-}
-
-func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution, agentCapabilities map[string]string) (map[string]string, []string) {
+func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map[string]string, []string) {
 	if len(job.Caches) == 0 {
 		return nil, nil
 	}
@@ -49,7 +34,7 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution, agen
 		if cacheID == "" || envName == "" {
 			continue
 		}
-		cacheDir, keyName, keyGitRefs, source, pruneCount, err := resolveSingleJobCacheDir(cacheRoot, execDir, job.Env, spec, agentCapabilities)
+		cacheDir, keyName, source, pruneCount, err := resolveSingleJobCacheDir(cacheRoot, execDir, spec)
 		if err != nil {
 			fallback := filepath.Join(execDir, ".ciwi-cache", sanitizeCacheSegment(cacheID))
 			if mkErr := os.MkdirAll(fallback, 0o755); mkErr != nil {
@@ -61,17 +46,7 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution, agen
 			logs = append(logs, fmt.Sprintf("id=%s env=%s source=%s warning=%v", cacheID, envName, source, err))
 		}
 		cacheEnv[envName] = cacheEnvPath(cacheDir)
-		for _, ref := range keyGitRefs {
-			cacheEnv[cacheGitRefHashEnvName(ref.Name)] = strings.TrimSpace(ref.Hash)
-		}
 		msg := fmt.Sprintf("id=%s env=%s key=%s source=%s dir=%s", cacheID, envName, keyName, source, filepath.ToSlash(cacheDir))
-		if len(keyGitRefs) > 0 {
-			parts := make([]string, 0, len(keyGitRefs))
-			for _, ref := range keyGitRefs {
-				parts = append(parts, fmt.Sprintf("%s=%s", strings.TrimSpace(ref.Name), strings.TrimSpace(ref.Hash)))
-			}
-			msg += " git_refs=" + strings.Join(parts, ",")
-		}
 		if pruneCount > 0 {
 			msg += fmt.Sprintf(" pruned=%d", pruneCount)
 		}
@@ -83,17 +58,14 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution, agen
 	return cacheEnv, logs
 }
 
-func resolveSingleJobCacheDir(cacheRoot, execDir string, jobEnv map[string]string, spec protocol.JobCacheSpec, agentCapabilities map[string]string) (string, string, []resolvedCacheGitRef, string, int, error) {
+func resolveSingleJobCacheDir(cacheRoot, execDir string, spec protocol.JobCacheSpec) (string, string, string, int, error) {
 	cacheID := sanitizeCacheSegment(spec.ID)
 	cacheBase := filepath.Join(cacheRoot, cacheID)
 	if err := os.MkdirAll(cacheBase, 0o755); err != nil {
-		return "", "", nil, "", 0, fmt.Errorf("create cache base: %w", err)
+		return "", "", "", 0, fmt.Errorf("create cache base: %w", err)
 	}
 
-	keyName, keyGitRefs, err := computeJobCacheKey(execDir, jobEnv, spec, agentCapabilities)
-	if err != nil {
-		return "", "", nil, "", 0, err
-	}
+	keyName := computeJobCacheKey(spec)
 
 	policy := normalizeCachePolicy(spec.Policy)
 	target := filepath.Join(cacheBase, keyName)
@@ -114,18 +86,18 @@ func resolveSingleJobCacheDir(cacheRoot, execDir string, jobEnv map[string]strin
 	}
 
 	if err := os.MkdirAll(selected, 0o755); err != nil {
-		return "", keyName, keyGitRefs, source, 0, fmt.Errorf("create cache dir: %w", err)
+		return "", keyName, source, 0, fmt.Errorf("create cache dir: %w", err)
 	}
 	_ = touchCacheDir(selected)
 	pruned := 0
 	if policy.push {
 		count, err := pruneCacheEntries(cacheBase, spec, selected)
 		if err != nil {
-			return selected, keyName, keyGitRefs, source, 0, fmt.Errorf("prune cache: %w", err)
+			return selected, keyName, source, 0, fmt.Errorf("prune cache: %w", err)
 		}
 		pruned = count
 	}
-	return selected, keyName, keyGitRefs, source, pruned, nil
+	return selected, keyName, source, pruned, nil
 }
 
 func normalizeCachePolicy(raw string) cachePolicy {
@@ -141,7 +113,7 @@ func normalizeCachePolicy(raw string) cachePolicy {
 	}
 }
 
-func computeJobCacheKey(execDir string, jobEnv map[string]string, spec protocol.JobCacheSpec, agentCapabilities map[string]string) (string, []resolvedCacheGitRef, error) {
+func computeJobCacheKey(spec protocol.JobCacheSpec) string {
 	prefix := strings.TrimSpace(spec.Key.Prefix)
 	if prefix == "" {
 		prefix = strings.TrimSpace(spec.ID)
@@ -149,296 +121,7 @@ func computeJobCacheKey(execDir string, jobEnv map[string]string, spec protocol.
 	if prefix == "" {
 		prefix = "cache"
 	}
-	prefix = sanitizeCacheSegment(prefix)
-
-	filePatterns := dedupeSortedStrings(spec.Key.Files)
-	runtimeTokens := dedupeSortedStrings(spec.Key.Runtime)
-	toolTokens := dedupeSortedStrings(spec.Key.Tools)
-	envTokens := dedupeSortedStrings(spec.Key.Env)
-
-	files := map[string]string{}
-	for _, pattern := range filePatterns {
-		normalizedPattern := normalizeGlobPattern(pattern)
-		matches, err := collectMatchingFiles(execDir, normalizedPattern)
-		if err != nil {
-			return "", nil, fmt.Errorf("cache key files pattern %q: %w", normalizedPattern, err)
-		}
-		if len(matches) == 0 {
-			files["pattern:"+normalizedPattern] = "<none>"
-			continue
-		}
-		for _, rel := range matches {
-			hash, err := hashFileSHA256(filepath.Join(execDir, filepath.FromSlash(rel)))
-			if err != nil {
-				return "", nil, fmt.Errorf("hash cache key file %q: %w", rel, err)
-			}
-			files[rel] = hash
-		}
-	}
-
-	runtimeVals := map[string]string{}
-	for _, token := range runtimeTokens {
-		switch strings.ToLower(strings.TrimSpace(token)) {
-		case "os":
-			if v := strings.TrimSpace(agentCapabilities["os"]); v != "" {
-				runtimeVals["os"] = v
-			} else {
-				runtimeVals["os"] = runtime.GOOS
-			}
-		case "arch":
-			if v := strings.TrimSpace(agentCapabilities["arch"]); v != "" {
-				runtimeVals["arch"] = v
-			} else {
-				runtimeVals["arch"] = runtime.GOARCH
-			}
-		}
-	}
-
-	toolVals := map[string]string{}
-	for _, tool := range toolTokens {
-		name := strings.TrimSpace(tool)
-		if name == "" {
-			continue
-		}
-		toolVals[name] = strings.TrimSpace(agentCapabilities["tool."+name])
-	}
-
-	envVals := map[string]string{}
-	for _, envName := range envTokens {
-		name := strings.TrimSpace(envName)
-		if name == "" {
-			continue
-		}
-		if v, ok := jobEnv[name]; ok {
-			envVals[name] = v
-			continue
-		}
-		envVals[name] = os.Getenv(name)
-	}
-	keyGitRefs, err := resolveCacheGitRefs(spec.Key.GitRefs)
-	if err != nil {
-		return "", nil, fmt.Errorf("resolve cache key git refs: %w", err)
-	}
-	gitRefVals := map[string]resolvedCacheGitRef{}
-	for _, ref := range keyGitRefs {
-		gitRefVals[ref.Name] = ref
-	}
-
-	payload := struct {
-		Prefix  string                         `json:"prefix"`
-		Files   map[string]string              `json:"files,omitempty"`
-		Runtime map[string]string              `json:"runtime,omitempty"`
-		Tools   map[string]string              `json:"tools,omitempty"`
-		Env     map[string]string              `json:"env,omitempty"`
-		GitRefs map[string]resolvedCacheGitRef `json:"git_refs,omitempty"`
-	}{
-		Prefix:  prefix,
-		Files:   files,
-		Runtime: runtimeVals,
-		Tools:   toolVals,
-		Env:     envVals,
-		GitRefs: gitRefVals,
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return "", nil, fmt.Errorf("marshal key payload: %w", err)
-	}
-	sum := sha256.Sum256(raw)
-	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(sum[:])[:20]), keyGitRefs, nil
-}
-
-func resolveCacheGitRefs(in []protocol.JobCacheKeyGitRef) ([]resolvedCacheGitRef, error) {
-	if len(in) == 0 {
-		return nil, nil
-	}
-	if _, err := exec.LookPath("git"); err != nil {
-		return nil, fmt.Errorf("git is required for cache key git_refs: %w", err)
-	}
-	out := make([]resolvedCacheGitRef, 0, len(in))
-	for _, ref := range in {
-		name := strings.TrimSpace(ref.Name)
-		repo := strings.TrimSpace(ref.Repository)
-		gitRef := strings.TrimSpace(ref.Ref)
-		if name == "" || repo == "" || gitRef == "" {
-			continue
-		}
-		hash, err := resolveGitRemoteHash(repo, gitRef)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		out = append(out, resolvedCacheGitRef{
-			Name:       name,
-			Repository: repo,
-			Ref:        gitRef,
-			Hash:       hash,
-		})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Name < out[j].Name
-	})
-	return out, nil
-}
-
-func resolveGitRemoteHash(repository, ref string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", repository, ref)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/usr/bin/false")
-	var out bytes.Buffer
-	var errOut bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errOut
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errOut.String())
-		if msg == "" {
-			msg = strings.TrimSpace(out.String())
-		}
-		if msg == "" {
-			return "", fmt.Errorf("git ls-remote %q %q failed: %w", repository, ref, err)
-		}
-		return "", fmt.Errorf("git ls-remote %q %q failed: %s", repository, ref, msg)
-	}
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 1 {
-			continue
-		}
-		hash := strings.TrimSpace(fields[0])
-		if len(hash) == 40 && isHexLowerable(hash) {
-			return strings.ToLower(hash), nil
-		}
-	}
-	return "", fmt.Errorf("git ls-remote %q %q returned no hash", repository, ref)
-}
-
-func isHexLowerable(v string) bool {
-	for _, r := range v {
-		switch {
-		case r >= '0' && r <= '9':
-		case r >= 'a' && r <= 'f':
-		case r >= 'A' && r <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func dedupeSortedStrings(in []string) []string {
-	if len(in) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		v = strings.TrimSpace(v)
-		if v == "" {
-			continue
-		}
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func normalizeGlobPattern(v string) string {
-	v = strings.ReplaceAll(strings.TrimSpace(v), "\\", "/")
-	v = strings.TrimPrefix(v, "./")
-	return pathCleanSlash(v)
-}
-
-func pathCleanSlash(v string) string {
-	v = strings.ReplaceAll(v, "//", "/")
-	return strings.TrimPrefix(v, "/")
-}
-
-func collectMatchingFiles(root, pattern string) ([]string, error) {
-	if pattern == "" {
-		return nil, nil
-	}
-	re, err := compileCacheGlob(pattern)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0)
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		if re.MatchString(rel) {
-			out = append(out, rel)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
-func compileCacheGlob(pattern string) (*regexp.Regexp, error) {
-	var b strings.Builder
-	b.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		ch := pattern[i]
-		if ch == '*' {
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				b.WriteString(".*")
-				i++
-				continue
-			}
-			b.WriteString("[^/]*")
-			continue
-		}
-		if ch == '?' {
-			b.WriteString("[^/]")
-			continue
-		}
-		if strings.ContainsRune(`.+()[]{}^$|\`, rune(ch)) {
-			b.WriteByte('\\')
-		}
-		b.WriteByte(ch)
-	}
-	b.WriteString("$")
-	re, err := regexp.Compile(b.String())
-	if err != nil {
-		return nil, fmt.Errorf("invalid glob %q: %w", pattern, err)
-	}
-	return re, nil
-}
-
-func hashFileSHA256(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return sanitizeCacheSegment(prefix)
 }
 
 func findRestoreCache(baseDir string, restoreKeys []string) (string, string) {
@@ -640,27 +323,4 @@ func cacheEnvPathForGOOS(goos, path string) string {
 		return strings.ReplaceAll(path, "\\", "/")
 	}
 	return path
-}
-
-func cacheGitRefHashEnvName(name string) string {
-	base := strings.TrimSpace(strings.ToUpper(name))
-	if base == "" {
-		base = "REF"
-	}
-	var b strings.Builder
-	for _, r := range base {
-		switch {
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r)
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	s := strings.Trim(b.String(), "_")
-	if s == "" {
-		s = "REF"
-	}
-	return "CIWI_CACHE_GIT_REF_" + s + "_HASH"
 }

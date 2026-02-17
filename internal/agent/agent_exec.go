@@ -116,7 +116,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			}
 		}
 	}
-	cacheEnv, cacheLogs := resolveJobCacheEnv(workDir, execDir, job, agentCapabilities)
+	cacheEnv, cacheLogs := resolveJobCacheEnv(workDir, execDir, job)
 	for _, line := range cacheLogs {
 		fmt.Fprintf(&output, "[cache] %s\n", line)
 	}

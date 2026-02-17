@@ -37,18 +37,7 @@ type JobCacheSpec struct {
 }
 
 type JobCacheKey struct {
-	Prefix  string              `json:"prefix,omitempty"`
-	Files   []string            `json:"files,omitempty"`
-	Runtime []string            `json:"runtime,omitempty"`
-	Tools   []string            `json:"tools,omitempty"`
-	Env     []string            `json:"env,omitempty"`
-	GitRefs []JobCacheKeyGitRef `json:"git_refs,omitempty"`
-}
-
-type JobCacheKeyGitRef struct {
-	Name       string `json:"name"`
-	Repository string `json:"repository"`
-	Ref        string `json:"ref"`
+	Prefix string `json:"prefix,omitempty"`
 }
 
 type CreateJobExecutionRequest struct {

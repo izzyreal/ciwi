@@ -596,12 +596,7 @@ func cloneJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
 
 func cloneJobCacheKey(in protocol.JobCacheKey) protocol.JobCacheKey {
 	return protocol.JobCacheKey{
-		Prefix:  in.Prefix,
-		Files:   append([]string(nil), in.Files...),
-		Runtime: append([]string(nil), in.Runtime...),
-		Tools:   append([]string(nil), in.Tools...),
-		Env:     append([]string(nil), in.Env...),
-		GitRefs: append([]protocol.JobCacheKeyGitRef(nil), in.GitRefs...),
+		Prefix: in.Prefix,
 	}
 }
 

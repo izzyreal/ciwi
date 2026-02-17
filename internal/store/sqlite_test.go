@@ -32,13 +32,6 @@ pipelines:
             env: CIWI_FETCHCONTENT_SOURCES_DIR
             key:
               prefix: fetchcontent-v1
-              files:
-                - CMakeLists.txt
-              runtime:
-                - os
-                - arch
-              tools:
-                - cmake
             restore_keys:
               - fetchcontent-v1
             policy: pull-push

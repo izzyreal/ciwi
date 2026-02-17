@@ -356,13 +356,12 @@ func TestResolveJobCacheEnvMissThenHit(t *testing.T) {
 				Env: "CACHE_DIR",
 				Key: protocol.JobCacheKey{
 					Prefix: "cache-v1",
-					Files:  []string{"CMakeLists.txt"},
 				},
 			},
 		},
 	}
 
-	env1, logs1 := resolveJobCacheEnv(workDir, execDir, job, nil)
+	env1, logs1 := resolveJobCacheEnv(workDir, execDir, job)
 	dir1 := env1["CACHE_DIR"]
 	if dir1 == "" {
 		t.Fatalf("expected CACHE_DIR to be set, logs=%v", logs1)
@@ -374,7 +373,7 @@ func TestResolveJobCacheEnvMissThenHit(t *testing.T) {
 		t.Fatalf("expected cache dir to exist: %v", err)
 	}
 
-	env2, logs2 := resolveJobCacheEnv(workDir, execDir, job, nil)
+	env2, logs2 := resolveJobCacheEnv(workDir, execDir, job)
 	dir2 := env2["CACHE_DIR"]
 	if dir2 != dir1 {
 		t.Fatalf("expected same cache dir on second resolve: %q vs %q", dir2, dir1)
@@ -401,12 +400,11 @@ func TestResolveJobCacheEnvUsesRestoreKey(t *testing.T) {
 				RestoreKeys: []string{"cache-v1"},
 				Key: protocol.JobCacheKey{
 					Prefix: "cache-v1",
-					Files:  []string{"CMakeLists.txt"},
 				},
 			},
 		},
 	}
-	env, logs := resolveJobCacheEnv(workDir, execDir, job, nil)
+	env, logs := resolveJobCacheEnv(workDir, execDir, job)
 	got := env["CACHE_DIR"]
 	if !samePath(got, restored) {
 		t.Fatalf("expected restore dir %q, got %q (logs=%v)", restored, got, logs)
@@ -424,65 +422,6 @@ func TestCacheEnvPathForGOOS(t *testing.T) {
 	linuxIn := "/var/lib/ciwi-agent/work/cache/fetchcontent/fetchcontent-v1-abc/mpc"
 	if got := cacheEnvPathForGOOS("linux", linuxIn); got != linuxIn {
 		t.Fatalf("unexpected linux cache env path: %q", got)
-	}
-}
-
-func TestCacheGitRefHashEnvName(t *testing.T) {
-	if got := cacheGitRefHashEnvName("mpc-core"); got != "CIWI_CACHE_GIT_REF_MPC_CORE_HASH" {
-		t.Fatalf("unexpected env name: %q", got)
-	}
-}
-
-func TestResolveCacheGitRefsLocalBareRepo(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skipf("git not available: %v", err)
-	}
-	root := t.TempDir()
-	remote := filepath.Join(root, "remote.git")
-	work := filepath.Join(root, "work")
-	run := func(dir string, args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v failed: %v output=%s", args, err, string(out))
-		}
-	}
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		t.Fatalf("mkdir work: %v", err)
-	}
-	run(root, "init", "--bare", remote)
-	run(work, "init", "-q")
-	run(work, "config", "user.name", "ciwi-test")
-	run(work, "config", "user.email", "ciwi-test@local")
-	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("one\n"), 0o644); err != nil {
-		t.Fatalf("write README: %v", err)
-	}
-	run(work, "add", "README.md")
-	run(work, "commit", "-m", "init")
-	run(work, "remote", "add", "origin", remote)
-	run(work, "branch", "-M", "main")
-	run(work, "push", "-u", "origin", "main")
-	headOut, err := exec.Command("git", "-C", work, "rev-parse", "HEAD").CombinedOutput()
-	if err != nil {
-		t.Fatalf("git rev-parse failed: %v output=%s", err, string(headOut))
-	}
-	head := strings.TrimSpace(string(headOut))
-
-	resolved, err := resolveCacheGitRefs([]protocol.JobCacheKeyGitRef{{
-		Name:       "mpc",
-		Repository: remote,
-		Ref:        "main",
-	}})
-	if err != nil {
-		t.Fatalf("resolveCacheGitRefs failed: %v", err)
-	}
-	if len(resolved) != 1 {
-		t.Fatalf("expected one ref, got %d", len(resolved))
-	}
-	if resolved[0].Hash != head {
-		t.Fatalf("expected hash %q, got %q", head, resolved[0].Hash)
 	}
 }
 

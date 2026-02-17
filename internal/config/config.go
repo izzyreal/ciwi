@@ -82,18 +82,7 @@ type PipelineJobCacheSpec struct {
 }
 
 type PipelineJobCacheKeySpec struct {
-	Prefix  string                          `yaml:"prefix,omitempty" json:"prefix,omitempty"`
-	Files   []string                        `yaml:"files,omitempty" json:"files,omitempty"`
-	Runtime []string                        `yaml:"runtime,omitempty" json:"runtime,omitempty"`
-	Tools   []string                        `yaml:"tools,omitempty" json:"tools,omitempty"`
-	Env     []string                        `yaml:"env,omitempty" json:"env,omitempty"`
-	GitRefs []PipelineJobCacheKeyGitRefSpec `yaml:"git_refs,omitempty" json:"git_refs,omitempty"`
-}
-
-type PipelineJobCacheKeyGitRefSpec struct {
-	Name       string `yaml:"name" json:"name"`
-	Repository string `yaml:"repository" json:"repository"`
-	Ref        string `yaml:"ref" json:"ref"`
+	Prefix string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
 }
 
 type PipelineJobRequirements struct {
@@ -293,54 +282,6 @@ func (cfg File) Validate() []string {
 				}
 				if c.MaxSizeMB < 0 {
 					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].max_size_mb must be >= 0", i, j, cIdx))
-				}
-				for k, pattern := range c.Key.Files {
-					pathSpec := strings.TrimSpace(pattern)
-					if pathSpec == "" {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.files[%d] must not be empty", i, j, cIdx, k))
-						continue
-					}
-					if hasUnsafePath(pathSpec) {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.files[%d] must be a relative in-repo path/glob", i, j, cIdx, k))
-					}
-				}
-				for k, token := range c.Key.Runtime {
-					switch strings.TrimSpace(token) {
-					case "os", "arch":
-					default:
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.runtime[%d] must be one of os,arch", i, j, cIdx, k))
-					}
-				}
-				for k, tool := range c.Key.Tools {
-					if strings.TrimSpace(tool) == "" || strings.ContainsAny(tool, " \t\n\r") {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.tools[%d] invalid tool name", i, j, cIdx, k))
-					}
-				}
-				for k, envName := range c.Key.Env {
-					if strings.TrimSpace(envName) == "" || strings.ContainsAny(envName, " \t\n\r=") {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.env[%d] invalid env var name", i, j, cIdx, k))
-					}
-				}
-				gitRefNames := map[string]struct{}{}
-				for k, gitRef := range c.Key.GitRefs {
-					name := strings.TrimSpace(gitRef.Name)
-					if name == "" {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.git_refs[%d].name is required", i, j, cIdx, k))
-					} else {
-						if strings.ContainsAny(name, " \t\n\r") {
-							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.git_refs[%d].name invalid %q", i, j, cIdx, k, name))
-						}
-						if _, exists := gitRefNames[name]; exists {
-							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.git_refs[%d].name duplicate %q", i, j, cIdx, k, name))
-						}
-						gitRefNames[name] = struct{}{}
-					}
-					if strings.TrimSpace(gitRef.Repository) == "" {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.git_refs[%d].repository is required", i, j, cIdx, k))
-					}
-					if strings.TrimSpace(gitRef.Ref) == "" {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].caches[%d].key.git_refs[%d].ref is required", i, j, cIdx, k))
-					}
 				}
 				for k, restore := range c.RestoreKeys {
 					if strings.TrimSpace(restore) == "" {
