@@ -171,18 +171,18 @@ Stored icon is served at `/api/v1/projects/{projectId}/icon` and shown in projec
 
 For macOS build/signing workflows, run ciwi agent as a **LaunchAgent** (user session), not a LaunchDaemon.
 
-One-line install (no options, tries auto-discovery first, prompts if needed):
+Install with GitHub API token (recommended to avoid rate limits):
 
 ```bash
+export CIWI_GITHUB_TOKEN="<your-token>"
 curl -fsSL -o /tmp/install_ciwi_agent_macos.sh \
   https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_macos.sh && \
 sh /tmp/install_ciwi_agent_macos.sh
 ```
 
-Install with GitHub API token (recommended to avoid rate limits):
+One-line install (no options, tries auto-discovery first, prompts if needed):
 
 ```bash
-export CIWI_GITHUB_TOKEN="<your-token>"
 curl -fsSL -o /tmp/install_ciwi_agent_macos.sh \
   https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_macos.sh && \
 sh /tmp/install_ciwi_agent_macos.sh
@@ -253,19 +253,19 @@ Uninstaller behavior:
 
 Run from an elevated PowerShell session (Run as Administrator).
 
-One-line install (no options):
+Install with GitHub API token (recommended to avoid rate limits):
 
 ```powershell
+$env:CIWI_GITHUB_TOKEN = "<your-token>"
 $script = Join-Path $env:TEMP ("install_ciwi_agent_windows_" + [Guid]::NewGuid().ToString("N") + ".ps1")
 $uri = "https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_windows.ps1?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
 Invoke-WebRequest -Uri $uri -OutFile $script
 powershell -NoProfile -ExecutionPolicy Bypass -File $script
 ```
 
-Install with GitHub API token (recommended to avoid rate limits):
+One-line install (no options):
 
 ```powershell
-$env:CIWI_GITHUB_TOKEN = "<your-token>"
 $script = Join-Path $env:TEMP ("install_ciwi_agent_windows_" + [Guid]::NewGuid().ToString("N") + ".ps1")
 $uri = "https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_windows.ps1?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
 Invoke-WebRequest -Uri $uri -OutFile $script
@@ -364,18 +364,18 @@ curl -s http://127.0.0.1:8112/healthz
 
 ## Linux agent installer (systemd)
 
-One-line install (no options):
+Install with GitHub API token (recommended to avoid rate limits):
 
 ```bash
+export CIWI_GITHUB_TOKEN="<your-token>"
 curl -fsSL -o /tmp/install_ciwi_agent_linux.sh \
   https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_linux.sh && \
 sh /tmp/install_ciwi_agent_linux.sh
 ```
 
-Install with GitHub API token (recommended to avoid rate limits):
+One-line install (no options):
 
 ```bash
-export CIWI_GITHUB_TOKEN="<your-token>"
 curl -fsSL -o /tmp/install_ciwi_agent_linux.sh \
   https://raw.githubusercontent.com/izzyreal/ciwi/main/install_agent_linux.sh && \
 sh /tmp/install_ciwi_agent_linux.sh
