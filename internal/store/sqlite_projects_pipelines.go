@@ -10,17 +10,25 @@ import (
 )
 
 func upsertProject(tx *sql.Tx, name, configPath, repoURL, repoRef, configFile, now string) (int64, error) {
-	if _, err := tx.Exec(`
-		INSERT INTO projects (name, config_path, repo_url, repo_ref, config_file, created_utc, updated_utc)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(name) DO UPDATE SET
-			config_path=excluded.config_path,
-			repo_url=excluded.repo_url,
-			repo_ref=excluded.repo_ref,
-			config_file=excluded.config_file,
-			updated_utc=excluded.updated_utc
-	`, name, configPath, repoURL, repoRef, configFile, now, now); err != nil {
-		return 0, fmt.Errorf("upsert project: %w", err)
+	res, err := tx.Exec(`
+		UPDATE projects
+		SET config_path = ?, repo_url = ?, repo_ref = ?, config_file = ?, updated_utc = ?
+		WHERE name = ?
+	`, configPath, repoURL, repoRef, configFile, now, name)
+	if err != nil {
+		return 0, fmt.Errorf("update project: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("project rows affected: %w", err)
+	}
+	if rows == 0 {
+		if _, err := tx.Exec(`
+			INSERT INTO projects (name, config_path, repo_url, repo_ref, config_file, created_utc, updated_utc)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, name, configPath, repoURL, repoRef, configFile, now, now); err != nil {
+			return 0, fmt.Errorf("insert project: %w", err)
+		}
 	}
 
 	var id int64

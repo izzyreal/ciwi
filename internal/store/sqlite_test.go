@@ -157,6 +157,63 @@ func TestStoreLoadConfigAndProjectDetail(t *testing.T) {
 	}
 }
 
+func TestStoreLoadConfigReloadDoesNotAdvanceProjectIDSequence(t *testing.T) {
+	s := openTestStore(t)
+	ciwiCfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: unit
+        timeout_seconds: 30
+        steps:
+          - run: go test ./...
+`), "ciwi-project.yaml")
+	if err != nil {
+		t.Fatalf("parse ciwi config: %v", err)
+	}
+	for i := 0; i < 8; i++ {
+		if err := s.LoadConfig(ciwiCfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+			t.Fatalf("load ciwi config (iteration %d): %v", i, err)
+		}
+	}
+	ciwiProject, err := s.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get ciwi project: %v", err)
+	}
+	if ciwiProject.ID != 1 {
+		t.Fatalf("expected ciwi project id=1, got %d", ciwiProject.ID)
+	}
+
+	fooCfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: foo
+pipelines:
+  - id: build
+    jobs:
+      - id: unit
+        timeout_seconds: 30
+        steps:
+          - run: echo foo
+`), "foo-project.yaml")
+	if err != nil {
+		t.Fatalf("parse foo config: %v", err)
+	}
+	if err := s.LoadConfig(fooCfg, "foo-project.yaml", "https://github.com/example/foo.git", "main", "foo-project.yaml"); err != nil {
+		t.Fatalf("load foo config: %v", err)
+	}
+	fooProject, err := s.GetProjectByName("foo")
+	if err != nil {
+		t.Fatalf("get foo project: %v", err)
+	}
+	if fooProject.ID != 2 {
+		t.Fatalf("expected foo project id=2 after ciwi reloads, got %d", fooProject.ID)
+	}
+}
+
 func TestStorePersistsPipelineJobNeeds(t *testing.T) {
 	s := openTestStore(t)
 	cfg, err := config.Parse([]byte(`
