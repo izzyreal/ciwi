@@ -45,6 +45,11 @@ Prefer the [automated installation scripts](#automated-installation-scripts), bu
 - `CIWI_SERVER_URL`: agent target base URL (default `http://127.0.0.1:8112`)
 - `CIWI_AGENT_ID`: override agent ID (default `agent-<hostname>`)
 - `CIWI_AGENT_WORKDIR`: local working directory for job execution (default `.ciwi-agent/work`)
+  - Workspace layout:
+    - `workspaces/<project_id>_<project_name>_<pipeline_job_id>[_<matrix_name_or_idx-N>]_env-<fingerprint>`
+    - non-matrix jobs omit the matrix segment
+    - environment fingerprint is derived from required capabilities (`os`, `arch`, `shell`, `executor`)
+  - Agent cache path remains `cache/` under this workdir.
 - `CIWI_AGENT_ENV_FILE`: Windows-only env file auto-loaded by agent startup (default `%ProgramData%\\ciwi-agent\\agent.env`)
 - `CIWI_AGENT_TRACE_SHELL`: enable shell command tracing (`set -x` for `posix`, `@echo on` for `cmd`, `Set-PSDebug -Trace 1` for `powershell`) (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)

@@ -548,7 +548,6 @@ func TestExecuteLeasedJobRunsPipelineStepsInSeparateShellProcesses(t *testing.T)
 	workDir := t.TempDir()
 	otherDir := t.TempDir()
 	jobID := "job-steps"
-	execDir := filepath.Join(workDir, jobID)
 
 	client := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -579,7 +578,12 @@ func TestExecuteLeasedJobRunsPipelineStepsInSeparateShellProcesses(t *testing.T)
 		RequiredCapabilities: map[string]string{
 			"shell": shellPosix,
 		},
+		Metadata: map[string]string{
+			"project_id":      "1",
+			"pipeline_job_id": "job-steps",
+		},
 	}
+	execDir := workspaceDirForJob(workDir, job)
 	if err := executeLeasedJob(context.Background(), client, "http://example.local", "agent-1", workDir, nil, job); err != nil {
 		t.Fatalf("executeLeasedJob: %v", err)
 	}

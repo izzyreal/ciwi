@@ -89,7 +89,8 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 		if len(pj.Steps) == 0 {
 			return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q has no steps", pj.ID)
 		}
-		matrixEntries := pj.MatrixInclude
+		originalMatrixEntries := pj.MatrixInclude
+		matrixEntries := originalMatrixEntries
 		if len(matrixEntries) == 0 {
 			matrixEntries = []map[string]string{{}}
 		}
@@ -186,6 +187,9 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 				"pipeline_run_id":    runID,
 				"pipeline_job_id":    pj.ID,
 				"pipeline_job_index": strconv.Itoa(index),
+			}
+			if len(originalMatrixEntries) > 0 {
+				metadata["matrix_index"] = strconv.Itoa(index)
 			}
 			if selection != nil && selection.DryRun {
 				metadata["dry_run"] = "1"

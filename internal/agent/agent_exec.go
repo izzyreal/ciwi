@@ -41,11 +41,11 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		return fmt.Errorf("report running status: %w", err)
 	}
 
-	jobDir := filepath.Join(workDir, job.ID)
-	if err := os.RemoveAll(jobDir); err != nil {
+	workspaceDir := workspaceDirForJob(workDir, job)
+	if err := os.RemoveAll(workspaceDir); err != nil {
 		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("prepare workdir: %v", err), "")
 	}
-	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
 		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("create workdir: %v", err), "")
 	}
 
@@ -64,9 +64,10 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	stopControlMonitor := monitorServerTerminalJobState(runCtx, client, serverURL, agentID, job.ID, &output, cancelRun)
 	defer stopControlMonitor()
 
-	execDir := jobDir
+	fmt.Fprintf(&output, "[meta] workspace=%s\n", workspaceDir)
+	execDir := workspaceDir
 	if job.Source != nil && strings.TrimSpace(job.Source.Repo) != "" {
-		sourceDir := filepath.Join(jobDir, "src")
+		sourceDir := filepath.Join(workspaceDir, "src")
 		checkoutStart := time.Now()
 		fmt.Fprintf(&output, "[checkout] repo=%s ref=%s\n", job.Source.Repo, job.Source.Ref)
 		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
