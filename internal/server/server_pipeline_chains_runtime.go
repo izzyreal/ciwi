@@ -10,6 +10,11 @@ import (
 )
 
 func (s *stateStore) onJobExecutionUpdated(job protocol.JobExecution) {
+	s.onJobExecutionUpdatedChain(job)
+	s.onJobExecutionUpdatedNeeds(job)
+}
+
+func (s *stateStore) onJobExecutionUpdatedChain(job protocol.JobExecution) {
 	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
 	if chainRunID == "" {
 		return
@@ -116,6 +121,133 @@ func (s *stateStore) onJobExecutionUpdated(job protocol.JobExecution) {
 	}
 }
 
+func (s *stateStore) onJobExecutionUpdatedNeeds(job protocol.JobExecution) {
+	runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
+	projectName := strings.TrimSpace(job.Metadata["project"])
+	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	pipelineJobID := strings.TrimSpace(job.Metadata["pipeline_job_id"])
+	if runID == "" || projectName == "" || pipelineID == "" || pipelineJobID == "" {
+		return
+	}
+	status := protocol.NormalizeJobExecutionStatus(job.Status)
+	if !protocol.IsTerminalJobExecutionStatus(status) {
+		return
+	}
+	all, err := s.pipelineStore().ListJobExecutions()
+	if err != nil {
+		return
+	}
+	inRun := make([]protocol.JobExecution, 0)
+	for _, candidate := range all {
+		if strings.TrimSpace(candidate.Metadata["pipeline_run_id"]) != runID {
+			continue
+		}
+		if strings.TrimSpace(candidate.Metadata["project"]) != projectName {
+			continue
+		}
+		if strings.TrimSpace(candidate.Metadata["pipeline_id"]) != pipelineID {
+			continue
+		}
+		inRun = append(inRun, candidate)
+	}
+	if len(inRun) == 0 {
+		return
+	}
+
+	upstreamGroup := make([]protocol.JobExecution, 0)
+	for _, candidate := range inRun {
+		if strings.TrimSpace(candidate.Metadata["pipeline_job_id"]) != pipelineJobID {
+			continue
+		}
+		upstreamGroup = append(upstreamGroup, candidate)
+	}
+	if len(upstreamGroup) == 0 {
+		return
+	}
+	for _, current := range upstreamGroup {
+		if !protocol.IsTerminalJobExecutionStatus(protocol.NormalizeJobExecutionStatus(current.Status)) {
+			return
+		}
+	}
+
+	upstreamSucceeded := true
+	for _, current := range upstreamGroup {
+		if protocol.NormalizeJobExecutionStatus(current.Status) != protocol.JobExecutionStatusSucceeded {
+			upstreamSucceeded = false
+			break
+		}
+	}
+	if !upstreamSucceeded {
+		reason := "cancelled: required job " + pipelineJobID + " failed"
+		for _, candidate := range inRun {
+			if protocol.NormalizeJobExecutionStatus(candidate.Status) != protocol.JobExecutionStatusQueued {
+				continue
+			}
+			if strings.TrimSpace(candidate.Metadata["needs_blocked"]) != "1" {
+				continue
+			}
+			needs := parseNeedsJobIDs(candidate.Metadata["needs_job_ids"])
+			if !needsContains(needs, pipelineJobID) {
+				continue
+			}
+			_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
+				"needs_blocked": "",
+			})
+			_, _ = s.pipelineStore().UpdateJobExecutionStatus(candidate.ID, protocol.JobExecutionStatusUpdateRequest{
+				AgentID:      "server-needs",
+				Status:       protocol.JobExecutionStatusFailed,
+				Error:        reason,
+				Output:       "[needs] " + reason,
+				TimestampUTC: time.Now().UTC(),
+			})
+		}
+		return
+	}
+
+	// Unblock queued jobs only when all their required pipeline jobs are fully successful.
+	for _, candidate := range inRun {
+		if protocol.NormalizeJobExecutionStatus(candidate.Status) != protocol.JobExecutionStatusQueued {
+			continue
+		}
+		if strings.TrimSpace(candidate.Metadata["needs_blocked"]) != "1" {
+			continue
+		}
+		needs := parseNeedsJobIDs(candidate.Metadata["needs_job_ids"])
+		if len(needs) == 0 || !needsContains(needs, pipelineJobID) {
+			continue
+		}
+		ready := true
+		for _, need := range needs {
+			needGroup := make([]protocol.JobExecution, 0)
+			for _, possible := range inRun {
+				if strings.TrimSpace(possible.Metadata["pipeline_job_id"]) != need {
+					continue
+				}
+				needGroup = append(needGroup, possible)
+			}
+			if len(needGroup) == 0 {
+				ready = false
+				break
+			}
+			for _, dep := range needGroup {
+				if protocol.NormalizeJobExecutionStatus(dep.Status) != protocol.JobExecutionStatusSucceeded {
+					ready = false
+					break
+				}
+			}
+			if !ready {
+				break
+			}
+		}
+		if !ready {
+			continue
+		}
+		_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
+			"needs_blocked": "",
+		})
+	}
+}
+
 func (s *stateStore) bindQueuedChainJobDependencyArtifacts(job protocol.JobExecution, all []protocol.JobExecution) error {
 	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
 	projectName := strings.TrimSpace(job.Metadata["project"])
@@ -210,4 +342,39 @@ func (s *stateStore) bindQueuedChainJobDependencyArtifacts(job protocol.JobExecu
 		return fmt.Errorf("persist dependency artifact env: %w", err)
 	}
 	return nil
+}
+
+func parseNeedsJobIDs(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
+func needsContains(needs []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, need := range needs {
+		if strings.TrimSpace(need) == target {
+			return true
+		}
+	}
+	return false
 }

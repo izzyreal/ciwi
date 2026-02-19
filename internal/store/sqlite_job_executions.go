@@ -109,6 +109,9 @@ func (s *Store) LeaseJobExecution(agentID string, agentCaps map[string]string) (
 		if strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" {
 			continue
 		}
+		if strings.TrimSpace(job.Metadata["needs_blocked"]) == "1" {
+			continue
+		}
 		if !capabilitiesMatch(agentCaps, job.RequiredCapabilities) {
 			continue
 		}

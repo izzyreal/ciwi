@@ -157,6 +157,50 @@ func TestStoreLoadConfigAndProjectDetail(t *testing.T) {
 	}
 }
 
+func TestStorePersistsPipelineJobNeeds(t *testing.T) {
+	s := openTestStore(t)
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: smoke
+        timeout_seconds: 30
+        steps:
+          - run: echo smoke
+      - id: package
+        needs:
+          - smoke
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+`), "needs-config")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if err := s.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	projects, err := s.ListProjects()
+	if err != nil {
+		t.Fatalf("list projects: %v", err)
+	}
+	detail, err := s.GetProjectDetail(projects[0].ID)
+	if err != nil {
+		t.Fatalf("get project detail: %v", err)
+	}
+	if len(detail.Pipelines) != 1 || len(detail.Pipelines[0].Jobs) != 2 {
+		t.Fatalf("unexpected pipeline job count: %+v", detail.Pipelines)
+	}
+	if got := detail.Pipelines[0].Jobs[1].Needs; len(got) != 1 || got[0] != "smoke" {
+		t.Fatalf("unexpected needs for package job: %+v", got)
+	}
+}
+
 func TestStoreLoadConfigAppliesProjectVaultSettings(t *testing.T) {
 	s := openTestStore(t)
 

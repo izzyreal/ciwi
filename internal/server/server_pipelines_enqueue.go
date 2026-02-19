@@ -50,6 +50,8 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 	jobIDs := make([]string, 0)
 	runID := fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
 	type pendingJob struct {
+		pipelineJobID  string
+		needs          []string
 		script         string
 		env            map[string]string
 		requiredCaps   map[string]string
@@ -62,10 +64,28 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 		stepPlan       []protocol.JobStepPlanItem
 	}
 	pending := make([]pendingJob, 0)
-	for _, pj := range p.SortedJobs() {
+	sortedJobs := p.SortedJobs()
+	selectedJobIDs := map[string]bool{}
+	for _, pj := range sortedJobs {
 		if selection != nil && strings.TrimSpace(selection.PipelineJobID) != "" && selection.PipelineJobID != pj.ID {
 			continue
 		}
+		selectedJobIDs[pj.ID] = true
+	}
+	for _, pj := range sortedJobs {
+		if selection != nil && strings.TrimSpace(selection.PipelineJobID) != "" && selection.PipelineJobID != pj.ID {
+			continue
+		}
+		for _, need := range pj.Needs {
+			need = strings.TrimSpace(need)
+			if need == "" {
+				continue
+			}
+			if !selectedJobIDs[need] {
+				return protocol.RunPipelineResponse{}, fmt.Errorf("selection excludes required job %q needed by %q", need, pj.ID)
+			}
+		}
+		needs := normalizePipelineJobNeeds(pj.Needs)
 		if len(pj.Steps) == 0 {
 			return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline job %q has no steps", pj.ID)
 		}
@@ -194,6 +214,10 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			if opts.blocked {
 				metadata["chain_blocked"] = "1"
 			}
+			if len(needs) > 0 {
+				metadata["needs_job_ids"] = strings.Join(needs, ",")
+				metadata["needs_blocked"] = "1"
+			}
 			if selection != nil && selection.DryRun {
 				env["CIWI_DRY_RUN"] = "1"
 			}
@@ -252,6 +276,8 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 				sourceRef = runCtx.SourceRefResolved
 			}
 			pending = append(pending, pendingJob{
+				pipelineJobID:  pj.ID,
+				needs:          append([]string(nil), needs...),
 				script:         strings.Join(rendered, "\n"),
 				env:            cloneMap(env),
 				requiredCaps:   requiredCaps,
@@ -315,6 +341,26 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 	}
 
 	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobExecutionIDs: jobIDs}, nil
+}
+
+func normalizePipelineJobNeeds(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(in))
+	for _, need := range in {
+		need = strings.TrimSpace(need)
+		if need == "" {
+			continue
+		}
+		if _, exists := seen[need]; exists {
+			continue
+		}
+		seen[need] = struct{}{}
+		out = append(out, need)
+	}
+	return out
 }
 
 func cloneProtocolJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
