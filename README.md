@@ -402,6 +402,20 @@ Installer behavior:
   - `CIWI_AGENT_WORKDIR`
   - `CIWI_GITHUB_TOKEN` (if provided during install)
 
+If your jobs need Docker and/or host audio device access, add `ciwi-agent` to the relevant groups:
+
+```bash
+sudo usermod -aG docker ciwi-agent
+sudo usermod -aG audio ciwi-agent
+sudo systemctl restart ciwi-agent
+```
+
+Verify:
+
+```bash
+id ciwi-agent; getent group docker; getent group audio
+```
+
 Default paths:
 - Binary: `/usr/local/bin/ciwi`
 - Env file: `/etc/default/ciwi-agent`
