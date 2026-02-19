@@ -237,6 +237,9 @@ func runLoop(ctx context.Context) error {
 }
 
 func selfUpdateWritabilityWarning() string {
+	if reason := selfUpdateServiceModeReason(); reason != "" {
+		return reason
+	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return "cannot resolve executable path: " + err.Error()

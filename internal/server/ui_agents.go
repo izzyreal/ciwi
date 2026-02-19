@@ -12,21 +12,6 @@ const agentsHTML = `<!doctype html>
     .row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
     th, td { border-bottom:1px solid var(--line); text-align:left; padding:8px 6px; vertical-align:top; overflow-wrap:anywhere; word-break:break-word; }
-    .logbox {
-      margin: 0;
-      white-space: pre-wrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 11px;
-      line-height: 1.35;
-      max-height: 120px;
-      overflow: auto;
-      user-select: text;
-      cursor: text;
-      background: #f7fcf9;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 6px;
-    }
     .ok { color:var(--ok); font-weight:600; }
     .stale { color:#a56a00; font-weight:600; }
     .offline { color:var(--bad); font-weight:600; }
@@ -42,6 +27,31 @@ const agentsHTML = `<!doctype html>
     }
     .badge-warn { background:#fff6e6; color:#8a5a00; }
     .badge-error { background:#ffeded; color:#8f1f1f; }
+    .heartbeat-cell { text-align:left; min-width:108px; }
+    .heartbeat-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      width: 100%;
+    }
+    .heartbeat-icon {
+      display:block;
+      font-size:21px;
+      line-height:1;
+      color:#b84b53;
+      opacity:.18;
+      will-change: opacity;
+    }
+    .heartbeat-icon.pulse {
+      animation: heartbeat-fade 10s linear forwards;
+    }
+    @keyframes heartbeat-fade {
+      0% { opacity: 1; }
+      100% { opacity: .18; }
+    }
+    .heartbeat-age { display:block; margin-top:4px; color:var(--muted); font-size:12px; white-space:nowrap; }
+    .run-mode { white-space:nowrap; }
   </style>
 </head>
 <body>
@@ -63,7 +73,7 @@ const agentsHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>Agent ID</th><th>Host</th><th>Platform</th><th>Version</th><th>Last Seen</th><th>Health</th><th>Capabilities</th><th>Actions</th><th>Recent Log</th></tr>
+          <tr><th>Agent ID</th><th>Host</th><th>Platform</th><th>Version</th><th>Heartbeat</th><th>Health</th><th>Run mode</th><th>Actions</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
@@ -73,6 +83,8 @@ const agentsHTML = `<!doctype html>
   <script>
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
+    const lastSeenByAgent = {};
+    const heartbeatBeatAtByAgent = {};
 
     function formatUpdatePrimaryText(a) {
       if (!a || !a.update_requested) return '';
@@ -109,7 +121,7 @@ const agentsHTML = `<!doctype html>
         const agents = data.agents || [];
         rows.innerHTML = '';
         if (agents.length === 0) {
-          rows.innerHTML = '<tr><td colspan="9" class="muted">No agents have sent heartbeats yet.</td></tr>';
+          rows.innerHTML = '<tr><td colspan="8" class="muted">No agents have sent heartbeats yet.</td></tr>';
           summary.textContent = '0 agents';
           return;
         }
@@ -130,16 +142,35 @@ const agentsHTML = `<!doctype html>
           const versionCell = escapeHtml(a.version || '') +
             primaryUpdateText +
             retryText;
+          const agentID = String(a.agent_id || '');
+          const lastSeen = String(a.last_seen_utc || '');
+          const prevLastSeen = String(lastSeenByAgent[agentID] || '');
+          if (lastSeen && lastSeen !== prevLastSeen) {
+            heartbeatBeatAtByAgent[agentID] = Date.now();
+          }
+          lastSeenByAgent[agentID] = lastSeen;
+          const beatAt = Number(heartbeatBeatAtByAgent[agentID] || 0);
+          const elapsed = Math.max(0, Date.now() - beatAt);
+          const pulseClass = beatAt > 0 ? 'pulse' : '';
+          let pulseStyle = '';
+          if (pulseClass) {
+            if (elapsed < 10000) {
+              pulseStyle = ' style="animation-delay:-' + String(elapsed) + 'ms;"';
+            } else {
+              pulseStyle = ' style="opacity:.18;"';
+            }
+          }
+          const runModeRaw = String((a.capabilities && a.capabilities.run_mode) || '').trim().toLowerCase();
+          const runModeLabel = runModeRaw === 'service' ? 'Service' : 'Manual';
           tr.innerHTML =
             '<td><a href="/agents/' + encodeURIComponent(a.agent_id || '') + '">' + escapeHtml(a.agent_id || '') + '</a></td>' +
             '<td>' + escapeHtml(a.hostname || '') + '</td>' +
             '<td>' + escapeHtml((a.os || '') + '/' + (a.arch || '')) + '</td>' +
             '<td>' + versionCell + '</td>' +
-            '<td>' + escapeHtml(formatTimestamp(a.last_seen_utc)) + '</td>' +
+            '<td class="heartbeat-cell"><div class="heartbeat-wrap"><span class="heartbeat-icon ' + pulseClass + '"' + pulseStyle + ' role="img" aria-label="heartbeat">❤️</span><span class="heartbeat-age">' + escapeHtml(humanizeHeartbeat(lastSeen)) + '</span></div></td>' +
             '<td class="' + s.cls + '">' + s.label + '</td>' +
-            '<td>' + escapeHtml(formatCapabilities(a.capabilities || {})) + '</td>' +
-            '<td>' + updateBtn + ' ' + refreshBtn + '</td>' +
-            '<td><div class="logbox">' + escapeHtml((a.recent_log || []).join('\n')) + '</div></td>';
+            '<td class="run-mode">' + runModeLabel + '</td>' +
+            '<td>' + updateBtn + ' ' + refreshBtn + '</td>';
           rows.appendChild(tr);
         }
         rows.querySelectorAll('button[data-action="update"], button[data-action="refresh-tools"]').forEach(btn => {
@@ -163,11 +194,28 @@ const agentsHTML = `<!doctype html>
         const online = agents.filter(a => statusForLastSeen(a.last_seen_utc || '').label === 'online').length;
         summary.textContent = online + '/' + agents.length + ' online';
       } catch (e) {
-        rows.innerHTML = '<tr><td colspan="9" class="offline">Could not load agents</td></tr>';
+        rows.innerHTML = '<tr><td colspan="8" class="offline">Could not load agents</td></tr>';
         summary.textContent = 'Failed to load agents';
       } finally {
         refreshInFlight = false;
       }
+    }
+
+    function humanizeHeartbeat(ts) {
+      const t = String(ts || '').trim();
+      if (!t) return 'never';
+      const d = new Date(t);
+      if (Number.isNaN(d.getTime())) return formatTimestamp(t);
+      const diffMs = Date.now() - d.getTime();
+      if (diffMs < 0) return 'just now';
+      const sec = Math.floor(diffMs / 1000);
+      if (sec < 60) return sec + 's ago';
+      const min = Math.floor(sec / 60);
+      if (min < 60) return min + 'm ago';
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return hr + 'h ago';
+      const day = Math.floor(hr / 24);
+      return day + 'd ago';
     }
     document.getElementById('refreshBtn').onclick = refreshAgents;
     refreshGuard.bindSelectionListener();

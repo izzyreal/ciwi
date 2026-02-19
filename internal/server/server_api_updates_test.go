@@ -131,6 +131,38 @@ func TestServerUpdateStatusEndpoint(t *testing.T) {
 	if payload.Status["update_available"] != "1" {
 		t.Fatalf("unexpected update_available: %q", payload.Status["update_available"])
 	}
+	if payload.Status["update_server_self_update_supported"] == "" {
+		t.Fatalf("expected update_server_self_update_supported to be present")
+	}
+	if payload.Status["update_server_mode"] == "" {
+		t.Fatalf("expected update_server_mode to be present")
+	}
+}
+
+func TestServerUpdateStatusIncludesNonServiceAgentFailures(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	s.mu.Lock()
+	s.agents["agent-a"] = agentState{
+		UpdateLastError: agentNonServiceUpdateErrorMarker + ": install using automated scripts",
+	}
+	s.agents["agent-b"] = agentState{
+		UpdateLastError: "download failed",
+	}
+	s.mu.Unlock()
+
+	statusResp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/update/status", nil)
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("update status status=%d body=%s", statusResp.StatusCode, readBody(t, statusResp))
+	}
+	var payload struct {
+		Status map[string]string `json:"status"`
+	}
+	decodeJSONBody(t, statusResp, &payload)
+	if payload.Status["update_agent_non_service_agents"] != "agent-a" {
+		t.Fatalf("unexpected update_agent_non_service_agents: %q", payload.Status["update_agent_non_service_agents"])
+	}
 }
 
 func TestServerUpdateTagsEndpoint(t *testing.T) {

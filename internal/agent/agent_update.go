@@ -53,6 +53,9 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 	if targetVersion == "" || !isVersionDifferent(targetVersion, currentVersion()) {
 		return nil
 	}
+	if reason := selfUpdateServiceModeReason(); reason != "" {
+		return fmt.Errorf("%s", reason)
+	}
 
 	apiBase = strings.TrimRight(strings.TrimSpace(apiBase), "/")
 	if apiBase == "" {

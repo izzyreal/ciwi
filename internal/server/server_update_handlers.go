@@ -314,6 +314,13 @@ func (s *stateStore) updateStatusHandler(w http.ResponseWriter, r *http.Request)
 	}
 	// Always expose live runtime version; persisted status can be stale across restarts.
 	state["update_current_version"] = currentVersion()
+	capability := detectServerUpdateCapability()
+	state["update_server_mode"] = capability.Mode
+	state["update_server_self_update_supported"] = boolString(capability.Supported)
+	state["update_server_self_update_reason"] = capability.Reason
+	state["update_agent_target_version"] = strings.TrimSpace(s.getAgentUpdateTarget())
+	blockedAgents := s.listAgentsBlockedOnNonServiceSelfUpdate()
+	state["update_agent_non_service_agents"] = strings.Join(blockedAgents, ",")
 	writeJSON(w, http.StatusOK, updateStatusResponse{Status: state})
 }
 

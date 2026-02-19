@@ -27,6 +27,17 @@ const agentHTML = `<!doctype html>
     .grid { display:grid; grid-template-columns:180px minmax(0,1fr); gap:6px 10px; font-size:13px; }
     .label { color:var(--muted); font-weight:600; }
     .value { overflow-wrap:anywhere; word-break:break-word; }
+    .cap-code {
+      display: inline-block;
+      margin: 0 6px 6px 0;
+      padding: 1px 6px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f7fcf9;
+      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-size: 12px;
+      line-height: 1.4;
+    }
     .logbox {
       margin:0;
       white-space:pre-wrap;
@@ -228,6 +239,14 @@ const agentHTML = `<!doctype html>
 
     function metaRow(k, v) {
       return '<div class="label">' + escapeHtml(k) + '</div><div class="value">' + v + '</div>';
+    }
+
+    function formatCapabilitiesInlineCode(caps) {
+      if (!caps) return '<span class="muted">none</span>';
+      const entries = Object.entries(caps);
+      if (entries.length === 0) return '<span class="muted">none</span>';
+      entries.sort((a, b) => String(a[0] || '').localeCompare(String(b[0] || '')));
+      return entries.map(([k, v]) => '<code class="cap-code">' + escapeHtml(String(k) + '=' + String(v)) + '</code>').join('');
     }
 
     function parseAgentShells(caps) {
@@ -502,8 +521,8 @@ const agentHTML = `<!doctype html>
           metaRow('Platform', escapeHtml((a.os || '') + '/' + (a.arch || ''))) +
           metaRow('Version', escapeHtml(a.version || '')) +
           metaRow('Last Seen', escapeHtml(formatTimestamp(a.last_seen_utc || ''))) +
-          metaRow('Capabilities', escapeHtml(formatCapabilities(a.capabilities || {}))) +
-          metaRow('Update', updateState || '<span class="muted">none</span>');
+          metaRow('Capabilities', formatCapabilitiesInlineCode(a.capabilities || {})) +
+          metaRow('Update status', updateState || '<span class="muted">No pending update</span>');
         document.getElementById('meta').innerHTML = metaHTML;
         document.getElementById('logBox').textContent = (a.recent_log || []).join('\n');
         renderAgentJobHistory(agentHistoryJobs, historyLoadError);

@@ -71,6 +71,7 @@ const settingsHTML = `<!doctype html>
           <button id="applyUpdateBtn" class="secondary">Update now</button>
           <span id="updateResult" style="color:#5f6f67;"></span>
         </div>
+        <div id="updateCapabilityNotice" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
         <p style="margin-top:8px;">
           Agents automatically update following a server update. Each agent first finishes already queued/running jobs before applying the new agent version.
         </p>
@@ -84,6 +85,7 @@ const settingsHTML = `<!doctype html>
           <button id="rollbackUpdateBtn" class="secondary">Rollback</button>
           <span id="rollbackResult" style="color:#5f6f67;"></span>
         </div>
+        <div id="rollbackCapabilityNotice" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
         <div id="rollbackHint" style="margin-top:8px;color:#5f6f67;font-size:12px;">
           Shows only versions lower than the current server version.
         </div>
@@ -104,6 +106,7 @@ const settingsHTML = `<!doctype html>
     const projectReloadState = new Map();
     let updateRestartWatchActive = false;
     let rollbackTagsLoadedAt = 0;
+    const shownAgentUpdateWarningKeys = new Set();
     // DEBUG(apply-update-confirm): temporary client-side diagnostics for flaky confirm/update flow.
     // Remove this block after investigation is complete.
     let applyUpdateClickSeq = 0;
@@ -262,6 +265,16 @@ const settingsHTML = `<!doctype html>
     async function refreshRollbackTags(force) {
       const select = document.getElementById('rollbackTagSelect');
       if (!select) return;
+      const rollbackBtn = document.getElementById('rollbackUpdateBtn');
+      if (rollbackBtn && rollbackBtn.disabled) {
+        if (!select.options.length) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'Rollback disabled';
+          select.appendChild(opt);
+        }
+        return;
+      }
       const now = Date.now();
       if (!force && rollbackTagsLoadedAt > 0 && (now - rollbackTagsLoadedAt) < 60000 && select.options.length > 0) {
         return;
@@ -502,10 +515,18 @@ const settingsHTML = `<!doctype html>
 
     async function refreshUpdateStatus() {
       const box = document.getElementById('updateStatus');
+      const checkBtn = document.getElementById('checkUpdatesBtn');
       const applyBtn = document.getElementById('applyUpdateBtn');
+      const rollbackBtn = document.getElementById('rollbackUpdateBtn');
+      const rollbackRefreshBtn = document.getElementById('refreshRollbackTagsBtn');
+      const rollbackSelect = document.getElementById('rollbackTagSelect');
+      const updateCapabilityNotice = document.getElementById('updateCapabilityNotice');
+      const rollbackCapabilityNotice = document.getElementById('rollbackCapabilityNotice');
       try {
         const r = await apiJSON('/api/v1/update/status');
         const s = r.status || {};
+        const serverUpdateSupported = String(s.update_server_self_update_supported || '').trim() === '1';
+        const serverMode = String(s.update_server_mode || '').trim();
         const current = (s.update_current_version || '').trim();
         const latest = (s.update_latest_version || '').trim();
         let available = '';
@@ -523,12 +544,56 @@ const settingsHTML = `<!doctype html>
         if (s.update_last_apply_utc) parts.push('Apply time: ' + formatTimestamp(s.update_last_apply_utc));
         if (s.update_message) parts.push('Message: ' + s.update_message);
         box.textContent = parts.join(' | ');
+        if (updateCapabilityNotice) {
+          if (serverMode === 'dev') {
+            updateCapabilityNotice.textContent = 'Running in dev mode. Updates disabled.';
+          } else if (!serverUpdateSupported) {
+            updateCapabilityNotice.innerHTML = 'Server is not running as a service. Updates disabled. Install updates manually. See <a href="https://github.com/izzyreal/ciwi?tab=readme-ov-file#linux-server-installer-systemd" target="_blank" rel="noopener noreferrer">README</a>.';
+          } else {
+            updateCapabilityNotice.textContent = '';
+          }
+        }
+        if (rollbackCapabilityNotice) {
+          if (serverMode === 'dev') {
+            rollbackCapabilityNotice.textContent = 'Running in dev mode. Updates disabled.';
+          } else if (!serverUpdateSupported) {
+            rollbackCapabilityNotice.innerHTML = 'Server is not running as a service. Updates disabled. Install updates manually. See <a href="https://github.com/izzyreal/ciwi?tab=readme-ov-file#linux-server-installer-systemd" target="_blank" rel="noopener noreferrer">README</a>.';
+          } else {
+            rollbackCapabilityNotice.textContent = '';
+          }
+        }
+        if (checkBtn) checkBtn.disabled = !serverUpdateSupported;
         if (applyBtn) {
-          applyBtn.style.display = (available === '1') ? 'inline-block' : 'none';
+          applyBtn.style.display = (!serverUpdateSupported || available === '1') ? 'inline-block' : 'none';
+          applyBtn.disabled = !serverUpdateSupported || (available !== '1');
+        }
+        if (rollbackSelect) rollbackSelect.disabled = !serverUpdateSupported;
+        if (rollbackBtn) rollbackBtn.disabled = !serverUpdateSupported;
+        if (rollbackRefreshBtn) rollbackRefreshBtn.disabled = !serverUpdateSupported;
+
+        const blockedAgentsRaw = String(s.update_agent_non_service_agents || '').trim();
+        const targetVersion = String(s.update_agent_target_version || '').trim();
+        if (blockedAgentsRaw) {
+          blockedAgentsRaw.split(',').map(v => String(v || '').trim()).filter(Boolean).forEach(agentID => {
+            const key = agentID + '|' + targetVersion;
+            if (shownAgentUpdateWarningKeys.has(key)) return;
+            shownAgentUpdateWarningKeys.add(key);
+            showSnackbar({
+              messageHTML: 'Agent <code>' + escapeHtml(agentID) + '</code> is not running as a service. Agent self-updates are disabled on that host. Install or reinstall via the <a href="https://github.com/izzyreal/ciwi?tab=readme-ov-file#automated-installation-scripts" target="_blank" rel="noopener noreferrer">automated installation scripts</a>.',
+              timeoutMs: 12000,
+            });
+          });
         }
       } catch (e) {
         box.textContent = 'Update status unavailable';
-        if (applyBtn) applyBtn.style.display = 'none';
+        if (checkBtn) checkBtn.disabled = true;
+        if (applyBtn) {
+          applyBtn.style.display = 'inline-block';
+          applyBtn.disabled = true;
+        }
+        if (rollbackSelect) rollbackSelect.disabled = true;
+        if (rollbackBtn) rollbackBtn.disabled = true;
+        if (rollbackRefreshBtn) rollbackRefreshBtn.disabled = true;
       }
     }
 

@@ -16,11 +16,16 @@ var versionPattern = regexp.MustCompile(`([0-9]+(?:\.[0-9]+){1,3})`)
 
 func detectAgentCapabilities() map[string]string {
 	shells := supportedShellsForRuntime()
+	runMode := "service"
+	if selfUpdateServiceModeReason() != "" {
+		runMode = "manual"
+	}
 	caps := map[string]string{
 		"executor": executorScript,
 		"shells":   strings.Join(shells, ","),
 		"os":       runtime.GOOS,
 		"arch":     runtime.GOARCH,
+		"run_mode": runMode,
 	}
 	if hasXorgDev() {
 		caps["xorg-dev"] = "1"

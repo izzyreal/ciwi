@@ -486,6 +486,9 @@ sudo journalctl -u ciwi-agent -f
 Agent update policy:
 - Server-requested agent updates use **drain queue** behavior.
 - Each agent applies its pending update only after it finishes its current and already-queued eligible jobs; no immediate preemption mode is exposed in UI/API.
+- Server self-update/rollback controls are enabled only when ciwi is running under a supported service manager.
+- In dev mode (`go run` / `version=dev`) and standalone server mode, update/rollback controls stay visible but disabled, with guidance in Global Settings.
+- Agents not running as a service report self-update disabled failures, and Global Settings shows a snackbar with a link to the automated installer docs.
 
 ### Consumed by installer/provisioning scripts
 

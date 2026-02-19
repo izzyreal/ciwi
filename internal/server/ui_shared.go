@@ -265,13 +265,18 @@ function snackbarHost() {
 function showSnackbar(opts) {
   const options = opts || {};
   const message = String(options.message || '').trim();
-  if (!message) return;
+  const messageHTML = String(options.messageHTML || '').trim();
+  if (!message && !messageHTML) return;
   const host = snackbarHost();
   const item = document.createElement('div');
   item.className = 'ciwi-snackbar';
   const msg = document.createElement('div');
   msg.className = 'ciwi-snackbar-msg';
-  msg.textContent = message;
+  if (messageHTML) {
+    msg.innerHTML = messageHTML;
+  } else {
+    msg.textContent = message;
+  }
   item.appendChild(msg);
 
   const actions = document.createElement('div');
