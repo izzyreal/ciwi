@@ -70,6 +70,12 @@ func detectToolVersions() map[string]string {
 		{name: "gcc", cmd: "gcc", args: []string{"--version"}},
 		{name: "clang", cmd: "clang", args: []string{"--version"}},
 		{name: "xcodebuild", cmd: "xcodebuild", args: []string{"-version"}},
+		{name: "iscc", cmd: "iscc", args: []string{"/?"}},
+		{name: "signtool", cmd: "signtool", args: []string{"/?"}},
+		{name: "codesign", cmd: "codesign", args: []string{"--version"}},
+		{name: "productsign", cmd: "productsign", args: []string{"--version"}},
+		{name: "packagesbuild", cmd: "packagesbuild", args: []string{"--version"}},
+		{name: "packagesutil", cmd: "packagesutil", args: []string{"--version"}},
 	}
 	out := map[string]string{}
 	for _, t := range tools {
@@ -77,10 +83,39 @@ func detectToolVersions() map[string]string {
 			out[t.name] = v
 		}
 	}
+	if v := detectXCRUNToolVersion("notarytool"); v != "" {
+		out["notarytool"] = v
+	}
+	if v := detectXCRUNToolVersion("stapler"); v != "" {
+		out["stapler"] = v
+	}
+	if fileExists("/usr/libexec/PlistBuddy") {
+		out["plistbuddy"] = "1"
+	}
 	if v := detectMSVCVersion(); v != "" {
 		out["msvc"] = v
 	}
 	return out
+}
+
+func detectXCRUNToolVersion(tool string) string {
+	tool = strings.TrimSpace(tool)
+	if tool == "" || runtime.GOOS != "darwin" {
+		return ""
+	}
+	if _, err := exec.LookPath("xcrun"); err != nil {
+		return ""
+	}
+	if v := detectToolVersion("xcrun", tool, "--version"); v != "" {
+		return v
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "xcrun", "--find", tool).CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return ""
+	}
+	return "1"
 }
 
 func detectToolVersion(cmd string, args ...string) string {
