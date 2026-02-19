@@ -296,11 +296,13 @@ choose_server_url() {
   count="$(printf '%s\n' "$discovered" | sed '/^$/d' | wc -l | tr -d ' ')"
 
   if [ "$count" -eq 1 ]; then
+    SERVER_URL_SOURCE="auto-discovery (single match)"
     printf '%s\n' "$discovered" | sed -n '1p'
     return
   fi
 
   if [ "$count" -gt 1 ]; then
+    SERVER_URL_SOURCE="auto-discovery (user selected)"
     echo "Multiple ciwi servers discovered:" >&2
     i=0
     printf '%s\n' "$discovered" | while IFS= read -r url; do
@@ -328,6 +330,7 @@ choose_server_url() {
     echo "server URL is required" >&2
     exit 1
   fi
+  SERVER_URL_SOURCE="manual entry (no server auto-discovered)"
   entered="$(canonicalize_url "$entered")"
   printf '%s\n' "$(prefer_hostname_url "$entered")"
 }
@@ -371,6 +374,7 @@ MANIFEST_PATH="$UPDATES_DIR/pending.json"
 NEWSYSLOG_FILE="/etc/newsyslog.d/ciwi-$(id -un).conf"
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname)"
 AGENT_ID="agent-${HOST_NAME}"
+SERVER_URL_SOURCE=""
 SERVER_URL="$(choose_server_url)"
 INSTALL_GITHUB_TOKEN="$(trim_single_line "${CIWI_GITHUB_TOKEN:-}")"
 TOKEN_SOURCE="none"
@@ -470,6 +474,7 @@ else
 fi
 
 echo "[4/6] Writing LaunchAgent plists..."
+echo "[info] Configuring CIWI_SERVER_URL=${SERVER_URL} (source: ${SERVER_URL_SOURCE})"
 cat >"$PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -596,7 +601,7 @@ echo "Updater:     ${UPDATER_LABEL}"
 echo "Binary:      ${INSTALL_DIR}/ciwi"
 echo "Plist:       ${PLIST_PATH}"
 echo "Updater plist: ${UPDATER_PLIST_PATH}"
-echo "Server URL:  ${SERVER_URL}"
+echo "Server URL:  ${SERVER_URL} (${SERVER_URL_SOURCE})"
 echo "Agent ID:    ${AGENT_ID}"
 echo "Workdir:     ${WORKDIR}"
 case "$TOKEN_SOURCE" in

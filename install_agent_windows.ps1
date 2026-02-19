@@ -400,15 +400,19 @@ $logsDir = Join-Path $dataRoot 'logs'
 $envFile = Join-Path $dataRoot 'agent.env'
 
 $serverUrl = Trim-OneLine $env:CIWI_SERVER_URL
+$serverUrlSource = 'CIWI_SERVER_URL environment variable'
 if ([string]::IsNullOrWhiteSpace($serverUrl)) {
   $serverUrl = Trim-OneLine (Read-EnvFileValue -Path $envFile -Key 'CIWI_SERVER_URL')
+  $serverUrlSource = 'existing agent env file'
 }
 if ([string]::IsNullOrWhiteSpace($serverUrl)) {
   Write-Host '[info] CIWI_SERVER_URL not set; auto-discovering ciwi server(s)...'
   $serverUrl = Choose-ServerUrl
+  $serverUrlSource = 'auto-discovery / interactive selection'
 } else {
   $serverUrl = Canonicalize-Url $serverUrl
 }
+Write-Host ("[info] Configuring CIWI_SERVER_URL={0} (source: {1})" -f $serverUrl, $serverUrlSource)
 $agentId = Trim-OneLine $env:CIWI_AGENT_ID
 if ([string]::IsNullOrWhiteSpace($agentId)) {
   $agentId = "agent-$($env:COMPUTERNAME)"
@@ -484,6 +488,7 @@ try {
   Write-Host "Service:      $serviceName"
   Write-Host "Binary:       $binaryPath"
   Write-Host "Config:       $envFile"
+  Write-Host "Server URL:   $serverUrl ($serverUrlSource)"
   Write-Host "Workdir:      $workDir"
   Write-Host "Logs dir:     $logsDir"
   Write-Host ''

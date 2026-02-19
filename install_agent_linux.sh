@@ -80,6 +80,10 @@ UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 LOGROTATE_FILE="/etc/logrotate.d/ciwi-agent"
 
 SERVER_URL="${CIWI_SERVER_URL:-http://127.0.0.1:8112}"
+SERVER_URL_SOURCE="default (http://127.0.0.1:8112)"
+if [ -n "${CIWI_SERVER_URL:-}" ]; then
+  SERVER_URL_SOURCE="CIWI_SERVER_URL environment variable"
+fi
 AGENT_ID="${CIWI_AGENT_ID:-agent-$(hostname -s)}"
 
 ARCH_RAW="$(uname -m)"
@@ -148,6 +152,7 @@ sudo mkdir -p "${DATA_DIR}" "${WORK_DIR}" "${LOG_DIR}"
 sudo chown -R "${USER_NAME}:${USER_NAME}" "${DATA_DIR}" "${LOG_DIR}"
 
 echo "[5/6] Writing config and systemd unit..."
+echo "[info] Configuring CIWI_SERVER_URL=${SERVER_URL} (source: ${SERVER_URL_SOURCE})"
 if [ ! -f "${ENV_FILE}" ]; then
   sudo tee "${ENV_FILE}" >/dev/null <<EOF
 CIWI_SERVER_URL=${SERVER_URL}
