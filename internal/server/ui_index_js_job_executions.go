@@ -228,7 +228,12 @@ const uiIndexJobExecutionsJS = `
       card.className = 'ciwi-job-group-card';
       const head = document.createElement('div');
       head.className = 'ciwi-job-group-head';
-      head.innerHTML = '<span class="ciwi-job-group-main"><span class="ciwi-job-group-emoji" aria-hidden="true">' + status.emoji +
+      const iconURLFn = (opts && typeof opts.projectIconURL === 'function') ? opts.projectIconURL : null;
+      const iconURL = iconURLFn ? String(iconURLFn(job) || '').trim() : '';
+      const iconHTML = iconURL
+        ? '<img class="ciwi-job-group-side-icon" src="' + escapeHtml(iconURL) + '" alt="" onerror="this.style.display=&quot;none&quot;" />'
+        : '';
+      head.innerHTML = '<span class="ciwi-job-group-main">' + iconHTML + '<span class="ciwi-job-group-emoji" aria-hidden="true">' + status.emoji +
         '</span><span class="ciwi-job-group-title">' + escapeHtml(groupTitle) +
         '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span>';
       card.appendChild(head);
@@ -236,10 +241,10 @@ const uiIndexJobExecutionsJS = `
       const table = document.createElement('table');
       table.className = 'ciwi-job-group-table';
       const body = document.createElement('tbody');
-      body.appendChild(buildJobExecutionRow(job, opts));
+      const rowOpts = { ...(opts || {}), projectIconURL: null };
+      body.appendChild(buildJobExecutionRow(job, rowOpts));
       table.appendChild(body);
       card.appendChild(table);
-
       td.appendChild(card);
       tr.appendChild(td);
       return tr;
@@ -300,8 +305,13 @@ const uiIndexJobExecutionsJS = `
       if (expandedJobGroups.has(groupKey)) {
         details.open = true;
       }
+      const iconURLFn = (opts && typeof opts.projectIconURL === 'function') ? opts.projectIconURL : null;
+      const iconURL = (iconURLFn && runJobs.length > 0) ? String(iconURLFn(runJobs[0]) || '').trim() : '';
+      const iconHTML = iconURL
+        ? '<img class="ciwi-job-group-side-icon" src="' + escapeHtml(iconURL) + '" alt="" onerror="this.style.display=&quot;none&quot;" />'
+        : '';
       const summary = document.createElement('summary');
-      summary.innerHTML = '<span class="ciwi-job-group-main"><span class="ciwi-job-group-emoji" aria-hidden="true">' + status.emoji +
+      summary.innerHTML = '<span class="ciwi-job-group-main">' + iconHTML + '<span class="ciwi-job-group-emoji" aria-hidden="true">' + status.emoji +
         '</span><span class="ciwi-job-group-title">' + escapeHtml(groupTitle) +
         '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span><span class="ciwi-job-group-toggle" aria-hidden="true"></span>';
       details.appendChild(summary);
@@ -309,8 +319,9 @@ const uiIndexJobExecutionsJS = `
       const innerTable = document.createElement('table');
       innerTable.className = 'ciwi-job-group-table';
       const innerBody = document.createElement('tbody');
+      const rowOpts = { ...(opts || {}), projectIconURL: null };
       runJobs.forEach(j => {
-        innerBody.appendChild(buildJobExecutionRow(j, opts));
+        innerBody.appendChild(buildJobExecutionRow(j, rowOpts));
       });
       innerTable.appendChild(innerBody);
       details.appendChild(innerTable);
@@ -322,7 +333,6 @@ const uiIndexJobExecutionsJS = `
         }
         saveStringSet(JOB_GROUPS_STORAGE_KEY, expandedJobGroups);
       });
-
       td.appendChild(details);
       tr.appendChild(td);
       return tr;

@@ -96,6 +96,8 @@ const uiIndexCSS = `
       border-radius: 10px;
       overflow: hidden;
       background: #fff;
+      width: 100%;
+      box-sizing: border-box;
     }
     .ciwi-job-group-details > summary {
       list-style: none;
@@ -133,6 +135,16 @@ const uiIndexCSS = `
     }
     .ciwi-job-group-emoji { font-size: 15px; line-height: 1; }
     .ciwi-job-group-status { font-size: 12px; white-space: nowrap; flex: 0 0 auto; }
+    .ciwi-job-group-side-icon {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      border: none;
+      flex: 0 0 auto;
+      background: transparent;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
     .ciwi-job-desc {
       display: inline-flex;
       align-items: center;
@@ -156,6 +168,8 @@ const uiIndexCSS = `
       border-radius: 10px;
       overflow: hidden;
       background: #fff;
+      width: 100%;
+      box-sizing: border-box;
     }
     .ciwi-job-group-head {
       display: flex;

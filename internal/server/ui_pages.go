@@ -114,9 +114,11 @@ function ensureJobSkeletonStyles() {
   style.id = '__ciwiJobSkeletonStyles';
   style.textContent = [
     '@keyframes ciwiSkeletonFade { 0% { opacity: .35; } 50% { opacity: .9; } 100% { opacity: .35; } }',
+    '.ciwi-job-two-line-row{--ciwi-row-text-block:2.5em;}',
     '.ciwi-job-two-line-row td{padding-top:6px;padding-bottom:6px;vertical-align:top;}',
     '.ciwi-job-cell-link{display:block;color:inherit;}',
-    '.ciwi-job-two-line-row .ciwi-job-cell{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25;min-height:2.5em;max-height:2.5em;}',
+    '.ciwi-job-two-line-row .ciwi-job-cell{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25;min-height:var(--ciwi-row-text-block);max-height:var(--ciwi-row-text-block);}',
+    '.ciwi-job-two-line-row .ciwi-project-mini-icon{width:var(--ciwi-row-text-block);height:var(--ciwi-row-text-block);}',
     '.ciwi-job-two-line-row .ciwi-job-cell-lines-2{-webkit-line-clamp:2;}',
     '.ciwi-job-two-line-row .ciwi-job-actions-cell{vertical-align:middle;}',
     '.ciwi-job-skeleton-row td{padding-top:6px;padding-bottom:6px;}',
