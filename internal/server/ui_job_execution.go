@@ -12,6 +12,19 @@ const jobExecutionHTML = `<!doctype html>
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
     .meta-grid { display:grid; grid-template-columns: 160px 1fr; gap:8px 12px; font-size:14px; }
     .label { color: var(--muted); }
+    .mode-value { display:inline-flex; align-items:center; gap:8px; }
+    .mode-info {
+      display: inline-block;
+      color: #28503f;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: help;
+    }
+    .mode-info > span {
+      display: block;
+      line-height: 1;
+    }
     .status-succeeded { color: var(--ok); font-weight: 700; }
     .status-failed { color: var(--bad); font-weight: 700; }
     .status-running { color: #a56a00; font-weight: 700; }
@@ -229,6 +242,17 @@ const jobExecutionHTML = `<!doctype html>
       if (!core) return '';
       if (duration.isRunningWithoutFinish) return core + ' (running)';
       return core;
+    }
+
+    function renderModeValue(dryRun) {
+      const label = dryRun ? 'Dry run' : 'Ordinary run';
+      return '' +
+        '<span class="mode-value">' +
+          '<span>' + label + '</span>' +
+          '<span class="mode-info" tabindex="0" aria-label="Run mode info" data-mode="' + (dryRun ? 'dry' : 'ordinary') + '">' +
+            '<span aria-hidden="true">ⓘ</span>' +
+          '</span>' +
+        '</span>';
     }
 
     function setBackLink() {
@@ -770,12 +794,14 @@ const jobExecutionHTML = `<!doctype html>
         await renderProjectIcon(projectID, projectName);
 
         const pipeline = String(metaSource.pipeline_id || '').trim();
+        const dryRun = String(metaSource.dry_run || '').trim() === '1';
         const buildVersion = buildVersionLabel(job);
         const rows = [
           { label: 'Job Execution ID', value: escapeHtml(job.id || '') },
           { label: 'Project', value: escapeHtml(projectName) },
           { label: 'Job ID', value: escapeHtml(pipelineJobID) },
           { label: 'Pipeline', value: escapeHtml(pipeline) },
+          { label: 'Mode', valueHTML: renderModeValue(dryRun) },
           { label: 'Build', value: escapeHtml(buildVersion) },
           { label: 'Agent', value: escapeHtml(job.leased_by_agent_id || '') },
           { label: 'Created', value: escapeHtml(formatTimestamp(job.created_utc)) },
@@ -785,9 +811,30 @@ const jobExecutionHTML = `<!doctype html>
         ];
 
         const meta = document.getElementById('metaGrid');
-        meta.innerHTML = rows.map(r =>
-          '<div class="label">' + r.label + '</div><div' + (r.valueId ? ' id="' + r.valueId + '"' : '') + '>' + r.value + '</div>'
-        ).join('');
+        const previousModeInfo = meta.querySelector('.mode-info');
+        const previousModeTooltip = previousModeInfo && previousModeInfo.__ciwiHoverTooltip;
+        const modeIconHovered = !!(previousModeInfo && previousModeInfo.matches(':hover'));
+        const modeTooltipVisible = !!(previousModeTooltip && typeof previousModeTooltip.isVisible === 'function' && previousModeTooltip.isVisible());
+        const modeTooltipHovered = !!document.querySelector('.ciwi-hover-tooltip[data-ciwi-tooltip-owner="mode-info"]:hover');
+        const holdMetaRefresh = modeIconHovered || modeTooltipVisible || modeTooltipHovered;
+        if (!holdMetaRefresh) {
+          meta.querySelectorAll('.mode-info').forEach(el => {
+            if (el.__ciwiHoverTooltip && typeof el.__ciwiHoverTooltip.destroy === 'function') {
+              el.__ciwiHoverTooltip.destroy();
+            }
+          });
+          meta.innerHTML = rows.map(r =>
+            '<div class="label">' + r.label + '</div><div' + (r.valueId ? ' id="' + r.valueId + '"' : '') + '>' + (r.valueHTML || r.value || '') + '</div>'
+          ).join('');
+          const modeInfo = meta.querySelector('.mode-info');
+          if (modeInfo) {
+            const mode = String(modeInfo.getAttribute('data-mode') || '').trim();
+            const tooltipHTML = mode === 'dry'
+              ? 'Dry run executes the job plan but skips steps marked <code>skip_dry_run</code>. This is useful to avoid pushing tags, commits, and artifacts to repositories. Ciwi does not automagically detect such writes, so make sure your ciwi YAML files use <code>skip_dry_run</code> where needed. See <a href="https://github.com/izzyreal/ciwi/blob/main/ciwi-project.yaml" target="_blank" rel="noopener">ciwi\'s own YAML</a> for example usage.'
+              : 'Ordinary run executes all configured steps, including side-effecting steps such as publish/release.';
+            createHoverTooltip(modeInfo, { html: tooltipHTML, lingerMs: 2000, owner: 'mode-info' });
+          }
+        }
 
         const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
         lastOutputRaw = output;
