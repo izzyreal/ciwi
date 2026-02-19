@@ -21,9 +21,19 @@ const projectHTML = `<!doctype html>
     .status-running { color: #a56a00; font-weight: 600; }
     .status-queued, .status-leased { color: var(--muted); }
     .pipeline { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+    .pipeline-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
+    .pipeline-meta { display:flex; flex-direction:column; gap:4px; min-width: 0; }
+    .pipeline-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+    .pipeline-body { margin-top: 8px; }
+    .pipeline.collapsed .pipeline-body { display:none; }
     .jobbox { margin: 8px 0 0 8px; padding: 8px; border-left: 2px solid var(--line); }
-    .matrix-list { display:flex; flex-wrap:wrap; gap:6px; margin-top: 6px; }
-    .matrix-item { border:1px solid var(--line); border-radius:8px; padding:6px; background:#fbfefd; }
+    .job-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
+    .job-desc { display:flex; flex-direction:column; gap:4px; min-width:0; }
+    .job-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+    .matrix-list { display:flex; flex-direction:column; gap:6px; margin-top: 6px; }
+    .matrix-item { border:1px solid var(--line); border-radius:8px; padding:6px; background:#fbfefd; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
+    .matrix-info { min-width: 0; }
+    .matrix-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
     .project-header-icon {
       width: 100px;
       height: 100px;
@@ -119,16 +129,21 @@ const projectHTML = `<!doctype html>
         const container = document.createElement('div');
         container.className = 'pipeline';
         const head = document.createElement('div');
-        head.className = 'row';
+        head.className = 'pipeline-head';
         const deps = (pl.depends_on || []).join(', ');
         const versioning = pl.versioning || {};
         const vparts = [];
         if (versioning.file) vparts.push('file=' + versioning.file);
         if (versioning.tag_prefix) vparts.push('tag_prefix=' + versioning.tag_prefix);
         if (versioning.auto_bump) vparts.push('auto_bump=' + versioning.auto_bump);
-        head.innerHTML = '<strong>Pipeline: <code>' + escapeHtml(pl.pipeline_id) + '</code></strong>' +
+        const headMeta = document.createElement('div');
+        headMeta.className = 'pipeline-meta';
+        headMeta.innerHTML = '<strong>Pipeline: <code>' + escapeHtml(pl.pipeline_id) + '</code></strong>' +
           (deps ? ('<span class="muted">depends_on: ' + escapeHtml(deps) + '</span>') : '') +
           (vparts.length > 0 ? ('<span class="muted">versioning: ' + escapeHtml(vparts.join(', ')) + '</span>') : '');
+        head.appendChild(headMeta);
+        const headControls = document.createElement('div');
+        headControls.className = 'pipeline-controls';
         const runAll = document.createElement('button');
         runAll.textContent = 'Run Pipeline';
         runAll.className = 'secondary';
@@ -163,85 +178,105 @@ const projectHTML = `<!doctype html>
         resolveBtn.textContent = 'Resolve Upcoming Build Version';
         resolveBtn.className = 'secondary';
         resolveBtn.onclick = () => openVersionResolveModal(pl.id, pl.pipeline_id);
-        head.appendChild(runAll);
+        const toggleBtn = document.createElement('button');
+        toggleBtn.textContent = 'Collapse';
+        toggleBtn.className = 'secondary';
+        toggleBtn.onclick = () => {
+          const collapsed = container.classList.toggle('collapsed');
+          toggleBtn.textContent = collapsed ? 'Expand' : 'Collapse';
+        };
+        headControls.appendChild(runAll);
         if (pipelineSupportsDryRun) {
-          head.appendChild(dryAll);
+          headControls.appendChild(dryAll);
         }
-        head.appendChild(resolveBtn);
+        headControls.appendChild(resolveBtn);
+        headControls.appendChild(toggleBtn);
+        head.appendChild(headControls);
         container.appendChild(head);
+        const pipelineBody = document.createElement('div');
+        pipelineBody.className = 'pipeline-body';
 
         (pl.jobs || []).forEach(j => {
           const jobSupportsDryRun = (j.steps || []).some(step => !!step.skip_dry_run);
           const jb = document.createElement('div');
           jb.className = 'jobbox';
+          const jobHead = document.createElement('div');
+          jobHead.className = 'job-head';
+          const jobDesc = document.createElement('div');
+          jobDesc.className = 'job-desc';
+          const jobActions = document.createElement('div');
+          jobActions.className = 'job-actions';
           const runsOn = Object.entries(j.runs_on || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
           const requiresTools = Object.entries(j.requires_tools || {}).map(kv => kv[0] + '=' + (kv[1] || '*')).join(', ');
           const requiresCaps = Object.entries(j.requires_capabilities || {}).map(kv => kv[0] + '=' + (kv[1] || '*')).join(', ');
-          jb.innerHTML =
+          jobDesc.innerHTML =
             '<div><strong>Job: ' + escapeHtml(j.id || '') + '</strong> <span class="muted">timeout=' + (j.timeout_seconds || 0) + 's</span></div>' +
             '<div class="muted">runs_on: ' + escapeHtml(runsOn) + '</div>' +
             '<div class="muted">requires.tools: ' + escapeHtml(requiresTools) + '</div>' +
             '<div class="muted">requires.capabilities: ' + escapeHtml(requiresCaps) + '</div>';
+          jobHead.appendChild(jobDesc);
+          jobHead.appendChild(jobActions);
+          jb.appendChild(jobHead);
 
-          const matrixList = document.createElement('div');
-          matrixList.className = 'matrix-list';
-          const includes = (j.matrix_includes && j.matrix_includes.length > 0) ? j.matrix_includes : [{ index: 0, name: '', vars: {} }];
-          includes.forEach(mi => {
-            const name = (mi.name || '').trim() || ('index-' + mi.index);
-            const item = document.createElement('div');
-            item.className = 'matrix-item';
-            const vars = Object.entries(mi.vars || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
-            item.innerHTML = '<div><code>' + escapeHtml(name) + '</code></div><div class="muted">' + escapeHtml(vars) + '</div>';
+          const hasMatrixIncludes = Array.isArray(j.matrix_includes) && j.matrix_includes.length > 0;
+          const createActionButton = (label, payload, successName, errorPrefix) => {
             const btn = document.createElement('button');
-            btn.textContent = 'Run';
+            btn.textContent = label;
             btn.className = 'secondary';
-            btn.style.marginTop = '6px';
             btn.onclick = async () => {
               btn.disabled = true;
               try {
                 const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
                   method: 'POST',
-                  body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index })
+                  body: JSON.stringify(payload)
                 });
-                const matrixName = (mi.name || '').trim() || (j.id || 'matrix');
-                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + matrixName + ' started');
+                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started');
                 await loadHistory();
               } catch (e) {
-                alert('Run selection failed: ' + e.message);
+                alert(errorPrefix + ': ' + e.message);
               } finally {
                 btn.disabled = false;
               }
             };
-            const dryBtn = document.createElement('button');
-            dryBtn.textContent = 'Dry Run';
-            dryBtn.className = 'secondary';
-            dryBtn.style.marginTop = '6px';
-            dryBtn.onclick = async () => {
-              dryBtn.disabled = true;
-              try {
-                const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
-                  method: 'POST',
-                  body: JSON.stringify({ pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true })
-                });
-                const matrixName = (mi.name || '').trim() || (j.id || 'matrix');
-                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + matrixName + ' started');
-                await loadHistory();
-              } catch (e) {
-                alert('Dry run selection failed: ' + e.message);
-              } finally {
-                dryBtn.disabled = false;
-              }
-            };
-            item.appendChild(btn);
-            if (jobSupportsDryRun) {
-              item.appendChild(dryBtn);
-            }
-            matrixList.appendChild(item);
-          });
-          jb.appendChild(matrixList);
-          container.appendChild(jb);
-        });
+            return btn;
+          };
 
+          if (hasMatrixIncludes) {
+            const matrixList = document.createElement('div');
+            matrixList.className = 'matrix-list';
+            const includes = j.matrix_includes;
+            includes.forEach(mi => {
+              const item = document.createElement('div');
+              item.className = 'matrix-item';
+              const name = (mi.name || '').trim() || ('index-' + mi.index);
+              const vars = Object.entries(mi.vars || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
+              const info = document.createElement('div');
+              info.className = 'matrix-info';
+              info.innerHTML = '<div><code>' + escapeHtml(name) + '</code></div><div class="muted">' + escapeHtml(vars) + '</div>';
+              const actions = document.createElement('div');
+              actions.className = 'matrix-actions';
+              const btn = createActionButton('Run', { pipeline_job_id: j.id, matrix_index: mi.index }, name, 'Run selection failed');
+              actions.appendChild(btn);
+              if (jobSupportsDryRun) {
+                const dryBtn = createActionButton('Dry Run', { pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true }, name, 'Dry run selection failed');
+                actions.appendChild(dryBtn);
+              }
+              item.appendChild(info);
+              item.appendChild(actions);
+              matrixList.appendChild(item);
+            });
+            jb.appendChild(matrixList);
+          } else {
+            const runBtn = createActionButton('Run Job', { pipeline_job_id: j.id }, (j.id || 'job'), 'Run selection failed');
+            jobActions.appendChild(runBtn);
+            if (jobSupportsDryRun) {
+              const dryBtn = createActionButton('Dry Run Job', { pipeline_job_id: j.id, dry_run: true }, (j.id || 'job'), 'Dry run selection failed');
+              jobActions.appendChild(dryBtn);
+            }
+          }
+          pipelineBody.appendChild(jb);
+        });
+        container.appendChild(pipelineBody);
         structure.appendChild(container);
       });
     }
