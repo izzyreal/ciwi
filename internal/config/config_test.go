@@ -218,6 +218,82 @@ pipelines:
 	}
 }
 
+func TestParseAcceptsJobNeeds(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: smoke
+        timeout_seconds: 30
+        steps:
+          - run: echo smoke
+      - id: package
+        needs:
+          - smoke
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+`), "test-job-needs")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if got := len(cfg.Pipelines[0].Jobs[1].Needs); got != 1 {
+		t.Fatalf("expected 1 need, got %d", got)
+	}
+	if cfg.Pipelines[0].Jobs[1].Needs[0] != "smoke" {
+		t.Fatalf("unexpected needs entry: %+v", cfg.Pipelines[0].Jobs[1].Needs)
+	}
+}
+
+func TestParseRejectsUnknownJobNeed(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: package
+        needs:
+          - smoke
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+`), "test-job-needs-unknown")
+	if err == nil || !strings.Contains(err.Error(), `references unknown job "smoke"`) {
+		t.Fatalf("expected unknown job need validation error, got: %v", err)
+	}
+}
+
+func TestParseRejectsCyclicJobNeeds(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: smoke
+        needs:
+          - package
+        timeout_seconds: 30
+        steps:
+          - run: echo smoke
+      - id: package
+        needs:
+          - smoke
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+`), "test-job-needs-cycle")
+	if err == nil || !strings.Contains(err.Error(), "cyclic needs graph") {
+		t.Fatalf("expected cyclic job needs validation error, got: %v", err)
+	}
+}
+
 func TestParseRejectsUnknownFields(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 1

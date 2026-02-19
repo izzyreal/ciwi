@@ -143,6 +143,7 @@ type MatrixInclude struct {
 
 type PipelineJobDetail struct {
 	ID                   string            `json:"id"`
+	Needs                []string          `json:"needs,omitempty"`
 	TimeoutSeconds       int               `json:"timeout_seconds"`
 	RunsOn               map[string]string `json:"runs_on,omitempty"`
 	RequiresTools        map[string]string `json:"requires_tools,omitempty"`

@@ -62,6 +62,7 @@ type Source struct {
 
 type PipelineJobSpec struct {
 	ID             string                  `yaml:"id" json:"id"`
+	Needs          []string                `yaml:"needs,omitempty" json:"needs,omitempty"`
 	RunsOn         map[string]string       `yaml:"runs_on" json:"runs_on"`
 	Requires       PipelineJobRequirements `yaml:"requires,omitempty" json:"requires,omitempty"`
 	TimeoutSeconds int                     `yaml:"timeout_seconds" json:"timeout_seconds"`
@@ -317,6 +318,33 @@ func (cfg File) Validate() []string {
 					}
 				}
 			}
+
+			for j, job := range p.Jobs {
+				seenNeeds := map[string]struct{}{}
+				for k, need := range job.Needs {
+					need = strings.TrimSpace(need)
+					if need == "" {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].needs[%d] must not be empty", i, j, k))
+						continue
+					}
+					if need == job.ID {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].needs[%d] must not reference itself", i, j, k))
+						continue
+					}
+					if _, ok := jobIDs[need]; !ok {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].needs[%d] references unknown job %q", i, j, k, need))
+						continue
+					}
+					if _, dup := seenNeeds[need]; dup {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].needs[%d] duplicate %q", i, j, k, need))
+						continue
+					}
+					seenNeeds[need] = struct{}{}
+				}
+			}
+			if hasPipelineJobNeedsCycle(p.Jobs) {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs contains cyclic needs graph", i))
+			}
 		}
 	}
 
@@ -377,6 +405,52 @@ func hasUnsafePath(v string) bool {
 	}
 	if strings.HasPrefix(v, "..") || strings.Contains(v, "../") || strings.Contains(v, `..\`) {
 		return true
+	}
+	return false
+}
+
+func hasPipelineJobNeedsCycle(jobs []PipelineJobSpec) bool {
+	edges := make(map[string][]string, len(jobs))
+	for _, job := range jobs {
+		if strings.TrimSpace(job.ID) == "" {
+			continue
+		}
+		for _, need := range job.Needs {
+			need = strings.TrimSpace(need)
+			if need == "" {
+				continue
+			}
+			edges[job.ID] = append(edges[job.ID], need)
+		}
+	}
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	var visit func(id string) bool
+	visit = func(id string) bool {
+		if visited[id] {
+			return false
+		}
+		if visiting[id] {
+			return true
+		}
+		visiting[id] = true
+		for _, dep := range edges[id] {
+			if visit(dep) {
+				return true
+			}
+		}
+		visiting[id] = false
+		visited[id] = true
+		return false
+	}
+	for _, job := range jobs {
+		id := strings.TrimSpace(job.ID)
+		if id == "" {
+			continue
+		}
+		if visit(id) {
+			return true
+		}
 	}
 	return false
 }
