@@ -81,6 +81,28 @@ const settingsHTML = `<!doctype html>
     const projectReloadState = new Map();
     let updateRestartWatchActive = false;
     let rollbackTagsLoadedAt = 0;
+    // DEBUG(apply-update-confirm): temporary client-side diagnostics for flaky confirm/update flow.
+    // Remove this block after investigation is complete.
+    let applyUpdateClickSeq = 0;
+    function logApplyUpdateDebug(phase, payload) {
+      const entry = {
+        ts: new Date().toISOString(),
+        phase: String(phase || ''),
+        payload: payload || {},
+      };
+      if (!window.__ciwiApplyUpdateDebugLog) {
+        window.__ciwiApplyUpdateDebugLog = [];
+      }
+      window.__ciwiApplyUpdateDebugLog.push(entry);
+      if (window.__ciwiApplyUpdateDebugLog.length > 200) {
+        window.__ciwiApplyUpdateDebugLog.shift();
+      }
+      try {
+        console.info('[ciwi][apply-update]', entry);
+      } catch (_) {
+      }
+    }
+    // END DEBUG(apply-update-confirm)
 
     function setProjectReloadState(projectId, text, color) {
       projectReloadState.set(String(projectId), { text, color });
@@ -293,17 +315,38 @@ const settingsHTML = `<!doctype html>
       result.textContent = 'Update request timed out; check update status and try again if needed.';
     }
 
-    document.getElementById('applyUpdateBtn').onclick = async () => {
+    document.getElementById('applyUpdateBtn').onclick = async (ev) => {
+      const clickId = (++applyUpdateClickSeq);
       const result = document.getElementById('updateResult');
-      if (!confirm('Apply update now and restart ciwi?')) return;
+      // DEBUG(apply-update-confirm)
+      logApplyUpdateDebug('click', {
+        click_id: clickId,
+        is_trusted: !!(ev && ev.isTrusted),
+        detail: Number((ev && ev.detail) || 0),
+      });
+      const confirmed = confirm('Apply update now and restart ciwi?');
+      logApplyUpdateDebug('confirm_result', { click_id: clickId, confirmed: !!confirmed });
+      if (!confirmed) return;
       result.textContent = 'Starting update...';
+      logApplyUpdateDebug('request_begin', { click_id: clickId, path: '/api/v1/update/apply' });
       try {
         const r = await postJSONWithTimeout('/api/v1/update/apply', '{}', 30000);
+        logApplyUpdateDebug('request_ok', {
+          click_id: clickId,
+          updated: !!(r && r.updated),
+          message: String((r && r.message) || ''),
+        });
         result.textContent = (r.message || 'Update started. Refresh in a moment.');
         if (r.updated) {
+          logApplyUpdateDebug('restart_watch_begin', { click_id: clickId });
           waitForServerRestartAndReload();
         }
       } catch (e) {
+        logApplyUpdateDebug('request_error', {
+          click_id: clickId,
+          name: String((e && e.name) || ''),
+          message: String((e && e.message) || ''),
+        });
         if (e && e.name === 'AbortError') {
           result.textContent = 'Update request timed out; checking status...';
           await monitorApplyProgressAfterTimeout();
@@ -312,6 +355,8 @@ const settingsHTML = `<!doctype html>
         }
       }
       await refreshUpdateStatus();
+      logApplyUpdateDebug('refresh_done', { click_id: clickId });
+      // END DEBUG(apply-update-confirm)
     };
 
     document.getElementById('restartServerBtn').onclick = async () => {
