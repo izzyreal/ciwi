@@ -51,7 +51,7 @@ const indexHTML = `<!doctype html>
       </div>
       <table>
         <thead>
-          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Reason</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Duration</th></tr>
         </thead>
         <tbody id="historyJobsBody"></tbody>
       </table>

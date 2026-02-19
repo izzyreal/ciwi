@@ -79,7 +79,7 @@ const projectHTML = `<!doctype html>
       <h2 style="margin:0 0 10px;">Execution History</h2>
       <table>
         <thead>
-          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Reason</th></tr>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Duration</th></tr>
         </thead>
         <tbody id="historyBody"></tbody>
       </table>
@@ -371,7 +371,7 @@ const projectHTML = `<!doctype html>
         rows.forEach(job => {
           const tr = buildJobExecutionRow(job, {
             includeActions: false,
-            includeReason: true,
+            includeDuration: true,
             backPath: window.location.pathname || '/'
           });
           body.appendChild(tr);

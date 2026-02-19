@@ -428,7 +428,7 @@ const uiIndexJobExecutionsJS = `
       };
       const historyOpts = {
         includeActions: false,
-        includeReason: true,
+        includeDuration: true,
         fixedLines: 2,
         backPath: window.location.pathname || '/',
         linkClass: 'job-link',

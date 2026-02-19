@@ -65,6 +65,24 @@ function formatDurationMs(ms) {
     : String(m).padStart(2, '0') + 'm ' + String(s).padStart(2, '0') + 's';
 }
 
+function formatJobExecutionDuration(startedUTC, finishedUTC, status) {
+  const startedRaw = String(startedUTC || '').trim();
+  if (!startedRaw) return '';
+  const started = new Date(startedRaw);
+  if (Number.isNaN(started.getTime())) return '';
+
+  const finishedRaw = String(finishedUTC || '').trim();
+  const finished = finishedRaw ? new Date(finishedRaw) : null;
+  const hasFinished = finished && !Number.isNaN(finished.getTime());
+  const running = isRunningJobStatus(status);
+  if (!hasFinished && !running) return '';
+
+  const endMs = hasFinished ? finished.getTime() : Date.now();
+  const duration = formatDurationMs(Math.max(0, endMs - started.getTime()));
+  if (!duration) return '';
+  return running && !hasFinished ? (duration + ' (running)') : duration;
+}
+
 function jobDescription(job) {
   const m = job.metadata || {};
   if (String(m.adhoc || '').trim() === '1') return 'Adhoc script';

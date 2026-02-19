@@ -21,6 +21,7 @@ const uiPagesJS = `function apiJSON(path, opts = {}) {
 function buildJobExecutionRow(job, opts = {}) {
   const includeActions = !!opts.includeActions;
   const includeReason = !!opts.includeReason;
+  const includeDuration = !!opts.includeDuration;
   const fixedLines = Math.max(0, Number(opts.fixedLines || 0));
   const backPath = opts.backPath || (window.location.pathname || '/');
   const onRemove = opts.onRemove || null;
@@ -56,6 +57,8 @@ function buildJobExecutionRow(job, opts = {}) {
   if (includeReason) {
     const reasons = (job.unmet_requirements || []);
     tr.innerHTML += '<td>' + cellText(reasons.join('; ')) + '</td>';
+  } else if (includeDuration) {
+    tr.innerHTML += '<td>' + cellText(formatJobExecutionDuration(job.started_utc, job.finished_utc, job.status)) + '</td>';
   }
 
   if (includeActions) {
@@ -94,6 +97,8 @@ function jobRowRenderKey(job) {
     job && job.status || '',
     job && job.leased_by_agent_id || '',
     job && job.created_utc || '',
+    job && job.started_utc || '',
+    job && job.finished_utc || '',
     m.pipeline_id || '',
     m.pipeline_job_id || '',
     m.matrix_name || '',
