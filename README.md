@@ -483,6 +483,10 @@ sudo journalctl -u ciwi-agent -f
 - `GET /api/v1/update/tags`
 - `GET /api/v1/update/status`
 
+Agent update policy:
+- Server-requested agent updates use **drain queue** behavior.
+- Each agent applies its pending update only after it finishes its current and already-queued eligible jobs; no immediate preemption mode is exposed in UI/API.
+
 ### Consumed by installer/provisioning scripts
 
 - `GET /healthz`

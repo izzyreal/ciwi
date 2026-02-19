@@ -24,6 +24,15 @@ const settingsHTML = `<!doctype html>
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
     a.job-link { color: var(--accent); }
+    .split-row { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    #restartServerBtn .nav-emoji {
+      display: inline-block;
+      transform: scale(1.5);
+      transform-origin: center;
+    }
+    @media (max-width: 980px) {
+      .split-row { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -38,6 +47,7 @@ const settingsHTML = `<!doctype html>
       <div class="row">
         <a class="nav-btn" href="/">Back to Main <span class="nav-emoji" aria-hidden="true">↩</span></a>
         <a class="nav-btn" href="/agents">Agents <span class="nav-emoji" aria-hidden="true">🖥️</span></a>
+        <a id="restartServerBtn" class="nav-btn" href="#" role="button">Restart Server <span class="nav-emoji" aria-hidden="true">⟳</span></a>
       </div>
     </div>
 
@@ -53,18 +63,31 @@ const settingsHTML = `<!doctype html>
       <div id="settingsProjects" style="margin-top:12px;"></div>
     </div>
 
-    <div class="card">
-      <h2>Server Updates</h2>
-      <div class="row">
-        <button id="checkUpdatesBtn" class="secondary">Check for updates</button>
-        <button id="applyUpdateBtn" class="secondary">Update now</button>
-        <button id="restartServerBtn" class="secondary">Restart server</button>
-        <select id="rollbackTagSelect" style="min-width:220px;"></select>
-        <button id="refreshRollbackTagsBtn" class="secondary">Refresh tags</button>
-        <button id="rollbackUpdateBtn" class="secondary">Rollback</button>
-        <span id="updateResult" style="color:#5f6f67;"></span>
+    <div class="split-row">
+      <div class="card">
+        <h2>Server Updates</h2>
+        <div class="row">
+          <button id="checkUpdatesBtn" class="secondary">Check for updates</button>
+          <button id="applyUpdateBtn" class="secondary">Update now</button>
+          <span id="updateResult" style="color:#5f6f67;"></span>
+        </div>
+        <p style="margin-top:8px;">
+          Agents automatically update following a server update. Each agent first finishes already queued/running jobs before applying the new agent version.
+        </p>
+        <div id="updateStatus" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
       </div>
-      <div id="updateStatus" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
+      <div class="card">
+        <h2>Rollback</h2>
+        <div class="row">
+          <select id="rollbackTagSelect" style="min-width:220px;"></select>
+          <button id="refreshRollbackTagsBtn" class="secondary">Refresh tags</button>
+          <button id="rollbackUpdateBtn" class="secondary">Rollback</button>
+          <span id="rollbackResult" style="color:#5f6f67;"></span>
+        </div>
+        <div id="rollbackHint" style="margin-top:8px;color:#5f6f67;font-size:12px;">
+          Shows only versions lower than the current server version.
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -106,6 +129,26 @@ const settingsHTML = `<!doctype html>
 
     function setProjectReloadState(projectId, text, color) {
       projectReloadState.set(String(projectId), { text, color });
+    }
+
+    function parseSemverParts(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return null;
+      const normalized = raw.startsWith('v') ? raw.slice(1) : raw;
+      const m = normalized.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+      if (!m) return null;
+      return [Number(m[1]), Number(m[2]), Number(m[3])];
+    }
+
+    function isStrictlyLowerVersion(candidate, current) {
+      const c = parseSemverParts(candidate);
+      const cur = parseSemverParts(current);
+      if (!c || !cur) return false;
+      for (let i = 0; i < 3; i += 1) {
+        if (c[i] < cur[i]) return true;
+        if (c[i] > cur[i]) return false;
+      }
+      return false;
     }
 
     async function refreshSettingsProjects() {
@@ -227,18 +270,20 @@ const settingsHTML = `<!doctype html>
       try {
         const r = await apiJSON('/api/v1/update/tags');
         const tags = Array.isArray(r.tags) ? r.tags : [];
+        const current = String(r.current_version || '').trim();
         select.innerHTML = '';
-        if (tags.length === 0) {
+        const filtered = tags
+          .map(tag => String(tag || '').trim())
+          .filter(v => v && v !== current && isStrictlyLowerVersion(v, current));
+        if (filtered.length === 0) {
           const opt = document.createElement('option');
           opt.value = '';
-          opt.textContent = 'No tags available';
+          opt.textContent = 'No lower versions available';
           select.appendChild(opt);
           rollbackTagsLoadedAt = now;
           return;
         }
-        tags.forEach(tag => {
-          const v = (tag || '').trim();
-          if (!v) return;
+        filtered.forEach(v => {
           const opt = document.createElement('option');
           opt.value = v;
           opt.textContent = v;
@@ -247,8 +292,6 @@ const settingsHTML = `<!doctype html>
         const hasPrev = prev && Array.from(select.options).some(o => o.value === prev);
         if (hasPrev) {
           select.value = prev;
-        } else if (r.current_version && Array.from(select.options).some(o => o.value === r.current_version)) {
-          select.value = r.current_version;
         } else if (select.options.length > 0) {
           select.selectedIndex = 0;
         }
@@ -359,7 +402,8 @@ const settingsHTML = `<!doctype html>
       // END DEBUG(apply-update-confirm)
     };
 
-    document.getElementById('restartServerBtn').onclick = async () => {
+    document.getElementById('restartServerBtn').onclick = async (ev) => {
+      if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
       const result = document.getElementById('updateResult');
       if (!confirm('Restart ciwi server now?')) return;
       result.textContent = 'Restart requested...';
@@ -382,7 +426,7 @@ const settingsHTML = `<!doctype html>
     };
 
     document.getElementById('rollbackUpdateBtn').onclick = async () => {
-      const result = document.getElementById('updateResult');
+      const result = document.getElementById('rollbackResult');
       const select = document.getElementById('rollbackTagSelect');
       const target = ((select && select.value) || '').trim();
       if (!target) {
@@ -458,6 +502,7 @@ const settingsHTML = `<!doctype html>
 
     async function refreshUpdateStatus() {
       const box = document.getElementById('updateStatus');
+      const applyBtn = document.getElementById('applyUpdateBtn');
       try {
         const r = await apiJSON('/api/v1/update/status');
         const s = r.status || {};
@@ -478,8 +523,12 @@ const settingsHTML = `<!doctype html>
         if (s.update_last_apply_utc) parts.push('Apply time: ' + formatTimestamp(s.update_last_apply_utc));
         if (s.update_message) parts.push('Message: ' + s.update_message);
         box.textContent = parts.join(' | ');
+        if (applyBtn) {
+          applyBtn.style.display = (available === '1') ? 'inline-block' : 'none';
+        }
       } catch (e) {
         box.textContent = 'Update status unavailable';
+        if (applyBtn) applyBtn.style.display = 'none';
       }
     }
 
