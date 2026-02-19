@@ -74,7 +74,7 @@ if (Test-Path -LiteralPath $binaryPath) {
 }
 if (Test-Path -LiteralPath $installDir) {
   $remaining = Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue
-  if ($null -eq $remaining -or $remaining.Count -eq 0) {
+  if (@($remaining).Count -eq 0) {
     Remove-Item -LiteralPath $installDir -Force -ErrorAction SilentlyContinue
   }
 }
