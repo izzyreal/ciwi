@@ -22,6 +22,7 @@ func (temporaryNetErr) Timeout() bool   { return false }
 func (temporaryNetErr) Temporary() bool { return true }
 
 func TestAgentUpdateHelpers(t *testing.T) {
+	t.Setenv("CIWI_GITHUB_TOKEN", "")
 	req, _ := http.NewRequest(http.MethodGet, "https://example.com", nil)
 	applyGitHubAuthHeader(nil)
 	applyGitHubAuthHeader(req)

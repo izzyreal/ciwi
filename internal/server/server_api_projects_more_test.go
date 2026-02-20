@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -142,39 +141,19 @@ func TestImportProjectHandlerValidationBranches(t *testing.T) {
 func TestDetectServerUpdateCapabilityModes(t *testing.T) {
 	oldVersion := version.Version
 	t.Cleanup(func() { version.Version = oldVersion })
+	version.Version = "v0.1.0"
 
-	version.Version = "dev"
-	devCap := detectServerUpdateCapability()
+	devCap := detectServerUpdateCapabilityWith(func() bool { return true }, func() bool { return false })
 	if devCap.Mode != "dev" || devCap.Supported {
 		t.Fatalf("unexpected dev capability: %+v", devCap)
 	}
 
-	version.Version = "v0.1.0"
-	if isServerRunningInDevMode() {
-		t.Skip("test binary runtime matches dev-mode heuristic; service/standalone branches are not reachable here")
-	}
-	switch runtime.GOOS {
-	case "linux":
-		t.Setenv("INVOCATION_ID", "abc")
-	case "darwin":
-		t.Setenv("LAUNCH_JOB_LABEL", "com.example.ciwi")
-	case "windows":
-		t.Setenv("CIWI_SERVER_WINDOWS_SERVICE_NAME", "ciwi")
-	}
-	serviceCap := detectServerUpdateCapability()
+	serviceCap := detectServerUpdateCapabilityWith(func() bool { return false }, func() bool { return true })
 	if serviceCap.Mode != "service" || !serviceCap.Supported {
 		t.Fatalf("unexpected service capability: %+v", serviceCap)
 	}
 
-	switch runtime.GOOS {
-	case "linux":
-		t.Setenv("INVOCATION_ID", "")
-	case "darwin":
-		t.Setenv("LAUNCH_JOB_LABEL", "")
-	case "windows":
-		t.Setenv("CIWI_SERVER_WINDOWS_SERVICE_NAME", "")
-	}
-	standaloneCap := detectServerUpdateCapability()
+	standaloneCap := detectServerUpdateCapabilityWith(func() bool { return false }, func() bool { return false })
 	if standaloneCap.Mode != "standalone" || standaloneCap.Supported {
 		t.Fatalf("unexpected standalone capability: %+v", standaloneCap)
 	}

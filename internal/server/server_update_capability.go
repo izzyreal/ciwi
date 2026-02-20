@@ -16,14 +16,18 @@ type serverUpdateCapability struct {
 }
 
 func detectServerUpdateCapability() serverUpdateCapability {
-	if isServerRunningInDevMode() {
+	return detectServerUpdateCapabilityWith(isServerRunningInDevMode, isServerRunningAsService)
+}
+
+func detectServerUpdateCapabilityWith(isDev func() bool, isService func() bool) serverUpdateCapability {
+	if isDev() {
 		return serverUpdateCapability{
 			Mode:      "dev",
 			Supported: false,
 			Reason:    "Running in dev mode. Updates disabled.",
 		}
 	}
-	if isServerRunningAsService() {
+	if isService() {
 		return serverUpdateCapability{
 			Mode:      "service",
 			Supported: true,
