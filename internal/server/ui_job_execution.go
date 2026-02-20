@@ -187,19 +187,12 @@ const jobExecutionHTML = `<!doctype html>
     .cache-stat-row { font-size:12px; color:#1f2a24; margin-top:2px; }
     .cache-stat-metrics { margin-top:6px; font-size:12px; color:#30463b; }
     .cache-stat-metrics code { font-size:11px; }
-    .runtime-card { display:none; }
-    .runtime-empty { color:#5f6f67; font-size:13px; }
-    .runtime-issues { margin-bottom:10px; padding:8px 10px; border:1px solid #e8cfcf; background:#fff5f5; border-radius:8px; color:#7a2f2f; font-size:13px; }
-    .runtime-ok { margin-bottom:10px; padding:8px 10px; border:1px solid #cfe8d8; background:#f3fbf6; border-radius:8px; color:#21553a; font-size:13px; }
-    .runtime-sections { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .runtime-section { border:1px solid #d9e7df; border-radius:8px; padding:8px 10px; background:#f8fcfa; }
-    .runtime-section h4 { margin:0 0 8px; font-size:13px; }
-    .runtime-list { font-size:12px; color:#1f2a24; max-height:220px; overflow:auto; }
-    .runtime-row { margin:2px 0; }
-    .runtime-probe-meta { margin-top:10px; font-size:12px; color:#41564b; }
+    .req-empty { color:#5f6f67; font-size:13px; }
+    .req-ok { padding:8px 10px; border:1px solid #cfe8d8; background:#f3fbf6; border-radius:8px; color:#21553a; font-size:13px; }
+    .req-issues { padding:8px 10px; border:1px solid #e8cfcf; background:#fff5f5; border-radius:8px; color:#7a2f2f; font-size:13px; }
+    .req-issues ul { margin:6px 0 0 18px; padding:0; }
     @media (max-width: 980px) {
       .detail-split { grid-template-columns: 1fr; }
-      .runtime-sections { grid-template-columns:1fr; }
     }
   </style>
 </head>
@@ -231,14 +224,17 @@ const jobExecutionHTML = `<!doctype html>
         <div class="meta-grid" id="metaGrid"></div>
       </div>
       <div class="card">
-        <h3 style="margin:0 0 10px;">Cache statistics</h3>
+        <h3 style="margin:0 0 10px;">Cache Statistics</h3>
         <div id="cacheStatsBox" class="cache-stats-empty">No cache statistics reported for this job.</div>
-        <div id="runtimeCapsBox" class="runtime-caps-empty">No runtime capability probe data reported for this job.</div>
       </div>
-    </div>
-    <div class="card runtime-card" id="runtimeCard">
-      <h3 style="margin:0 0 10px;">Runtime requirements</h3>
-      <div id="runtimeCapsBox" class="runtime-empty"></div>
+      <div class="card">
+        <h3 style="margin:0 0 10px;">Host Tool Requirements</h3>
+        <div id="hostToolReqBox" class="req-empty">No tool requirements declared for this job.</div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 10px;">Container Tool Requirements</h3>
+        <div id="containerToolReqBox" class="req-empty">No container tool requirements declared for this job.</div>
+      </div>
     </div>
     <div class="card" id="releaseSummaryCard" style="display:none;">
       <h3 style="margin:0 0 10px;">Release Summary</h3>
@@ -434,71 +430,38 @@ const jobExecutionHTML = `<!doctype html>
       return out;
     }
 
-    function renderRuntimeCapabilities(runtimeCaps, requiredCaps) {
-      const card = document.getElementById('runtimeCard');
-      const box = document.getElementById('runtimeCapsBox');
-      if (!box || !card) return;
-      const caps = runtimeCaps || {};
+    function renderToolRequirements(requiredCaps, runtimeCaps) {
       const req = requiredCaps || {};
-      const hostReqs = requirementRows(req, 'requires.tool.');
-      const containerReqs = requirementRows(req, 'requires.container.tool.');
-      const hostTools = Object.keys(caps).filter(k => k.startsWith('host.tool.')).sort((a, b) => a.localeCompare(b));
-      const containerTools = Object.keys(caps).filter(k => k.startsWith('container.tool.')).sort((a, b) => a.localeCompare(b));
-      const hasProbeContext = !!String(caps['container.name'] || '').trim() || containerReqs.length > 0 || hostTools.length > 0 || hostReqs.length > 0;
-      if (!hasProbeContext) {
-        card.style.display = 'none';
-        return;
-      }
-      card.style.display = '';
+      const caps = runtimeCaps || {};
+      const hostRows = requirementRows(req, 'requires.tool.');
+      const containerRows = requirementRows(req, 'requires.container.tool.');
 
-      const issues = [];
-      hostReqs.forEach(r => {
-        const actual = String(caps['host.tool.' + r.tool] || '').trim();
-        if (!toolConstraintSatisfied(actual, r.constraint)) {
-          issues.push('host tool <code>' + escapeHtml(r.tool) + '</code> expected <code>' + escapeHtml(r.constraint || '*') + '</code>, got <code>' + escapeHtml(actual || 'missing') + '</code>');
+      function renderInto(boxId, rows, prefix, emptyText) {
+        const box = document.getElementById(boxId);
+        if (!box) return;
+        if (!rows.length) {
+          box.className = 'req-empty';
+          box.textContent = emptyText;
+          return;
         }
-      });
-      containerReqs.forEach(r => {
-        const actual = String(caps['container.tool.' + r.tool] || '').trim();
-        if (!toolConstraintSatisfied(actual, r.constraint)) {
-          issues.push('container tool <code>' + escapeHtml(r.tool) + '</code> expected <code>' + escapeHtml(r.constraint || '*') + '</code>, got <code>' + escapeHtml(actual || 'missing') + '</code>');
+        const issues = [];
+        rows.forEach(r => {
+          const actual = String(caps[prefix + r.tool] || '').trim();
+          if (!toolConstraintSatisfied(actual, r.constraint)) {
+            issues.push('<code>' + escapeHtml(r.tool) + '</code> expected <code>' + escapeHtml(r.constraint || '*') + '</code>, got <code>' + escapeHtml(actual || 'missing') + '</code>');
+          }
+        });
+        if (!issues.length) {
+          box.className = 'req-ok';
+          box.innerHTML = '<strong>Requirements matched</strong>';
+          return;
         }
-      });
-
-      function sectionRows(toolKeys, prefix) {
-        if (!toolKeys.length) return '<div class="runtime-row"><span class="label">none reported</span></div>';
-        return toolKeys.map(k => {
-          const tool = k.slice(prefix.length);
-          return '<div class="runtime-row"><code>' + escapeHtml(tool) + '</code>: ' + escapeHtml(String(caps[k] || '')) + '</div>';
-        }).join('');
+        box.className = 'req-issues';
+        box.innerHTML = '<strong>Requirements mismatch</strong><ul>' + issues.map(i => '<li>' + i + '</li>').join('') + '</ul>';
       }
 
-      const statusHTML = issues.length
-        ? ('<div class="runtime-issues"><strong>Requirements mismatch</strong><br>' + issues.join('<br>') + '</div>')
-        : '<div class="runtime-ok"><strong>Requirements matched</strong></div>';
-      const probeName = String(caps['container.name'] || '').trim();
-      const probeError = String(caps['container.probe_error'] || '').trim();
-      const probeMeta = (probeName || probeError)
-        ? ('<div class="runtime-probe-meta">' +
-            (probeName ? ('Probe container: <code>' + escapeHtml(probeName) + '</code>') : '') +
-            (probeName && probeError ? ' | ' : '') +
-            (probeError ? ('Probe error: ' + escapeHtml(probeError)) : '') +
-           '</div>')
-        : '';
-      box.className = '';
-      box.innerHTML = '' +
-        statusHTML +
-        '<div class="runtime-sections">' +
-          '<div class="runtime-section">' +
-            '<h4>Host tools</h4>' +
-            '<div class="runtime-list">' + sectionRows(hostTools, 'host.tool.') + '</div>' +
-          '</div>' +
-          '<div class="runtime-section">' +
-            '<h4>Container tools</h4>' +
-            '<div class="runtime-list">' + sectionRows(containerTools, 'container.tool.') + '</div>' +
-          '</div>' +
-        '</div>' +
-        probeMeta;
+      renderInto('hostToolReqBox', hostRows, 'host.tool.', 'No tool requirements declared for this job.');
+      renderInto('containerToolReqBox', containerRows, 'container.tool.', 'No container tool requirements declared for this job.');
     }
 
     function setBackLink() {
@@ -1065,7 +1028,7 @@ const jobExecutionHTML = `<!doctype html>
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
         renderCacheStats(job.cache_stats);
-        renderRuntimeCapabilities(job.runtime_capabilities, job.required_capabilities);
+        renderToolRequirements(job.required_capabilities, job.runtime_capabilities);
 
         const meta = document.getElementById('metaGrid');
         const previousModeInfo = meta.querySelector('.mode-info');
