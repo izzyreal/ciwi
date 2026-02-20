@@ -27,3 +27,25 @@ func TestSelfUpdateServiceModeReasonForDarwinMissingEnv(t *testing.T) {
 		t.Fatalf("expected missing darwin launchd env to disable self-update")
 	}
 }
+
+func TestSelfUpdateServiceModeReasonForLinuxAndUnknown(t *testing.T) {
+	linuxNoService := selfUpdateServiceModeReasonFor("linux", func(string) string { return "" })
+	if linuxNoService == "" {
+		t.Fatalf("expected linux without INVOCATION_ID to disable self-update")
+	}
+
+	linuxService := selfUpdateServiceModeReasonFor("linux", func(key string) string {
+		if key == "INVOCATION_ID" {
+			return "abc"
+		}
+		return ""
+	})
+	if linuxService != "" {
+		t.Fatalf("expected linux with INVOCATION_ID to allow self-update, got %q", linuxService)
+	}
+
+	unknown := selfUpdateServiceModeReasonFor("plan9", func(string) string { return "" })
+	if unknown == "" {
+		t.Fatalf("expected unsupported runtime to disable self-update")
+	}
+}

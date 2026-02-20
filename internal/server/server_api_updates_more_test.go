@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/version"
 )
@@ -110,5 +111,85 @@ func TestServerUpdateApplyGoRunGuard(t *testing.T) {
 	}
 	if !strings.Contains(body, "self-update is unavailable for go run binaries") {
 		t.Fatalf("expected go-run guard message in apply response")
+	}
+}
+
+func TestServerUpdateHandlersMethodAndJSONValidation(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		wantStatus int
+	}{
+		{name: "check method guard", method: http.MethodGet, path: "/api/v1/update/check", wantStatus: http.StatusMethodNotAllowed},
+		{name: "apply method guard", method: http.MethodGet, path: "/api/v1/update/apply", wantStatus: http.StatusMethodNotAllowed},
+		{name: "rollback method guard", method: http.MethodGet, path: "/api/v1/update/rollback", wantStatus: http.StatusMethodNotAllowed},
+		{name: "tags method guard", method: http.MethodPost, path: "/api/v1/update/tags", body: "{}", wantStatus: http.StatusMethodNotAllowed},
+		{name: "apply invalid json", method: http.MethodPost, path: "/api/v1/update/apply", body: `{"target_version":`, wantStatus: http.StatusBadRequest},
+		{name: "rollback invalid json", method: http.MethodPost, path: "/api/v1/update/rollback", body: `{"target_version":`, wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var resp *http.Response
+			if strings.TrimSpace(tc.body) == "" {
+				resp = mustJSONRequest(t, ts.Client(), tc.method, ts.URL+tc.path, nil)
+			} else {
+				resp = mustRawJSONRequest(t, ts.Client(), tc.method, ts.URL+tc.path, tc.body)
+			}
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", resp.StatusCode, tc.wantStatus, readBody(t, resp))
+			}
+		})
+	}
+}
+
+func TestServerUpdateApplyAndRollbackConflictWhenInProgress(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	s.update.mu.Lock()
+	s.update.inProgress = true
+	s.update.lastMessage = "already running"
+	s.update.mu.Unlock()
+
+	applyResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/apply", map[string]any{
+		"target_version": "v9.9.9",
+	})
+	if applyResp.StatusCode != http.StatusConflict {
+		t.Fatalf("apply status=%d want=409 body=%s", applyResp.StatusCode, readBody(t, applyResp))
+	}
+
+	rollbackResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/rollback", map[string]any{
+		"target_version": "v9.9.8",
+	})
+	if rollbackResp.StatusCode != http.StatusConflict {
+		t.Fatalf("rollback status=%d want=409 body=%s", rollbackResp.StatusCode, readBody(t, rollbackResp))
+	}
+}
+
+func TestPersistUpdateStatusSkipsEmptyKeys(t *testing.T) {
+	_, s := newTestHTTPServerWithState(t)
+	if err := s.persistUpdateStatus(map[string]string{
+		"":                    "ignored",
+		"   ":                 "ignored-too",
+		"update_message":      "ok",
+		"update_last_checked": time.Now().UTC().Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatalf("persistUpdateStatus: %v", err)
+	}
+	state, err := s.updateStateStore().ListAppState()
+	if err != nil {
+		t.Fatalf("ListAppState: %v", err)
+	}
+	if got := strings.TrimSpace(state["update_message"]); got != "ok" {
+		t.Fatalf("expected update_message to persist, got %q", got)
+	}
+	if _, exists := state[""]; exists {
+		t.Fatalf("unexpected blank app-state key present")
 	}
 }
