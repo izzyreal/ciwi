@@ -157,6 +157,9 @@ const jobExecutionHTML = `<!doctype html>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button id="forceFailBtn" class="copy-btn" style="display:none;">Cancel</button>
+        <span id="rerunInfo" class="mode-info" tabindex="0" aria-label="Run Job Again info">
+          <span aria-hidden="true">ⓘ</span>
+        </span>
         <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
         <a id="backLink" class="nav-btn" href="/">Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span></a>
       </div>
@@ -889,6 +892,20 @@ const jobExecutionHTML = `<!doctype html>
       const hasStarted = !!String(job.started_utc || '').trim();
       rerunBtn.disabled = !hasStarted;
       rerunBtn.title = hasStarted ? '' : 'Job must have started at least once';
+      const rerunInfo = document.getElementById('rerunInfo');
+      if (rerunInfo && !rerunInfo.__ciwiHoverTooltip) {
+        const tooltipHTML = '' +
+          '<strong>What Run Job Again does</strong><br />' +
+          'It enqueues a new job execution with the same script, environment, requirements, source repo/ref, and step plan as this run.<br /><br />' +
+          '<strong>Source checkout behavior</strong><br />' +
+          'If this job was already pinned to a commit (for example via pipeline version resolution), rerun uses that same pinned commit. ' +
+          'If source ref is a moving branch/tag name, rerun fetches that ref again at execution time and may build a newer commit.<br /><br />' +
+          '<strong>Artifacts and logs</strong><br />' +
+          'Rerun creates a fresh job execution ID with fresh logs and artifact records. Previous job artifacts are kept; they are not replaced.<br /><br />' +
+          '<strong>When this is useful</strong><br />' +
+          'Use it to quickly retry flaky failures, rerun after agent/tool fixes, or rerun a one-off job without re-enqueueing an entire pipeline.';
+        createHoverTooltip(rerunInfo, { html: tooltipHTML, lingerMs: 2000, owner: 'rerun-info' });
+      }
       rerunBtn.onclick = async () => {
         if (rerunBtn.disabled) return;
         rerunBtn.disabled = true;

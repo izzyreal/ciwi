@@ -105,7 +105,11 @@ From `/agents`, use **Refresh Tools** to request an on-demand re-scan on an agen
 
 UI actions map to these server behaviors:
 - **Run Again** clones an existing job execution into a new queued job with the same script, env, capabilities, source repo/ref metadata and step plan.
-- **Run Again** does not resolve branch HEAD again; it reuses the original job execution's resolved source context.
+- **Run Again** keeps whatever source ref string is stored on that job execution.
+- If that stored source ref is a pinned commit SHA, rerun checks out the same commit.
+- If that stored source ref is a moving branch/tag ref, rerun fetches it again at execution time and may build a newer commit.
+- **Run Again** creates a new job execution ID with fresh logs and artifact records; prior artifacts are kept and not replaced.
+- **Run Again** is useful for fast retries after flaky failures or after fixing agent/tooling issues, without re-enqueueing the full pipeline.
 - **Flush History** deletes job executions whose status is not `queued`, `leased`, or `running`.
 - **Flush History** removes execution logs/status payloads in sqlite for flushed jobs.
 - **Flush History** does not remove artifact files from disk (`CIWI_ARTIFACTS_DIR`); it is history cleanup, not artifact GC.
