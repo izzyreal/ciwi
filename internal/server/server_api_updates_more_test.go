@@ -237,8 +237,12 @@ func TestServerUpdateApplyStagedBranchesWithHandlerSeams(t *testing.T) {
 
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/releases/tags/") {
+			asset := expectedAssetName(runtime.GOOS, runtime.GOARCH)
+			if asset == "" {
+				asset = "ciwi-linux-amd64"
+			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example.invalid/release","assets":[{"name":"ciwi-darwin-arm64","url":"https://example.invalid/asset"}]}`))
+			_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example.invalid/release","assets":[{"name":"` + asset + `","url":"https://example.invalid/asset"}]}`))
 			return
 		}
 		http.NotFound(w, r)
@@ -336,8 +340,12 @@ func TestServerUpdateApplyChecksumAndHelperFailureBranches(t *testing.T) {
 
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/releases/tags/") {
+			asset := expectedAssetName(runtime.GOOS, runtime.GOARCH)
+			if asset == "" {
+				asset = "ciwi-linux-amd64"
+			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example.invalid/release","assets":[{"name":"ciwi-darwin-arm64","url":"https://example.invalid/asset"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/checksums"}]}`))
+			_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example.invalid/release","assets":[{"name":"` + asset + `","url":"https://example.invalid/asset"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/checksums"}]}`))
 			return
 		}
 		http.NotFound(w, r)

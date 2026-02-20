@@ -40,6 +40,7 @@ const (
 )
 
 var (
+	agentUpdateRuntimeGOOS          = runtime.GOOS
 	agentExecutablePathFn           = os.Executable
 	agentAbsPathFn                  = filepath.Abs
 	agentSelfUpdateServiceReasonFn  = selfUpdateServiceModeReason
@@ -88,9 +89,9 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		repository = "izzyreal/ciwi"
 	}
 
-	assetName := expectedAssetName(runtime.GOOS, runtime.GOARCH)
+	assetName := expectedAssetName(agentUpdateRuntimeGOOS, runtime.GOARCH)
 	if assetName == "" {
-		return fmt.Errorf("no known update asset for os=%s arch=%s", runtime.GOOS, runtime.GOARCH)
+		return fmt.Errorf("no known update asset for os=%s arch=%s", agentUpdateRuntimeGOOS, runtime.GOARCH)
 	}
 	checksumName := strings.TrimSpace(envOrDefault("CIWI_UPDATE_CHECKSUM_ASSET", "ciwi-checksums.txt"))
 	if checksumName == "" {
@@ -116,7 +117,7 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		}
 	}
 
-	if runtime.GOOS == "darwin" && agentHasDarwinUpdaterConfigFn() {
+	if agentUpdateRuntimeGOOS == "darwin" && agentHasDarwinUpdaterConfigFn() {
 		if err := agentStageDarwinUpdaterFn(targetVersion, asset.Name, exePath, newBinPath); err != nil {
 			return err
 		}
@@ -128,7 +129,7 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		return fmt.Errorf("prepare update helper: %w", err)
 	}
 	serviceName := ""
-	if runtime.GOOS == "windows" {
+	if agentUpdateRuntimeGOOS == "windows" {
 		if active, name := agentWindowsServiceInfoFn(); active {
 			serviceName = strings.TrimSpace(name)
 		}

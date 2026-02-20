@@ -103,9 +103,6 @@ func TestSelfUpdateAndRestartSuccessSchedulesExit(t *testing.T) {
 }
 
 func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("darwin-only branch")
-	}
 	restore := stubSelfUpdateOrchestration(t)
 	defer restore()
 
@@ -123,6 +120,7 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 		return p, nil
 	}
 	agentHasDarwinUpdaterConfigFn = func() bool { return true }
+	agentUpdateRuntimeGOOS = "darwin"
 	agentStageDarwinUpdaterFn = func(string, string, string, string) error {
 		staged++
 		return nil
@@ -147,6 +145,7 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 func stubSelfUpdateOrchestration(t *testing.T) func() {
 	t.Helper()
 	origExecutable := agentExecutablePathFn
+	origRuntimeGOOS := agentUpdateRuntimeGOOS
 	origAbs := agentAbsPathFn
 	origReason := agentSelfUpdateServiceReasonFn
 	origFetch := agentFetchReleaseAssetsForTagFn
@@ -162,6 +161,7 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 	origExit := agentScheduleExitAfterUpdateFn
 
 	agentExecutablePathFn = func() (string, error) { return "/opt/ciwi/ciwi-agent", nil }
+	agentUpdateRuntimeGOOS = runtime.GOOS
 	agentAbsPathFn = func(path string) (string, error) { return path, nil }
 	agentSelfUpdateServiceReasonFn = func() string { return "" }
 	agentFetchReleaseAssetsForTagFn = func(context.Context, string, string, string, string, string) (githubReleaseAsset, githubReleaseAsset, error) {
@@ -180,6 +180,7 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 
 	return func() {
 		agentExecutablePathFn = origExecutable
+		agentUpdateRuntimeGOOS = origRuntimeGOOS
 		agentAbsPathFn = origAbs
 		agentSelfUpdateServiceReasonFn = origReason
 		agentFetchReleaseAssetsForTagFn = origFetch
