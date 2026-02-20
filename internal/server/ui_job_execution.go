@@ -115,9 +115,10 @@ const jobExecutionHTML = `<!doctype html>
     .copy-btn {
       font-weight: 600;
     }
-    .artifacts-toolbar {
+    .card-head-row {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
+      align-items: center;
       margin: 0 0 10px;
     }
     .artifact-tree,
@@ -256,7 +257,10 @@ const jobExecutionHTML = `<!doctype html>
     </div>
 
     <div class="card">
-      <h3 style="margin:0 0 10px;">Artifacts</h3>
+      <div class="card-head-row">
+        <h3 style="margin:0;">Artifacts</h3>
+        <a id="artifactsDownloadAllBtn" class="copy-btn nav-btn" href="#" style="display:none;">Download All (.zip)</a>
+      </div>
       <div id="artifactsBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
     </div>
     <div class="card">
@@ -495,7 +499,7 @@ const jobExecutionHTML = `<!doctype html>
 
     function buildArtifactTree(items) {
       const root = { dirs: {}, files: [] };
-      items.forEach((a, idx) => {
+      items.forEach((a) => {
         const raw = String((a && a.path) || '').trim();
         if (!raw) return;
         const parts = raw.split('/').filter(Boolean);
@@ -506,7 +510,7 @@ const jobExecutionHTML = `<!doctype html>
           if (!node.dirs[seg]) node.dirs[seg] = { dirs: {}, files: [] };
           node = node.dirs[seg];
         }
-        node.files.push({ name: parts[parts.length - 1], item: a, idx: idx });
+        node.files.push({ name: parts[parts.length - 1], item: a });
       });
       return root;
     }
@@ -538,7 +542,6 @@ const jobExecutionHTML = `<!doctype html>
               '<span class="artifact-path">' + escapeHtml(entry.name) + '</span>' +
               '<span>(' + formatBytes(a.size_bytes) + ')</span>' +
               '<a href=\"' + a.url + '\" target=\"_blank\" rel=\"noopener\">Download</a>' +
-              '<button class="copy-btn" data-artifact-index="' + String(entry.idx) + '">Copy</button>' +
             '</div>' +
           '</li>';
       });
@@ -547,6 +550,7 @@ const jobExecutionHTML = `<!doctype html>
     }
 
     function renderArtifacts(box, jobId, items) {
+      const downloadAllBtn = document.getElementById('artifactsDownloadAllBtn');
       const signature = JSON.stringify(items.map(a => [String(a.path || ''), Number(a.size_bytes || 0), String(a.url || '')]));
       if (signature === lastArtifactsSignature) {
         return;
@@ -556,9 +560,17 @@ const jobExecutionHTML = `<!doctype html>
         artifactExpandedPaths = previousExpanded;
       }
       if (items.length === 0) {
+        if (downloadAllBtn) {
+          downloadAllBtn.style.display = 'none';
+          downloadAllBtn.setAttribute('href', '#');
+        }
         box.textContent = 'No artifacts';
         lastArtifactsSignature = signature;
         return;
+      }
+      if (downloadAllBtn) {
+        downloadAllBtn.style.display = '';
+        downloadAllBtn.setAttribute('href', '/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts/download-all');
       }
       const tree = buildArtifactTree(items);
       const expanded = (artifactExpandedPaths && artifactExpandedPaths.size > 0)
@@ -568,28 +580,7 @@ const jobExecutionHTML = `<!doctype html>
         // Default expansion is one directory level from root.
         Object.keys(tree.dirs || {}).forEach(name => expanded.add(name));
       }
-      box.innerHTML =
-        '<div class="artifacts-toolbar">' +
-          '<a class="copy-btn nav-btn" href="/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts/download-all">Download All (.zip)</a>' +
-        '</div>' +
-        renderArtifactTreeNode(tree, '', 0, expanded);
-      box.querySelectorAll('button.copy-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const idx = Number(btn.getAttribute('data-artifact-index') || '-1');
-          const path = (items[idx] && items[idx].path) || '';
-          if (!path) return;
-          try {
-            await navigator.clipboard.writeText(path);
-            const old = btn.textContent;
-            btn.textContent = 'Copied';
-            setTimeout(() => { btn.textContent = old; }, 1000);
-          } catch (_) {
-            const old = btn.textContent;
-            btn.textContent = 'Copy failed';
-            setTimeout(() => { btn.textContent = old; }, 1200);
-          }
-        });
-      });
+      box.innerHTML = renderArtifactTreeNode(tree, '', 0, expanded);
       box.querySelectorAll('details[data-artifact-dir]').forEach(d => {
         d.addEventListener('toggle', () => {
           const path = String(d.getAttribute('data-artifact-dir') || '').trim();
