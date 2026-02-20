@@ -82,8 +82,8 @@ const uiIndexCSS = `
       overflow-wrap: anywhere;
       word-break: break-word;
     }
-    table th:first-child,
-    table td:first-child { padding-left: 10px; }
+    table th:first-child { padding-left: 10px; }
+    table tbody tr:not(.ciwi-job-group-row):not(.ciwi-empty-row) td:first-child { padding-left: 10px; }
     td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .status-succeeded { color: var(--ok); font-weight: 600; }
     .status-failed { color: var(--bad); font-weight: 600; }

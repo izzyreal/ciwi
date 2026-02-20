@@ -131,7 +131,7 @@ const agentsHTML = `<!doctype html>
           const tr = document.createElement('tr');
           const updateBtn = (a.update_requested && !a.update_in_progress)
             ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Retry Update Now</button>'
-            : ((a.needs_update && s.label !== 'offline')
+            : ((!a.update_in_progress && a.needs_update && s.label !== 'offline')
               ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Update</button>'
               : '');
           const refreshBtn = (s.label !== 'offline')
