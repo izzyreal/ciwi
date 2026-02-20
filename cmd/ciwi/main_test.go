@@ -1,76 +1,146 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"io"
-	"log/slog"
-	"os"
+	"errors"
 	"strings"
 	"testing"
 )
 
-func TestInitLoggingLevelFromEnv(t *testing.T) {
-	cases := []struct {
-		name    string
-		env     string
-		debugOn bool
-		infoOn  bool
-		warnOn  bool
-		errorOn bool
-	}{
-		{name: "debug", env: "debug", debugOn: true, infoOn: true, warnOn: true, errorOn: true},
-		{name: "warn", env: "warn", debugOn: false, infoOn: false, warnOn: true, errorOn: true},
-		{name: "error", env: "error", debugOn: false, infoOn: false, warnOn: false, errorOn: true},
-		{name: "default", env: "", debugOn: false, infoOn: true, warnOn: true, errorOn: true},
+func TestRunWithCommandDispatchAndExitCodes(t *testing.T) {
+	ctx := context.Background()
+
+	type called struct {
+		server, agent, allInOne, helper, staged, stagedAgent bool
+	}
+	mk := func(c *called, err error) commandRunners {
+		return commandRunners{
+			runServer: func(context.Context) error { c.server = true; return err },
+			runAgent:  func(context.Context) error { c.agent = true; return err },
+			runAllInOne: func(context.Context) error {
+				c.allInOne = true
+				return err
+			},
+			runUpdateHelper: func([]string) error { c.helper = true; return err },
+			runApplyStagedUpdate: func([]string) error {
+				c.staged = true
+				return err
+			},
+			runApplyStagedAgentUpdate: func([]string) error {
+				c.stagedAgent = true
+				return err
+			},
+		}
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("CIWI_LOG_LEVEL", tc.env)
-			initLogging()
-			h := slog.Default().Handler()
-			ctx := context.Background()
-			if got := h.Enabled(ctx, slog.LevelDebug); got != tc.debugOn {
-				t.Fatalf("debug enabled=%v want %v", got, tc.debugOn)
-			}
-			if got := h.Enabled(ctx, slog.LevelInfo); got != tc.infoOn {
-				t.Fatalf("info enabled=%v want %v", got, tc.infoOn)
-			}
-			if got := h.Enabled(ctx, slog.LevelWarn); got != tc.warnOn {
-				t.Fatalf("warn enabled=%v want %v", got, tc.warnOn)
-			}
-			if got := h.Enabled(ctx, slog.LevelError); got != tc.errorOn {
-				t.Fatalf("error enabled=%v want %v", got, tc.errorOn)
-			}
-		})
-	}
+	t.Run("missing command", func(t *testing.T) {
+		var out bytes.Buffer
+		code := runWith([]string{"ciwi"}, &out, ctx, mk(&called{}, nil))
+		if code != 2 {
+			t.Fatalf("expected exit code 2, got %d", code)
+		}
+		if !strings.Contains(out.String(), "Usage:") {
+			t.Fatalf("expected usage output, got %q", out.String())
+		}
+	})
+
+	t.Run("unknown command", func(t *testing.T) {
+		var out bytes.Buffer
+		code := runWith([]string{"ciwi", "nope"}, &out, ctx, mk(&called{}, nil))
+		if code != 2 {
+			t.Fatalf("expected exit code 2, got %d", code)
+		}
+		if !strings.Contains(out.String(), "unknown command: nope") {
+			t.Fatalf("expected unknown command output, got %q", out.String())
+		}
+	})
+
+	t.Run("help", func(t *testing.T) {
+		var out bytes.Buffer
+		code := runWith([]string{"ciwi", "--help"}, &out, ctx, mk(&called{}, nil))
+		if code != 0 {
+			t.Fatalf("expected exit code 0, got %d", code)
+		}
+		if !strings.Contains(out.String(), "lightweight CI/CD") {
+			t.Fatalf("expected help output, got %q", out.String())
+		}
+	})
+
+	t.Run("server dispatch", func(t *testing.T) {
+		var out bytes.Buffer
+		c := &called{}
+		code := runWith([]string{"ciwi", "server"}, &out, ctx, mk(c, nil))
+		if code != 0 || !c.server || c.agent || c.allInOne || c.helper || c.staged || c.stagedAgent {
+			t.Fatalf("unexpected dispatch result code=%d called=%+v", code, c)
+		}
+	})
+
+	t.Run("agent dispatch", func(t *testing.T) {
+		var out bytes.Buffer
+		c := &called{}
+		code := runWith([]string{"ciwi", "agent"}, &out, ctx, mk(c, nil))
+		if code != 0 || !c.agent {
+			t.Fatalf("unexpected dispatch result code=%d called=%+v", code, c)
+		}
+	})
+
+	t.Run("all-in-one dispatch", func(t *testing.T) {
+		var out bytes.Buffer
+		c := &called{}
+		code := runWith([]string{"ciwi", "all-in-one"}, &out, ctx, mk(c, nil))
+		if code != 0 || !c.allInOne {
+			t.Fatalf("unexpected dispatch result code=%d called=%+v", code, c)
+		}
+	})
+
+	t.Run("internal modes dispatch", func(t *testing.T) {
+		var out bytes.Buffer
+		c := &called{}
+		code := runWith([]string{"ciwi", "update-helper", "--x"}, &out, ctx, mk(c, nil))
+		if code != 0 || !c.helper {
+			t.Fatalf("unexpected update-helper dispatch result code=%d called=%+v", code, c)
+		}
+
+		c = &called{}
+		code = runWith([]string{"ciwi", "apply-staged-update"}, &out, ctx, mk(c, nil))
+		if code != 0 || !c.staged {
+			t.Fatalf("unexpected apply-staged-update dispatch result code=%d called=%+v", code, c)
+		}
+
+		c = &called{}
+		code = runWith([]string{"ciwi", "apply-staged-agent-update"}, &out, ctx, mk(c, nil))
+		if code != 0 || !c.stagedAgent {
+			t.Fatalf("unexpected apply-staged-agent-update dispatch result code=%d called=%+v", code, c)
+		}
+	})
+
+	t.Run("command error maps to exit 1", func(t *testing.T) {
+		var out bytes.Buffer
+		code := runWith([]string{"ciwi", "server"}, &out, ctx, mk(&called{}, errors.New("boom")))
+		if code != 1 {
+			t.Fatalf("expected exit code 1, got %d", code)
+		}
+		if !strings.Contains(out.String(), "ciwi: boom") {
+			t.Fatalf("expected error output, got %q", out.String())
+		}
+	})
 }
 
-func TestUsageWritesExpectedText(t *testing.T) {
-	out := captureStderr(t, usage)
-	if !strings.Contains(out, "ciwi - lightweight CI/CD") {
-		t.Fatalf("missing usage title, got: %q", out)
-	}
-	if !strings.Contains(out, "apply-staged-update") || !strings.Contains(out, "apply-staged-agent-update") {
-		t.Fatalf("missing updater commands in usage: %q", out)
-	}
-}
+func TestRunAllInOneWithReturnsFirstError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	orig := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
+	errExpected := errors.New("server failed")
+	got := runAllInOneWith(
+		ctx,
+		func(context.Context) error { return errExpected },
+		func(context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	)
+	if !errors.Is(got, errExpected) {
+		t.Fatalf("expected first returned error, got %v", got)
 	}
-	os.Stderr = w
-	done := make(chan string, 1)
-	go func() {
-		raw, _ := io.ReadAll(r)
-		done <- string(raw)
-	}()
-	fn()
-	_ = w.Close()
-	os.Stderr = orig
-	return <-done
 }

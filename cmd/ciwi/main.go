@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -16,43 +17,34 @@ import (
 	"github.com/izzyreal/ciwi/internal/updatehelper"
 )
 
+type commandRunners struct {
+	runServer                 func(context.Context) error
+	runAgent                  func(context.Context) error
+	runAllInOne               func(context.Context) error
+	runUpdateHelper           func([]string) error
+	runApplyStagedUpdate      func([]string) error
+	runApplyStagedAgentUpdate func([]string) error
+}
+
+func defaultCommandRunners() commandRunners {
+	return commandRunners{
+		runServer:                 server.Run,
+		runAgent:                  agent.Run,
+		runAllInOne:               runAllInOne,
+		runUpdateHelper:           updatehelper.Run,
+		runApplyStagedUpdate:      linuxupdater.RunApplyStaged,
+		runApplyStagedAgentUpdate: darwinupdater.RunApplyStagedAgent,
+	}
+}
+
 func main() {
 	initLogging()
-
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	var err error
-	switch os.Args[1] {
-	case "server":
-		err = server.Run(ctx)
-	case "agent":
-		err = agent.Run(ctx)
-	case "all-in-one":
-		err = runAllInOne(ctx)
-	case "update-helper":
-		err = updatehelper.Run(os.Args[2:])
-	case "apply-staged-update":
-		err = linuxupdater.RunApplyStaged(os.Args[2:])
-	case "apply-staged-agent-update":
-		err = darwinupdater.RunApplyStagedAgent(os.Args[2:])
-	case "help", "-h", "--help":
-		usage()
-		return
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", os.Args[1])
-		usage()
-		os.Exit(2)
-	}
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "ciwi: %v\n", err)
-		os.Exit(1)
+	if exitCode := runWith(os.Args, os.Stderr, ctx, defaultCommandRunners()); exitCode != 0 {
+		os.Exit(exitCode)
 	}
 }
 
@@ -76,20 +68,63 @@ func initLogging() {
 }
 
 func runAllInOne(ctx context.Context) error {
+	return runAllInOneWith(ctx, server.Run, agent.Run)
+}
+
+func runAllInOneWith(ctx context.Context, runServer func(context.Context) error, runAgent func(context.Context) error) error {
 	errCh := make(chan error, 2)
 
 	go func() {
-		errCh <- server.Run(ctx)
+		errCh <- runServer(ctx)
 	}()
 	go func() {
-		errCh <- agent.Run(ctx)
+		errCh <- runAgent(ctx)
 	}()
 
 	return <-errCh
 }
 
+func runWith(args []string, stderr io.Writer, ctx context.Context, runners commandRunners) int {
+	if len(args) < 2 {
+		usageTo(stderr)
+		return 2
+	}
+
+	var err error
+	switch args[1] {
+	case "server":
+		err = runners.runServer(ctx)
+	case "agent":
+		err = runners.runAgent(ctx)
+	case "all-in-one":
+		err = runners.runAllInOne(ctx)
+	case "update-helper":
+		err = runners.runUpdateHelper(args[2:])
+	case "apply-staged-update":
+		err = runners.runApplyStagedUpdate(args[2:])
+	case "apply-staged-agent-update":
+		err = runners.runApplyStagedAgentUpdate(args[2:])
+	case "help", "-h", "--help":
+		usageTo(stderr)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[1])
+		usageTo(stderr)
+		return 2
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "ciwi: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func usage() {
-	fmt.Fprintf(os.Stderr, `ciwi - lightweight CI/CD
+	usageTo(os.Stderr)
+}
+
+func usageTo(w io.Writer) {
+	fmt.Fprintf(w, `ciwi - lightweight CI/CD
 
 Usage:
   ciwi <command>

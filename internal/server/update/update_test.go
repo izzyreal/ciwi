@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/updateutil"
 )
@@ -288,5 +289,143 @@ func TestDownloadTextAssetWithAuthHeader(t *testing.T) {
 	}
 	if gotAuth != "Bearer token-123" {
 		t.Fatalf("unexpected auth header: %q", gotAuth)
+	}
+}
+
+func TestFetchLatestInfoTargetTagAndErrorLabel(t *testing.T) {
+	assetName := updateutil.ExpectedAssetName(runtime.GOOS, runtime.GOARCH)
+	if strings.TrimSpace(assetName) == "" {
+		t.Skip("no expected asset naming for this GOOS/GOARCH")
+	}
+	var gotPath string
+	client := mockClient(func(r *http.Request) (*http.Response, error) {
+		gotPath = r.URL.Path
+		return textResponse(http.StatusBadGateway, "upstream down"), nil
+	})
+	_, err := FetchLatestInfo(context.Background(), FetchInfoOptions{
+		APIBase:         "https://api.example",
+		Repo:            "acme/ciwi",
+		TargetTag:       "v1.2.3",
+		HTTPClient:      client,
+		RequireChecksum: false,
+	})
+	if err == nil || !strings.Contains(err.Error(), "release for tag v1.2.3 query failed") {
+		t.Fatalf("expected tagged release error label, got %v", err)
+	}
+	if gotPath != "/repos/acme/ciwi/releases/tags/v1.2.3" {
+		t.Fatalf("unexpected tagged release path: %q", gotPath)
+	}
+}
+
+func TestFetchLatestInfoMissingCompatibleAsset(t *testing.T) {
+	client := mockClient(func(r *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, map[string]any{
+			"tag_name": "v1.0.0",
+			"assets": []map[string]any{
+				{"name": "ciwi-other-platform", "url": "https://example/download/other"},
+			},
+		}), nil
+	})
+	_, err := FetchLatestInfo(context.Background(), FetchInfoOptions{
+		APIBase:         "https://api.example",
+		Repo:            "acme/ciwi",
+		HTTPClient:      client,
+		RequireChecksum: false,
+	})
+	if err == nil || !strings.Contains(err.Error(), "no compatible asset") {
+		t.Fatalf("expected missing compatible asset error, got %v", err)
+	}
+}
+
+func TestFetchTagsErrors(t *testing.T) {
+	t.Run("status error", func(t *testing.T) {
+		client := mockClient(func(r *http.Request) (*http.Response, error) {
+			return textResponse(http.StatusServiceUnavailable, "busy"), nil
+		})
+		_, err := FetchTags(context.Background(), FetchTagsOptions{
+			APIBase:    "https://api.example",
+			Repo:       "acme/ciwi",
+			HTTPClient: client,
+		})
+		if err == nil || !strings.Contains(err.Error(), "tags query failed: status=503") {
+			t.Fatalf("expected tags status error, got %v", err)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		client := mockClient(func(r *http.Request) (*http.Response, error) {
+			return textResponse(http.StatusOK, "{"), nil
+		})
+		_, err := FetchTags(context.Background(), FetchTagsOptions{
+			APIBase:    "https://api.example",
+			Repo:       "acme/ciwi",
+			HTTPClient: client,
+		})
+		if err == nil || !strings.Contains(err.Error(), "decode tags response") {
+			t.Fatalf("expected tags decode error, got %v", err)
+		}
+	})
+}
+
+func TestStageLinuxUpdateBinaryWriteManifestError(t *testing.T) {
+	tmp := t.TempDir()
+	newBin := filepath.Join(tmp, "ciwi-new"+ExeExt())
+	if err := os.WriteFile(newBin, []byte("bin"), 0o755); err != nil {
+		t.Fatalf("write new bin: %v", err)
+	}
+	// Manifest path directory intentionally missing to force write error.
+	manifestPath := filepath.Join(tmp, "missing-dir", "pending.json")
+	err := StageLinuxUpdateBinary("v1.0.0", "ciwi-linux-amd64", newBin, StageLinuxOptions{
+		StagingDir:   filepath.Join(tmp, "stage"),
+		ManifestPath: manifestPath,
+	})
+	if err == nil || !strings.Contains(err.Error(), "write staged manifest") {
+		t.Fatalf("expected write staged manifest error, got %v", err)
+	}
+}
+
+func TestStartUpdateHelperArgsAndCopyFile(t *testing.T) {
+	tmp := t.TempDir()
+	helper := filepath.Join(tmp, "helper.sh")
+	argsLog := filepath.Join(tmp, "args.log")
+	script := "#!/bin/sh\necho \"$@\" > \"" + argsLog + "\"\nexit 0\n"
+	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+	if err := StartUpdateHelper(helper, "/tmp/target", "/tmp/new", 1234, []string{"serve", "--flag"}); err != nil {
+		t.Fatalf("StartUpdateHelper: %v", err)
+	}
+	for i := 0; i < 50; i++ {
+		if _, err := os.Stat(argsLog); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	raw, err := os.ReadFile(argsLog)
+	if err != nil {
+		t.Fatalf("read args log: %v", err)
+	}
+	args := string(raw)
+	if !strings.Contains(args, "update-helper") || !strings.Contains(args, "--target /tmp/target") || !strings.Contains(args, "--new /tmp/new") || !strings.Contains(args, "--pid 1234") {
+		t.Fatalf("unexpected helper args: %q", args)
+	}
+	if !strings.Contains(args, "--arg serve") || !strings.Contains(args, "--arg --flag") {
+		t.Fatalf("expected restart args in helper invocation, got %q", args)
+	}
+
+	src := filepath.Join(tmp, "src.bin")
+	dst := filepath.Join(tmp, "dst.bin")
+	if err := os.WriteFile(src, []byte("copy-me"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := CopyFile(src, dst, 0o700); err != nil {
+		t.Fatalf("CopyFile: %v", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read dst: %v", err)
+	}
+	if string(got) != "copy-me" {
+		t.Fatalf("unexpected copied content: %q", string(got))
 	}
 }
