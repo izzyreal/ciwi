@@ -322,7 +322,7 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 			requiresContainerToolsJSON, _ := json.Marshal(j.Requires.Container.Tools)
 			requiresCapsJSON := "{}"
 			artifactsJSON, _ := json.Marshal(j.Artifacts)
-			cachesJSON, _ := json.Marshal(j.Caches)
+			cachesJSON, _ := json.Marshal(config.EffectivePipelineJobCaches(j))
 			matrixJSON, _ := json.Marshal(j.Matrix.Include)
 			stepsJSON, _ := json.Marshal(j.Steps)
 

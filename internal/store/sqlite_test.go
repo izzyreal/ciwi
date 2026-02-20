@@ -157,6 +157,57 @@ func TestStoreLoadConfigAndProjectDetail(t *testing.T) {
 	}
 }
 
+func TestStoreLoadConfigExpandsManagedGoCaches(t *testing.T) {
+	s := openTestStore(t)
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 120
+        go_cache: {}
+        caches:
+          - id: fetchcontent
+            env: FETCHCONTENT_BASE_DIR
+        steps:
+          - run: go build ./...
+`), "go-cache-store")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	if err := s.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	projects, err := s.ListProjects()
+	if err != nil {
+		t.Fatalf("list projects: %v", err)
+	}
+	detail, err := s.GetProjectDetail(projects[0].ID)
+	if err != nil {
+		t.Fatalf("get project detail: %v", err)
+	}
+	caches := detail.Pipelines[0].Jobs[0].Caches
+	if len(caches) != 3 {
+		t.Fatalf("expected 3 caches, got %d", len(caches))
+	}
+	if caches[1].ID != config.ManagedGoBuildCacheID || caches[1].Env != config.ManagedGoBuildCacheEnv {
+		t.Fatalf("unexpected go build cache: %+v", caches[1])
+	}
+	if caches[2].ID != config.ManagedGoModCacheID || caches[2].Env != config.ManagedGoModCacheEnv {
+		t.Fatalf("unexpected go mod cache: %+v", caches[2])
+	}
+}
+
 func TestStoreLoadConfigReloadDoesNotAdvanceProjectIDSequence(t *testing.T) {
 	s := openTestStore(t)
 	ciwiCfg, err := config.Parse([]byte(`

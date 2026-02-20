@@ -68,6 +68,7 @@ type PipelineJobSpec struct {
 	TimeoutSeconds int                     `yaml:"timeout_seconds" json:"timeout_seconds"`
 	Artifacts      []string                `yaml:"artifacts" json:"artifacts"`
 	Caches         []PipelineJobCacheSpec  `yaml:"caches,omitempty" json:"caches,omitempty"`
+	GoCache        *PipelineJobGoCacheSpec `yaml:"go_cache,omitempty" json:"go_cache,omitempty"`
 	Matrix         PipelineJobMatrix       `yaml:"matrix" json:"matrix"`
 	Steps          []PipelineJobStep       `yaml:"steps" json:"steps"`
 }
@@ -75,6 +76,10 @@ type PipelineJobSpec struct {
 type PipelineJobCacheSpec struct {
 	ID  string `yaml:"id" json:"id"`
 	Env string `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+type PipelineJobGoCacheSpec struct {
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 type PipelineJobRequirements struct {
@@ -423,6 +428,59 @@ func hasUnsafePath(v string) bool {
 		return true
 	}
 	return false
+}
+
+const (
+	ManagedGoBuildCacheID  = "go-build"
+	ManagedGoBuildCacheEnv = "GOCACHE"
+	ManagedGoModCacheID    = "go-mod"
+	ManagedGoModCacheEnv   = "GOMODCACHE"
+)
+
+func EffectivePipelineJobCaches(job PipelineJobSpec) []PipelineJobCacheSpec {
+	out := make([]PipelineJobCacheSpec, 0, len(job.Caches)+2)
+	out = append(out, job.Caches...)
+	if !goCacheEnabled(job.GoCache) {
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	}
+	hasGoBuild := false
+	hasGoMod := false
+	for _, cache := range out {
+		id := strings.TrimSpace(cache.ID)
+		env := strings.TrimSpace(cache.Env)
+		if strings.EqualFold(id, ManagedGoBuildCacheID) || strings.EqualFold(env, ManagedGoBuildCacheEnv) {
+			hasGoBuild = true
+		}
+		if strings.EqualFold(id, ManagedGoModCacheID) || strings.EqualFold(env, ManagedGoModCacheEnv) {
+			hasGoMod = true
+		}
+	}
+	if !hasGoBuild {
+		out = append(out, PipelineJobCacheSpec{
+			ID:  ManagedGoBuildCacheID,
+			Env: ManagedGoBuildCacheEnv,
+		})
+	}
+	if !hasGoMod {
+		out = append(out, PipelineJobCacheSpec{
+			ID:  ManagedGoModCacheID,
+			Env: ManagedGoModCacheEnv,
+		})
+	}
+	return out
+}
+
+func goCacheEnabled(spec *PipelineJobGoCacheSpec) bool {
+	if spec == nil {
+		return false
+	}
+	if spec.Enabled == nil {
+		return true
+	}
+	return *spec.Enabled
 }
 
 func hasPipelineJobNeedsCycle(jobs []PipelineJobSpec) bool {

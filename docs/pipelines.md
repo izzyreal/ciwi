@@ -73,3 +73,17 @@ Resolved just-in-time when agent leases a job.
 
 - Caches are directory caches keyed by `caches[].id`.
 - Recommended FetchContent approach is source-only caching; keep build output job-local.
+- Go projects can enable managed Go caches per job:
+
+```yaml
+jobs:
+  - id: unit-tests
+    go_cache: {}
+    steps:
+      - run: go test ./...
+```
+
+- `go_cache: {}` adds two managed caches under ciwi's cache root:
+- `go-build` -> `GOCACHE`
+- `go-mod` -> `GOMODCACHE`
+- You can disable it explicitly with `go_cache: { enabled: false }`.
