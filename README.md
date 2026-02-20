@@ -114,6 +114,7 @@ Container runtime probe (opt-in):
 - For containerized jobs, set:
   - `runs_on.container_image`: container image used by ciwi to start/manage the runtime container before requirement validation
   - `runs_on.container_devices` (optional): comma-separated host device paths to pass through to the runtime container (for example `/dev/snd`)
+  - `runs_on.container_groups` (optional): comma-separated supplemental groups passed as `docker run --group-add` (for example `audio`)
 - When `runs_on.container_image` is set, ciwi executes job steps inside that managed container (`docker exec`) instead of directly on the host.
 - Source checkout and cache directories are bind-mounted into the runtime container by the agent.
 - ciwi will probe tool versions inside that container using dedicated structured API fields, and expose them on the Job Details page under runtime capability data.

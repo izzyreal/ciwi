@@ -136,6 +136,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		probeContainerUser = defaultContainerUserSpec()
 	}
 	probeContainerDevices := runtimeExecContainerDevicesFromMetadata(job.Metadata)
+	probeContainerGroups := runtimeExecContainerGroupsFromMetadata(job.Metadata)
 	requireContainerTools := len(containerToolRequirements(job.RequiredCapabilities)) > 0
 	if requireContainerTools && strings.TrimSpace(probeContainerImage) == "" {
 		err := fmt.Errorf("container tool requirements require runs_on.container_image")
@@ -182,6 +183,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			user:    probeContainerUser,
 			mounts:  mounts,
 			devices: probeContainerDevices,
+			groups:  probeContainerGroups,
 		})
 		if startErr != nil {
 			fmt.Fprintf(&output, "[runtime] %v\n", startErr)
@@ -220,7 +222,11 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		if len(probeContainerDevices) > 0 {
 			deviceSummary = strings.Join(probeContainerDevices, ", ")
 		}
-		fmt.Fprintf(&output, "[runtime] started execution container %s from %s (workdir=%s user=%s mounts=%s devices=%s)\n", probeContainer, probeContainerImage, probeContainerWorkdir, userSummary, mountSummary, deviceSummary)
+		groupSummary := "none"
+		if len(probeContainerGroups) > 0 {
+			groupSummary = strings.Join(probeContainerGroups, ", ")
+		}
+		fmt.Fprintf(&output, "[runtime] started execution container %s from %s (workdir=%s user=%s mounts=%s devices=%s groups=%s)\n", probeContainer, probeContainerImage, probeContainerWorkdir, userSummary, mountSummary, deviceSummary, groupSummary)
 		defer cleanupRuntimeProbeContainer(context.Background(), probeContainer)
 		execContainer = &executionContainerContext{
 			name:    probeContainer,

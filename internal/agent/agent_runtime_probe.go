@@ -152,6 +152,31 @@ func runtimeExecContainerDevicesFromMetadata(meta map[string]string) []string {
 	return out
 }
 
+func runtimeExecContainerGroupsFromMetadata(meta map[string]string) []string {
+	if len(meta) == 0 {
+		return nil
+	}
+	raw := strings.TrimSpace(meta["runtime_exec.container_groups"])
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		group := strings.TrimSpace(part)
+		if group == "" {
+			continue
+		}
+		if _, exists := seen[group]; exists {
+			continue
+		}
+		seen[group] = struct{}{}
+		out = append(out, group)
+	}
+	return out
+}
+
 func runtimeProbeContainerName(jobID string, meta map[string]string) string {
 	if runtimeProbeContainerImageFromMetadata(meta) == "" {
 		return ""
@@ -181,6 +206,7 @@ type runtimeContainerConfig struct {
 	user    string
 	mounts  []runtimeContainerMount
 	devices []string
+	groups  []string
 }
 
 func defaultContainerUserSpec() string {
@@ -242,6 +268,13 @@ func startRuntimeContainer(ctx context.Context, cfg runtimeContainerConfig) erro
 			continue
 		}
 		args = append(args, "--device", device)
+	}
+	for _, g := range cfg.groups {
+		group := strings.TrimSpace(g)
+		if group == "" {
+			continue
+		}
+		args = append(args, "--group-add", group)
 	}
 	for _, m := range cfg.mounts {
 		hostPath := strings.TrimSpace(m.hostPath)

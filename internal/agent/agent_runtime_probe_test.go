@@ -74,3 +74,24 @@ func TestRuntimeExecContainerDevicesFromMetadata(t *testing.T) {
 		}
 	})
 }
+
+func TestRuntimeExecContainerGroupsFromMetadata(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		got := runtimeExecContainerGroupsFromMetadata(nil)
+		if len(got) != 0 {
+			t.Fatalf("expected no groups, got %v", got)
+		}
+	})
+
+	t.Run("split and dedupe", func(t *testing.T) {
+		got := runtimeExecContainerGroupsFromMetadata(map[string]string{
+			"runtime_exec.container_groups": " audio, audio , render ",
+		})
+		if len(got) != 2 {
+			t.Fatalf("expected 2 groups, got %d (%v)", len(got), got)
+		}
+		if got[0] != "audio" || got[1] != "render" {
+			t.Fatalf("unexpected groups order/content: %v", got)
+		}
+	})
+}

@@ -662,6 +662,28 @@ pipelines:
 	}
 }
 
+func TestParseRejectsContainerGroupsWithoutContainerImage(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: linux
+        runs_on:
+          executor: script
+          shell: posix
+          container_groups: audio
+        timeout_seconds: 60
+        steps:
+          - run: echo build
+`), "test-container-groups-without-image")
+	if err == nil || !strings.Contains(err.Error(), "runs_on.container_image is required when runs_on.container_groups is set") {
+		t.Fatalf("expected runs_on.container_image validation error for container_groups, got: %v", err)
+	}
+}
+
 func TestParseAcceptsPowerShellShell(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 1
