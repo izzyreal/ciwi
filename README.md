@@ -106,6 +106,7 @@ jobs:
 Constraint syntax supports:
 - presence only: `*` (or empty)
 - version compare: `>=`, `>`, `<=`, `<`, `=`, `==`
+- synthetic tool flags are also supported (for example `xorg-dev: "*"` when Linux X11 development headers/libs are available on the agent host)
 
 From `/agents`, use **Refresh Tools** to request an on-demand re-scan on an agent.
 

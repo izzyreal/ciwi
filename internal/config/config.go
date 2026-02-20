@@ -78,9 +78,8 @@ type PipelineJobCacheSpec struct {
 }
 
 type PipelineJobRequirements struct {
-	Tools        map[string]string             `yaml:"tools,omitempty" json:"tools,omitempty"`
-	Capabilities map[string]string             `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
-	Container    PipelineJobContainerRequirements `yaml:"container,omitempty" json:"container,omitempty"`
+	Tools     map[string]string                `yaml:"tools,omitempty" json:"tools,omitempty"`
+	Container PipelineJobContainerRequirements `yaml:"container,omitempty" json:"container,omitempty"`
 }
 
 type PipelineJobContainerRequirements struct {
@@ -250,17 +249,6 @@ func (cfg File) Validate() []string {
 					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].requires.container.tools[%q] invalid tool name", i, j, tool))
 				}
 				if strings.TrimSpace(constraint) == "" {
-					continue
-				}
-			}
-			for capKey, requiredValue := range job.Requires.Capabilities {
-				if strings.TrimSpace(capKey) == "" {
-					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].requires.capabilities contains empty capability name", i, j))
-				}
-				if strings.ContainsAny(capKey, " \t\n\r") {
-					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].requires.capabilities[%q] invalid capability name", i, j, capKey))
-				}
-				if strings.TrimSpace(requiredValue) == "" {
 					continue
 				}
 			}

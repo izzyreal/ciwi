@@ -363,14 +363,13 @@ func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []pro
 	out := make([]protocol.PipelineJobDetail, 0, len(persistedJobs))
 	for _, j := range persistedJobs {
 		d := protocol.PipelineJobDetail{
-			ID:                   j.ID,
-			Needs:                append([]string(nil), j.Needs...),
-			TimeoutSeconds:       j.TimeoutSeconds,
-			RunsOn:               cloneMap(j.RunsOn),
-			RequiresTools:        cloneMap(j.RequiresTools),
-			RequiresCapabilities: cloneMap(j.RequiresCaps),
-			Artifacts:            append([]string(nil), j.Artifacts...),
-			Caches:               cloneJobCachesFromConfig(j.Caches),
+			ID:             j.ID,
+			Needs:          append([]string(nil), j.Needs...),
+			TimeoutSeconds: j.TimeoutSeconds,
+			RunsOn:         cloneMap(j.RunsOn),
+			RequiresTools:  cloneMap(j.RequiresTools),
+			Artifacts:      append([]string(nil), j.Artifacts...),
+			Caches:         cloneJobCachesFromConfig(j.Caches),
 		}
 		d.Steps = make([]protocol.PipelineStep, 0, len(j.Steps))
 		for _, step := range j.Steps {
@@ -493,7 +492,6 @@ func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, er
 		_ = json.Unmarshal([]byte(runsOnJSON), &j.RunsOn)
 		_ = json.Unmarshal([]byte(requiresToolsJSON), &j.RequiresTools)
 		_ = json.Unmarshal([]byte(requiresContainerToolsJSON), &j.RequiresContainerTools)
-		_ = json.Unmarshal([]byte(requiresCapsJSON), &j.RequiresCaps)
 		_ = json.Unmarshal([]byte(artifactsJSON), &j.Artifacts)
 		_ = json.Unmarshal([]byte(cachesJSON), &j.Caches)
 		_ = json.Unmarshal([]byte(matrixJSON), &j.MatrixInclude)

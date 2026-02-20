@@ -146,16 +146,15 @@ type MatrixInclude struct {
 }
 
 type PipelineJobDetail struct {
-	ID                   string            `json:"id"`
-	Needs                []string          `json:"needs,omitempty"`
-	TimeoutSeconds       int               `json:"timeout_seconds"`
-	RunsOn               map[string]string `json:"runs_on,omitempty"`
-	RequiresTools        map[string]string `json:"requires_tools,omitempty"`
-	RequiresCapabilities map[string]string `json:"requires_capabilities,omitempty"`
-	Artifacts            []string          `json:"artifacts,omitempty"`
-	Caches               []JobCacheSpec    `json:"caches,omitempty"`
-	Steps                []PipelineStep    `json:"steps,omitempty"`
-	MatrixIncludes       []MatrixInclude   `json:"matrix_includes,omitempty"`
+	ID             string            `json:"id"`
+	Needs          []string          `json:"needs,omitempty"`
+	TimeoutSeconds int               `json:"timeout_seconds"`
+	RunsOn         map[string]string `json:"runs_on,omitempty"`
+	RequiresTools  map[string]string `json:"requires_tools,omitempty"`
+	Artifacts      []string          `json:"artifacts,omitempty"`
+	Caches         []JobCacheSpec    `json:"caches,omitempty"`
+	Steps          []PipelineStep    `json:"steps,omitempty"`
+	MatrixIncludes []MatrixInclude   `json:"matrix_includes,omitempty"`
 }
 
 type PipelineStep struct {

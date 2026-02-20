@@ -347,8 +347,8 @@ pipelines:
 	}
 }
 
-func TestParseAcceptsRequiresCapabilities(t *testing.T) {
-	cfg, err := Parse([]byte(`
+func TestParseRejectsRequiresCapabilitiesField(t *testing.T) {
+	_, err := Parse([]byte(`
 version: 1
 project:
   name: ciwi
@@ -362,34 +362,9 @@ pipelines:
             xorg-dev: "1"
         steps:
           - run: echo build
-`), "test-requires-capabilities")
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
-	}
-	got := cfg.Pipelines[0].Jobs[0].Requires.Capabilities["xorg-dev"]
-	if got != "1" {
-		t.Fatalf("expected requires.capabilities xorg-dev=1, got %q", got)
-	}
-}
-
-func TestParseRejectsInvalidRequiresCapabilitiesName(t *testing.T) {
-	_, err := Parse([]byte(`
-version: 1
-project:
-  name: ciwi
-pipelines:
-  - id: build
-    jobs:
-      - id: linux
-        timeout_seconds: 60
-        requires:
-          capabilities:
-            "bad cap": "1"
-        steps:
-          - run: echo build
 `), "test-invalid-requires-capabilities")
-	if err == nil || !strings.Contains(err.Error(), "requires.capabilities") {
-		t.Fatalf("expected requires.capabilities validation error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "field capabilities not found") {
+		t.Fatalf("expected unknown requires.capabilities field error, got: %v", err)
 	}
 }
 

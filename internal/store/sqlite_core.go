@@ -44,7 +44,6 @@ type PersistedPipelineJob struct {
 	RunsOn                 map[string]string
 	RequiresTools          map[string]string
 	RequiresContainerTools map[string]string
-	RequiresCaps           map[string]string
 	TimeoutSeconds         int
 	Artifacts              []string
 	Caches                 []config.PipelineJobCacheSpec
@@ -321,7 +320,7 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 			runsOnJSON, _ := json.Marshal(j.RunsOn)
 			requiresToolsJSON, _ := json.Marshal(j.Requires.Tools)
 			requiresContainerToolsJSON, _ := json.Marshal(j.Requires.Container.Tools)
-			requiresCapsJSON, _ := json.Marshal(j.Requires.Capabilities)
+			requiresCapsJSON := "{}"
 			artifactsJSON, _ := json.Marshal(j.Artifacts)
 			cachesJSON, _ := json.Marshal(j.Caches)
 			matrixJSON, _ := json.Marshal(j.Matrix.Include)

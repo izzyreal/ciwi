@@ -27,9 +27,6 @@ func detectAgentCapabilities() map[string]string {
 		"arch":     runtime.GOARCH,
 		"run_mode": runMode,
 	}
-	if hasXorgDev() {
-		caps["xorg-dev"] = "1"
-	}
 	for tool, version := range detectToolVersions() {
 		if strings.TrimSpace(version) == "" {
 			continue
@@ -99,6 +96,9 @@ func detectToolVersions() map[string]string {
 	}
 	if v := detectMSVCVersion(); v != "" {
 		out["msvc"] = v
+	}
+	if hasXorgDev() {
+		out["xorg-dev"] = "1"
 	}
 	return out
 }

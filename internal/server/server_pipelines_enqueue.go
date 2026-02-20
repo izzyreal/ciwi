@@ -278,17 +278,6 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 				}
 				requiredCaps["requires.container.tool."+tool] = strings.TrimSpace(constraint)
 			}
-			for capabilityKey, requiredValue := range pj.RequiresCaps {
-				capabilityKey = strings.TrimSpace(capabilityKey)
-				if capabilityKey == "" {
-					continue
-				}
-				if requiredCaps == nil {
-					requiredCaps = map[string]string{}
-				}
-				requiredCaps[capabilityKey] = strings.TrimSpace(requiredValue)
-			}
-
 			sourceRef := p.SourceRef
 			if runCtx.SourceRefResolved != "" {
 				sourceRef = runCtx.SourceRefResolved
