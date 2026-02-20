@@ -258,6 +258,16 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
 		return nil
 	}
+	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:             agentID,
+		Status:              protocol.JobExecutionStatusRunning,
+		Output:              redactSensitive(trimOutput(output.String()), job.SensitiveValues),
+		CurrentStep:         "Preparing execution",
+		RuntimeCapabilities: runtimeCaps,
+		TimestampUTC:        time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("report runtime capabilities: %w", err)
+	}
 
 	traceShell := boolEnv("CIWI_AGENT_TRACE_SHELL", true)
 	verboseGo := boolEnv("CIWI_AGENT_GO_BUILD_VERBOSE", true)
