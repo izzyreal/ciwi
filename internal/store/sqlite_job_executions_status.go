@@ -150,58 +150,18 @@ func retrySQLiteBusy(fn func() error) error {
 }
 
 func (s *Store) MergeJobExecutionEnv(jobID string, patch map[string]string) (map[string]string, error) {
-	if strings.TrimSpace(jobID) == "" {
-		return nil, fmt.Errorf("job id is required")
-	}
-	if len(patch) == 0 {
-		job, err := s.GetJobExecution(jobID)
-		if err != nil {
-			return nil, err
-		}
-		return cloneMap(job.Env), nil
-	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var raw string
-	if err := tx.QueryRow(`SELECT env_json FROM job_executions WHERE id = ?`, jobID).Scan(&raw); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("job not found")
-		}
-		return nil, fmt.Errorf("read env: %w", err)
-	}
-
-	env := map[string]string{}
-	_ = json.Unmarshal([]byte(raw), &env)
-	if env == nil {
-		env = map[string]string{}
-	}
-	for k, v := range patch {
-		key := strings.TrimSpace(k)
-		if key == "" {
-			continue
-		}
-		if strings.TrimSpace(v) == "" {
-			delete(env, key)
-			continue
-		}
-		env[key] = v
-	}
-	updated, _ := json.Marshal(env)
-	if _, err := tx.Exec(`UPDATE job_executions SET env_json = ? WHERE id = ?`, string(updated), jobID); err != nil {
-		return nil, fmt.Errorf("update env: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
-	}
-	return cloneMap(env), nil
+	return s.mergeJobExecutionStringMap(jobID, patch, "env_json", "update env", func(job protocol.JobExecution) map[string]string {
+		return job.Env
+	})
 }
 
 func (s *Store) MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error) {
+	return s.mergeJobExecutionStringMap(jobID, patch, "metadata_json", "update metadata", func(job protocol.JobExecution) map[string]string {
+		return job.Metadata
+	})
+}
+
+func (s *Store) mergeJobExecutionStringMap(jobID string, patch map[string]string, column string, updateErrPrefix string, currentMap func(protocol.JobExecution) map[string]string) (map[string]string, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return nil, fmt.Errorf("job id is required")
 	}
@@ -210,7 +170,7 @@ func (s *Store) MergeJobExecutionMetadata(jobID string, patch map[string]string)
 		if err != nil {
 			return nil, err
 		}
-		return cloneMap(job.Metadata), nil
+		return cloneMap(currentMap(job)), nil
 	}
 
 	tx, err := s.db.Begin()
@@ -219,18 +179,19 @@ func (s *Store) MergeJobExecutionMetadata(jobID string, patch map[string]string)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	query := `SELECT ` + column + ` FROM job_executions WHERE id = ?`
 	var raw string
-	if err := tx.QueryRow(`SELECT metadata_json FROM job_executions WHERE id = ?`, jobID).Scan(&raw); err != nil {
+	if err := tx.QueryRow(query, jobID).Scan(&raw); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("job not found")
 		}
-		return nil, fmt.Errorf("read metadata: %w", err)
+		return nil, fmt.Errorf("read %s: %w", strings.TrimSuffix(column, "_json"), err)
 	}
 
-	meta := map[string]string{}
-	_ = json.Unmarshal([]byte(raw), &meta)
-	if meta == nil {
-		meta = map[string]string{}
+	values := map[string]string{}
+	_ = json.Unmarshal([]byte(raw), &values)
+	if values == nil {
+		values = map[string]string{}
 	}
 	for k, v := range patch {
 		key := strings.TrimSpace(k)
@@ -238,19 +199,20 @@ func (s *Store) MergeJobExecutionMetadata(jobID string, patch map[string]string)
 			continue
 		}
 		if strings.TrimSpace(v) == "" {
-			delete(meta, key)
+			delete(values, key)
 			continue
 		}
-		meta[key] = v
+		values[key] = v
 	}
-	updated, _ := json.Marshal(meta)
-	if _, err := tx.Exec(`UPDATE job_executions SET metadata_json = ? WHERE id = ?`, string(updated), jobID); err != nil {
-		return nil, fmt.Errorf("update metadata: %w", err)
+	updated, _ := json.Marshal(values)
+	updateSQL := `UPDATE job_executions SET ` + column + ` = ? WHERE id = ?`
+	if _, err := tx.Exec(updateSQL, string(updated), jobID); err != nil {
+		return nil, fmt.Errorf("%s: %w", updateErrPrefix, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
-	return cloneMap(meta), nil
+	return cloneMap(values), nil
 }
 
 func (s *Store) DeleteQueuedJobExecution(jobID string) error {

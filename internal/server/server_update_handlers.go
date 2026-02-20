@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -26,6 +25,19 @@ var (
 	serverExeExtFn                      = exeExt
 )
 
+const (
+	updateKeyLastCheckedUTC     = "update_last_checked_utc"
+	updateKeyMessage            = "update_message"
+	updateKeyLatestVersion      = "update_latest_version"
+	updateKeyLastApplyStatus    = "update_last_apply_status"
+	updateKeyReloadProjectsPend = "update_reload_projects_pending"
+	updateStatusRunning         = "running"
+	updateStatusFailed          = "failed"
+	updateStatusNoop            = "noop"
+	updateStatusStaged          = "staged"
+	updateStatusSuccess         = "success"
+)
+
 func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -34,10 +46,10 @@ func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) 
 	info, err := s.fetchLatestUpdateInfo(r.Context())
 	if err != nil {
 		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_checked_utc": time.Now().UTC().Format(time.RFC3339Nano),
-			"update_current_version":  currentVersion(),
-			"update_message":          err.Error(),
-			"update_available":        "0",
+			updateKeyLastCheckedUTC:  time.Now().UTC().Format(time.RFC3339Nano),
+			"update_current_version": currentVersion(),
+			updateKeyMessage:         err.Error(),
+			"update_available":       "0",
 		})
 		writeJSON(w, http.StatusOK, updateCheckResponse{
 			CurrentVersion: currentVersion(),
@@ -57,13 +69,13 @@ func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) 
 		resp.Message = "already up to date"
 	}
 	_ = s.persistUpdateStatus(map[string]string{
-		"update_last_checked_utc": time.Now().UTC().Format(time.RFC3339Nano),
-		"update_current_version":  currentVersion(),
-		"update_latest_version":   info.TagName,
-		"update_release_url":      info.HTMLURL,
-		"update_asset_name":       info.Asset.Name,
-		"update_available":        boolString(resp.UpdateAvailable),
-		"update_message":          resp.Message,
+		updateKeyLastCheckedUTC:  time.Now().UTC().Format(time.RFC3339Nano),
+		"update_current_version": currentVersion(),
+		updateKeyLatestVersion:   info.TagName,
+		"update_release_url":     info.HTMLURL,
+		"update_asset_name":      info.Asset.Name,
+		"update_available":       boolString(resp.UpdateAvailable),
+		updateKeyMessage:         resp.Message,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -152,34 +164,26 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		s.update.mu.Unlock()
 	}()
 	_ = s.persistUpdateStatus(map[string]string{
-		"update_last_apply_utc":    time.Now().UTC().Format(time.RFC3339Nano),
-		"update_last_apply_status": "running",
-		"update_message":           "update started",
+		"update_last_apply_utc":  time.Now().UTC().Format(time.RFC3339Nano),
+		updateKeyLastApplyStatus: updateStatusRunning,
+		updateKeyMessage:         "update started",
 	})
 
 	exePath, err := serverExecutablePathFn()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("resolve executable path: %v", err), http.StatusInternalServerError)
+		s.failUpdateApply(w, http.StatusInternalServerError, "resolve executable path: "+err.Error(), "resolve executable path: "+err.Error())
 		return
 	}
 	exePath, _ = filepath.Abs(exePath)
 	if serverLooksLikeGoRunBinaryFn(exePath) {
 		msg := "self-update is unavailable for go run binaries; run built ciwi binary instead"
-		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_apply_status": "failed",
-			"update_message":           msg,
-		})
-		http.Error(w, msg, http.StatusBadRequest)
+		s.failUpdateApply(w, http.StatusBadRequest, msg, msg)
 		return
 	}
 
 	info, err := s.fetchUpdateInfoForTag(r.Context(), targetVersion)
 	if err != nil {
-		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_apply_status": "failed",
-			"update_message":           err.Error(),
-		})
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.failUpdateApply(w, http.StatusBadRequest, err.Error(), err.Error())
 		return
 	}
 	if !isVersionDifferent(info.TagName, currentVersion()) {
@@ -188,9 +192,9 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 			msg = "already up to date"
 		}
 		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_apply_status": "noop",
-			"update_message":           msg,
-			"update_latest_version":    info.TagName,
+			updateKeyLastApplyStatus: updateStatusNoop,
+			updateKeyMessage:         msg,
+			updateKeyLatestVersion:   info.TagName,
 		})
 		_ = s.setAgentUpdateTarget(currentVersion())
 		writeJSON(w, http.StatusOK, updateApplyResponse{
@@ -203,55 +207,40 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 
 	newBinPath, err := serverDownloadUpdateAssetFn(r.Context(), info.Asset.URL, info.Asset.Name)
 	if err != nil {
-		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_apply_status": "failed",
-			"update_message":           "download update asset: " + err.Error(),
-		})
-		http.Error(w, fmt.Sprintf("download update asset: %v", err), http.StatusBadRequest)
+		msg := "download update asset: " + err.Error()
+		s.failUpdateApply(w, http.StatusBadRequest, msg, msg)
 		return
 	}
 	if strings.TrimSpace(info.ChecksumAsset.URL) != "" {
 		checksumText, err := serverDownloadTextAssetFn(r.Context(), info.ChecksumAsset.URL)
 		if err != nil {
-			_ = s.persistUpdateStatus(map[string]string{
-				"update_last_apply_status": "failed",
-				"update_message":           "download checksum asset: " + err.Error(),
-			})
-			http.Error(w, fmt.Sprintf("download checksum asset: %v", err), http.StatusBadRequest)
+			msg := "download checksum asset: " + err.Error()
+			s.failUpdateApply(w, http.StatusBadRequest, msg, msg)
 			return
 		}
 		if err := serverVerifyFileSHA256Fn(newBinPath, info.Asset.Name, checksumText); err != nil {
-			_ = s.persistUpdateStatus(map[string]string{
-				"update_last_apply_status": "failed",
-				"update_message":           "checksum verification failed: " + err.Error(),
-			})
-			http.Error(w, fmt.Sprintf("checksum verification failed: %v", err), http.StatusBadRequest)
+			msg := "checksum verification failed: " + err.Error()
+			s.failUpdateApply(w, http.StatusBadRequest, msg, msg)
 			return
 		}
 	}
 
 	if serverIsLinuxSystemUpdaterEnabledFn() {
 		if err := serverStageLinuxUpdateBinaryFn(info.TagName, info, newBinPath); err != nil {
-			_ = s.persistUpdateStatus(map[string]string{
-				"update_last_apply_status": "failed",
-				"update_message":           "stage update: " + err.Error(),
-			})
-			http.Error(w, fmt.Sprintf("stage update: %v", err), http.StatusInternalServerError)
+			msg := "stage update: " + err.Error()
+			s.failUpdateApply(w, http.StatusInternalServerError, msg, msg)
 			return
 		}
 		if err := serverTriggerLinuxSystemUpdaterFn(); err != nil {
-			_ = s.persistUpdateStatus(map[string]string{
-				"update_last_apply_status": "failed",
-				"update_message":           "trigger updater: " + err.Error(),
-			})
-			http.Error(w, fmt.Sprintf("trigger updater: %v", err), http.StatusInternalServerError)
+			msg := "trigger updater: " + err.Error()
+			s.failUpdateApply(w, http.StatusInternalServerError, msg, msg)
 			return
 		}
 		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_apply_status":       "staged",
-			"update_message":                 updateApplyMessage(rollback, true),
-			"update_latest_version":          info.TagName,
-			"update_reload_projects_pending": "1",
+			updateKeyLastApplyStatus:    updateStatusStaged,
+			updateKeyMessage:            updateApplyMessage(rollback, true),
+			updateKeyLatestVersion:      info.TagName,
+			updateKeyReloadProjectsPend: "1",
 		})
 		_ = s.setAgentUpdateTarget(info.TagName)
 		writeJSON(w, http.StatusOK, updateApplyResponse{
@@ -266,27 +255,21 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 
 	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+serverExeExtFn())
 	if err := serverCopyFileFn(exePath, helperPath, 0o755); err != nil {
-		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_apply_status": "failed",
-			"update_message":           "prepare update helper: " + err.Error(),
-		})
-		http.Error(w, fmt.Sprintf("prepare update helper: %v", err), http.StatusInternalServerError)
+		msg := "prepare update helper: " + err.Error()
+		s.failUpdateApply(w, http.StatusInternalServerError, msg, msg)
 		return
 	}
 
 	if err := serverStartUpdateHelperFn(helperPath, exePath, newBinPath, os.Getpid(), os.Args[1:]); err != nil {
-		_ = s.persistUpdateStatus(map[string]string{
-			"update_last_apply_status": "failed",
-			"update_message":           "start update helper: " + err.Error(),
-		})
-		http.Error(w, fmt.Sprintf("start update helper: %v", err), http.StatusInternalServerError)
+		msg := "start update helper: " + err.Error()
+		s.failUpdateApply(w, http.StatusInternalServerError, msg, msg)
 		return
 	}
 	_ = s.persistUpdateStatus(map[string]string{
-		"update_last_apply_status":       "success",
-		"update_message":                 updateApplyMessage(rollback, false),
-		"update_latest_version":          info.TagName,
-		"update_reload_projects_pending": "1",
+		updateKeyLastApplyStatus:    updateStatusSuccess,
+		updateKeyMessage:            updateApplyMessage(rollback, false),
+		updateKeyLatestVersion:      info.TagName,
+		updateKeyReloadProjectsPend: "1",
 	})
 	_ = s.setAgentUpdateTarget(info.TagName)
 
@@ -301,6 +284,14 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		time.Sleep(250 * time.Millisecond)
 		os.Exit(0)
 	}()
+}
+
+func (s *stateStore) failUpdateApply(w http.ResponseWriter, statusCode int, responseMessage, persistMessage string) {
+	_ = s.persistUpdateStatus(map[string]string{
+		updateKeyLastApplyStatus: updateStatusFailed,
+		updateKeyMessage:         strings.TrimSpace(persistMessage),
+	})
+	http.Error(w, strings.TrimSpace(responseMessage), statusCode)
 }
 
 func updateApplyMessage(rollback, staged bool) string {
