@@ -1,8 +1,12 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -192,4 +196,182 @@ func TestPersistUpdateStatusSkipsEmptyKeys(t *testing.T) {
 	if _, exists := state[""]; exists {
 		t.Fatalf("unexpected blank app-state key present")
 	}
+}
+
+func TestServerUpdateApplyStagedBranchesWithHandlerSeams(t *testing.T) {
+	oldExecutable := serverExecutablePathFn
+	oldGoRun := serverLooksLikeGoRunBinaryFn
+	oldDownload := serverDownloadUpdateAssetFn
+	oldDownloadText := serverDownloadTextAssetFn
+	oldVerify := serverVerifyFileSHA256Fn
+	oldLinuxEnabled := serverIsLinuxSystemUpdaterEnabledFn
+	oldStage := serverStageLinuxUpdateBinaryFn
+	oldTrigger := serverTriggerLinuxSystemUpdaterFn
+	t.Cleanup(func() {
+		serverExecutablePathFn = oldExecutable
+		serverLooksLikeGoRunBinaryFn = oldGoRun
+		serverDownloadUpdateAssetFn = oldDownload
+		serverDownloadTextAssetFn = oldDownloadText
+		serverVerifyFileSHA256Fn = oldVerify
+		serverIsLinuxSystemUpdaterEnabledFn = oldLinuxEnabled
+		serverStageLinuxUpdateBinaryFn = oldStage
+		serverTriggerLinuxSystemUpdaterFn = oldTrigger
+	})
+
+	tmp := t.TempDir()
+	fakeExe := filepath.Join(tmp, "ciwi")
+	if err := os.WriteFile(fakeExe, []byte("ciwi"), 0o755); err != nil {
+		t.Fatalf("write fake exe: %v", err)
+	}
+	fakeBin := filepath.Join(tmp, "ciwi-new")
+	if err := os.WriteFile(fakeBin, []byte("new"), 0o755); err != nil {
+		t.Fatalf("write fake downloaded binary: %v", err)
+	}
+
+	serverExecutablePathFn = func() (string, error) { return fakeExe, nil }
+	serverLooksLikeGoRunBinaryFn = func(string) bool { return false }
+	serverDownloadUpdateAssetFn = func(_ context.Context, _, _ string) (string, error) { return fakeBin, nil }
+	serverDownloadTextAssetFn = func(_ context.Context, _ string) (string, error) { return "checksum", nil }
+	serverVerifyFileSHA256Fn = func(_, _, _ string) error { return nil }
+	serverIsLinuxSystemUpdaterEnabledFn = func() bool { return true }
+
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/releases/tags/") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example.invalid/release","assets":[{"name":"ciwi-darwin-arm64","url":"https://example.invalid/asset"}]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer gh.Close()
+	t.Setenv("CIWI_UPDATE_API_BASE", gh.URL)
+	t.Setenv("CIWI_UPDATE_REPO", "izzyreal/ciwi")
+	t.Setenv("CIWI_UPDATE_REQUIRE_CHECKSUM", "false")
+	oldVersion := version.Version
+	version.Version = "v0.1.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	t.Run("staged success", func(t *testing.T) {
+		serverStageLinuxUpdateBinaryFn = func(targetVersion string, info latestUpdateInfo, newBinPath string) error {
+			if targetVersion != "v9.9.9" || strings.TrimSpace(newBinPath) == "" {
+				t.Fatalf("unexpected staged args target=%q path=%q info=%+v", targetVersion, newBinPath, info)
+			}
+			return nil
+		}
+		serverTriggerLinuxSystemUpdaterFn = func() error { return nil }
+
+		resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/apply", map[string]any{"target_version": "v9.9.9"})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected staged success status 200, got %d body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		var payload struct {
+			Updated bool `json:"updated"`
+			Staged  bool `json:"staged"`
+		}
+		decodeJSONBody(t, resp, &payload)
+		if !payload.Updated || !payload.Staged {
+			t.Fatalf("unexpected staged success payload: %+v", payload)
+		}
+		status, ok, err := s.db.GetAppState("update_last_apply_status")
+		if err != nil || !ok || status != "staged" {
+			t.Fatalf("expected persisted staged status, ok=%v status=%q err=%v", ok, status, err)
+		}
+	})
+
+	t.Run("stage failure", func(t *testing.T) {
+		serverStageLinuxUpdateBinaryFn = func(string, latestUpdateInfo, string) error { return fmt.Errorf("stage failed") }
+		serverTriggerLinuxSystemUpdaterFn = func() error { return nil }
+		resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/apply", map[string]any{"target_version": "v9.9.9"})
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Fatalf("expected stage failure status 500, got %d body=%s", resp.StatusCode, readBody(t, resp))
+		}
+	})
+
+	t.Run("trigger failure", func(t *testing.T) {
+		serverStageLinuxUpdateBinaryFn = func(string, latestUpdateInfo, string) error { return nil }
+		serverTriggerLinuxSystemUpdaterFn = func() error { return fmt.Errorf("trigger failed") }
+		resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/apply", map[string]any{"target_version": "v9.9.9"})
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Fatalf("expected trigger failure status 500, got %d body=%s", resp.StatusCode, readBody(t, resp))
+		}
+	})
+}
+
+func TestServerUpdateApplyChecksumAndHelperFailureBranches(t *testing.T) {
+	oldExecutable := serverExecutablePathFn
+	oldGoRun := serverLooksLikeGoRunBinaryFn
+	oldDownload := serverDownloadUpdateAssetFn
+	oldDownloadText := serverDownloadTextAssetFn
+	oldVerify := serverVerifyFileSHA256Fn
+	oldLinuxEnabled := serverIsLinuxSystemUpdaterEnabledFn
+	oldCopy := serverCopyFileFn
+	oldStart := serverStartUpdateHelperFn
+	t.Cleanup(func() {
+		serverExecutablePathFn = oldExecutable
+		serverLooksLikeGoRunBinaryFn = oldGoRun
+		serverDownloadUpdateAssetFn = oldDownload
+		serverDownloadTextAssetFn = oldDownloadText
+		serverVerifyFileSHA256Fn = oldVerify
+		serverIsLinuxSystemUpdaterEnabledFn = oldLinuxEnabled
+		serverCopyFileFn = oldCopy
+		serverStartUpdateHelperFn = oldStart
+	})
+
+	tmp := t.TempDir()
+	fakeExe := filepath.Join(tmp, "ciwi")
+	if err := os.WriteFile(fakeExe, []byte("ciwi"), 0o755); err != nil {
+		t.Fatalf("write fake exe: %v", err)
+	}
+	fakeBin := filepath.Join(tmp, "ciwi-new")
+	if err := os.WriteFile(fakeBin, []byte("new"), 0o755); err != nil {
+		t.Fatalf("write fake downloaded binary: %v", err)
+	}
+	serverExecutablePathFn = func() (string, error) { return fakeExe, nil }
+	serverLooksLikeGoRunBinaryFn = func(string) bool { return false }
+	serverDownloadUpdateAssetFn = func(_ context.Context, _, _ string) (string, error) { return fakeBin, nil }
+	serverIsLinuxSystemUpdaterEnabledFn = func() bool { return false }
+
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/releases/tags/") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example.invalid/release","assets":[{"name":"ciwi-darwin-arm64","url":"https://example.invalid/asset"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/checksums"}]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer gh.Close()
+	t.Setenv("CIWI_UPDATE_API_BASE", gh.URL)
+	t.Setenv("CIWI_UPDATE_REPO", "izzyreal/ciwi")
+	t.Setenv("CIWI_UPDATE_REQUIRE_CHECKSUM", "true")
+	oldVersion := version.Version
+	version.Version = "v0.1.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	t.Run("checksum verification failure", func(t *testing.T) {
+		serverDownloadTextAssetFn = func(_ context.Context, _ string) (string, error) { return "checksum", nil }
+		serverVerifyFileSHA256Fn = func(_, _, _ string) error { return fmt.Errorf("bad checksum") }
+
+		resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/apply", map[string]any{"target_version": "v9.9.9"})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected checksum failure status 400, got %d body=%s", resp.StatusCode, readBody(t, resp))
+		}
+	})
+
+	t.Run("helper start failure", func(t *testing.T) {
+		serverDownloadTextAssetFn = func(_ context.Context, _ string) (string, error) { return "checksum", nil }
+		serverVerifyFileSHA256Fn = func(_, _, _ string) error { return nil }
+		serverCopyFileFn = func(_, _ string, _ os.FileMode) error { return nil }
+		serverStartUpdateHelperFn = func(_, _, _ string, _ int, _ []string) error { return fmt.Errorf("helper start failed") }
+
+		resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/apply", map[string]any{"target_version": "v9.9.9"})
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Fatalf("expected helper start failure status 500, got %d body=%s", resp.StatusCode, readBody(t, resp))
+		}
+	})
 }

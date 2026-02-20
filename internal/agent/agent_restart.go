@@ -10,35 +10,43 @@ import (
 	"time"
 )
 
+var (
+	agentRuntimeGOOS    = runtime.GOOS
+	restartViaLaunchd   = restartAgentViaLaunchd
+	restartViaSystemd   = restartAgentViaSystemd
+	restartViaWinSvc    = restartAgentViaWindowsService
+	scheduleAgentExitFn = scheduleAgentExit
+)
+
 func requestAgentRestart() string {
 	var serviceErr string
-	switch runtime.GOOS {
+	switch agentRuntimeGOOS {
 	case "darwin":
-		if msg, err, attempted := restartAgentViaLaunchd(); attempted {
+		if msg, err, attempted := restartViaLaunchd(); attempted {
 			if err == nil {
-				scheduleAgentExit()
+				scheduleAgentExitFn()
 				return msg
 			}
 			serviceErr = err.Error()
 		}
 	case "linux":
-		if msg, err, attempted := restartAgentViaSystemd(); attempted {
+		if msg, err, attempted := restartViaSystemd(); attempted {
 			if err == nil {
-				scheduleAgentExit()
+				scheduleAgentExitFn()
 				return msg
 			}
 			serviceErr = err.Error()
 		}
 	case "windows":
-		if msg, err, attempted := restartAgentViaWindowsService(); attempted {
+		if msg, err, attempted := restartViaWinSvc(); attempted {
 			if err == nil {
-				scheduleAgentExit()
+				scheduleAgentExitFn()
 				return msg
 			}
 			serviceErr = err.Error()
 		}
 	}
-	scheduleAgentExit()
+	scheduleAgentExitFn()
 	if strings.TrimSpace(serviceErr) != "" {
 		return "service restart failed; fallback exit requested: " + serviceErr
 	}

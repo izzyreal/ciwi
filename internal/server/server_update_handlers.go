@@ -12,6 +12,20 @@ import (
 	"time"
 )
 
+var (
+	serverExecutablePathFn              = os.Executable
+	serverLooksLikeGoRunBinaryFn        = looksLikeGoRunBinary
+	serverDownloadUpdateAssetFn         = downloadUpdateAsset
+	serverDownloadTextAssetFn           = downloadTextAsset
+	serverVerifyFileSHA256Fn            = verifyFileSHA256
+	serverIsLinuxSystemUpdaterEnabledFn = isLinuxSystemUpdaterEnabled
+	serverStageLinuxUpdateBinaryFn      = stageLinuxUpdateBinary
+	serverTriggerLinuxSystemUpdaterFn   = triggerLinuxSystemUpdater
+	serverCopyFileFn                    = copyFile
+	serverStartUpdateHelperFn           = startUpdateHelper
+	serverExeExtFn                      = exeExt
+)
+
 func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -143,13 +157,13 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		"update_message":           "update started",
 	})
 
-	exePath, err := os.Executable()
+	exePath, err := serverExecutablePathFn()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("resolve executable path: %v", err), http.StatusInternalServerError)
 		return
 	}
 	exePath, _ = filepath.Abs(exePath)
-	if looksLikeGoRunBinary(exePath) {
+	if serverLooksLikeGoRunBinaryFn(exePath) {
 		msg := "self-update is unavailable for go run binaries; run built ciwi binary instead"
 		_ = s.persistUpdateStatus(map[string]string{
 			"update_last_apply_status": "failed",
@@ -187,7 +201,7 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	newBinPath, err := downloadUpdateAsset(r.Context(), info.Asset.URL, info.Asset.Name)
+	newBinPath, err := serverDownloadUpdateAssetFn(r.Context(), info.Asset.URL, info.Asset.Name)
 	if err != nil {
 		_ = s.persistUpdateStatus(map[string]string{
 			"update_last_apply_status": "failed",
@@ -197,7 +211,7 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if strings.TrimSpace(info.ChecksumAsset.URL) != "" {
-		checksumText, err := downloadTextAsset(r.Context(), info.ChecksumAsset.URL)
+		checksumText, err := serverDownloadTextAssetFn(r.Context(), info.ChecksumAsset.URL)
 		if err != nil {
 			_ = s.persistUpdateStatus(map[string]string{
 				"update_last_apply_status": "failed",
@@ -206,7 +220,7 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 			http.Error(w, fmt.Sprintf("download checksum asset: %v", err), http.StatusBadRequest)
 			return
 		}
-		if err := verifyFileSHA256(newBinPath, info.Asset.Name, checksumText); err != nil {
+		if err := serverVerifyFileSHA256Fn(newBinPath, info.Asset.Name, checksumText); err != nil {
 			_ = s.persistUpdateStatus(map[string]string{
 				"update_last_apply_status": "failed",
 				"update_message":           "checksum verification failed: " + err.Error(),
@@ -216,8 +230,8 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	if isLinuxSystemUpdaterEnabled() {
-		if err := stageLinuxUpdateBinary(info.TagName, info, newBinPath); err != nil {
+	if serverIsLinuxSystemUpdaterEnabledFn() {
+		if err := serverStageLinuxUpdateBinaryFn(info.TagName, info, newBinPath); err != nil {
 			_ = s.persistUpdateStatus(map[string]string{
 				"update_last_apply_status": "failed",
 				"update_message":           "stage update: " + err.Error(),
@@ -225,7 +239,7 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 			http.Error(w, fmt.Sprintf("stage update: %v", err), http.StatusInternalServerError)
 			return
 		}
-		if err := triggerLinuxSystemUpdater(); err != nil {
+		if err := serverTriggerLinuxSystemUpdaterFn(); err != nil {
 			_ = s.persistUpdateStatus(map[string]string{
 				"update_last_apply_status": "failed",
 				"update_message":           "trigger updater: " + err.Error(),
@@ -250,8 +264,8 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
-	if err := copyFile(exePath, helperPath, 0o755); err != nil {
+	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+serverExeExtFn())
+	if err := serverCopyFileFn(exePath, helperPath, 0o755); err != nil {
 		_ = s.persistUpdateStatus(map[string]string{
 			"update_last_apply_status": "failed",
 			"update_message":           "prepare update helper: " + err.Error(),
@@ -260,7 +274,7 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := startUpdateHelper(helperPath, exePath, newBinPath, os.Getpid(), os.Args[1:]); err != nil {
+	if err := serverStartUpdateHelperFn(helperPath, exePath, newBinPath, os.Getpid(), os.Args[1:]); err != nil {
 		_ = s.persistUpdateStatus(map[string]string{
 			"update_last_apply_status": "failed",
 			"update_message":           "start update helper: " + err.Error(),
