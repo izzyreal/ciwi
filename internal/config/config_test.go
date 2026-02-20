@@ -615,6 +615,31 @@ pipelines:
 	}
 }
 
+func TestParseRejectsContainerToolRequirementsWithoutContainerImage(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: linux
+        runs_on:
+          executor: script
+          shell: posix
+        requires:
+          container:
+            tools:
+              cmake: "*"
+        timeout_seconds: 60
+        steps:
+          - run: echo build
+`), "test-container-tools-without-image")
+	if err == nil || !strings.Contains(err.Error(), "runs_on.container_image is required when requires.container.tools is set") {
+		t.Fatalf("expected runs_on.container_image validation error, got: %v", err)
+	}
+}
+
 func TestParseAcceptsPowerShellShell(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 1

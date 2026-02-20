@@ -252,11 +252,14 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			if depJobIDs := resolveDependencyArtifactJobIDs(p.DependsOn, depCtx.ArtifactJobIDsAll, depJobID); len(depJobIDs) > 0 {
 				env["CIWI_DEP_ARTIFACT_JOB_IDS"] = strings.Join(depJobIDs, ",")
 			}
-			if containerProbe := strings.TrimSpace(pj.RunsOn["container_probe"]); containerProbe != "" {
-				metadata["runtime_probe.container"] = containerProbe
-			}
 			if containerImage := strings.TrimSpace(pj.RunsOn["container_image"]); containerImage != "" {
 				metadata["runtime_probe.container_image"] = containerImage
+			}
+			if containerWorkdir := strings.TrimSpace(pj.RunsOn["container_workdir"]); containerWorkdir != "" {
+				metadata["runtime_exec.container_workdir"] = containerWorkdir
+			}
+			if containerUser := strings.TrimSpace(pj.RunsOn["container_user"]); containerUser != "" {
+				metadata["runtime_exec.container_user"] = containerUser
 			}
 
 			requiredCaps := cloneMap(pj.RunsOn)

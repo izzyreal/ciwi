@@ -124,7 +124,101 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	cacheStats := collectJobCacheStats(resolvedCaches)
 	probeContainer := runtimeProbeContainerName(job.ID, job.Metadata)
 	probeContainerImage := runtimeProbeContainerImageFromMetadata(job.Metadata)
-	if started, ensureErr := ensureRuntimeProbeContainer(runCtx, probeContainer, probeContainerImage); ensureErr != nil {
+	probeContainerWorkdir := runtimeExecContainerWorkdirFromMetadata(job.Metadata)
+	if strings.TrimSpace(probeContainerWorkdir) == "" {
+		probeContainerWorkdir = "/workspace"
+	}
+	probeContainerUser := runtimeExecContainerUserFromMetadata(job.Metadata)
+	if strings.TrimSpace(probeContainerUser) == "" {
+		probeContainerUser = defaultContainerUserSpec()
+	}
+	requireContainerTools := len(containerToolRequirements(job.RequiredCapabilities)) > 0
+	if requireContainerTools && strings.TrimSpace(probeContainerImage) == "" {
+		err := fmt.Errorf("container tool requirements require runs_on.container_image")
+		fmt.Fprintf(&output, "[runtime] %v\n", err)
+		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID:      agentID,
+			Status:       protocol.JobExecutionStatusFailed,
+			Error:        err.Error(),
+			Output:       trimmedOutput,
+			CacheStats:   cacheStats,
+			TimestampUTC: time.Now().UTC(),
+		}); reportErr != nil {
+			return reportErr
+		}
+		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
+		return nil
+	}
+	containerExec := strings.TrimSpace(probeContainerImage) != ""
+	execContainer := (*executionContainerContext)(nil)
+	if containerExec {
+		mounts := []runtimeContainerMount{
+			{hostPath: execDir, containerPath: probeContainerWorkdir},
+		}
+		cacheMountSeen := map[string]struct{}{}
+		for _, hostPath := range cacheEnv {
+			hostPath = strings.TrimSpace(hostPath)
+			if hostPath == "" {
+				continue
+			}
+			if _, ok := cacheMountSeen[hostPath]; ok {
+				continue
+			}
+			cacheMountSeen[hostPath] = struct{}{}
+			mounts = append(mounts, runtimeContainerMount{
+				hostPath:      hostPath,
+				containerPath: hostPath,
+			})
+		}
+		startErr := startRuntimeContainer(runCtx, runtimeContainerConfig{
+			name:    probeContainer,
+			image:   probeContainerImage,
+			workdir: probeContainerWorkdir,
+			user:    probeContainerUser,
+			mounts:  mounts,
+		})
+		if startErr != nil {
+			fmt.Fprintf(&output, "[runtime] %v\n", startErr)
+			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+			if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+				AgentID:      agentID,
+				Status:       protocol.JobExecutionStatusFailed,
+				Error:        startErr.Error(),
+				Output:       trimmedOutput,
+				CacheStats:   cacheStats,
+				TimestampUTC: time.Now().UTC(),
+			}); reportErr != nil {
+				return reportErr
+			}
+			slog.Error("job failed", "job_execution_id", job.ID, "error", startErr.Error())
+			return nil
+		}
+		mountSpecs := make([]string, 0, len(mounts))
+		for _, m := range mounts {
+			hostPath := strings.TrimSpace(m.hostPath)
+			containerPath := strings.TrimSpace(m.containerPath)
+			if hostPath == "" || containerPath == "" {
+				continue
+			}
+			mountSpecs = append(mountSpecs, hostPath+"->"+containerPath)
+		}
+		mountSummary := "none"
+		if len(mountSpecs) > 0 {
+			mountSummary = strings.Join(mountSpecs, ", ")
+		}
+		userSummary := strings.TrimSpace(probeContainerUser)
+		if userSummary == "" {
+			userSummary = "default"
+		}
+		fmt.Fprintf(&output, "[runtime] started execution container %s from %s (workdir=%s user=%s mounts=%s)\n", probeContainer, probeContainerImage, probeContainerWorkdir, userSummary, mountSummary)
+		defer cleanupRuntimeProbeContainer(context.Background(), probeContainer)
+		execContainer = &executionContainerContext{
+			name:    probeContainer,
+			workdir: probeContainerWorkdir,
+		}
+	}
+	if ensureErr := validateProbeContainerReady(runCtx, probeContainer, probeContainerImage); ensureErr != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", ensureErr)
 		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
@@ -139,42 +233,27 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		slog.Error("job failed", "job_execution_id", job.ID, "error", ensureErr.Error())
 		return nil
-	} else if started {
-		fmt.Fprintf(&output, "[runtime] started probe container %s from %s\n", probeContainer, probeContainerImage)
-		defer cleanupRuntimeProbeContainer(context.Background(), probeContainer)
 	}
 	runtimeCaps := collectRuntimeCapabilities(agentCapabilities, probeContainer)
 	if summary := runtimeProbeSummary(runtimeCaps); summary != "" {
 		fmt.Fprintf(&output, "%s\n", summary)
 	}
-	requireContainerTools := len(containerToolRequirements(job.RequiredCapabilities)) > 0
-	containerToolValidationDeferred := false
-	containerToolValidationSatisfied := !requireContainerTools
 	if err := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
-		// Some jobs create/start the runtime container as part of early steps.
-		// Defer enforcement in that case and validate again once steps progress.
-		if requireContainerTools && strings.TrimSpace(probeContainer) != "" && runtimeContainerToolCount(runtimeCaps) == 0 {
-			containerToolValidationDeferred = true
-			fmt.Fprintf(&output, "[runtime] deferring container tool requirement check until runtime container is up\n")
-		} else {
-			fmt.Fprintf(&output, "[runtime] %v\n", err)
-			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-			if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:             agentID,
-				Status:              protocol.JobExecutionStatusFailed,
-				Error:               err.Error(),
-				Output:              trimmedOutput,
-				CacheStats:          cacheStats,
-				RuntimeCapabilities: runtimeCaps,
-				TimestampUTC:        time.Now().UTC(),
-			}); reportErr != nil {
-				return reportErr
-			}
-			slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
-			return nil
+		fmt.Fprintf(&output, "[runtime] %v\n", err)
+		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID:             agentID,
+			Status:              protocol.JobExecutionStatusFailed,
+			Error:               err.Error(),
+			Output:              trimmedOutput,
+			CacheStats:          cacheStats,
+			RuntimeCapabilities: runtimeCaps,
+			TimestampUTC:        time.Now().UTC(),
+		}); reportErr != nil {
+			return reportErr
 		}
-	} else {
-		containerToolValidationSatisfied = true
+		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
+		return nil
 	}
 
 	traceShell := boolEnv("CIWI_AGENT_TRACE_SHELL", true)
@@ -194,7 +273,12 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	fmt.Fprintf(&output, "[run] shell_trace=%t go_build_verbose=%t\n", traceShell, verboseGo)
 	fmt.Fprintf(&output, "[run] shell=%s\n", shell)
 
-	runEnv := withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
+	runEnv := []string(nil)
+	if execContainer != nil {
+		runEnv = withGoVerbose(mergeEnv(mergeEnv([]string{}, job.Env), cacheEnv), verboseGo)
+	} else {
+		runEnv = withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
+	}
 	scriptSteps := stepPlanToScriptSteps(job.StepPlan)
 	collectedSuites := make([]protocol.TestSuiteReport, 0, len(scriptSteps))
 	var collectedCoverage *protocol.CoverageReport
@@ -203,7 +287,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	runStart := time.Now()
 	if len(scriptSteps) == 0 {
-		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, runEnv, &output, "Running job script", job.SensitiveValues, traceShell)
+		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, execContainer, runEnv, &output, "Running job script", job.SensitiveValues, traceShell)
 	} else {
 		for _, step := range scriptSteps {
 			currentStep := formatCurrentStep(step.meta)
@@ -241,7 +325,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			if step.meta.kind == "dryrun_skip" {
 				continue
 			}
-			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, runEnv, &output, currentStep, job.SensitiveValues, traceShell)
+			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, runEnv, &output, currentStep, job.SensitiveValues, traceShell)
 			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
 				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)
 				if parseErr != nil {
@@ -278,24 +362,6 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				err = fmt.Errorf("%s: %w", currentStep, stepErr)
 				break
 			}
-			if containerToolValidationDeferred && !containerToolValidationSatisfied {
-				runtimeCaps = collectRuntimeCapabilities(agentCapabilities, probeContainer)
-				if validateErr := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); validateErr == nil {
-					containerToolValidationSatisfied = true
-					if summary := runtimeProbeSummary(runtimeCaps); summary != "" {
-						fmt.Fprintf(&output, "%s\n", summary)
-					}
-					fmt.Fprintf(&output, "[runtime] container tool requirements satisfied\n")
-				}
-			}
-		}
-	}
-	if err == nil && requireContainerTools && !containerToolValidationSatisfied {
-		runtimeCaps = collectRuntimeCapabilities(agentCapabilities, probeContainer)
-		if validateErr := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); validateErr != nil {
-			err = validateErr
-		} else {
-			containerToolValidationSatisfied = true
 		}
 	}
 	duration := time.Since(runStart).Round(time.Millisecond)
@@ -494,6 +560,7 @@ func runJobScript(
 	runCtx context.Context,
 	client *http.Client,
 	serverURL, agentID, jobID, shell, execDir, script string,
+	container *executionContainerContext,
 	env []string,
 	output *syncBuffer,
 	defaultCurrentStep string,
@@ -501,24 +568,47 @@ func runJobScript(
 	traceShell bool,
 ) error {
 	tracedScript := applyShellTracing(shell, script, traceShell)
-	bin, args, err := commandForScript(shell, tracedScript)
-	if err == nil && runtime.GOOS == "windows" && shell == shellCmd {
-		stagedCmd, stageErr := stageCmdScript(execDir, tracedScript)
-		if stageErr != nil {
-			return fmt.Errorf("stage cmd script: %w", stageErr)
+	var cmd *exec.Cmd
+	if container != nil {
+		if normalizeShell(shell) != shellPosix {
+			return fmt.Errorf("container execution supports only posix shell")
 		}
-		bin, args, err = commandForScript(shell, stagedCmd)
+		containerName := strings.TrimSpace(container.name)
+		if containerName == "" {
+			return fmt.Errorf("container execution requires container name")
+		}
+		args := []string{"exec"}
+		if w := strings.TrimSpace(container.workdir); w != "" {
+			args = append(args, "-w", w)
+		}
+		for _, e := range env {
+			e = strings.TrimSpace(e)
+			if e == "" || !strings.Contains(e, "=") {
+				continue
+			}
+			args = append(args, "--env", e)
+		}
+		args = append(args, containerName, "sh", "-lc", tracedScript)
+		cmd = exec.Command("docker", args...)
+	} else {
+		bin, args, err := commandForScript(shell, tracedScript)
+		if err == nil && runtime.GOOS == "windows" && shell == shellCmd {
+			stagedCmd, stageErr := stageCmdScript(execDir, tracedScript)
+			if stageErr != nil {
+				return fmt.Errorf("stage cmd script: %w", stageErr)
+			}
+			bin, args, err = commandForScript(shell, stagedCmd)
+		}
+		if err != nil {
+			return fmt.Errorf("build shell command: %w", err)
+		}
+		cmd = exec.Command(bin, args...)
+		cmd.Dir = execDir
+		cmd.Env = env
 	}
-	if err != nil {
-		return fmt.Errorf("build shell command: %w", err)
-	}
-
-	cmd := exec.Command(bin, args...)
 	prepareCommandForCancellation(cmd)
-	cmd.Dir = execDir
 	cmd.Stdout = output
 	cmd.Stderr = output
-	cmd.Env = env
 
 	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, sensitive, defaultCurrentStep)
 	defer stopStreaming()
@@ -712,6 +802,11 @@ func normalizeShell(v string) string {
 type syncBuffer struct {
 	mu sync.Mutex
 	b  bytes.Buffer
+}
+
+type executionContainerContext struct {
+	name    string
+	workdir string
 }
 
 func (s *syncBuffer) Write(p []byte) (int, error) {
