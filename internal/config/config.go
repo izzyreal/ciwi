@@ -216,6 +216,7 @@ func (cfg File) Validate() []string {
 			executor := strings.ToLower(strings.TrimSpace(job.RunsOn["executor"]))
 			shell := strings.ToLower(strings.TrimSpace(job.RunsOn["shell"]))
 			containerImage := strings.TrimSpace(job.RunsOn["container_image"])
+			containerDevices := strings.TrimSpace(job.RunsOn["container_devices"])
 			if executor != "" && executor != "script" {
 				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].runs_on.executor must be \"script\"", i, j))
 			}
@@ -255,6 +256,9 @@ func (cfg File) Validate() []string {
 			}
 			if len(job.Requires.Container.Tools) > 0 && containerImage == "" {
 				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].runs_on.container_image is required when requires.container.tools is set", i, j))
+			}
+			if containerDevices != "" && containerImage == "" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].runs_on.container_image is required when runs_on.container_devices is set", i, j))
 			}
 			cacheIDs := map[string]struct{}{}
 			for cIdx, c := range job.Caches {

@@ -261,6 +261,9 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			if containerUser := strings.TrimSpace(pj.RunsOn["container_user"]); containerUser != "" {
 				metadata["runtime_exec.container_user"] = containerUser
 			}
+			if containerDevices := strings.TrimSpace(pj.RunsOn["container_devices"]); containerDevices != "" {
+				metadata["runtime_exec.container_devices"] = containerDevices
+			}
 
 			requiredCaps := cloneMap(pj.RunsOn)
 			for k := range requiredCaps {

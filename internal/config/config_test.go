@@ -640,6 +640,28 @@ pipelines:
 	}
 }
 
+func TestParseRejectsContainerDevicesWithoutContainerImage(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: linux
+        runs_on:
+          executor: script
+          shell: posix
+          container_devices: /dev/snd
+        timeout_seconds: 60
+        steps:
+          - run: echo build
+`), "test-container-devices-without-image")
+	if err == nil || !strings.Contains(err.Error(), "runs_on.container_image is required when runs_on.container_devices is set") {
+		t.Fatalf("expected runs_on.container_image validation error for container_devices, got: %v", err)
+	}
+}
+
 func TestParseAcceptsPowerShellShell(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 1

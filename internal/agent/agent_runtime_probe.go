@@ -127,6 +127,31 @@ func runtimeExecContainerUserFromMetadata(meta map[string]string) string {
 	return strings.TrimSpace(meta["runtime_exec.container_user"])
 }
 
+func runtimeExecContainerDevicesFromMetadata(meta map[string]string) []string {
+	if len(meta) == 0 {
+		return nil
+	}
+	raw := strings.TrimSpace(meta["runtime_exec.container_devices"])
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		device := strings.TrimSpace(part)
+		if device == "" {
+			continue
+		}
+		if _, exists := seen[device]; exists {
+			continue
+		}
+		seen[device] = struct{}{}
+		out = append(out, device)
+	}
+	return out
+}
+
 func runtimeProbeContainerName(jobID string, meta map[string]string) string {
 	if runtimeProbeContainerImageFromMetadata(meta) == "" {
 		return ""
@@ -155,6 +180,7 @@ type runtimeContainerConfig struct {
 	workdir string
 	user    string
 	mounts  []runtimeContainerMount
+	devices []string
 }
 
 func defaultContainerUserSpec() string {
@@ -209,6 +235,13 @@ func startRuntimeContainer(ctx context.Context, cfg runtimeContainerConfig) erro
 	}
 	if userSpec := strings.TrimSpace(cfg.user); userSpec != "" {
 		args = append(args, "--user", userSpec)
+	}
+	for _, d := range cfg.devices {
+		device := strings.TrimSpace(d)
+		if device == "" {
+			continue
+		}
+		args = append(args, "--device", device)
 	}
 	for _, m := range cfg.mounts {
 		hostPath := strings.TrimSpace(m.hostPath)

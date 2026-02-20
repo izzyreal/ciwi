@@ -53,3 +53,24 @@ func TestValidateContainerToolRequirements(t *testing.T) {
 		}
 	})
 }
+
+func TestRuntimeExecContainerDevicesFromMetadata(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		got := runtimeExecContainerDevicesFromMetadata(nil)
+		if len(got) != 0 {
+			t.Fatalf("expected no devices, got %v", got)
+		}
+	})
+
+	t.Run("split and dedupe", func(t *testing.T) {
+		got := runtimeExecContainerDevicesFromMetadata(map[string]string{
+			"runtime_exec.container_devices": " /dev/snd, /dev/snd , /dev/dri ",
+		})
+		if len(got) != 2 {
+			t.Fatalf("expected 2 devices, got %d (%v)", len(got), got)
+		}
+		if got[0] != "/dev/snd" || got[1] != "/dev/dri" {
+			t.Fatalf("unexpected devices order/content: %v", got)
+		}
+	})
+}
