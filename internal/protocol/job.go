@@ -113,6 +113,8 @@ type ProjectSummary struct {
 	RepoURL        string                 `json:"repo_url,omitempty"`
 	RepoRef        string                 `json:"repo_ref,omitempty"`
 	ConfigFile     string                 `json:"config_file,omitempty"`
+	LoadedCommit   string                 `json:"loaded_commit,omitempty"`
+	UpdatedUTC     time.Time              `json:"updated_utc,omitempty"`
 	Pipelines      []PipelineSummary      `json:"pipelines"`
 	PipelineChains []PipelineChainSummary `json:"pipeline_chains,omitempty"`
 }
@@ -190,6 +192,8 @@ type ProjectDetail struct {
 	RepoURL        string                 `json:"repo_url,omitempty"`
 	RepoRef        string                 `json:"repo_ref,omitempty"`
 	ConfigFile     string                 `json:"config_file,omitempty"`
+	LoadedCommit   string                 `json:"loaded_commit,omitempty"`
+	UpdatedUTC     time.Time              `json:"updated_utc,omitempty"`
 	Pipelines      []PipelineDetail       `json:"pipelines,omitempty"`
 	PipelineChains []PipelineChainSummary `json:"pipeline_chains,omitempty"`
 }

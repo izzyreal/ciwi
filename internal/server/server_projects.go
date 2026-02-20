@@ -65,7 +65,7 @@ func (s *stateStore) importProjectHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp, err := s.persistImportedProject(req, fetchRes.ConfigContent, fetchRes.IconContentType, fetchRes.IconContentBytes)
+	resp, err := s.persistImportedProject(req, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.IconContentType, fetchRes.IconContentBytes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -168,7 +168,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			RepoURL:    project.RepoURL,
 			RepoRef:    project.RepoRef,
 			ConfigFile: configFile,
-		}, fetchRes.ConfigContent, fetchRes.IconContentType, fetchRes.IconContentBytes)
+		}, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.IconContentType, fetchRes.IconContentBytes)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -231,7 +231,7 @@ func (s *stateStore) reloadProjectFromRepo(ctx context.Context, project protocol
 		RepoURL:    project.RepoURL,
 		RepoRef:    project.RepoRef,
 		ConfigFile: configFile,
-	}, fetchRes.ConfigContent, fetchRes.IconContentType, fetchRes.IconContentBytes)
+	}, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.IconContentType, fetchRes.IconContentBytes)
 	return err
 }
 
@@ -248,7 +248,7 @@ func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, projectListViewResponse{Projects: projects})
 }
 
-func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent, iconContentType string, iconContent []byte) (protocol.ImportProjectResponse, error) {
+func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent, loadedCommit, iconContentType string, iconContent []byte) (protocol.ImportProjectResponse, error) {
 	cfg, err := config.Parse([]byte(cfgContent), req.ConfigFile)
 	if err != nil {
 		return protocol.ImportProjectResponse{}, err
@@ -271,6 +271,9 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 		return protocol.ImportProjectResponse{}, err
 	}
 	if project, err := s.projectStore().GetProjectByName(cfg.Project.Name); err == nil {
+		if commitErr := s.projectStore().SetProjectLoadedCommit(project.ID, strings.TrimSpace(loadedCommit)); commitErr != nil {
+			return protocol.ImportProjectResponse{}, commitErr
+		}
 		s.setProjectIcon(project.ID, iconContentType, iconContent)
 	}
 

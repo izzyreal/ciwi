@@ -4,17 +4,29 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func upsertProject(tx *sql.Tx, name, configPath, repoURL, repoRef, configFile, now string) (int64, error) {
+func parseRFC3339OrZero(raw string) time.Time {
+	value := raw
+	if value == "" {
+		return time.Time{}
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return ts
+	}
+	return time.Time{}
+}
+
+func upsertProject(tx *sql.Tx, name, configPath, repoURL, repoRef, configFile, loadedCommit, now string) (int64, error) {
 	res, err := tx.Exec(`
 		UPDATE projects
-		SET config_path = ?, repo_url = ?, repo_ref = ?, config_file = ?, updated_utc = ?
+		SET config_path = ?, repo_url = ?, repo_ref = ?, config_file = ?, loaded_commit = ?, updated_utc = ?
 		WHERE name = ?
-	`, configPath, repoURL, repoRef, configFile, now, name)
+	`, configPath, repoURL, repoRef, configFile, loadedCommit, now, name)
 	if err != nil {
 		return 0, fmt.Errorf("update project: %w", err)
 	}
@@ -24,9 +36,9 @@ func upsertProject(tx *sql.Tx, name, configPath, repoURL, repoRef, configFile, n
 	}
 	if rows == 0 {
 		if _, err := tx.Exec(`
-			INSERT INTO projects (name, config_path, repo_url, repo_ref, config_file, created_utc, updated_utc)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, name, configPath, repoURL, repoRef, configFile, now, now); err != nil {
+			INSERT INTO projects (name, config_path, repo_url, repo_ref, config_file, loaded_commit, created_utc, updated_utc)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, name, configPath, repoURL, repoRef, configFile, loadedCommit, now, now); err != nil {
 			return 0, fmt.Errorf("insert project: %w", err)
 		}
 	}
@@ -59,7 +71,7 @@ func upsertPipeline(tx *sql.Tx, projectID int64, p config.Pipeline, now string) 
 
 func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 	rows, err := s.db.Query(`
-		SELECT p.id, p.name, p.config_path, p.repo_url, p.repo_ref, p.config_file, pl.id, pl.pipeline_id, pl.trigger_mode, pl.depends_on_json, pl.source_repo, pl.source_ref, pl.versioning_json
+		SELECT p.id, p.name, p.config_path, p.repo_url, p.repo_ref, p.config_file, p.loaded_commit, p.updated_utc, pl.id, pl.pipeline_id, pl.trigger_mode, pl.depends_on_json, pl.source_repo, pl.source_ref, pl.versioning_json
 		FROM projects p
 		LEFT JOIN pipelines pl ON pl.project_id = p.id
 		ORDER BY p.name, pl.pipeline_id
@@ -75,23 +87,26 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 	for rows.Next() {
 		var projectID int64
 		var projectName, configPath string
-		var repoURL, repoRef, configFile sql.NullString
+		var repoURL, repoRef, configFile, loadedCommit sql.NullString
+		var updatedUTC string
 		var pipelineID sql.NullInt64
 		var pipelineName, trigger, dependsOnJSON, sourceRepo, sourceRef, versioningJSON sql.NullString
 
-		if err := rows.Scan(&projectID, &projectName, &configPath, &repoURL, &repoRef, &configFile, &pipelineID, &pipelineName, &trigger, &dependsOnJSON, &sourceRepo, &sourceRef, &versioningJSON); err != nil {
+		if err := rows.Scan(&projectID, &projectName, &configPath, &repoURL, &repoRef, &configFile, &loadedCommit, &updatedUTC, &pipelineID, &pipelineName, &trigger, &dependsOnJSON, &sourceRepo, &sourceRef, &versioningJSON); err != nil {
 			return nil, fmt.Errorf("scan project row: %w", err)
 		}
 
 		project, ok := projectsByID[projectID]
 		if !ok {
 			project = &protocol.ProjectSummary{
-				ID:         projectID,
-				Name:       projectName,
-				ConfigPath: configPath,
-				RepoURL:    repoURL.String,
-				RepoRef:    repoRef.String,
-				ConfigFile: configFile.String,
+				ID:           projectID,
+				Name:         projectName,
+				ConfigPath:   configPath,
+				RepoURL:      repoURL.String,
+				RepoRef:      repoRef.String,
+				ConfigFile:   configFile.String,
+				LoadedCommit: loadedCommit.String,
+				UpdatedUTC:   parseRFC3339OrZero(updatedUTC),
 			}
 			projectsByID[projectID] = project
 			order = append(order, projectID)
@@ -160,32 +175,36 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 func (s *Store) GetProjectByID(id int64) (protocol.ProjectSummary, error) {
 	var p protocol.ProjectSummary
 	row := s.db.QueryRow(`
-		SELECT id, name, config_path, repo_url, repo_ref, config_file
+		SELECT id, name, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
 		FROM projects
 		WHERE id = ?
 	`, id)
-	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile); err != nil {
+	var updatedUTC string
+	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile, &p.LoadedCommit, &updatedUTC); err != nil {
 		if err == sql.ErrNoRows {
 			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
 		}
 		return protocol.ProjectSummary{}, fmt.Errorf("get project: %w", err)
 	}
+	p.UpdatedUTC = parseRFC3339OrZero(updatedUTC)
 	return p, nil
 }
 
 func (s *Store) GetProjectByName(name string) (protocol.ProjectSummary, error) {
 	var p protocol.ProjectSummary
 	row := s.db.QueryRow(`
-		SELECT id, name, config_path, repo_url, repo_ref, config_file
+		SELECT id, name, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
 		FROM projects
 		WHERE name = ?
 	`, name)
-	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile); err != nil {
+	var updatedUTC string
+	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile, &p.LoadedCommit, &updatedUTC); err != nil {
 		if err == sql.ErrNoRows {
 			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
 		}
 		return protocol.ProjectSummary{}, fmt.Errorf("get project: %w", err)
 	}
+	p.UpdatedUTC = parseRFC3339OrZero(updatedUTC)
 	return p, nil
 }
 
@@ -206,11 +225,13 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 	}
 
 	detail := protocol.ProjectDetail{
-		ID:         project.ID,
-		Name:       project.Name,
-		RepoURL:    project.RepoURL,
-		RepoRef:    project.RepoRef,
-		ConfigFile: project.ConfigFile,
+		ID:           project.ID,
+		Name:         project.Name,
+		RepoURL:      project.RepoURL,
+		RepoRef:      project.RepoRef,
+		ConfigFile:   project.ConfigFile,
+		LoadedCommit: project.LoadedCommit,
+		UpdatedUTC:   project.UpdatedUTC,
 	}
 
 	for rows.Next() {
@@ -281,6 +302,18 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 	}
 
 	return detail, nil
+}
+
+func (s *Store) SetProjectLoadedCommit(projectID int64, loadedCommit string) error {
+	_, err := s.db.Exec(`
+		UPDATE projects
+		SET loaded_commit = ?, updated_utc = ?
+		WHERE id = ?
+	`, loadedCommit, time.Now().UTC().Format(time.RFC3339Nano), projectID)
+	if err != nil {
+		return fmt.Errorf("set project loaded commit: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) pipelineSupportsDryRun(pipelineDBID int64) (bool, error) {

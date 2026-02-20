@@ -85,6 +85,7 @@ func (s *Store) migrate() error {
 			repo_url TEXT,
 			repo_ref TEXT,
 			config_file TEXT,
+			loaded_commit TEXT NOT NULL DEFAULT '',
 			vault_connection_id INTEGER,
 			vault_connection_name TEXT,
 			project_secrets_json TEXT NOT NULL DEFAULT '[]',
@@ -216,6 +217,9 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("projects", "config_file", "TEXT"); err != nil {
 		return err
 	}
+	if err := s.addColumnIfMissing("projects", "loaded_commit", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.addColumnIfMissing("projects", "vault_connection_id", "INTEGER"); err != nil {
 		return err
 	}
@@ -281,7 +285,7 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	projectID, err := upsertProject(tx, cfg.Project.Name, configPath, repoURL, repoRef, configFile, now)
+	projectID, err := upsertProject(tx, cfg.Project.Name, configPath, repoURL, repoRef, configFile, "", now)
 	if err != nil {
 		return err
 	}

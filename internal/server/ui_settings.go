@@ -154,6 +154,30 @@ const settingsHTML = `<!doctype html>
       return false;
     }
 
+    function shortCommitHash(commit) {
+      const value = String(commit || '').trim();
+      if (!value) return '';
+      if (value.length <= 8) return value;
+      return value.slice(0, 8);
+    }
+
+    function deriveCommitURL(repoURL, commit) {
+      const rawRepo = String(repoURL || '').trim();
+      const sha = String(commit || '').trim();
+      if (!rawRepo || !sha) return '';
+      // Support github https and ssh remotes.
+      if (rawRepo.indexOf('github.com') >= 0) {
+        let path = rawRepo;
+        path = path.replace(/^https?:\/\/github\.com\//i, '');
+        path = path.replace(/^git@github\.com:/i, '');
+        path = path.replace(/\.git$/i, '');
+        path = path.replace(/^\/+/, '');
+        if (!path) return '';
+        return 'https://github.com/' + path + '/commit/' + encodeURIComponent(sha);
+      }
+      return '';
+    }
+
     async function refreshSettingsProjects() {
       const data = await apiJSON('/api/v1/projects');
       const root = document.getElementById('settingsProjects');
@@ -169,10 +193,23 @@ const settingsHTML = `<!doctype html>
         top.className = 'project-head';
 
         const topInfo = document.createElement('div');
+        const loadedCommit = String(project.loaded_commit || '').trim();
+        const shortCommit = shortCommitHash(loadedCommit);
+        const commitURL = deriveCommitURL(project.repo_url, loadedCommit);
+        const lastUpdated = String(project.updated_utc || '').trim();
+        const commitPart = shortCommit
+          ? (commitURL
+              ? ('<a class="job-link" href="' + commitURL + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(shortCommit) + '</a>')
+              : ('<code>' + escapeHtml(shortCommit) + '</code>'))
+          : '<span style="color:#5f6f67;">n/a</span>';
+        const updatedPart = lastUpdated
+          ? escapeHtml(formatTimestamp(lastUpdated))
+          : '<span style="color:#5f6f67;">n/a</span>';
         topInfo.innerHTML =
           '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + escapeHtml(project.name) + '</a></strong> ' +
           '<span class="pill">' + escapeHtml(project.repo_url || '') + '</span> ' +
-          '<span class="pill">' + escapeHtml(project.config_file || project.config_path || '') + '</span>';
+          '<span class="pill">' + escapeHtml(project.config_file || project.config_path || '') + '</span>' +
+          '<div style="margin-top:6px;font-size:12px;color:#3a4f44;">Loaded commit: ' + commitPart + ' | Last update time: ' + updatedPart + '</div>';
         top.appendChild(topInfo);
 
         const controls = document.createElement('div');

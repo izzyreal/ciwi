@@ -15,6 +15,7 @@ type RepoFetchResult struct {
 	ConfigContent    string
 	IconContentType  string
 	IconContentBytes []byte
+	SourceCommit     string
 }
 
 func FetchConfigFileFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (string, error) {
@@ -46,12 +47,17 @@ func FetchConfigAndIconFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, c
 	if err != nil {
 		return RepoFetchResult{}, fmt.Errorf("repo is not a valid ciwi project: missing root file %q", configFile)
 	}
+	shaOut, err := runCmd(ctx, "", "git", "-C", tmpDir, "rev-parse", "FETCH_HEAD")
+	if err != nil {
+		return RepoFetchResult{}, fmt.Errorf("resolve source commit for fetched config: %v", err)
+	}
 
 	iconType, iconBytes := fetchProjectIconBytes(ctx, tmpDir)
 	return RepoFetchResult{
 		ConfigContent:    out,
 		IconContentType:  iconType,
 		IconContentBytes: iconBytes,
+		SourceCommit:     strings.TrimSpace(shaOut),
 	}, nil
 }
 
