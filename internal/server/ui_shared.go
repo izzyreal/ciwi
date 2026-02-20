@@ -472,7 +472,16 @@ function showQueuedJobsSnackbar(message) {
     message: message,
     actionLabel: 'Show queued jobs',
     onAction: () => {
-      window.location.href = '/#queued-jobs';
+      try { sessionStorage.setItem('__ciwiFocusQueuedJobs', '1'); } catch (_) {}
+      if ((window.location.pathname || '/') === '/') {
+        const node = document.getElementById('queued-jobs');
+        if (node && typeof node.scrollIntoView === 'function') {
+          window.location.hash = 'queued-jobs';
+          node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          return;
+        }
+      }
+      window.location.assign('/#queued-jobs');
     },
   });
 }
