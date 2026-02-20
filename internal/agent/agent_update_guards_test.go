@@ -2,17 +2,15 @@ package agent
 
 import (
 	"context"
-	"os"
 	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestSelfUpdateAndRestartNoopWhenTargetMissingOrSame(t *testing.T) {
-	exePath, _ := os.Executable()
-	if looksLikeGoRunBinary(exePath) {
-		t.Skip("test runtime is go-run style; self-update guard triggers before noop checks")
-	}
+	restore := stubSelfUpdateOrchestration(t)
+	defer restore()
+
 	if err := selfUpdateAndRestart(context.Background(), "", "izzyreal/ciwi", "https://api.github.com", nil); err != nil {
 		t.Fatalf("expected empty target to no-op, got %v", err)
 	}
