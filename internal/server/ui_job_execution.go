@@ -124,6 +124,22 @@ const jobExecutionHTML = `<!doctype html>
       margin: 0 0 10px;
       flex-wrap: wrap;
     }
+    .log-search-input {
+      min-width: 180px;
+      height: 32px;
+      padding: 4px 8px;
+      border: 1px solid #c4ddd0;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .log-search-count {
+      min-width: 44px;
+      text-align: center;
+      color: #42574b;
+      font-size: 12px;
+      font-weight: 600;
+      align-self: center;
+    }
     .tail-on {
       border-color: #3f7a5a;
       background: #e9f6ef;
@@ -178,6 +194,10 @@ const jobExecutionHTML = `<!doctype html>
       <div class="log-toolbar">
         <button id="tailToggleBtn" class="copy-btn tail-on" type="button">Tailing: On</button>
         <button id="copyOutputBtn" class="copy-btn" type="button">Copy Output</button>
+        <input id="logSearchInput" class="log-search-input" type="search" placeholder="Search output" aria-label="Search output" />
+        <button id="logSearchPrevBtn" class="copy-btn" type="button" aria-label="Previous match">▲</button>
+        <button id="logSearchNextBtn" class="copy-btn" type="button" aria-label="Next match">▼</button>
+        <span id="logSearchCount" class="log-search-count">0/0</span>
       </div>
       <div id="logBox" class="log"></div>
     </div>
@@ -208,6 +228,7 @@ const jobExecutionHTML = `<!doctype html>
     let lastTestReportSignature = '';
     let lastArtifactsSignature = '';
     let artifactExpandedPaths = null;
+    let logSearchController = null;
     const refreshGuard = createRefreshGuard(5000);
 
     function jobExecutionIdFromPath() {
@@ -756,6 +777,15 @@ const jobExecutionHTML = `<!doctype html>
           setTimeout(() => { copyBtn.textContent = old; }, 1200);
         });
       }
+      if (!logSearchController) {
+        logSearchController = createTextSearchController({
+          scopeEl: document.getElementById('logBox'),
+          inputEl: document.getElementById('logSearchInput'),
+          prevBtn: document.getElementById('logSearchPrevBtn'),
+          nextBtn: document.getElementById('logSearchNextBtn'),
+          countEl: document.getElementById('logSearchCount'),
+        });
+      }
       setTailingEnabled(tailingEnabled);
     }
 
@@ -844,6 +874,9 @@ const jobExecutionHTML = `<!doctype html>
         if (output !== lastRenderedOutput) {
           document.getElementById('logBox').innerHTML = renderOutputLog(output);
           lastRenderedOutput = output;
+          if (logSearchController && typeof logSearchController.refresh === 'function') {
+            logSearchController.refresh();
+          }
           if (tailingEnabled) {
             requestAnimationFrame(scrollLogToBottom);
           }
