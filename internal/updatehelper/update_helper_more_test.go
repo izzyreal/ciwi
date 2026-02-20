@@ -78,3 +78,13 @@ func TestRunReplacesBinaryWhenRelaunchSucceeds(t *testing.T) {
 		t.Fatalf("expected new binary path to be moved away, err=%v", err)
 	}
 }
+
+func TestRestartWindowsServiceReturnsErrorWhenSCMissing(t *testing.T) {
+	err := restartWindowsService("ciwi-agent")
+	if err == nil {
+		t.Fatalf("expected restartWindowsService error when sc.exe is unavailable")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "sc.exe start") {
+		t.Fatalf("expected sc.exe error context, got %v", err)
+	}
+}

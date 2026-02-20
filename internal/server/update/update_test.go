@@ -112,10 +112,60 @@ func TestStageLinuxUpdateBinaryWritesManifestAndStagedBinary(t *testing.T) {
 	}
 }
 
+func TestStageLinuxUpdateBinaryUsesLatestAndDefaultManifestPath(t *testing.T) {
+	tmp := t.TempDir()
+	newBin := filepath.Join(tmp, "ciwi-new"+ExeExt())
+	if err := os.WriteFile(newBin, []byte("bin"), 0o755); err != nil {
+		t.Fatalf("write new bin: %v", err)
+	}
+	stagingDir := filepath.Join(tmp, "stage")
+	if err := StageLinuxUpdateBinary("###", "ciwi_asset", newBin, StageLinuxOptions{
+		StagingDir: stagingDir,
+	}); err != nil {
+		t.Fatalf("stage linux update with defaults: %v", err)
+	}
+	stagedPath := filepath.Join(stagingDir, "ciwi-latest"+ExeExt())
+	if _, err := os.Stat(stagedPath); err != nil {
+		t.Fatalf("expected staged binary at %q: %v", stagedPath, err)
+	}
+	manifestPath := filepath.Join(stagingDir, "pending.json")
+	rawManifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read default manifest path: %v", err)
+	}
+	manifest := string(rawManifest)
+	if !strings.Contains(manifest, "\"target_version\": \"###\"") || !strings.Contains(manifest, stagedPath) {
+		t.Fatalf("manifest missing expected fields: %s", manifest)
+	}
+}
+
 func TestTriggerLinuxSystemUpdaterReportsCommandError(t *testing.T) {
 	err := TriggerLinuxSystemUpdater(filepath.Join(t.TempDir(), "no-systemctl"), "ciwi-updater.service")
 	if err == nil {
 		t.Fatalf("expected error for missing systemctl path")
+	}
+}
+
+func TestTriggerLinuxSystemUpdaterSuccessAndDefaultUnit(t *testing.T) {
+	tmp := t.TempDir()
+	argsPath := filepath.Join(tmp, "args.txt")
+	scriptPath := filepath.Join(tmp, "fake-systemctl.sh")
+	script := "#!/bin/sh\n" +
+		"echo \"$@\" > \"" + argsPath + "\"\n" +
+		"exit 0\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake systemctl script: %v", err)
+	}
+	if err := TriggerLinuxSystemUpdater(scriptPath, ""); err != nil {
+		t.Fatalf("TriggerLinuxSystemUpdater: %v", err)
+	}
+	rawArgs, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read captured args: %v", err)
+	}
+	got := strings.TrimSpace(string(rawArgs))
+	if got != "start --no-block ciwi-updater.service" {
+		t.Fatalf("unexpected systemctl args: %q", got)
 	}
 }
 
@@ -217,6 +267,16 @@ func TestDownloadTextAssetSuccess(t *testing.T) {
 	}
 	if out != "hello\nworld" {
 		t.Fatalf("unexpected text: %q", out)
+	}
+}
+
+func TestDownloadTextAssetHTTPErrorIncludesBody(t *testing.T) {
+	client := mockClient(func(r *http.Request) (*http.Response, error) {
+		return textResponse(http.StatusBadGateway, "upstream error"), nil
+	})
+	_, err := DownloadTextAsset(context.Background(), "https://downloads.example/text", DownloadOptions{HTTPClient: client})
+	if err == nil || !strings.Contains(err.Error(), "status=502") {
+		t.Fatalf("expected status error, got %v", err)
 	}
 }
 

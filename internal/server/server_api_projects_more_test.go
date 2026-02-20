@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/project"
 	"github.com/izzyreal/ciwi/internal/version"
 )
@@ -138,6 +140,60 @@ func TestImportProjectHandlerValidationBranches(t *testing.T) {
 	}
 }
 
+func TestImportProjectHandlerFetchFailureAndSuccess(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	oldFetch := fetchProjectConfigAndIcon
+	t.Cleanup(func() { fetchProjectConfigAndIcon = oldFetch })
+
+	fetchProjectConfigAndIcon = func(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (project.RepoFetchResult, error) {
+		return project.RepoFetchResult{}, context.DeadlineExceeded
+	}
+	failResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/import", map[string]any{
+		"repo_url": "https://github.com/izzyreal/ciwi.git",
+	})
+	if failResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 when import fetch fails, got %d body=%s", failResp.StatusCode, readBody(t, failResp))
+	}
+
+	var gotConfigFile string
+	fetchProjectConfigAndIcon = func(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (project.RepoFetchResult, error) {
+		gotConfigFile = configFile
+		return project.RepoFetchResult{
+			ConfigContent:   testConfigYAML,
+			SourceCommit:    "deadbeef",
+			IconContentType: "image/svg+xml",
+			IconContentBytes: []byte("<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'>" +
+				"<rect width='8' height='8' fill='black'/></svg>"),
+		}, nil
+	}
+	okResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/import", map[string]any{
+		"repo_url": "https://github.com/izzyreal/ciwi.git",
+		"repo_ref": "main",
+	})
+	if okResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 for import success, got %d body=%s", okResp.StatusCode, readBody(t, okResp))
+	}
+	if gotConfigFile != "ciwi-project.yaml" {
+		t.Fatalf("expected default config_file to be ciwi-project.yaml, got %q", gotConfigFile)
+	}
+	var payload protocol.ImportProjectResponse
+	if err := json.NewDecoder(okResp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode import response: %v", err)
+	}
+	if payload.ProjectName != "ciwi" || payload.Pipelines != 1 {
+		t.Fatalf("unexpected import response payload: %+v", payload)
+	}
+	projectSummary, err := s.db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("GetProjectByName after import: %v", err)
+	}
+	if projectSummary.LoadedCommit != "deadbeef" {
+		t.Fatalf("expected loaded commit persisted, got %q", projectSummary.LoadedCommit)
+	}
+}
+
 func TestDetectServerUpdateCapabilityModes(t *testing.T) {
 	oldVersion := version.Version
 	t.Cleanup(func() { version.Version = oldVersion })
@@ -159,5 +215,81 @@ func TestDetectServerUpdateCapabilityModes(t *testing.T) {
 	}
 	if strings.TrimSpace(standaloneCap.Reason) == "" {
 		t.Fatalf("expected standalone mode reason")
+	}
+}
+
+func TestReloadProjectFromRepoBranches(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	err := s.reloadProjectFromRepo(context.Background(), protocol.ProjectSummary{
+		Name:       "ciwi",
+		ConfigFile: "ciwi-project.yaml",
+	})
+	if err == nil || !strings.Contains(err.Error(), "project has no repo_url configured") {
+		t.Fatalf("expected missing repo_url error, got %v", err)
+	}
+
+	oldFetch := fetchProjectConfigAndIcon
+	t.Cleanup(func() { fetchProjectConfigAndIcon = oldFetch })
+	fetchProjectConfigAndIcon = func(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (project.RepoFetchResult, error) {
+		return project.RepoFetchResult{}, context.DeadlineExceeded
+	}
+	err = s.reloadProjectFromRepo(context.Background(), protocol.ProjectSummary{
+		Name:       "ciwi",
+		RepoURL:    "https://github.com/izzyreal/ciwi.git",
+		RepoRef:    "main",
+		ConfigFile: "ciwi-project.yaml",
+	})
+	if err == nil {
+		t.Fatalf("expected reload fetch failure")
+	}
+
+	fetchProjectConfigAndIcon = func(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (project.RepoFetchResult, error) {
+		return project.RepoFetchResult{
+			ConfigContent: testConfigYAML,
+			SourceCommit:  "feedcafe",
+		}, nil
+	}
+	err = s.reloadProjectFromRepo(context.Background(), protocol.ProjectSummary{
+		Name:       "ciwi",
+		RepoURL:    "https://github.com/izzyreal/ciwi.git",
+		RepoRef:    "main",
+		ConfigFile: "ciwi-project.yaml",
+	})
+	if err != nil {
+		t.Fatalf("reloadProjectFromRepo success: %v", err)
+	}
+}
+
+func TestPersistImportedProjectParseError(t *testing.T) {
+	_, s := newTestHTTPServerWithState(t)
+	_, err := s.persistImportedProject(protocol.ImportProjectRequest{
+		RepoURL:    "https://github.com/izzyreal/ciwi.git",
+		RepoRef:    "main",
+		ConfigFile: "ciwi-project.yaml",
+	}, "not: [valid", "abc", "", nil)
+	if err == nil {
+		t.Fatalf("expected parse error from persistImportedProject")
+	}
+}
+
+func TestProjectByIDHandlerInvalidPaths(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	badID := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/projects/not-a-number", nil)
+	if badID.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid project id, got %d", badID.StatusCode)
+	}
+
+	tooManyParts := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/projects/1/icon/extra", nil)
+	if tooManyParts.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for over-nested project path, got %d", tooManyParts.StatusCode)
+	}
+
+	unknownSubpath := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/projects/1/nope", nil)
+	if unknownSubpath.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown project subpath, got %d", unknownSubpath.StatusCode)
 	}
 }

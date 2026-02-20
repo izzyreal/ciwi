@@ -130,3 +130,99 @@ func TestAgentRunScriptRejectsUnsupportedShellForJobExecution(t *testing.T) {
 		t.Fatalf("unexpected unsupported shell response: %s", body)
 	}
 }
+
+func TestAgentLeaseHandlerValidationAndBranches(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	methodResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agent/lease", nil)
+	if methodResp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for GET lease, got %d", methodResp.StatusCode)
+	}
+
+	invalidJSON := mustRawJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", `{"agent_id":`)
+	if invalidJSON.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid lease json, got %d", invalidJSON.StatusCode)
+	}
+
+	missingAgent := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{})
+	if missingAgent.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing agent_id, got %d", missingAgent.StatusCode)
+	}
+
+	noJob := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-empty",
+	})
+	if noJob.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for no matching job, got %d body=%s", noJob.StatusCode, readBody(t, noJob))
+	}
+	var noJobPayload struct {
+		Assigned bool   `json:"assigned"`
+		Message  string `json:"message"`
+	}
+	decodeJSONBody(t, noJob, &noJobPayload)
+	if noJobPayload.Assigned || !strings.Contains(noJobPayload.Message, "no matching queued job") {
+		t.Fatalf("unexpected no-job lease payload: %+v", noJobPayload)
+	}
+
+	hbResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-busy",
+		"hostname":      "host-busy",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-12T00:00:00Z",
+	})
+	if hbResp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
+	}
+	_ = readBody(t, hbResp)
+
+	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-busy/actions", map[string]any{
+		"action":          "run-script",
+		"shell":           "posix",
+		"script":          "echo hi",
+		"timeout_seconds": 30,
+	})
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("run-script create job status=%d body=%s", createResp.StatusCode, readBody(t, createResp))
+	}
+	var createPayload struct {
+		JobExecutionID string `json:"job_execution_id"`
+	}
+	decodeJSONBody(t, createResp, &createPayload)
+
+	firstLease := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-busy",
+	})
+	if firstLease.StatusCode != http.StatusOK {
+		t.Fatalf("expected first lease 200, got %d body=%s", firstLease.StatusCode, readBody(t, firstLease))
+	}
+	var firstLeasePayload struct {
+		Assigned bool `json:"assigned"`
+		Job      struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, firstLease, &firstLeasePayload)
+	if !firstLeasePayload.Assigned || firstLeasePayload.Job.ID != createPayload.JobExecutionID {
+		t.Fatalf("unexpected first lease payload: %+v", firstLeasePayload)
+	}
+
+	secondLease := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-busy",
+	})
+	if secondLease.StatusCode != http.StatusOK {
+		t.Fatalf("expected second lease 200, got %d body=%s", secondLease.StatusCode, readBody(t, secondLease))
+	}
+	var secondLeasePayload struct {
+		Assigned bool   `json:"assigned"`
+		Message  string `json:"message"`
+	}
+	decodeJSONBody(t, secondLease, &secondLeasePayload)
+	if secondLeasePayload.Assigned || !strings.Contains(secondLeasePayload.Message, "already has an active job") {
+		t.Fatalf("unexpected second lease payload: %+v", secondLeasePayload)
+	}
+}

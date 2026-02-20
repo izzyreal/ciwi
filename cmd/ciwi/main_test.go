@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"strings"
 	"testing"
 )
@@ -142,5 +144,41 @@ func TestRunAllInOneWithReturnsFirstError(t *testing.T) {
 	)
 	if !errors.Is(got, errExpected) {
 		t.Fatalf("expected first returned error, got %v", got)
+	}
+}
+
+func TestDefaultCommandRunnersAndHelpers(t *testing.T) {
+	runners := defaultCommandRunners()
+	if runners.runServer == nil || runners.runAgent == nil || runners.runAllInOne == nil ||
+		runners.runUpdateHelper == nil || runners.runApplyStagedUpdate == nil || runners.runApplyStagedAgentUpdate == nil {
+		t.Fatalf("expected all default command runners to be wired: %+v", runners)
+	}
+
+	t.Setenv("CIWI_LOG_LEVEL", "debug")
+	initLogging()
+	if slog.Default() == nil {
+		t.Fatalf("expected slog default logger to be set")
+	}
+	t.Setenv("CIWI_LOG_LEVEL", "warn")
+	initLogging()
+	t.Setenv("CIWI_LOG_LEVEL", "error")
+	initLogging()
+	t.Setenv("CIWI_LOG_LEVEL", "unknown")
+	initLogging()
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	usage()
+	_ = w.Close()
+	os.Stderr = old
+	out := make([]byte, 4096)
+	n, _ := r.Read(out)
+	_ = r.Close()
+	if !strings.Contains(string(out[:n]), "Usage:") {
+		t.Fatalf("expected usage output, got %q", string(out[:n]))
 	}
 }

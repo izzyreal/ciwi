@@ -68,6 +68,43 @@ func TestFetchProjectIconBytesNoCandidates(t *testing.T) {
 	}
 }
 
+func TestFetchProjectIconBytesHandlesUnpreparedRepoState(t *testing.T) {
+	tmpDir := t.TempDir()
+	runGit(t, tmpDir, "init", "-q")
+	// No FETCH_HEAD available in this repo state.
+	mime, raw := fetchProjectIconBytes(context.Background(), tmpDir)
+	if mime != "" || len(raw) != 0 {
+		t.Fatalf("expected no icon for missing FETCH_HEAD, got mime=%q bytes=%d", mime, len(raw))
+	}
+}
+
+func TestFetchConfigAndIconFromRepoWithEmptyRefAndBMPIcon(t *testing.T) {
+	repoDir := initTestGitRepo(t, map[string]string{
+		"ciwi-project.yaml": "version: 1\nproject:\n  name: test\npipelines: []\n",
+		"assets/logo.bmp":   tinyBMPBase64(),
+	}, true)
+
+	tmpDir := t.TempDir()
+	res, err := FetchConfigAndIconFromRepo(context.Background(), tmpDir, repoDir, "", "ciwi-project.yaml")
+	if err != nil {
+		t.Fatalf("FetchConfigAndIconFromRepo empty ref: %v", err)
+	}
+	if res.IconContentType != "image/bmp" {
+		t.Fatalf("expected image/bmp icon type, got %q", res.IconContentType)
+	}
+	if len(res.IconContentBytes) == 0 {
+		t.Fatalf("expected bmp icon bytes")
+	}
+}
+
+func TestFetchConfigAndIconFromRepoFetchFailureForInvalidRemote(t *testing.T) {
+	tmpDir := t.TempDir()
+	_, err := FetchConfigAndIconFromRepo(context.Background(), tmpDir, "", "HEAD", "ciwi-project.yaml")
+	if err == nil || !strings.Contains(err.Error(), "git fetch failed") {
+		t.Fatalf("expected git fetch failure, got %v", err)
+	}
+}
+
 func initTestGitRepo(t *testing.T, files map[string]string, decodeBase64ForPNG bool) string {
 	t.Helper()
 	repoDir := t.TempDir()
@@ -80,12 +117,16 @@ func initTestGitRepo(t *testing.T, files map[string]string, decodeBase64ForPNG b
 			t.Fatalf("mkdir %q: %v", full, err)
 		}
 		data := []byte(content)
-		if decodeBase64ForPNG && strings.HasSuffix(strings.ToLower(rel), ".png") {
-			decoded, err := base64.StdEncoding.DecodeString(content)
-			if err != nil {
-				t.Fatalf("decode png base64 for %q: %v", rel, err)
+		if decodeBase64ForPNG {
+			lower := strings.ToLower(rel)
+			isImage := strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".bmp")
+			if isImage {
+				decoded, err := base64.StdEncoding.DecodeString(content)
+				if err != nil {
+					t.Fatalf("decode image base64 for %q: %v", rel, err)
+				}
+				data = decoded
 			}
-			data = decoded
 		}
 		if err := os.WriteFile(full, data, 0o644); err != nil {
 			t.Fatalf("write %q: %v", full, err)
@@ -109,4 +150,9 @@ func runGit(t *testing.T, dir string, args ...string) {
 func tinyPNGBase64() string {
 	// 1x1 transparent PNG
 	return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5p8WQAAAAASUVORK5CYII="
+}
+
+func tinyBMPBase64() string {
+	// 1x1 24-bit BMP
+	return "Qk06AAAAAAAAADYAAAAoAAAAAQAAAAEAAAABABgAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAA////AA=="
 }

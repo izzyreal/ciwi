@@ -12,6 +12,93 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
+type pendingUpdateRequest struct {
+	target     string
+	repository string
+	apiBase    string
+}
+
+type deferredControl struct {
+	jobInProgress         bool
+	pendingUpdate         *pendingUpdateRequest
+	pendingRestart        bool
+	pendingCacheWipe      bool
+	pendingJobHistoryWipe bool
+}
+
+func (d *deferredControl) setJobInProgress(v bool) {
+	d.jobInProgress = v
+}
+
+func (d *deferredControl) requestUpdate(target, repository, apiBase string, onDefer func(), runNow func(string, string, string)) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return
+	}
+	if d.jobInProgress {
+		d.pendingUpdate = &pendingUpdateRequest{target: target, repository: repository, apiBase: apiBase}
+		if onDefer != nil {
+			onDefer()
+		}
+		return
+	}
+	runNow(target, repository, apiBase)
+}
+
+func (d *deferredControl) requestRestart(onDefer func(), runNow func()) {
+	if d.jobInProgress {
+		d.pendingRestart = true
+		if onDefer != nil {
+			onDefer()
+		}
+		return
+	}
+	runNow()
+}
+
+func (d *deferredControl) requestCacheWipe(onDefer func(), runNow func()) {
+	if d.jobInProgress {
+		d.pendingCacheWipe = true
+		if onDefer != nil {
+			onDefer()
+		}
+		return
+	}
+	runNow()
+}
+
+func (d *deferredControl) requestJobHistoryWipe(onDefer func(), runNow func()) {
+	if d.jobInProgress {
+		d.pendingJobHistoryWipe = true
+		if onDefer != nil {
+			onDefer()
+		}
+		return
+	}
+	runNow()
+}
+
+func (d *deferredControl) flushDeferred(runUpdate func(string, string, string), runRestart, runCacheWipe, runJobHistoryWipe func()) {
+	d.jobInProgress = false
+	if d.pendingUpdate != nil {
+		req := *d.pendingUpdate
+		d.pendingUpdate = nil
+		runUpdate(req.target, req.repository, req.apiBase)
+	}
+	if d.pendingRestart {
+		d.pendingRestart = false
+		runRestart()
+	}
+	if d.pendingCacheWipe {
+		d.pendingCacheWipe = false
+		runCacheWipe()
+	}
+	if d.pendingJobHistoryWipe {
+		d.pendingJobHistoryWipe = false
+		runJobHistoryWipe()
+	}
+}
+
 func Run(ctx context.Context) error {
 	loadAgentPlatformEnv()
 	if handled, err := runAsWindowsServiceIfNeeded(runLoop); handled {
@@ -44,87 +131,66 @@ func runLoop(ctx context.Context) error {
 	capabilities := detectAgentCapabilities()
 	pendingUpdateFailure := ""
 	pendingRestartStatus := ""
-	jobInProgress := false
-	pendingRestart := false
-	pendingCacheWipe := false
-	pendingJobHistoryWipe := false
-	type pendingUpdateRequest struct {
-		target     string
-		repository string
-		apiBase    string
-	}
+	control := &deferredControl{}
 	type jobResult struct {
 		jobID string
 		err   error
 	}
-	var pendingUpdate *pendingUpdateRequest
 	jobDoneCh := make(chan jobResult, 1)
 
 	runOrDeferUpdate := func(target, repository, apiBase string) {
-		target = strings.TrimSpace(target)
-		if target == "" {
-			return
-		}
-		if jobInProgress {
-			pendingUpdate = &pendingUpdateRequest{
-				target:     target,
-				repository: repository,
-				apiBase:    apiBase,
-			}
+		control.requestUpdate(target, repository, apiBase, func() {
 			slog.Info("server requested agent update; deferring until current job completes", "target_version", target)
-			return
-		}
-		slog.Info("server requested agent update", "target_version", target)
-		if err := selfUpdateAndRestart(ctx, target, repository, apiBase, os.Args[1:]); err != nil {
-			slog.Error("agent self-update failed", "error", err)
-			pendingUpdateFailure = err.Error()
-		}
+		}, func(target, repository, apiBase string) {
+			slog.Info("server requested agent update", "target_version", target)
+			if err := selfUpdateAndRestart(ctx, target, repository, apiBase, os.Args[1:]); err != nil {
+				slog.Error("agent self-update failed", "error", err)
+				pendingUpdateFailure = err.Error()
+			}
+		})
 	}
 	runOrDeferRestart := func() {
-		if jobInProgress {
-			pendingRestart = true
+		control.requestRestart(func() {
 			pendingRestartStatus = "restart deferred: agent busy with active job"
 			slog.Info("server requested agent restart; deferring until current job completes")
-			return
-		}
-		slog.Info("server requested agent restart")
-		pendingRestartStatus = requestAgentRestart()
-		if pendingRestartStatus != "" {
-			if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
-				slog.Error("heartbeat failed while reporting restart status", "error", err)
-			} else {
-				pendingUpdateFailure = ""
-				pendingRestartStatus = ""
+		}, func() {
+			slog.Info("server requested agent restart")
+			pendingRestartStatus = requestAgentRestart()
+			if pendingRestartStatus != "" {
+				if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
+					slog.Error("heartbeat failed while reporting restart status", "error", err)
+				} else {
+					pendingUpdateFailure = ""
+					pendingRestartStatus = ""
+				}
 			}
-		}
+		})
 	}
 	runOrDeferCacheWipe := func() {
-		if jobInProgress {
-			pendingCacheWipe = true
+		control.requestCacheWipe(func() {
 			slog.Info("server requested cache wipe; deferring until current job completes")
-			return
-		}
-		slog.Info("server requested cache wipe")
-		msg, err := wipeAgentCache(workDir)
-		if err != nil {
-			slog.Error("agent cache wipe failed", "error", err)
-			return
-		}
-		slog.Info(msg)
+		}, func() {
+			slog.Info("server requested cache wipe")
+			msg, err := wipeAgentCache(workDir)
+			if err != nil {
+				slog.Error("agent cache wipe failed", "error", err)
+				return
+			}
+			slog.Info(msg)
+		})
 	}
 	runOrDeferJobHistoryWipe := func() {
-		if jobInProgress {
-			pendingJobHistoryWipe = true
+		control.requestJobHistoryWipe(func() {
 			slog.Info("server requested local job history wipe; deferring until current job completes")
-			return
-		}
-		slog.Info("server requested local job history wipe")
-		msg, err := wipeAgentJobHistory(workDir)
-		if err != nil {
-			slog.Error("agent local job history wipe failed", "error", err)
-			return
-		}
-		slog.Info(msg)
+		}, func() {
+			slog.Info("server requested local job history wipe")
+			msg, err := wipeAgentJobHistory(workDir)
+			if err != nil {
+				slog.Error("agent local job history wipe failed", "error", err)
+				return
+			}
+			slog.Info(msg)
+		})
 	}
 
 	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
@@ -161,27 +227,10 @@ func runLoop(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case done := <-jobDoneCh:
-			jobInProgress = false
 			if done.err != nil {
 				slog.Error("execute job failed", "job_execution_id", done.jobID, "error", done.err)
 			}
-			if pendingUpdate != nil {
-				req := *pendingUpdate
-				pendingUpdate = nil
-				runOrDeferUpdate(req.target, req.repository, req.apiBase)
-			}
-			if pendingRestart {
-				pendingRestart = false
-				runOrDeferRestart()
-			}
-			if pendingCacheWipe {
-				pendingCacheWipe = false
-				runOrDeferCacheWipe()
-			}
-			if pendingJobHistoryWipe {
-				pendingJobHistoryWipe = false
-				runOrDeferJobHistoryWipe()
-			}
+			control.flushDeferred(runOrDeferUpdate, runOrDeferRestart, runOrDeferCacheWipe, runOrDeferJobHistoryWipe)
 		case <-heartbeatTicker.C:
 			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus)
 			if err != nil {
@@ -213,7 +262,7 @@ func runLoop(ctx context.Context) error {
 				}
 			}
 		case <-leaseTicker.C:
-			if jobInProgress {
+			if control.jobInProgress {
 				continue
 			}
 			job, err := leaseJob(ctx, client, serverURL, agentID, capabilities)
@@ -224,7 +273,7 @@ func runLoop(ctx context.Context) error {
 			if job == nil {
 				continue
 			}
-			jobInProgress = true
+			control.setJobInProgress(true)
 			jobCaps := cloneMap(capabilities)
 			go func(leased protocol.JobExecution, caps map[string]string) {
 				jobDoneCh <- jobResult{

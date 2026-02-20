@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIsValidUpdateStatus(t *testing.T) {
@@ -83,6 +85,72 @@ func TestHealthzHandler(t *testing.T) {
 	healthzHandler(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
+func TestServerInfoHandler(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/server-info", nil)
+	serverInfoHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body serverInfoResponse
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode server info response: %v", err)
+	}
+	if body.Name != "ciwi" || body.APIVersion != 1 {
+		t.Fatalf("unexpected server info: %+v", body)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/server-info", nil)
+	serverInfoHandler(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for non-GET method, got %d", rec.Code)
+	}
+}
+
+func TestSummarizeAgentStatusFields(t *testing.T) {
+	if got := summarizeUpdateFailure(" \n\t "); got != "" {
+		t.Fatalf("expected empty summarized update failure, got %q", got)
+	}
+	if got := summarizeRestartStatus(" \n\t "); got != "" {
+		t.Fatalf("expected empty summarized restart status, got %q", got)
+	}
+
+	normalized := summarizeUpdateFailure("  update    failed \n due\tto network ")
+	if normalized != "update failed due to network" {
+		t.Fatalf("unexpected normalized update failure: %q", normalized)
+	}
+
+	long := strings.Repeat("x", maxReportedUpdateFailureLength+50)
+	got := summarizeRestartStatus(long)
+	if len(got) > maxReportedUpdateFailureLength {
+		t.Fatalf("expected truncation to <= %d chars, got len=%d", maxReportedUpdateFailureLength, len(got))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("expected truncated restart status to end with ellipsis, got %q", got)
+	}
+}
+
+func TestOptionalTime(t *testing.T) {
+	if got := optionalTime(time.Time{}); got != nil {
+		t.Fatalf("expected nil pointer for zero time, got %v", got)
+	}
+	in := time.Now().UTC().Round(0)
+	got := optionalTime(in)
+	if got == nil || !got.Equal(in) {
+		t.Fatalf("expected non-nil pointer with same value, got %v", got)
+	}
+}
+
+func TestListProjectsHandlerMethodGuard(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects", map[string]any{})
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for non-GET projects list, got %d body=%s", resp.StatusCode, readBody(t, resp))
 	}
 }
 

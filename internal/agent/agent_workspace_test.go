@@ -83,3 +83,21 @@ func TestWorkspaceDirForJobSingleWhenNoMatrix(t *testing.T) {
 		t.Fatalf("expected no index matrix marker in non-matrix workspace path, got %q", got)
 	}
 }
+
+func TestWorkspaceEnvFingerprintFallbackAndSanitize(t *testing.T) {
+	required := map[string]string{
+		"requires.tool.cmake": "3.31.5",
+		"custom":              "  value  ",
+	}
+	got := workspaceEnvFingerprint(required)
+	if !strings.HasPrefix(got, "env-") || len(got) <= len("env-") {
+		t.Fatalf("unexpected fallback fingerprint: %q", got)
+	}
+
+	if sanitized := sanitizeWorkspacePathPart("  ###  "); sanitized != "x" {
+		t.Fatalf("expected sanitize fallback to x, got %q", sanitized)
+	}
+	if matrix := workspaceMatrixIdentity(map[string]string{"matrix_index": "7"}); matrix != "idx-7" {
+		t.Fatalf("expected matrix identity from index, got %q", matrix)
+	}
+}

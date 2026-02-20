@@ -9,6 +9,20 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
+func TestParseRFC3339OrZero(t *testing.T) {
+	if got := parseRFC3339OrZero(""); !got.IsZero() {
+		t.Fatalf("expected zero time for empty value, got %v", got)
+	}
+	if got := parseRFC3339OrZero("not-a-time"); !got.IsZero() {
+		t.Fatalf("expected zero time for invalid value, got %v", got)
+	}
+	now := time.Now().UTC().Truncate(time.Nanosecond)
+	got := parseRFC3339OrZero(now.Format(time.RFC3339Nano))
+	if !got.Equal(now) {
+		t.Fatalf("expected parsed time %v, got %v", now, got)
+	}
+}
+
 func TestStoreAppStateRoundTrip(t *testing.T) {
 	s := openTestStore(t)
 
@@ -283,6 +297,86 @@ pipelines:
 	}
 	if err := s.DeleteVaultConnection(conn.ID); err == nil {
 		t.Fatalf("expected deleting missing vault connection to fail")
+	}
+}
+
+func TestStoreVaultEdgeCases(t *testing.T) {
+	s := openTestStore(t)
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+`), "vault-edge-cases")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if err := s.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	project, err := s.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("GetProjectByName: %v", err)
+	}
+
+	if _, err := s.GetVaultConnectionByName("missing"); err == nil {
+		t.Fatalf("expected missing vault connection by name to fail")
+	}
+
+	if _, err := s.UpdateProjectVaultSettings(project.ID, protocol.UpdateProjectVaultRequest{
+		VaultConnectionID: 9999,
+	}); err == nil {
+		t.Fatalf("expected unknown vault connection id to fail")
+	}
+
+	settings, err := s.UpdateProjectVaultSettings(project.ID, protocol.UpdateProjectVaultRequest{
+		VaultConnectionName: "unknown-vault",
+		Secrets:             []protocol.ProjectSecretSpec{{Name: "token", Path: "kv/data/ciwi", Key: "token"}},
+	})
+	if err != nil {
+		t.Fatalf("UpdateProjectVaultSettings unknown name: %v", err)
+	}
+	if settings.VaultConnectionID != 0 || settings.VaultConnectionName != "unknown-vault" {
+		t.Fatalf("expected unresolved vault name to persist with zero id, got %+v", settings)
+	}
+
+	conn, err := s.UpsertVaultConnection(protocol.UpsertVaultConnectionRequest{
+		Name:         "ciwi-vault",
+		URL:          "http://vault.local:8200",
+		AuthMethod:   "approle",
+		AppRoleMount: "approle",
+		RoleID:       "role",
+		SecretIDEnv:  "CIWI_VAULT_SECRET_ID",
+	})
+	if err != nil {
+		t.Fatalf("UpsertVaultConnection: %v", err)
+	}
+
+	if _, err := s.db.Exec(`UPDATE projects SET vault_connection_id = NULL, vault_connection_name = ? WHERE id = ?`, conn.Name, project.ID); err != nil {
+		t.Fatalf("manual vault backfill setup: %v", err)
+	}
+	backfilled, err := s.GetProjectVaultSettings(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectVaultSettings after name-only update: %v", err)
+	}
+	if backfilled.VaultConnectionID != conn.ID {
+		t.Fatalf("expected name-only settings to resolve vault id %d, got %+v", conn.ID, backfilled)
+	}
+}
+
+func TestStoreProjectLookupNotFound(t *testing.T) {
+	s := openTestStore(t)
+	if _, err := s.GetProjectByID(42); err == nil {
+		t.Fatalf("expected GetProjectByID missing project to fail")
+	}
+	if _, err := s.GetProjectByName("missing"); err == nil {
+		t.Fatalf("expected GetProjectByName missing project to fail")
 	}
 }
 

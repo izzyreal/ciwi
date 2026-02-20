@@ -30,7 +30,7 @@ func defaultCommandRunners() commandRunners {
 	return commandRunners{
 		runServer:                 server.Run,
 		runAgent:                  agent.Run,
-		runAllInOne:               runAllInOne,
+		runAllInOne:               func(ctx context.Context) error { return runAllInOneWith(ctx, server.Run, agent.Run) },
 		runUpdateHelper:           updatehelper.Run,
 		runApplyStagedUpdate:      linuxupdater.RunApplyStaged,
 		runApplyStagedAgentUpdate: darwinupdater.RunApplyStagedAgent,
@@ -65,10 +65,6 @@ func initLogging() {
 		AddSource: false,
 	})
 	slog.SetDefault(slog.New(handler))
-}
-
-func runAllInOne(ctx context.Context) error {
-	return runAllInOneWith(ctx, server.Run, agent.Run)
 }
 
 func runAllInOneWith(ctx context.Context, runServer func(context.Context) error, runAgent func(context.Context) error) error {
