@@ -431,11 +431,12 @@ const jobExecutionHTML = `<!doctype html>
       return out;
     }
 
-    function renderToolRequirements(requiredCaps, runtimeCaps) {
+    function renderToolRequirements(requiredCaps, runtimeCaps, jobStatus) {
       const req = requiredCaps || {};
       const caps = runtimeCaps || {};
       const hostRows = requirementRows(req, 'requires.tool.');
       const containerRows = requirementRows(req, 'requires.container.tool.');
+      const status = String(jobStatus || '').trim().toLowerCase();
 
       function renderInto(boxId, rows, prefix, emptyText) {
         const box = document.getElementById(boxId);
@@ -443,6 +444,19 @@ const jobExecutionHTML = `<!doctype html>
         if (!rows.length) {
           box.className = 'req-empty';
           box.textContent = emptyText;
+          return;
+        }
+        const hasObservedRuntimeData = rows.some(r => {
+          const key = prefix + r.tool;
+          return String(caps[key] || '').trim() !== '';
+        });
+        if (!hasObservedRuntimeData) {
+          box.className = 'req-empty';
+          if (isQueuedJobStatus(status) || isRunningJobStatus(status)) {
+            box.textContent = 'Pending runtime capability report from agent.';
+          } else {
+            box.textContent = 'Runtime capability report unavailable for this execution.';
+          }
           return;
         }
         const issues = [];
@@ -1029,7 +1043,7 @@ const jobExecutionHTML = `<!doctype html>
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
         renderCacheStats(job.cache_stats);
-        renderToolRequirements(job.required_capabilities, job.runtime_capabilities);
+        renderToolRequirements(job.required_capabilities, job.runtime_capabilities, job.status);
 
         const meta = document.getElementById('metaGrid');
         const previousModeInfo = meta.querySelector('.mode-info');
