@@ -130,7 +130,7 @@ const agentsHTML = `<!doctype html>
           const s = statusForLastSeen(a.last_seen_utc || '');
           const tr = document.createElement('tr');
           const updateBtn = (a.update_requested && !a.update_in_progress)
-            ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Retry Now</button>'
+            ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Retry Update Now</button>'
             : ((a.needs_update && s.label !== 'offline')
               ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Update</button>'
               : '');

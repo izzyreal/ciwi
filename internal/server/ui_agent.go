@@ -499,7 +499,7 @@ const agentHTML = `<!doctype html>
         adhocShells = parseAgentShells(a.capabilities || {});
         const showUpdate = (!a.update_in_progress) && (!!a.update_requested || (!!a.needs_update && s.label !== 'offline'));
         updateButton.style.display = showUpdate ? 'inline-block' : 'none';
-        updateButton.textContent = a.update_requested ? 'Retry Now' : 'Update';
+        updateButton.textContent = a.update_requested ? 'Retry Update Now' : 'Update';
         restartButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
         wipeCacheButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
         flushAgentHistoryButton.style.display = 'inline-block';

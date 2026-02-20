@@ -7,14 +7,23 @@ import (
 )
 
 func selfUpdateServiceModeReason() string {
-	switch runtime.GOOS {
+	return selfUpdateServiceModeReasonFor(runtime.GOOS, func(key string) string {
+		return os.Getenv(key)
+	})
+}
+
+func selfUpdateServiceModeReasonFor(goos string, getenv func(string) string) string {
+	switch strings.TrimSpace(goos) {
 	case "linux":
-		if strings.TrimSpace(os.Getenv("INVOCATION_ID")) != "" {
+		if strings.TrimSpace(getenv("INVOCATION_ID")) != "" {
 			return ""
 		}
 		return "agent is not running as a service; self-update disabled"
 	case "darwin":
-		if strings.TrimSpace(os.Getenv("LAUNCH_JOB_LABEL")) != "" {
+		// macOS installer wires launchd update support via these env vars.
+		if strings.TrimSpace(getenv("CIWI_AGENT_LAUNCHD_LABEL")) != "" &&
+			strings.TrimSpace(getenv("CIWI_AGENT_LAUNCHD_PLIST")) != "" &&
+			strings.TrimSpace(getenv("CIWI_AGENT_UPDATER_LABEL")) != "" {
 			return ""
 		}
 		return "agent is not running as a service; self-update disabled"
