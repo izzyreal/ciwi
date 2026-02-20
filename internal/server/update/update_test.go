@@ -455,13 +455,21 @@ func TestStartUpdateHelperArgsAndCopyFile(t *testing.T) {
 	if err := StartUpdateHelper(helper, "/tmp/target", "/tmp/new", 1234, []string{"serve", "--flag"}); err != nil {
 		t.Fatalf("StartUpdateHelper: %v", err)
 	}
-	for i := 0; i < 50; i++ {
-		if _, err := os.Stat(argsLog); err == nil {
+	var (
+		raw []byte
+		err error
+	)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		raw, err = os.ReadFile(argsLog)
+		if err == nil && len(raw) > 0 {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	raw, err := os.ReadFile(argsLog)
 	if err != nil {
 		t.Fatalf("read args log: %v", err)
 	}
