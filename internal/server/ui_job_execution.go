@@ -156,7 +156,7 @@ const jobExecutionHTML = `<!doctype html>
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <button id="forceFailBtn" class="copy-btn" style="display:none;">Force Fail</button>
+        <button id="forceFailBtn" class="copy-btn" style="display:none;">Cancel</button>
         <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
         <a id="backLink" class="nav-btn" href="/">Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span></a>
       </div>
@@ -859,14 +859,14 @@ const jobExecutionHTML = `<!doctype html>
         forceBtn.disabled = false;
         forceBtn.onclick = async () => {
           const confirmed = await showConfirmDialog({
-            title: 'Force Fail Job',
-            message: 'Force-fail this active job?',
-            okLabel: 'Force fail',
+            title: 'Cancel Job',
+            message: 'Cancel this active job?',
+            okLabel: 'Cancel job',
           });
           if (!confirmed) return;
           forceBtn.disabled = true;
           try {
-            const fres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/force-fail', {
+            const fres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/cancel', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: '{}'
@@ -876,7 +876,7 @@ const jobExecutionHTML = `<!doctype html>
             }
             await loadJobExecution(true);
           } catch (e) {
-            await showAlertDialog({ title: 'Force fail failed', message: 'Force fail failed: ' + e.message });
+            await showAlertDialog({ title: 'Cancel failed', message: 'Cancel failed: ' + e.message });
           } finally {
             forceBtn.disabled = false;
           }

@@ -107,6 +107,10 @@ function buildVersionLabel(job) {
 
 function formatJobStatus(job) {
   const status = (job && job.status) || '';
+  const errText = String((job && job.error) || '').trim().toLowerCase();
+  if (normalizedJobStatus(status) === 'failed' && errText === 'cancelled by user') {
+    return 'Cancelled by user';
+  }
   const summary = job && job.test_summary;
   if (!summary || !summary.total) return status;
   if (summary.failed > 0) return status + ' (' + summary.passed + '/' + summary.total + ' passed)';

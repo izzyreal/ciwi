@@ -458,7 +458,7 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	}
 }
 
-func TestExecuteLeasedJobCancelsWhenServerForceFails(t *testing.T) {
+func TestExecuteLeasedJobCancelsWhenServerCancels(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix shell assertion test skipped on windows")
 	}
@@ -471,21 +471,21 @@ func TestExecuteLeasedJobCancelsWhenServerForceFails(t *testing.T) {
 	client := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
-			case r.Method == http.MethodGet && r.URL.Path == "/api/v1/jobs/job-force-fail":
+			case r.Method == http.MethodGet && r.URL.Path == "/api/v1/jobs/job-cancel":
 				check := atomic.AddInt32(&stateChecks, 1)
 				status := "running"
 				errText := ""
 				if check >= 2 {
 					status = "failed"
-					errText = "force-failed from UI"
+					errText = "cancelled by user"
 				}
-				body := `{"job_execution":{"id":"job-force-fail","status":"` + status + `","error":"` + errText + `"}}`
+				body := `{"job_execution":{"id":"job-cancel","status":"` + status + `","error":"` + errText + `"}}`
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       io.NopCloser(strings.NewReader(body)),
 					Header:     make(http.Header),
 				}, nil
-			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-force-fail/status":
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-cancel/status":
 				var req protocol.JobExecutionStatusUpdateRequest
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Fatalf("decode status: %v", err)
@@ -509,7 +509,7 @@ func TestExecuteLeasedJobCancelsWhenServerForceFails(t *testing.T) {
 	}
 
 	job := protocol.JobExecution{
-		ID:             "job-force-fail",
+		ID:             "job-cancel",
 		Script:         "sleep 4",
 		TimeoutSeconds: 120,
 		RequiredCapabilities: map[string]string{
@@ -535,7 +535,7 @@ func TestExecuteLeasedJobCancelsWhenServerForceFails(t *testing.T) {
 	if last.Status != "failed" {
 		t.Fatalf("expected final status failed, got %q", last.Status)
 	}
-	if !strings.Contains(last.Output, "[control] job marked failed on server: force-failed from UI") {
+	if !strings.Contains(last.Output, "[control] job marked failed on server: cancelled by user") {
 		t.Fatalf("expected control cancel marker in output, got:\n%s", last.Output)
 	}
 }

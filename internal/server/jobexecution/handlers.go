@@ -161,7 +161,7 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "force-fail" {
+	if len(parts) == 2 && parts[1] == "cancel" {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -183,11 +183,11 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		if output != "" {
 			output += "\n"
 		}
-		output += "[control] job force-failed from UI"
+		output += "[control] job cancelled by user"
 		updated, err := deps.Store.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:      agentID,
 			Status:       protocol.JobExecutionStatusFailed,
-			Error:        "force-failed from UI",
+			Error:        "cancelled by user",
 			Output:       output,
 			TimestampUTC: nowUTC(deps),
 		})

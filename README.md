@@ -473,7 +473,7 @@ sudo journalctl -u ciwi-agent -f
 - `DELETE /api/v1/jobs/{id}`
 - `POST /api/v1/jobs/clear-queue`
 - `POST /api/v1/jobs/flush-history`
-- `POST /api/v1/jobs/{id}/force-fail`
+- `POST /api/v1/jobs/{id}/cancel`
 - `POST /api/v1/jobs/{id}/rerun`
 - `GET /api/v1/jobs/{id}/tests`
 - `POST /api/v1/update/check`
