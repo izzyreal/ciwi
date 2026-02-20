@@ -122,6 +122,27 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		fmt.Fprintf(&output, "[cache] %s\n", line)
 	}
 	cacheStats := collectJobCacheStats(resolvedCaches)
+	runtimeCaps := collectRuntimeCapabilities(agentCapabilities, runtimeProbeContainerFromMetadata(job.Metadata))
+	if summary := runtimeProbeSummary(runtimeCaps); summary != "" {
+		fmt.Fprintf(&output, "%s\n", summary)
+	}
+	if err := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
+		fmt.Fprintf(&output, "[runtime] %v\n", err)
+		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID:             agentID,
+			Status:              protocol.JobExecutionStatusFailed,
+			Error:               err.Error(),
+			Output:              trimmedOutput,
+			CacheStats:          cacheStats,
+			RuntimeCapabilities: runtimeCaps,
+			TimestampUTC:        time.Now().UTC(),
+		}); reportErr != nil {
+			return reportErr
+		}
+		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
+		return nil
+	}
 
 	traceShell := boolEnv("CIWI_AGENT_TRACE_SHELL", true)
 	verboseGo := boolEnv("CIWI_AGENT_GO_BUILD_VERBOSE", true)
@@ -245,12 +266,13 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 			failMsg := "artifact upload failed: " + uploadErr.Error()
 			if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:      agentID,
-				Status:       protocol.JobExecutionStatusFailed,
-				Error:        failMsg,
-				Output:       trimmedOutput,
-				CacheStats:   cacheStats,
-				TimestampUTC: time.Now().UTC(),
+				AgentID:             agentID,
+				Status:              protocol.JobExecutionStatusFailed,
+				Error:               failMsg,
+				Output:              trimmedOutput,
+				CacheStats:          cacheStats,
+				RuntimeCapabilities: runtimeCaps,
+				TimestampUTC:        time.Now().UTC(),
 			}); reportErr != nil {
 				return reportErr
 			}
@@ -282,13 +304,14 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	if err == nil {
 		exitCode := 0
 		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:      agentID,
-			Status:       protocol.JobExecutionStatusSucceeded,
-			ExitCode:     &exitCode,
-			Output:       trimmedOutput,
-			CacheStats:   cacheStats,
-			CurrentStep:  "",
-			TimestampUTC: time.Now().UTC(),
+			AgentID:             agentID,
+			Status:              protocol.JobExecutionStatusSucceeded,
+			ExitCode:            &exitCode,
+			Output:              trimmedOutput,
+			CacheStats:          cacheStats,
+			RuntimeCapabilities: runtimeCaps,
+			CurrentStep:         "",
+			TimestampUTC:        time.Now().UTC(),
 		}); reportErr != nil {
 			return fmt.Errorf("report succeeded status: %w", reportErr)
 		}
@@ -302,14 +325,15 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		failMsg = "job timed out"
 	}
 	if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      agentID,
-		Status:       protocol.JobExecutionStatusFailed,
-		ExitCode:     exitCode,
-		Error:        failMsg,
-		Output:       trimmedOutput,
-		CacheStats:   cacheStats,
-		CurrentStep:  "",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:             agentID,
+		Status:              protocol.JobExecutionStatusFailed,
+		ExitCode:            exitCode,
+		Error:               failMsg,
+		Output:              trimmedOutput,
+		CacheStats:          cacheStats,
+		RuntimeCapabilities: runtimeCaps,
+		CurrentStep:         "",
+		TimestampUTC:        time.Now().UTC(),
 	}); reportErr != nil {
 		return reportErr
 	}

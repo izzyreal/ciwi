@@ -78,8 +78,13 @@ type PipelineJobCacheSpec struct {
 }
 
 type PipelineJobRequirements struct {
-	Tools        map[string]string `yaml:"tools,omitempty" json:"tools,omitempty"`
-	Capabilities map[string]string `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+	Tools        map[string]string             `yaml:"tools,omitempty" json:"tools,omitempty"`
+	Capabilities map[string]string             `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+	Container    PipelineJobContainerRequirements `yaml:"container,omitempty" json:"container,omitempty"`
+}
+
+type PipelineJobContainerRequirements struct {
+	Tools map[string]string `yaml:"tools,omitempty" json:"tools,omitempty"`
 }
 
 type PipelineJobMatrix struct {
@@ -232,6 +237,17 @@ func (cfg File) Validate() []string {
 				}
 				if strings.ContainsAny(tool, " \t\n\r") {
 					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].requires.tools[%q] invalid tool name", i, j, tool))
+				}
+				if strings.TrimSpace(constraint) == "" {
+					continue
+				}
+			}
+			for tool, constraint := range job.Requires.Container.Tools {
+				if strings.TrimSpace(tool) == "" {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].requires.container.tools contains empty tool name", i, j))
+				}
+				if strings.ContainsAny(tool, " \t\n\r") {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].requires.container.tools[%q] invalid tool name", i, j, tool))
 				}
 				if strings.TrimSpace(constraint) == "" {
 					continue

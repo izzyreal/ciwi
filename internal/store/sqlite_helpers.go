@@ -15,19 +15,19 @@ import (
 
 func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.JobExecution, error) {
 	var (
-		job                                                                                              protocol.JobExecution
-		envJSON, requiredJSON, artifactGlobsJSON, cachesJSON, metadataJSON, stepPlanJSON, cacheStatsJSON string
-		sourceRepo, sourceRef                                                                            sql.NullString
-		createdUTC                                                                                       string
-		startedUTC, finishedUTC                                                                          sql.NullString
-		leasedByAgentID, leasedUTC                                                                       sql.NullString
-		exitCode                                                                                         sql.NullInt64
-		errorText, outputText, currentStepText                                                           sql.NullString
+		job                                                                                                               protocol.JobExecution
+		envJSON, requiredJSON, artifactGlobsJSON, cachesJSON, metadataJSON, stepPlanJSON, cacheStatsJSON, runtimeCapsJSON string
+		sourceRepo, sourceRef                                                                                             sql.NullString
+		createdUTC                                                                                                        string
+		startedUTC, finishedUTC                                                                                           sql.NullString
+		leasedByAgentID, leasedUTC                                                                                        sql.NullString
+		exitCode                                                                                                          sql.NullInt64
+		errorText, outputText, currentStepText                                                                            sql.NullString
 	)
 
 	if err := scanner.Scan(
 		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON, &stepPlanJSON,
-		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText, &cacheStatsJSON, &currentStepText,
+		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText, &cacheStatsJSON, &runtimeCapsJSON, &currentStepText,
 	); err != nil {
 		return protocol.JobExecution{}, err
 	}
@@ -39,6 +39,7 @@ func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.Jo
 	_ = json.Unmarshal([]byte(metadataJSON), &job.Metadata)
 	_ = json.Unmarshal([]byte(stepPlanJSON), &job.StepPlan)
 	_ = json.Unmarshal([]byte(cacheStatsJSON), &job.CacheStats)
+	_ = json.Unmarshal([]byte(runtimeCapsJSON), &job.RuntimeCapabilities)
 
 	if sourceRepo.Valid && sourceRepo.String != "" {
 		job.Source = &protocol.SourceSpec{Repo: sourceRepo.String, Ref: sourceRef.String}
@@ -94,6 +95,10 @@ func capabilitiesMatch(agentCapabilities, requiredCapabilities map[string]string
 			if !requirements.ToolConstraintMatch(agentValue, strings.TrimSpace(requiredValue)) {
 				return false
 			}
+			continue
+		}
+		if strings.HasPrefix(k, "requires.container.tool.") {
+			// Container tool constraints are validated by the agent runtime probe.
 			continue
 		}
 		if k == "shell" {

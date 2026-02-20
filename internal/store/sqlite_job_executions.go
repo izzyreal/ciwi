@@ -60,7 +60,7 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
-		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, cache_stats_json, current_step_text
+		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, cache_stats_json, runtime_capabilities_json, current_step_text
 		FROM job_executions
 		ORDER BY created_utc DESC, id DESC
 	`)
@@ -86,7 +86,7 @@ func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 func (s *Store) GetJobExecution(id string) (protocol.JobExecution, error) {
 	row := s.db.QueryRow(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
-		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, cache_stats_json, current_step_text
+		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, output_text, cache_stats_json, runtime_capabilities_json, current_step_text
 		FROM job_executions WHERE id = ?
 	`, id)
 	job, err := scanJobExecution(row)
@@ -159,7 +159,7 @@ func (s *Store) AgentHasActiveJobExecution(agentID string) (bool, error) {
 func (s *Store) ListQueuedJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
-		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, cache_stats_json, current_step_text
+		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, '' AS output_text, cache_stats_json, runtime_capabilities_json, current_step_text
 		FROM job_executions WHERE status = ?
 		ORDER BY created_utc ASC, id ASC
 	`, protocol.JobExecutionStatusQueued)
@@ -236,6 +236,17 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 			cacheStatsJSON = string(raw)
 		}
 	}
+	runtimeCapsJSON := "{}"
+	if len(job.RuntimeCapabilities) > 0 {
+		if raw, marshalErr := json.Marshal(job.RuntimeCapabilities); marshalErr == nil {
+			runtimeCapsJSON = string(raw)
+		}
+	}
+	if len(req.RuntimeCapabilities) > 0 {
+		if raw, marshalErr := json.Marshal(req.RuntimeCapabilities); marshalErr == nil {
+			runtimeCapsJSON = string(raw)
+		}
+	}
 
 	if status == protocol.JobExecutionStatusRunning && !job.StartedUTC.IsZero() {
 		started = nullableTime(job.StartedUTC)
@@ -256,7 +267,7 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	}
 
 	where := "id = ?"
-	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output, cacheStatsJSON, currentStep}
+	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output, cacheStatsJSON, runtimeCapsJSON, currentStep}
 	if status == protocol.JobExecutionStatusRunning {
 		// Never allow a running heartbeat/log-stream update to overwrite a terminal state.
 		where = "id = ? AND status NOT IN (?, ?)"
@@ -274,7 +285,7 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 		var execErr error
 		res, execErr = s.db.Exec(`
 			UPDATE job_executions
-			SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?, cache_stats_json = ?, current_step_text = ?
+			SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?, cache_stats_json = ?, runtime_capabilities_json = ?, current_step_text = ?
 			WHERE `+where+`
 		`, args...)
 		return execErr

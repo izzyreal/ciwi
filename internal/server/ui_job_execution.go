@@ -187,6 +187,9 @@ const jobExecutionHTML = `<!doctype html>
     .cache-stat-row { font-size:12px; color:#1f2a24; margin-top:2px; }
     .cache-stat-metrics { margin-top:6px; font-size:12px; color:#30463b; }
     .cache-stat-metrics code { font-size:11px; }
+    .runtime-caps-empty { color:#5f6f67; font-size:13px; margin-top:10px; }
+    .runtime-caps-list { margin-top:10px; font-size:12px; color:#1f2a24; max-height:180px; overflow:auto; border-top:1px solid #d9e7df; padding-top:8px; }
+    .runtime-caps-row { margin:2px 0; }
     @media (max-width: 980px) {
       .detail-split { grid-template-columns: 1fr; }
     }
@@ -222,6 +225,7 @@ const jobExecutionHTML = `<!doctype html>
       <div class="card">
         <h3 style="margin:0 0 10px;">Cache statistics</h3>
         <div id="cacheStatsBox" class="cache-stats-empty">No cache statistics reported for this job.</div>
+        <div id="runtimeCapsBox" class="runtime-caps-empty">No runtime capability probe data reported for this job.</div>
       </div>
     </div>
     <div class="card" id="releaseSummaryCard" style="display:none;">
@@ -357,6 +361,22 @@ const jobExecutionHTML = `<!doctype html>
             (metricRows ? ('<div class="cache-stat-metrics">' + metricRows + '</div>') : '') +
           '</div>';
       }).join('');
+    }
+
+    function renderRuntimeCapabilities(runtimeCaps) {
+      const box = document.getElementById('runtimeCapsBox');
+      if (!box) return;
+      const caps = runtimeCaps || {};
+      const keys = Object.keys(caps).sort((a, b) => a.localeCompare(b));
+      if (!keys.length) {
+        box.className = 'runtime-caps-empty';
+        box.textContent = 'No runtime capability probe data reported for this job.';
+        return;
+      }
+      box.className = 'runtime-caps-list';
+      box.innerHTML = keys.map(k =>
+        '<div class="runtime-caps-row"><code>' + escapeHtml(k) + '</code>: ' + escapeHtml(String(caps[k] || '')) + '</div>'
+      ).join('');
     }
 
     function setBackLink() {
@@ -923,6 +943,7 @@ const jobExecutionHTML = `<!doctype html>
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
         renderCacheStats(job.cache_stats);
+        renderRuntimeCapabilities(job.runtime_capabilities);
 
         const meta = document.getElementById('metaGrid');
         const previousModeInfo = meta.querySelector('.mode-info');

@@ -252,8 +252,12 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			if depJobIDs := resolveDependencyArtifactJobIDs(p.DependsOn, depCtx.ArtifactJobIDsAll, depJobID); len(depJobIDs) > 0 {
 				env["CIWI_DEP_ARTIFACT_JOB_IDS"] = strings.Join(depJobIDs, ",")
 			}
+			if containerProbe := strings.TrimSpace(pj.RunsOn["container_probe"]); containerProbe != "" {
+				metadata["runtime_probe.container"] = containerProbe
+			}
 
 			requiredCaps := cloneMap(pj.RunsOn)
+			delete(requiredCaps, "container_probe")
 			for tool, constraint := range pj.RequiresTools {
 				tool = strings.TrimSpace(tool)
 				if tool == "" {
@@ -263,6 +267,16 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 					requiredCaps = map[string]string{}
 				}
 				requiredCaps["requires.tool."+tool] = strings.TrimSpace(constraint)
+			}
+			for tool, constraint := range pj.RequiresContainerTools {
+				tool = strings.TrimSpace(tool)
+				if tool == "" {
+					continue
+				}
+				if requiredCaps == nil {
+					requiredCaps = map[string]string{}
+				}
+				requiredCaps["requires.container.tool."+tool] = strings.TrimSpace(constraint)
 			}
 			for capabilityKey, requiredValue := range pj.RequiresCaps {
 				capabilityKey = strings.TrimSpace(capabilityKey)

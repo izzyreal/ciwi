@@ -109,6 +109,11 @@ Constraint syntax supports:
 
 From `/agents`, use **Refresh Tools** to request an on-demand re-scan on an agent.
 
+Container runtime probe (opt-in):
+- For containerized jobs, set `runs_on.container_probe` to the target running container name.
+- ciwi will probe tool versions inside that container using dedicated structured API fields, and expose them on the Job Details page under runtime capability data.
+- This probe data is stored as `runtime_capabilities` on the job execution and does not rely on output log scraping.
+
 ## Job History actions
 
 UI actions map to these server behaviors:

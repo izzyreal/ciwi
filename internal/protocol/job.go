@@ -56,6 +56,7 @@ type JobExecution struct {
 	StepPlan             []JobStepPlanItem        `json:"step_plan,omitempty"`
 	CurrentStep          string                   `json:"current_step,omitempty"`
 	CacheStats           []JobCacheStats          `json:"cache_stats,omitempty"`
+	RuntimeCapabilities  map[string]string        `json:"runtime_capabilities,omitempty"`
 	Status               string                   `json:"status"`
 	CreatedUTC           time.Time                `json:"created_utc"`
 	StartedUTC           time.Time                `json:"started_utc,omitempty"`
@@ -247,15 +248,16 @@ type UploadArtifactsRequest struct {
 }
 
 type JobExecutionStatusUpdateRequest struct {
-	AgentID      string              `json:"agent_id"`
-	Status       string              `json:"status"`
-	ExitCode     *int                `json:"exit_code,omitempty"`
-	Error        string              `json:"error,omitempty"`
-	Output       string              `json:"output,omitempty"`
-	CurrentStep  string              `json:"current_step,omitempty"`
-	CacheStats   []JobCacheStats     `json:"cache_stats,omitempty"`
-	Events       []JobExecutionEvent `json:"events,omitempty"`
-	TimestampUTC time.Time           `json:"timestamp_utc,omitempty"`
+	AgentID             string              `json:"agent_id"`
+	Status              string              `json:"status"`
+	ExitCode            *int                `json:"exit_code,omitempty"`
+	Error               string              `json:"error,omitempty"`
+	Output              string              `json:"output,omitempty"`
+	CurrentStep         string              `json:"current_step,omitempty"`
+	CacheStats          []JobCacheStats     `json:"cache_stats,omitempty"`
+	RuntimeCapabilities map[string]string   `json:"runtime_capabilities,omitempty"`
+	Events              []JobExecutionEvent `json:"events,omitempty"`
+	TimestampUTC        time.Time           `json:"timestamp_utc,omitempty"`
 }
 
 type JobCacheStats struct {
