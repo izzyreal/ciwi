@@ -25,8 +25,14 @@ type stagedManifest struct {
 	RequestedAtUTC string `json:"requested_at_utc"`
 }
 
+var (
+	geteuidFn           = os.Geteuid
+	executablePathFn    = os.Executable
+	applyStagedUpdateFn = applyStagedUpdate
+)
+
 func RunApplyStaged(args []string) (retErr error) {
-	if os.Geteuid() != 0 {
+	if geteuidFn() != 0 {
 		return fmt.Errorf("apply-staged-update requires root privileges")
 	}
 
@@ -54,7 +60,7 @@ func RunApplyStaged(args []string) (retErr error) {
 		}()
 	}
 
-	targetPath, err := os.Executable()
+	targetPath, err := executablePathFn()
 	if err != nil {
 		return fmt.Errorf("resolve executable path: %w", err)
 	}
@@ -64,7 +70,7 @@ func RunApplyStaged(args []string) (retErr error) {
 	if systemctlPath == "" {
 		systemctlPath = "/bin/systemctl"
 	}
-	manifest, err := applyStagedUpdate(*manifestPath, targetPath, *serviceName, systemctlPath)
+	manifest, err := applyStagedUpdateFn(*manifestPath, targetPath, *serviceName, systemctlPath)
 	if err != nil {
 		return err
 	}

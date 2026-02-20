@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -118,5 +119,65 @@ func TestDetectAgentCapabilitiesBasicShape(t *testing.T) {
 	}
 	if caps["run_mode"] == "" {
 		t.Fatalf("expected run_mode capability")
+	}
+}
+
+func TestQueryVSWhereInstallPathParsesFirstNonEmptyLine(t *testing.T) {
+	tmp := t.TempDir()
+	vswhere := filepath.Join(tmp, "vswhere.exe")
+	if runtime.GOOS == "windows" {
+		if err := os.WriteFile(vswhere, []byte("@echo.\r\n@echo C:\\VS\\2022\\BuildTools\r\n"), 0o755); err != nil {
+			t.Fatalf("write fake vswhere: %v", err)
+		}
+	} else {
+		if err := os.WriteFile(vswhere, []byte("#!/bin/sh\necho\necho /opt/vs/2022/BuildTools\n"), 0o755); err != nil {
+			t.Fatalf("write fake vswhere: %v", err)
+		}
+	}
+	got := queryVSWhereInstallPath(vswhere)
+	if strings.TrimSpace(got) == "" {
+		t.Fatalf("expected parsed install path")
+	}
+}
+
+func TestFindWindowsMSVCCompilerPathWithOverride(t *testing.T) {
+	tmp := t.TempDir()
+	cl := filepath.Join(tmp, "cl.exe")
+	if err := os.WriteFile(cl, []byte("stub"), 0o644); err != nil {
+		t.Fatalf("write override cl.exe: %v", err)
+	}
+	t.Setenv("CIWI_MSVC_CL_PATH", cl)
+	if got := findWindowsMSVCCompilerPath(); got != cl {
+		t.Fatalf("expected CIWI_MSVC_CL_PATH override, got %q", got)
+	}
+}
+
+func TestFindWindowsMSVCCompilerPathViaVswhere(t *testing.T) {
+	tmp := t.TempDir()
+	installPath := filepath.Join(tmp, "VS", "2022", "BuildTools")
+	cl := filepath.Join(installPath, "VC", "Tools", "MSVC", "14.39.33519", "bin", "Hostx64", "x64", "cl.exe")
+	if err := os.MkdirAll(filepath.Dir(cl), 0o755); err != nil {
+		t.Fatalf("mkdir cl path: %v", err)
+	}
+	if err := os.WriteFile(cl, []byte("stub"), 0o644); err != nil {
+		t.Fatalf("write cl.exe: %v", err)
+	}
+
+	vswhere := filepath.Join(tmp, "vswhere.exe")
+	if runtime.GOOS == "windows" {
+		content := "@echo " + installPath + "\r\n"
+		if err := os.WriteFile(vswhere, []byte(content), 0o755); err != nil {
+			t.Fatalf("write fake vswhere: %v", err)
+		}
+	} else {
+		content := "#!/bin/sh\necho '" + installPath + "'\n"
+		if err := os.WriteFile(vswhere, []byte(content), 0o755); err != nil {
+			t.Fatalf("write fake vswhere: %v", err)
+		}
+	}
+	t.Setenv("PATH", tmp)
+	t.Setenv("CIWI_MSVC_CL_PATH", "")
+	if got := findWindowsMSVCCompilerPath(); got != cl {
+		t.Fatalf("expected vswhere-discovered cl.exe %q, got %q", cl, got)
 	}
 }

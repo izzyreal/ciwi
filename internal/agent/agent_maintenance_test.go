@@ -34,6 +34,21 @@ func TestWipeAgentCache(t *testing.T) {
 	}
 }
 
+func TestWipeAgentCacheWhenCachePathIsFile(t *testing.T) {
+	workDir := t.TempDir()
+	cachePath := filepath.Join(workDir, "cache")
+	if err := os.WriteFile(cachePath, []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatalf("write cache path file: %v", err)
+	}
+	msg, err := wipeAgentCache(workDir)
+	if err != nil {
+		t.Fatalf("wipeAgentCache should recover when cache path is a file, got %v", err)
+	}
+	if !strings.Contains(msg, "cache wipe completed") {
+		t.Fatalf("unexpected completion message: %q", msg)
+	}
+}
+
 func TestWipeAgentJobHistory(t *testing.T) {
 	workDir := t.TempDir()
 	workspacesDir := filepath.Join(workDir, "workspaces")
@@ -69,5 +84,12 @@ func TestWipeAgentJobHistory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(workDir, "keep-me")); err != nil {
 		t.Fatalf("expected non-job dir to remain, stat err=%v", err)
+	}
+}
+
+func TestWipeAgentJobHistoryReadError(t *testing.T) {
+	_, err := wipeAgentJobHistory(filepath.Join(t.TempDir(), "missing"))
+	if err == nil {
+		t.Fatalf("expected wipeAgentJobHistory read error for missing work dir")
 	}
 }
