@@ -237,6 +237,83 @@ function wireModalCloseBehavior(overlay, onClose) {
   });
 }
 
+function ensureConfirmDialogStyles() {
+  if (document.getElementById('__ciwiConfirmDialogStyles')) return;
+  const style = document.createElement('style');
+  style.id = '__ciwiConfirmDialogStyles';
+  style.textContent = [
+    '.ciwi-confirm-modal{height:auto;grid-template-rows:auto auto auto;max-width:min(520px,92vw);}',
+    '.ciwi-confirm-body{padding:14px 16px 6px;color:#1f2a24;font-size:14px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word;}',
+    '.ciwi-confirm-actions{padding:8px 16px 14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}',
+    '.ciwi-confirm-actions .secondary{background:#fff;color:#27473b;border:1px solid #c4ddd0;}',
+  ].join('');
+  document.head.appendChild(style);
+}
+
+function ensureConfirmDialog() {
+  ensureModalBaseStyles();
+  ensureConfirmDialogStyles();
+  let overlay = document.getElementById('__ciwiConfirmOverlay');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = '__ciwiConfirmOverlay';
+  overlay.className = 'ciwi-modal-overlay';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.innerHTML = [
+    '<div class="ciwi-modal ciwi-confirm-modal" role="dialog" aria-modal="true" aria-label="Confirm action">',
+    '  <div class="ciwi-modal-head">',
+    '    <div style="font-weight:700;" id="__ciwiConfirmTitle">Confirm</div>',
+    '  </div>',
+    '  <div class="ciwi-confirm-body" id="__ciwiConfirmMessage"></div>',
+    '  <div class="ciwi-confirm-actions">',
+    '    <button type="button" id="__ciwiConfirmCancel" class="secondary">Cancel</button>',
+    '    <button type="button" id="__ciwiConfirmOk">OK</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function showConfirmDialog(opts) {
+  const options = opts || {};
+  const message = String(options.message || '').trim();
+  if (!message) return Promise.resolve(false);
+  const title = String(options.title || 'Confirm').trim() || 'Confirm';
+  const okLabel = String(options.okLabel || 'OK').trim() || 'OK';
+  const cancelLabel = String(options.cancelLabel || 'Cancel').trim() || 'Cancel';
+  const overlay = ensureConfirmDialog();
+  const titleEl = document.getElementById('__ciwiConfirmTitle');
+  const msgEl = document.getElementById('__ciwiConfirmMessage');
+  const okBtn = document.getElementById('__ciwiConfirmOk');
+  const cancelBtn = document.getElementById('__ciwiConfirmCancel');
+  if (!titleEl || !msgEl || !okBtn || !cancelBtn) return Promise.resolve(false);
+
+  titleEl.textContent = title;
+  msgEl.textContent = message;
+  okBtn.textContent = okLabel;
+  cancelBtn.textContent = cancelLabel;
+  okBtn.disabled = false;
+  cancelBtn.disabled = false;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      okBtn.onclick = null;
+      cancelBtn.onclick = null;
+      closeModalOverlay(overlay);
+      resolve(!!value);
+    };
+    wireModalCloseBehavior(overlay, () => settle(false));
+    okBtn.onclick = () => settle(true);
+    cancelBtn.onclick = () => settle(false);
+    openModalOverlay(overlay, '460px', 'auto');
+    setTimeout(() => okBtn.focus(), 0);
+  });
+}
+
 function ensureSnackbarStyles() {
   if (document.getElementById('__ciwiSnackbarStyles')) return;
   const style = document.createElement('style');

@@ -380,7 +380,11 @@ const settingsHTML = `<!doctype html>
         is_trusted: !!(ev && ev.isTrusted),
         detail: Number((ev && ev.detail) || 0),
       });
-      const confirmed = confirm('Apply update now and restart ciwi?');
+      const confirmed = await showConfirmDialog({
+        title: 'Apply Update',
+        message: 'Apply update now and restart ciwi?',
+        okLabel: 'Apply update',
+      });
       logApplyUpdateDebug('confirm_result', { click_id: clickId, confirmed: !!confirmed });
       if (!confirmed) return;
       result.textContent = 'Starting update...';
@@ -418,7 +422,12 @@ const settingsHTML = `<!doctype html>
     document.getElementById('restartServerBtn').onclick = async (ev) => {
       if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
       const result = document.getElementById('updateResult');
-      if (!confirm('Restart ciwi server now?')) return;
+      const confirmed = await showConfirmDialog({
+        title: 'Restart Server',
+        message: 'Restart ciwi server now?',
+        okLabel: 'Restart server',
+      });
+      if (!confirmed) return;
       result.textContent = 'Restart requested...';
       try {
         const r = await postJSONWithTimeout('/api/v1/server/restart', '{}', 10000);
@@ -446,7 +455,12 @@ const settingsHTML = `<!doctype html>
         result.textContent = 'Select a rollback tag first.';
         return;
       }
-      if (!confirm('Rollback server and agents to ' + target + '?')) return;
+      const confirmed = await showConfirmDialog({
+        title: 'Rollback',
+        message: 'Rollback server and agents to ' + target + '?',
+        okLabel: 'Rollback',
+      });
+      if (!confirmed) return;
       result.textContent = 'Starting rollback to ' + target + '...';
       try {
         const body = JSON.stringify({ target_version: target });
