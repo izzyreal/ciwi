@@ -255,9 +255,16 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			if containerProbe := strings.TrimSpace(pj.RunsOn["container_probe"]); containerProbe != "" {
 				metadata["runtime_probe.container"] = containerProbe
 			}
+			if containerImage := strings.TrimSpace(pj.RunsOn["container_image"]); containerImage != "" {
+				metadata["runtime_probe.container_image"] = containerImage
+			}
 
 			requiredCaps := cloneMap(pj.RunsOn)
-			delete(requiredCaps, "container_probe")
+			for k := range requiredCaps {
+				if strings.HasPrefix(k, "container_") {
+					delete(requiredCaps, k)
+				}
+			}
 			for tool, constraint := range pj.RequiresTools {
 				tool = strings.TrimSpace(tool)
 				if tool == "" {

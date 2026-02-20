@@ -122,26 +122,59 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		fmt.Fprintf(&output, "[cache] %s\n", line)
 	}
 	cacheStats := collectJobCacheStats(resolvedCaches)
-	runtimeCaps := collectRuntimeCapabilities(agentCapabilities, runtimeProbeContainerFromMetadata(job.Metadata))
-	if summary := runtimeProbeSummary(runtimeCaps); summary != "" {
-		fmt.Fprintf(&output, "%s\n", summary)
-	}
-	if err := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
-		fmt.Fprintf(&output, "[runtime] %v\n", err)
+	probeContainer := runtimeProbeContainerName(job.ID, job.Metadata)
+	probeContainerImage := runtimeProbeContainerImageFromMetadata(job.Metadata)
+	if started, ensureErr := ensureRuntimeProbeContainer(runCtx, probeContainer, probeContainerImage); ensureErr != nil {
+		fmt.Fprintf(&output, "[runtime] %v\n", ensureErr)
 		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:             agentID,
-			Status:              protocol.JobExecutionStatusFailed,
-			Error:               err.Error(),
-			Output:              trimmedOutput,
-			CacheStats:          cacheStats,
-			RuntimeCapabilities: runtimeCaps,
-			TimestampUTC:        time.Now().UTC(),
+			AgentID:      agentID,
+			Status:       protocol.JobExecutionStatusFailed,
+			Error:        ensureErr.Error(),
+			Output:       trimmedOutput,
+			CacheStats:   cacheStats,
+			TimestampUTC: time.Now().UTC(),
 		}); reportErr != nil {
 			return reportErr
 		}
-		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
+		slog.Error("job failed", "job_execution_id", job.ID, "error", ensureErr.Error())
 		return nil
+	} else if started {
+		fmt.Fprintf(&output, "[runtime] started probe container %s from %s\n", probeContainer, probeContainerImage)
+		defer cleanupRuntimeProbeContainer(context.Background(), probeContainer)
+	}
+	runtimeCaps := collectRuntimeCapabilities(agentCapabilities, probeContainer)
+	if summary := runtimeProbeSummary(runtimeCaps); summary != "" {
+		fmt.Fprintf(&output, "%s\n", summary)
+	}
+	requireContainerTools := len(containerToolRequirements(job.RequiredCapabilities)) > 0
+	containerToolValidationDeferred := false
+	containerToolValidationSatisfied := !requireContainerTools
+	if err := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
+		// Some jobs create/start the runtime container as part of early steps.
+		// Defer enforcement in that case and validate again once steps progress.
+		if requireContainerTools && strings.TrimSpace(probeContainer) != "" && runtimeContainerToolCount(runtimeCaps) == 0 {
+			containerToolValidationDeferred = true
+			fmt.Fprintf(&output, "[runtime] deferring container tool requirement check until runtime container is up\n")
+		} else {
+			fmt.Fprintf(&output, "[runtime] %v\n", err)
+			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+			if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+				AgentID:             agentID,
+				Status:              protocol.JobExecutionStatusFailed,
+				Error:               err.Error(),
+				Output:              trimmedOutput,
+				CacheStats:          cacheStats,
+				RuntimeCapabilities: runtimeCaps,
+				TimestampUTC:        time.Now().UTC(),
+			}); reportErr != nil {
+				return reportErr
+			}
+			slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
+			return nil
+		}
+	} else {
+		containerToolValidationSatisfied = true
 	}
 
 	traceShell := boolEnv("CIWI_AGENT_TRACE_SHELL", true)
@@ -245,6 +278,24 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				err = fmt.Errorf("%s: %w", currentStep, stepErr)
 				break
 			}
+			if containerToolValidationDeferred && !containerToolValidationSatisfied {
+				runtimeCaps = collectRuntimeCapabilities(agentCapabilities, probeContainer)
+				if validateErr := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); validateErr == nil {
+					containerToolValidationSatisfied = true
+					if summary := runtimeProbeSummary(runtimeCaps); summary != "" {
+						fmt.Fprintf(&output, "%s\n", summary)
+					}
+					fmt.Fprintf(&output, "[runtime] container tool requirements satisfied\n")
+				}
+			}
+		}
+	}
+	if err == nil && requireContainerTools && !containerToolValidationSatisfied {
+		runtimeCaps = collectRuntimeCapabilities(agentCapabilities, probeContainer)
+		if validateErr := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); validateErr != nil {
+			err = validateErr
+		} else {
+			containerToolValidationSatisfied = true
 		}
 	}
 	duration := time.Since(runStart).Round(time.Millisecond)

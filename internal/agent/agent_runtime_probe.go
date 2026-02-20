@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -110,6 +111,71 @@ func runtimeProbeContainerFromMetadata(meta map[string]string) string {
 	return strings.TrimSpace(meta["runtime_probe.container"])
 }
 
+func runtimeProbeContainerImageFromMetadata(meta map[string]string) string {
+	if len(meta) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(meta["runtime_probe.container_image"])
+}
+
+func runtimeProbeContainerName(jobID string, meta map[string]string) string {
+	if v := runtimeProbeContainerFromMetadata(meta); v != "" {
+		return v
+	}
+	if runtimeProbeContainerImageFromMetadata(meta) == "" {
+		return ""
+	}
+	return "ciwi-probe-" + shortStableID(jobID)
+}
+
+func shortStableID(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "unknown"
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(s))
+	return fmt.Sprintf("%x", h.Sum64())
+}
+
+func ensureRuntimeProbeContainer(ctx context.Context, name, image string) (bool, error) {
+	name = strings.TrimSpace(name)
+	image = strings.TrimSpace(image)
+	if name == "" || image == "" {
+		return false, nil
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		return false, fmt.Errorf("docker not found on agent")
+	}
+	inspectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, inspectErr := runCommandCapture(inspectCtx, "", "docker", "inspect", "-f", "{{.State.Running}}", name)
+	if inspectErr == nil && strings.EqualFold(strings.TrimSpace(out), "true") {
+		return false, nil
+	}
+	// Remove stale container name before creating a probe runtime.
+	_, _ = runCommandCapture(inspectCtx, "", "docker", "rm", "-f", name)
+	startCtx, startCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer startCancel()
+	if _, err := runCommandCapture(startCtx, "", "docker", "run", "-d", "--name", name, image, "sleep", "infinity"); err != nil {
+		return false, fmt.Errorf("start runtime probe container %q from %q: %w", name, image, err)
+	}
+	return true, nil
+}
+
+func cleanupRuntimeProbeContainer(ctx context.Context, name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		return
+	}
+	cleanupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, _ = runCommandCapture(cleanupCtx, "", "docker", "rm", "-f", name)
+}
+
 func runtimeProbeSummary(runtimeCaps map[string]string) string {
 	if len(runtimeCaps) == 0 {
 		return ""
@@ -125,6 +191,16 @@ func runtimeProbeSummary(runtimeCaps map[string]string) string {
 		}
 	}
 	return fmt.Sprintf("[runtime] host_tools=%d container_tools=%d", hostTools, containerTools)
+}
+
+func runtimeContainerToolCount(runtimeCaps map[string]string) int {
+	count := 0
+	for k := range runtimeCaps {
+		if strings.HasPrefix(k, "container.tool.") {
+			count++
+		}
+	}
+	return count
 }
 
 func containerToolRequirements(requiredCaps map[string]string) map[string]string {
