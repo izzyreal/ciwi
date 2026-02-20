@@ -39,12 +39,34 @@ const (
 	updateNetworkMaxAttempts = 3
 )
 
+var (
+	agentExecutablePathFn           = os.Executable
+	agentAbsPathFn                  = filepath.Abs
+	agentSelfUpdateServiceReasonFn  = selfUpdateServiceModeReason
+	agentFetchReleaseAssetsForTagFn = fetchReleaseAssetsForTag
+	agentDownloadUpdateAssetFn      = downloadUpdateAsset
+	agentDownloadTextAssetFn        = downloadTextAsset
+	agentVerifyFileSHA256Fn         = verifyFileSHA256
+	agentHasDarwinUpdaterConfigFn   = hasDarwinUpdaterConfig
+	agentStageDarwinUpdaterFn       = stageAndTriggerDarwinUpdater
+	agentCopyFileFn                 = copyFile
+	agentWindowsServiceInfoFn       = windowsServiceInfo
+	agentStartUpdateHelperFn        = startUpdateHelper
+	agentPIDFn                      = os.Getpid
+	agentScheduleExitAfterUpdateFn  = func() {
+		go func() {
+			time.Sleep(250 * time.Millisecond)
+			os.Exit(0)
+		}()
+	}
+)
+
 func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBase string, restartArgs []string) error {
-	exePath, err := os.Executable()
+	exePath, err := agentExecutablePathFn()
 	if err != nil {
 		return fmt.Errorf("resolve executable path: %w", err)
 	}
-	exePath, _ = filepath.Abs(exePath)
+	exePath, _ = agentAbsPathFn(exePath)
 	if looksLikeGoRunBinary(exePath) {
 		return fmt.Errorf("self-update unavailable for go run binaries")
 	}
@@ -53,7 +75,7 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 	if targetVersion == "" || !isVersionDifferent(targetVersion, currentVersion()) {
 		return nil
 	}
-	if reason := selfUpdateServiceModeReason(); reason != "" {
+	if reason := agentSelfUpdateServiceReasonFn(); reason != "" {
 		return fmt.Errorf("%s", reason)
 	}
 
@@ -75,51 +97,47 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		checksumName = "ciwi-checksums.txt"
 	}
 
-	asset, checksumAsset, err := fetchReleaseAssetsForTag(ctx, apiBase, repository, targetVersion, assetName, checksumName)
+	asset, checksumAsset, err := agentFetchReleaseAssetsForTagFn(ctx, apiBase, repository, targetVersion, assetName, checksumName)
 	if err != nil {
 		return err
 	}
 
-	newBinPath, err := downloadUpdateAsset(ctx, asset.URL, asset.Name)
+	newBinPath, err := agentDownloadUpdateAssetFn(ctx, asset.URL, asset.Name)
 	if err != nil {
 		return fmt.Errorf("download update asset: %w", err)
 	}
 	if checksumAsset.URL != "" {
-		checksumText, err := downloadTextAsset(ctx, checksumAsset.URL)
+		checksumText, err := agentDownloadTextAssetFn(ctx, checksumAsset.URL)
 		if err != nil {
 			return fmt.Errorf("download checksum asset: %w", err)
 		}
-		if err := verifyFileSHA256(newBinPath, asset.Name, checksumText); err != nil {
+		if err := agentVerifyFileSHA256Fn(newBinPath, asset.Name, checksumText); err != nil {
 			return fmt.Errorf("checksum verification failed: %w", err)
 		}
 	}
 
-	if runtime.GOOS == "darwin" && hasDarwinUpdaterConfig() {
-		if err := stageAndTriggerDarwinUpdater(targetVersion, asset.Name, exePath, newBinPath); err != nil {
+	if runtime.GOOS == "darwin" && agentHasDarwinUpdaterConfigFn() {
+		if err := agentStageDarwinUpdaterFn(targetVersion, asset.Name, exePath, newBinPath); err != nil {
 			return err
 		}
 		return nil
 	}
 
 	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
-	if err := copyFile(exePath, helperPath, 0o755); err != nil {
+	if err := agentCopyFileFn(exePath, helperPath, 0o755); err != nil {
 		return fmt.Errorf("prepare update helper: %w", err)
 	}
 	serviceName := ""
 	if runtime.GOOS == "windows" {
-		if active, name := windowsServiceInfo(); active {
+		if active, name := agentWindowsServiceInfoFn(); active {
 			serviceName = strings.TrimSpace(name)
 		}
 	}
 
-	if err := startUpdateHelper(helperPath, exePath, newBinPath, os.Getpid(), restartArgs, serviceName); err != nil {
+	if err := agentStartUpdateHelperFn(helperPath, exePath, newBinPath, agentPIDFn(), restartArgs, serviceName); err != nil {
 		return fmt.Errorf("start update helper: %w", err)
 	}
-
-	go func() {
-		time.Sleep(250 * time.Millisecond)
-		os.Exit(0)
-	}()
+	agentScheduleExitAfterUpdateFn()
 	return nil
 }
 

@@ -135,3 +135,138 @@ func TestStartUpdateHelperBuildsProcess(t *testing.T) {
 		t.Fatalf("expected restart args to be forwarded, got %q", args)
 	}
 }
+
+func TestStartUpdateHelperIncludesServiceName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script-based helper invocation test is posix-only")
+	}
+	tmp := t.TempDir()
+	argsLog := filepath.Join(tmp, "args.log")
+	help := filepath.Join(tmp, "helper.sh")
+	script := "#!/bin/sh\necho \"$@\" > \"" + argsLog + "\"\nexit 0\n"
+	if err := os.WriteFile(help, []byte(script), 0o755); err != nil {
+		t.Fatalf("write helper script: %v", err)
+	}
+	if err := startUpdateHelper(help, "/tmp/target", "/tmp/new", 1234, []string{"agent"}, "ciwi-agent"); err != nil {
+		t.Fatalf("startUpdateHelper: %v", err)
+	}
+	found := false
+	for i := 0; i < 50; i++ {
+		if _, err := os.Stat(argsLog); err == nil {
+			found = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !found {
+		t.Fatalf("helper did not write args log: %s", argsLog)
+	}
+	raw, err := os.ReadFile(argsLog)
+	if err != nil {
+		t.Fatalf("read helper args log: %v", err)
+	}
+	args := string(raw)
+	if !strings.Contains(args, "--service-name ciwi-agent") {
+		t.Fatalf("expected service-name arg, got %q", args)
+	}
+}
+
+func TestFetchReleaseAssetsForTagRetryAndAuthHeader(t *testing.T) {
+	calls := 0
+	var authHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		authHeader = r.Header.Get("Authorization")
+		if calls == 1 {
+			http.Error(w, "retry me", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v1.2.3","assets":[{"name":"asset.bin","url":"https://example.invalid/asset"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/checksums"}]}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("CIWI_GITHUB_TOKEN", "token-123")
+	asset, checksum, err := fetchReleaseAssetsForTag(context.Background(), srv.URL, "izzyreal/ciwi", "v1.2.3", "asset.bin", "ciwi-checksums.txt")
+	if err != nil {
+		t.Fatalf("fetchReleaseAssetsForTag with retry: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", calls)
+	}
+	if authHeader != "Bearer token-123" {
+		t.Fatalf("unexpected auth header: %q", authHeader)
+	}
+	if asset.Name != "asset.bin" || checksum.Name != "ciwi-checksums.txt" {
+		t.Fatalf("unexpected assets: asset=%+v checksum=%+v", asset, checksum)
+	}
+}
+
+func TestFetchReleaseAssetsForTagCancelledDuringBackoff(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "retry me", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := fetchReleaseAssetsForTag(ctx, srv.URL, "izzyreal/ciwi", "v1.2.3", "asset.bin", "ciwi-checksums.txt")
+	if err == nil {
+		t.Fatalf("expected cancellation error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "canceled") {
+		t.Fatalf("expected canceled error, got %v", err)
+	}
+}
+
+func TestDownloadUpdateAssetRetryAndAuthHeader(t *testing.T) {
+	calls := 0
+	var authHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		authHeader = r.Header.Get("Authorization")
+		if calls == 1 {
+			http.Error(w, "retry me", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte("binary-payload-2"))
+	}))
+	defer srv.Close()
+
+	t.Setenv("CIWI_GITHUB_TOKEN", "token-xyz")
+	path, err := downloadUpdateAsset(context.Background(), srv.URL, "ciwi-test")
+	if err != nil {
+		t.Fatalf("downloadUpdateAsset with retry: %v", err)
+	}
+	defer os.Remove(path)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read downloaded asset: %v", err)
+	}
+	if string(raw) != "binary-payload-2" {
+		t.Fatalf("unexpected payload: %q", string(raw))
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", calls)
+	}
+	if authHeader != "Bearer token-xyz" {
+		t.Fatalf("unexpected auth header: %q", authHeader)
+	}
+}
+
+func TestDownloadTextAssetCancelledDuringBackoff(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "retry me", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := downloadTextAsset(ctx, srv.URL)
+	if err == nil {
+		t.Fatalf("expected cancellation error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "canceled") {
+		t.Fatalf("expected canceled error, got %v", err)
+	}
+}
