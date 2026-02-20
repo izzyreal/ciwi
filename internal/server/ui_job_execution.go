@@ -858,7 +858,12 @@ const jobExecutionHTML = `<!doctype html>
         forceBtn.style.display = 'inline-block';
         forceBtn.disabled = false;
         forceBtn.onclick = async () => {
-          if (!confirm('Force-fail this active job?')) return;
+          const confirmed = await showConfirmDialog({
+            title: 'Force Fail Job',
+            message: 'Force-fail this active job?',
+            okLabel: 'Force fail',
+          });
+          if (!confirmed) return;
           forceBtn.disabled = true;
           try {
             const fres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/force-fail', {
@@ -871,7 +876,7 @@ const jobExecutionHTML = `<!doctype html>
             }
             await loadJobExecution(true);
           } catch (e) {
-            alert('Force fail failed: ' + e.message);
+            await showAlertDialog({ title: 'Force fail failed', message: 'Force fail failed: ' + e.message });
           } finally {
             forceBtn.disabled = false;
           }
@@ -907,7 +912,7 @@ const jobExecutionHTML = `<!doctype html>
           const shortName = matrixName || pipelineName || 'job';
           showJobStartedSnackbar(projectName + ' ' + shortName + ' started', enqueuedID);
         } catch (e) {
-          alert('Run again failed: ' + String(e.message || e));
+          await showAlertDialog({ title: 'Run again failed', message: 'Run again failed: ' + String(e.message || e) });
         } finally {
           rerunBtn.textContent = old;
           rerunBtn.disabled = !hasStarted;

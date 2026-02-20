@@ -95,7 +95,7 @@ const uiIndexProjectsJS = `
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
               await refreshJobs();
             } catch (e) {
-              alert('Run failed: ' + e.message);
+              await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
             } finally {
               btn.disabled = false;
             }
@@ -112,7 +112,7 @@ const uiIndexProjectsJS = `
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
               await refreshJobs();
             } catch (e) {
-              alert('Dry run failed: ' + e.message);
+              await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
             } finally {
               dryBtn.disabled = false;
             }
@@ -153,7 +153,7 @@ const uiIndexProjectsJS = `
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started');
               await refreshJobs();
             } catch (e) {
-              alert('Run failed: ' + e.message);
+              await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
             } finally {
               runBtn.disabled = false;
             }
@@ -169,7 +169,7 @@ const uiIndexProjectsJS = `
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started');
               await refreshJobs();
             } catch (e) {
-              alert('Dry run failed: ' + e.message);
+              await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
             } finally {
               dryBtn.disabled = false;
             }

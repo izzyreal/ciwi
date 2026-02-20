@@ -88,18 +88,31 @@ const vaultHTML = `<!doctype html>
           testBtn.disabled = true;
           try {
             const r = await api('/api/v1/vault/connections/' + c.id + '/test', { method: 'POST', body: '{}' });
-            alert(r.ok ? ('OK: ' + (r.message || '')) : ('FAILED: ' + (r.message || '')));
+            await showAlertDialog({
+              title: r.ok ? 'Vault test OK' : 'Vault test failed',
+              message: r.ok ? ('OK: ' + (r.message || '')) : ('FAILED: ' + (r.message || '')),
+            });
           } catch (e) {
-            alert('Test failed: ' + e.message);
+            await showAlertDialog({ title: 'Vault test failed', message: 'Test failed: ' + e.message });
           } finally { testBtn.disabled = false; }
         };
         const delBtn = document.createElement('button');
         delBtn.className = 'secondary';
         delBtn.textContent = 'Delete';
         delBtn.onclick = async () => {
-          if (!confirm('Delete connection?')) return;
+          const confirmed = await showConfirmDialog({
+            title: 'Delete Vault Connection',
+            message: 'Delete connection?',
+            okLabel: 'Delete',
+          });
+          if (!confirmed) return;
           delBtn.disabled = true;
-          try { await api('/api/v1/vault/connections/' + c.id, { method: 'DELETE' }); await refresh(); } catch (e) { alert(e.message); } finally { delBtn.disabled = false; }
+          try {
+            await api('/api/v1/vault/connections/' + c.id, { method: 'DELETE' });
+            await refresh();
+          } catch (e) {
+            await showAlertDialog({ title: 'Delete failed', message: String(e.message || e) });
+          } finally { delBtn.disabled = false; }
         };
         td.appendChild(testBtn);
         td.appendChild(delBtn);

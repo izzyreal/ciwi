@@ -418,11 +418,11 @@ const agentHTML = `<!doctype html>
       const shell = String(adhocShellSelect.value || '').trim();
       const script = String(adhocScriptInput.value || '');
       if (!shell) {
-        alert('Pick a shell first.');
+        await showAlertDialog({ title: 'Missing shell', message: 'Pick a shell first.' });
         return;
       }
       if (!script.trim()) {
-        alert('Script is empty.');
+        await showAlertDialog({ title: 'Missing script', message: 'Script is empty.' });
         return;
       }
       adhocRunBtn.disabled = true;
@@ -541,34 +541,49 @@ const agentHTML = `<!doctype html>
         await postAction('update');
         await refreshAgent(true);
       } catch (e) {
-        alert('Update request failed: ' + e.message);
+        await showAlertDialog({ title: 'Update request failed', message: 'Update request failed: ' + e.message });
       }
     };
     document.getElementById('restartBtn').onclick = async () => {
-      if (!confirm('Request restart for this agent?')) return;
+      const confirmed = await showConfirmDialog({
+        title: 'Restart Agent',
+        message: 'Request restart for this agent?',
+        okLabel: 'Restart agent',
+      });
+      if (!confirmed) return;
       try {
         await postAction('restart');
         await refreshAgent(true);
       } catch (e) {
-        alert('Restart request failed: ' + e.message);
+        await showAlertDialog({ title: 'Restart request failed', message: 'Restart request failed: ' + e.message });
       }
     };
     document.getElementById('wipeCacheBtn').onclick = async () => {
-      if (!confirm('Wipe this agent cache now? This removes all cached dependency sources on that agent.')) return;
+      const confirmed = await showConfirmDialog({
+        title: 'Wipe Cache',
+        message: 'Wipe this agent cache now? This removes all cached dependency sources on that agent.',
+        okLabel: 'Wipe cache',
+      });
+      if (!confirmed) return;
       try {
         await postAction('wipe-cache');
         await refreshAgent(true);
       } catch (e) {
-        alert('Cache wipe request failed: ' + e.message);
+        await showAlertDialog({ title: 'Cache wipe failed', message: 'Cache wipe request failed: ' + e.message });
       }
     };
     document.getElementById('flushAgentHistoryBtn').onclick = async () => {
-      if (!confirm('Flush job history for this agent? This deletes historical job records and artifact files for this agent.')) return;
+      const confirmed = await showConfirmDialog({
+        title: 'Flush Agent Job History',
+        message: 'Flush job history for this agent? This deletes historical job records and artifact files for this agent.',
+        okLabel: 'Flush history',
+      });
+      if (!confirmed) return;
       try {
         await postAction('flush-job-history');
         await refreshAgent(true);
       } catch (e) {
-        alert('Agent job history flush failed: ' + e.message);
+        await showAlertDialog({ title: 'Flush failed', message: 'Agent job history flush failed: ' + e.message });
       }
     };
     document.getElementById('refreshToolsBtn').onclick = async () => {
@@ -576,12 +591,12 @@ const agentHTML = `<!doctype html>
         await postAction('refresh-tools');
         await refreshAgent(true);
       } catch (e) {
-        alert('Refresh tools request failed: ' + e.message);
+        await showAlertDialog({ title: 'Refresh tools failed', message: 'Refresh tools request failed: ' + e.message });
       }
     };
-    document.getElementById('runAdhocBtn').onclick = () => {
+    document.getElementById('runAdhocBtn').onclick = async () => {
       if (adhocShells.length === 0) {
-        alert('Agent does not advertise script shell capabilities.');
+        await showAlertDialog({ title: 'Adhoc unavailable', message: 'Agent does not advertise script shell capabilities.' });
         return;
       }
       openAdhocModal();

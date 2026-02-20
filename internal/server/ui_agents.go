@@ -185,7 +185,7 @@ const agentsHTML = `<!doctype html>
               if (!res.ok) throw new Error(await res.text());
               await refreshAgents();
             } catch (e) {
-              alert('Request failed: ' + e.message);
+              await showAlertDialog({ title: 'Request failed', message: 'Request failed: ' + e.message });
             } finally {
               btn.disabled = false;
             }

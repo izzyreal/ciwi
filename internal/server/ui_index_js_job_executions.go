@@ -432,7 +432,7 @@ const uiIndexJobExecutionsJS = `
             await apiJSON('/api/v1/jobs/' + j.id, { method: 'DELETE' });
             await refreshJobs();
           } catch (e) {
-            alert('Remove failed: ' + e.message);
+            await showAlertDialog({ title: 'Remove failed', message: 'Remove failed: ' + e.message });
           }
         }
       };
@@ -459,26 +459,36 @@ const uiIndexJobExecutionsJS = `
     }
 
     document.getElementById('clearQueueBtn').onclick = async () => {
-      if (!confirm('Clear all queued/leased jobs?')) {
+      const confirmed = await showConfirmDialog({
+        title: 'Clear Queue',
+        message: 'Clear all queued/leased jobs?',
+        okLabel: 'Clear queue',
+      });
+      if (!confirmed) {
         return;
       }
       try {
         await apiJSON('/api/v1/jobs/clear-queue', { method: 'POST', body: '{}' });
         await refreshJobs();
       } catch (e) {
-        alert('Clear queue failed: ' + e.message);
+        await showAlertDialog({ title: 'Clear queue failed', message: 'Clear queue failed: ' + e.message });
       }
     };
 
     document.getElementById('flushHistoryBtn').onclick = async () => {
-      if (!confirm('Flush all finished jobs from history?')) {
+      const confirmed = await showConfirmDialog({
+        title: 'Flush History',
+        message: 'Flush all finished jobs from history?',
+        okLabel: 'Flush history',
+      });
+      if (!confirmed) {
         return;
       }
       try {
         await apiJSON('/api/v1/jobs/flush-history', { method: 'POST', body: '{}' });
         await refreshJobs();
       } catch (e) {
-        alert('Flush history failed: ' + e.message);
+        await showAlertDialog({ title: 'Flush history failed', message: 'Flush history failed: ' + e.message });
       }
     };
 `

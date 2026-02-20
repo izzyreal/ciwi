@@ -204,7 +204,13 @@ function closeModalOverlay(overlay) {
 }
 
 function wireModalCloseBehavior(overlay, onClose) {
-  if (!overlay || overlay.__ciwiModalCloseBound) return;
+  if (!overlay) return;
+  if (typeof onClose === 'function') {
+    overlay.__ciwiModalOnClose = onClose;
+  } else {
+    overlay.__ciwiModalOnClose = null;
+  }
+  if (overlay.__ciwiModalCloseBound) return;
   ensureModalBaseStyles();
   if (overlay.getAttribute('aria-hidden') !== 'false') {
     overlay.style.display = 'none';
@@ -225,7 +231,8 @@ function wireModalCloseBehavior(overlay, onClose) {
     if (ev.target !== overlay) return;
     if (!pointerDownOnOverlay) return;
     if (hasActiveTextSelection()) return;
-    if (typeof onClose === 'function') onClose(); else closeModalOverlay(overlay);
+    const closeFn = overlay.__ciwiModalOnClose;
+    if (typeof closeFn === 'function') closeFn(); else closeModalOverlay(overlay);
   });
   document.addEventListener('mouseup', () => {
     pointerDownOnOverlay = false;
@@ -233,7 +240,8 @@ function wireModalCloseBehavior(overlay, onClose) {
   document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
     if (overlay.style.display !== 'flex') return;
-    if (typeof onClose === 'function') onClose(); else closeModalOverlay(overlay);
+    const closeFn = overlay.__ciwiModalOnClose;
+    if (typeof closeFn === 'function') closeFn(); else closeModalOverlay(overlay);
   });
 }
 
@@ -309,6 +317,63 @@ function showConfirmDialog(opts) {
     wireModalCloseBehavior(overlay, () => settle(false));
     okBtn.onclick = () => settle(true);
     cancelBtn.onclick = () => settle(false);
+    openModalOverlay(overlay, '460px', 'auto');
+    setTimeout(() => okBtn.focus(), 0);
+  });
+}
+
+function ensureAlertDialog() {
+  ensureModalBaseStyles();
+  ensureConfirmDialogStyles();
+  let overlay = document.getElementById('__ciwiAlertOverlay');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = '__ciwiAlertOverlay';
+  overlay.className = 'ciwi-modal-overlay';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.innerHTML = [
+    '<div class="ciwi-modal ciwi-confirm-modal" role="dialog" aria-modal="true" aria-label="Message">',
+    '  <div class="ciwi-modal-head">',
+    '    <div style="font-weight:700;" id="__ciwiAlertTitle">Message</div>',
+    '  </div>',
+    '  <div class="ciwi-confirm-body" id="__ciwiAlertMessage"></div>',
+    '  <div class="ciwi-confirm-actions">',
+    '    <button type="button" id="__ciwiAlertOk">OK</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function showAlertDialog(opts) {
+  const options = opts || {};
+  const message = String(options.message || '').trim();
+  if (!message) return Promise.resolve();
+  const title = String(options.title || 'Message').trim() || 'Message';
+  const okLabel = String(options.okLabel || 'OK').trim() || 'OK';
+  const overlay = ensureAlertDialog();
+  const titleEl = document.getElementById('__ciwiAlertTitle');
+  const msgEl = document.getElementById('__ciwiAlertMessage');
+  const okBtn = document.getElementById('__ciwiAlertOk');
+  if (!titleEl || !msgEl || !okBtn) return Promise.resolve();
+
+  titleEl.textContent = title;
+  msgEl.textContent = message;
+  okBtn.textContent = okLabel;
+  okBtn.disabled = false;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      okBtn.onclick = null;
+      closeModalOverlay(overlay);
+      resolve();
+    };
+    wireModalCloseBehavior(overlay, settle);
+    okBtn.onclick = settle;
     openModalOverlay(overlay, '460px', 'auto');
     setTimeout(() => okBtn.focus(), 0);
   });

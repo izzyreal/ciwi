@@ -154,7 +154,7 @@ const projectHTML = `<!doctype html>
             showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
             await loadHistory();
           } catch (e) {
-            alert('Run failed: ' + e.message);
+            await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
           } finally {
             runAll.disabled = false;
           }
@@ -169,7 +169,7 @@ const projectHTML = `<!doctype html>
             showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
             await loadHistory();
           } catch (e) {
-            alert('Dry run failed: ' + e.message);
+            await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
           } finally {
             dryAll.disabled = false;
           }
@@ -233,7 +233,7 @@ const projectHTML = `<!doctype html>
                 showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started');
                 await loadHistory();
               } catch (e) {
-                alert(errorPrefix + ': ' + e.message);
+                await showAlertDialog({ title: errorPrefix, message: errorPrefix + ': ' + e.message });
               } finally {
                 btn.disabled = false;
               }
