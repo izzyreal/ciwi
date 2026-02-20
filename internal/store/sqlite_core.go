@@ -168,6 +168,7 @@ func (s *Store) migrate() error {
 			exit_code INTEGER,
 			error_text TEXT,
 			output_text TEXT,
+			cache_stats_json TEXT NOT NULL DEFAULT '[]',
 			current_step_text TEXT NOT NULL DEFAULT ''
 		);`,
 		`CREATE TABLE IF NOT EXISTS job_execution_artifacts (
@@ -260,6 +261,9 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "current_step_text", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("job_executions", "cache_stats_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "step_plan_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {

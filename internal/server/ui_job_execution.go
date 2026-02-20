@@ -10,6 +10,7 @@ const jobExecutionHTML = `<!doctype html>
   <style>
 ` + uiPageChromeCSS + `
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+    .detail-split { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
     .meta-grid { display:grid; grid-template-columns: 160px 1fr; gap:8px 12px; font-size:14px; }
     .label { color: var(--muted); }
     .mode-value { display:inline-flex; align-items:center; gap:8px; }
@@ -177,6 +178,18 @@ const jobExecutionHTML = `<!doctype html>
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }
+    .cache-stats-empty { color:#5f6f67; font-size:14px; }
+    .cache-stats-list { display:flex; flex-direction:column; gap:8px; }
+    .cache-stat-item { border:1px solid #d9e7df; border-radius:8px; padding:8px 10px; background:#f8fcfa; }
+    .cache-stat-head { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
+    .cache-stat-title { font-weight:700; }
+    .cache-stat-pill { font-size:11px; border:1px solid #c4ddd0; border-radius:999px; padding:1px 6px; color:#2a5a45; background:#edf8f2; }
+    .cache-stat-row { font-size:12px; color:#1f2a24; margin-top:2px; }
+    .cache-stat-metrics { margin-top:6px; font-size:12px; color:#30463b; }
+    .cache-stat-metrics code { font-size:11px; }
+    @media (max-width: 980px) {
+      .detail-split { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -201,8 +214,15 @@ const jobExecutionHTML = `<!doctype html>
       </div>
     </div>
 
-    <div class="card">
-      <div class="meta-grid" id="metaGrid"></div>
+    <div class="detail-split">
+      <div class="card">
+        <h3 style="margin:0 0 10px;">Job Properties</h3>
+        <div class="meta-grid" id="metaGrid"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 10px;">Cache statistics</h3>
+        <div id="cacheStatsBox" class="cache-stats-empty">No cache statistics reported for this job.</div>
+      </div>
     </div>
     <div class="card" id="releaseSummaryCard" style="display:none;">
       <h3 style="margin:0 0 10px;">Release Summary</h3>
@@ -297,6 +317,46 @@ const jobExecutionHTML = `<!doctype html>
             '<span aria-hidden="true">ⓘ</span>' +
           '</span>' +
         '</span>';
+    }
+
+    function renderCacheStats(stats) {
+      const box = document.getElementById('cacheStatsBox');
+      if (!box) return;
+      const entries = Array.isArray(stats) ? stats : [];
+      if (!entries.length) {
+        box.className = 'cache-stats-empty';
+        box.textContent = 'No cache statistics reported for this job.';
+        return;
+      }
+      box.className = 'cache-stats-list';
+      box.innerHTML = entries.map(s => {
+        const id = String((s && s.id) || '').trim();
+        const env = String((s && s.env) || '').trim();
+        const typ = String((s && s.type) || '').trim();
+        const source = String((s && s.source) || '').trim();
+        const path = String((s && s.path) || '').trim();
+        const files = Number((s && s.files) || 0);
+        const dirs = Number((s && s.directories) || 0);
+        const size = Number((s && s.size_bytes) || 0);
+        const err = String((s && s.error) || '').trim();
+        const metrics = (s && s.tool_metrics) || {};
+        const metricRows = Object.keys(metrics).sort((a,b) => a.localeCompare(b)).slice(0, 10).map(k =>
+          '<div><code>' + escapeHtml(k) + '</code>: ' + escapeHtml(String(metrics[k] || '')) + '</div>'
+        ).join('');
+        return '' +
+          '<div class="cache-stat-item">' +
+            '<div class="cache-stat-head">' +
+              '<span class="cache-stat-title">' + escapeHtml(id || 'cache') + '</span>' +
+              (env ? ('<span class="cache-stat-pill">' + escapeHtml(env) + '</span>') : '') +
+              (typ ? ('<span class="cache-stat-pill">' + escapeHtml(typ) + '</span>') : '') +
+              (source ? ('<span class="cache-stat-pill">source: ' + escapeHtml(source) + '</span>') : '') +
+            '</div>' +
+            (path ? ('<div class="cache-stat-row">Path: <code>' + escapeHtml(path) + '</code></div>') : '') +
+            '<div class="cache-stat-row">Size: ' + escapeHtml(formatBytes(size)) + ' | Files: ' + escapeHtml(String(files)) + ' | Dirs: ' + escapeHtml(String(dirs)) + '</div>' +
+            (err ? ('<div class="cache-stat-row" style="color:#b23a48;">Error: ' + escapeHtml(err) + '</div>') : '') +
+            (metricRows ? ('<div class="cache-stat-metrics">' + metricRows + '</div>') : '') +
+          '</div>';
+      }).join('');
     }
 
     function setBackLink() {
@@ -862,6 +922,7 @@ const jobExecutionHTML = `<!doctype html>
           { label: 'Duration', value: escapeHtml(formatJobExecutionDuration(job.started_utc, job.finished_utc, job.status)) },
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
+        renderCacheStats(job.cache_stats);
 
         const meta = document.getElementById('metaGrid');
         const previousModeInfo = meta.querySelector('.mode-info');

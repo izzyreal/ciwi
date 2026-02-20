@@ -117,10 +117,11 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			}
 		}
 	}
-	cacheEnv, cacheLogs := resolveJobCacheEnv(workDir, execDir, job)
+	cacheEnv, cacheLogs, resolvedCaches := resolveJobCacheEnvDetailed(workDir, execDir, job)
 	for _, line := range cacheLogs {
 		fmt.Fprintf(&output, "[cache] %s\n", line)
 	}
+	cacheStats := collectJobCacheStats(resolvedCaches)
 
 	traceShell := boolEnv("CIWI_AGENT_TRACE_SHELL", true)
 	verboseGo := boolEnv("CIWI_AGENT_GO_BUILD_VERBOSE", true)
@@ -248,6 +249,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				Status:       protocol.JobExecutionStatusFailed,
 				Error:        failMsg,
 				Output:       trimmedOutput,
+				CacheStats:   cacheStats,
 				TimestampUTC: time.Now().UTC(),
 			}); reportErr != nil {
 				return reportErr
@@ -284,6 +286,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			Status:       protocol.JobExecutionStatusSucceeded,
 			ExitCode:     &exitCode,
 			Output:       trimmedOutput,
+			CacheStats:   cacheStats,
 			CurrentStep:  "",
 			TimestampUTC: time.Now().UTC(),
 		}); reportErr != nil {
@@ -304,6 +307,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		ExitCode:     exitCode,
 		Error:        failMsg,
 		Output:       trimmedOutput,
+		CacheStats:   cacheStats,
 		CurrentStep:  "",
 		TimestampUTC: time.Now().UTC(),
 	}); reportErr != nil {

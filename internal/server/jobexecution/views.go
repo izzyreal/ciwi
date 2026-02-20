@@ -18,6 +18,7 @@ type View struct {
 	Metadata             map[string]string                 `json:"metadata,omitempty"`
 	StepPlan             []protocol.JobStepPlanItem        `json:"step_plan,omitempty"`
 	CurrentStep          string                            `json:"current_step,omitempty"`
+	CacheStats           []protocol.JobCacheStats          `json:"cache_stats,omitempty"`
 	Status               string                            `json:"status"`
 	CreatedUTC           time.Time                         `json:"created_utc"`
 	StartedUTC           *time.Time                        `json:"started_utc,omitempty"`
@@ -100,6 +101,7 @@ func ViewFromProtocol(job protocol.JobExecution) View {
 		Metadata:             job.Metadata,
 		StepPlan:             job.StepPlan,
 		CurrentStep:          job.CurrentStep,
+		CacheStats:           job.CacheStats,
 		Status:               protocol.NormalizeJobExecutionStatus(job.Status),
 		CreatedUTC:           job.CreatedUTC,
 		LeasedByAgentID:      job.LeasedByAgentID,

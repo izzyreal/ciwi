@@ -55,6 +55,7 @@ type JobExecution struct {
 	Metadata             map[string]string        `json:"metadata,omitempty"`
 	StepPlan             []JobStepPlanItem        `json:"step_plan,omitempty"`
 	CurrentStep          string                   `json:"current_step,omitempty"`
+	CacheStats           []JobCacheStats          `json:"cache_stats,omitempty"`
 	Status               string                   `json:"status"`
 	CreatedUTC           time.Time                `json:"created_utc"`
 	StartedUTC           time.Time                `json:"started_utc,omitempty"`
@@ -252,8 +253,22 @@ type JobExecutionStatusUpdateRequest struct {
 	Error        string              `json:"error,omitempty"`
 	Output       string              `json:"output,omitempty"`
 	CurrentStep  string              `json:"current_step,omitempty"`
+	CacheStats   []JobCacheStats     `json:"cache_stats,omitempty"`
 	Events       []JobExecutionEvent `json:"events,omitempty"`
 	TimestampUTC time.Time           `json:"timestamp_utc,omitempty"`
+}
+
+type JobCacheStats struct {
+	ID          string            `json:"id"`
+	Env         string            `json:"env,omitempty"`
+	Type        string            `json:"type,omitempty"`
+	Path        string            `json:"path,omitempty"`
+	Source      string            `json:"source,omitempty"`
+	SizeBytes   int64             `json:"size_bytes,omitempty"`
+	Files       int64             `json:"files,omitempty"`
+	Directories int64             `json:"directories,omitempty"`
+	ToolMetrics map[string]string `json:"tool_metrics,omitempty"`
+	Error       string            `json:"error,omitempty"`
 }
 
 const (

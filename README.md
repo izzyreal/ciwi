@@ -35,6 +35,14 @@ This comes with notably less zero-config-ness, so you'll have to read up on [env
 
 Canonical domain terminology lives in [`terminology.md`](terminology.md).
 
+## Design philosophy
+
+ciwi intentionally avoids fragile behavior that depends on parsing human-readable logs.
+
+- ciwi is designed around explicit API contracts and structured payloads between server, agent, and UI.
+- Features should use dedicated fields/endpoints (for example status/report payloads) instead of scraping job output text.
+- Job output remains for humans; machine behavior should rely on typed data.
+
 ## Environment variables
 
 Prefer the [automated installation scripts](#automated-installation-scripts), but if you wish to tinker, here are a few options:
@@ -110,6 +118,7 @@ UI actions map to these server behaviors:
 - If that stored source ref is a moving branch/tag ref, rerun fetches it again at execution time and may build a newer commit.
 - **Run Again** creates a new job execution ID with fresh logs and artifact records; prior artifacts are kept and not replaced.
 - **Run Again** is useful for fast retries after flaky failures or after fixing agent/tooling issues, without re-enqueueing the full pipeline.
+- Job details include a **Cache statistics** panel populated from structured agent status payloads (`cache_stats`), not log parsing.
 - **Flush History** deletes job executions whose status is not `queued`, `leased`, or `running`.
 - **Flush History** removes execution logs/status payloads in sqlite for flushed jobs.
 - **Flush History** does not remove artifact files from disk (`CIWI_ARTIFACTS_DIR`); it is history cleanup, not artifact GC.

@@ -12,15 +12,28 @@ import (
 )
 
 func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map[string]string, []string) {
+	cacheEnv, logs, _ := resolveJobCacheEnvDetailed(workDir, execDir, job)
+	return cacheEnv, logs
+}
+
+type resolvedJobCache struct {
+	ID     string
+	Env    string
+	Path   string
+	Source string
+}
+
+func resolveJobCacheEnvDetailed(workDir, execDir string, job protocol.JobExecution) (map[string]string, []string, []resolvedJobCache) {
 	if len(job.Caches) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	cacheRoot := filepath.Join(workDir, "cache")
 	if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
-		return nil, []string{fmt.Sprintf("warning=create_cache_root_failed err=%v", err)}
+		return nil, []string{fmt.Sprintf("warning=create_cache_root_failed err=%v", err)}, nil
 	}
 	cacheEnv := map[string]string{}
 	logs := make([]string, 0, len(job.Caches)*2)
+	resolved := make([]resolvedJobCache, 0, len(job.Caches))
 	for _, spec := range job.Caches {
 		cacheID := strings.TrimSpace(spec.ID)
 		envName := strings.TrimSpace(spec.Env)
@@ -41,11 +54,17 @@ func resolveJobCacheEnv(workDir, execDir string, job protocol.JobExecution) (map
 		cacheEnv[envName] = cacheEnvPath(cacheDir)
 		msg := fmt.Sprintf("id=%s env=%s source=%s dir=%s", cacheID, envName, source, filepath.ToSlash(cacheDir))
 		logs = append(logs, msg)
+		resolved = append(resolved, resolvedJobCache{
+			ID:     cacheID,
+			Env:    envName,
+			Path:   cacheDir,
+			Source: source,
+		})
 	}
 	if len(cacheEnv) == 0 {
-		return nil, logs
+		return nil, logs, resolved
 	}
-	return cacheEnv, logs
+	return cacheEnv, logs, resolved
 }
 
 func resolveSingleJobCacheDir(cacheRoot string, spec protocol.JobCacheSpec) (string, string, error) {
