@@ -476,10 +476,6 @@ function showQueuedJobsSnackbar(message) {
     message: message,
     actionLabel: 'Show queued jobs',
     onAction: () => {
-      try {
-        sessionStorage.setItem('__ciwiFocusQueuedJobs', '1');
-        sessionStorage.setItem('__ciwiFocusQueuedJobsUntil', String(Date.now() + 8000));
-      } catch (_) {}
       if ((window.location.pathname || '/') === '/') {
         const node = document.getElementById('queued-jobs');
         if (node && typeof node.scrollIntoView === 'function') {
