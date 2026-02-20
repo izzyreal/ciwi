@@ -25,6 +25,24 @@ const jobExecutionHTML = `<!doctype html>
       display: block;
       line-height: 1;
     }
+    .job-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .rerun-action-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      align-self: center;
+    }
+    .rerun-action-wrap .mode-info {
+      position: absolute;
+      top: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
     .status-succeeded { color: var(--ok); font-weight: 700; }
     .status-failed { color: var(--bad); font-weight: 700; }
     .status-running { color: #a56a00; font-weight: 700; }
@@ -171,12 +189,14 @@ const jobExecutionHTML = `<!doctype html>
           <div style="color:#5f6f67;" id="subtitle">Loading...</div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div class="job-actions">
         <button id="forceFailBtn" class="copy-btn" style="display:none;">Cancel</button>
-        <span id="rerunInfo" class="mode-info" tabindex="0" aria-label="Run Job Again info">
-          <span aria-hidden="true">ⓘ</span>
+        <span class="rerun-action-wrap">
+          <span id="rerunInfo" class="mode-info" tabindex="0" aria-label="Run Job Again info">
+            <span aria-hidden="true">ⓘ</span>
+          </span>
+          <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
         </span>
-        <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
         <a id="backLink" class="nav-btn" href="/">Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span></a>
       </div>
     </div>
