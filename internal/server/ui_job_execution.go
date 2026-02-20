@@ -10,7 +10,8 @@ const jobExecutionHTML = `<!doctype html>
   <style>
 ` + uiPageChromeCSS + `
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
-    .detail-split { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .detail-split { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom: 16px; }
+    .detail-split > .card { margin-bottom: 0; }
     .meta-grid { display:grid; grid-template-columns: 160px 1fr; gap:8px 12px; font-size:14px; }
     .label { color: var(--muted); }
     .mode-value { display:inline-flex; align-items:center; gap:8px; }
