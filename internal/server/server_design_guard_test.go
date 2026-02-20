@@ -15,7 +15,9 @@ func TestDesignGuardGoCodeAvoidsRawJobStatusLiterals(t *testing.T) {
 		"internal/server/server_agents.go",
 		"internal/server/jobexecution/views.go",
 		"internal/agent/agent_exec.go",
-		"internal/store/sqlite_job_executions.go",
+		"internal/store/sqlite_job_executions_queue.go",
+		"internal/store/sqlite_job_executions_status.go",
+		"internal/store/sqlite_job_executions_artifacts.go",
 	}
 	forbidden := []string{
 		`"queued"`,
