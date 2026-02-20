@@ -26,6 +26,10 @@ function isRunningJobStatus(status) {
   return normalizedJobStatus(status) === 'running';
 }
 
+function isQueuedJobStatus(status) {
+  return normalizedJobStatus(status) === 'queued';
+}
+
 function isSucceededJobStatus(status) {
   return normalizedJobStatus(status) === 'succeeded';
 }
