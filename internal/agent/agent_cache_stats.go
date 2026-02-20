@@ -113,6 +113,12 @@ func readCCacheMetrics(cacheDir string) map[string]string {
 		if key == "" || val == "" {
 			continue
 		}
+		// ccache verbose stats can repeat keys across sections (for example
+		// aggregate/local and remote counters). Keep the first occurrence so
+		// top-level summary numbers are not overwritten by later section values.
+		if _, exists := metrics[key]; exists {
+			continue
+		}
 		metrics[key] = val
 	}
 	if len(metrics) == 0 {
