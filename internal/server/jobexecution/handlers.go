@@ -120,15 +120,13 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		return
 	}
 
-	rel := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
-	if rel == "" {
+	parsed, ok := parseJobPath(r.URL.Path)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	parts := strings.Split(rel, "/")
-	jobID := parts[0]
-
-	if len(parts) == 1 {
+	jobID := parsed.JobID
+	if parsed.IsRoot() {
 		switch r.Method {
 		case http.MethodGet:
 			job, err := deps.Store.GetJobExecution(jobID)
@@ -159,37 +157,81 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "cancel" {
+	if parsed.IsResource("cancel") {
 		handleJobCancel(w, r, deps, jobID)
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "rerun" {
+	if parsed.IsResource("rerun") {
 		handleJobRerun(w, r, deps, jobID)
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "status" {
+	if parsed.IsResource("status") {
 		handleJobStatus(w, r, deps, jobID)
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "artifacts" {
+	if parsed.IsResource("artifacts") {
 		handleJobArtifacts(w, r, deps, jobID)
 		return
 	}
 
-	if len(parts) == 3 && parts[1] == "artifacts" && parts[2] == "download-all" {
+	if parsed.IsNestedResource("artifacts", "download-all") {
 		handleJobArtifactsDownloadAll(w, r, deps, jobID)
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "tests" {
+	if parsed.IsResource("tests") {
 		handleJobTests(w, r, deps, jobID)
 		return
 	}
 
 	http.NotFound(w, r)
+}
+
+type jobPath struct {
+	JobID      string
+	Resource   string
+	Subpath    string
+	partsCount int
+}
+
+func parseJobPath(path string) (jobPath, bool) {
+	rel := strings.Trim(strings.TrimPrefix(path, "/api/v1/jobs/"), "/")
+	if rel == "" {
+		return jobPath{}, false
+	}
+	parts := strings.Split(rel, "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		return jobPath{}, false
+	}
+	if len(parts) > 3 {
+		return jobPath{}, false
+	}
+	out := jobPath{
+		JobID:      parts[0],
+		partsCount: len(parts),
+	}
+	if len(parts) >= 2 {
+		out.Resource = parts[1]
+	}
+	if len(parts) == 3 {
+		out.Subpath = parts[2]
+	}
+	return out, true
+}
+
+func (p jobPath) IsRoot() bool {
+	return p.partsCount == 1
+}
+
+func (p jobPath) IsResource(name string) bool {
+	return p.partsCount == 2 && p.Resource == name
+}
+
+func (p jobPath) IsNestedResource(resource, subpath string) bool {
+	return p.partsCount == 3 && p.Resource == resource && p.Subpath == subpath
 }
 
 func listArtifactsWithSynthetic(deps HandlerDeps, jobID string) ([]protocol.JobExecutionArtifact, error) {
