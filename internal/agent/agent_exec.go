@@ -122,6 +122,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		fmt.Fprintf(&output, "[cache] %s\n", line)
 	}
 	cacheStats := collectJobCacheStats(resolvedCaches)
+	refreshCacheStats := func() []protocol.JobCacheStats {
+		return collectJobCacheStats(resolvedCaches)
+	}
 	probeContainer := runtimeProbeContainerName(job.ID, job.Metadata)
 	probeContainerImage := runtimeProbeContainerImageFromMetadata(job.Metadata)
 	probeContainerWorkdir := runtimeExecContainerWorkdirFromMetadata(job.Metadata)
@@ -382,6 +385,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			fmt.Fprintf(&output, "[artifacts] upload_failed=%v\n", uploadErr)
 			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 			failMsg := "artifact upload failed: " + uploadErr.Error()
+			cacheStats = refreshCacheStats()
 			if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 				AgentID:             agentID,
 				Status:              protocol.JobExecutionStatusFailed,
@@ -420,6 +424,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 
 	if err == nil {
 		exitCode := 0
+		cacheStats = refreshCacheStats()
 		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:             agentID,
 			Status:              protocol.JobExecutionStatusSucceeded,
@@ -441,6 +446,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	if runCtx.Err() == context.DeadlineExceeded {
 		failMsg = "job timed out"
 	}
+	cacheStats = refreshCacheStats()
 	if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:             agentID,
 		Status:              protocol.JobExecutionStatusFailed,
