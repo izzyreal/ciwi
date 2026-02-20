@@ -540,6 +540,40 @@ func TestExecuteLeasedJobCancelsWhenServerForceFails(t *testing.T) {
 	}
 }
 
+func TestRunCancelableCommandSendsInterruptBeforeKill(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("signal semantics test is unix-specific")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skipf("sh not available: %v", err)
+	}
+
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.Command("sh", "-c", `trap 'echo INT > interrupted.txt; exit 130' INT; while true; do sleep 0.1; done`)
+	cmd.Dir = dir
+	prepareCommandForCancellation(cmd)
+
+	start := time.Now()
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cancel()
+	}()
+
+	err := runCancelableCommand(ctx, cmd)
+	if err == nil {
+		t.Fatalf("expected cancellation error")
+	}
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("expected prompt cancellation, took %s", elapsed)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "interrupted.txt")); statErr != nil {
+		t.Fatalf("expected interrupt trap marker file, stat err=%v", statErr)
+	}
+}
+
 func TestExecuteLeasedJobRunsPipelineStepsInSeparateShellProcesses(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix shell assertion test skipped on windows")

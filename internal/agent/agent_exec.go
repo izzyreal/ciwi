@@ -434,7 +434,8 @@ func runJobScript(
 		return fmt.Errorf("build shell command: %w", err)
 	}
 
-	cmd := exec.CommandContext(runCtx, bin, args...)
+	cmd := exec.Command(bin, args...)
+	prepareCommandForCancellation(cmd)
 	cmd.Dir = execDir
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -442,7 +443,44 @@ func runJobScript(
 
 	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, sensitive, defaultCurrentStep)
 	defer stopStreaming()
-	return cmd.Run()
+	return runCancelableCommand(runCtx, cmd)
+}
+
+func runCancelableCommand(ctx context.Context, cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-waitCh:
+		return err
+	case <-ctx.Done():
+		_ = interruptCommandTree(cmd)
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
+		select {
+		case err := <-waitCh:
+			if err != nil {
+				return err
+			}
+			return ctx.Err()
+		case <-timer.C:
+			_ = killCommandTree(cmd)
+			select {
+			case err := <-waitCh:
+				if err != nil {
+					return err
+				}
+			case <-time.After(2 * time.Second):
+			}
+			return ctx.Err()
+		}
+	}
 }
 
 type jobScriptStep struct {
