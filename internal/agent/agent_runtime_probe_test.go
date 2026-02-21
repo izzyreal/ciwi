@@ -54,6 +54,55 @@ func TestValidateContainerToolRequirements(t *testing.T) {
 	})
 }
 
+func TestValidateHostToolRequirements(t *testing.T) {
+	t.Run("no requirements", func(t *testing.T) {
+		if err := validateHostToolRequirements(nil, map[string]string{"host.tool.git": "2.40.0"}); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("satisfied", func(t *testing.T) {
+		required := map[string]string{
+			"requires.tool.git": ">=2.30.0",
+		}
+		runtimeCaps := map[string]string{
+			"host.tool.git": "2.42.0",
+		}
+		if err := validateHostToolRequirements(required, runtimeCaps); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("missing tool", func(t *testing.T) {
+		required := map[string]string{
+			"requires.tool.packagesutil": "*",
+		}
+		err := validateHostToolRequirements(required, map[string]string{})
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "packagesutil") {
+			t.Fatalf("expected error mentioning packagesutil, got %q", err.Error())
+		}
+	})
+
+	t.Run("constraint mismatch", func(t *testing.T) {
+		required := map[string]string{
+			"requires.tool.go": ">=1.30.0",
+		}
+		runtimeCaps := map[string]string{
+			"host.tool.go": "1.26.0",
+		}
+		err := validateHostToolRequirements(required, runtimeCaps)
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "does not satisfy >=1.30.0") {
+			t.Fatalf("unexpected error: %q", err.Error())
+		}
+	})
+}
+
 func TestRuntimeExecContainerDevicesFromMetadata(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		got := runtimeExecContainerDevicesFromMetadata(nil)

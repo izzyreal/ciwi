@@ -245,9 +245,32 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		slog.Error("job failed", "job_execution_id", job.ID, "error", ensureErr.Error())
 		return nil
 	}
+	shell, err := resolveJobShell(job.RequiredCapabilities)
+	if err != nil {
+		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("resolve job shell: %v", err), "")
+	}
+
 	runtimeCaps := collectRuntimeCapabilities(agentCapabilities, probeContainer)
+	enrichRuntimeHostToolCapabilities(runtimeCaps, job.RequiredCapabilities, shell)
 	if summary := runtimeProbeSummary(runtimeCaps); summary != "" {
 		fmt.Fprintf(&output, "%s\n", summary)
+	}
+	if err := validateHostToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
+		fmt.Fprintf(&output, "[runtime] %v\n", err)
+		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
+		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID:             agentID,
+			Status:              protocol.JobExecutionStatusFailed,
+			Error:               err.Error(),
+			Output:              trimmedOutput,
+			CacheStats:          cacheStats,
+			RuntimeCapabilities: runtimeCaps,
+			TimestampUTC:        time.Now().UTC(),
+		}); reportErr != nil {
+			return reportErr
+		}
+		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
+		return nil
 	}
 	if err := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", err)
@@ -284,11 +307,6 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		if job.Metadata["has_secrets"] == "1" || job.Metadata["adhoc"] == "1" {
 			traceShell = false
 		}
-	}
-
-	shell, err := resolveJobShell(job.RequiredCapabilities)
-	if err != nil {
-		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("resolve job shell: %v", err), "")
 	}
 
 	fmt.Fprintf(&output, "[run] shell_trace=%t go_build_verbose=%t\n", traceShell, verboseGo)

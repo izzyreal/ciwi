@@ -16,6 +16,7 @@ import (
 )
 
 const containerToolRequirementPrefix = "requires.container.tool."
+const hostToolRequirementPrefix = "requires.tool."
 
 func collectRuntimeCapabilities(agentCapabilities map[string]string, probeContainer string) map[string]string {
 	out := map[string]string{}
@@ -364,6 +365,76 @@ func containerToolRequirements(requiredCaps map[string]string) map[string]string
 		return nil
 	}
 	return out
+}
+
+func hostToolRequirements(requiredCaps map[string]string) map[string]string {
+	if len(requiredCaps) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for key, value := range requiredCaps {
+		if !strings.HasPrefix(key, hostToolRequirementPrefix) {
+			continue
+		}
+		tool := strings.TrimSpace(strings.TrimPrefix(key, hostToolRequirementPrefix))
+		if tool == "" {
+			continue
+		}
+		out[tool] = strings.TrimSpace(value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func enrichRuntimeHostToolCapabilities(runtimeCaps map[string]string, requiredCaps map[string]string, shell string) {
+	reqs := hostToolRequirements(requiredCaps)
+	if len(reqs) == 0 {
+		return
+	}
+	for tool := range reqs {
+		if v := detectToolVersionInShellFn(shell, tool, "--version"); v != "" {
+			runtimeCaps["host.tool."+tool] = v
+			continue
+		}
+		// Some tools print version via different flags or on help output.
+		for _, alt := range [][]string{{"-version"}, {"-v"}, {"/?"}} {
+			if v := detectToolVersionInShellFn(shell, tool, alt...); v != "" {
+				runtimeCaps["host.tool."+tool] = v
+				break
+			}
+		}
+	}
+}
+
+func validateHostToolRequirements(requiredCaps, runtimeCaps map[string]string) error {
+	reqs := hostToolRequirements(requiredCaps)
+	if len(reqs) == 0 {
+		return nil
+	}
+	failed := []string{}
+	for tool, constraint := range reqs {
+		observed := strings.TrimSpace(runtimeCaps["host.tool."+tool])
+		if !requirements.ToolConstraintMatch(observed, constraint) {
+			if observed == "" {
+				if constraint == "" || constraint == "*" {
+					failed = append(failed, fmt.Sprintf("%s missing on agent runtime", tool))
+				} else {
+					failed = append(failed, fmt.Sprintf("%s missing on agent runtime (required %s)", tool, constraint))
+				}
+			} else if constraint == "" || constraint == "*" {
+				failed = append(failed, fmt.Sprintf("%s unavailable on agent runtime", tool))
+			} else {
+				failed = append(failed, fmt.Sprintf("%s=%s does not satisfy %s", tool, observed, constraint))
+			}
+		}
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+	sort.Strings(failed)
+	return fmt.Errorf("host tool requirements unmet: %s", strings.Join(failed, "; "))
 }
 
 func validateContainerToolRequirements(requiredCaps, runtimeCaps map[string]string) error {

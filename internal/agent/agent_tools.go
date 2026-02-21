@@ -13,6 +13,7 @@ import (
 )
 
 var versionPattern = regexp.MustCompile(`([0-9]+(?:\.[0-9]+){1,3})`)
+var detectToolVersionInShellFn = detectToolVersionInShell
 
 func detectAgentCapabilities() map[string]string {
 	shells := supportedShellsForRuntime()
@@ -124,10 +125,95 @@ func detectXCRUNToolVersion(tool string) string {
 }
 
 func detectToolVersion(cmd string, args ...string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return ""
+	}
+	for _, shell := range supportedShellsForRuntime() {
+		if v := detectToolVersionInShellFn(shell, cmd, args...); v != "" {
+			return v
+		}
+	}
 	if _, err := exec.LookPath(cmd); err != nil {
 		return ""
 	}
 	return detectToolVersionByPath(cmd, args...)
+}
+
+func detectToolVersionInShell(shell, cmd string, args ...string) string {
+	script := toolProbeScriptForShell(shell, cmd, args)
+	if strings.TrimSpace(script) == "" {
+		return ""
+	}
+	bin, shellArgs, err := commandForScript(shell, script)
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	c := exec.CommandContext(ctx, bin, shellArgs...)
+	raw, err := c.CombinedOutput()
+	if err != nil && len(raw) == 0 {
+		return ""
+	}
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return ""
+	}
+	if strings.Contains(text, "go version go") {
+		text = strings.ReplaceAll(text, "go version go", "go version ")
+	}
+	if m := versionPattern.FindStringSubmatch(text); len(m) >= 2 {
+		return m[1]
+	}
+	return ""
+}
+
+func toolProbeScriptForShell(shell, cmd string, args []string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return ""
+	}
+	norm := normalizeShell(shell)
+	switch norm {
+	case shellPosix:
+		line := shellQuote(cmd)
+		for _, arg := range args {
+			line += " " + shellQuote(arg)
+		}
+		return "if command -v " + shellQuote(cmd) + " >/dev/null 2>&1; then " + line + " 2>&1; fi"
+	case shellCmd:
+		line := cmdQuote(cmd)
+		for _, arg := range args {
+			line += " " + cmdQuote(arg)
+		}
+		return "where " + cmdQuote(cmd) + " >NUL 2>NUL && " + line + " 2>&1"
+	case shellPowerShell:
+		quotedCmd := powershellQuote(cmd)
+		line := "& " + quotedCmd
+		for _, arg := range args {
+			line += " " + powershellQuote(arg)
+		}
+		return "$c = Get-Command " + quotedCmd + " -ErrorAction SilentlyContinue; if ($c) { " + line + " 2>&1 }"
+	default:
+		return ""
+	}
+}
+
+func cmdQuote(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return `""`
+	}
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
+func powershellQuote(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 func detectToolVersionByPath(cmd string, args ...string) string {
