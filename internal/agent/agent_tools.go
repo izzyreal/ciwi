@@ -75,7 +75,6 @@ func detectToolVersions() map[string]string {
 		{name: "xcodebuild", cmd: "xcodebuild", args: []string{"-version"}},
 		{name: "iscc", cmd: "iscc", args: []string{"/?"}},
 		{name: "signtool", cmd: "signtool", args: []string{"/?"}},
-		{name: "codesign", cmd: "codesign", args: []string{"--version"}},
 		{name: "productsign", cmd: "productsign", args: []string{"--version"}},
 		{name: "packagesbuild", cmd: "packagesbuild", args: []string{"--version"}},
 		{name: "packagesutil", cmd: "packagesutil", args: []string{"version"}},
@@ -85,6 +84,9 @@ func detectToolVersions() map[string]string {
 		if v := detectToolVersion(t.cmd, t.args...); v != "" {
 			out[t.name] = v
 		}
+	}
+	if v := detectCodesignVersion(); v != "" {
+		out["codesign"] = v
 	}
 	if v := detectXCRUNToolVersion("notarytool"); v != "" {
 		out["notarytool"] = v
@@ -102,6 +104,20 @@ func detectToolVersions() map[string]string {
 		out["xorg-dev"] = "1"
 	}
 	return out
+}
+
+func detectCodesignVersion() string {
+	if v := detectToolVersion("codesign", "--version"); v != "" {
+		return v
+	}
+	codesignPath, err := exec.LookPath("codesign")
+	if err != nil || strings.TrimSpace(codesignPath) == "" {
+		return ""
+	}
+	if v := detectToolVersion("what", codesignPath); v != "" {
+		return v
+	}
+	return ""
 }
 
 func detectXCRUNToolVersion(tool string) string {

@@ -67,6 +67,40 @@ func TestDetectToolVersionByPathEdgeCases(t *testing.T) {
 	}
 }
 
+func TestDetectCodesignVersionViaWhatFallback(t *testing.T) {
+	binDir := t.TempDir()
+	pathSep := string(os.PathListSeparator)
+	origPath := os.Getenv("PATH")
+	setPath := binDir
+	if strings.TrimSpace(origPath) != "" {
+		setPath = binDir + pathSep + origPath
+	}
+	t.Setenv("PATH", setPath)
+
+	makeTool := func(name, body string) {
+		toolPath := filepath.Join(binDir, name)
+		if runtime.GOOS == "windows" {
+			toolPath += ".bat"
+			if err := os.WriteFile(toolPath, []byte(body+"\r\n"), 0o755); err != nil {
+				t.Fatalf("write fake %s: %v", name, err)
+			}
+			return
+		}
+		if err := os.WriteFile(toolPath, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+			t.Fatalf("write fake %s: %v", name, err)
+		}
+	}
+
+	// Simulate codesign existing but not supporting --version.
+	makeTool("codesign", "exit 1")
+	// Simulate BSD `what` output for codesign.
+	makeTool("what", "echo 'PROGRAM:codesign  PROJECT:codesign-69.100.1'")
+
+	if got := detectCodesignVersion(); got == "" {
+		t.Fatalf("expected codesign version from what fallback, got empty")
+	}
+}
+
 func TestCandidateVSWherePathsIncludesLookupAndEnvRoots(t *testing.T) {
 	binDir := t.TempDir()
 	lookupPath := filepath.Join(binDir, "vswhere.exe")
