@@ -1,6 +1,18 @@
 package server
 
 const jobExecutionRenderJS = `
+    function formatJobDetailUnmetRequirementHTML(reason) {
+      const text = String(reason || '').trim();
+      if (!text) return '';
+      let m = text.match(/^missing tool\s+(.+)$/i);
+      if (m) return 'Missing tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code>';
+      m = text.match(/^tool\s+(\S+)\s+unavailable$/i);
+      if (m) return 'Tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code> unavailable';
+      m = text.match(/^tool\s+(\S+)\s+does not satisfy\s+(.+)$/i);
+      if (m) return 'Tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code> does not satisfy <code>' + escapeHtml(String(m[2] || '').trim()) + '</code>';
+      return escapeHtml(text);
+    }
+
     function renderModeValue(dryRun) {
       const label = dryRun ? 'Dry run' : 'Ordinary run';
       return '' +
@@ -111,9 +123,10 @@ const jobExecutionRenderJS = `
       return out;
     }
 
-    function renderToolRequirements(requiredCaps, runtimeCaps, jobStatus) {
+    function renderToolRequirements(requiredCaps, runtimeCaps, jobStatus, unmetRequirements) {
       const req = requiredCaps || {};
       const caps = runtimeCaps || {};
+      const unmet = Array.isArray(unmetRequirements) ? unmetRequirements : [];
       const hostRows = requirementRows(req, 'requires.tool.');
       const containerRows = requirementRows(req, 'requires.container.tool.');
       const status = String(jobStatus || '').trim().toLowerCase();
@@ -131,6 +144,12 @@ const jobExecutionRenderJS = `
           return String(caps[key] || '').trim() !== '';
         });
         if (!hasObservedRuntimeData) {
+          if (prefix === 'host.tool.' && unmet.length > 0) {
+            const queuedIssues = unmet.map(formatJobDetailUnmetRequirementHTML).filter(Boolean);
+            box.className = 'req-issues';
+            box.innerHTML = '<strong>Requirements mismatch</strong><ul>' + queuedIssues.map(i => '<li>' + i + '</li>').join('') + '</ul>';
+            return;
+          }
           box.className = 'req-empty';
           if (isQueuedJobStatus(status) || isRunningJobStatus(status)) {
             box.textContent = 'Pending runtime capability report from agent.';

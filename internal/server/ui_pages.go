@@ -18,6 +18,34 @@ const uiPagesJS = `function apiJSON(path, opts = {}) {
     });
 }
 
+function formatUnmetRequirementHTML(reason) {
+  const text = String(reason || '').trim();
+  if (!text) return '';
+  let m = text.match(/^missing tool\s+(.+)$/i);
+  if (m) return 'Missing tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code>';
+  m = text.match(/^tool\s+(\S+)\s+unavailable$/i);
+  if (m) return 'Tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code> unavailable';
+  m = text.match(/^tool\s+(\S+)\s+does not satisfy\s+(.+)$/i);
+  if (m) {
+    return 'Tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code> does not satisfy <code>' + escapeHtml(String(m[2] || '').trim()) + '</code>';
+  }
+  return escapeHtml(text);
+}
+
+function formatUnmetRequirementsInlineHTML(reasons) {
+  const rows = Array.isArray(reasons) ? reasons : [];
+  const htmlRows = rows.map(formatUnmetRequirementHTML).filter(Boolean);
+  if (!htmlRows.length) return '';
+  return htmlRows.join('; ');
+}
+
+function formatUnmetRequirementsTooltipHTML(reasons) {
+  const rows = Array.isArray(reasons) ? reasons : [];
+  const htmlRows = rows.map(formatUnmetRequirementHTML).filter(Boolean);
+  if (!htmlRows.length) return '';
+  return '<strong>Missing requirements</strong><div style="margin-top:6px;">' + htmlRows.join('<br />') + '</div>';
+}
+
 function buildJobExecutionRow(job, opts = {}) {
   const includeActions = !!opts.includeActions;
   const includeReason = !!opts.includeReason;
@@ -56,7 +84,26 @@ function buildJobExecutionRow(job, opts = {}) {
 
   if (includeReason) {
     const reasons = (job.unmet_requirements || []);
-    tr.innerHTML += '<td>' + cellText(reasons.join('; ')) + '</td>';
+    const reasonTd = document.createElement('td');
+    if (reasons.length === 0) {
+      reasonTd.innerHTML = cellText('');
+    } else {
+      const summaryHTML = formatUnmetRequirementsInlineHTML(reasons);
+      reasonTd.innerHTML = '' +
+        '<span class="ciwi-job-reason">' +
+          '<span class="ciwi-job-reason-summary">' + (fixedLines > 0 ? ('<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '">' + summaryHTML + '</span>') : summaryHTML) + '</span>' +
+          '<span class="ciwi-job-reason-info" tabindex="0" aria-label="Missing requirements info">ⓘ</span>' +
+        '</span>';
+      const info = reasonTd.querySelector('.ciwi-job-reason-info');
+      if (info && typeof createHoverTooltip === 'function') {
+        createHoverTooltip(info, {
+          html: formatUnmetRequirementsTooltipHTML(reasons),
+          lingerMs: 2000,
+          owner: 'queue-reason-' + String(job.id || ''),
+        });
+      }
+    }
+    tr.appendChild(reasonTd);
   } else if (includeDuration) {
     tr.innerHTML += '<td>' + cellText(formatJobExecutionDuration(job.started_utc, job.finished_utc, job.status)) + '</td>';
   }
@@ -120,6 +167,9 @@ function ensureJobSkeletonStyles() {
     '.ciwi-job-two-line-row .ciwi-job-cell{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25;min-height:var(--ciwi-row-text-block);max-height:var(--ciwi-row-text-block);}',
     '.ciwi-job-two-line-row .ciwi-project-mini-icon{width:var(--ciwi-row-text-block);height:var(--ciwi-row-text-block);}',
     '.ciwi-job-two-line-row .ciwi-job-cell-lines-2{-webkit-line-clamp:2;}',
+    '.ciwi-job-reason{display:flex;align-items:flex-start;gap:8px;}',
+    '.ciwi-job-reason-summary code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;background:#eef6f1;border:1px solid #d7e6dd;border-radius:4px;padding:0 4px;font-size:.95em;}',
+    '.ciwi-job-reason-info{display:inline-block;line-height:1;cursor:help;user-select:none;}',
     '.ciwi-job-two-line-row .ciwi-job-actions-cell{vertical-align:middle;}',
     '.ciwi-job-skeleton-row td{padding-top:6px;padding-bottom:6px;}',
     '.ciwi-job-skeleton-lines{display:flex;flex-direction:column;gap:8px;}',

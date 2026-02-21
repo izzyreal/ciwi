@@ -226,7 +226,7 @@ const jobExecutionDataJS = `
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
         renderCacheStats(job.cache_stats);
-        renderToolRequirements(job.required_capabilities, job.runtime_capabilities, job.status);
+        renderToolRequirements(job.required_capabilities, job.runtime_capabilities, job.status, job.unmet_requirements);
 
         const meta = document.getElementById('metaGrid');
         const previousModeInfo = meta.querySelector('.mode-info');
