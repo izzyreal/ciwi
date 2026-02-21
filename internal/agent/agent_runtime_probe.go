@@ -393,14 +393,18 @@ func enrichRuntimeHostToolCapabilities(runtimeCaps map[string]string, requiredCa
 	if len(reqs) == 0 {
 		return
 	}
+	normShell := normalizeShell(shell)
+	if normShell == "" {
+		normShell = defaultShellForRuntime()
+	}
 	for tool := range reqs {
-		if v := detectToolVersionInShellFn(shell, tool, "--version"); v != "" {
+		if v := detectToolVersionInShellFn(normShell, tool, "--version"); v != "" {
 			runtimeCaps["host.tool."+tool] = v
 			continue
 		}
 		// Some tools print version via different flags or on help output.
-		for _, alt := range [][]string{{"-version"}, {"-v"}, {"/?"}} {
-			if v := detectToolVersionInShellFn(shell, tool, alt...); v != "" {
+		for _, alt := range [][]string{{"version"}, {"-version"}, {"-v"}, {"/?"}} {
+			if v := detectToolVersionInShellFn(normShell, tool, alt...); v != "" {
 				runtimeCaps["host.tool."+tool] = v
 				break
 			}

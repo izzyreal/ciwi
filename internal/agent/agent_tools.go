@@ -78,7 +78,7 @@ func detectToolVersions() map[string]string {
 		{name: "codesign", cmd: "codesign", args: []string{"--version"}},
 		{name: "productsign", cmd: "productsign", args: []string{"--version"}},
 		{name: "packagesbuild", cmd: "packagesbuild", args: []string{"--version"}},
-		{name: "packagesutil", cmd: "packagesutil", args: []string{"--version"}},
+		{name: "packagesutil", cmd: "packagesutil", args: []string{"version"}},
 	}
 	out := map[string]string{}
 	for _, t := range tools {
