@@ -143,3 +143,22 @@ func TestEscapePowerShellSingleQuoted(t *testing.T) {
 		t.Fatalf("unexpected escaped string: %q", got)
 	}
 }
+
+func TestWindowsServiceRestartScriptIncludesRobustRestartFlow(t *testing.T) {
+	script := windowsServiceRestartScript("ciwi-agent-O'Hara")
+	if !strings.Contains(script, "$name='ciwi-agent-O''Hara'") {
+		t.Fatalf("expected escaped service name in script, got %q", script)
+	}
+	if !strings.Contains(script, "Stop-Service -Name $name") {
+		t.Fatalf("expected Stop-Service in script, got %q", script)
+	}
+	if !strings.Contains(script, "WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped") {
+		t.Fatalf("expected WaitForStatus stop wait in script, got %q", script)
+	}
+	if !strings.Contains(script, "Start-Service -Name $name") {
+		t.Fatalf("expected Start-Service in script, got %q", script)
+	}
+	if !strings.Contains(script, "sc.exe start \"$name\"") {
+		t.Fatalf("expected sc.exe fallback start in script, got %q", script)
+	}
+}

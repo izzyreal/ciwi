@@ -99,14 +99,7 @@ func restartAgentViaWindowsService() (string, error, bool) {
 
 	// Run restart logic in a detached process so it survives this service instance
 	// being stopped.
-	psName := escapePowerShellSingleQuoted(name)
-	script := "$name='" + psName + "'; " +
-		"sc.exe stop \"$name\" *> $null; " +
-		"$deadline=(Get-Date).AddSeconds(45); " +
-		"do { $q = sc.exe query \"$name\" 2>$null; " +
-		"if ($q -match 'STATE\\s+:\\s+1\\s+STOPPED') { break }; " +
-		"Start-Sleep -Seconds 1 } while ((Get-Date) -lt $deadline); " +
-		"sc.exe start \"$name\" *> $null"
+	script := windowsServiceRestartScript(name)
 
 	cmd := exec.Command(
 		"cmd.exe",
@@ -126,6 +119,21 @@ func restartAgentViaWindowsService() (string, error, bool) {
 		return "", fmt.Errorf("start detached windows restart helper for %q: %w", name, err), true
 	}
 	return "restart via windows service requested (" + name + ")", nil, true
+}
+
+func windowsServiceRestartScript(name string) string {
+	psName := escapePowerShellSingleQuoted(name)
+	return "$name='" + psName + "'; " +
+		"try { Stop-Service -Name $name -ErrorAction SilentlyContinue } catch {} ; " +
+		"try { $svc = Get-Service -Name $name -ErrorAction Stop; " +
+		"if ($svc.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped) { " +
+		"$svc.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromSeconds(45)) } } catch {} ; " +
+		"$startDeadline=(Get-Date).AddSeconds(20); " +
+		"do { $started=$false; " +
+		"try { Start-Service -Name $name -ErrorAction Stop; $started=$true } catch { " +
+		"$s = sc.exe start \"$name\" 2>&1; $txt = ($s | Out-String); " +
+		"if (($LASTEXITCODE -eq 0) -or ($txt -match '1056') -or ($txt -match 'already (running|been started)')) { $started=$true } }; " +
+		"if ($started) { break }; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $startDeadline)"
 }
 
 func escapePowerShellSingleQuoted(s string) string {
