@@ -50,7 +50,7 @@ func resolvePipelineRunContextWithReporter(p store.PersistedPipeline, dep pipeli
 
 	if strings.TrimSpace(p.SourceRepo) == "" {
 		if report != nil {
-			report("version", "error", "pipeline source.repo is empty; cannot resolve version")
+			report("version", "error", "pipeline vcs_source.repo is empty; cannot resolve version")
 		}
 		return ctx, nil
 	}

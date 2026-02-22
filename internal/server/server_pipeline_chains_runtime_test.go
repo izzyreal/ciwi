@@ -73,7 +73,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: compile
@@ -83,7 +83,7 @@ pipelines:
         steps:
           - run: echo build
   - id: package
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: pkg
@@ -142,7 +142,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: compile
@@ -152,7 +152,7 @@ pipelines:
         steps:
           - run: echo build
   - id: package
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: pkg
@@ -208,7 +208,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: compile
@@ -220,7 +220,7 @@ pipelines:
   - id: package
     depends_on:
       - publish
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: pkg
@@ -230,7 +230,7 @@ pipelines:
         steps:
           - run: echo package
   - id: publish
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: pub
@@ -274,5 +274,184 @@ pipeline_chains:
 	}
 	if !strings.Contains(secondAfter.Error, "dependency") {
 		t.Fatalf("unexpected bind failure reason: %q", secondAfter.Error)
+	}
+}
+
+func TestPipelineChainDAGFanOutAndConverge(t *testing.T) {
+	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
+	enqueueSingleChain(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: build-job
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: sign
+    depends_on:
+      - build
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: sign-job
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo sign
+  - id: package-macos
+    depends_on:
+      - sign
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: package-macos-job
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo package-macos
+  - id: package-windows
+    depends_on:
+      - sign
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: package-windows-job
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo package-windows
+  - id: package-linux
+    depends_on:
+      - sign
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: package-linux-job
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo package-linux
+  - id: release
+    depends_on:
+      - package-macos
+      - package-windows
+      - package-linux
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: release-job
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo release
+pipeline_chains:
+  - id: build-sign-package-release
+    pipelines:
+      - build
+      - sign
+      - package-macos
+      - package-windows
+      - package-linux
+      - release
+`)
+
+	signJob := findPipelineJobExecution(t, s, "sign")
+	if strings.TrimSpace(signJob.Metadata["chain_blocked"]) != "1" {
+		t.Fatalf("expected sign to start blocked")
+	}
+	if strings.TrimSpace(signJob.Metadata["chain_depends_on_pipelines"]) != "build" {
+		t.Fatalf("expected sign dependency metadata build, got %q", signJob.Metadata["chain_depends_on_pipelines"])
+	}
+	releaseJob := findPipelineJobExecution(t, s, "release")
+	deps := strings.TrimSpace(releaseJob.Metadata["chain_depends_on_pipelines"])
+	if deps == "" || !strings.Contains(deps, "package-macos") || !strings.Contains(deps, "package-windows") || !strings.Contains(deps, "package-linux") {
+		t.Fatalf("expected release to depend on all package pipelines, got %q", deps)
+	}
+
+	buildJob := findPipelineJobExecution(t, s, "build")
+	buildUpdated, err := s.db.UpdateJobExecutionStatus(buildJob.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		Output:       "ok",
+		TimestampUTC: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("mark build succeeded: %v", err)
+	}
+	s.onJobExecutionUpdated(buildUpdated)
+
+	signAfterBuild, err := s.db.GetJobExecution(signJob.ID)
+	if err != nil {
+		t.Fatalf("get sign after build: %v", err)
+	}
+	if strings.TrimSpace(signAfterBuild.Metadata["chain_blocked"]) != "" {
+		t.Fatalf("expected sign to unblock after build success")
+	}
+
+	signUpdated, err := s.db.UpdateJobExecutionStatus(signJob.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		Output:       "ok",
+		TimestampUTC: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("mark sign succeeded: %v", err)
+	}
+	s.onJobExecutionUpdated(signUpdated)
+
+	pMac := findPipelineJobExecution(t, s, "package-macos")
+	pWin := findPipelineJobExecution(t, s, "package-windows")
+	pLin := findPipelineJobExecution(t, s, "package-linux")
+	for _, pjob := range []protocol.JobExecution{pMac, pWin, pLin} {
+		after, err := s.db.GetJobExecution(pjob.ID)
+		if err != nil {
+			t.Fatalf("get package job %s: %v", pjob.ID, err)
+		}
+		if strings.TrimSpace(after.Metadata["chain_blocked"]) != "" {
+			t.Fatalf("expected package pipeline %q to unblock after sign success", after.Metadata["pipeline_id"])
+		}
+	}
+	releaseAfterSign, err := s.db.GetJobExecution(releaseJob.ID)
+	if err != nil {
+		t.Fatalf("get release after sign: %v", err)
+	}
+	if strings.TrimSpace(releaseAfterSign.Metadata["chain_blocked"]) != "1" {
+		t.Fatalf("expected release to remain blocked until all package pipelines succeed")
+	}
+
+	for _, pjob := range []protocol.JobExecution{pMac, pWin, pLin} {
+		updated, err := s.db.UpdateJobExecutionStatus(pjob.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID:      "agent-1",
+			Status:       protocol.JobExecutionStatusSucceeded,
+			Output:       "ok",
+			TimestampUTC: time.Now().UTC(),
+		})
+		if err != nil {
+			t.Fatalf("mark package job succeeded (%s): %v", pjob.ID, err)
+		}
+		s.onJobExecutionUpdated(updated)
+	}
+
+	releaseAfterPackages, err := s.db.GetJobExecution(releaseJob.ID)
+	if err != nil {
+		t.Fatalf("get release after package success: %v", err)
+	}
+	if strings.TrimSpace(releaseAfterPackages.Metadata["chain_blocked"]) != "" {
+		t.Fatalf("expected release to unblock after all package pipelines succeed")
+	}
+	if protocol.NormalizeJobExecutionStatus(releaseAfterPackages.Status) != protocol.JobExecutionStatusQueued {
+		t.Fatalf("expected release to stay queued after unblocking, got %q", releaseAfterPackages.Status)
 	}
 }

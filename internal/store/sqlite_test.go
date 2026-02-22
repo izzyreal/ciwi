@@ -16,7 +16,7 @@ project:
 pipelines:
   - id: build
     trigger: manual
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
       ref: main
     jobs:
@@ -165,7 +165,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: compile
@@ -273,7 +273,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: smoke

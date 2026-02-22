@@ -30,6 +30,49 @@ pipelines:
 	}
 }
 
+func TestParseAcceptsVCSSource(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+      ref: main
+    jobs:
+      - id: compile
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+`), "test-vcs-source")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	src := cfg.Pipelines[0].VCSSource
+	if src == nil || src.Repo != "https://github.com/izzyreal/ciwi.git" || src.Ref != "main" {
+		t.Fatalf("unexpected vcs source: %+v", src)
+	}
+}
+
+func TestParseAcceptsPipelineWithoutVCSSource(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: artifact-only
+    jobs:
+      - id: package
+        timeout_seconds: 60
+        steps:
+          - run: echo package
+`), "test-no-vcs-source")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+}
+
 func TestParseTestStep(t *testing.T) {
 	cfg, err := Parse([]byte(`
 version: 1
@@ -512,7 +555,7 @@ project:
   name: ciwi
 pipelines:
   - id: release
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     versioning:
       file: VERSION

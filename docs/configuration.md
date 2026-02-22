@@ -26,7 +26,7 @@ Build-time version embedding:
 
 ## Agent prerequisites
 
-- `git` for jobs with `source.repo`
+- `git` for jobs with `vcs_source.repo`
 - `gh` for release steps using GitHub CLI
 
 ## Tool capability detection and requirements

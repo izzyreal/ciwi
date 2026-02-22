@@ -17,7 +17,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: build-matrix
@@ -62,7 +62,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: smoke
@@ -97,7 +97,7 @@ project:
   name: ciwi
 pipelines:
   - id: release
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: publish
@@ -139,6 +139,39 @@ pipelines:
 	}
 	if got := strings.TrimSpace(job.StepPlan[1].Kind); got != "dryrun_skip" {
 		t.Fatalf("expected second step kind=dryrun_skip, got %q", got)
+	}
+}
+
+func TestEnqueuePersistedPipelineWithoutSourceCreatesArtifactOnlyJob(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: artifact-only
+    jobs:
+      - id: package
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+`), "artifact-only")
+
+	resp, err := s.enqueuePersistedPipeline(p, &protocol.RunPipelineSelectionRequest{PipelineJobID: "package"})
+	if err != nil {
+		t.Fatalf("enqueue pipeline: %v", err)
+	}
+	if resp.Enqueued != 1 || len(resp.JobExecutionIDs) != 1 {
+		t.Fatalf("expected one execution, got enqueued=%d ids=%d", resp.Enqueued, len(resp.JobExecutionIDs))
+	}
+
+	job, err := s.db.GetJobExecution(resp.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get enqueued job: %v", err)
+	}
+	if job.Source != nil {
+		t.Fatalf("expected no source for artifact-only pipeline job, got %+v", job.Source)
 	}
 }
 

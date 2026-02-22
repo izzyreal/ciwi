@@ -36,9 +36,6 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 }
 
 func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest, opts enqueuePipelineOptions) (protocol.RunPipelineResponse, error) {
-	if strings.TrimSpace(p.SourceRepo) == "" {
-		return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline source.repo is required")
-	}
 	depCtx := pipelineDependencyContext{}
 	if opts.forcedDep != nil {
 		depCtx = *opts.forcedDep
@@ -94,6 +91,10 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 		}
 	}
 	for _, spec := range pending {
+		var source *protocol.SourceSpec
+		if strings.TrimSpace(spec.sourceRepo) != "" {
+			source = &protocol.SourceSpec{Repo: spec.sourceRepo, Ref: spec.sourceRef}
+		}
 		job, err := s.pipelineStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
 			Script:               spec.script,
 			Env:                  cloneMap(spec.env),
@@ -101,7 +102,7 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			TimeoutSeconds:       spec.timeoutSeconds,
 			ArtifactGlobs:        append([]string(nil), spec.artifactGlobs...),
 			Caches:               cloneProtocolJobCaches(spec.caches),
-			Source:               &protocol.SourceSpec{Repo: spec.sourceRepo, Ref: spec.sourceRef},
+			Source:               source,
 			Metadata:             spec.metadata,
 			StepPlan:             cloneJobStepPlan(spec.stepPlan),
 		})

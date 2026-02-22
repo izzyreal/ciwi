@@ -255,11 +255,13 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	}
 
 	for i := range cfg.Pipelines {
-		if strings.TrimSpace(cfg.Pipelines[i].Source.Repo) == "" {
-			cfg.Pipelines[i].Source.Repo = req.RepoURL
-		}
-		if strings.TrimSpace(cfg.Pipelines[i].Source.Ref) == "" {
-			cfg.Pipelines[i].Source.Ref = req.RepoRef
+		if cfg.Pipelines[i].VCSSource != nil {
+			if strings.TrimSpace(cfg.Pipelines[i].VCSSource.Repo) == "" {
+				cfg.Pipelines[i].VCSSource.Repo = req.RepoURL
+			}
+			if strings.TrimSpace(cfg.Pipelines[i].VCSSource.Ref) == "" {
+				cfg.Pipelines[i].VCSSource.Ref = req.RepoRef
+			}
 		}
 	}
 

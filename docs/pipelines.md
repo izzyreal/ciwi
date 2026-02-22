@@ -2,9 +2,11 @@
 
 ## Source and execution model
 
-Pipeline-level source:
-- `pipelines[].source.repo` (required)
-- `pipelines[].source.ref` (optional)
+Pipeline-level VCS source (optional):
+- `pipelines[].vcs_source.repo`
+- `pipelines[].vcs_source.ref`
+
+If `vcs_source` is omitted, ciwi runs the pipeline as artifact/script-only and skips VCS checkout.
 
 Agent checkout behavior:
 - clone default branch
@@ -15,6 +17,12 @@ Agent checkout behavior:
 
 - `pipelines[].depends_on`: upstream pipeline IDs
 - dependent runs inherit resolved version/source metadata for consistency
+
+`pipeline_chains` execution is DAG-based:
+- Jobs in a pipeline are enqueued together.
+- A chain pipeline stays blocked until all listed in-chain `depends_on` pipelines finish successfully.
+- On upstream failure, only blocked downstream pipelines that depend on that failed pipeline are cancelled.
+- If no in-chain `depends_on` is declared, ciwi falls back to linear order (depends on previous chain item).
 
 ## Versioning
 

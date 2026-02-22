@@ -25,7 +25,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: smoke
@@ -98,7 +98,7 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: smoke

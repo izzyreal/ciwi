@@ -53,12 +53,18 @@ func upsertProject(tx *sql.Tx, name, configPath, repoURL, repoRef, configFile, l
 func upsertPipeline(tx *sql.Tx, projectID int64, p config.Pipeline, now string) (int64, error) {
 	dependsOnJSON, _ := json.Marshal(p.DependsOn)
 	versioningJSON, _ := json.Marshal(p.Versioning)
+	repo := ""
+	ref := ""
+	if src := p.VCSSource; src != nil {
+		repo = src.Repo
+		ref = src.Ref
+	}
 	if _, err := tx.Exec(`
 		INSERT INTO pipelines (project_id, pipeline_id, trigger_mode, depends_on_json, source_repo, source_ref, versioning_json, created_utc, updated_utc)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(project_id, pipeline_id)
 		DO UPDATE SET trigger_mode=excluded.trigger_mode, depends_on_json=excluded.depends_on_json, source_repo=excluded.source_repo, source_ref=excluded.source_ref, versioning_json=excluded.versioning_json, updated_utc=excluded.updated_utc
-	`, projectID, p.ID, p.Trigger, string(dependsOnJSON), p.Source.Repo, p.Source.Ref, string(versioningJSON), now, now); err != nil {
+	`, projectID, p.ID, p.Trigger, string(dependsOnJSON), repo, ref, string(versioningJSON), now, now); err != nil {
 		return 0, fmt.Errorf("upsert pipeline: %w", err)
 	}
 

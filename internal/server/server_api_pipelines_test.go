@@ -50,7 +50,7 @@ project:
 pipelines:
   - id: build
     trigger: manual
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
       ref: main
     jobs:
@@ -130,7 +130,7 @@ project:
 pipelines:
   - id: build
     trigger: manual
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
       ref: main
     jobs:
@@ -143,7 +143,7 @@ pipelines:
           - run: echo build
   - id: package
     trigger: manual
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
       ref: main
     jobs:

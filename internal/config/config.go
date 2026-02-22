@@ -39,7 +39,7 @@ type Pipeline struct {
 	ID         string              `yaml:"id" json:"id"`
 	Trigger    string              `yaml:"trigger" json:"trigger"`
 	DependsOn  []string            `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
-	Source     Source              `yaml:"source" json:"source"`
+	VCSSource  *Source             `yaml:"vcs_source,omitempty" json:"vcs_source,omitempty"`
 	Versioning *PipelineVersioning `yaml:"versioning,omitempty" json:"versioning,omitempty"`
 	Jobs       []PipelineJobSpec   `yaml:"jobs" json:"jobs"`
 }
@@ -190,6 +190,12 @@ func (cfg File) Validate() []string {
 
 		if len(p.Jobs) == 0 {
 			errs = append(errs, fmt.Sprintf("pipelines[%d].jobs must contain at least one job", i))
+		}
+		if p.VCSSource != nil && strings.TrimSpace(p.VCSSource.Repo) == "" {
+			errs = append(errs, fmt.Sprintf("pipelines[%d].vcs_source.repo is required when vcs_source is set", i))
+		}
+		if p.Versioning != nil && (p.VCSSource == nil || strings.TrimSpace(p.VCSSource.Repo) == "") {
+			errs = append(errs, fmt.Sprintf("pipelines[%d].vcs_source.repo is required when versioning is set", i))
 		}
 		if p.Versioning != nil {
 			if file := strings.TrimSpace(p.Versioning.File); file != "" {

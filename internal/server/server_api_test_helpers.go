@@ -22,7 +22,7 @@ project:
 pipelines:
   - id: build
     trigger: manual
-    source:
+    vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
       ref: main
     jobs:

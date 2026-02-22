@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,8 +21,8 @@ func (s *stateStore) onJobExecutionUpdatedChain(job protocol.JobExecution) {
 	if strings.TrimSpace(job.Metadata["chain_cancelled"]) == "1" {
 		return
 	}
-	pos, err := strconv.Atoi(strings.TrimSpace(job.Metadata["pipeline_chain_position"]))
-	if err != nil || pos <= 0 {
+	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	if pipelineID == "" {
 		return
 	}
 	status := protocol.NormalizeJobExecutionStatus(job.Status)
@@ -34,68 +33,137 @@ func (s *stateStore) onJobExecutionUpdatedChain(job protocol.JobExecution) {
 	if err != nil {
 		return
 	}
-	if status == protocol.JobExecutionStatusSucceeded {
-		currentPosJobs := make([]protocol.JobExecution, 0)
-		for _, candidate := range all {
-			if strings.TrimSpace(candidate.Metadata["chain_run_id"]) != chainRunID {
-				continue
-			}
-			cpos, err := strconv.Atoi(strings.TrimSpace(candidate.Metadata["pipeline_chain_position"]))
-			if err != nil || cpos != pos {
-				continue
-			}
-			currentPosJobs = append(currentPosJobs, candidate)
-		}
-		if len(currentPosJobs) == 0 {
-			return
-		}
-		for _, current := range currentPosJobs {
-			cstatus := protocol.NormalizeJobExecutionStatus(current.Status)
-			if cstatus != protocol.JobExecutionStatusSucceeded {
-				// Wait until every job in this chain position has succeeded.
-				return
-			}
-		}
-		nextPos := strconv.Itoa(pos + 1)
-		for _, candidate := range all {
-			if protocol.NormalizeJobExecutionStatus(candidate.Status) != protocol.JobExecutionStatusQueued {
-				continue
-			}
-			if strings.TrimSpace(candidate.Metadata["chain_run_id"]) != chainRunID {
-				continue
-			}
-			if strings.TrimSpace(candidate.Metadata["pipeline_chain_position"]) != nextPos {
-				continue
-			}
-			if strings.TrimSpace(candidate.Metadata["chain_blocked"]) != "1" {
-				continue
-			}
-			if err := s.bindQueuedChainJobDependencyArtifacts(candidate, all); err != nil {
-				reason := "cancelled: " + err.Error()
-				_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
-					"chain_cancelled": "1",
-					"chain_blocked":   "",
-				})
-				_, _ = s.pipelineStore().UpdateJobExecutionStatus(candidate.ID, protocol.JobExecutionStatusUpdateRequest{
-					AgentID:      "server-chain",
-					Status:       protocol.JobExecutionStatusFailed,
-					Error:        reason,
-					Output:       "[chain] " + reason,
-					TimestampUTC: time.Now().UTC(),
-				})
-				continue
-			}
-			_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
-				"chain_blocked": "",
-			})
-		}
+	currentTerminated, currentSucceeded, _ := pipelineChainStatus(all, chainRunID, pipelineID)
+	if !currentTerminated {
 		return
 	}
 
-	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
-	reason := "cancelled: upstream pipeline failed"
-	if pipelineID != "" {
-		reason = "cancelled: upstream pipeline " + pipelineID + " failed"
+	if !currentSucceeded {
+		cancelBlockedChainDependents(s, all, chainRunID, pipelineID)
+		return
+	}
+
+	for _, candidate := range all {
+		if protocol.NormalizeJobExecutionStatus(candidate.Status) != protocol.JobExecutionStatusQueued {
+			continue
+		}
+		if strings.TrimSpace(candidate.Metadata["chain_run_id"]) != chainRunID {
+			continue
+		}
+		if strings.TrimSpace(candidate.Metadata["chain_blocked"]) != "1" {
+			continue
+		}
+		deps := parseChainDependsOnPipelines(candidate.Metadata["chain_depends_on_pipelines"])
+		if len(deps) == 0 {
+			_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
+				"chain_blocked": "",
+			})
+			continue
+		}
+		ready := true
+		failedDep := ""
+		for _, depID := range deps {
+			depTerminated, depSucceeded, depExists := pipelineChainStatus(all, chainRunID, depID)
+			if !depExists || !depTerminated {
+				ready = false
+				break
+			}
+			if !depSucceeded {
+				failedDep = depID
+				break
+			}
+		}
+		if failedDep != "" {
+			cancelChainJob(s, candidate, "cancelled: upstream pipeline "+failedDep+" failed")
+			continue
+		}
+		if !ready {
+			continue
+		}
+		if err := s.bindQueuedChainJobDependencyArtifacts(candidate, all); err != nil {
+			cancelChainJob(s, candidate, "cancelled: "+err.Error())
+			continue
+		}
+		_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
+			"chain_blocked": "",
+		})
+	}
+}
+
+func parseChainDependsOnPipelines(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func pipelineChainStatus(all []protocol.JobExecution, chainRunID, pipelineID string) (terminated bool, succeeded bool, exists bool) {
+	pipelineID = strings.TrimSpace(pipelineID)
+	if pipelineID == "" {
+		return false, false, false
+	}
+	terminated = true
+	succeeded = true
+	for _, j := range all {
+		if strings.TrimSpace(j.Metadata["chain_run_id"]) != chainRunID {
+			continue
+		}
+		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
+			continue
+		}
+		exists = true
+		status := protocol.NormalizeJobExecutionStatus(j.Status)
+		if !protocol.IsTerminalJobExecutionStatus(status) {
+			terminated = false
+			succeeded = false
+			continue
+		}
+		if status != protocol.JobExecutionStatusSucceeded {
+			succeeded = false
+		}
+	}
+	if !exists {
+		return false, false, false
+	}
+	return terminated, succeeded, true
+}
+
+func cancelChainJob(s *stateStore, job protocol.JobExecution, reason string) {
+	_, _ = s.pipelineStore().MergeJobExecutionMetadata(job.ID, map[string]string{
+		"chain_cancelled": "1",
+		"chain_blocked":   "",
+	})
+	_, _ = s.pipelineStore().UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:      "server-chain",
+		Status:       protocol.JobExecutionStatusFailed,
+		Error:        reason,
+		Output:       "[chain] " + reason,
+		TimestampUTC: time.Now().UTC(),
+	})
+}
+
+func cancelBlockedChainDependents(s *stateStore, all []protocol.JobExecution, chainRunID, failedPipelineID string) {
+	failedPipelineID = strings.TrimSpace(failedPipelineID)
+	if failedPipelineID == "" {
+		return
 	}
 	for _, candidate := range all {
 		if protocol.NormalizeJobExecutionStatus(candidate.Status) != protocol.JobExecutionStatusQueued {
@@ -104,20 +172,17 @@ func (s *stateStore) onJobExecutionUpdatedChain(job protocol.JobExecution) {
 		if strings.TrimSpace(candidate.Metadata["chain_run_id"]) != chainRunID {
 			continue
 		}
-		cpos, err := strconv.Atoi(strings.TrimSpace(candidate.Metadata["pipeline_chain_position"]))
-		if err != nil || cpos <= pos {
+		if strings.TrimSpace(candidate.Metadata["chain_blocked"]) != "1" {
 			continue
 		}
-		_, _ = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{
-			"chain_cancelled": "1",
-		})
-		_, _ = s.pipelineStore().UpdateJobExecutionStatus(candidate.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:      "server-chain",
-			Status:       protocol.JobExecutionStatusFailed,
-			Error:        reason,
-			Output:       "[chain] " + reason,
-			TimestampUTC: time.Now().UTC(),
-		})
+		deps := parseChainDependsOnPipelines(candidate.Metadata["chain_depends_on_pipelines"])
+		if len(deps) == 0 {
+			continue
+		}
+		if !needsContains(deps, failedPipelineID) {
+			continue
+		}
+		cancelChainJob(s, candidate, "cancelled: upstream pipeline "+failedPipelineID+" failed")
 	}
 }
 

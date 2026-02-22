@@ -143,7 +143,16 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 	}
 	allJobIDs := make([]string, 0)
 	total := len(pipelines)
+	chainPipelineSet := map[string]struct{}{}
+	for _, p := range pipelines {
+		chainPipelineSet[strings.TrimSpace(p.PipelineID)] = struct{}{}
+	}
 	for i, p := range pipelines {
+		prevPipelineID := ""
+		if i > 0 {
+			prevPipelineID = strings.TrimSpace(pipelines[i-1].PipelineID)
+		}
+		chainDeps := deriveChainPipelineDependencies(p, chainPipelineSet, prevPipelineID)
 		meta := map[string]string{
 			"chain_run_id":            chainRunID,
 			"pipeline_chain_id":       ch.ChainID,
@@ -151,9 +160,12 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 			"pipeline_chain_position": strconv.Itoa(i + 1),
 			"pipeline_chain_total":    strconv.Itoa(total),
 		}
+		if len(chainDeps) > 0 {
+			meta["chain_depends_on_pipelines"] = strings.Join(chainDeps, ",")
+		}
 		opts := enqueuePipelineOptions{
 			metaPatch: meta,
-			blocked:   i > 0,
+			blocked:   len(chainDeps) > 0,
 		}
 		if i > 0 {
 			opts.forcedDep = &pipelineDependencyContext{
@@ -174,4 +186,31 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 		Enqueued:        len(allJobIDs),
 		JobExecutionIDs: allJobIDs,
 	}, nil
+}
+
+func deriveChainPipelineDependencies(p store.PersistedPipeline, chainPipelineSet map[string]struct{}, fallbackPrev string) []string {
+	out := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, dep := range p.DependsOn {
+		dep = strings.TrimSpace(dep)
+		if dep == "" {
+			continue
+		}
+		if _, ok := chainPipelineSet[dep]; !ok {
+			continue
+		}
+		if _, dup := seen[dep]; dup {
+			continue
+		}
+		seen[dep] = struct{}{}
+		out = append(out, dep)
+	}
+	if len(out) > 0 {
+		return out
+	}
+	fallbackPrev = strings.TrimSpace(fallbackPrev)
+	if fallbackPrev != "" {
+		return []string{fallbackPrev}
+	}
+	return nil
 }
