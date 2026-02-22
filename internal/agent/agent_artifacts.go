@@ -11,10 +11,19 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/izzyreal/ciwi/internal/protocol"
+)
+
+const (
+	artifactLogLevelNone              = "none"
+	artifactLogLevelSummary           = "summary"
+	artifactLogLevelVerbose           = "verbose"
+	defaultArtifactLogLevel           = artifactLogLevelSummary
+	defaultArtifactLogMaxIncludeLines = 25
 )
 
 func collectAndUploadArtifacts(ctx context.Context, client *http.Client, serverURL, agentID, jobID, execDir string, globs []string, progress func(string)) (string, error) {
@@ -65,6 +74,7 @@ func collectArtifacts(execDir string, globs []string) ([]protocol.UploadArtifact
 
 	var summary strings.Builder
 	fmt.Fprintf(&summary, "[artifacts] globs=%s\n", strings.Join(globs, ", "))
+	logLevel, includeLineLimit := artifactLogConfigFromEnv()
 
 	seen := map[string]struct{}{}
 	matched := make([]string, 0)
@@ -93,6 +103,12 @@ func collectArtifacts(execDir string, globs []string) ([]protocol.UploadArtifact
 	sort.Strings(matched)
 
 	uploads := make([]protocol.UploadArtifact, 0)
+	var (
+		includeLines      int
+		includeSuppressed int
+		skipped           int
+		totalBytes        int64
+	)
 	for _, rel := range matched {
 		if len(uploads) >= maxArtifactsPerJob {
 			fmt.Fprintf(&summary, "[artifacts] cap_reached=%d\n", maxArtifactsPerJob)
@@ -101,6 +117,7 @@ func collectArtifacts(execDir string, globs []string) ([]protocol.UploadArtifact
 		full := filepath.Join(execDir, filepath.FromSlash(rel))
 		info, err := os.Stat(full)
 		if err != nil {
+			skipped++
 			fmt.Fprintf(&summary, "[artifacts] skip=%s err=%v\n", rel, err)
 			continue
 		}
@@ -108,21 +125,54 @@ func collectArtifacts(execDir string, globs []string) ([]protocol.UploadArtifact
 			continue
 		}
 		if info.Size() > maxArtifactFileBytes {
+			skipped++
 			fmt.Fprintf(&summary, "[artifacts] skip=%s reason=size(%d>%d)\n", rel, info.Size(), maxArtifactFileBytes)
 			continue
 		}
 
 		content, err := os.ReadFile(full)
 		if err != nil {
+			skipped++
 			fmt.Fprintf(&summary, "[artifacts] skip=%s err=%v\n", rel, err)
 			continue
 		}
 		uploads = append(uploads, protocol.UploadArtifact{Path: rel, DataBase64: base64.StdEncoding.EncodeToString(content)})
-		fmt.Fprintf(&summary, "[artifacts] include=%s size=%d\n", rel, len(content))
+		totalBytes += int64(len(content))
+		if logLevel == artifactLogLevelVerbose {
+			if includeLines < includeLineLimit {
+				fmt.Fprintf(&summary, "[artifacts] include=%s size=%d\n", rel, len(content))
+				includeLines++
+			} else {
+				includeSuppressed++
+			}
+		}
 	}
 
 	if len(uploads) == 0 {
 		fmt.Fprintf(&summary, "[artifacts] none\n")
+		return uploads, summary.String(), nil
+	}
+	if logLevel == artifactLogLevelVerbose && includeSuppressed > 0 {
+		fmt.Fprintf(&summary, "[artifacts] includes_truncated=%d shown=%d total=%d\n", includeSuppressed, includeLines, len(uploads))
+	}
+	if logLevel != artifactLogLevelNone {
+		fmt.Fprintf(&summary, "[artifacts] included=%d bytes=%d skipped=%d\n", len(uploads), totalBytes, skipped)
 	}
 	return uploads, summary.String(), nil
+}
+
+func artifactLogConfigFromEnv() (level string, includeLineLimit int) {
+	level = strings.ToLower(strings.TrimSpace(envOrDefault("CIWI_ARTIFACT_LOG_LEVEL", defaultArtifactLogLevel)))
+	switch level {
+	case artifactLogLevelNone, artifactLogLevelSummary, artifactLogLevelVerbose:
+	default:
+		level = defaultArtifactLogLevel
+	}
+	includeLineLimit = defaultArtifactLogMaxIncludeLines
+	if raw := strings.TrimSpace(envOrDefault("CIWI_ARTIFACT_LOG_MAX_INCLUDE_LINES", "")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v >= 0 {
+			includeLineLimit = v
+		}
+	}
+	return level, includeLineLimit
 }

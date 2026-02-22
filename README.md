@@ -26,6 +26,11 @@ Note on agent workdir:
 - Installer-based deployments set an absolute workdir (Linux: `/var/lib/ciwi-agent/work`, macOS: `$HOME/.ciwi-agent/work`, Windows: `%ProgramData%\\ciwi-agent\\work`).
 - The agent normalizes the workdir to an absolute path at runtime.
 
+Note on artifact log verbosity:
+- Agent artifact upload logs are compact by default (`CIWI_ARTIFACT_LOG_LEVEL=summary`).
+- Use `CIWI_ARTIFACT_LOG_LEVEL=verbose` and optionally `CIWI_ARTIFACT_LOG_MAX_INCLUDE_LINES` for per-file include lines.
+- See [`docs/configuration.md`](docs/configuration.md) for details.
+
 ## Documentation Map
 
 - Getting started: [`docs/getting-started.md`](docs/getting-started.md)

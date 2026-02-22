@@ -12,6 +12,8 @@ Common variables:
 - `CIWI_AGENT_ENV_FILE`: Windows env file (default `%ProgramData%\\ciwi-agent\\agent.env`)
 - `CIWI_AGENT_TRACE_SHELL`: shell tracing (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
+- `CIWI_ARTIFACT_LOG_LEVEL`: artifact collection log verbosity: `none|summary|verbose` (default `summary`)
+- `CIWI_ARTIFACT_LOG_MAX_INCLUDE_LINES`: max per-file `[artifacts] include=...` lines when level is `verbose` (default `25`)
 - `CIWI_WINDOWS_SERVICE_NAME`: Windows service name (default `ciwi-agent`)
 - `CIWI_UPDATE_REPO`: update repo (default `izzyreal/ciwi`)
 - `CIWI_UPDATE_API_BASE`: update API base (default `https://api.github.com`)

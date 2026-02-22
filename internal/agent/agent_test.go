@@ -255,6 +255,8 @@ func TestCommandForScript(t *testing.T) {
 }
 
 func TestCollectArtifacts(t *testing.T) {
+	t.Setenv("CIWI_ARTIFACT_LOG_LEVEL", "")
+	t.Setenv("CIWI_ARTIFACT_LOG_MAX_INCLUDE_LINES", "")
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "dist", "nested"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -281,8 +283,62 @@ func TestCollectArtifacts(t *testing.T) {
 	if string(a) != "A" || string(b) != "B" {
 		t.Fatalf("unexpected decoded artifact content")
 	}
-	if !strings.Contains(summary, "[artifacts] include=dist/a.txt") {
-		t.Fatalf("expected summary to include dist/a.txt, got: %s", summary)
+	if strings.Contains(summary, "[artifacts] include=") {
+		t.Fatalf("default summary should not include per-file include lines, got: %s", summary)
+	}
+	if !strings.Contains(summary, "[artifacts] included=2 bytes=2 skipped=0") {
+		t.Fatalf("expected compact summary line, got: %s", summary)
+	}
+}
+
+func TestCollectArtifactsVerboseLoggingWithTruncation(t *testing.T) {
+	t.Setenv("CIWI_ARTIFACT_LOG_LEVEL", "verbose")
+	t.Setenv("CIWI_ARTIFACT_LOG_MAX_INCLUDE_LINES", "1")
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dist", "nested"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "a.txt"), []byte("A"), 0o644); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "nested", "b.txt"), []byte("B"), 0o644); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+
+	_, summary, err := collectArtifacts(root, []string{"dist/**/*.txt"})
+	if err != nil {
+		t.Fatalf("collect artifacts: %v", err)
+	}
+	if !strings.Contains(summary, "[artifacts] include=dist/a.txt size=1") {
+		t.Fatalf("expected first include line in verbose summary, got: %s", summary)
+	}
+	if strings.Contains(summary, "[artifacts] include=dist/nested/b.txt size=1") {
+		t.Fatalf("expected include truncation after one line, got: %s", summary)
+	}
+	if !strings.Contains(summary, "[artifacts] includes_truncated=1 shown=1 total=2") {
+		t.Fatalf("expected truncation summary, got: %s", summary)
+	}
+}
+
+func TestCollectArtifactsNoneLevelSuppressesSummaryLine(t *testing.T) {
+	t.Setenv("CIWI_ARTIFACT_LOG_LEVEL", "none")
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "a.txt"), []byte("A"), 0o644); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+
+	_, summary, err := collectArtifacts(root, []string{"dist/*.txt"})
+	if err != nil {
+		t.Fatalf("collect artifacts: %v", err)
+	}
+	if strings.Contains(summary, "[artifacts] included=") {
+		t.Fatalf("none level should suppress included summary line, got: %s", summary)
+	}
+	if !strings.Contains(summary, "[artifacts] globs=dist/*.txt") {
+		t.Fatalf("expected globs line to remain, got: %s", summary)
 	}
 }
 
