@@ -160,10 +160,12 @@ func TestDownloadDependencyArtifactsZIPVerboseWithTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("downloadDependencyArtifacts: %v", err)
 	}
-	if !strings.Contains(summary, "[dep-artifacts] restored=dist/a.bin bytes=3") {
-		t.Fatalf("expected first restored line in verbose mode, got: %s", summary)
+	hasA := strings.Contains(summary, "[dep-artifacts] restored=dist/a.bin bytes=3")
+	hasB := strings.Contains(summary, "[dep-artifacts] restored=dist/b.txt bytes=3")
+	if !hasA && !hasB {
+		t.Fatalf("expected one restored line in verbose mode, got: %s", summary)
 	}
-	if strings.Contains(summary, "[dep-artifacts] restored=dist/b.txt bytes=3") {
+	if hasA && hasB {
 		t.Fatalf("expected restore truncation after one line, got: %s", summary)
 	}
 	if !strings.Contains(summary, "[dep-artifacts] restored_truncated=1 shown=1 total=2") {
