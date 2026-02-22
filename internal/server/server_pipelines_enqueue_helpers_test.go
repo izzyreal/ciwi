@@ -61,7 +61,19 @@ func TestResolveDependencyArtifactJobIDs(t *testing.T) {
 }
 
 func TestCloneJobStepPlan(t *testing.T) {
-	in := []protocol.JobStepPlanItem{{Index: 1, Total: 2, Name: "compile", Script: "cmake --build .", Kind: "run", TestName: "", TestFormat: "", TestReport: ""}}
+	in := []protocol.JobStepPlanItem{{
+		Index:           1,
+		Total:           2,
+		Name:            "compile",
+		Script:          "cmake --build .",
+		Kind:            "run",
+		Env:             map[string]string{"GITHUB_TOKEN": "{{ secret.github-secret }}"},
+		VaultConnection: "home-vault",
+		VaultSecrets:    []protocol.ProjectSecretSpec{{Name: "github-secret", Mount: "kv", Path: "gh", Key: "token"}},
+		TestName:        "",
+		TestFormat:      "",
+		TestReport:      "",
+	}}
 	got := cloneJobStepPlan(in)
 	if !reflect.DeepEqual(got, in) {
 		t.Fatalf("cloneJobStepPlan mismatch: got=%v want=%v", got, in)
@@ -69,6 +81,14 @@ func TestCloneJobStepPlan(t *testing.T) {
 	got[0].Name = "mutated"
 	if in[0].Name == "mutated" {
 		t.Fatalf("cloneJobStepPlan should deep-copy")
+	}
+	got[0].Env["GITHUB_TOKEN"] = "mutated"
+	if in[0].Env["GITHUB_TOKEN"] == "mutated" {
+		t.Fatalf("cloneJobStepPlan should deep-copy env map")
+	}
+	got[0].VaultSecrets[0].Key = "mutated"
+	if in[0].VaultSecrets[0].Key == "mutated" {
+		t.Fatalf("cloneJobStepPlan should deep-copy vault secrets")
 	}
 }
 
