@@ -147,9 +147,9 @@ function Build-HostUrlCandidates {
     [Parameter(Mandatory = $true)][int]$Port
   )
 
-  $host = Trim-OneLine $HostName
-  $host = $host.TrimEnd('.').ToLowerInvariant()
-  if ([string]::IsNullOrWhiteSpace($host)) {
+  $normalizedHost = Trim-OneLine $HostName
+  $normalizedHost = $normalizedHost.TrimEnd('.').ToLowerInvariant()
+  if ([string]::IsNullOrWhiteSpace($normalizedHost)) {
     return @()
   }
 
@@ -165,10 +165,10 @@ function Build-HostUrlCandidates {
     $candidates.Add("http://${h}:$Port") | Out-Null
   }
 
-  & $addHost $host
-  if ($host -notmatch '\.') {
+  & $addHost $normalizedHost
+  if ($normalizedHost -notmatch '\.') {
     foreach ($suffix in @(Get-DnsSuffixCandidates)) {
-      & $addHost "$host.$suffix"
+      & $addHost "$normalizedHost.$suffix"
     }
   }
 
