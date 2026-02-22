@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -26,8 +27,13 @@ const (
 	defaultArtifactLogMaxIncludeLines = 25
 )
 
+type collectedArtifact struct {
+	Path    string
+	Content []byte
+}
+
 func collectAndUploadArtifacts(ctx context.Context, client *http.Client, serverURL, agentID, jobID, execDir string, globs []string, progress func(string)) (string, error) {
-	artifacts, summary, err := collectArtifacts(execDir, globs)
+	artifacts, summary, err := collectArtifactsWithProgress(execDir, globs, progress)
 	if err != nil {
 		return summary, err
 	}
@@ -35,30 +41,22 @@ func collectAndUploadArtifacts(ctx context.Context, client *http.Client, serverU
 		return summary, nil
 	}
 	if progress != nil {
-		progress(fmt.Sprintf("[artifacts] uploading=%d", len(artifacts)))
+		progress(fmt.Sprintf("[artifacts] collected=%d bytes=%d", len(artifacts), totalCollectedArtifactBytes(artifacts)))
+		progress(fmt.Sprintf("[artifacts] uploading=%d mode=zip", len(artifacts)))
 	}
 
-	reqBody := protocol.UploadArtifactsRequest{AgentID: agentID, Artifacts: artifacts}
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return summary, fmt.Errorf("marshal artifact upload: %w", err)
+	if err := uploadArtifactsZIP(ctx, client, serverURL, agentID, jobID, artifacts); err == nil {
+		if progress != nil {
+			progress("[artifacts] upload complete")
+		}
+		return summary + "\n[artifacts] uploaded", nil
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/v1/jobs/"+jobID+"/artifacts", bytes.NewReader(body))
-	if err != nil {
-		return summary, fmt.Errorf("create artifact upload request: %w", err)
+	if progress != nil {
+		progress("[artifacts] zip upload failed; falling back to legacy upload")
+		progress(fmt.Sprintf("[artifacts] uploading=%d mode=legacy", len(artifacts)))
 	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return summary, fmt.Errorf("send artifact upload: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
-		return summary, fmt.Errorf("artifact upload rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+	if err := uploadArtifactsLegacy(ctx, client, serverURL, agentID, jobID, artifacts); err != nil {
+		return summary, err
 	}
 	if progress != nil {
 		progress("[artifacts] upload complete")
@@ -67,7 +65,98 @@ func collectAndUploadArtifacts(ctx context.Context, client *http.Client, serverU
 	return summary + "\n[artifacts] uploaded", nil
 }
 
-func collectArtifacts(execDir string, globs []string) ([]protocol.UploadArtifact, string, error) {
+func uploadArtifactsLegacy(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, artifacts []collectedArtifact) error {
+	reqBody := protocol.UploadArtifactsRequest{
+		AgentID:   agentID,
+		Artifacts: toLegacyUploadArtifacts(artifacts),
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshal artifact upload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/v1/jobs/"+jobID+"/artifacts", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create artifact upload request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send artifact upload: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
+		return fmt.Errorf("artifact upload rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+	return nil
+}
+
+func uploadArtifactsZIP(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, artifacts []collectedArtifact) error {
+	var payload bytes.Buffer
+	zw := zip.NewWriter(&payload)
+	for _, a := range artifacts {
+		rel := filepath.ToSlash(filepath.Clean(strings.TrimSpace(a.Path)))
+		if rel == "" || rel == "." || strings.HasPrefix(rel, "/") || rel == ".." || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
+			continue
+		}
+		entry, err := zw.Create(rel)
+		if err != nil {
+			_ = zw.Close()
+			return fmt.Errorf("create zip entry %q: %w", rel, err)
+		}
+		if _, err := entry.Write(a.Content); err != nil {
+			_ = zw.Close()
+			return fmt.Errorf("write zip entry %q: %w", rel, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return fmt.Errorf("finalize artifact zip: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/v1/jobs/"+jobID+"/artifacts/upload-zip", bytes.NewReader(payload.Bytes()))
+	if err != nil {
+		return fmt.Errorf("create zip artifact upload request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/zip")
+	req.Header.Set("X-CIWI-Agent-ID", agentID)
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send zip artifact upload: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
+		return fmt.Errorf("zip artifact upload rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+	return nil
+}
+
+func toLegacyUploadArtifacts(in []collectedArtifact) []protocol.UploadArtifact {
+	out := make([]protocol.UploadArtifact, 0, len(in))
+	for _, a := range in {
+		out = append(out, protocol.UploadArtifact{
+			Path:       a.Path,
+			DataBase64: base64.StdEncoding.EncodeToString(a.Content),
+		})
+	}
+	return out
+}
+
+func totalCollectedArtifactBytes(in []collectedArtifact) int64 {
+	var total int64
+	for _, a := range in {
+		total += int64(len(a.Content))
+	}
+	return total
+}
+
+func collectArtifacts(execDir string, globs []string) ([]collectedArtifact, string, error) {
+	return collectArtifactsWithProgress(execDir, globs, nil)
+}
+
+func collectArtifactsWithProgress(execDir string, globs []string, progress func(string)) ([]collectedArtifact, string, error) {
 	if len(globs) == 0 {
 		return nil, "", nil
 	}
@@ -102,12 +191,13 @@ func collectArtifacts(execDir string, globs []string) ([]protocol.UploadArtifact
 	}
 	sort.Strings(matched)
 
-	uploads := make([]protocol.UploadArtifact, 0)
+	uploads := make([]collectedArtifact, 0)
 	var (
 		includeLines      int
 		includeSuppressed int
 		skipped           int
 		totalBytes        int64
+		scanned           int
 	)
 	for _, rel := range matched {
 		if len(uploads) >= maxArtifactsPerJob {
@@ -124,6 +214,7 @@ func collectArtifacts(execDir string, globs []string) ([]protocol.UploadArtifact
 		if info.IsDir() {
 			continue
 		}
+		scanned++
 		if info.Size() > maxArtifactFileBytes {
 			skipped++
 			fmt.Fprintf(&summary, "[artifacts] skip=%s reason=size(%d>%d)\n", rel, info.Size(), maxArtifactFileBytes)
@@ -136,8 +227,11 @@ func collectArtifacts(execDir string, globs []string) ([]protocol.UploadArtifact
 			fmt.Fprintf(&summary, "[artifacts] skip=%s err=%v\n", rel, err)
 			continue
 		}
-		uploads = append(uploads, protocol.UploadArtifact{Path: rel, DataBase64: base64.StdEncoding.EncodeToString(content)})
+		uploads = append(uploads, collectedArtifact{Path: rel, Content: content})
 		totalBytes += int64(len(content))
+		if progress != nil && scanned%250 == 0 {
+			progress(fmt.Sprintf("[artifacts] collecting scanned=%d included=%d bytes=%d", scanned, len(uploads), totalBytes))
+		}
 		if logLevel == artifactLogLevelVerbose {
 			if includeLines < includeLineLimit {
 				fmt.Fprintf(&summary, "[artifacts] include=%s size=%d\n", rel, len(content))

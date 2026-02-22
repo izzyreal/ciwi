@@ -177,6 +177,11 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		return
 	}
 
+	if parsed.IsNestedResource("artifacts", "upload-zip") {
+		handleJobArtifactsUploadZIP(w, r, deps, jobID)
+		return
+	}
+
 	if parsed.IsNestedResource("artifacts", "download") {
 		handleJobArtifactsDownload(w, r, deps, jobID)
 		return

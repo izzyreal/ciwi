@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -278,8 +277,8 @@ func TestCollectArtifacts(t *testing.T) {
 	if uploads[0].Path != "dist/a.txt" || uploads[1].Path != "dist/nested/b.txt" {
 		t.Fatalf("unexpected artifact paths: %+v", uploads)
 	}
-	a, _ := base64.StdEncoding.DecodeString(uploads[0].DataBase64)
-	b, _ := base64.StdEncoding.DecodeString(uploads[1].DataBase64)
+	a := uploads[0].Content
+	b := uploads[1].Content
 	if string(a) != "A" || string(b) != "B" {
 		t.Fatalf("unexpected decoded artifact content")
 	}
@@ -351,21 +350,32 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	var gotReq protocol.UploadArtifactsRequest
+	zipCalled := false
 	client := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("unexpected method: %s", r.Method)
 			}
-			if !strings.HasPrefix(r.URL.Path, "/api/v1/jobs/job-123/artifacts") {
-				t.Fatalf("unexpected path: %s", r.URL.Path)
+			if r.URL.Path == "/api/v1/jobs/job-123/artifacts/upload-zip" {
+				zipCalled = true
+				if got := r.Header.Get("X-CIWI-Agent-ID"); got != "agent-1" {
+					t.Fatalf("unexpected X-CIWI-Agent-ID: %q", got)
+				}
+				if ct := r.Header.Get("Content-Type"); ct != "application/zip" {
+					t.Fatalf("unexpected content type: %q", ct)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"artifacts":[]}`)),
+					Header:     make(http.Header),
+				}, nil
 			}
-			if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
-				t.Fatalf("decode upload request: %v", err)
+			if strings.HasPrefix(r.URL.Path, "/api/v1/jobs/job-123/artifacts") {
+				t.Fatalf("legacy endpoint should not be called when zip upload succeeds")
 			}
 			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(`{"artifacts":[]}`)),
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
 				Header:     make(http.Header),
 			}, nil
 		}),
@@ -384,14 +394,74 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("collectAndUploadArtifacts: %v", err)
 	}
-	if gotReq.AgentID != "agent-1" {
-		t.Fatalf("unexpected agent id: %q", gotReq.AgentID)
+	if !zipCalled {
+		t.Fatalf("expected zip endpoint to be called")
 	}
-	if len(gotReq.Artifacts) != 1 {
-		t.Fatalf("expected 1 uploaded artifact, got %d", len(gotReq.Artifacts))
+	if !strings.Contains(summary, "[artifacts] uploaded") {
+		t.Fatalf("expected uploaded marker in summary, got: %s", summary)
 	}
-	if gotReq.Artifacts[0].Path != "dist/ciwi.bin" {
-		t.Fatalf("unexpected artifact path: %q", gotReq.Artifacts[0].Path)
+}
+
+func TestCollectAndUploadArtifactsFallsBackToLegacy(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "ciwi.bin"), []byte("ciwi"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	var (
+		zipCalled    bool
+		legacyCalled bool
+		gotReq       protocol.UploadArtifactsRequest
+	)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			switch r.URL.Path {
+			case "/api/v1/jobs/job-123/artifacts/upload-zip":
+				zipCalled = true
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(strings.NewReader("missing")),
+					Header:     make(http.Header),
+				}, nil
+			case "/api/v1/jobs/job-123/artifacts":
+				legacyCalled = true
+				if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+					t.Fatalf("decode upload request: %v", err)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"artifacts":[]}`)),
+					Header:     make(http.Header),
+				}, nil
+			default:
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(strings.NewReader("not found")),
+					Header:     make(http.Header),
+				}, nil
+			}
+		}),
+	}
+	summary, err := collectAndUploadArtifacts(
+		context.Background(),
+		client,
+		"http://example.local",
+		"agent-1",
+		"job-123",
+		root,
+		[]string{"dist/*"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("collectAndUploadArtifacts: %v", err)
+	}
+	if !zipCalled || !legacyCalled {
+		t.Fatalf("expected both zip and legacy upload paths, zip=%v legacy=%v", zipCalled, legacyCalled)
+	}
+	if gotReq.AgentID != "agent-1" || len(gotReq.Artifacts) != 1 || gotReq.Artifacts[0].Path != "dist/ciwi.bin" {
+		t.Fatalf("unexpected legacy payload: %+v", gotReq)
 	}
 	if !strings.Contains(summary, "[artifacts] uploaded") {
 		t.Fatalf("expected uploaded marker in summary, got: %s", summary)

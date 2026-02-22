@@ -2,6 +2,7 @@ package jobexecution
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -186,6 +187,51 @@ func handleJobArtifacts(w http.ResponseWriter, r *http.Request, deps HandlerDeps
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func handleJobArtifactsUploadZIP(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	agentID := strings.TrimSpace(r.Header.Get("X-CIWI-Agent-ID"))
+	if agentID == "" {
+		agentID = strings.TrimSpace(r.URL.Query().Get("agent_id"))
+	}
+	if agentID == "" {
+		http.Error(w, "agent_id is required", http.StatusBadRequest)
+		return
+	}
+	job, err := deps.Store.GetJobExecution(jobID)
+	if err != nil {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+	if job.LeasedByAgentID != "" && job.LeasedByAgentID != agentID {
+		http.Error(w, "job is leased by another agent", http.StatusConflict)
+		return
+	}
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed reading zip payload", http.StatusBadRequest)
+		return
+	}
+	artifacts, err := PersistArtifactsZIP(deps.ArtifactsDir, jobID, payload)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := deps.Store.SaveJobExecutionArtifacts(jobID, artifacts); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for i := range artifacts {
+		artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
+	}
+	if deps.MarkAgentSeen != nil {
+		deps.MarkAgentSeen(agentID, nowUTC(deps))
+	}
+	httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
 }
 
 func handleJobArtifactsDownloadAll(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {

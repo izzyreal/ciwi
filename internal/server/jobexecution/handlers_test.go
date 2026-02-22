@@ -1,9 +1,12 @@
 package jobexecution
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -260,6 +263,47 @@ func TestHandleByIDArtifactsGetAndPost(t *testing.T) {
 	body := fmt.Sprintf(`{"agent_id":"agent-1","artifacts":[{"path":"dist/app.bin","data_base64":"%s"}]}`, base64.StdEncoding.EncodeToString([]byte("hello")))
 	recPost := httptest.NewRecorder()
 	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts", strings.NewReader(body))
+	HandleByID(recPost, reqPost, HandlerDeps{Store: store, ArtifactsDir: artifactsDir})
+	if recPost.Code != http.StatusOK {
+		t.Fatalf("expected POST 200, got %d: %s", recPost.Code, recPost.Body.String())
+	}
+	if !saveCalled {
+		t.Fatalf("expected SaveJobExecutionArtifacts to be called")
+	}
+}
+
+func TestHandleByIDArtifactsUploadZIP(t *testing.T) {
+	artifactsDir := t.TempDir()
+	store := &stubStore{}
+	var saveCalled bool
+	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
+		return protocol.JobExecution{ID: id, LeasedByAgentID: "agent-1"}, nil
+	}
+	store.saveJobExecutionArtifactsFn = func(id string, artifacts []protocol.JobExecutionArtifact) error {
+		saveCalled = true
+		if len(artifacts) != 1 || artifacts[0].Path != "dist/app.bin" {
+			t.Fatalf("unexpected persisted artifacts: %+v", artifacts)
+		}
+		return nil
+	}
+
+	var payload bytes.Buffer
+	zw := zip.NewWriter(&payload)
+	w, err := zw.Create("dist/app.bin")
+	if err != nil {
+		t.Fatalf("create zip entry: %v", err)
+	}
+	if _, err := io.WriteString(w, "hello"); err != nil {
+		t.Fatalf("write zip entry: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip writer: %v", err)
+	}
+
+	recPost := httptest.NewRecorder()
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts/upload-zip", bytes.NewReader(payload.Bytes()))
+	reqPost.Header.Set("Content-Type", "application/zip")
+	reqPost.Header.Set("X-CIWI-Agent-ID", "agent-1")
 	HandleByID(recPost, reqPost, HandlerDeps{Store: store, ArtifactsDir: artifactsDir})
 	if recPost.Code != http.StatusOK {
 		t.Fatalf("expected POST 200, got %d: %s", recPost.Code, recPost.Body.String())
