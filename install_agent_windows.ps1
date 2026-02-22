@@ -696,6 +696,13 @@ function Get-WindowsArch {
   }
 }
 
+function Get-WindowsAssetCandidates {
+  param([Parameter(Mandatory = $true)][string]$Arch)
+  $a = Trim-OneLine $Arch
+  $a = $a.ToLowerInvariant()
+  return @("ciwi-windows-$a.exe")
+}
+
 function Parse-Checksums {
   param([Parameter(Mandatory = $true)][string]$Content)
   $out = @{}
@@ -868,7 +875,8 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 }
 
 $arch = Get-WindowsArch
-$assetName = "ciwi-windows-$arch.exe"
+$assetCandidates = @(Get-WindowsAssetCandidates -Arch $arch)
+$assetName = $assetCandidates[0]
 $checksumAssetName = 'ciwi-checksums.txt'
 $releaseBase = "https://github.com/$repo/releases/latest/download"
 
@@ -888,12 +896,31 @@ $assetPath = Join-Path $tempRoot $assetName
 $checksumPath = Join-Path $tempRoot $checksumAssetName
 
 try {
-  Write-Host "[2/7] Downloading $assetName..."
-  Invoke-DownloadFile -Url "$releaseBase/$assetName" -Headers $headers -OutFile $assetPath
+  Write-Host "[2/7] Downloading release metadata and checksums..."
   Invoke-DownloadFile -Url "$releaseBase/$checksumAssetName" -Headers $headers -OutFile $checksumPath
 
-  Write-Host '[3/7] Verifying checksum...'
   $checksums = Parse-Checksums -Content (Get-Content -LiteralPath $checksumPath -Raw)
+  $selected = ''
+  foreach ($candidate in $assetCandidates) {
+    if ($checksums.ContainsKey($candidate)) {
+      $selected = $candidate
+      break
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace($selected)) {
+    $windowsAssets = @($checksums.Keys | Where-Object { $_ -like 'ciwi-windows-*.exe' } | Sort-Object)
+    $available = '(none)'
+    if ($windowsAssets.Count -gt 0) {
+      $available = ($windowsAssets -join ', ')
+    }
+    throw "no compatible Windows release asset found for arch '$arch'. Tried: $($assetCandidates -join ', '). Available: $available"
+  }
+  $assetName = $selected
+  $assetPath = Join-Path $tempRoot $assetName
+  Write-Host "[2/7] Downloading $assetName..."
+  Invoke-DownloadFile -Url "$releaseBase/$assetName" -Headers $headers -OutFile $assetPath
+
+  Write-Host '[3/7] Verifying checksum...'
   if (-not $checksums.ContainsKey($assetName)) {
     throw "checksum entry not found for '$assetName'"
   }

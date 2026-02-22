@@ -53,6 +53,10 @@ pipelines:
               goos: windows
               goarch: amd64
               ext: ".exe"
+            - name: windows-arm64
+              goos: windows
+              goarch: arm64
+              ext: ".exe"
             - name: darwin-amd64
               goos: darwin
               goarch: amd64
@@ -131,11 +135,13 @@ pipelines:
               test -f dist/ciwi-darwin-amd64
               test -f dist/ciwi-darwin-arm64
               test -f dist/ciwi-windows-amd64.exe
+              test -f dist/ciwi-windows-arm64.exe
               for f in \
                 dist/ciwi-linux-amd64 \
                 dist/ciwi-darwin-amd64 \
                 dist/ciwi-darwin-arm64 \
-                dist/ciwi-windows-amd64.exe; do
+                dist/ciwi-windows-amd64.exe \
+                dist/ciwi-windows-arm64.exe; do
                 shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
               done > dist/ciwi-checksums.txt
               test -f dist/ciwi-checksums.txt
@@ -160,6 +166,7 @@ pipelines:
                 dist/ciwi-darwin-amd64 \
                 dist/ciwi-darwin-arm64 \
                 dist/ciwi-windows-amd64.exe \
+                dist/ciwi-windows-arm64.exe \
                 dist/ciwi-checksums.txt
               TOTAL="$#"
               IDX=0
