@@ -111,7 +111,7 @@ func runLoop(ctx context.Context) error {
 	serverURL := envOrDefault("CIWI_SERVER_URL", "http://127.0.0.1:8112")
 	agentID := envOrDefault("CIWI_AGENT_ID", defaultAgentID())
 	hostname, _ := os.Hostname()
-	workDir := envOrDefault("CIWI_AGENT_WORKDIR", ".ciwi-agent/work")
+	workDir := agentWorkDir()
 
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return fmt.Errorf("create agent workdir: %w", err)

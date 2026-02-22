@@ -21,6 +21,11 @@ ciwi started as a practical replacement for Jenkins/TeamCity for private project
 
 Detailed guide: [`docs/getting-started.md`](docs/getting-started.md).
 
+Note on agent workdir:
+- `CIWI_AGENT_WORKDIR` is optional. If unset, the agent defaults to `.ciwi-agent/work` relative to its working directory.
+- Installer-based deployments set an absolute workdir (Linux: `/var/lib/ciwi-agent/work`, macOS: `$HOME/.ciwi-agent/work`, Windows: `%ProgramData%\\ciwi-agent\\work`).
+- The agent normalizes the workdir to an absolute path at runtime.
+
 ## Documentation Map
 
 - Getting started: [`docs/getting-started.md`](docs/getting-started.md)

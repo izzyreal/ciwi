@@ -160,7 +160,7 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 		return fmt.Errorf("missing launchd updater configuration")
 	}
 
-	workDir := strings.TrimSpace(envOrDefault("CIWI_AGENT_WORKDIR", ".ciwi-agent/work"))
+	workDir := agentWorkDir()
 	manifestPath := strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATE_MANIFEST", filepath.Join(workDir, "updates", "pending.json")))
 	if manifestPath == "" {
 		return fmt.Errorf("unable to resolve CIWI_AGENT_UPDATE_MANIFEST path")
