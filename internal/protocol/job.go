@@ -301,6 +301,8 @@ type JobExecutionEvent struct {
 type TestCase struct {
 	Package         string  `json:"package,omitempty"`
 	Name            string  `json:"name,omitempty"`
+	File            string  `json:"file,omitempty"`
+	Line            int     `json:"line,omitempty"`
 	Status          string  `json:"status"`
 	DurationSeconds float64 `json:"duration_seconds,omitempty"`
 	Output          string  `json:"output,omitempty"`

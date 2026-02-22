@@ -2,6 +2,8 @@ package agent
 
 import (
 	"encoding/json"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -15,6 +17,8 @@ type goTestEvent struct {
 	Output  string  `json:"Output"`
 }
 
+var goTestOutputFileLineRE = regexp.MustCompile(`(?:^|[\s\t])((?:[A-Za-z]:)?[A-Za-z0-9_./\\-]+\.go):([0-9]+):`)
+
 func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport {
 	type caseKey struct {
 		pkg  string
@@ -23,6 +27,8 @@ func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport 
 	type caseState struct {
 		pkg      string
 		name     string
+		file     string
+		line     int
 		status   string
 		elapsed  float64
 		outputSB strings.Builder
@@ -52,6 +58,12 @@ func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport 
 		}
 		if ev.Output != "" {
 			st.outputSB.WriteString(ev.Output)
+			if st.file == "" {
+				if file, line, ok := parseGoTestOutputSourceLocation(ev.Output); ok {
+					st.file = file
+					st.line = line
+				}
+			}
 		}
 		switch ev.Action {
 		case "pass", "fail", "skip":
@@ -76,6 +88,8 @@ func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport 
 		tc := protocol.TestCase{
 			Package:         st.pkg,
 			Name:            st.name,
+			File:            st.file,
+			Line:            st.line,
 			Status:          status,
 			DurationSeconds: st.elapsed,
 			Output:          st.outputSB.String(),
@@ -92,4 +106,20 @@ func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport 
 		}
 	}
 	return suite
+}
+
+func parseGoTestOutputSourceLocation(out string) (string, int, bool) {
+	match := goTestOutputFileLineRE.FindStringSubmatch(out)
+	if len(match) != 3 {
+		return "", 0, false
+	}
+	file := normalizeTestSourcePath(match[1])
+	if file == "" {
+		return "", 0, false
+	}
+	line, err := strconv.Atoi(strings.TrimSpace(match[2]))
+	if err != nil || line <= 0 {
+		return "", 0, false
+	}
+	return file, line, true
 }

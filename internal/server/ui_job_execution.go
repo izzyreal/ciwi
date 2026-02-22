@@ -144,6 +144,46 @@ const jobExecutionHTML = `<!doctype html>
     .artifact-leaf {
       margin: 4px 0;
     }
+    .test-summary-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 8px 0;
+    }
+    .test-pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid #c4ddd0;
+      background: #f6fbf8;
+      color: #234338;
+    }
+    .test-pill-pass { background: #e9f8ef; border-color: #9fd3b2; color: #1f6b3f; }
+    .test-pill-fail { background: #fde9e8; border-color: #f0b3af; color: #9b2c2c; }
+    .test-pill-skip { background: #fff5e6; border-color: #e8c98f; color: #8a5a14; }
+    .test-filter-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin: 6px 0 10px;
+    }
+    .test-filter-btn {
+      border: 1px solid #c4ddd0;
+      background: #ffffff;
+      color: #2e4b3d;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .test-filter-btn.active {
+      background: #e6f2eb;
+      border-color: #8db8a2;
+      color: #1f3d31;
+      font-weight: 700;
+    }
     .log-toolbar {
       display: flex;
       gap: 8px;

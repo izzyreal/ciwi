@@ -382,7 +382,7 @@ const jobExecutionDataJS = `
         }
         const testSignature = JSON.stringify(report);
         if (testSignature !== lastTestReportSignature) {
-          renderTestReport(report);
+          renderTestReport(report, job);
           lastTestReportSignature = testSignature;
         }
       } catch (_) {

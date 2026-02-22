@@ -30,6 +30,8 @@ type junitTestSuite struct {
 type junitTestCase struct {
 	Name      string         `xml:"name,attr"`
 	ClassName string         `xml:"classname,attr"`
+	File      string         `xml:"file,attr"`
+	Line      string         `xml:"line,attr"`
 	Time      string         `xml:"time,attr"`
 	Failures  []junitMessage `xml:"failure"`
 	Errors    []junitMessage `xml:"error"`
@@ -120,6 +122,8 @@ func parseJUnitXMLSuite(name string, lines []string) protocol.TestSuiteReport {
 			testCase := protocol.TestCase{
 				Package:         pkg,
 				Name:            strings.TrimSpace(tc.Name),
+				File:            normalizeTestSourcePath(tc.File),
+				Line:            maxInt(0, parseIntDefault(tc.Line, 0)),
 				Status:          status,
 				DurationSeconds: parseFloatDefault(tc.Time, 0),
 				Output:          out,
@@ -154,6 +158,18 @@ func parseJUnitXMLSuite(name string, lines []string) protocol.TestSuiteReport {
 	}
 
 	return suite
+}
+
+func normalizeTestSourcePath(raw string) string {
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		return ""
+	}
+	path = strings.ReplaceAll(path, "\\", "/")
+	for strings.HasPrefix(path, "./") {
+		path = strings.TrimPrefix(path, "./")
+	}
+	return path
 }
 
 func flattenJUnitSuites(ts junitTestSuite) []junitTestSuite {

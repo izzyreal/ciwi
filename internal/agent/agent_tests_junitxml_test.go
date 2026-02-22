@@ -8,7 +8,7 @@ import (
 func TestParseJUnitXMLSuiteWithCasesAndMessages(t *testing.T) {
 	lines := []string{
 		`<testsuite name="root-suite" package="pkg.root" tests="3" failures="1" errors="0" skipped="1">`,
-		`  <testcase name="ok" classname="pkg.case" time="0.10"></testcase>`,
+		`  <testcase name="ok" classname="pkg.case" file="./pkg/case_test.go" line="17" time="0.10"></testcase>`,
 		`  <testcase name="fail" time="0.20">`,
 		`    <failure message="boom" type="assert">trace line</failure>`,
 		`    <system-out>stdout line</system-out>`,
@@ -32,6 +32,9 @@ func TestParseJUnitXMLSuiteWithCasesAndMessages(t *testing.T) {
 	}
 	if suite.Cases[0].Package != "pkg.case" || suite.Cases[0].Status != "pass" {
 		t.Fatalf("unexpected first case: %+v", suite.Cases[0])
+	}
+	if suite.Cases[0].File != "pkg/case_test.go" || suite.Cases[0].Line != 17 {
+		t.Fatalf("unexpected first case source: %+v", suite.Cases[0])
 	}
 	if suite.Cases[1].Package != "pkg.root" || suite.Cases[1].Status != "fail" {
 		t.Fatalf("unexpected second case package/status: %+v", suite.Cases[1])

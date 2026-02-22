@@ -403,7 +403,135 @@ const jobExecutionRenderJS = `
         '<details data-cov-key="tree"' + (openTree ? ' open' : '') + '><summary><strong>Tree View</strong></summary>' + tree + '</details>';
     }
 
-    function renderTestReport(report) {
+    function parseRepoContext(repoURL) {
+      const raw = String(repoURL || '').trim();
+      if (!raw) return { host: '', repoPath: '' };
+      let host = '';
+      let repoPath = '';
+      let m = raw.match(/^https?:\/\/([^/]+)\/(.+)$/i);
+      if (m) {
+        host = String(m[1] || '').toLowerCase();
+        repoPath = String(m[2] || '');
+      } else {
+        m = raw.match(/^git@([^:]+):(.+)$/i);
+        if (m) {
+          host = String(m[1] || '').toLowerCase();
+          repoPath = String(m[2] || '');
+        } else {
+          m = raw.match(/^([^/]+\.[^/]+)\/(.+)$/i);
+          if (m) {
+            host = String(m[1] || '').toLowerCase();
+            repoPath = String(m[2] || '');
+          }
+        }
+      }
+      repoPath = repoPath.replace(/\.git$/i, '').replace(/^\/+/, '').replace(/\/+$/, '');
+      return { host: host, repoPath: repoPath };
+    }
+
+    function deriveTestSourceContext(job) {
+      const j = job || {};
+      const meta = (j.metadata || {});
+      const src = (j.source || {});
+      const repo = String(meta.pipeline_source_repo || src.repo || '').trim();
+      const ref = String(meta.pipeline_source_ref_resolved || src.ref || '').trim();
+      const parsed = parseRepoContext(repo);
+      return { host: parsed.host, repoPath: parsed.repoPath, ref: ref };
+    }
+
+    function testCaseMatchesFilter(c, filter) {
+      if (filter === 'all') return true;
+      return String((c && c.status) || '').toLowerCase() === filter;
+    }
+
+    function testCaseStatusRank(c) {
+      const st = String((c && c.status) || '').toLowerCase();
+      if (st === 'fail') return 0;
+      if (st === 'skip') return 1;
+      if (st === 'pass') return 2;
+      return 3;
+    }
+
+    function normalizeTestPath(path) {
+      let p = String(path || '').trim();
+      if (!p) return '';
+      p = p.replace(/\\/g, '/');
+      while (p.indexOf('./') === 0) p = p.slice(2);
+      return p;
+    }
+
+    function testPackageRelativePath(pkg, sourceCtx) {
+      const sc = sourceCtx || {};
+      const host = String(sc.host || '').trim().toLowerCase();
+      const repoPath = String(sc.repoPath || '').trim();
+      const p = normalizeTestPath(pkg);
+      if (!p || !repoPath) return '';
+      const fullPrefix = (host ? (host + '/') : '') + repoPath + '/';
+      if (p.indexOf(fullPrefix) === 0) return p.slice(fullPrefix.length);
+      const ghPrefix = 'github.com/' + repoPath + '/';
+      if (p.indexOf(ghPrefix) === 0) return p.slice(ghPrefix.length);
+      const glPrefix = 'gitlab.com/' + repoPath + '/';
+      if (p.indexOf(glPrefix) === 0) return p.slice(glPrefix.length);
+      return '';
+    }
+
+    function resolveTestCaseSourcePath(testCase, sourceCtx) {
+      const c = testCase || {};
+      const sc = sourceCtx || {};
+      const repoPath = String(sc.repoPath || '').trim();
+      const host = String(sc.host || '').trim().toLowerCase();
+      const relPkg = testPackageRelativePath(c.package, sourceCtx);
+      let file = normalizeTestPath(c.file);
+      if (!file) return '';
+      const fullPrefix = (host ? (host + '/') : '') + repoPath + '/';
+      if (repoPath && file.indexOf(fullPrefix) === 0) file = file.slice(fullPrefix.length);
+      if (repoPath && file.indexOf(repoPath + '/') === 0) file = file.slice(repoPath.length + 1);
+      if (repoPath && file.indexOf('github.com/' + repoPath + '/') === 0) file = file.slice(('github.com/' + repoPath + '/').length);
+      if (repoPath && file.indexOf('gitlab.com/' + repoPath + '/') === 0) file = file.slice(('gitlab.com/' + repoPath + '/').length);
+      if (relPkg && file.indexOf('/') < 0) file = relPkg + '/' + file;
+      return normalizeTestPath(file);
+    }
+
+    function buildBlobURL(sourceCtx, relPath, line) {
+      const sc = sourceCtx || {};
+      const host = String(sc.host || '').trim().toLowerCase();
+      const repoPath = String(sc.repoPath || '').trim();
+      const ref = String(sc.ref || '').trim();
+      const path = normalizeTestPath(relPath);
+      if (!host || !repoPath || !ref || !path) return '';
+      if (host === 'github.com') {
+        return 'https://github.com/' + repoPath + '/blob/' + encodeURIComponent(ref) + '/' + encodeURI(path) + (line > 0 ? ('#L' + line) : '');
+      }
+      if (host === 'gitlab.com') {
+        return 'https://gitlab.com/' + repoPath + '/-/blob/' + encodeURIComponent(ref) + '/' + encodeURI(path) + (line > 0 ? ('#L' + line) : '');
+      }
+      return '';
+    }
+
+    function buildTestCaseSourceURL(testCase, sourceCtx) {
+      if (!sourceCtx || !sourceCtx.repoPath) return '';
+      const c = testCase || {};
+      const relPath = resolveTestCaseSourcePath(c, sourceCtx);
+      const line = Number(c.line || 0);
+      const blobURL = buildBlobURL(sourceCtx, relPath, line);
+      if (blobURL) return blobURL;
+
+      const name = String(c.name || '').trim();
+      if (!name) return '';
+      const repoPath = String(sourceCtx.repoPath || '').trim();
+      const host = String(sourceCtx.host || '').trim().toLowerCase();
+      const ref = String(sourceCtx.ref || '').trim();
+      const relPkg = testPackageRelativePath(c.package, sourceCtx);
+      const terms = ['"' + name + '"'];
+      if (relPkg) terms.push('path:' + relPkg);
+      const query = encodeURIComponent(terms.join(' '));
+      if (host !== 'github.com') return '';
+      let url = 'https://github.com/' + repoPath + '/search?q=' + query + '&type=code';
+      if (ref) url += '&ref=' + encodeURIComponent(ref);
+      return url;
+    }
+
+    function renderTestReport(report, job) {
       const box = document.getElementById('testReportBox');
       if (!box) return;
       const suites = report && Array.isArray(report.suites) ? report.suites : [];
@@ -411,10 +539,24 @@ const jobExecutionRenderJS = `
         box.textContent = 'No parsed test report';
         return;
       }
-      const header = '<div><strong>Total:</strong> ' + (report.total || 0) +
-        ' | <strong>Passed:</strong> ' + (report.passed || 0) +
-        ' | <strong>Failed:</strong> ' + (report.failed || 0) +
-        ' | <strong>Skipped:</strong> ' + (report.skipped || 0) + '</div>';
+      const sourceCtx = deriveTestSourceContext(job);
+      if (window.__ciwiTestFilter == null) {
+        window.__ciwiTestFilter = (Number(report.failed || 0) > 0) ? 'fail' : 'all';
+      }
+      const activeFilter = String(window.__ciwiTestFilter || 'all');
+      const header = '' +
+        '<div class="test-summary-row">' +
+          '<span class="test-pill">Total: ' + (report.total || 0) + '</span>' +
+          '<span class="test-pill test-pill-pass">Passed: ' + (report.passed || 0) + '</span>' +
+          '<span class="test-pill test-pill-fail">Failed: ' + (report.failed || 0) + '</span>' +
+          '<span class="test-pill test-pill-skip">Skipped: ' + (report.skipped || 0) + '</span>' +
+        '</div>' +
+        '<div class="test-filter-row">' +
+          '<button type="button" class="test-filter-btn' + (activeFilter === 'all' ? ' active' : '') + '" data-test-filter="all">All</button>' +
+          '<button type="button" class="test-filter-btn' + (activeFilter === 'fail' ? ' active' : '') + '" data-test-filter="fail">Failed</button>' +
+          '<button type="button" class="test-filter-btn' + (activeFilter === 'skip' ? ' active' : '') + '" data-test-filter="skip">Skipped</button>' +
+          '<button type="button" class="test-filter-btn' + (activeFilter === 'pass' ? ' active' : '') + '" data-test-filter="pass">Passed</button>' +
+        '</div>';
 
       const suiteHtml = suites.map((s, suiteIdx) => {
         const cases = Array.isArray(s.cases) ? s.cases : [];
@@ -427,36 +569,58 @@ const jobExecutionRenderJS = `
         const moduleHtml = Array.from(modules.entries())
           .sort((a, b) => a[0].localeCompare(b[0]))
           .map(([mod, moduleCases], modIdx) => {
+            const visibleCases = moduleCases
+              .filter(c => testCaseMatchesFilter(c, activeFilter))
+              .slice()
+              .sort((a, b) => {
+                const byStatus = testCaseStatusRank(a) - testCaseStatusRank(b);
+                if (byStatus !== 0) return byStatus;
+                return String(a.name || '').localeCompare(String(b.name || ''));
+              });
+            if (!visibleCases.length) return '';
             let mPass = 0;
             let mFail = 0;
             let mSkip = 0;
-            moduleCases.forEach(c => {
+            visibleCases.forEach(c => {
               const st = String(c.status || '').toLowerCase();
               if (st === 'pass') mPass++;
               else if (st === 'fail') mFail++;
               else if (st === 'skip') mSkip++;
             });
-            const rows = moduleCases.map(c =>
-              '<tr>' +
-              '<td>' + escapeHtml(c.name || '') + '</td>' +
+            const rows = visibleCases.map(c => {
+              const testName = escapeHtml(c.name || '');
+              const sourceURL = buildTestCaseSourceURL(c, sourceCtx);
+              const nameCell = sourceURL
+                ? ('<a href="' + sourceURL + '" target="_blank" rel="noopener noreferrer">' + testName + '</a>')
+                : testName;
+              return '<tr>' +
+              '<td>' + nameCell + '</td>' +
               '<td>' + escapeHtml(c.status || '') + '</td>' +
               '<td>' + (c.duration_seconds || 0).toFixed(3) + 's</td>' +
-              '</tr>'
-            ).join('');
+              '</tr>';
+            }).join('');
             return '<details data-test-key="suite:' + suiteIdx + ':mod:' + modIdx + '">' +
-              '<summary><code>' + escapeHtml(mod) + '</code> - total=' + moduleCases.length + ', passed=' + mPass + ', failed=' + mFail + ', skipped=' + mSkip + '</summary>' +
+              '<summary><code>' + escapeHtml(mod) + '</code> - total=' + visibleCases.length + ', passed=' + mPass + ', failed=' + mFail + ', skipped=' + mSkip + '</summary>' +
               '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
               '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Test</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Status</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Duration</th></tr></thead>' +
               '<tbody>' + rows + '</tbody></table>' +
               '</details>';
-          }).join('');
+          }).filter(Boolean).join('');
+        if (!moduleHtml) return '';
         return '<div style="margin-top:10px;">' +
           '<div><strong>' + escapeHtml(s.name || 'suite') + '</strong> (' + escapeHtml(s.format || '') + ')</div>' +
           '<div style="font-size:13px;color:#5f6f67;">total=' + (s.total || 0) + ', passed=' + (s.passed || 0) + ', failed=' + (s.failed || 0) + ', skipped=' + (s.skipped || 0) + '</div>' +
           '<div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">' + moduleHtml + '</div>' +
           '</div>';
-      }).join('');
-      box.innerHTML = header + suiteHtml;
+      }).filter(Boolean).join('');
+      const emptyMsg = suiteHtml ? '' : '<div style="color:#5f6f67;">No tests for selected filter.</div>';
+      box.innerHTML = header + emptyMsg + suiteHtml;
+      box.querySelectorAll('[data-test-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          window.__ciwiTestFilter = String(btn.getAttribute('data-test-filter') || 'all');
+          renderTestReport(report, job);
+        });
+      });
     }
     function classifyLine(rawLine) {
       if (/^\[meta\]/.test(rawLine)) return 'phase-meta';
