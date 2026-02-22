@@ -101,6 +101,80 @@ function Resolve-HostnameForIp {
   return ''
 }
 
+function Get-DnsSuffixCandidates {
+  $seen = @{}
+  $values = New-Object System.Collections.Generic.List[string]
+
+  $addSuffix = {
+    param([string]$Suffix)
+    $v = Trim-OneLine $Suffix
+    if ([string]::IsNullOrWhiteSpace($v)) { return }
+    $v = $v.TrimEnd('.').ToLowerInvariant()
+    while ($v.StartsWith('.')) {
+      $v = $v.Substring(1)
+    }
+    if ([string]::IsNullOrWhiteSpace($v)) { return }
+    if (-not $seen.ContainsKey($v)) {
+      $seen[$v] = $true
+      $values.Add($v) | Out-Null
+    }
+  }
+
+  & $addSuffix 'local'
+  & $addSuffix $env:USERDNSDOMAIN
+
+  try {
+    $globalDns = Get-DnsClientGlobalSetting -ErrorAction Stop
+    foreach ($suffix in @($globalDns.SuffixSearchList)) {
+      & $addSuffix ([string]$suffix)
+    }
+  } catch {
+  }
+
+  try {
+    foreach ($client in @(Get-DnsClient -ErrorAction Stop)) {
+      & $addSuffix ([string]$client.ConnectionSpecificSuffix)
+    }
+  } catch {
+  }
+
+  return @($values)
+}
+
+function Build-HostUrlCandidates {
+  param(
+    [Parameter(Mandatory = $true)][string]$HostName,
+    [Parameter(Mandatory = $true)][int]$Port
+  )
+
+  $host = Trim-OneLine $HostName
+  $host = $host.TrimEnd('.').ToLowerInvariant()
+  if ([string]::IsNullOrWhiteSpace($host)) {
+    return @()
+  }
+
+  $seen = @{}
+  $candidates = New-Object System.Collections.Generic.List[string]
+  $addHost = {
+    param([string]$CandidateHost)
+    $h = Trim-OneLine $CandidateHost
+    $h = $h.TrimEnd('.').ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($h)) { return }
+    if ($seen.ContainsKey($h)) { return }
+    $seen[$h] = $true
+    $candidates.Add("http://${h}:$Port") | Out-Null
+  }
+
+  & $addHost $host
+  if ($host -notmatch '\.') {
+    foreach ($suffix in @(Get-DnsSuffixCandidates)) {
+      & $addHost "$host.$suffix"
+    }
+  }
+
+  return @($candidates)
+}
+
 function Prefer-HostnameUrl {
   param([Parameter(Mandatory = $true)][string]$Url)
   $canonical = Canonicalize-Url $Url
@@ -120,14 +194,9 @@ function Prefer-HostnameUrl {
   if ($serverHost -eq 'localhost' -or $serverHost -eq '127.0.0.1') {
     return $canonical
   }
-  $candidate = "http://${serverHost}:$($uri.Port)"
-  if (Test-CiwiServer -BaseUrl $candidate) {
-    return $candidate
-  }
-  if ($serverHost -notmatch '\.') {
-    $candidateLocal = "http://${serverHost}.local:$($uri.Port)"
-    if (Test-CiwiServer -BaseUrl $candidateLocal) {
-      return $candidateLocal
+  foreach ($candidate in @(Build-HostUrlCandidates -HostName $serverHost -Port $uri.Port)) {
+    if (Test-CiwiServer -BaseUrl $candidate) {
+      return $candidate
     }
   }
   return $canonical
@@ -177,9 +246,11 @@ function Discover-Servers {
     }
     $resolvedHost = Resolve-HostnameForIp -Ip $ip
     if (-not [string]::IsNullOrWhiteSpace($resolvedHost)) {
-      $candidateHost = "http://${resolvedHost}:8112"
-      if (Test-CiwiServer -BaseUrl $candidateHost) {
-        Add-UniqueServer -Map $found -Url $candidateHost
+      foreach ($candidateHost in @(Build-HostUrlCandidates -HostName $resolvedHost -Port 8112)) {
+        if (Test-CiwiServer -BaseUrl $candidateHost) {
+          Add-UniqueServer -Map $found -Url $candidateHost
+          break
+        }
       }
     }
   }
