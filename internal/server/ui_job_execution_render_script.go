@@ -492,6 +492,54 @@ const jobExecutionRenderJS = `
       return normalizeTestPath(file);
     }
 
+    function parseExternalRepoPath(rawPath) {
+      const p = normalizeTestPath(rawPath);
+      if (!p) return null;
+      const segs = p.split('/').filter(Boolean);
+      if (segs.length < 4) return null;
+      const host = String(segs[0] || '').toLowerCase();
+      if (host !== 'github.com' && host !== 'gitlab.com') return null;
+      const owner = String(segs[1] || '').trim();
+      const repo = String(segs[2] || '').trim();
+      if (!owner || !repo) return null;
+      const repoPath = owner + '/' + repo;
+      const subPath = normalizeTestPath(segs.slice(3).join('/'));
+      return { host: host, repoPath: repoPath, subPath: subPath };
+    }
+
+    function inferExternalTestSource(testCase, sourceCtx) {
+      const c = testCase || {};
+      const sc = sourceCtx || {};
+      const parsedFile = parseExternalRepoPath(c.file);
+      if (parsedFile && parsedFile.subPath) {
+        const sameRepo = String(sc.host || '').toLowerCase() === parsedFile.host && String(sc.repoPath || '') === parsedFile.repoPath;
+        const ref = sameRepo && String(sc.ref || '').trim() ? String(sc.ref || '').trim() : 'HEAD';
+        return {
+          sourceCtx: { host: parsedFile.host, repoPath: parsedFile.repoPath, ref: ref },
+          relPath: parsedFile.subPath,
+          packageRelPath: '',
+        };
+      }
+      const parsedPackage = parseExternalRepoPath(c.package);
+      const file = normalizeTestPath(c.file);
+      if (!parsedPackage) return null;
+      let relPath = parsedPackage.subPath;
+      if (file) {
+        if (file.indexOf('/') >= 0) relPath = file;
+        else if (relPath) relPath = relPath + '/' + file;
+        else relPath = file;
+      }
+      relPath = normalizeTestPath(relPath);
+      if (!relPath) return null;
+      const sameRepo = String(sc.host || '').toLowerCase() === parsedPackage.host && String(sc.repoPath || '') === parsedPackage.repoPath;
+      const ref = sameRepo && String(sc.ref || '').trim() ? String(sc.ref || '').trim() : 'HEAD';
+      return {
+        sourceCtx: { host: parsedPackage.host, repoPath: parsedPackage.repoPath, ref: ref },
+        relPath: relPath,
+        packageRelPath: parsedPackage.subPath,
+      };
+    }
+
     function buildBlobURL(sourceCtx, relPath, line) {
       const sc = sourceCtx || {};
       const host = String(sc.host || '').trim().toLowerCase();
@@ -508,27 +556,51 @@ const jobExecutionRenderJS = `
       return '';
     }
 
+    function buildCodeSearchURL(sourceCtx, name, pkgRelPath) {
+      const sc = sourceCtx || {};
+      const host = String(sc.host || '').trim().toLowerCase();
+      const repoPath = String(sc.repoPath || '').trim();
+      const ref = String(sc.ref || '').trim();
+      const testName = String(name || '').trim();
+      if (!host || !repoPath || !testName) return '';
+      const terms = ['"' + testName + '"'];
+      if (pkgRelPath) terms.push('path:' + pkgRelPath);
+      const query = encodeURIComponent(terms.join(' '));
+      if (host === 'github.com') {
+        let url = 'https://github.com/' + repoPath + '/search?q=' + query + '&type=code';
+        if (ref) url += '&ref=' + encodeURIComponent(ref);
+        return url;
+      }
+      if (host === 'gitlab.com') {
+        return 'https://gitlab.com/' + repoPath + '/-/search?search=' + query + '&scope=blobs';
+      }
+      return '';
+    }
+
     function buildTestCaseSourceURL(testCase, sourceCtx) {
-      if (!sourceCtx || !sourceCtx.repoPath) return '';
       const c = testCase || {};
-      const relPath = resolveTestCaseSourcePath(c, sourceCtx);
+      let activeSourceCtx = sourceCtx || {};
+      let relPath = resolveTestCaseSourcePath(c, sourceCtx);
+      if (!relPath) {
+        const inferred = inferExternalTestSource(c, sourceCtx);
+        if (inferred && inferred.sourceCtx && inferred.relPath) {
+          activeSourceCtx = inferred.sourceCtx;
+          relPath = inferred.relPath;
+        }
+      }
       const line = Number(c.line || 0);
-      const blobURL = buildBlobURL(sourceCtx, relPath, line);
+      const blobURL = buildBlobURL(activeSourceCtx, relPath, line);
       if (blobURL) return blobURL;
 
       const name = String(c.name || '').trim();
       if (!name) return '';
-      const repoPath = String(sourceCtx.repoPath || '').trim();
-      const host = String(sourceCtx.host || '').trim().toLowerCase();
-      const ref = String(sourceCtx.ref || '').trim();
-      const relPkg = testPackageRelativePath(c.package, sourceCtx);
-      const terms = ['"' + name + '"'];
-      if (relPkg) terms.push('path:' + relPkg);
-      const query = encodeURIComponent(terms.join(' '));
-      if (host !== 'github.com') return '';
-      let url = 'https://github.com/' + repoPath + '/search?q=' + query + '&type=code';
-      if (ref) url += '&ref=' + encodeURIComponent(ref);
-      return url;
+      let pkgRel = testPackageRelativePath(c.package, sourceCtx);
+      const inferredForSearch = inferExternalTestSource(c, sourceCtx);
+      if (inferredForSearch && inferredForSearch.sourceCtx) {
+        activeSourceCtx = inferredForSearch.sourceCtx;
+        if (inferredForSearch.packageRelPath) pkgRel = inferredForSearch.packageRelPath;
+      }
+      return buildCodeSearchURL(activeSourceCtx, name, pkgRel);
     }
 
     function renderTestReport(report, job) {
