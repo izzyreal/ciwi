@@ -301,6 +301,145 @@ function Discover-MDNSServers {
   return @($found.Values | Sort-Object)
 }
 
+function Discover-UnicastDNSSDServers {
+  $found = @{}
+  if (-not (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) {
+    return @()
+  }
+  $domains = @(Get-DnsSuffixCandidates)
+  foreach ($domain in $domains) {
+    $d = Trim-OneLine ([string]$domain)
+    if ([string]::IsNullOrWhiteSpace($d)) { continue }
+    $ptrName = "_ciwi._tcp.$d"
+    $ptrRecords = @()
+    try {
+      $ptrRecords = @(Resolve-DnsName -Name $ptrName -Type PTR -ErrorAction Stop)
+    } catch {
+      continue
+    }
+    foreach ($ptr in $ptrRecords) {
+      $instance = Trim-OneLine ([string]$ptr.NameHost)
+      if ([string]::IsNullOrWhiteSpace($instance)) { continue }
+      $srvRecords = @()
+      try {
+        $srvRecords = @(Resolve-DnsName -Name $instance -Type SRV -ErrorAction Stop)
+      } catch {
+        continue
+      }
+      foreach ($srv in $srvRecords) {
+        $targetHost = Trim-OneLine ([string]$srv.NameTarget)
+        if ([string]::IsNullOrWhiteSpace($targetHost)) {
+          $targetHost = Trim-OneLine ([string]$srv.NameHost)
+        }
+        $targetPort = 0
+        [void][int]::TryParse((Trim-OneLine ([string]$srv.Port)), [ref]$targetPort)
+        if ([string]::IsNullOrWhiteSpace($targetHost) -or $targetPort -le 0) { continue }
+        foreach ($candidate in @(Build-HostUrlCandidates -HostName $targetHost -Port $targetPort)) {
+          if (Test-CiwiServer -BaseUrl $candidate) {
+            Add-UniqueServer -Map $found -Url $candidate
+            break
+          }
+        }
+      }
+    }
+  }
+  return @($found.Values | Sort-Object)
+}
+
+function Get-HostsFileHostCandidates {
+  $hostsPath = Join-Path $env:WINDIR 'System32\drivers\etc\hosts'
+  if (-not (Test-Path -LiteralPath $hostsPath)) {
+    return @()
+  }
+  $seen = @{}
+  $values = New-Object System.Collections.Generic.List[string]
+  try {
+    foreach ($rawLine in @(Get-Content -LiteralPath $hostsPath -ErrorAction Stop)) {
+      $line = Trim-OneLine ([string]$rawLine)
+      if ([string]::IsNullOrWhiteSpace($line)) { continue }
+      if ($line.StartsWith('#')) { continue }
+      $line = ($line -split '#')[0].Trim()
+      if ([string]::IsNullOrWhiteSpace($line)) { continue }
+      $parts = $line -split '\s+'
+      if ($parts.Length -lt 2) { continue }
+      for ($i = 1; $i -lt $parts.Length; $i++) {
+        $candidateHost = Trim-OneLine ([string]$parts[$i]).TrimEnd('.').ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($candidateHost)) { continue }
+        if ($candidateHost -eq 'localhost') { continue }
+        if ($candidateHost -like '*.localhost') { continue }
+        if (-not $seen.ContainsKey($candidateHost)) {
+          $seen[$candidateHost] = $true
+          $values.Add($candidateHost) | Out-Null
+        }
+      }
+    }
+  } catch {
+  }
+  return @($values | Sort-Object)
+}
+
+function Test-TcpPortQuick {
+  param(
+    [Parameter(Mandatory = $true)][string]$HostName,
+    [Parameter(Mandatory = $true)][int]$Port,
+    [int]$TimeoutMs = 120
+  )
+  $client = New-Object System.Net.Sockets.TcpClient
+  try {
+    $async = $client.BeginConnect($HostName, $Port, $null, $null)
+    if (-not $async.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
+      return $false
+    }
+    $client.EndConnect($async)
+    return $true
+  } catch {
+    return $false
+  } finally {
+    try { $client.Close() } catch {}
+  }
+}
+
+function Discover-SubnetServers {
+  $found = @{}
+  $maxProbes = 256
+  $ipsToProbe = New-Object System.Collections.Generic.List[string]
+  $ipSeen = @{}
+  try {
+    $localIPs = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop)
+    foreach ($entry in $localIPs) {
+      $ip = Trim-OneLine ([string]$entry.IPAddress)
+      if (-not (Is-IPv4 $ip)) { continue }
+      if ($ip.StartsWith('127.')) { continue }
+      if ($ip.StartsWith('169.254.')) { continue }
+      $octets = $ip.Split('.')
+      if ($octets.Length -ne 4) { continue }
+      $prefix = "$($octets[0]).$($octets[1]).$($octets[2])"
+      for ($n = 1; $n -le 254; $n++) {
+        if ($ipsToProbe.Count -ge $maxProbes) { break }
+        $candidateIP = "$prefix.$n"
+        if ($candidateIP -eq $ip) { continue }
+        if ($ipSeen.ContainsKey($candidateIP)) { continue }
+        $ipSeen[$candidateIP] = $true
+        $ipsToProbe.Add($candidateIP) | Out-Null
+      }
+      if ($ipsToProbe.Count -ge $maxProbes) { break }
+    }
+  } catch {
+    return @()
+  }
+
+  foreach ($candidateIP in $ipsToProbe) {
+    if (-not (Test-TcpPortQuick -HostName $candidateIP -Port 8112 -TimeoutMs 120)) {
+      continue
+    }
+    $url = "http://${candidateIP}:8112"
+    if (Test-CiwiServer -BaseUrl $url) {
+      Add-UniqueServer -Map $found -Url $url
+    }
+  }
+  return @($found.Values | Sort-Object)
+}
+
 function Prefer-HostnameUrl {
   param([Parameter(Mandatory = $true)][string]$Url)
   $canonical = Canonicalize-Url $Url
@@ -355,6 +494,19 @@ function Discover-Servers {
     Add-UniqueServer -Map $found -Url $mdnsUrl
   }
 
+  foreach ($dnsSdUrl in @(Discover-UnicastDNSSDServers)) {
+    Add-UniqueServer -Map $found -Url $dnsSdUrl
+  }
+
+  foreach ($hostsName in @(Get-HostsFileHostCandidates)) {
+    foreach ($candidateHost in @(Build-HostUrlCandidates -HostName $hostsName -Port 8112)) {
+      if (Test-CiwiServer -BaseUrl $candidateHost) {
+        Add-UniqueServer -Map $found -Url $candidateHost
+        break
+      }
+    }
+  }
+
   # Probe likely LAN names already resolved by this host (for example from ping/nslookup).
   foreach ($dnsHost in @(Get-DnsCacheHostCandidates)) {
     foreach ($candidateHost in @(Build-HostUrlCandidates -HostName $dnsHost -Port 8112)) {
@@ -393,6 +545,10 @@ function Discover-Servers {
         }
       }
     }
+  }
+
+  foreach ($subnetUrl in @(Discover-SubnetServers)) {
+    Add-UniqueServer -Map $found -Url $subnetUrl
   }
 
   return @($found.Values | Sort-Object)
