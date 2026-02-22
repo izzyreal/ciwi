@@ -142,6 +142,53 @@ pipelines:
 	}
 }
 
+func TestEnqueuePersistedPipelineDryRunAllStepsSkippedUsesPlaceholderScript(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+            skip_dry_run: true
+          - run: echo upload
+            skip_dry_run: true
+`), "dryrun-all-skipped")
+
+	resp, err := s.enqueuePersistedPipeline(p, &protocol.RunPipelineSelectionRequest{
+		PipelineJobID: "publish",
+		DryRun:        true,
+	})
+	if err != nil {
+		t.Fatalf("enqueue pipeline dry run all skipped: %v", err)
+	}
+	if resp.Enqueued != 1 || len(resp.JobExecutionIDs) != 1 {
+		t.Fatalf("expected one execution, got enqueued=%d ids=%d", resp.Enqueued, len(resp.JobExecutionIDs))
+	}
+
+	job, err := s.db.GetJobExecution(resp.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get enqueued job: %v", err)
+	}
+	if got := strings.TrimSpace(job.Script); got != "echo [dry-run] all steps skipped" {
+		t.Fatalf("expected placeholder script for all-skipped dry-run job, got %q", job.Script)
+	}
+	if len(job.StepPlan) != 2 {
+		t.Fatalf("expected 2 dryrun_skip steps, got %d", len(job.StepPlan))
+	}
+	if strings.TrimSpace(job.StepPlan[0].Kind) != "dryrun_skip" || strings.TrimSpace(job.StepPlan[1].Kind) != "dryrun_skip" {
+		t.Fatalf("expected all step plan items dryrun_skip, got %+v", job.StepPlan)
+	}
+}
+
 func TestEnqueuePersistedPipelineWithoutSourceCreatesArtifactOnlyJob(t *testing.T) {
 	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
 version: 1

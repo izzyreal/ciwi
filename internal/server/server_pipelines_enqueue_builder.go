@@ -202,6 +202,11 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	if len(stepPlan) == 0 {
 		return nil, fmt.Errorf("pipeline job %q has no executable steps after rendering", pipelineJobID)
 	}
+	if len(rendered) == 0 {
+		// In dry-run mode a job may contain only skip_dry_run steps. Persist a harmless
+		// placeholder script so queue validation does not reject an empty script.
+		rendered = append(rendered, "echo [dry-run] all steps skipped")
+	}
 	for stepIndex := range stepPlan {
 		stepPlan[stepIndex].Index = stepIndex + 1
 		stepPlan[stepIndex].Total = len(stepPlan)
