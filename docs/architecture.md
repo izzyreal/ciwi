@@ -135,7 +135,7 @@ Primary persisted entities:
 - job artifacts
 - test/coverage reports
 - app state key-values (including update status)
-- vault connections + per-project vault settings
+- vault connections + step-level vault mappings from YAML
 
 ## Design principles
 

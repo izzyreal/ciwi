@@ -44,9 +44,6 @@
   - `POST /api/v1/vault/connections`
   - `DELETE /api/v1/vault/connections/{id}`
   - `POST /api/v1/vault/connections/{id}/test`
-  - `GET /api/v1/projects/{projectId}/vault`
-  - `PUT /api/v1/projects/{projectId}/vault`
-  - `POST /api/v1/projects/{projectId}/vault-test`
 - Updates/server control:
   - `POST /api/v1/update/check`
   - `POST /api/v1/update/apply`

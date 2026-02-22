@@ -175,10 +175,6 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		}
 
 		writeJSON(w, http.StatusOK, resp)
-	case "vault":
-		s.projectVaultHandler(w, r, projectID)
-	case "vault-test":
-		s.projectVaultTestHandler(w, r, projectID)
 	default:
 		http.NotFound(w, r)
 	}

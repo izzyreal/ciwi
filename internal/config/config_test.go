@@ -181,19 +181,11 @@ project:
 	}
 }
 
-func TestParseProjectVault(t *testing.T) {
+func TestParseStepVault(t *testing.T) {
 	cfg, err := Parse([]byte(`
 version: 1
 project:
   name: ciwi
-  vault:
-    connection: home-vault
-    secrets:
-      - name: github-secret
-        mount: kv
-        path: gh
-        key: token
-        kv_version: 2
 pipelines:
   - id: build
     jobs:
@@ -201,36 +193,74 @@ pipelines:
         timeout_seconds: 60
         steps:
           - run: go build ./...
+            vault:
+              connection: home-vault
+              secrets:
+                - name: github-secret
+                  mount: kv
+                  path: gh
+                  key: token
+                  kv_version: 2
 `), "test-vault")
 	if err != nil {
 		t.Fatalf("parse vault config: %v", err)
 	}
-	if cfg.Project.Vault == nil {
-		t.Fatal("expected project.vault to be parsed")
+	if len(cfg.Pipelines) != 1 || len(cfg.Pipelines[0].Jobs) != 1 || len(cfg.Pipelines[0].Jobs[0].Steps) != 1 {
+		t.Fatalf("unexpected parsed pipeline shape")
 	}
-	if cfg.Project.Vault.Connection != "home-vault" {
-		t.Fatalf("unexpected vault connection: %q", cfg.Project.Vault.Connection)
+	stepVault := cfg.Pipelines[0].Jobs[0].Steps[0].Vault
+	if stepVault == nil {
+		t.Fatal("expected steps[0].vault to be parsed")
 	}
-	if len(cfg.Project.Vault.Secrets) != 1 || cfg.Project.Vault.Secrets[0].Name != "github-secret" {
-		t.Fatalf("unexpected vault secrets: %+v", cfg.Project.Vault.Secrets)
+	if stepVault.Connection != "home-vault" {
+		t.Fatalf("unexpected step vault connection: %q", stepVault.Connection)
+	}
+	if len(stepVault.Secrets) != 1 || stepVault.Secrets[0].Name != "github-secret" {
+		t.Fatalf("unexpected step vault secrets: %+v", stepVault.Secrets)
 	}
 }
 
-func TestParseRejectsInvalidProjectVault(t *testing.T) {
+func TestParseRejectsInvalidStepVault(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+            vault:
+              connection: ""
+              secrets:
+                - name: github-secret
+                  path: gh
+                  key: token
+`), "test-invalid-vault")
+	if err == nil || !strings.Contains(err.Error(), "steps[0].vault.connection is required") {
+		t.Fatalf("expected steps[].vault.connection error, got: %v", err)
+	}
+}
+
+func TestParseRejectsLegacyProjectVault(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 1
 project:
   name: ciwi
   vault:
-    connection: ""
-    secrets:
-      - name: github-secret
-        path: gh
-        key: token
-pipelines: []
-`), "test-invalid-vault")
-	if err == nil || !strings.Contains(err.Error(), "project.vault.connection is required") {
-		t.Fatalf("expected project.vault.connection error, got: %v", err)
+    connection: home-vault
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+`), "test-legacy-project-vault")
+	if err == nil || !strings.Contains(err.Error(), "field vault not found") {
+		t.Fatalf("expected legacy project.vault to be rejected, got: %v", err)
 	}
 }
 

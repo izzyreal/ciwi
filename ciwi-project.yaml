@@ -1,14 +1,6 @@
 version: 1
 project:
   name: ciwi
-  vault:
-    connection: home-vault
-    secrets:
-      - name: github-secret
-        mount: kv
-        path: gh
-        key: token
-        kv_version: 2
 
 pipelines:
   - id: build
@@ -93,10 +85,26 @@ pipelines:
         steps:
           - run: test -n "$GITHUB_TOKEN"
             skip_dry_run: true
+            vault:
+              connection: home-vault
+              secrets:
+                - name: github-secret
+                  mount: kv
+                  path: gh
+                  key: token
+                  kv_version: 2
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
           - run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/izzyreal/ciwi.git"
             skip_dry_run: true
+            vault:
+              connection: home-vault
+              secrets:
+                - name: github-secret
+                  mount: kv
+                  path: gh
+                  key: token
+                  kv_version: 2
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
           - run: test -f VERSION

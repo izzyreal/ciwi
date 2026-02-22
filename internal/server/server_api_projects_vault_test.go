@@ -121,43 +121,14 @@ func TestProjectsAndVaultAPI(t *testing.T) {
 		t.Fatalf("unexpected vault connection test response: %+v", connTestPayload)
 	}
 
-	projectVaultBefore := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/"+int64ToString(projectID)+"/vault-test", map[string]any{})
-	if projectVaultBefore.StatusCode != http.StatusOK {
-		t.Fatalf("project vault-test before config status=%d body=%s", projectVaultBefore.StatusCode, readBody(t, projectVaultBefore))
-	}
-	var beforePayload struct {
-		OK      bool   `json:"ok"`
-		Message string `json:"message"`
-	}
-	decodeJSONBody(t, projectVaultBefore, &beforePayload)
-	if beforePayload.OK || !strings.Contains(beforePayload.Message, "no vault connection") {
-		t.Fatalf("unexpected vault-test before config payload: %+v", beforePayload)
+	projectVaultGet := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/projects/"+int64ToString(projectID)+"/vault", nil)
+	if projectVaultGet.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected project vault endpoint to be removed, got status=%d body=%s", projectVaultGet.StatusCode, readBody(t, projectVaultGet))
 	}
 
-	updateSettingsResp := mustJSONRequest(t, ts.Client(), http.MethodPut, ts.URL+"/api/v1/projects/"+int64ToString(projectID)+"/vault", map[string]any{
-		"vault_connection_id": connID,
-		"secrets": []map[string]any{{
-			"name": "github_token",
-			"path": "ciwi",
-			"key":  "token",
-		}},
-	})
-	if updateSettingsResp.StatusCode != http.StatusOK {
-		t.Fatalf("update project vault settings status=%d body=%s", updateSettingsResp.StatusCode, readBody(t, updateSettingsResp))
-	}
-
-	projectVaultAfter := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/"+int64ToString(projectID)+"/vault-test", map[string]any{})
-	if projectVaultAfter.StatusCode != http.StatusOK {
-		t.Fatalf("project vault-test after config status=%d body=%s", projectVaultAfter.StatusCode, readBody(t, projectVaultAfter))
-	}
-	var afterPayload struct {
-		OK      bool              `json:"ok"`
-		Message string            `json:"message"`
-		Details map[string]string `json:"details"`
-	}
-	decodeJSONBody(t, projectVaultAfter, &afterPayload)
-	if !afterPayload.OK || afterPayload.Details["github_token"] != "ok" {
-		t.Fatalf("unexpected vault-test after config payload: %+v", afterPayload)
+	projectVaultTest := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/"+int64ToString(projectID)+"/vault-test", map[string]any{})
+	if projectVaultTest.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected project vault-test endpoint to be removed, got status=%d body=%s", projectVaultTest.StatusCode, readBody(t, projectVaultTest))
 	}
 
 	deleteResp := mustJSONRequest(t, ts.Client(), http.MethodDelete, ts.URL+"/api/v1/vault/connections/"+int64ToString(connID), nil)

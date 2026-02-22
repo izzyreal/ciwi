@@ -18,88 +18,88 @@ import (
 var secretPlaceholderRE = regexp.MustCompile(`\{\{\s*secret\.([a-zA-Z0-9_\-]+)\s*\}\}`)
 
 func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExecution) error {
-	if job == nil || len(job.Env) == 0 {
+	if job == nil {
 		return nil
 	}
-	needsSecrets := false
+
 	for _, value := range job.Env {
 		if len(secretPlaceholderRE.FindAllStringSubmatch(value, -1)) > 0 {
-			needsSecrets = true
-			break
+			return fmt.Errorf("secret placeholders are only supported in step env")
 		}
 	}
-	if !needsSecrets {
-		return nil
-	}
-	projectName := strings.TrimSpace(job.Metadata["project"])
-	if projectName == "" {
-		return nil
-	}
 
-	project, err := s.vaultStore().GetProjectByName(projectName)
-	if err != nil {
-		return nil
-	}
-	settings, err := s.vaultStore().GetProjectVaultSettings(project.ID)
-	if err != nil || len(settings.Secrets) == 0 {
-		return nil
-	}
-	if settings.VaultConnectionID <= 0 && strings.TrimSpace(settings.VaultConnectionName) == "" {
-		return nil
-	}
-
-	var conn protocol.VaultConnection
-	if settings.VaultConnectionID > 0 {
-		conn, err = s.vaultStore().GetVaultConnectionByID(settings.VaultConnectionID)
-		if err != nil {
-			return err
-		}
-	} else {
-		conn, err = s.vaultStore().GetVaultConnectionByName(settings.VaultConnectionName)
-		if err != nil {
-			return err
-		}
-	}
-	secretMap := map[string]protocol.ProjectSecretSpec{}
-	for _, sp := range settings.Secrets {
-		secretMap[sp.Name] = sp
-	}
-
-	resolved := cloneMap(job.Env)
+	connectionByName := map[string]protocol.VaultConnection{}
 	sensitive := []string{}
-	for key, value := range resolved {
-		matches := secretPlaceholderRE.FindAllStringSubmatch(value, -1)
-		if len(matches) == 0 {
+	hasSecrets := false
+	for i := range job.StepPlan {
+		step := &job.StepPlan[i]
+		if len(step.Env) == 0 {
 			continue
 		}
-		out := value
-		for _, m := range matches {
-			if len(m) < 2 {
+		needsStepSecrets := false
+		for _, value := range step.Env {
+			if len(secretPlaceholderRE.FindAllStringSubmatch(value, -1)) > 0 {
+				needsStepSecrets = true
+				break
+			}
+		}
+		if !needsStepSecrets {
+			continue
+		}
+		hasSecrets = true
+		connName := strings.TrimSpace(step.VaultConnection)
+		if connName == "" {
+			return fmt.Errorf("step %d uses secret placeholders but has no vault.connection", i+1)
+		}
+		conn, ok := connectionByName[connName]
+		if !ok {
+			var err error
+			conn, err = s.vaultStore().GetVaultConnectionByName(connName)
+			if err != nil {
+				return fmt.Errorf("resolve vault connection %q: %w", connName, err)
+			}
+			connectionByName[connName] = conn
+		}
+		secretMap := map[string]protocol.ProjectSecretSpec{}
+		for _, spec := range step.VaultSecrets {
+			secretMap[strings.TrimSpace(spec.Name)] = spec
+		}
+		resolvedStepEnv := cloneMap(step.Env)
+		for key, value := range resolvedStepEnv {
+			matches := secretPlaceholderRE.FindAllStringSubmatch(value, -1)
+			if len(matches) == 0 {
 				continue
 			}
-			secretName := m[1]
-			spec, ok := secretMap[secretName]
-			if !ok {
-				return fmt.Errorf("secret %q is not configured for project", secretName)
+			out := value
+			for _, m := range matches {
+				if len(m) < 2 {
+					continue
+				}
+				secretName := strings.TrimSpace(m[1])
+				spec, ok := secretMap[secretName]
+				if !ok {
+					return fmt.Errorf("step %d secret %q is not configured in step vault.secrets", i+1, secretName)
+				}
+				secretValue, getErr := s.readVaultSecret(ctx, conn, spec)
+				if getErr != nil {
+					return fmt.Errorf("resolve step %d secret %q: %w", i+1, secretName, getErr)
+				}
+				out = strings.ReplaceAll(out, m[0], secretValue)
+				sensitive = append(sensitive, secretValue)
 			}
-			secretValue, getErr := s.readVaultSecret(ctx, conn, spec)
-			if getErr != nil {
-				return fmt.Errorf("resolve secret %q: %w", secretName, getErr)
-			}
-			out = strings.ReplaceAll(out, m[0], secretValue)
-			sensitive = append(sensitive, secretValue)
+			resolvedStepEnv[key] = out
 		}
-		resolved[key] = out
+		step.Env = resolvedStepEnv
 	}
 
-	if needsSecrets {
-		job.Env = resolved
-		if job.Metadata == nil {
-			job.Metadata = map[string]string{}
-		}
-		job.Metadata["has_secrets"] = "1"
-		job.SensitiveValues = servervault.DedupeStrings(sensitive)
+	if !hasSecrets {
+		return nil
 	}
+	if job.Metadata == nil {
+		job.Metadata = map[string]string{}
+	}
+	job.Metadata["has_secrets"] = "1"
+	job.SensitiveValues = servervault.DedupeStrings(sensitive)
 	return nil
 }
 

@@ -60,9 +60,6 @@ type vaultStore interface {
 	DeleteVaultConnection(id int64) error
 	GetVaultConnectionByID(id int64) (protocol.VaultConnection, error)
 	GetVaultConnectionByName(name string) (protocol.VaultConnection, error)
-	GetProjectVaultSettings(projectID int64) (protocol.ProjectVaultSettings, error)
-	UpdateProjectVaultSettings(projectID int64, req protocol.UpdateProjectVaultRequest) (protocol.ProjectVaultSettings, error)
-	GetProjectByName(name string) (protocol.ProjectSummary, error)
 }
 
 type updateStateStore interface {

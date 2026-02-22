@@ -63,19 +63,6 @@ const projectHTML = `<!doctype html>
       <div id="structure">Loading...</div>
     </div>
     <div class="card">
-      <h2 style="margin:0 0 10px;">Vault Access</h2>
-      <div class="row" style="margin-bottom:8px;">
-        <label for="vaultConnectionSelect" class="muted">Connection:</label>
-        <select id="vaultConnectionSelect"></select>
-        <button id="saveVaultBtn" class="secondary">Save Vault Settings</button>
-        <button id="testVaultBtn" class="secondary">Test</button>
-        <span id="vaultMsg" class="muted"></span>
-      </div>
-      <div class="muted" style="margin-bottom:6px;">Secret mappings (one per line): <code>name=mount/path#key</code></div>
-      <textarea id="vaultSecretsText" style="width:100%;min-height:120px;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;"></textarea>
-    </div>
-
-    <div class="card">
       <h2 style="margin:0 0 10px;">Execution History</h2>
       <table>
         <thead>
@@ -279,83 +266,6 @@ const projectHTML = `<!doctype html>
       });
     }
 
-    async function loadVaultSection() {
-      const id = projectIdFromPath();
-      const select = document.getElementById('vaultConnectionSelect');
-      const txt = document.getElementById('vaultSecretsText');
-      const conns = await apiJSON('/api/v1/vault/connections');
-      select.innerHTML = '<option value="0">(none)</option>';
-      (conns.connections || []).forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = String(c.id);
-        opt.textContent = c.name + ' (' + c.url + ')';
-        select.appendChild(opt);
-      });
-      const settingsResp = await apiJSON('/api/v1/projects/' + encodeURIComponent(id) + '/vault');
-      const settings = settingsResp.settings || {};
-      select.value = String(settings.vault_connection_id || 0);
-      const lines = (settings.secrets || []).map(s => {
-        const mount = (s.mount || '').trim();
-        const prefix = mount ? (mount + '/') : '';
-        return s.name + '=' + prefix + s.path + '#' + s.key;
-      });
-      txt.value = lines.join('\n');
-    }
-
-    function parseSecretLines(text) {
-      const out = [];
-      (text || '').split('\n').map(x => x.trim()).filter(Boolean).forEach(line => {
-        const eq = line.indexOf('=');
-        const hash = line.lastIndexOf('#');
-        if (eq <= 0 || hash <= eq + 1) throw new Error('Invalid mapping line: ' + line);
-        const name = line.slice(0, eq).trim();
-        const pathPart = line.slice(eq + 1, hash).trim();
-        const key = line.slice(hash + 1).trim();
-        const slash = pathPart.indexOf('/');
-        let mount = '';
-        let path = pathPart;
-        if (slash > 0) {
-          mount = pathPart.slice(0, slash).trim();
-          path = pathPart.slice(slash + 1).trim();
-        }
-        out.push({ name, mount, path, key });
-      });
-      return out;
-    }
-
-    document.getElementById('saveVaultBtn').onclick = async () => {
-      const id = projectIdFromPath();
-      const msg = document.getElementById('vaultMsg');
-      msg.textContent = 'Saving...';
-      try {
-        const payload = {
-          vault_connection_id: Number(document.getElementById('vaultConnectionSelect').value || '0'),
-          secrets: parseSecretLines(document.getElementById('vaultSecretsText').value),
-        };
-        await apiJSON('/api/v1/projects/' + encodeURIComponent(id) + '/vault', { method: 'PUT', body: JSON.stringify(payload) });
-        msg.textContent = 'Saved';
-      } catch (e) {
-        msg.textContent = 'Error: ' + e.message;
-      }
-    };
-
-    document.getElementById('testVaultBtn').onclick = async () => {
-      const id = projectIdFromPath();
-      const msg = document.getElementById('vaultMsg');
-      msg.textContent = 'Testing...';
-      try {
-        const r = await apiJSON('/api/v1/projects/' + encodeURIComponent(id) + '/vault-test', { method: 'POST', body: '{}' });
-        const details = r.details || {};
-        const failures = Object.entries(details).filter(([, v]) => v !== 'ok');
-        const suffix = failures.length > 0
-          ? (' (' + failures.map(([k, v]) => k + ': ' + v).join('; ') + ')')
-          : '';
-        msg.textContent = (r.ok ? 'OK: ' : 'FAILED: ') + (r.message || '') + suffix;
-      } catch (e) {
-        msg.textContent = 'Test error: ' + e.message;
-      }
-    };
-
     async function loadHistory(force) {
       if (refreshInFlight || (!force && refreshGuard.shouldPause())) {
         return;
@@ -382,7 +292,6 @@ const projectHTML = `<!doctype html>
     async function tick() {
       try {
         await loadProject();
-        await loadVaultSection();
         await loadHistory(true);
       } catch (e) {
         document.getElementById('subtitle').textContent = 'Failed to load project: ' + e.message;

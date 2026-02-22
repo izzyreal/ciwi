@@ -364,7 +364,11 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			if step.meta.kind == "dryrun_skip" {
 				continue
 			}
-			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, runEnv, &output, currentStep, job.SensitiveValues, traceShell)
+			stepRunEnv := runEnv
+			if len(step.env) > 0 {
+				stepRunEnv = mergeEnv(runEnv, step.env)
+			}
+			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, stepRunEnv, &output, currentStep, job.SensitiveValues, traceShell)
 			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
 				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)
 				if parseErr != nil {
@@ -601,6 +605,7 @@ func parseStepTestSuiteFromFile(execDir string, meta stepMarkerMeta) (protocol.T
 type jobScriptStep struct {
 	meta   stepMarkerMeta
 	script string
+	env    map[string]string
 }
 
 func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
@@ -640,6 +645,7 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 				coverageReport: strings.TrimSpace(step.CoverageReport),
 			},
 			script: script,
+			env:    cloneMap(step.Env),
 		})
 	}
 	if len(steps) == 0 {

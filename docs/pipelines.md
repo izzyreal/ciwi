@@ -68,6 +68,22 @@ Step-level env is supported via `steps[].env`.
 Secret placeholder form:
 - `{{ secret.<name> }}`
 
+Secrets are declared per step:
+
+```yaml
+steps:
+  - run: echo release
+    vault:
+      connection: home-vault
+      secrets:
+        - name: github-secret
+          mount: kv
+          path: gh
+          key: token
+    env:
+      GITHUB_TOKEN: "{{ secret.github-secret }}"
+```
+
 Resolved just-in-time when agent leases a job.
 
 ## Job history actions behavior

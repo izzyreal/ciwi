@@ -1,8 +1,8 @@
 # Vault Integration (AppRole)
 
-Vault config is two-layered:
-1. Global Vault connection
-2. Per-project secret mappings
+Vault config is split into:
+1. Global Vault connections
+2. Step-local secret mappings in `ciwi-project.yaml`
 
 ## 1) Add Vault connection
 
@@ -15,35 +15,24 @@ From `/vault` page, configure:
 
 Use **Test** to validate AppRole login.
 
-## 2) Configure project Vault access
-
-From project page **Vault Access**:
-- choose connection
-- mappings per line: `name=mount/path#key`
-- save and test
-
-## 3) Use in YAML
+## 2) Configure step-local mappings in YAML
 
 ```yaml
 steps:
   - run: github-release ... --security-token "$GITHUB_SECRET"
+    vault:
+      connection: home-vault
+      secrets:
+        - name: github_secret
+          mount: kv
+          path: gh
+          key: token
     env:
       GITHUB_SECRET: "{{ secret.github_secret }}"
 ```
 
-## Optional declarative mapping in ciwi-project.yaml
-
-```yaml
-project:
-  vault:
-    connection: home-vault
-    secrets:
-      - name: github-secret
-        mount: kv
-        path: gh
-        key: token
-        kv_version: 2
-```
+Only `steps[].env` supports `{{ secret.<name> }}` placeholders.
+Secret placeholders outside step env are rejected.
 
 ## Security model
 

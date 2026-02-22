@@ -7,25 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func TestResolveJobSecretsAndVaultRuntime(t *testing.T) {
 	ts, s := newTestHTTPServerWithState(t)
 	defer ts.Close()
-
-	cfg, err := config.Parse([]byte(testConfigYAML), "ciwi-project.yaml")
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
-	}
-	if err := s.db.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	project, err := s.db.GetProjectByName("ciwi")
-	if err != nil {
-		t.Fatalf("get project: %v", err)
-	}
 
 	vaultAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -55,29 +42,31 @@ func TestResolveJobSecretsAndVaultRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert vault connection: %v", err)
 	}
-	if _, err := s.db.UpdateProjectVaultSettings(project.ID, protocol.UpdateProjectVaultRequest{
-		VaultConnectionID: conn.ID,
-		Secrets: []protocol.ProjectSecretSpec{{
-			Name: "github_token",
-			Path: "ciwi",
-			Key:  "token",
-		}},
-	}); err != nil {
-		t.Fatalf("update project vault settings: %v", err)
-	}
 
 	job := protocol.JobExecution{
-		Metadata: map[string]string{"project": "ciwi"},
-		Env: map[string]string{
-			"GITHUB_TOKEN": "{{secret.github_token}}",
-			"UNCHANGED":    "plain",
-		},
+		StepPlan: []protocol.JobStepPlanItem{{
+			Name:            "release",
+			Script:          "echo ok",
+			VaultConnection: conn.Name,
+			VaultSecrets: []protocol.ProjectSecretSpec{{
+				Name: "github_token",
+				Path: "ciwi",
+				Key:  "token",
+			}},
+			Env: map[string]string{
+				"GITHUB_TOKEN": "{{secret.github_token}}",
+				"UNCHANGED":    "plain",
+			},
+		}},
 	}
 	if err := s.resolveJobSecrets(context.Background(), &job); err != nil {
 		t.Fatalf("resolveJobSecrets: %v", err)
 	}
-	if job.Env["GITHUB_TOKEN"] != "secret-value" || job.Env["UNCHANGED"] != "plain" {
-		t.Fatalf("unexpected resolved env: %+v", job.Env)
+	if got := job.StepPlan[0].Env["GITHUB_TOKEN"]; got != "secret-value" {
+		t.Fatalf("unexpected resolved token: %q", got)
+	}
+	if got := job.StepPlan[0].Env["UNCHANGED"]; got != "plain" {
+		t.Fatalf("unexpected plain env: %q", got)
 	}
 	if job.Metadata["has_secrets"] != "1" {
 		t.Fatalf("expected has_secrets metadata flag")
@@ -105,24 +94,12 @@ func TestResolveJobSecretsNoopAndMissingSecret(t *testing.T) {
 	defer ts.Close()
 
 	// No placeholders should no-op.
-	plainJob := protocol.JobExecution{Metadata: map[string]string{"project": "ciwi"}, Env: map[string]string{"A": "B"}}
+	plainJob := protocol.JobExecution{Env: map[string]string{"A": "B"}}
 	if err := s.resolveJobSecrets(context.Background(), &plainJob); err != nil {
 		t.Fatalf("resolveJobSecrets plain: %v", err)
 	}
 
-	// Placeholder with missing project secret should error once project+vault are configured.
-	cfg, err := config.Parse([]byte(testConfigYAML), "ciwi-project.yaml")
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
-	}
-	if err := s.db.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	project, err := s.db.GetProjectByName("ciwi")
-	if err != nil {
-		t.Fatalf("get project: %v", err)
-	}
-	conn, err := s.db.UpsertVaultConnection(protocol.UpsertVaultConnectionRequest{
+	_, err := s.db.UpsertVaultConnection(protocol.UpsertVaultConnectionRequest{
 		Name:         "vault-main",
 		URL:          "http://127.0.0.1:1", // unused here due early missing-secret failure
 		AuthMethod:   "approle",
@@ -133,18 +110,19 @@ func TestResolveJobSecretsNoopAndMissingSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert vault connection: %v", err)
 	}
-	if _, err := s.db.UpdateProjectVaultSettings(project.ID, protocol.UpdateProjectVaultRequest{
-		VaultConnectionID: conn.ID,
-		Secrets: []protocol.ProjectSecretSpec{{
-			Name: "known",
-			Path: "ciwi",
-			Key:  "token",
-		}},
-	}); err != nil {
-		t.Fatalf("update project vault settings: %v", err)
-	}
 
-	job := protocol.JobExecution{Metadata: map[string]string{"project": "ciwi"}, Env: map[string]string{"X": "{{secret.unknown}}"}}
+	job := protocol.JobExecution{
+		StepPlan: []protocol.JobStepPlanItem{{
+			Script:          "echo x",
+			VaultConnection: "vault-main",
+			VaultSecrets: []protocol.ProjectSecretSpec{{
+				Name: "known",
+				Path: "ciwi",
+				Key:  "token",
+			}},
+			Env: map[string]string{"X": "{{secret.unknown}}"},
+		}},
+	}
 	if err := s.resolveJobSecrets(context.Background(), &job); err == nil {
 		t.Fatalf("expected resolveJobSecrets to fail for unknown secret")
 	}

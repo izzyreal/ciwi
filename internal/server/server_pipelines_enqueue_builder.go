@@ -129,17 +129,35 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	stepPlan := make([]protocol.JobStepPlanItem, 0, len(steps))
 	env := make(map[string]string)
 	for idx, step := range steps {
+		stepEnv := map[string]string{}
+		for k, v := range step.Env {
+			stepEnv[k] = renderTemplate(v, renderVars)
+		}
+		stepVaultConnection := ""
+		stepVaultSecrets := make([]protocol.ProjectSecretSpec, 0)
+		if step.Vault != nil {
+			stepVaultConnection = strings.TrimSpace(step.Vault.Connection)
+			for _, sec := range step.Vault.Secrets {
+				stepVaultSecrets = append(stepVaultSecrets, protocol.ProjectSecretSpec{
+					Name:      strings.TrimSpace(sec.Name),
+					Mount:     strings.TrimSpace(sec.Mount),
+					Path:      strings.TrimSpace(sec.Path),
+					Key:       strings.TrimSpace(sec.Key),
+					KVVersion: sec.KVVersion,
+				})
+			}
+		}
 		if selection != nil && selection.DryRun && step.SkipDryRun {
 			stepPlan = append(stepPlan, protocol.JobStepPlanItem{
-				Name: describeSkippedPipelineStepLiteral(step, idx, pipelineJobID),
-				Kind: "dryrun_skip",
+				Name:            describeSkippedPipelineStepLiteral(step, idx, pipelineJobID),
+				Kind:            "dryrun_skip",
+				Env:             stepEnv,
+				VaultConnection: stepVaultConnection,
+				VaultSecrets:    stepVaultSecrets,
 			})
 			continue
 		}
 		if step.Test != nil {
-			for k, v := range step.Env {
-				env[k] = renderTemplate(v, renderVars)
-			}
 			command := renderTemplate(step.Test.Command, renderVars)
 			if strings.TrimSpace(command) == "" {
 				continue
@@ -154,19 +172,19 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 			}
 			rendered = append(rendered, command)
 			stepPlan = append(stepPlan, protocol.JobStepPlanItem{
-				Name:           "test " + name,
-				Script:         command,
-				Kind:           "test",
-				TestName:       strings.TrimSpace(name),
-				TestFormat:     strings.TrimSpace(format),
-				TestReport:     strings.TrimSpace(step.Test.Report),
-				CoverageFormat: strings.TrimSpace(step.Test.CoverageFormat),
-				CoverageReport: strings.TrimSpace(step.Test.CoverageReport),
+				Name:            "test " + name,
+				Script:          command,
+				Kind:            "test",
+				Env:             stepEnv,
+				VaultConnection: stepVaultConnection,
+				VaultSecrets:    stepVaultSecrets,
+				TestName:        strings.TrimSpace(name),
+				TestFormat:      strings.TrimSpace(format),
+				TestReport:      strings.TrimSpace(step.Test.Report),
+				CoverageFormat:  strings.TrimSpace(step.Test.CoverageFormat),
+				CoverageReport:  strings.TrimSpace(step.Test.CoverageReport),
 			})
 			continue
-		}
-		for k, v := range step.Env {
-			env[k] = renderTemplate(v, renderVars)
 		}
 		line := renderTemplate(step.Run, renderVars)
 		if strings.TrimSpace(line) == "" {
@@ -174,8 +192,11 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		}
 		rendered = append(rendered, line)
 		stepPlan = append(stepPlan, protocol.JobStepPlanItem{
-			Name:   describePipelineStep(step, idx, pipelineJobID),
-			Script: line,
+			Name:            describePipelineStep(step, idx, pipelineJobID),
+			Script:          line,
+			Env:             stepEnv,
+			VaultConnection: stepVaultConnection,
+			VaultSecrets:    stepVaultSecrets,
 		})
 	}
 	if len(stepPlan) == 0 {

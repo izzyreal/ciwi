@@ -18,16 +18,15 @@ type File struct {
 }
 
 type Project struct {
-	Name  string        `yaml:"name" json:"name"`
-	Vault *ProjectVault `yaml:"vault,omitempty" json:"vault,omitempty"`
+	Name string `yaml:"name" json:"name"`
 }
 
-type ProjectVault struct {
+type StepVault struct {
 	Connection string               `yaml:"connection" json:"connection"`
-	Secrets    []ProjectVaultSecret `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+	Secrets    []StepVaultSecretRef `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 }
 
-type ProjectVaultSecret struct {
+type StepVaultSecretRef struct {
 	Name      string `yaml:"name" json:"name"`
 	Mount     string `yaml:"mount,omitempty" json:"mount,omitempty"`
 	Path      string `yaml:"path" json:"path"`
@@ -100,6 +99,7 @@ type PipelineJobStep struct {
 	Test       *PipelineJobTestStep `yaml:"test,omitempty" json:"test,omitempty"`
 	SkipDryRun bool                 `yaml:"skip_dry_run,omitempty" json:"skip_dry_run,omitempty"`
 	Env        map[string]string    `yaml:"env,omitempty" json:"env,omitempty"`
+	Vault      *StepVault           `yaml:"vault,omitempty" json:"vault,omitempty"`
 }
 
 type PipelineJobTestStep struct {
@@ -144,24 +144,6 @@ func (cfg File) Validate() []string {
 	if strings.TrimSpace(cfg.Project.Name) == "" {
 		errs = append(errs, "project.name is required")
 	}
-	if cfg.Project.Vault != nil {
-		if strings.TrimSpace(cfg.Project.Vault.Connection) == "" {
-			errs = append(errs, "project.vault.connection is required when project.vault is set")
-		}
-		seenSecrets := map[string]struct{}{}
-		for i, sec := range cfg.Project.Vault.Secrets {
-			if strings.TrimSpace(sec.Name) == "" || strings.TrimSpace(sec.Path) == "" || strings.TrimSpace(sec.Key) == "" {
-				errs = append(errs, fmt.Sprintf("project.vault.secrets[%d] requires name, path and key", i))
-			}
-			if strings.TrimSpace(sec.Name) != "" {
-				if _, ok := seenSecrets[sec.Name]; ok {
-					errs = append(errs, fmt.Sprintf("project.vault.secrets[%d] duplicate name %q", i, sec.Name))
-				}
-				seenSecrets[sec.Name] = struct{}{}
-			}
-		}
-	}
-
 	if len(cfg.Pipelines) == 0 {
 		errs = append(errs, "pipelines must contain at least one pipeline")
 		return errs
@@ -342,6 +324,23 @@ func (cfg File) Validate() []string {
 				for envK := range st.Env {
 					if strings.TrimSpace(envK) == "" {
 						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].env key must not be empty", i, j, k))
+					}
+				}
+				if st.Vault != nil {
+					if strings.TrimSpace(st.Vault.Connection) == "" {
+						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].vault.connection is required", i, j, k))
+					}
+					seenStepSecrets := map[string]struct{}{}
+					for si, sec := range st.Vault.Secrets {
+						if strings.TrimSpace(sec.Name) == "" || strings.TrimSpace(sec.Path) == "" || strings.TrimSpace(sec.Key) == "" {
+							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].vault.secrets[%d] requires name, path and key", i, j, k, si))
+						}
+						if strings.TrimSpace(sec.Name) != "" {
+							if _, ok := seenStepSecrets[sec.Name]; ok {
+								errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].vault.secrets[%d] duplicate name %q", i, j, k, si, sec.Name))
+							}
+							seenStepSecrets[sec.Name] = struct{}{}
+						}
 					}
 				}
 			}
