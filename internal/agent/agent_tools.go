@@ -75,7 +75,6 @@ func detectToolVersions() map[string]string {
 		{name: "xcodebuild", cmd: "xcodebuild", args: []string{"-version"}},
 		{name: "iscc", cmd: "iscc", args: []string{"/?"}},
 		{name: "signtool", cmd: "signtool", args: []string{"/?"}},
-		{name: "productsign", cmd: "productsign", args: []string{"--version"}},
 		{name: "packagesbuild", cmd: "packagesbuild", args: []string{"--version"}},
 		{name: "packagesutil", cmd: "packagesutil", args: []string{"version"}},
 	}
@@ -88,11 +87,17 @@ func detectToolVersions() map[string]string {
 	if v := detectCodesignVersion(); v != "" {
 		out["codesign"] = v
 	}
+	if v := detectProductsignVersion(); v != "" {
+		out["productsign"] = v
+	}
 	if v := detectXCRUNToolVersion("notarytool"); v != "" {
 		out["notarytool"] = v
 	}
 	if v := detectXCRUNToolVersion("stapler"); v != "" {
 		out["stapler"] = v
+	}
+	if v := detectZipVersion(); v != "" {
+		out["zip"] = v
 	}
 	if fileExists("/usr/libexec/PlistBuddy") {
 		out["plistbuddy"] = "1"
@@ -118,6 +123,35 @@ func detectCodesignVersion() string {
 		return v
 	}
 	return ""
+}
+
+func detectProductsignVersion() string {
+	if v := detectToolVersion("productsign", "--version"); v != "" {
+		return v
+	}
+	// productsign often has no version flag; presence is enough for "*" constraints.
+	if v := detectXCRUNToolVersion("productsign"); v != "" {
+		return v
+	}
+	return detectToolPresence("productsign")
+}
+
+func detectZipVersion() string {
+	if v := detectToolVersion("zip", "-v"); v != "" {
+		return v
+	}
+	return detectToolPresence("zip")
+}
+
+func detectToolPresence(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return ""
+	}
+	if _, err := exec.LookPath(cmd); err != nil {
+		return ""
+	}
+	return "1"
 }
 
 func detectXCRUNToolVersion(tool string) string {

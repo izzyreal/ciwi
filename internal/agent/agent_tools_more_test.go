@@ -101,6 +101,46 @@ func TestDetectCodesignVersionViaWhatFallback(t *testing.T) {
 	}
 }
 
+func TestDetectProductsignVersionFallsBackToPresence(t *testing.T) {
+	binDir := t.TempDir()
+	toolPath := filepath.Join(binDir, "productsign")
+	if runtime.GOOS == "windows" {
+		toolPath += ".bat"
+		if err := os.WriteFile(toolPath, []byte("@exit /b 1\r\n"), 0o755); err != nil {
+			t.Fatalf("write fake productsign: %v", err)
+		}
+	} else {
+		if err := os.WriteFile(toolPath, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+			t.Fatalf("write fake productsign: %v", err)
+		}
+	}
+	t.Setenv("PATH", binDir)
+
+	if got := detectProductsignVersion(); got != "1" {
+		t.Fatalf("expected productsign presence fallback \"1\", got %q", got)
+	}
+}
+
+func TestDetectZipVersionFallsBackToPresence(t *testing.T) {
+	binDir := t.TempDir()
+	toolPath := filepath.Join(binDir, "zip")
+	if runtime.GOOS == "windows" {
+		toolPath += ".bat"
+		if err := os.WriteFile(toolPath, []byte("@exit /b 1\r\n"), 0o755); err != nil {
+			t.Fatalf("write fake zip: %v", err)
+		}
+	} else {
+		if err := os.WriteFile(toolPath, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+			t.Fatalf("write fake zip: %v", err)
+		}
+	}
+	t.Setenv("PATH", binDir)
+
+	if got := detectZipVersion(); got != "1" {
+		t.Fatalf("expected zip presence fallback \"1\", got %q", got)
+	}
+}
+
 func TestCandidateVSWherePathsIncludesLookupAndEnvRoots(t *testing.T) {
 	binDir := t.TempDir()
 	lookupPath := filepath.Join(binDir, "vswhere.exe")
