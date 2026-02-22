@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,6 +22,32 @@ func TestListenPortFromAddr(t *testing.T) {
 	}
 	if got := listenPortFromAddr("not-a-port:"); got != "" {
 		t.Fatalf("expected invalid addr parse to empty, got %q", got)
+	}
+}
+
+func TestFilterAdvertiseIPs(t *testing.T) {
+	v4LAN := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(24, 32)}
+	v4Loop := &net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)}
+	v6Global := &net.IPNet{IP: net.ParseIP("2a0d:3341:b9e9:8410::1"), Mask: net.CIDRMask(64, 128)}
+	v6LinkLocal := &net.IPNet{IP: net.ParseIP("fe80::1"), Mask: net.CIDRMask(64, 128)}
+	v4LANDup := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(24, 32)}
+
+	got := filterAdvertiseIPs([]net.Addr{
+		v4Loop,
+		v6LinkLocal,
+		v6Global,
+		v4LAN,
+		v4LANDup,
+		nil,
+	})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 advertise IPs, got %d (%v)", len(got), got)
+	}
+	if got[0].String() != "192.168.1.10" {
+		t.Fatalf("expected IPv4 first, got %v", got)
+	}
+	if got[1].String() != "2a0d:3341:b9e9:8410::1" {
+		t.Fatalf("unexpected second IP: %v", got[1])
 	}
 }
 

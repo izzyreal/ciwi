@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -38,7 +39,8 @@ func startMDNSAdvertiser(serverAddr string) func() {
 		"api_version=1",
 		"version=" + currentVersion(),
 	}
-	service, err := mdns.NewMDNSService(instance, "_ciwi._tcp", "", "", portNum, nil, meta)
+	ips := discoverAdvertiseIPs()
+	service, err := mdns.NewMDNSService(instance, "_ciwi._tcp", "", "", portNum, ips, meta)
 	if err != nil {
 		slog.Error("mdns advertise service setup failed", "error", err)
 		return func() {}
@@ -53,6 +55,60 @@ func startMDNSAdvertiser(serverAddr string) func() {
 	return func() {
 		server.Shutdown()
 	}
+}
+
+func discoverAdvertiseIPs() []net.IP {
+	ifAddrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	return filterAdvertiseIPs(ifAddrs)
+}
+
+func filterAdvertiseIPs(addrs []net.Addr) []net.IP {
+	if len(addrs) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]net.IP, 0, len(addrs))
+	for _, addr := range addrs {
+		if addr == nil {
+			continue
+		}
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok || ipNet == nil || ipNet.IP == nil {
+			continue
+		}
+		ip := ipNet.IP
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			continue
+		}
+		normalized := ip.To16()
+		if normalized == nil {
+			continue
+		}
+		key := normalized.String()
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, normalized)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Slice(out, func(i, j int) bool {
+		ai := out[i].To4() != nil
+		aj := out[j].To4() != nil
+		if ai != aj {
+			return ai
+		}
+		return out[i].String() < out[j].String()
+	})
+	return out
 }
 
 func listenPortFromAddr(addr string) string {
