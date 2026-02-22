@@ -30,6 +30,8 @@ pipelines:
               coverage_format: go-coverprofile
               coverage_report: dist/go-unit.cover
       - id: build-cross-platform
+        needs:
+          - unit-tests
         runs_on:
           executor: script
           shell: posix
