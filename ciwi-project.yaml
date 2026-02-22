@@ -171,6 +171,16 @@ pipelines:
                 echo "[release] Uploaded ${IDX}/${TOTAL}: ${FILE} in $((END-START))s"
               done
             skip_dry_run: true
+            vault:
+              connection: home-vault
+              secrets:
+                - name: github-secret
+                  mount: kv
+                  path: gh
+                  key: token
+                  kv_version: 2
+            env:
+              GITHUB_TOKEN: "{{ secret.github-secret }}"
 
 pipeline_chains:
   - id: build-release
