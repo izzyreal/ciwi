@@ -175,6 +175,48 @@ function Build-HostUrlCandidates {
   return @($candidates)
 }
 
+function Get-DnsCacheHostCandidates {
+  $seen = @{}
+  $values = New-Object System.Collections.Generic.List[string]
+  $suffixes = @(Get-DnsSuffixCandidates)
+
+  if (-not (Get-Command Get-DnsClientCache -ErrorAction SilentlyContinue)) {
+    return @()
+  }
+
+  try {
+    foreach ($entry in @(Get-DnsClientCache -ErrorAction Stop)) {
+      $name = Trim-OneLine ([string]$entry.Entry)
+      $name = $name.TrimEnd('.').ToLowerInvariant()
+      if ([string]::IsNullOrWhiteSpace($name)) { continue }
+      if ($name -eq 'localhost') { continue }
+      if ($name -like '*.in-addr.arpa' -or $name -like '*.ip6.arpa') { continue }
+
+      if ($name -match '\.') {
+        $likelyLan = $false
+        foreach ($suffix in $suffixes) {
+          if ([string]::IsNullOrWhiteSpace($suffix)) { continue }
+          if ($name -eq $suffix -or $name.EndsWith(".$suffix")) {
+            $likelyLan = $true
+            break
+          }
+        }
+        if (-not $likelyLan -and $name -notmatch '\.(lan|local)$') {
+          continue
+        }
+      }
+
+      if (-not $seen.ContainsKey($name)) {
+        $seen[$name] = $true
+        $values.Add($name) | Out-Null
+      }
+    }
+  } catch {
+  }
+
+  return @($values | Sort-Object)
+}
+
 function Prefer-HostnameUrl {
   param([Parameter(Mandatory = $true)][string]$Url)
   $canonical = Canonicalize-Url $Url
@@ -222,6 +264,16 @@ function Discover-Servers {
   foreach ($candidate in @('http://127.0.0.1:8112', 'http://localhost:8112')) {
     if (Test-CiwiServer -BaseUrl $candidate) {
       Add-UniqueServer -Map $found -Url $candidate
+    }
+  }
+
+  # Probe likely LAN names already resolved by this host (for example from ping/nslookup).
+  foreach ($dnsHost in @(Get-DnsCacheHostCandidates)) {
+    foreach ($candidateHost in @(Build-HostUrlCandidates -HostName $dnsHost -Port 8112)) {
+      if (Test-CiwiServer -BaseUrl $candidateHost) {
+        Add-UniqueServer -Map $found -Url $candidateHost
+        break
+      }
     }
   }
 
