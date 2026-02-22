@@ -14,6 +14,8 @@ import (
 )
 
 func TestDownloadDependencyArtifacts(t *testing.T) {
+	t.Setenv("CIWI_DEP_ARTIFACT_LOG_LEVEL", "")
+	t.Setenv("CIWI_DEP_ARTIFACT_LOG_MAX_RESTORED_LINES", "")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/jobs/job-build-1/artifacts":
@@ -36,6 +38,12 @@ func TestDownloadDependencyArtifacts(t *testing.T) {
 	}
 	if !strings.Contains(summary, "downloading=2") {
 		t.Fatalf("unexpected summary: %s", summary)
+	}
+	if strings.Contains(summary, "[dep-artifacts] restored=dist/") {
+		t.Fatalf("default summary should not include per-file restore lines, got: %s", summary)
+	}
+	if !strings.Contains(summary, "[dep-artifacts] restored=2 bytes=6 skipped=0 from job=job-build-1") {
+		t.Fatalf("expected compact restored summary line, got: %s", summary)
 	}
 	a, err := os.ReadFile(filepath.Join(execDir, "dist", "a.bin"))
 	if err != nil {
@@ -64,6 +72,8 @@ func TestDependencyArtifactJobIDs(t *testing.T) {
 }
 
 func TestDownloadDependencyArtifactsPrefersZIP(t *testing.T) {
+	t.Setenv("CIWI_DEP_ARTIFACT_LOG_LEVEL", "")
+	t.Setenv("CIWI_DEP_ARTIFACT_LOG_MAX_RESTORED_LINES", "")
 	zipBytes := buildTestZIP(t, map[string]string{
 		"dist/a.bin": "AAA",
 		"dist/b.txt": "BBB",
@@ -88,6 +98,12 @@ func TestDownloadDependencyArtifactsPrefersZIP(t *testing.T) {
 	}
 	if !strings.Contains(summary, "zip_entries=2") {
 		t.Fatalf("expected zip summary, got: %s", summary)
+	}
+	if strings.Contains(summary, "[dep-artifacts] restored=dist/") {
+		t.Fatalf("default summary should not include per-file restore lines, got: %s", summary)
+	}
+	if !strings.Contains(summary, "[dep-artifacts] restored=2 bytes=6 skipped=0 from job=job-build-1") {
+		t.Fatalf("expected compact restored summary line, got: %s", summary)
 	}
 	a, err := os.ReadFile(filepath.Join(execDir, "dist", "a.bin"))
 	if err != nil {
@@ -119,4 +135,38 @@ func buildTestZIP(t *testing.T, files map[string]string) []byte {
 		t.Fatalf("close zip writer: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func TestDownloadDependencyArtifactsZIPVerboseWithTruncation(t *testing.T) {
+	t.Setenv("CIWI_DEP_ARTIFACT_LOG_LEVEL", "verbose")
+	t.Setenv("CIWI_DEP_ARTIFACT_LOG_MAX_RESTORED_LINES", "1")
+	zipBytes := buildTestZIP(t, map[string]string{
+		"dist/a.bin": "AAA",
+		"dist/b.txt": "BBB",
+	})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/jobs/job-build-1/artifacts/download-all":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(zipBytes)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	execDir := t.TempDir()
+	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-build-1", execDir)
+	if err != nil {
+		t.Fatalf("downloadDependencyArtifacts: %v", err)
+	}
+	if !strings.Contains(summary, "[dep-artifacts] restored=dist/a.bin bytes=3") {
+		t.Fatalf("expected first restored line in verbose mode, got: %s", summary)
+	}
+	if strings.Contains(summary, "[dep-artifacts] restored=dist/b.txt bytes=3") {
+		t.Fatalf("expected restore truncation after one line, got: %s", summary)
+	}
+	if !strings.Contains(summary, "[dep-artifacts] restored_truncated=1 shown=1 total=2") {
+		t.Fatalf("expected truncation summary, got: %s", summary)
+	}
 }

@@ -11,13 +11,23 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
+const (
+	depArtifactLogLevelNone              = "none"
+	depArtifactLogLevelSummary           = "summary"
+	depArtifactLogLevelVerbose           = "verbose"
+	defaultDepArtifactLogLevel           = depArtifactLogLevelSummary
+	defaultDepArtifactLogMaxRestoredRows = 25
+)
+
 func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serverURL, jobID, execDir string) (string, error) {
 	var summary strings.Builder
+	logLevel, restoredLineLimit := dependencyArtifactLogConfigFromEnv()
 	if strings.TrimSpace(serverURL) == "" {
 		return "", fmt.Errorf("server url is required")
 	}
@@ -28,7 +38,7 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 		return "", fmt.Errorf("exec dir is required")
 	}
 
-	if zipSummary, err := downloadDependencyArtifactsZIP(ctx, client, serverURL, jobID, execDir); err == nil {
+	if zipSummary, err := downloadDependencyArtifactsZIP(ctx, client, serverURL, jobID, execDir, logLevel, restoredLineLimit); err == nil {
 		return zipSummary, nil
 	} else {
 		fmt.Fprintf(&summary, "[dep-artifacts] zip_fallback job=%s reason=%v\n", jobID, err)
@@ -56,10 +66,20 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 		fmt.Fprintf(&summary, "[dep-artifacts] none from job=%s", jobID)
 		return summary.String(), nil
 	}
-	fmt.Fprintf(&summary, "[dep-artifacts] downloading=%d from job=%s\n", len(payload.Artifacts), jobID)
+	if logLevel != depArtifactLogLevelNone {
+		fmt.Fprintf(&summary, "[dep-artifacts] downloading=%d from job=%s\n", len(payload.Artifacts), jobID)
+	}
+	var (
+		restoredCount      int
+		restoredBytes      int64
+		skippedCount       int
+		restoredLinesShown int
+		restoredSuppressed int
+	)
 	for _, a := range payload.Artifacts {
 		rel, err := safeDependencyArtifactPath(a.Path)
 		if err != nil {
+			skippedCount++
 			fmt.Fprintf(&summary, "[dep-artifacts] skip=%s reason=%v\n", a.Path, err)
 			continue
 		}
@@ -86,12 +106,31 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 		if err := writeDependencyArtifact(execDir, rel, content); err != nil {
 			return summary.String(), fmt.Errorf("write artifact %q: %w", a.Path, err)
 		}
-		fmt.Fprintf(&summary, "[dep-artifacts] restored=%s bytes=%d\n", rel, len(content))
+		restoredCount++
+		restoredBytes += int64(len(content))
+		if logLevel == depArtifactLogLevelVerbose {
+			if restoredLinesShown < restoredLineLimit {
+				fmt.Fprintf(&summary, "[dep-artifacts] restored=%s bytes=%d\n", rel, len(content))
+				restoredLinesShown++
+			} else {
+				restoredSuppressed++
+			}
+		}
+	}
+	if restoredCount == 0 {
+		fmt.Fprintf(&summary, "[dep-artifacts] none from job=%s", jobID)
+		return strings.TrimSuffix(summary.String(), "\n"), nil
+	}
+	if logLevel == depArtifactLogLevelVerbose && restoredSuppressed > 0 {
+		fmt.Fprintf(&summary, "[dep-artifacts] restored_truncated=%d shown=%d total=%d\n", restoredSuppressed, restoredLinesShown, restoredCount)
+	}
+	if logLevel != depArtifactLogLevelNone {
+		fmt.Fprintf(&summary, "[dep-artifacts] restored=%d bytes=%d skipped=%d from job=%s\n", restoredCount, restoredBytes, skippedCount, jobID)
 	}
 	return strings.TrimSuffix(summary.String(), "\n"), nil
 }
 
-func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, serverURL, jobID, execDir string) (string, error) {
+func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, serverURL, jobID, execDir, logLevel string, restoredLineLimit int) (string, error) {
 	var summary strings.Builder
 	zipURL := strings.TrimRight(serverURL, "/") + "/api/v1/jobs/" + jobID + "/artifacts/download-all"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, zipURL, nil)
@@ -114,14 +153,23 @@ func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, se
 	if err != nil {
 		return "", fmt.Errorf("open zip: %w", err)
 	}
-	fmt.Fprintf(&summary, "[dep-artifacts] zip_entries=%d from job=%s\n", len(zr.File), jobID)
-	restored := 0
+	if logLevel != depArtifactLogLevelNone {
+		fmt.Fprintf(&summary, "[dep-artifacts] zip_entries=%d from job=%s\n", len(zr.File), jobID)
+	}
+	var (
+		restoredCount      int
+		restoredBytes      int64
+		skippedCount       int
+		restoredLinesShown int
+		restoredSuppressed int
+	)
 	for _, zf := range zr.File {
 		if zf.FileInfo().IsDir() {
 			continue
 		}
 		rel, err := safeDependencyArtifactPath(zf.Name)
 		if err != nil {
+			skippedCount++
 			fmt.Fprintf(&summary, "[dep-artifacts] skip=%s reason=%v\n", zf.Name, err)
 			continue
 		}
@@ -140,12 +188,26 @@ func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, se
 		if err := writeDependencyArtifact(execDir, rel, content); err != nil {
 			return summary.String(), fmt.Errorf("write artifact %q: %w", zf.Name, err)
 		}
-		fmt.Fprintf(&summary, "[dep-artifacts] restored=%s bytes=%d\n", rel, len(content))
-		restored++
+		restoredCount++
+		restoredBytes += int64(len(content))
+		if logLevel == depArtifactLogLevelVerbose {
+			if restoredLinesShown < restoredLineLimit {
+				fmt.Fprintf(&summary, "[dep-artifacts] restored=%s bytes=%d\n", rel, len(content))
+				restoredLinesShown++
+			} else {
+				restoredSuppressed++
+			}
+		}
 	}
-	if restored == 0 {
+	if restoredCount == 0 {
 		fmt.Fprintf(&summary, "[dep-artifacts] none from job=%s", jobID)
 		return summary.String(), nil
+	}
+	if logLevel == depArtifactLogLevelVerbose && restoredSuppressed > 0 {
+		fmt.Fprintf(&summary, "[dep-artifacts] restored_truncated=%d shown=%d total=%d\n", restoredSuppressed, restoredLinesShown, restoredCount)
+	}
+	if logLevel != depArtifactLogLevelNone {
+		fmt.Fprintf(&summary, "[dep-artifacts] restored=%d bytes=%d skipped=%d from job=%s\n", restoredCount, restoredBytes, skippedCount, jobID)
 	}
 	return strings.TrimSuffix(summary.String(), "\n"), nil
 }
@@ -211,4 +273,20 @@ func writeDependencyArtifact(execDir, rel string, content []byte) error {
 		return err
 	}
 	return os.WriteFile(dst, content, 0o644)
+}
+
+func dependencyArtifactLogConfigFromEnv() (level string, restoredLineLimit int) {
+	level = strings.ToLower(strings.TrimSpace(envOrDefault("CIWI_DEP_ARTIFACT_LOG_LEVEL", defaultDepArtifactLogLevel)))
+	switch level {
+	case depArtifactLogLevelNone, depArtifactLogLevelSummary, depArtifactLogLevelVerbose:
+	default:
+		level = defaultDepArtifactLogLevel
+	}
+	restoredLineLimit = defaultDepArtifactLogMaxRestoredRows
+	if raw := strings.TrimSpace(envOrDefault("CIWI_DEP_ARTIFACT_LOG_MAX_RESTORED_LINES", "")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v >= 0 {
+			restoredLineLimit = v
+		}
+	}
+	return level, restoredLineLimit
 }

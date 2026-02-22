@@ -29,6 +29,7 @@ Note on agent workdir:
 Note on artifact log verbosity:
 - Agent artifact upload logs are compact by default (`CIWI_ARTIFACT_LOG_LEVEL=summary`).
 - Use `CIWI_ARTIFACT_LOG_LEVEL=verbose` and optionally `CIWI_ARTIFACT_LOG_MAX_INCLUDE_LINES` for per-file include lines.
+- Dependency artifact restore logs are also compact by default (`CIWI_DEP_ARTIFACT_LOG_LEVEL=summary`), with optional `CIWI_DEP_ARTIFACT_LOG_MAX_RESTORED_LINES` in `verbose` mode.
 - See [`docs/configuration.md`](docs/configuration.md) for details.
 
 ## Documentation Map
