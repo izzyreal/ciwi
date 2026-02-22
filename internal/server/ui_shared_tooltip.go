@@ -122,6 +122,14 @@ function createHoverTooltip(anchor, opts) {
     if (!visible) return;
     positionTip();
   };
+  const onDocumentMouseDown = (event) => {
+    if (!visible) return;
+    const target = event && event.target;
+    if (!target) return;
+    if (target === anchor || (anchor.contains && anchor.contains(target))) return;
+    if (target === tip || (tip.contains && tip.contains(target))) return;
+    hideNow();
+  };
 
   anchor.addEventListener('mouseenter', onEnter);
   anchor.addEventListener('focus', onEnter);
@@ -130,6 +138,7 @@ function createHoverTooltip(anchor, opts) {
   tip.addEventListener('mouseenter', onEnter);
   tip.addEventListener('mouseleave', onLeave);
   tip.addEventListener('mousedown', startSelectionDrag);
+  document.addEventListener('mousedown', onDocumentMouseDown);
   document.addEventListener('mouseup', stopSelectionDrag);
   document.addEventListener('selectionchange', onSelection);
   window.addEventListener('scroll', onReposition, true);
@@ -146,6 +155,7 @@ function createHoverTooltip(anchor, opts) {
       tip.removeEventListener('mouseenter', onEnter);
       tip.removeEventListener('mouseleave', onLeave);
       tip.removeEventListener('mousedown', startSelectionDrag);
+      document.removeEventListener('mousedown', onDocumentMouseDown);
       document.removeEventListener('mouseup', stopSelectionDrag);
       document.removeEventListener('selectionchange', onSelection);
       window.removeEventListener('scroll', onReposition, true);
