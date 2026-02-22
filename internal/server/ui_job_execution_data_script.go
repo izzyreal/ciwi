@@ -267,7 +267,7 @@ const jobExecutionDataJS = `
           }
         }
         const stepDescription = String(job.current_step || '').trim();
-        let subtitle = 'Status: <span class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
+        let subtitle = 'Status: <span class="' + statusClassForJob(job) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
         if (stepDescription) {
           subtitle += ' <span class="label"> - ' + escapeHtml(stepDescription) + '</span>';
         }
@@ -307,9 +307,40 @@ const jobExecutionDataJS = `
       }
 
       const rerunBtn = document.getElementById('rerunBtn');
+      const rerunBlockedLink = document.getElementById('rerunBlockedLink');
       const hasStarted = !!String(job.started_utc || '').trim();
       rerunBtn.disabled = !hasStarted;
       rerunBtn.title = hasStarted ? '' : 'Job must have started at least once';
+      if (rerunBlockedLink) {
+        rerunBlockedLink.style.display = 'none';
+        rerunBlockedLink.removeAttribute('href');
+        rerunBlockedLink.textContent = 'Open failed dependency';
+      }
+      if (!hasStarted && isDependencyBlockedJob(job) && rerunBlockedLink) {
+        try {
+          const bres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/blocked-by', { cache: 'no-store' });
+          if (bres.ok) {
+            const bdata = await bres.json();
+            const dep = (bdata && bdata.dependency) || null;
+            const depID = String((dep && dep.job_execution_id) || '').trim();
+            if (depID) {
+              const backTo = encodeURIComponent(window.location.pathname + window.location.search);
+              rerunBlockedLink.href = '/jobs/' + encodeURIComponent(depID) + '?back=' + backTo;
+              rerunBlockedLink.style.display = 'inline';
+              const depJob = String((dep && dep.pipeline_job_id) || '').trim();
+              const depMatrix = String((dep && dep.matrix_name) || '').trim();
+              let label = depJob;
+              if (depMatrix) {
+                label = depJob ? (depJob + ' / ' + depMatrix) : depMatrix;
+              }
+              if (label) {
+                rerunBlockedLink.textContent = 'Open failed dependency: ' + label;
+              }
+              rerunBtn.title = '';
+            }
+          }
+        } catch (_) {}
+      }
       const rerunInfo = document.getElementById('rerunInfo');
       if (rerunInfo && !rerunInfo.__ciwiHoverTooltip) {
         const tooltipHTML = '' +

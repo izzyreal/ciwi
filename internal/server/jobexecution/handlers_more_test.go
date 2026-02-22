@@ -162,3 +162,93 @@ func TestNowUTCUsesDepsClockOrFallback(t *testing.T) {
 		t.Fatalf("expected fallback to current UTC time, got %s (range %s..%s)", got, before, after)
 	}
 }
+
+func TestHandleByIDBlockedBy(t *testing.T) {
+	t.Run("method not allowed", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/blocked-by", nil)
+		HandleByID(rec, req, HandlerDeps{Store: &stubStore{}})
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d", rec.Code)
+		}
+	})
+
+	t.Run("not blocked", func(t *testing.T) {
+		store := &stubStore{
+			getJobExecutionFn: func(id string) (protocol.JobExecution, error) {
+				return protocol.JobExecution{
+					ID:     id,
+					Status: protocol.JobExecutionStatusFailed,
+					Error:  "script failed",
+				}, nil
+			},
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-1/blocked-by", nil)
+		HandleByID(rec, req, HandlerDeps{Store: store})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"blocked":false`) {
+			t.Fatalf("expected blocked=false payload, got %s", rec.Body.String())
+		}
+	})
+
+	t.Run("finds required dependency job", func(t *testing.T) {
+		store := &stubStore{
+			getJobExecutionFn: func(id string) (protocol.JobExecution, error) {
+				return protocol.JobExecution{
+					ID:     id,
+					Status: protocol.JobExecutionStatusFailed,
+					Error:  "cancelled: required job unit-tests failed",
+					Metadata: map[string]string{
+						"project":         "ciwi",
+						"pipeline_id":     "build",
+						"pipeline_run_id": "run-1",
+						"pipeline_job_id": "build-cross-platform",
+					},
+				}, nil
+			},
+			listJobExecutionsFn: func() ([]protocol.JobExecution, error) {
+				return []protocol.JobExecution{
+					{
+						ID:     "job-old",
+						Status: protocol.JobExecutionStatusFailed,
+						Metadata: map[string]string{
+							"project":         "ciwi",
+							"pipeline_id":     "build",
+							"pipeline_run_id": "run-1",
+							"pipeline_job_id": "unit-tests",
+						},
+						CreatedUTC: time.Date(2026, time.February, 22, 16, 30, 0, 0, time.UTC),
+					},
+					{
+						ID:     "job-new",
+						Status: protocol.JobExecutionStatusFailed,
+						Metadata: map[string]string{
+							"project":         "ciwi",
+							"pipeline_id":     "build",
+							"pipeline_run_id": "run-1",
+							"pipeline_job_id": "unit-tests",
+							"matrix_name":     "linux-amd64",
+						},
+						CreatedUTC: time.Date(2026, time.February, 22, 16, 31, 0, 0, time.UTC),
+					},
+				}, nil
+			},
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-blocked/blocked-by", nil)
+		HandleByID(rec, req, HandlerDeps{Store: store})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, `"blocked":true`) || !strings.Contains(body, `"job_execution_id":"job-new"`) {
+			t.Fatalf("unexpected blocked-by payload: %s", body)
+		}
+		if !strings.Contains(body, `"pipeline_job_id":"unit-tests"`) {
+			t.Fatalf("expected pipeline job id in payload: %s", body)
+		}
+	})
+}

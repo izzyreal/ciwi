@@ -120,7 +120,7 @@ const agentHelpersJS = `
         const href = '/jobs/' + encodeURIComponent(id) + '?back=' + backTo;
         return '<tr>' +
           '<td><a href="' + href + '">' + escapeHtml(jobDescription(job)) + '</a></td>' +
-          '<td class="' + statusClass(job.status) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
+          '<td class="' + statusClassForJob(job) + '">' + escapeHtml(formatJobStatus(job)) + '</td>' +
           '<td>' + escapeHtml((job.metadata && job.metadata.pipeline_id) || '') + '</td>' +
           '<td>' + escapeHtml(buildVersionLabel(job)) + '</td>' +
           '<td>' + escapeHtml(formatTimestamp(job.created_utc || '')) + '</td>' +

@@ -43,6 +43,28 @@ function statusClass(status) {
   return 'status-' + normalizedJobStatus(status);
 }
 
+function blockedDependencyNameFromError(err) {
+  const text = String(err || '').trim();
+  if (!text) return '';
+  let m = text.match(/^cancelled:\s+required job\s+(.+?)\s+failed$/i);
+  if (m) return String(m[1] || '').trim();
+  m = text.match(/^cancelled:\s+upstream pipeline\s+(.+?)\s+failed$/i);
+  if (m) return String(m[1] || '').trim();
+  return '';
+}
+
+function isDependencyBlockedJob(job) {
+  const j = job || {};
+  if (normalizedJobStatus(j.status) !== 'failed') return false;
+  if (String(j.started_utc || '').trim()) return false;
+  return blockedDependencyNameFromError(j.error).length > 0;
+}
+
+function statusClassForJob(job) {
+  if (isDependencyBlockedJob(job)) return 'status-blocked';
+  return statusClass((job && job.status) || '');
+}
+
 function formatTimestamp(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -112,9 +134,13 @@ function buildVersionLabel(job) {
 
 function formatJobStatus(job) {
   const status = (job && job.status) || '';
-  const errText = String((job && job.error) || '').trim().toLowerCase();
-  if (normalizedJobStatus(status) === 'failed' && errText === 'cancelled by user') {
+  const errText = String((job && job.error) || '').trim();
+  if (normalizedJobStatus(status) === 'failed' && errText.toLowerCase() === 'cancelled by user') {
     return 'Cancelled by user';
+  }
+  const blockedDep = blockedDependencyNameFromError(errText);
+  if (isDependencyBlockedJob(job) && blockedDep) {
+    return 'blocked (dependency failed: ' + blockedDep + ')';
   }
   const summary = job && job.test_summary;
   if (!summary || !summary.total) return status;

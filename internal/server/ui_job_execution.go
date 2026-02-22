@@ -36,7 +36,8 @@ const jobExecutionHTML = `<!doctype html>
     .rerun-action-wrap {
       position: relative;
       display: inline-flex;
-      align-items: center;
+      align-items: flex-start;
+      flex-direction: column;
       align-self: center;
     }
     .rerun-action-wrap .mode-info {
@@ -45,8 +46,13 @@ const jobExecutionHTML = `<!doctype html>
       left: 50%;
       transform: translateX(-50%);
     }
+    .rerun-blocked-link {
+      margin-top: 6px;
+      font-size: 12px;
+    }
     .status-succeeded { color: var(--ok); font-weight: 700; }
     .status-failed { color: var(--bad); font-weight: 700; }
+    .status-blocked { color: #8a5a14; font-weight: 700; }
     .status-running { color: #a56a00; font-weight: 700; }
     .status-queued, .status-leased { color: var(--muted); font-weight: 700; }
     .log {
@@ -260,6 +266,7 @@ const jobExecutionHTML = `<!doctype html>
             <span aria-hidden="true">ⓘ</span>
           </span>
           <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
+          <a id="rerunBlockedLink" class="rerun-blocked-link" href="#" style="display:none;">Open failed dependency</a>
         </span>
         <a id="backLink" class="nav-btn" href="/">Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span></a>
       </div>

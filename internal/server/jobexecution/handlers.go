@@ -197,6 +197,11 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		return
 	}
 
+	if parsed.IsResource("blocked-by") {
+		handleJobBlockedBy(w, r, deps, jobID)
+		return
+	}
+
 	http.NotFound(w, r)
 }
 

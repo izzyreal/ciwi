@@ -18,6 +18,7 @@ const projectHTML = `<!doctype html>
     td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .status-succeeded { color: var(--ok); font-weight: 600; }
     .status-failed { color: var(--bad); font-weight: 600; }
+    .status-blocked { color: #8a5a14; font-weight: 600; }
     .status-running { color: #a56a00; font-weight: 600; }
     .status-queued, .status-leased { color: var(--muted); }
     .pipeline { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }

@@ -89,6 +89,19 @@ type EventsViewResponse struct {
 	Events []protocol.JobExecutionEvent `json:"events"`
 }
 
+type BlockedDependencyView struct {
+	JobExecutionID string `json:"job_execution_id,omitempty"`
+	PipelineID     string `json:"pipeline_id,omitempty"`
+	PipelineJobID  string `json:"pipeline_job_id,omitempty"`
+	MatrixName     string `json:"matrix_name,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+}
+
+type BlockedByViewResponse struct {
+	Blocked    bool                   `json:"blocked"`
+	Dependency *BlockedDependencyView `json:"dependency,omitempty"`
+}
+
 func ViewFromProtocol(job protocol.JobExecution) View {
 	view := View{
 		ID:                   job.ID,

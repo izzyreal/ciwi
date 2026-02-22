@@ -76,7 +76,7 @@ function buildJobExecutionRow(job, opts = {}) {
 
   tr.innerHTML =
     '<td><span class="ciwi-job-desc">' + iconHTML + '<a class="' + linkClasses + '" href="/jobs/' + encodeURIComponent(job.id) + '?back=' + backTo + '">' + cellText(description) + '</a></span></td>' +
-    '<td class="' + statusClass(job.status) + '">' + cellText(formatJobStatus(job)) + '</td>' +
+    '<td class="' + statusClassForJob(job) + '">' + cellText(formatJobStatus(job)) + '</td>' +
     '<td>' + cellText(pipeline) + '</td>' +
     '<td>' + cellText(buildVersionLabel(job)) + '</td>' +
     '<td>' + cellText(job.leased_by_agent_id || '') + '</td>' +
