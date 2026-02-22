@@ -402,8 +402,8 @@ function Test-TcpPortQuick {
 function Discover-SubnetServers {
   $found = @{}
   $maxProbes = 768
-  $timeoutMs = 80
-  $maxDurationMs = 12000
+  $timeoutMs = 50
+  $maxDurationMs = 18000
   $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
   $ipsToProbe = New-Object System.Collections.Generic.List[string]
   $ipSeen = @{}
@@ -417,6 +417,9 @@ function Discover-SubnetServers {
     $prefixSeen[$p] = $true
     $prefixes.Add($p) | Out-Null
   }
+  foreach ($common in @('192.168.1', '192.168.0', '10.0.0', '10.0.1', '172.16.0', '172.20.0')) {
+    & $addPrefix $common
+  }
   try {
     $localIPs = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop)
     foreach ($entry in $localIPs) {
@@ -427,9 +430,6 @@ function Discover-SubnetServers {
       $octets = $ip.Split('.')
       if ($octets.Length -ne 4) { continue }
       & $addPrefix "$($octets[0]).$($octets[1]).$($octets[2])"
-    }
-    foreach ($common in @('192.168.1', '192.168.0', '10.0.0', '10.0.1', '172.16.0', '172.20.0')) {
-      & $addPrefix $common
     }
   } catch {
     return @()
