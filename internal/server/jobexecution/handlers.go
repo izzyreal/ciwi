@@ -177,6 +177,11 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 		return
 	}
 
+	if parsed.IsNestedResource("artifacts", "download") {
+		handleJobArtifactsDownload(w, r, deps, jobID)
+		return
+	}
+
 	if parsed.IsNestedResource("artifacts", "download-all") {
 		handleJobArtifactsDownloadAll(w, r, deps, jobID)
 		return
@@ -245,6 +250,11 @@ func listArtifactsWithSynthetic(deps HandlerDeps, jobID string) ([]protocol.JobE
 }
 
 func writeArtifactsZIP(w http.ResponseWriter, artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact) error {
+	fileName := buildArtifactsZIPFileName(jobID, "")
+	return writeArtifactsZIPWithFileName(w, artifactsDir, jobID, artifacts, fileName)
+}
+
+func writeArtifactsZIPWithFileName(w http.ResponseWriter, artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact, fileName string) error {
 	zipPrefix := sanitizeZIPName(jobID)
 	if zipPrefix == "" {
 		zipPrefix = "job"
@@ -260,8 +270,8 @@ func writeArtifactsZIP(w http.ResponseWriter, artifactsDir, jobID string, artifa
 	// Deterministic order yields stable archive listing in the UI.
 	sort.SliceStable(artifacts, func(i, j int) bool { return artifacts[i].Path < artifacts[j].Path })
 	for _, a := range artifacts {
-		rel := filepath.ToSlash(filepath.Clean(strings.TrimSpace(a.Path)))
-		if rel == "" || rel == "." || strings.HasPrefix(rel, "/") || strings.Contains(rel, "..") {
+		rel, ok := normalizeRelativeArtifactPath(a.Path)
+		if !ok {
 			continue
 		}
 		full := filepath.Join(artifactsDir, jobID, filepath.FromSlash(rel))
@@ -312,8 +322,7 @@ func writeArtifactsZIP(w http.ResponseWriter, artifactsDir, jobID string, artifa
 	}
 	defer tmp.Close()
 
-	fileName := sanitizeZIPName(jobID) + "-artifacts.zip"
-	if strings.TrimSpace(fileName) == "-artifacts.zip" {
+	if strings.TrimSpace(fileName) == "" {
 		fileName = "job-artifacts.zip"
 	}
 	w.Header().Set("Content-Type", "application/zip")
@@ -346,6 +355,26 @@ func sanitizeZIPName(v string) string {
 		}
 	}
 	return strings.Trim(strings.TrimSpace(b.String()), "-.")
+}
+
+func normalizeRelativeArtifactPath(raw string) (string, bool) {
+	rel := filepath.ToSlash(filepath.Clean(strings.TrimSpace(raw)))
+	if rel == "" || rel == "." || strings.HasPrefix(rel, "/") || rel == ".." || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
+		return "", false
+	}
+	return rel, true
+}
+
+func buildArtifactsZIPFileName(jobID, prefix string) string {
+	name := strings.TrimSpace(jobID)
+	if strings.TrimSpace(prefix) != "" {
+		name += "-" + strings.TrimSpace(prefix)
+	}
+	fileName := sanitizeZIPName(name) + "-artifacts.zip"
+	if strings.TrimSpace(fileName) == "-artifacts.zip" {
+		fileName = "job-artifacts.zip"
+	}
+	return fileName
 }
 
 func HandleClearQueue(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {

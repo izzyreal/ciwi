@@ -136,6 +136,11 @@ const jobExecutionHTML = `<!doctype html>
       color: #1f2a24;
       font-weight: 600;
     }
+    .artifact-dir-download {
+      margin-left: 8px;
+      font-size: 12px;
+      font-weight: 500;
+    }
     .artifact-leaf {
       margin: 4px 0;
     }

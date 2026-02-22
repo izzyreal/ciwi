@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,6 +26,12 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 	}
 	if strings.TrimSpace(execDir) == "" {
 		return "", fmt.Errorf("exec dir is required")
+	}
+
+	if zipSummary, err := downloadDependencyArtifactsZIP(ctx, client, serverURL, jobID, execDir); err == nil {
+		return zipSummary, nil
+	} else {
+		fmt.Fprintf(&summary, "[dep-artifacts] zip_fallback job=%s reason=%v\n", jobID, err)
 	}
 
 	artifactsURL := strings.TrimRight(serverURL, "/") + "/api/v1/jobs/" + jobID + "/artifacts"
@@ -75,14 +83,69 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 		if readErr != nil {
 			return summary.String(), fmt.Errorf("read artifact %q: %w", a.Path, readErr)
 		}
-		dst := filepath.Join(execDir, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return summary.String(), fmt.Errorf("mkdir for artifact %q: %w", a.Path, err)
-		}
-		if err := os.WriteFile(dst, content, 0o644); err != nil {
+		if err := writeDependencyArtifact(execDir, rel, content); err != nil {
 			return summary.String(), fmt.Errorf("write artifact %q: %w", a.Path, err)
 		}
 		fmt.Fprintf(&summary, "[dep-artifacts] restored=%s bytes=%d\n", rel, len(content))
+	}
+	return strings.TrimSuffix(summary.String(), "\n"), nil
+}
+
+func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, serverURL, jobID, execDir string) (string, error) {
+	var summary strings.Builder
+	zipURL := strings.TrimRight(serverURL, "/") + "/api/v1/jobs/" + jobID + "/artifacts/download-all"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, zipURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create zip request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download zip: %w", err)
+	}
+	defer resp.Body.Close()
+	payload, readErr := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("zip rejected: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(payload)))
+	}
+	if readErr != nil {
+		return "", fmt.Errorf("read zip: %w", readErr)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(payload), int64(len(payload)))
+	if err != nil {
+		return "", fmt.Errorf("open zip: %w", err)
+	}
+	fmt.Fprintf(&summary, "[dep-artifacts] zip_entries=%d from job=%s\n", len(zr.File), jobID)
+	restored := 0
+	for _, zf := range zr.File {
+		if zf.FileInfo().IsDir() {
+			continue
+		}
+		rel, err := safeDependencyArtifactPath(zf.Name)
+		if err != nil {
+			fmt.Fprintf(&summary, "[dep-artifacts] skip=%s reason=%v\n", zf.Name, err)
+			continue
+		}
+		rc, err := zf.Open()
+		if err != nil {
+			return summary.String(), fmt.Errorf("open zip entry %q: %w", zf.Name, err)
+		}
+		content, readErr := io.ReadAll(rc)
+		closeErr := rc.Close()
+		if readErr != nil {
+			return summary.String(), fmt.Errorf("read zip entry %q: %w", zf.Name, readErr)
+		}
+		if closeErr != nil {
+			return summary.String(), fmt.Errorf("close zip entry %q: %w", zf.Name, closeErr)
+		}
+		if err := writeDependencyArtifact(execDir, rel, content); err != nil {
+			return summary.String(), fmt.Errorf("write artifact %q: %w", zf.Name, err)
+		}
+		fmt.Fprintf(&summary, "[dep-artifacts] restored=%s bytes=%d\n", rel, len(content))
+		restored++
+	}
+	if restored == 0 {
+		fmt.Fprintf(&summary, "[dep-artifacts] none from job=%s", jobID)
+		return summary.String(), nil
 	}
 	return strings.TrimSuffix(summary.String(), "\n"), nil
 }
@@ -140,4 +203,12 @@ func dependencyArtifactJobIDs(env map[string]string) []string {
 		return nil
 	}
 	return ids
+}
+
+func writeDependencyArtifact(execDir, rel string, content []byte) error {
+	dst := filepath.Join(execDir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, content, 0o644)
 }

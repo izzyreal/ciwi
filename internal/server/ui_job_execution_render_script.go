@@ -205,14 +205,15 @@ const jobExecutionRenderJS = `
       return out;
     }
 
-    function renderArtifactTreeNode(node, parentPath, depth, expanded) {
+    function renderArtifactTreeNode(node, parentPath, depth, expanded, jobId) {
       const dirNames = Object.keys(node.dirs).sort((a, b) => a.localeCompare(b));
       const files = (node.files || []).slice().sort((a, b) => a.name.localeCompare(b.name));
       let html = '<ul class="artifact-tree">';
       dirNames.forEach(name => {
         const path = parentPath ? (parentPath + '/' + name) : name;
         const open = expanded.has(path);
-        html += '<li><details data-artifact-dir="' + escapeHtml(path) + '"' + (open ? ' open' : '') + '><summary>' + escapeHtml(name) + '</summary>' + renderArtifactTreeNode(node.dirs[name], path, depth + 1, expanded) + '</details></li>';
+        const zipHref = '/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts/download?prefix=' + encodeURIComponent(path);
+        html += '<li><details data-artifact-dir="' + escapeHtml(path) + '"' + (open ? ' open' : '') + '><summary>' + escapeHtml(name) + ' <a class="artifact-dir-download" href="' + zipHref + '" onclick="event.stopPropagation()">Download .zip</a></summary>' + renderArtifactTreeNode(node.dirs[name], path, depth + 1, expanded, jobId) + '</details></li>';
       });
       files.forEach(entry => {
         const a = entry.item || {};
@@ -260,7 +261,7 @@ const jobExecutionRenderJS = `
         // Default expansion is one directory level from root.
         Object.keys(tree.dirs || {}).forEach(name => expanded.add(name));
       }
-      box.innerHTML = renderArtifactTreeNode(tree, '', 0, expanded);
+      box.innerHTML = renderArtifactTreeNode(tree, '', 0, expanded, jobId);
       box.querySelectorAll('details[data-artifact-dir]').forEach(d => {
         d.addEventListener('toggle', () => {
           const path = String(d.getAttribute('data-artifact-dir') || '').trim();

@@ -203,6 +203,41 @@ func handleJobArtifactsDownloadAll(w http.ResponseWriter, r *http.Request, deps 
 	}
 }
 
+func handleJobArtifactsDownload(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	prefix, ok := normalizeRelativeArtifactPath(r.URL.Query().Get("prefix"))
+	if !ok {
+		http.Error(w, "invalid prefix", http.StatusBadRequest)
+		return
+	}
+	artifacts, err := listArtifactsWithSynthetic(deps, jobID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	filtered := make([]protocol.JobExecutionArtifact, 0, len(artifacts))
+	for _, a := range artifacts {
+		rel, ok := normalizeRelativeArtifactPath(a.Path)
+		if !ok {
+			continue
+		}
+		if rel == prefix || strings.HasPrefix(rel, prefix+"/") {
+			filtered = append(filtered, a)
+		}
+	}
+	if len(filtered) == 0 {
+		http.Error(w, "artifact directory not found", http.StatusNotFound)
+		return
+	}
+	fileName := buildArtifactsZIPFileName(jobID, prefix)
+	if err := writeArtifactsZIPWithFileName(w, deps.ArtifactsDir, jobID, filtered, fileName); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 func handleJobTests(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {
 	switch r.Method {
 	case http.MethodGet:
