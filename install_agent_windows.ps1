@@ -401,9 +401,22 @@ function Test-TcpPortQuick {
 
 function Discover-SubnetServers {
   $found = @{}
-  $maxProbes = 256
+  $maxProbes = 768
+  $timeoutMs = 80
+  $maxDurationMs = 12000
+  $startedAt = [Environment]::TickCount64
   $ipsToProbe = New-Object System.Collections.Generic.List[string]
   $ipSeen = @{}
+  $prefixSeen = @{}
+  $prefixes = New-Object System.Collections.Generic.List[string]
+  $addPrefix = {
+    param([string]$Prefix)
+    $p = Trim-OneLine ([string]$Prefix)
+    if ([string]::IsNullOrWhiteSpace($p)) { return }
+    if ($prefixSeen.ContainsKey($p)) { return }
+    $prefixSeen[$p] = $true
+    $prefixes.Add($p) | Out-Null
+  }
   try {
     $localIPs = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop)
     foreach ($entry in $localIPs) {
@@ -413,28 +426,38 @@ function Discover-SubnetServers {
       if ($ip.StartsWith('169.254.')) { continue }
       $octets = $ip.Split('.')
       if ($octets.Length -ne 4) { continue }
-      $prefix = "$($octets[0]).$($octets[1]).$($octets[2])"
-      for ($n = 1; $n -le 254; $n++) {
-        if ($ipsToProbe.Count -ge $maxProbes) { break }
-        $candidateIP = "$prefix.$n"
-        if ($candidateIP -eq $ip) { continue }
-        if ($ipSeen.ContainsKey($candidateIP)) { continue }
-        $ipSeen[$candidateIP] = $true
-        $ipsToProbe.Add($candidateIP) | Out-Null
-      }
-      if ($ipsToProbe.Count -ge $maxProbes) { break }
+      & $addPrefix "$($octets[0]).$($octets[1]).$($octets[2])"
+    }
+    foreach ($common in @('192.168.1', '192.168.0', '10.0.0', '10.0.1', '172.16.0', '172.20.0')) {
+      & $addPrefix $common
     }
   } catch {
     return @()
   }
+  foreach ($prefix in $prefixes) {
+    for ($n = 1; $n -le 254; $n++) {
+      if ($ipsToProbe.Count -ge $maxProbes) { break }
+      $candidateIP = "$prefix.$n"
+      if ($ipSeen.ContainsKey($candidateIP)) { continue }
+      $ipSeen[$candidateIP] = $true
+      $ipsToProbe.Add($candidateIP) | Out-Null
+    }
+    if ($ipsToProbe.Count -ge $maxProbes) { break }
+  }
 
   foreach ($candidateIP in $ipsToProbe) {
-    if (-not (Test-TcpPortQuick -HostName $candidateIP -Port 8112 -TimeoutMs 120)) {
+    if (([Environment]::TickCount64 - $startedAt) -ge $maxDurationMs) {
+      break
+    }
+    if (-not (Test-TcpPortQuick -HostName $candidateIP -Port 8112 -TimeoutMs $timeoutMs)) {
       continue
     }
     $url = "http://${candidateIP}:8112"
     if (Test-CiwiServer -BaseUrl $url) {
       Add-UniqueServer -Map $found -Url $url
+      if ($found.Count -ge 1) {
+        return @($found.Values | Sort-Object)
+      }
     }
   }
   return @($found.Values | Sort-Object)
