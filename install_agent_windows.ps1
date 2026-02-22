@@ -622,6 +622,57 @@ function New-GitHubHeaders {
   return $headers
 }
 
+function Invoke-DownloadFile {
+  param(
+    [Parameter(Mandatory = $true)][string]$Url,
+    [Parameter(Mandatory = $true)][string]$OutFile,
+    [hashtable]$Headers,
+    [int]$Attempts = 4
+  )
+  $attemptCount = [Math]::Max(1, $Attempts)
+  for ($attempt = 1; $attempt -le $attemptCount; $attempt++) {
+    try {
+      if (Test-Path -LiteralPath $OutFile) {
+        Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
+      }
+      if ($null -eq $Headers) {
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -TimeoutSec 45
+      } else {
+        Invoke-WebRequest -Uri $Url -Headers $Headers -OutFile $OutFile -TimeoutSec 45
+      }
+      if (Test-Path -LiteralPath $OutFile) {
+        return
+      }
+    } catch {
+    }
+
+    try {
+      if (Test-Path -LiteralPath $OutFile) {
+        Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
+      }
+      $curlArgs = @('-fsSL', '--retry', '3', '--retry-all-errors', '--connect-timeout', '8', '--max-time', '60')
+      if ($null -ne $Headers) {
+        foreach ($k in @($Headers.Keys)) {
+          $v = Trim-OneLine ([string]$Headers[$k])
+          if ([string]::IsNullOrWhiteSpace($v)) { continue }
+          $curlArgs += @('-H', "$k`: $v")
+        }
+      }
+      $curlArgs += @('-o', $OutFile, $Url)
+      & curl.exe @curlArgs | Out-Null
+      if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $OutFile)) {
+        return
+      }
+    } catch {
+    }
+
+    if ($attempt -lt $attemptCount) {
+      Start-Sleep -Seconds ([Math]::Min(6, $attempt * 2))
+    }
+  }
+  throw "download failed after $attemptCount attempts: $Url"
+}
+
 function Get-LatestTag {
   param(
     [Parameter(Mandatory = $true)][string]$Repo,
@@ -838,8 +889,8 @@ $checksumPath = Join-Path $tempRoot $checksumAssetName
 
 try {
   Write-Host "[2/7] Downloading $assetName..."
-  Invoke-WebRequest -Uri "$releaseBase/$assetName" -Headers $headers -OutFile $assetPath
-  Invoke-WebRequest -Uri "$releaseBase/$checksumAssetName" -Headers $headers -OutFile $checksumPath
+  Invoke-DownloadFile -Url "$releaseBase/$assetName" -Headers $headers -OutFile $assetPath
+  Invoke-DownloadFile -Url "$releaseBase/$checksumAssetName" -Headers $headers -OutFile $checksumPath
 
   Write-Host '[3/7] Verifying checksum...'
   $checksums = Parse-Checksums -Content (Get-Content -LiteralPath $checksumPath -Raw)
