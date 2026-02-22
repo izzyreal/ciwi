@@ -74,18 +74,14 @@ func resolveDependencyArtifactJobID(dependsOn []string, depArtifactJobIDs map[st
 }
 
 func resolveDependencyArtifactJobIDs(dependsOn []string, depArtifactJobIDsAll map[string][]string, preferred string) []string {
+	if p := strings.TrimSpace(preferred); p != "" {
+		return []string{p}
+	}
 	if len(dependsOn) == 0 || len(depArtifactJobIDsAll) == 0 {
-		if strings.TrimSpace(preferred) == "" {
-			return nil
-		}
-		return []string{strings.TrimSpace(preferred)}
+		return nil
 	}
 	out := make([]string, 0)
 	seen := map[string]struct{}{}
-	if p := strings.TrimSpace(preferred); p != "" {
-		out = append(out, p)
-		seen[p] = struct{}{}
-	}
 	for _, depID := range dependsOn {
 		depID = strings.TrimSpace(depID)
 		if depID == "" {

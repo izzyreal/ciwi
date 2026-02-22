@@ -51,9 +51,14 @@ func TestResolveDependencyArtifactJobIDs(t *testing.T) {
 		"package": {"job-2", "job-3"},
 	}
 	got := resolveDependencyArtifactJobIDs([]string{"build", "package"}, all, "job-0")
-	want := []string{"job-0", "job-1", "job-2", "job-3"}
+	want := []string{"job-0"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("resolveDependencyArtifactJobIDs mismatch: got=%v want=%v", got, want)
+	}
+	got = resolveDependencyArtifactJobIDs([]string{"build", "package"}, all, "")
+	want = []string{"job-1", "job-2", "job-3"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("resolveDependencyArtifactJobIDs without preferred mismatch: got=%v want=%v", got, want)
 	}
 	if got := resolveDependencyArtifactJobIDs(nil, nil, ""); got != nil {
 		t.Fatalf("expected nil when no deps and no preferred, got %v", got)
