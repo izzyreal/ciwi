@@ -200,3 +200,87 @@ pipeline_chains:
 		t.Fatalf("expected chain run to enqueue jobs, got %+v", runPayload)
 	}
 }
+
+func TestPipelineChainRunIsAtomicOnValidationError(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi-atomic
+pipelines:
+  - id: first
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+      ref: main
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo first
+  - id: second
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+      ref: main
+    jobs:
+      - id: prep
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo prep
+      - id: publish
+        needs:
+          - prep
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo second
+pipeline_chains:
+  - id: first-second
+    pipelines:
+      - first
+      - second
+`)
+
+	project, err := s.db.GetProjectByName("ciwi-atomic")
+	if err != nil {
+		t.Fatalf("GetProjectByName: %v", err)
+	}
+	detail, err := s.db.GetProjectDetail(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectDetail: %v", err)
+	}
+	if len(detail.PipelineChains) == 0 {
+		t.Fatalf("expected pipeline chain")
+	}
+	chainID := detail.PipelineChains[0].ID
+
+	runResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/run", map[string]any{
+		"pipeline_job_id": "publish",
+	})
+	if runResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid selection across chain, got %d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	body := readBody(t, runResp)
+	if !strings.Contains(body, `selection excludes required job "prep" needed by "publish"`) {
+		t.Fatalf("unexpected error body: %s", body)
+	}
+
+	jobs, err := s.db.ListJobExecutions()
+	if err != nil {
+		t.Fatalf("ListJobExecutions: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("expected no jobs enqueued on failed chain validation, got %d", len(jobs))
+	}
+}

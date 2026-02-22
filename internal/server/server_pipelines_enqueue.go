@@ -96,6 +96,17 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 	if err != nil {
 		return protocol.RunPipelineResponse{}, err
 	}
+	jobIDs, err := s.persistPendingJobs(pending)
+	if err != nil {
+		return protocol.RunPipelineResponse{}, err
+	}
+	if selection != nil && len(jobIDs) == 0 {
+		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
+	}
+	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobExecutionIDs: jobIDs}, nil
+}
+
+func (s *stateStore) persistPendingJobs(pending []pendingJob) ([]string, error) {
 	jobIDs := make([]string, 0)
 	for _, spec := range pending {
 		var source *protocol.SourceSpec
@@ -114,14 +125,9 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			StepPlan:             cloneJobStepPlan(spec.stepPlan),
 		})
 		if err != nil {
-			return protocol.RunPipelineResponse{}, err
+			return nil, err
 		}
 		jobIDs = append(jobIDs, job.ID)
 	}
-
-	if selection != nil && len(jobIDs) == 0 {
-		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
-	}
-
-	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobExecutionIDs: jobIDs}, nil
+	return jobIDs, nil
 }

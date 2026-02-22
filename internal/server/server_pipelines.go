@@ -147,6 +147,12 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 	for _, p := range pipelines {
 		chainPipelineSet[strings.TrimSpace(p.PipelineID)] = struct{}{}
 	}
+	type chainPreparedPipeline struct {
+		pipeline store.PersistedPipeline
+		pending  []pendingJob
+	}
+	prepared := make([]chainPreparedPipeline, 0, len(pipelines))
+
 	for i, p := range pipelines {
 		prevPipelineID := ""
 		if i > 0 {
@@ -174,11 +180,25 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 				SourceRefResolved: firstRun.SourceRefResolved,
 			}
 		}
-		resp, err := s.enqueuePersistedPipelineWithOptions(p, selection, opts)
+		_, pending, err := s.preparePendingPipelineJobs(p, selection, opts)
 		if err != nil {
 			return protocol.RunPipelineResponse{}, err
 		}
-		allJobIDs = append(allJobIDs, resp.JobExecutionIDs...)
+		prepared = append(prepared, chainPreparedPipeline{
+			pipeline: p,
+			pending:  pending,
+		})
+	}
+
+	for _, pp := range prepared {
+		jobIDs, err := s.persistPendingJobs(pp.pending)
+		if err != nil {
+			return protocol.RunPipelineResponse{}, err
+		}
+		allJobIDs = append(allJobIDs, jobIDs...)
+	}
+	if selection != nil && len(allJobIDs) == 0 {
+		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
 	return protocol.RunPipelineResponse{
 		ProjectName:     ch.ProjectName,
