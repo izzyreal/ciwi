@@ -35,7 +35,7 @@ func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selecti
 	return s.enqueuePersistedPipelineWithOptions(p, selection, enqueuePipelineOptions{})
 }
 
-func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest, opts enqueuePipelineOptions) (protocol.RunPipelineResponse, error) {
+func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest, opts enqueuePipelineOptions) (pipelineRunContext, []pendingJob, error) {
 	depCtx := pipelineDependencyContext{}
 	if opts.forcedDep != nil {
 		depCtx = *opts.forcedDep
@@ -43,7 +43,7 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 		var err error
 		depCtx, err = s.checkPipelineDependenciesWithReporter(p, nil)
 		if err != nil {
-			return protocol.RunPipelineResponse{}, err
+			return pipelineRunContext{}, nil, err
 		}
 	}
 	runCtx := pipelineRunContext{}
@@ -53,15 +53,13 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 		var err error
 		runCtx, err = resolvePipelineRunContextWithReporter(p, depCtx, nil)
 		if err != nil {
-			return protocol.RunPipelineResponse{}, err
+			return pipelineRunContext{}, nil, err
 		}
 	}
-
-	jobIDs := make([]string, 0)
 	runID := fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
 	pending, err := s.buildPendingPipelineJobs(p, selection, opts, runCtx, depCtx, runID)
 	if err != nil {
-		return protocol.RunPipelineResponse{}, err
+		return pipelineRunContext{}, nil, err
 	}
 	if runCtx.AutoBump != "" && selection != nil && selection.DryRun {
 		// Explicitly skip auto bump script in dry-run mode.
@@ -69,7 +67,7 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 	}
 	if runCtx.AutoBump != "" {
 		if len(pending) != 1 {
-			return protocol.RunPipelineResponse{}, fmt.Errorf("versioning.auto_bump requires exactly one job execution in the pipeline run")
+			return pipelineRunContext{}, nil, fmt.Errorf("versioning.auto_bump requires exactly one job execution in the pipeline run")
 		}
 		autoBumpScript := buildAutoBumpStepScript(runCtx.AutoBump)
 		pending[0].script = pending[0].script + "\n" + autoBumpScript
@@ -90,6 +88,15 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 			pending[0].stepPlan[i].Total = len(pending[0].stepPlan)
 		}
 	}
+	return runCtx, pending, nil
+}
+
+func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest, opts enqueuePipelineOptions) (protocol.RunPipelineResponse, error) {
+	_, pending, err := s.preparePendingPipelineJobs(p, selection, opts)
+	if err != nil {
+		return protocol.RunPipelineResponse{}, err
+	}
+	jobIDs := make([]string, 0)
 	for _, spec := range pending {
 		var source *protocol.SourceSpec
 		if strings.TrimSpace(spec.sourceRepo) != "" {

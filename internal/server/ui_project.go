@@ -35,6 +35,10 @@ const projectHTML = `<!doctype html>
     .matrix-item { border:1px solid var(--line); border-radius:8px; padding:6px; background:#fbfefd; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
     .matrix-info { min-width: 0; }
     .matrix-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+    .inspect-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
+    .inspect-select { font-size:13px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:#1f2a24; }
+    .inspect-checkbox { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:#1f2a24; user-select:none; }
+    .inspect-content { margin:0; background:#0f1412; color:#cde7dc; border-radius:8px; border:1px solid #22352d; padding:12px; width:100%; height:100%; overflow:auto; font-size:12px; line-height:1.35; white-space:pre; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .project-header-icon {
       width: 100px;
       height: 100px;
@@ -79,6 +83,7 @@ const projectHTML = `<!doctype html>
   <script>
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
+    let inspectModalState = null;
 
     function projectIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
@@ -86,6 +91,125 @@ const projectHTML = `<!doctype html>
     }
     let currentProjectName = '';
     let currentProjectID = 0;
+
+    function ensureProjectInspectModal() {
+      let overlay = document.getElementById('projectInspectOverlay');
+      if (overlay) return overlay;
+      ensureModalBaseStyles();
+      overlay = document.createElement('div');
+      overlay.id = 'projectInspectOverlay';
+      overlay.className = 'ciwi-modal-overlay';
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.innerHTML = '' +
+        '<div class="ciwi-modal" role="dialog" aria-modal="true" aria-label="Inspect pipeline or job">' +
+          '<div class="ciwi-modal-head">' +
+            '<div>' +
+              '<div class="ciwi-modal-title" id="projectInspectTitle">Inspect</div>' +
+              '<div class="ciwi-modal-subtitle" id="projectInspectSubtitle"></div>' +
+            '</div>' +
+            '<button type="button" class="secondary" id="projectInspectCloseBtn">Close</button>' +
+          '</div>' +
+          '<div class="ciwi-modal-body">' +
+            '<div class="inspect-toolbar">' +
+              '<label for="projectInspectView" class="muted">View:</label>' +
+              '<select id="projectInspectView" class="inspect-select">' +
+                '<option value="raw_yaml">Raw YAML</option>' +
+                '<option value="executor_script">Executor script</option>' +
+              '</select>' +
+              '<label class="inspect-checkbox">' +
+                '<input id="projectInspectDryRun" type="checkbox" />' +
+                '<span>Dry run</span>' +
+              '</label>' +
+            '</div>' +
+            '<pre id="projectInspectContent" class="inspect-content">Loading...</pre>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      wireModalCloseBehavior(overlay, closeProjectInspectModal);
+      const closeBtn = document.getElementById('projectInspectCloseBtn');
+      if (closeBtn) closeBtn.onclick = closeProjectInspectModal;
+      const viewSelect = document.getElementById('projectInspectView');
+      if (viewSelect) {
+        viewSelect.onchange = () => {
+          if (!inspectModalState) return;
+          inspectModalState.view = String(viewSelect.value || 'raw_yaml').trim() || 'raw_yaml';
+          syncProjectInspectControls();
+          loadProjectInspectContent();
+        };
+      }
+      const dryRunInput = document.getElementById('projectInspectDryRun');
+      if (dryRunInput) {
+        dryRunInput.onchange = () => {
+          if (!inspectModalState) return;
+          inspectModalState.dryRun = !!dryRunInput.checked;
+          loadProjectInspectContent();
+        };
+      }
+      return overlay;
+    }
+
+    function closeProjectInspectModal() {
+      inspectModalState = null;
+      const overlay = document.getElementById('projectInspectOverlay');
+      closeModalOverlay(overlay);
+    }
+
+    function openProjectInspectModal(req, title, subtitle) {
+      inspectModalState = {
+        req: req || {},
+        view: 'raw_yaml',
+        dryRun: false,
+        title: String(title || 'Inspect').trim(),
+        subtitle: String(subtitle || '').trim(),
+      };
+      const overlay = ensureProjectInspectModal();
+      const titleEl = document.getElementById('projectInspectTitle');
+      const subtitleEl = document.getElementById('projectInspectSubtitle');
+      const viewSelect = document.getElementById('projectInspectView');
+      const dryRunInput = document.getElementById('projectInspectDryRun');
+      if (titleEl) titleEl.textContent = inspectModalState.title;
+      if (subtitleEl) subtitleEl.textContent = inspectModalState.subtitle;
+      if (viewSelect) viewSelect.value = inspectModalState.view;
+      if (dryRunInput) dryRunInput.checked = inspectModalState.dryRun;
+      syncProjectInspectControls();
+      openModalOverlay(overlay, '900px', '78vh');
+      loadProjectInspectContent();
+    }
+
+    function syncProjectInspectControls() {
+      const dryRunInput = document.getElementById('projectInspectDryRun');
+      if (!dryRunInput || !inspectModalState) return;
+      const isScript = String(inspectModalState.view || '').trim() === 'executor_script';
+      dryRunInput.disabled = !isScript;
+    }
+
+    async function loadProjectInspectContent() {
+      if (!inspectModalState) return;
+      const contentEl = document.getElementById('projectInspectContent');
+      if (!contentEl) return;
+      contentEl.textContent = 'Loading...';
+      const req = {
+        ...(inspectModalState.req || {}),
+        view: inspectModalState.view || 'raw_yaml',
+        dry_run: !!inspectModalState.dryRun,
+      };
+      try {
+        const data = await apiJSON('/api/v1/projects/' + encodeURIComponent(String(currentProjectID || '')) + '/inspect', {
+          method: 'POST',
+          body: JSON.stringify(req),
+        });
+        const payload = data || {};
+        const title = String(payload.title || '').trim();
+        const content = String(payload.content || '').trim();
+        if (title) {
+          const titleEl = document.getElementById('projectInspectTitle');
+          if (titleEl) titleEl.textContent = title;
+        }
+        contentEl.textContent = content || '(empty)';
+      } catch (e) {
+        contentEl.textContent = 'Failed to load: ' + String(e && e.message || e);
+      }
+    }
 
     async function loadProject() {
       const id = projectIdFromPath();
@@ -166,6 +290,14 @@ const projectHTML = `<!doctype html>
         resolveBtn.textContent = 'Resolve Upcoming Build Version';
         resolveBtn.className = 'secondary';
         resolveBtn.onclick = () => openVersionResolveModal(pl.id, pl.pipeline_id);
+        const inspectPipelineBtn = document.createElement('button');
+        inspectPipelineBtn.textContent = 'Inspect Pipeline';
+        inspectPipelineBtn.className = 'secondary';
+        inspectPipelineBtn.onclick = () => openProjectInspectModal(
+          { pipeline_db_id: pl.id },
+          'Pipeline ' + (pl.pipeline_id || ''),
+          'Preview raw YAML or rendered executor scripts'
+        );
         const toggleBtn = document.createElement('button');
         toggleBtn.textContent = 'Collapse';
         toggleBtn.className = 'secondary';
@@ -178,6 +310,7 @@ const projectHTML = `<!doctype html>
           headControls.appendChild(dryAll);
         }
         headControls.appendChild(resolveBtn);
+        headControls.appendChild(inspectPipelineBtn);
         headControls.appendChild(toggleBtn);
         head.appendChild(headControls);
         container.appendChild(head);
@@ -247,6 +380,15 @@ const projectHTML = `<!doctype html>
                 const dryBtn = createActionButton('Dry Run', { pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true }, name, 'Dry run selection failed');
                 actions.appendChild(dryBtn);
               }
+              const inspectBtn = document.createElement('button');
+              inspectBtn.textContent = 'Inspect';
+              inspectBtn.className = 'secondary';
+              inspectBtn.onclick = () => openProjectInspectModal(
+                { pipeline_db_id: pl.id, pipeline_job_id: j.id, matrix_index: mi.index },
+                'Job ' + (j.id || ''),
+                'Matrix ' + name
+              );
+              actions.appendChild(inspectBtn);
               item.appendChild(info);
               item.appendChild(actions);
               matrixList.appendChild(item);
@@ -259,6 +401,15 @@ const projectHTML = `<!doctype html>
               const dryBtn = createActionButton('Dry Run Job', { pipeline_job_id: j.id, dry_run: true }, (j.id || 'job'), 'Dry run selection failed');
               jobActions.appendChild(dryBtn);
             }
+            const inspectBtn = document.createElement('button');
+            inspectBtn.textContent = 'Inspect Job';
+            inspectBtn.className = 'secondary';
+            inspectBtn.onclick = () => openProjectInspectModal(
+              { pipeline_db_id: pl.id, pipeline_job_id: j.id },
+              'Job ' + (j.id || ''),
+              'Preview raw YAML or rendered executor script'
+            );
+            jobActions.appendChild(inspectBtn);
           }
           pipelineBody.appendChild(jb);
         });

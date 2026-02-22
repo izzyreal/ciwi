@@ -262,6 +262,89 @@ func TestReloadProjectFromRepoBranches(t *testing.T) {
 	}
 }
 
+func TestProjectInspectHandlerRawYAMLAndExecutorScript(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: inspect-project
+pipelines:
+  - id: release
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/acme/inspect-project.git
+      ref: main
+    jobs:
+      - id: publish
+        runs_on:
+          executor: script
+          shell: posix
+          os: linux
+        timeout_seconds: 60
+        steps:
+          - run: echo publish
+            skip_dry_run: true
+          - run: echo upload
+            skip_dry_run: true
+`), "inspect-project.yaml")
+	if err != nil {
+		t.Fatalf("parse test config: %v", err)
+	}
+	if err := s.db.LoadConfig(cfg, "inspect-project.yaml", "https://github.com/acme/inspect-project.git", "main", "inspect-project.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	projectSummary, err := s.db.GetProjectByName("inspect-project")
+	if err != nil {
+		t.Fatalf("GetProjectByName: %v", err)
+	}
+	p, err := s.db.GetPipelineByProjectAndID("inspect-project", "release")
+	if err != nil {
+		t.Fatalf("GetPipelineByProjectAndID: %v", err)
+	}
+
+	t.Run("method not allowed", func(t *testing.T) {
+		resp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/projects/"+int64ToString(projectSummary.ID)+"/inspect", nil)
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d body=%s", resp.StatusCode, readBody(t, resp))
+		}
+	})
+
+	t.Run("raw pipeline yaml", func(t *testing.T) {
+		resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/"+int64ToString(projectSummary.ID)+"/inspect", map[string]any{
+			"pipeline_db_id": p.DBID,
+			"view":           "raw_yaml",
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("raw inspect status=%d body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		body := readBody(t, resp)
+		if !strings.Contains(body, `"view":"raw_yaml"`) {
+			t.Fatalf("expected raw view in response, got %s", body)
+		}
+		if !strings.Contains(body, "skip_dry_run: true") {
+			t.Fatalf("expected raw yaml with skip_dry_run, got %s", body)
+		}
+	})
+
+	t.Run("executor script dry-run all skipped uses placeholder", func(t *testing.T) {
+		resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/"+int64ToString(projectSummary.ID)+"/inspect", map[string]any{
+			"pipeline_db_id":  p.DBID,
+			"pipeline_job_id": "publish",
+			"dry_run":         true,
+			"view":            "executor_script",
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("script inspect status=%d body=%s", resp.StatusCode, readBody(t, resp))
+		}
+		body := readBody(t, resp)
+		if !strings.Contains(body, `echo [dry-run] all steps skipped`) {
+			t.Fatalf("expected placeholder executor script, got %s", body)
+		}
+	})
+}
+
 func TestPersistImportedProjectParseError(t *testing.T) {
 	_, s := newTestHTTPServerWithState(t)
 	_, err := s.persistImportedProject(protocol.ImportProjectRequest{

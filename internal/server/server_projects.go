@@ -175,6 +175,9 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		}
 
 		writeJSON(w, http.StatusOK, resp)
+	case "inspect":
+		s.projectInspectHandler(w, r, projectID)
+		return
 	default:
 		http.NotFound(w, r)
 	}
