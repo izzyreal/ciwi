@@ -217,6 +217,90 @@ function Get-DnsCacheHostCandidates {
   return @($values | Sort-Object)
 }
 
+function Invoke-CommandWithTimeout {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+    [int]$TimeoutSeconds = 2
+  )
+
+  $stdoutFile = Join-Path $env:TEMP ("ciwi-installer-cmd-out-" + [Guid]::NewGuid().ToString('N') + ".log")
+  $stderrFile = Join-Path $env:TEMP ("ciwi-installer-cmd-err-" + [Guid]::NewGuid().ToString('N') + ".log")
+  $proc = $null
+  try {
+    $proc = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+    $finished = $proc.WaitForExit(($TimeoutSeconds * 1000))
+    if (-not $finished) {
+      try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch {}
+      try { $proc.WaitForExit(1000) } catch {}
+    }
+    $lines = @()
+    if (Test-Path -LiteralPath $stdoutFile) {
+      $lines += @(Get-Content -LiteralPath $stdoutFile -ErrorAction SilentlyContinue)
+    }
+    if (Test-Path -LiteralPath $stderrFile) {
+      $lines += @(Get-Content -LiteralPath $stderrFile -ErrorAction SilentlyContinue)
+    }
+    return @($lines)
+  } catch {
+  } finally {
+    if ($null -ne $proc) {
+      try { $proc.Dispose() } catch {}
+    }
+    Remove-Item -LiteralPath $stdoutFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
+  }
+  return @()
+}
+
+function Discover-MDNSServers {
+  $found = @{}
+  $dnsSd = Get-Command dns-sd -ErrorAction SilentlyContinue
+  if ($null -eq $dnsSd) {
+    return @()
+  }
+  $dnsSdPath = Trim-OneLine ([string]$dnsSd.Source)
+  if ([string]::IsNullOrWhiteSpace($dnsSdPath)) {
+    $dnsSdPath = Trim-OneLine ([string]$dnsSd.Path)
+  }
+  if ([string]::IsNullOrWhiteSpace($dnsSdPath)) {
+    return @()
+  }
+
+  $browseLines = @(Invoke-CommandWithTimeout -FilePath $dnsSdPath -ArgumentList @('-B', '_ciwi._tcp', 'local') -TimeoutSeconds 3)
+  $instanceSeen = @{}
+  foreach ($line in $browseLines) {
+    $text = Trim-OneLine ([string]$line)
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    if ($text -notmatch '\bAdd\b') { continue }
+    $parts = $text -split '\s+'
+    if ($parts.Length -lt 1) { continue }
+    $instance = Trim-OneLine ([string]$parts[$parts.Length - 1])
+    if ([string]::IsNullOrWhiteSpace($instance)) { continue }
+    if ($instanceSeen.ContainsKey($instance)) { continue }
+    $instanceSeen[$instance] = $true
+
+    $resolveLines = @(Invoke-CommandWithTimeout -FilePath $dnsSdPath -ArgumentList @('-L', $instance, '_ciwi._tcp', 'local') -TimeoutSeconds 3)
+    foreach ($resolveLine in $resolveLines) {
+      $resolveText = Trim-OneLine ([string]$resolveLine)
+      if ([string]::IsNullOrWhiteSpace($resolveText)) { continue }
+      $m = [regex]::Match($resolveText, 'can be reached at\s+([^:.\s]+(?:\.[^:.\s]+)*)\s*:\s*([0-9]+)\.?', 'IgnoreCase')
+      if (-not $m.Success) { continue }
+      $mdnsHost = Trim-OneLine $m.Groups[1].Value
+      $mdnsPort = 0
+      if (-not [int]::TryParse((Trim-OneLine $m.Groups[2].Value), [ref]$mdnsPort)) { continue }
+      foreach ($candidate in @(Build-HostUrlCandidates -HostName $mdnsHost -Port $mdnsPort)) {
+        if (Test-CiwiServer -BaseUrl $candidate) {
+          Add-UniqueServer -Map $found -Url $candidate
+          break
+        }
+      }
+    }
+  }
+
+  return @($found.Values | Sort-Object)
+}
+
 function Prefer-HostnameUrl {
   param([Parameter(Mandatory = $true)][string]$Url)
   $canonical = Canonicalize-Url $Url
@@ -265,6 +349,10 @@ function Discover-Servers {
     if (Test-CiwiServer -BaseUrl $candidate) {
       Add-UniqueServer -Map $found -Url $candidate
     }
+  }
+
+  foreach ($mdnsUrl in @(Discover-MDNSServers)) {
+    Add-UniqueServer -Map $found -Url $mdnsUrl
   }
 
   # Probe likely LAN names already resolved by this host (for example from ping/nslookup).
