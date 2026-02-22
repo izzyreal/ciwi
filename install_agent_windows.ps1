@@ -404,7 +404,7 @@ function Discover-SubnetServers {
   $maxProbes = 768
   $timeoutMs = 80
   $maxDurationMs = 12000
-  $startedAt = [Environment]::TickCount64
+  $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
   $ipsToProbe = New-Object System.Collections.Generic.List[string]
   $ipSeen = @{}
   $prefixSeen = @{}
@@ -446,7 +446,7 @@ function Discover-SubnetServers {
   }
 
   foreach ($candidateIP in $ipsToProbe) {
-    if (([Environment]::TickCount64 - $startedAt) -ge $maxDurationMs) {
+    if ($stopwatch.ElapsedMilliseconds -ge $maxDurationMs) {
       break
     }
     if (-not (Test-TcpPortQuick -HostName $candidateIP -Port 8112 -TimeoutMs $timeoutMs)) {
