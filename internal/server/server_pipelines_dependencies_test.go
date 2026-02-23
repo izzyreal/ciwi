@@ -83,3 +83,34 @@ func TestVerifyDependencyRunRejectsCrossVersionSuccessfulFallback(t *testing.T) 
 		t.Fatalf("expected dependency verification to fail when latest version has no successful run")
 	}
 }
+
+func TestVerifyDependencyRunReturnsSourceRepoAndResolvedRef(t *testing.T) {
+	base := time.Now().UTC()
+	jobs := []protocol.JobExecution{
+		{
+			ID:         "build-ok",
+			Status:     protocol.JobExecutionStatusSucceeded,
+			CreatedUTC: base,
+			Metadata: map[string]string{
+				"project":                      "ciwi",
+				"pipeline_id":                  "build",
+				"pipeline_run_id":              "run-1",
+				"pipeline_version_raw":         "1.2.3",
+				"pipeline_version":             "v1.2.3",
+				"pipeline_source_repo":         "https://github.com/acme/build.git",
+				"pipeline_source_ref_resolved": "deadbeef",
+			},
+		},
+	}
+
+	ctx, err := verifyDependencyRun(jobs, "ciwi", "build")
+	if err != nil {
+		t.Fatalf("verify dependency run: %v", err)
+	}
+	if ctx.SourceRepo != "https://github.com/acme/build.git" {
+		t.Fatalf("unexpected source repo: %q", ctx.SourceRepo)
+	}
+	if ctx.SourceRefResolved != "deadbeef" {
+		t.Fatalf("unexpected source ref resolved: %q", ctx.SourceRefResolved)
+	}
+}

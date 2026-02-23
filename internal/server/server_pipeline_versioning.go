@@ -38,7 +38,9 @@ func resolvePipelineRunContextWithReporter(p store.PersistedPipeline, dep pipeli
 		}
 		ctx.Version = dep.Version
 		ctx.VersionRaw = dep.VersionRaw
-		ctx.SourceRefResolved = dep.SourceRefResolved
+		if sameSourceRepo(dep.SourceRepo, p.SourceRepo) {
+			ctx.SourceRefResolved = dep.SourceRefResolved
+		}
 		return ctx, nil
 	}
 	if !versioningEnabled {

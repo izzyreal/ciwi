@@ -222,6 +222,106 @@ pipelines:
 	}
 }
 
+func TestEnqueuePersistedPipelineDependencyVersionFromOtherRepoDoesNotOverrideSourceRef(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	s := &stateStore{db: db}
+
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    vcs_source:
+      repo: https://github.com/acme/source-a.git
+      ref: refs/heads/main
+    jobs:
+      - id: build-job
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: package
+    depends_on:
+      - build
+    vcs_source:
+      repo: https://github.com/acme/source-b.git
+      ref: refs/heads/release
+    jobs:
+      - id: package-job
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+`), "cross-repo-dep")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if err := db.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	buildExec, err := db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo build",
+		TimeoutSeconds: 30,
+		Metadata: map[string]string{
+			"project":                      "ciwi",
+			"pipeline_id":                  "build",
+			"pipeline_run_id":              "run-build-1",
+			"pipeline_version_raw":         "1.2.3",
+			"pipeline_version":             "v1.2.3",
+			"pipeline_source_repo":         "https://github.com/acme/source-a.git",
+			"pipeline_source_ref_resolved": "d1c73be0f6f2335a3f16a6f706b08755b71c5d9c",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create build execution: %v", err)
+	}
+	if _, err := db.UpdateJobExecutionStatus(buildExec.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  protocol.JobExecutionStatusSucceeded,
+	}); err != nil {
+		t.Fatalf("mark build succeeded: %v", err)
+	}
+
+	p, err := db.GetPipelineByProjectAndID("ciwi", "package")
+	if err != nil {
+		t.Fatalf("get package pipeline: %v", err)
+	}
+	resp, err := s.enqueuePersistedPipeline(p, nil)
+	if err != nil {
+		t.Fatalf("enqueue package: %v", err)
+	}
+	if resp.Enqueued != 1 || len(resp.JobExecutionIDs) != 1 {
+		t.Fatalf("expected one package execution, got enqueued=%d ids=%d", resp.Enqueued, len(resp.JobExecutionIDs))
+	}
+	job, err := db.GetJobExecution(resp.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get package execution: %v", err)
+	}
+	if job.Source == nil {
+		t.Fatalf("expected package source to be set")
+	}
+	if got := strings.TrimSpace(job.Source.Repo); got != "https://github.com/acme/source-b.git" {
+		t.Fatalf("unexpected source repo: %q", got)
+	}
+	if got := strings.TrimSpace(job.Source.Ref); got != "refs/heads/release" {
+		t.Fatalf("expected package source ref to remain pipeline ref, got %q", got)
+	}
+	if got := strings.TrimSpace(job.Metadata["pipeline_source_ref_resolved"]); got != "" {
+		t.Fatalf("expected no resolved source ref metadata for cross-repo dependency inheritance, got %q", got)
+	}
+	if got := strings.TrimSpace(job.Env["CIWI_PIPELINE_SOURCE_REF"]); got != "" {
+		t.Fatalf("expected no CIWI_PIPELINE_SOURCE_REF for cross-repo dependency inheritance, got %q", got)
+	}
+}
+
 func loadPipelineForEnqueueBuilderTest(t *testing.T, yaml []byte, source string) (*stateStore, store.PersistedPipeline) {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))

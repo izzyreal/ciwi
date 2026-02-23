@@ -41,3 +41,6 @@ ciwi.db-wal
 
 # Server
 ciwi-artifacts
+
+# Codex build cache
+.cache

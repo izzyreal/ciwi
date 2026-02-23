@@ -124,3 +124,52 @@ func TestCheckPipelineDependenciesWithReporter(t *testing.T) {
 		t.Fatalf("expected reporter to include ok message, got %v", reporterMsgs)
 	}
 }
+
+func TestCheckPipelineDependenciesWithReporterIgnoresCrossRepoResolvedRefInheritance(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	base := time.Now().UTC()
+	createSucceeded := func(jobID, runID, pipelineID, repo, resolvedRef string) {
+		t.Helper()
+		job, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+			Script:         "echo " + pipelineID,
+			TimeoutSeconds: 30,
+			Metadata: map[string]string{
+				"project":                      "ciwi",
+				"pipeline_id":                  pipelineID,
+				"pipeline_run_id":              runID,
+				"pipeline_version":             "v1.2.3",
+				"pipeline_version_raw":         "1.2.3",
+				"pipeline_source_repo":         repo,
+				"pipeline_source_ref_resolved": resolvedRef,
+				"created_hint":                 base.String(),
+			},
+		})
+		if err != nil {
+			t.Fatalf("create dependency job %s: %v", jobID, err)
+		}
+		if _, err := s.db.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID: "agent-1",
+			Status:  protocol.JobExecutionStatusSucceeded,
+		}); err != nil {
+			t.Fatalf("mark dependency job %s succeeded: %v", jobID, err)
+		}
+	}
+
+	createSucceeded("build-1", "run-build-1", "build-a", "https://github.com/acme/repo-a.git", "aaaaaaaa")
+	createSucceeded("build-2", "run-build-2", "build-b", "https://github.com/acme/repo-b.git", "bbbbbbbb")
+
+	p := store.PersistedPipeline{
+		ProjectName: "ciwi",
+		PipelineID:  "release",
+		DependsOn:   []string{"build-a", "build-b"},
+	}
+	ctx, err := s.checkPipelineDependenciesWithReporter(p, nil)
+	if err != nil {
+		t.Fatalf("check dependencies: %v", err)
+	}
+	if ctx.SourceRefResolved != "" || ctx.SourceRepo != "" {
+		t.Fatalf("expected no shared source ref inheritance across repo boundaries, got repo=%q ref=%q", ctx.SourceRepo, ctx.SourceRefResolved)
+	}
+}

@@ -49,11 +49,19 @@ func (s *stateStore) checkPipelineDependenciesWithReporter(p store.PersistedPipe
 			out.Version = ctx.Version
 			out.VersionRaw = ctx.VersionRaw
 		}
-		if ctx.SourceRefResolved != "" {
-			if out.SourceRefResolved != "" && out.SourceRefResolved != ctx.SourceRefResolved {
-				return pipelineDependencyContext{}, fmt.Errorf("dependency source refs conflict: %q vs %q", out.SourceRefResolved, ctx.SourceRefResolved)
+		if strings.TrimSpace(ctx.SourceRepo) != "" && ctx.SourceRefResolved != "" {
+			if out.SourceRefResolved == "" {
+				out.SourceRepo = strings.TrimSpace(ctx.SourceRepo)
+				out.SourceRefResolved = ctx.SourceRefResolved
+			} else if sameSourceRepo(out.SourceRepo, ctx.SourceRepo) {
+				if out.SourceRefResolved != ctx.SourceRefResolved {
+					return pipelineDependencyContext{}, fmt.Errorf("dependency source refs conflict: %q vs %q", out.SourceRefResolved, ctx.SourceRefResolved)
+				}
+			} else {
+				// Dependencies from different repos cannot provide one shared pinned source ref.
+				out.SourceRepo = ""
+				out.SourceRefResolved = ""
 			}
-			out.SourceRefResolved = ctx.SourceRefResolved
 		}
 		if len(ctx.ArtifactJobIDs) > 0 {
 			if out.ArtifactJobIDs == nil {
@@ -220,10 +228,17 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 	return pipelineDependencyContext{
 		VersionRaw:        strings.TrimSpace(meta["pipeline_version_raw"]),
 		Version:           strings.TrimSpace(meta["pipeline_version"]),
+		SourceRepo:        strings.TrimSpace(meta["pipeline_source_repo"]),
 		SourceRefResolved: strings.TrimSpace(meta["pipeline_source_ref_resolved"]),
 		ArtifactJobIDs:    artifactJobIDs,
 		ArtifactJobIDsAll: map[string][]string{pipelineID: artifactJobIDsAll},
 	}, nil
+}
+
+func sameSourceRepo(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	return a != "" && b != "" && a == b
 }
 
 func dependencyRunIsSuccessful(statuses []string) bool {

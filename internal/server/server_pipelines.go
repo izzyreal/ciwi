@@ -18,6 +18,7 @@ type resolveStepReporter func(step, status, message string)
 type pipelineDependencyContext struct {
 	VersionRaw        string
 	Version           string
+	SourceRepo        string
 	SourceRefResolved string
 	ArtifactJobIDs    map[string]string
 	ArtifactJobIDsAll map[string][]string
@@ -177,6 +178,7 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 			opts.forcedDep = &pipelineDependencyContext{
 				VersionRaw:        firstRun.VersionRaw,
 				Version:           firstRun.Version,
+				SourceRepo:        strings.TrimSpace(pipelines[0].SourceRepo),
 				SourceRefResolved: firstRun.SourceRefResolved,
 			}
 		}
