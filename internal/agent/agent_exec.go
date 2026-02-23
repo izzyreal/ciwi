@@ -89,6 +89,11 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			return nil
 		}
 		execDir = sourceDir
+		if gitIdentityErr := ensureRepoGitIdentity(runCtx, sourceDir); gitIdentityErr != nil {
+			fmt.Fprintf(&output, "[git] warning: failed to configure repository identity: %v\n", gitIdentityErr)
+		} else {
+			fmt.Fprintf(&output, "%s\n", repoGitIdentitySummary())
+		}
 	}
 	depJobIDs := dependencyArtifactJobIDs(job.Env)
 	if len(depJobIDs) > 0 {
