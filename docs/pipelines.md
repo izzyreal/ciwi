@@ -13,6 +13,13 @@ Agent checkout behavior:
 - `git fetch origin <ref>`
 - `git checkout --force FETCH_HEAD`
 
+Git identity behavior for source-backed jobs:
+- After checkout, ciwi configures repository-local git identity:
+- `user.name=ciwi-agent`
+- `user.email=ciwi-agent@local`
+- This applies to git commit/tag/push operations in job steps unless overridden later by step scripts.
+- Artifact-only jobs (no `vcs_source`) have no checked-out repository, so this repo-local identity setup does not run.
+
 ## Dependency chains
 
 - `pipelines[].depends_on`: upstream pipeline IDs
