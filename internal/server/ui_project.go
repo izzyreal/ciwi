@@ -259,10 +259,18 @@ const projectHTML = `<!doctype html>
         const runAll = document.createElement('button');
         runAll.textContent = 'Run Pipeline';
         runAll.className = 'secondary';
-        runAll.onclick = async () => {
+        runAll.onclick = async (ev) => {
           runAll.disabled = true;
           try {
-            const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', { method: 'POST', body: '{}' });
+            const runResult = await runWithOptionalSourceRef(ev, {
+              runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
+              sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+              payload: {},
+              title: 'Run Pipeline With Source Ref',
+              subtitle: String(pl.pipeline_id || ''),
+              runLabel: 'Run',
+            });
+            if (runResult.cancelled) return;
             showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
             await loadHistory();
           } catch (e) {
@@ -274,10 +282,18 @@ const projectHTML = `<!doctype html>
         const dryAll = document.createElement('button');
         dryAll.textContent = 'Dry Run Pipeline';
         dryAll.className = 'secondary';
-        dryAll.onclick = async () => {
+        dryAll.onclick = async (ev) => {
           dryAll.disabled = true;
           try {
-            const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+            const runResult = await runWithOptionalSourceRef(ev, {
+              runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
+              sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+              payload: { dry_run: true },
+              title: 'Dry Run Pipeline With Source Ref',
+              subtitle: String(pl.pipeline_id || ''),
+              runLabel: 'Dry Run',
+            });
+            if (runResult.cancelled) return;
             showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
             await loadHistory();
           } catch (e) {
@@ -338,17 +354,22 @@ const projectHTML = `<!doctype html>
           jb.appendChild(jobHead);
 
           const hasMatrixIncludes = Array.isArray(j.matrix_includes) && j.matrix_includes.length > 0;
-          const createActionButton = (label, payload, successName, errorPrefix) => {
+          const createActionButton = (label, payload, successName, errorPrefix, modalTitle) => {
             const btn = document.createElement('button');
             btn.textContent = label;
             btn.className = 'secondary';
-            btn.onclick = async () => {
+            btn.onclick = async (ev) => {
               btn.disabled = true;
               try {
-                const resp = await apiJSON('/api/v1/pipelines/' + pl.id + '/run-selection', {
-                  method: 'POST',
-                  body: JSON.stringify(payload)
+                const runResult = await runWithOptionalSourceRef(ev, {
+                  runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
+                  sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+                  payload: payload,
+                  title: modalTitle,
+                  subtitle: String(pl.pipeline_id || ''),
+                  runLabel: label,
                 });
+                if (runResult.cancelled) return;
                 showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started');
                 await loadHistory();
               } catch (e) {
@@ -374,10 +395,10 @@ const projectHTML = `<!doctype html>
               info.innerHTML = '<div><code>' + escapeHtml(name) + '</code></div><div class="muted">' + escapeHtml(vars) + '</div>';
               const actions = document.createElement('div');
               actions.className = 'matrix-actions';
-              const btn = createActionButton('Run', { pipeline_job_id: j.id, matrix_index: mi.index }, name, 'Run selection failed');
+              const btn = createActionButton('Run', { pipeline_job_id: j.id, matrix_index: mi.index }, name, 'Run selection failed', 'Run Matrix Entry With Source Ref');
               actions.appendChild(btn);
               if (jobSupportsDryRun) {
-                const dryBtn = createActionButton('Dry Run', { pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true }, name, 'Dry run selection failed');
+                const dryBtn = createActionButton('Dry Run', { pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true }, name, 'Dry run selection failed', 'Dry Run Matrix Entry With Source Ref');
                 actions.appendChild(dryBtn);
               }
               const inspectBtn = document.createElement('button');
@@ -395,10 +416,10 @@ const projectHTML = `<!doctype html>
             });
             jb.appendChild(matrixList);
           } else {
-            const runBtn = createActionButton('Run Job', { pipeline_job_id: j.id }, (j.id || 'job'), 'Run selection failed');
+            const runBtn = createActionButton('Run Job', { pipeline_job_id: j.id }, (j.id || 'job'), 'Run selection failed', 'Run Job With Source Ref');
             jobActions.appendChild(runBtn);
             if (jobSupportsDryRun) {
-              const dryBtn = createActionButton('Dry Run Job', { pipeline_job_id: j.id, dry_run: true }, (j.id || 'job'), 'Dry run selection failed');
+              const dryBtn = createActionButton('Dry Run Job', { pipeline_job_id: j.id, dry_run: true }, (j.id || 'job'), 'Dry run selection failed', 'Dry Run Job With Source Ref');
               jobActions.appendChild(dryBtn);
             }
             const inspectBtn = document.createElement('button');

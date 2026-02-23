@@ -19,6 +19,7 @@ type pipelineDependencyContext struct {
 	VersionRaw        string
 	Version           string
 	SourceRepo        string
+	SourceRefRaw      string
 	SourceRefResolved string
 	ArtifactJobIDs    map[string]string
 	ArtifactJobIDsAll map[string][]string
@@ -27,6 +28,7 @@ type pipelineDependencyContext struct {
 type pipelineRunContext struct {
 	VersionRaw        string
 	Version           string
+	SourceRefRaw      string
 	SourceRefResolved string
 	VersionFile       string
 	TagPrefix         string
@@ -40,7 +42,7 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || (parts[1] != "run-selection" && parts[1] != "version-resolve") {
+	if len(parts) != 2 || (parts[1] != "run-selection" && parts[1] != "version-resolve" && parts[1] != "source-refs") {
 		http.NotFound(w, r)
 		return
 	}
@@ -60,6 +62,14 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		s.streamVersionResolve(w, p)
+		return
+	}
+	if parts[1] == "source-refs" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.pipelineSourceRefsHandler(w, p)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -86,7 +96,7 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || parts[1] != "run" {
+	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "source-refs") {
 		http.NotFound(w, r)
 		return
 	}
@@ -102,6 +112,14 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 	}
 	if len(ch.Pipelines) == 0 {
 		http.Error(w, "pipeline chain has no pipelines", http.StatusBadRequest)
+		return
+	}
+	if parts[1] == "source-refs" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.pipelineChainSourceRefsHandler(w, ch)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -138,9 +156,25 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 	if err != nil {
 		return protocol.RunPipelineResponse{}, err
 	}
-	firstRun, err := resolvePipelineRunContextWithReporter(pipelines[0], firstDep, nil)
+	overrideSourceRef := normalizeSourceRef(selection)
+	overrideRepo := strings.TrimSpace(pipelines[0].SourceRepo)
+	if overrideSourceRef != "" && overrideRepo == "" {
+		return protocol.RunPipelineResponse{}, fmt.Errorf("source_ref override requires first chain pipeline vcs_source.repo")
+	}
+	firstVersionPipeline := pipelines[0]
+	if overrideSourceRef != "" && shouldApplySourceRefOverride(firstVersionPipeline.SourceRepo, overrideRepo) {
+		firstVersionPipeline.SourceRef = overrideSourceRef
+	}
+	firstRun, err := resolvePipelineRunContextWithReporter(firstVersionPipeline, firstDep, nil)
 	if err != nil {
 		return protocol.RunPipelineResponse{}, err
+	}
+	if firstRun.SourceRefResolved == "" && overrideSourceRef != "" && shouldApplySourceRefOverride(firstVersionPipeline.SourceRepo, overrideRepo) {
+		resolved, err := resolveSourceRefFromRepo(strings.TrimSpace(firstVersionPipeline.SourceRepo), strings.TrimSpace(firstVersionPipeline.SourceRef))
+		if err != nil {
+			return protocol.RunPipelineResponse{}, err
+		}
+		firstRun.SourceRefResolved = resolved
 	}
 	allJobIDs := make([]string, 0)
 	total := len(pipelines)
@@ -171,14 +205,17 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 			meta["chain_depends_on_pipelines"] = strings.Join(chainDeps, ",")
 		}
 		opts := enqueuePipelineOptions{
-			metaPatch: meta,
-			blocked:   len(chainDeps) > 0,
+			metaPatch:             meta,
+			blocked:               len(chainDeps) > 0,
+			sourceRefOverride:     overrideSourceRef,
+			sourceRefOverrideRepo: overrideRepo,
 		}
 		if i > 0 {
 			opts.forcedDep = &pipelineDependencyContext{
 				VersionRaw:        firstRun.VersionRaw,
 				Version:           firstRun.Version,
 				SourceRepo:        strings.TrimSpace(pipelines[0].SourceRepo),
+				SourceRefRaw:      firstRun.SourceRefRaw,
 				SourceRefResolved: firstRun.SourceRefResolved,
 			}
 		}

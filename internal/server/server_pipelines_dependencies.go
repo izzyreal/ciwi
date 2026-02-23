@@ -229,6 +229,7 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 		VersionRaw:        strings.TrimSpace(meta["pipeline_version_raw"]),
 		Version:           strings.TrimSpace(meta["pipeline_version"]),
 		SourceRepo:        strings.TrimSpace(meta["pipeline_source_repo"]),
+		SourceRefRaw:      strings.TrimSpace(meta["pipeline_source_ref_raw"]),
 		SourceRefResolved: strings.TrimSpace(meta["pipeline_source_ref_resolved"]),
 		ArtifactJobIDs:    artifactJobIDs,
 		ArtifactJobIDsAll: map[string][]string{pipelineID: artifactJobIDsAll},

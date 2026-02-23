@@ -1,6 +1,8 @@
 package server
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -320,6 +322,125 @@ pipelines:
 	if got := strings.TrimSpace(job.Env["CIWI_PIPELINE_SOURCE_REF"]); got != "" {
 		t.Fatalf("expected no CIWI_PIPELINE_SOURCE_REF for cross-repo dependency inheritance, got %q", got)
 	}
+}
+
+func TestEnqueuePersistedPipelineWithSourceRefOverrideResolvesCommit(t *testing.T) {
+	repoURL, featureRef, featureSHA := createTestRemoteGitRepo(t)
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    vcs_source:
+      repo: `+repoURL+`
+      ref: refs/heads/main
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo compile
+`), "source-ref-override")
+
+	resp, err := s.enqueuePersistedPipeline(p, &protocol.RunPipelineSelectionRequest{
+		SourceRef: featureRef,
+	})
+	if err != nil {
+		t.Fatalf("enqueue pipeline with source_ref override: %v", err)
+	}
+	if resp.Enqueued != 1 || len(resp.JobExecutionIDs) != 1 {
+		t.Fatalf("expected one execution, got enqueued=%d ids=%d", resp.Enqueued, len(resp.JobExecutionIDs))
+	}
+	job, err := s.db.GetJobExecution(resp.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get job execution: %v", err)
+	}
+	if job.Source == nil {
+		t.Fatalf("expected source to be set")
+	}
+	if got := strings.TrimSpace(job.Source.Ref); got != featureSHA {
+		t.Fatalf("expected source ref to be resolved sha %q, got %q", featureSHA, got)
+	}
+	if got := strings.TrimSpace(job.Metadata["pipeline_source_ref_raw"]); got != featureRef {
+		t.Fatalf("expected pipeline_source_ref_raw %q, got %q", featureRef, got)
+	}
+	if got := strings.TrimSpace(job.Metadata["pipeline_source_ref_resolved"]); got != featureSHA {
+		t.Fatalf("expected pipeline_source_ref_resolved %q, got %q", featureSHA, got)
+	}
+	if got := strings.TrimSpace(job.Env["CIWI_PIPELINE_SOURCE_REF_RAW"]); got != featureRef {
+		t.Fatalf("expected CIWI_PIPELINE_SOURCE_REF_RAW %q, got %q", featureRef, got)
+	}
+	if got := strings.TrimSpace(job.Env["CIWI_PIPELINE_SOURCE_REF"]); got != featureSHA {
+		t.Fatalf("expected CIWI_PIPELINE_SOURCE_REF %q, got %q", featureSHA, got)
+	}
+}
+
+func TestEnqueuePersistedPipelineWithSourceRefOverrideRequiresSourceRepo(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: no-source
+    jobs:
+      - id: build
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo hi
+`), "source-ref-override-no-source")
+	_, err := s.enqueuePersistedPipeline(p, &protocol.RunPipelineSelectionRequest{
+		SourceRef: "refs/heads/main",
+	})
+	if err == nil {
+		t.Fatalf("expected source_ref override to fail for pipeline without source repo")
+	}
+	if !strings.Contains(err.Error(), "source_ref override requires pipeline vcs_source.repo") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func createTestRemoteGitRepo(t *testing.T) (repoURL, featureRef, featureSHA string) {
+	t.Helper()
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	work := filepath.Join(root, "work")
+	runGit(t, "", "init", "--bare", remote)
+	runGit(t, "", "clone", remote, work)
+	runGit(t, work, "config", "user.name", "ciwi-test")
+	runGit(t, work, "config", "user.email", "ciwi-test@local")
+	runGit(t, work, "checkout", "-b", "main")
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	runGit(t, work, "add", "README.md")
+	runGit(t, work, "commit", "-m", "main commit")
+	runGit(t, work, "push", "-u", "origin", "main")
+	runGit(t, work, "checkout", "-b", "feature/one-off")
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatalf("write README feature: %v", err)
+	}
+	runGit(t, work, "add", "README.md")
+	runGit(t, work, "commit", "-m", "feature commit")
+	runGit(t, work, "push", "-u", "origin", "feature/one-off")
+	featureSHA = strings.TrimSpace(runGit(t, work, "rev-parse", "HEAD"))
+	return remote, "refs/heads/feature/one-off", featureSHA
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	if strings.TrimSpace(dir) != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return string(out)
 }
 
 func loadPipelineForEnqueueBuilderTest(t *testing.T, yaml []byte, source string) (*stateStore, store.PersistedPipeline) {

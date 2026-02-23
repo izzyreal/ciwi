@@ -10,10 +10,12 @@ import (
 )
 
 type enqueuePipelineOptions struct {
-	forcedDep *pipelineDependencyContext
-	forcedRun *pipelineRunContext
-	metaPatch map[string]string
-	blocked   bool
+	forcedDep             *pipelineDependencyContext
+	forcedRun             *pipelineRunContext
+	metaPatch             map[string]string
+	blocked               bool
+	sourceRefOverride     string
+	sourceRefOverrideRepo string
 }
 
 type pendingJob struct {
@@ -32,10 +34,25 @@ type pendingJob struct {
 }
 
 func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest) (protocol.RunPipelineResponse, error) {
-	return s.enqueuePersistedPipelineWithOptions(p, selection, enqueuePipelineOptions{})
+	opts := enqueuePipelineOptions{}
+	if sourceRef := normalizeSourceRef(selection); sourceRef != "" {
+		if strings.TrimSpace(p.SourceRepo) == "" {
+			return protocol.RunPipelineResponse{}, fmt.Errorf("source_ref override requires pipeline vcs_source.repo")
+		}
+		opts.sourceRefOverride = sourceRef
+		opts.sourceRefOverrideRepo = strings.TrimSpace(p.SourceRepo)
+	}
+	return s.enqueuePersistedPipelineWithOptions(p, selection, opts)
 }
 
 func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest, opts enqueuePipelineOptions) (pipelineRunContext, []pendingJob, error) {
+	overrideSourceRef := strings.TrimSpace(opts.sourceRefOverride)
+	if overrideSourceRef != "" && shouldApplySourceRefOverride(p.SourceRepo, opts.sourceRefOverrideRepo) {
+		if strings.TrimSpace(p.SourceRepo) == "" {
+			return pipelineRunContext{}, nil, fmt.Errorf("source_ref override requires pipeline vcs_source.repo")
+		}
+		p.SourceRef = overrideSourceRef
+	}
 	depCtx := pipelineDependencyContext{}
 	if opts.forcedDep != nil {
 		depCtx = *opts.forcedDep
@@ -55,6 +72,13 @@ func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selec
 		if err != nil {
 			return pipelineRunContext{}, nil, err
 		}
+	}
+	if runCtx.SourceRefResolved == "" && overrideSourceRef != "" && shouldApplySourceRefOverride(p.SourceRepo, opts.sourceRefOverrideRepo) {
+		resolved, err := resolveSourceRefFromRepo(strings.TrimSpace(p.SourceRepo), strings.TrimSpace(p.SourceRef))
+		if err != nil {
+			return pipelineRunContext{}, nil, err
+		}
+		runCtx.SourceRefResolved = resolved
 	}
 	runID := fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
 	pending, err := s.buildPendingPipelineJobs(p, selection, opts, runCtx, depCtx, runID)

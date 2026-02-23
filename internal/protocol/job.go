@@ -222,6 +222,7 @@ type RunPipelineSelectionRequest struct {
 	MatrixName    string `json:"matrix_name,omitempty"`
 	MatrixIndex   *int   `json:"matrix_index,omitempty"`
 	DryRun        bool   `json:"dry_run,omitempty"`
+	SourceRef     string `json:"source_ref,omitempty"`
 }
 
 type JobExecutionArtifact struct {

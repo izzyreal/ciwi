@@ -242,6 +242,9 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	if runCtx.SourceRefResolved != "" {
 		metadata["pipeline_source_ref_resolved"] = runCtx.SourceRefResolved
 	}
+	if strings.TrimSpace(runCtx.SourceRefRaw) != "" {
+		metadata["pipeline_source_ref_raw"] = strings.TrimSpace(runCtx.SourceRefRaw)
+	}
 	metadata["pipeline_source_repo"] = p.SourceRepo
 	for k, v := range opts.metaPatch {
 		if strings.TrimSpace(k) == "" {
@@ -275,8 +278,8 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	if runCtx.SourceRefResolved != "" {
 		env["CIWI_PIPELINE_SOURCE_REF"] = runCtx.SourceRefResolved
 	}
-	if strings.TrimSpace(p.SourceRef) != "" {
-		env["CIWI_PIPELINE_SOURCE_REF_RAW"] = strings.TrimSpace(p.SourceRef)
+	if strings.TrimSpace(runCtx.SourceRefRaw) != "" {
+		env["CIWI_PIPELINE_SOURCE_REF_RAW"] = strings.TrimSpace(runCtx.SourceRefRaw)
 	}
 	env["CIWI_PIPELINE_SOURCE_REPO"] = p.SourceRepo
 	depJobID := resolveDependencyArtifactJobID(pipelineDependsOn, depCtx.ArtifactJobIDs, pipelineJobID, matrixVars)

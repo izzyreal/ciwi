@@ -284,3 +284,124 @@ pipeline_chains:
 		t.Fatalf("expected no jobs enqueued on failed chain validation, got %d", len(jobs))
 	}
 }
+
+func TestPipelineSourceRefsHandler(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	repoURL, _, _ := createTestRemoteGitRepo(t)
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    vcs_source:
+      repo: `+repoURL+`
+      ref: refs/heads/main
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+`)
+
+	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+
+	methodGuard := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/source-refs", map[string]any{})
+	if methodGuard.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for POST source-refs, got %d", methodGuard.StatusCode)
+	}
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/source-refs", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for pipeline source-refs, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		DefaultRef string `json:"default_ref"`
+		Refs       []struct {
+			Name string `json:"name"`
+			Ref  string `json:"ref"`
+		} `json:"refs"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.DefaultRef != "refs/heads/main" {
+		t.Fatalf("expected default_ref refs/heads/main, got %q", payload.DefaultRef)
+	}
+	if len(payload.Refs) < 2 {
+		t.Fatalf("expected at least two branch refs, got %+v", payload.Refs)
+	}
+}
+
+func TestPipelineChainSourceRefsHandler(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	repoURL, _, _ := createTestRemoteGitRepo(t)
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    vcs_source:
+      repo: `+repoURL+`
+      ref: refs/heads/main
+    jobs:
+      - id: build
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: package
+    trigger: manual
+    vcs_source:
+      repo: `+repoURL+`
+      ref: refs/heads/main
+    jobs:
+      - id: package
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+pipeline_chains:
+  - id: build-package
+    pipelines:
+      - build
+      - package
+`)
+
+	_, chainID := firstPipelineAndChainIDs(t, s, "ciwi")
+	methodGuard := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/source-refs", map[string]any{})
+	if methodGuard.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for POST chain source-refs, got %d", methodGuard.StatusCode)
+	}
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/source-refs", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for chain source-refs, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		DefaultRef string `json:"default_ref"`
+		Refs       []struct {
+			Name string `json:"name"`
+			Ref  string `json:"ref"`
+		} `json:"refs"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.DefaultRef != "refs/heads/main" {
+		t.Fatalf("expected default_ref refs/heads/main, got %q", payload.DefaultRef)
+	}
+	if len(payload.Refs) < 2 {
+		t.Fatalf("expected at least two branch refs, got %+v", payload.Refs)
+	}
+}

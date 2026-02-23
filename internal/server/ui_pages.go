@@ -297,4 +297,164 @@ function openVersionResolveModal(pipelineId, pipelineLabel) {
     closeVersionResolveStream();
   };
 }
+
+function ensureSourceRefRunStyles() {
+  if (document.getElementById('__ciwiSourceRefRunStyles')) return;
+  const style = document.createElement('style');
+  style.id = '__ciwiSourceRefRunStyles';
+  style.textContent = [
+    '.source-ref-run-modal{height:auto;max-width:min(560px,92vw);grid-template-rows:auto auto auto;}',
+    '.source-ref-run-body{padding:14px 16px 8px;display:flex;flex-direction:column;gap:10px;}',
+    '.source-ref-run-note{font-size:13px;color:#5f6f67;}',
+    '.source-ref-run-label{font-size:13px;color:#1f2a24;font-weight:600;}',
+    '.source-ref-run-select{width:100%;font-size:13px;border:1px solid #c4ddd0;border-radius:8px;padding:8px;background:#fff;color:#1f2a24;}',
+    '.source-ref-run-actions{padding:8px 16px 14px;display:flex;justify-content:flex-end;gap:8px;}',
+  ].join('');
+  document.head.appendChild(style);
+}
+
+function ensureSourceRefRunModal() {
+  let overlay = document.getElementById('__ciwiSourceRefRunOverlay');
+  if (overlay) return overlay;
+  ensureModalBaseStyles();
+  ensureSourceRefRunStyles();
+  overlay = document.createElement('div');
+  overlay.id = '__ciwiSourceRefRunOverlay';
+  overlay.className = 'ciwi-modal-overlay';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.innerHTML = [
+    '<div class="ciwi-modal source-ref-run-modal" role="dialog" aria-modal="true" aria-label="Run with source ref">',
+    '  <div class="ciwi-modal-head">',
+    '    <div>',
+    '      <div id="sourceRefRunTitle" class="ciwi-modal-title">Run With Source Ref</div>',
+    '      <div id="sourceRefRunSubtitle" class="ciwi-modal-subtitle"></div>',
+    '    </div>',
+    '    <button type="button" id="sourceRefRunCloseBtn" class="secondary">Cancel</button>',
+    '  </div>',
+    '  <div class="source-ref-run-body">',
+    '    <div id="sourceRefRunNote" class="source-ref-run-note">Loading branches...</div>',
+    '    <label class="source-ref-run-label" for="sourceRefRunSelect">Branch</label>',
+    '    <select id="sourceRefRunSelect" class="source-ref-run-select"></select>',
+    '  </div>',
+    '  <div class="source-ref-run-actions">',
+    '    <button type="button" id="sourceRefRunCancelBtn" class="secondary">Cancel</button>',
+    '    <button type="button" id="sourceRefRunConfirmBtn">Run</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function openSourceRefRunDialog(opts) {
+  const options = opts || {};
+  const sourceRefsPath = String(options.sourceRefsPath || '').trim();
+  if (!sourceRefsPath) return Promise.reject(new Error('sourceRefsPath is required'));
+  const title = String(options.title || 'Run With Source Ref').trim() || 'Run With Source Ref';
+  const subtitle = String(options.subtitle || '').trim();
+  const runLabel = String(options.runLabel || 'Run').trim() || 'Run';
+  const overlay = ensureSourceRefRunModal();
+  const titleEl = document.getElementById('sourceRefRunTitle');
+  const subtitleEl = document.getElementById('sourceRefRunSubtitle');
+  const noteEl = document.getElementById('sourceRefRunNote');
+  const selectEl = document.getElementById('sourceRefRunSelect');
+  const closeBtn = document.getElementById('sourceRefRunCloseBtn');
+  const cancelBtn = document.getElementById('sourceRefRunCancelBtn');
+  const confirmBtn = document.getElementById('sourceRefRunConfirmBtn');
+  if (!titleEl || !subtitleEl || !noteEl || !selectEl || !closeBtn || !cancelBtn || !confirmBtn) {
+    return Promise.reject(new Error('source ref modal elements unavailable'));
+  }
+  titleEl.textContent = title;
+  subtitleEl.textContent = subtitle;
+  noteEl.textContent = 'Loading branches...';
+  selectEl.innerHTML = '';
+  selectEl.disabled = true;
+  confirmBtn.textContent = runLabel;
+  confirmBtn.disabled = true;
+  closeBtn.disabled = true;
+  cancelBtn.disabled = true;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      closeBtn.onclick = null;
+      cancelBtn.onclick = null;
+      confirmBtn.onclick = null;
+      closeModalOverlay(overlay);
+      resolve(value);
+    };
+    wireModalCloseBehavior(overlay, () => settle(null));
+    closeBtn.onclick = () => settle(null);
+    cancelBtn.onclick = () => settle(null);
+    confirmBtn.onclick = () => {
+      const value = String(selectEl.value || '').trim();
+      if (!value) return;
+      settle(value);
+    };
+    openModalOverlay(overlay, '520px', 'auto');
+    apiJSON(sourceRefsPath)
+      .then((data) => {
+        const refs = Array.isArray((data || {}).refs) ? data.refs : [];
+        const defaultRef = String((data || {}).default_ref || '').trim();
+        if (!refs.length) {
+          noteEl.textContent = 'No branches available.';
+          return;
+        }
+        selectEl.innerHTML = '';
+        refs.forEach((entry) => {
+          const ref = String((entry || {}).ref || '').trim();
+          const name = String((entry || {}).name || '').trim();
+          if (!ref) return;
+          const opt = document.createElement('option');
+          opt.value = ref;
+          opt.textContent = name ? (name + ' (' + ref + ')') : ref;
+          selectEl.appendChild(opt);
+        });
+        if (defaultRef) selectEl.value = defaultRef;
+        if (!String(selectEl.value || '').trim() && selectEl.options.length > 0) {
+          selectEl.selectedIndex = 0;
+        }
+        noteEl.textContent = 'Select a source branch for this one-off run.';
+        selectEl.disabled = false;
+        confirmBtn.disabled = !String(selectEl.value || '').trim();
+        closeBtn.disabled = false;
+        cancelBtn.disabled = false;
+        selectEl.onchange = () => {
+          confirmBtn.disabled = !String(selectEl.value || '').trim();
+        };
+        setTimeout(() => selectEl.focus(), 0);
+      })
+      .catch((err) => {
+        closeBtn.disabled = false;
+        cancelBtn.disabled = false;
+        noteEl.textContent = 'Failed to load branches.';
+        reject(err);
+      });
+  });
+}
+
+async function runWithOptionalSourceRef(event, opts) {
+  const options = opts || {};
+  const runPath = String(options.runPath || '').trim();
+  if (!runPath) throw new Error('runPath is required');
+  const payload = { ...(options.payload || {}) };
+  let selectedSourceRef = '';
+  if (event && event.shiftKey) {
+    const sourceRefsPath = String(options.sourceRefsPath || '').trim();
+    if (!sourceRefsPath) throw new Error('sourceRefsPath is required for shift-run');
+    const chosen = await openSourceRefRunDialog({
+      sourceRefsPath,
+      title: options.title || 'Run With Source Ref',
+      subtitle: options.subtitle || '',
+      runLabel: options.runLabel || 'Run',
+    });
+    if (!chosen) return { cancelled: true };
+    selectedSourceRef = String(chosen).trim();
+    if (selectedSourceRef) payload.source_ref = selectedSourceRef;
+  }
+  const resp = await apiJSON(runPath, { method: 'POST', body: JSON.stringify(payload) });
+  return { cancelled: false, response: resp, sourceRef: selectedSourceRef };
+}
 `

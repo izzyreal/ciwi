@@ -16,6 +16,7 @@ var semverCorePattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 func resolvePipelineRunContextWithReporter(p store.PersistedPipeline, dep pipelineDependencyContext, report resolveStepReporter) (pipelineRunContext, error) {
 	ctx := pipelineRunContext{}
+	ctx.SourceRefRaw = strings.TrimSpace(p.SourceRef)
 	file := strings.TrimSpace(p.Versioning.File)
 	tagPrefix := strings.TrimSpace(p.Versioning.TagPrefix)
 	autoBump := strings.TrimSpace(p.Versioning.AutoBump)
@@ -39,6 +40,9 @@ func resolvePipelineRunContextWithReporter(p store.PersistedPipeline, dep pipeli
 		ctx.Version = dep.Version
 		ctx.VersionRaw = dep.VersionRaw
 		if sameSourceRepo(dep.SourceRepo, p.SourceRepo) {
+			if raw := strings.TrimSpace(dep.SourceRefRaw); raw != "" {
+				ctx.SourceRefRaw = raw
+			}
 			ctx.SourceRefResolved = dep.SourceRefResolved
 		}
 		return ctx, nil

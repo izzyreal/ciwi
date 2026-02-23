@@ -88,10 +88,18 @@ const uiIndexProjectsJS = `
           const btn = document.createElement('button');
           btn.className = 'secondary';
           btn.textContent = 'Run';
-          btn.onclick = async () => {
+          btn.onclick = async (ev) => {
             btn.disabled = true;
             try {
-              const resp = await apiJSON('/api/v1/pipelines/' + p.id + '/run-selection', { method: 'POST', body: '{}' });
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
+                sourceRefsPath: '/api/v1/pipelines/' + p.id + '/source-refs',
+                payload: {},
+                title: 'Run Pipeline With Source Ref',
+                subtitle: String(p.pipeline_id || ''),
+                runLabel: 'Run',
+              });
+              if (runResult.cancelled) return;
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
               await refreshJobs();
             } catch (e) {
@@ -105,10 +113,18 @@ const uiIndexProjectsJS = `
           const dryBtn = document.createElement('button');
           dryBtn.className = 'secondary';
           dryBtn.textContent = 'Dry Run';
-          dryBtn.onclick = async () => {
+          dryBtn.onclick = async (ev) => {
             dryBtn.disabled = true;
             try {
-              const resp = await apiJSON('/api/v1/pipelines/' + p.id + '/run-selection', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
+                sourceRefsPath: '/api/v1/pipelines/' + p.id + '/source-refs',
+                payload: { dry_run: true },
+                title: 'Dry Run Pipeline With Source Ref',
+                subtitle: String(p.pipeline_id || ''),
+                runLabel: 'Dry Run',
+              });
+              if (runResult.cancelled) return;
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
               await refreshJobs();
             } catch (e) {
@@ -146,10 +162,18 @@ const uiIndexProjectsJS = `
           const runBtn = document.createElement('button');
           runBtn.className = 'secondary';
           runBtn.textContent = 'Run';
-          runBtn.onclick = async () => {
+          runBtn.onclick = async (ev) => {
             runBtn.disabled = true;
             try {
-              const resp = await apiJSON('/api/v1/pipeline-chains/' + c.id + '/run', { method: 'POST', body: '{}' });
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: '/api/v1/pipeline-chains/' + c.id + '/run',
+                sourceRefsPath: '/api/v1/pipeline-chains/' + c.id + '/source-refs',
+                payload: {},
+                title: 'Run Chain With Source Ref',
+                subtitle: String(c.chain_id || ''),
+                runLabel: 'Run',
+              });
+              if (runResult.cancelled) return;
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started');
               await refreshJobs();
             } catch (e) {
@@ -162,10 +186,18 @@ const uiIndexProjectsJS = `
           const dryBtn = document.createElement('button');
           dryBtn.className = 'secondary';
           dryBtn.textContent = 'Dry Run';
-          dryBtn.onclick = async () => {
+          dryBtn.onclick = async (ev) => {
             dryBtn.disabled = true;
             try {
-              const resp = await apiJSON('/api/v1/pipeline-chains/' + c.id + '/run', { method: 'POST', body: JSON.stringify({ dry_run: true }) });
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: '/api/v1/pipeline-chains/' + c.id + '/run',
+                sourceRefsPath: '/api/v1/pipeline-chains/' + c.id + '/source-refs',
+                payload: { dry_run: true },
+                title: 'Dry Run Chain With Source Ref',
+                subtitle: String(c.chain_id || ''),
+                runLabel: 'Dry Run',
+              });
+              if (runResult.cancelled) return;
               showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started');
               await refreshJobs();
             } catch (e) {
