@@ -147,10 +147,6 @@ pipelines:
               test -f dist/ciwi-checksums.txt
           - run: |
               TAG="${CIWI_PIPELINE_TAG}"
-              git config user.name "ciwi-agent"
-              git config user.email "ciwi-agent@local"
-          - run: |
-              TAG="${CIWI_PIPELINE_TAG}"
               git tag -a "$TAG" -m "ciwi $TAG"
               git push origin "$TAG"
             skip_dry_run: true
