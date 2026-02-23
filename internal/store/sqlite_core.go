@@ -300,6 +300,9 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 	if err != nil {
 		return err
 	}
+	if err := pruneStaleProjectPipelines(tx, projectID, cfg.Pipelines); err != nil {
+		return err
+	}
 
 	for _, p := range cfg.Pipelines {
 		pipelineDBID, err := upsertPipeline(tx, projectID, p, now)
@@ -345,6 +348,27 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+func pruneStaleProjectPipelines(tx *sql.Tx, projectID int64, pipelines []config.Pipeline) error {
+	if len(pipelines) == 0 {
+		if _, err := tx.Exec(`DELETE FROM pipelines WHERE project_id = ?`, projectID); err != nil {
+			return fmt.Errorf("clear project pipelines: %w", err)
+		}
+		return nil
+	}
+	placeholders := make([]string, 0, len(pipelines))
+	args := make([]any, 0, 1+len(pipelines))
+	args = append(args, projectID)
+	for _, p := range pipelines {
+		placeholders = append(placeholders, "?")
+		args = append(args, p.ID)
+	}
+	query := `DELETE FROM pipelines WHERE project_id = ? AND pipeline_id NOT IN (` + strings.Join(placeholders, ",") + `)`
+	if _, err := tx.Exec(query, args...); err != nil {
+		return fmt.Errorf("prune stale pipelines: %w", err)
 	}
 	return nil
 }

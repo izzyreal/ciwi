@@ -265,6 +265,75 @@ pipelines:
 	}
 }
 
+func TestStoreLoadConfigPrunesRemovedPipelines(t *testing.T) {
+	s := openTestStore(t)
+
+	initial, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: package-sign
+    jobs:
+      - id: macos-codesign
+        runs_on:
+          os: darwin
+        timeout_seconds: 30
+        steps:
+          - run: echo sign
+`), "prune-initial")
+	if err != nil {
+		t.Fatalf("parse initial config: %v", err)
+	}
+	if err := s.LoadConfig(initial, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load initial config: %v", err)
+	}
+
+	reloaded, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+`), "prune-reloaded")
+	if err != nil {
+		t.Fatalf("parse reloaded config: %v", err)
+	}
+	if err := s.LoadConfig(reloaded, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load reloaded config: %v", err)
+	}
+
+	project, err := s.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get project by name: %v", err)
+	}
+	detail, err := s.GetProjectDetail(project.ID)
+	if err != nil {
+		t.Fatalf("get project detail: %v", err)
+	}
+	if len(detail.Pipelines) != 1 {
+		t.Fatalf("expected 1 pipeline after prune, got %d", len(detail.Pipelines))
+	}
+	if got := detail.Pipelines[0].PipelineID; got != "build" {
+		t.Fatalf("unexpected remaining pipeline: %q", got)
+	}
+}
+
 func TestStorePersistsPipelineJobNeeds(t *testing.T) {
 	s := openTestStore(t)
 	cfg, err := config.Parse([]byte(`
