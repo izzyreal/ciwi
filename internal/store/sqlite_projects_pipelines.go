@@ -25,8 +25,8 @@ func upsertProject(tx *sql.Tx, name, configPath, repoURL, repoRef, configFile, l
 	res, err := tx.Exec(`
 		UPDATE projects
 		SET config_path = ?, repo_url = ?, repo_ref = ?, config_file = ?, loaded_commit = ?, updated_utc = ?
-		WHERE name = ?
-	`, configPath, repoURL, repoRef, configFile, loadedCommit, now, name)
+		WHERE config_path = ?
+	`, configPath, repoURL, repoRef, configFile, loadedCommit, now, configPath)
 	if err != nil {
 		return 0, fmt.Errorf("update project: %w", err)
 	}
@@ -44,7 +44,7 @@ func upsertProject(tx *sql.Tx, name, configPath, repoURL, repoRef, configFile, l
 	}
 
 	var id int64
-	if err := tx.QueryRow(`SELECT id FROM projects WHERE name = ?`, name).Scan(&id); err != nil {
+	if err := tx.QueryRow(`SELECT id FROM projects WHERE config_path = ?`, configPath).Scan(&id); err != nil {
 		return 0, fmt.Errorf("fetch project id: %w", err)
 	}
 	return id, nil
@@ -248,6 +248,24 @@ func (s *Store) GetProjectByName(name string) (protocol.ProjectSummary, error) {
 			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
 		}
 		return protocol.ProjectSummary{}, fmt.Errorf("get project: %w", err)
+	}
+	p.UpdatedUTC = parseRFC3339OrZero(updatedUTC)
+	return p, nil
+}
+
+func (s *Store) GetProjectByConfigPath(configPath string) (protocol.ProjectSummary, error) {
+	var p protocol.ProjectSummary
+	row := s.db.QueryRow(`
+		SELECT id, name, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
+		FROM projects
+		WHERE config_path = ?
+	`, configPath)
+	var updatedUTC string
+	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile, &p.LoadedCommit, &updatedUTC); err != nil {
+		if err == sql.ErrNoRows {
+			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
+		}
+		return protocol.ProjectSummary{}, fmt.Errorf("get project by config path: %w", err)
 	}
 	p.UpdatedUTC = parseRFC3339OrZero(updatedUTC)
 	return p, nil

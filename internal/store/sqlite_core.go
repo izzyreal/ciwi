@@ -79,7 +79,7 @@ func (s *Store) migrate() error {
 		`PRAGMA busy_timeout=5000;`,
 		`CREATE TABLE IF NOT EXISTS projects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
 			config_path TEXT NOT NULL,
 			repo_url TEXT,
 			repo_ref TEXT,

@@ -33,7 +33,7 @@ func (s *stateStore) enqueuePersistedPipelineOfflineCached(p store.PersistedPipe
 	if selection != nil && len(jobIDs) == 0 {
 		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
-	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobExecutionIDs: jobIDs}, nil
+	return protocol.RunPipelineResponse{ProjectName: displayProjectName(p.ProjectName), PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobExecutionIDs: jobIDs}, nil
 }
 
 func (s *stateStore) preparePendingPipelineJobsOfflineCached(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest) ([]pendingJob, error) {
@@ -83,7 +83,7 @@ func (s *stateStore) enqueuePersistedPipelineChainOfflineCached(ch store.Persist
 		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
 	return protocol.RunPipelineResponse{
-		ProjectName:     ch.ProjectName,
+		ProjectName:     displayProjectName(ch.ProjectName),
 		PipelineID:      ch.ChainID,
 		Enqueued:        len(jobIDs),
 		JobExecutionIDs: jobIDs,

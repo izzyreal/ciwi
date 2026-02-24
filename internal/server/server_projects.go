@@ -94,6 +94,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
+			applyDisplayProjectNameDetail(&detail)
 			writeJSON(w, http.StatusOK, projectDetailViewResponse{Project: detail})
 			return
 		case http.MethodDelete:
@@ -259,6 +260,7 @@ func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	applyDisplayProjectNames(projects)
 	writeJSON(w, http.StatusOK, projectListViewResponse{Projects: projects})
 }
 
@@ -295,7 +297,7 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	if err := s.projectStore().LoadConfig(cfg, configPath, req.RepoURL, effectiveRepoRef, req.ConfigFile); err != nil {
 		return protocol.ImportProjectResponse{}, err
 	}
-	if project, err := s.projectStore().GetProjectByName(cfg.Project.Name); err == nil {
+	if project, err := s.projectStore().GetProjectByConfigPath(configPath); err == nil {
 		if commitErr := s.projectStore().SetProjectLoadedCommit(project.ID, strings.TrimSpace(loadedCommit)); commitErr != nil {
 			return protocol.ImportProjectResponse{}, commitErr
 		}
@@ -303,7 +305,7 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	}
 
 	return protocol.ImportProjectResponse{
-		ProjectName: cfg.Project.Name,
+		ProjectName: displayProjectName(cfg.Project.Name),
 		RepoURL:     req.RepoURL,
 		RepoRef:     effectiveRepoRef,
 		ConfigFile:  req.ConfigFile,
@@ -316,41 +318,7 @@ func (s *stateStore) resolveImportedProjectName(baseName string, req protocol.Im
 	if baseName == "" {
 		return "", fmt.Errorf("project.name is required")
 	}
-	repoURL := strings.TrimSpace(req.RepoURL)
-	repoRef := strings.TrimSpace(effectiveRepoRef)
-	configFile := strings.TrimSpace(req.ConfigFile)
-	if configFile == "" {
-		configFile = "ciwi-project.yaml"
-	}
-	projects, err := s.projectStore().ListProjects()
-	if err != nil {
-		return "", err
-	}
-	used := map[string]struct{}{}
-	for _, p := range projects {
-		used[strings.TrimSpace(p.Name)] = struct{}{}
-		if strings.TrimSpace(p.RepoURL) == repoURL &&
-			strings.TrimSpace(p.RepoRef) == repoRef &&
-			strings.TrimSpace(p.ConfigFile) == configFile {
-			return strings.TrimSpace(p.Name), nil
-		}
-	}
-	if _, exists := used[baseName]; !exists {
-		return baseName, nil
-	}
-	refLabel := repoRef
-	if refLabel == "" {
-		refLabel = "default"
-	}
-	candidate := fmt.Sprintf("%s@%s", baseName, refLabel)
-	if _, exists := used[candidate]; !exists {
-		return candidate, nil
-	}
-	for i := 2; i < 1000; i++ {
-		candidate = fmt.Sprintf("%s@%s-%d", baseName, refLabel, i)
-		if _, exists := used[candidate]; !exists {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("failed to resolve unique project name for %q", baseName)
+	_ = req
+	_ = effectiveRepoRef
+	return baseName, nil
 }

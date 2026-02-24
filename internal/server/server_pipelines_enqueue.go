@@ -130,7 +130,7 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 	if selection != nil && len(jobIDs) == 0 {
 		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
-	return protocol.RunPipelineResponse{ProjectName: p.ProjectName, PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobExecutionIDs: jobIDs}, nil
+	return protocol.RunPipelineResponse{ProjectName: displayProjectName(p.ProjectName), PipelineID: p.PipelineID, Enqueued: len(jobIDs), JobExecutionIDs: jobIDs}, nil
 }
 
 func (s *stateStore) persistPendingJobs(pending []pendingJob) ([]string, error) {

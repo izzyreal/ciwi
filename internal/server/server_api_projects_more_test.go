@@ -260,8 +260,8 @@ func TestImportProjectSameRepoDifferentRefDoesNotReplaceExistingProject(t *testi
 	}
 	var featurePayload protocol.ImportProjectResponse
 	decodeJSONBody(t, featureResp, &featurePayload)
-	if strings.TrimSpace(featurePayload.ProjectName) == "ciwi" {
-		t.Fatalf("expected second import to get unique project name, got %q", featurePayload.ProjectName)
+	if strings.TrimSpace(featurePayload.ProjectName) != "ciwi" {
+		t.Fatalf("expected display project name ciwi, got %q", featurePayload.ProjectName)
 	}
 
 	listResp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/projects", nil)

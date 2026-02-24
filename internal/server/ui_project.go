@@ -499,7 +499,14 @@ const projectHTML = `<!doctype html>
         const data = await apiJSON('/api/v1/jobs');
         const body = document.getElementById('historyBody');
         body.innerHTML = '';
-        const rows = (data.job_executions || []).filter(j => ((j.metadata && j.metadata.project) || '') === currentProjectName).slice(0, 120);
+        const projectID = String(currentProjectID || '').trim();
+        const rows = (data.job_executions || []).filter(j => {
+          const metadata = (j && j.metadata) || {};
+          const jobProjectID = String(metadata.project_id || '').trim();
+          if (jobProjectID) return jobProjectID === projectID;
+          // Backward compatibility for older executions missing project_id metadata.
+          return String(metadata.project || '').trim() === currentProjectName;
+        }).slice(0, 120);
         rows.forEach(job => {
           const tr = buildJobExecutionRow(job, {
             includeActions: false,

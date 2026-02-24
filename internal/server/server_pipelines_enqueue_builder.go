@@ -215,7 +215,7 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		}
 	}
 	metadata := map[string]string{
-		"project":            p.ProjectName,
+		"project":            displayProjectName(p.ProjectName),
 		"project_id":         strconv.FormatInt(p.ProjectID, 10),
 		"pipeline_id":        p.PipelineID,
 		"pipeline_run_id":    runID,
