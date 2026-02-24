@@ -403,6 +403,39 @@ pipelines:
 	}
 }
 
+func TestEnqueuePersistedPipelineSelectionAgentIDSetsRequiredCapability(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo hi
+`), "selection-agent-id")
+	resp, err := s.enqueuePersistedPipeline(p, &protocol.RunPipelineSelectionRequest{
+		AgentID: "agent-linux-1",
+	})
+	if err != nil {
+		t.Fatalf("enqueue with agent_id selection: %v", err)
+	}
+	if resp.Enqueued != 1 || len(resp.JobExecutionIDs) != 1 {
+		t.Fatalf("expected one execution, got enqueued=%d ids=%d", resp.Enqueued, len(resp.JobExecutionIDs))
+	}
+	job, err := s.db.GetJobExecution(resp.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if got := strings.TrimSpace(job.RequiredCapabilities["agent_id"]); got != "agent-linux-1" {
+		t.Fatalf("expected required agent_id=agent-linux-1, got %q", got)
+	}
+}
+
 func createTestRemoteGitRepo(t *testing.T) (repoURL, featureRef, featureSHA string) {
 	t.Helper()
 	root := t.TempDir()

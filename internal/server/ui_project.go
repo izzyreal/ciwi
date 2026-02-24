@@ -265,6 +265,7 @@ const projectHTML = `<!doctype html>
             const runResult = await runWithOptionalSourceRef(ev, {
               runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
               sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+              eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
               payload: {},
               title: 'Run Pipeline With Source Ref',
               subtitle: String(pl.pipeline_id || ''),
@@ -288,6 +289,7 @@ const projectHTML = `<!doctype html>
             const runResult = await runWithOptionalSourceRef(ev, {
               runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
               sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+              eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
               payload: { dry_run: true },
               title: 'Dry Run Pipeline With Source Ref',
               subtitle: String(pl.pipeline_id || ''),
@@ -364,6 +366,7 @@ const projectHTML = `<!doctype html>
                 const runResult = await runWithOptionalSourceRef(ev, {
                   runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
                   sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+                  eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
                   payload: payload,
                   title: modalTitle,
                   subtitle: String(pl.pipeline_id || ''),

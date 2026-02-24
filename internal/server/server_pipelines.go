@@ -42,7 +42,7 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || (parts[1] != "run-selection" && parts[1] != "version-resolve" && parts[1] != "source-refs") {
+	if len(parts) != 2 || (parts[1] != "run-selection" && parts[1] != "version-resolve" && parts[1] != "source-refs" && parts[1] != "eligible-agents") {
 		http.NotFound(w, r)
 		return
 	}
@@ -72,6 +72,10 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		s.pipelineSourceRefsHandler(w, p)
 		return
 	}
+	if parts[1] == "eligible-agents" {
+		s.pipelineEligibleAgentsHandler(w, p, r)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -96,7 +100,7 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "source-refs") {
+	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "source-refs" && parts[1] != "eligible-agents") {
 		http.NotFound(w, r)
 		return
 	}
@@ -120,6 +124,10 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 			return
 		}
 		s.pipelineChainSourceRefsHandler(w, ch)
+		return
+	}
+	if parts[1] == "eligible-agents" {
+		s.pipelineChainEligibleAgentsHandler(w, ch, r)
 		return
 	}
 	if r.Method != http.MethodPost {

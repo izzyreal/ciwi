@@ -405,3 +405,135 @@ pipeline_chains:
 		t.Fatalf("expected at least two branch refs, got %+v", payload.Refs)
 	}
 }
+
+func TestPipelineEligibleAgentsHandler(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+          arch: amd64
+        requires:
+          tools:
+            git: ">=2.40.0"
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+`)
+	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+	s.mu.Lock()
+	s.agents["agent-linux"] = agentState{
+		OS:   "linux",
+		Arch: "amd64",
+		Capabilities: map[string]string{
+			"shells":   "posix",
+			"tool.git": "2.42.0",
+		},
+	}
+	s.agents["agent-windows"] = agentState{
+		OS:   "windows",
+		Arch: "amd64",
+		Capabilities: map[string]string{
+			"shells":   "cmd,powershell",
+			"tool.git": "2.42.0",
+		},
+	}
+	s.mu.Unlock()
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/eligible-agents", map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for pipeline eligible-agents, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		EligibleAgentIDs []string `json:"eligible_agent_ids"`
+		PendingJobs      int      `json:"pending_jobs"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.PendingJobs != 1 {
+		t.Fatalf("expected pending_jobs=1, got %d", payload.PendingJobs)
+	}
+	if len(payload.EligibleAgentIDs) != 1 || payload.EligibleAgentIDs[0] != "agent-linux" {
+		t.Fatalf("unexpected eligible agents: %+v", payload.EligibleAgentIDs)
+	}
+
+	filteredResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/eligible-agents", map[string]any{
+		"agent_id": "agent-windows",
+	})
+	if filteredResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for pipeline eligible-agents filtered request, got %d body=%s", filteredResp.StatusCode, readBody(t, filteredResp))
+	}
+	var filtered struct {
+		EligibleAgentIDs []string `json:"eligible_agent_ids"`
+	}
+	decodeJSONBody(t, filteredResp, &filtered)
+	if len(filtered.EligibleAgentIDs) != 0 {
+		t.Fatalf("expected no eligible agents after non-matching agent_id filter, got %+v", filtered.EligibleAgentIDs)
+	}
+}
+
+func TestPipelineChainEligibleAgentsHandler(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    jobs:
+      - id: build
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: package
+    trigger: manual
+    jobs:
+      - id: package
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+pipeline_chains:
+  - id: build-package
+    pipelines:
+      - build
+      - package
+`)
+	_, chainID := firstPipelineAndChainIDs(t, s, "ciwi")
+	s.mu.Lock()
+	s.agents["agent-linux"] = agentState{OS: "linux", Arch: "amd64", Capabilities: map[string]string{"shells": "posix"}}
+	s.agents["agent-darwin"] = agentState{OS: "darwin", Arch: "arm64", Capabilities: map[string]string{"shells": "posix"}}
+	s.mu.Unlock()
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/eligible-agents", map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for chain eligible-agents, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		EligibleAgentIDs []string `json:"eligible_agent_ids"`
+		PendingJobs      int      `json:"pending_jobs"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.PendingJobs != 2 {
+		t.Fatalf("expected pending_jobs=2, got %d", payload.PendingJobs)
+	}
+	if len(payload.EligibleAgentIDs) != 1 || payload.EligibleAgentIDs[0] != "agent-linux" {
+		t.Fatalf("unexpected eligible agents: %+v", payload.EligibleAgentIDs)
+	}
+}

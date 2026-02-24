@@ -94,6 +94,7 @@ const uiIndexProjectsJS = `
               const runResult = await runWithOptionalSourceRef(ev, {
                 runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
                 sourceRefsPath: '/api/v1/pipelines/' + p.id + '/source-refs',
+                eligibleAgentsPath: '/api/v1/pipelines/' + p.id + '/eligible-agents',
                 payload: {},
                 title: 'Run Pipeline With Source Ref',
                 subtitle: String(p.pipeline_id || ''),
@@ -119,6 +120,7 @@ const uiIndexProjectsJS = `
               const runResult = await runWithOptionalSourceRef(ev, {
                 runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
                 sourceRefsPath: '/api/v1/pipelines/' + p.id + '/source-refs',
+                eligibleAgentsPath: '/api/v1/pipelines/' + p.id + '/eligible-agents',
                 payload: { dry_run: true },
                 title: 'Dry Run Pipeline With Source Ref',
                 subtitle: String(p.pipeline_id || ''),
@@ -168,6 +170,7 @@ const uiIndexProjectsJS = `
               const runResult = await runWithOptionalSourceRef(ev, {
                 runPath: '/api/v1/pipeline-chains/' + c.id + '/run',
                 sourceRefsPath: '/api/v1/pipeline-chains/' + c.id + '/source-refs',
+                eligibleAgentsPath: '/api/v1/pipeline-chains/' + c.id + '/eligible-agents',
                 payload: {},
                 title: 'Run Chain With Source Ref',
                 subtitle: String(c.chain_id || ''),
@@ -192,6 +195,7 @@ const uiIndexProjectsJS = `
               const runResult = await runWithOptionalSourceRef(ev, {
                 runPath: '/api/v1/pipeline-chains/' + c.id + '/run',
                 sourceRefsPath: '/api/v1/pipeline-chains/' + c.id + '/source-refs',
+                eligibleAgentsPath: '/api/v1/pipeline-chains/' + c.id + '/eligible-agents',
                 payload: { dry_run: true },
                 title: 'Dry Run Chain With Source Ref',
                 subtitle: String(c.chain_id || ''),

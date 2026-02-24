@@ -331,6 +331,18 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		}
 		requiredCaps["requires.container.tool."+tool] = strings.TrimSpace(constraint)
 	}
+	if selection != nil {
+		agentID := strings.TrimSpace(selection.AgentID)
+		if agentID != "" {
+			if requiredCaps == nil {
+				requiredCaps = map[string]string{}
+			}
+			if existing := strings.TrimSpace(requiredCaps["agent_id"]); existing != "" && existing != agentID {
+				return nil, fmt.Errorf("selection requested agent_id %q but job %q requires agent_id %q", agentID, pipelineJobID, existing)
+			}
+			requiredCaps["agent_id"] = agentID
+		}
+	}
 	sourceRef := p.SourceRef
 	if runCtx.SourceRefResolved != "" {
 		sourceRef = runCtx.SourceRefResolved

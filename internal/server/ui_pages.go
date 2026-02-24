@@ -308,6 +308,7 @@ function ensureSourceRefRunStyles() {
     '.source-ref-run-note{font-size:13px;color:#5f6f67;}',
     '.source-ref-run-label{font-size:13px;color:#1f2a24;font-weight:600;}',
     '.source-ref-run-select{width:100%;font-size:13px;border:1px solid #c4ddd0;border-radius:8px;padding:8px;background:#fff;color:#1f2a24;}',
+    '.source-ref-run-grid{display:grid;grid-template-columns:1fr;gap:10px;}',
     '.source-ref-run-actions{padding:8px 16px 14px;display:flex;justify-content:flex-end;gap:8px;}',
   ].join('');
   document.head.appendChild(style);
@@ -333,8 +334,16 @@ function ensureSourceRefRunModal() {
     '  </div>',
     '  <div class="source-ref-run-body">',
     '    <div id="sourceRefRunNote" class="source-ref-run-note">Loading branches...</div>',
-    '    <label class="source-ref-run-label" for="sourceRefRunSelect">Branch</label>',
-    '    <select id="sourceRefRunSelect" class="source-ref-run-select"></select>',
+    '    <div class="source-ref-run-grid">',
+    '      <div>',
+    '        <label class="source-ref-run-label" for="sourceRefRunSelect">Branch</label>',
+    '        <select id="sourceRefRunSelect" class="source-ref-run-select"></select>',
+    '      </div>',
+    '      <div>',
+    '        <label class="source-ref-run-label" for="sourceRefRunAgentSelect">Agent</label>',
+    '        <select id="sourceRefRunAgentSelect" class="source-ref-run-select"></select>',
+    '      </div>',
+    '    </div>',
     '  </div>',
     '  <div class="source-ref-run-actions">',
     '    <button type="button" id="sourceRefRunCancelBtn" class="secondary">Cancel</button>',
@@ -358,17 +367,20 @@ function openSourceRefRunDialog(opts) {
   const subtitleEl = document.getElementById('sourceRefRunSubtitle');
   const noteEl = document.getElementById('sourceRefRunNote');
   const selectEl = document.getElementById('sourceRefRunSelect');
+  const agentSelectEl = document.getElementById('sourceRefRunAgentSelect');
   const closeBtn = document.getElementById('sourceRefRunCloseBtn');
   const cancelBtn = document.getElementById('sourceRefRunCancelBtn');
   const confirmBtn = document.getElementById('sourceRefRunConfirmBtn');
-  if (!titleEl || !subtitleEl || !noteEl || !selectEl || !closeBtn || !cancelBtn || !confirmBtn) {
+  if (!titleEl || !subtitleEl || !noteEl || !selectEl || !agentSelectEl || !closeBtn || !cancelBtn || !confirmBtn) {
     return Promise.reject(new Error('source ref modal elements unavailable'));
   }
   titleEl.textContent = title;
   subtitleEl.textContent = subtitle;
   noteEl.textContent = 'Loading branches...';
   selectEl.innerHTML = '';
+  agentSelectEl.innerHTML = '';
   selectEl.disabled = true;
+  agentSelectEl.disabled = true;
   confirmBtn.textContent = runLabel;
   confirmBtn.disabled = true;
   closeBtn.disabled = true;
@@ -389,9 +401,53 @@ function openSourceRefRunDialog(opts) {
     closeBtn.onclick = () => settle(null);
     cancelBtn.onclick = () => settle(null);
     confirmBtn.onclick = () => {
-      const value = String(selectEl.value || '').trim();
-      if (!value) return;
-      settle(value);
+      const sourceRef = String(selectEl.value || '').trim();
+      if (!sourceRef) return;
+      const agentID = String(agentSelectEl.value || '').trim();
+      settle({ sourceRef, agentID });
+    };
+    const refreshEligibleAgents = () => {
+      const eligibleAgentsPath = String(options.eligibleAgentsPath || '').trim();
+      agentSelectEl.innerHTML = '';
+      if (!eligibleAgentsPath) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Any eligible agent';
+        agentSelectEl.appendChild(opt);
+        agentSelectEl.disabled = false;
+        confirmBtn.disabled = !String(selectEl.value || '').trim();
+        return Promise.resolve();
+      }
+      agentSelectEl.disabled = true;
+      const reqPayload = { ...((options.payload || {})) };
+      const sourceRef = String(selectEl.value || '').trim();
+      if (sourceRef) reqPayload.source_ref = sourceRef;
+      return apiJSON(eligibleAgentsPath, { method: 'POST', body: JSON.stringify(reqPayload) })
+        .then((agentsResp) => {
+          const ids = Array.isArray((agentsResp || {}).eligible_agent_ids) ? agentsResp.eligible_agent_ids : [];
+          const anyOpt = document.createElement('option');
+          anyOpt.value = '';
+          anyOpt.textContent = 'Any eligible agent';
+          agentSelectEl.appendChild(anyOpt);
+          ids.forEach((id) => {
+            const agentID = String(id || '').trim();
+            if (!agentID) return;
+            const opt = document.createElement('option');
+            opt.value = agentID;
+            opt.textContent = agentID;
+            agentSelectEl.appendChild(opt);
+          });
+          agentSelectEl.disabled = false;
+          confirmBtn.disabled = !String(selectEl.value || '').trim();
+        })
+        .catch((err) => {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'Eligibility check failed';
+          agentSelectEl.appendChild(opt);
+          agentSelectEl.disabled = true;
+          throw err;
+        });
     };
     openModalOverlay(overlay, '520px', 'auto');
     apiJSON(sourceRefsPath)
@@ -418,13 +474,20 @@ function openSourceRefRunDialog(opts) {
         }
         noteEl.textContent = 'Select a source branch for this one-off run.';
         selectEl.disabled = false;
-        confirmBtn.disabled = !String(selectEl.value || '').trim();
         closeBtn.disabled = false;
         cancelBtn.disabled = false;
+        refreshEligibleAgents()
+          .then(() => setTimeout(() => selectEl.focus(), 0))
+          .catch((err) => {
+            noteEl.textContent = 'Failed to load eligible agents.';
+            reject(err);
+          });
         selectEl.onchange = () => {
-          confirmBtn.disabled = !String(selectEl.value || '').trim();
+          refreshEligibleAgents().catch((err) => {
+            noteEl.textContent = 'Failed to load eligible agents.';
+            reject(err);
+          });
         };
-        setTimeout(() => selectEl.focus(), 0);
       })
       .catch((err) => {
         closeBtn.disabled = false;
@@ -446,13 +509,17 @@ async function runWithOptionalSourceRef(event, opts) {
     if (!sourceRefsPath) throw new Error('sourceRefsPath is required for shift-run');
     const chosen = await openSourceRefRunDialog({
       sourceRefsPath,
+      eligibleAgentsPath: options.eligibleAgentsPath || '',
+      payload: payload,
       title: options.title || 'Run With Source Ref',
       subtitle: options.subtitle || '',
       runLabel: options.runLabel || 'Run',
     });
     if (!chosen) return { cancelled: true };
-    selectedSourceRef = String(chosen).trim();
+    selectedSourceRef = String(chosen.sourceRef || '').trim();
+    const selectedAgentID = String(chosen.agentID || '').trim();
     if (selectedSourceRef) payload.source_ref = selectedSourceRef;
+    if (selectedAgentID) payload.agent_id = selectedAgentID;
   }
   const resp = await apiJSON(runPath, { method: 'POST', body: JSON.stringify(payload) });
   return { cancelled: false, response: resp, sourceRef: selectedSourceRef };
