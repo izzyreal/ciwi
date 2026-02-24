@@ -526,15 +526,17 @@ pipelines:
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("secret mappings inspect status=%d body=%s", resp.StatusCode, readBody(t, resp))
 	}
-	body := readBody(t, resp)
-	if !strings.Contains(body, `"view":"secret_mappings"`) {
-		t.Fatalf("expected secret_mappings view in response, got %s", body)
+	var payload projectInspectResponse
+	decodeJSONBody(t, resp, &payload)
+	if payload.View != "secret_mappings" {
+		t.Fatalf("expected secret_mappings view in response, got %+v", payload)
 	}
-	if !strings.Contains(body, `"vault_connection: home-vault"`) {
-		t.Fatalf("expected vault connection in mapping output, got %s", body)
+	content := strings.TrimSpace(payload.Content)
+	if !strings.Contains(content, "vault_connection: home-vault") {
+		t.Fatalf("expected vault connection in mapping output, got %q", content)
 	}
-	if !strings.Contains(body, `"github-token: mount=kv path=ciwi/gh key=token`) {
-		t.Fatalf("expected mapped secret details in output, got %s", body)
+	if !strings.Contains(content, "github-token: mount=kv path=ciwi/gh key=token") {
+		t.Fatalf("expected mapped secret details in output, got %q", content)
 	}
 }
 
