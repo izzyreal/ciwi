@@ -58,9 +58,11 @@ const vaultHTML = `<!doctype html>
     </div>
     <div class="card">
       <h3 style="margin:0 0 10px;">Connections</h3>
+      <div id="vaultActionMsg" class="muted" style="margin-bottom:8px;"></div>
       <table><thead><tr><th>Name</th><th>URL</th><th>Mount</th><th>Auth</th><th>Role ID</th><th>Secret Source</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table>
     </div>
   </main>
+  <script src="/ui/shared.js"></script>
   <script>
     async function api(path, opts={}) {
       const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
@@ -86,13 +88,17 @@ const vaultHTML = `<!doctype html>
         testBtn.textContent = 'Test';
         testBtn.onclick = async () => {
           testBtn.disabled = true;
+          const msg = document.getElementById('vaultActionMsg');
+          msg.textContent = 'Testing ' + (c.name || '') + '...';
           try {
             const r = await api('/api/v1/vault/connections/' + c.id + '/test', { method: 'POST', body: '{}' });
+            msg.textContent = (r.ok ? 'OK: ' : 'FAILED: ') + String(r.message || '');
             await showAlertDialog({
               title: r.ok ? 'Vault test OK' : 'Vault test failed',
               message: r.ok ? ('OK: ' + (r.message || '')) : ('FAILED: ' + (r.message || '')),
             });
           } catch (e) {
+            msg.textContent = 'Test failed: ' + e.message;
             await showAlertDialog({ title: 'Vault test failed', message: 'Test failed: ' + e.message });
           } finally { testBtn.disabled = false; }
         };

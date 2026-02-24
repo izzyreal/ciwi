@@ -14,7 +14,3 @@ type vaultConnectionDeleteResponse struct {
 	Deleted bool  `json:"deleted"`
 	ID      int64 `json:"id"`
 }
-
-type projectVaultSettingsResponse struct {
-	Settings protocol.ProjectVaultSettings `json:"settings"`
-}

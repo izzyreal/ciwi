@@ -470,6 +470,74 @@ pipelines:
 	})
 }
 
+func TestProjectInspectHandlerSecretMappingsView(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: inspect-secrets
+pipelines:
+  - id: release
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/acme/inspect-secrets.git
+      ref: main
+    jobs:
+      - id: publish
+        runs_on:
+          executor: script
+          shell: posix
+          os: linux
+        timeout_seconds: 60
+        steps:
+          - run: echo check
+            vault:
+              connection: home-vault
+              secrets:
+                - name: github-token
+                  mount: kv
+                  path: ciwi/gh
+                  key: token
+            env:
+              GITHUB_TOKEN: "{{ secret.github-token }}"
+`), "inspect-secrets.yaml")
+	if err != nil {
+		t.Fatalf("parse test config: %v", err)
+	}
+	if err := s.db.LoadConfig(cfg, "inspect-secrets.yaml", "https://github.com/acme/inspect-secrets.git", "main", "inspect-secrets.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	projectSummary, err := s.db.GetProjectByName("inspect-secrets")
+	if err != nil {
+		t.Fatalf("GetProjectByName: %v", err)
+	}
+	p, err := s.db.GetPipelineByProjectAndID("inspect-secrets", "release")
+	if err != nil {
+		t.Fatalf("GetPipelineByProjectAndID: %v", err)
+	}
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/"+int64ToString(projectSummary.ID)+"/inspect", map[string]any{
+		"pipeline_db_id":  p.DBID,
+		"pipeline_job_id": "publish",
+		"view":            "secret_mappings",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("secret mappings inspect status=%d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	body := readBody(t, resp)
+	if !strings.Contains(body, `"view":"secret_mappings"`) {
+		t.Fatalf("expected secret_mappings view in response, got %s", body)
+	}
+	if !strings.Contains(body, `"vault_connection: home-vault"`) {
+		t.Fatalf("expected vault connection in mapping output, got %s", body)
+	}
+	if !strings.Contains(body, `"github-token: mount=kv path=ciwi/gh key=token`) {
+		t.Fatalf("expected mapped secret details in output, got %s", body)
+	}
+}
+
 func TestPersistImportedProjectParseError(t *testing.T) {
 	_, s := newTestHTTPServerWithState(t)
 	_, err := s.persistImportedProject(protocol.ImportProjectRequest{

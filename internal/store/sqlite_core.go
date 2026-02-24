@@ -85,9 +85,6 @@ func (s *Store) migrate() error {
 			repo_ref TEXT,
 			config_file TEXT,
 			loaded_commit TEXT NOT NULL DEFAULT '',
-			vault_connection_id INTEGER,
-			vault_connection_name TEXT,
-			project_secrets_json TEXT NOT NULL DEFAULT '[]',
 			created_utc TEXT NOT NULL,
 			updated_utc TEXT NOT NULL
 		);`,
@@ -220,15 +217,6 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("projects", "loaded_commit", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "vault_connection_id", "INTEGER"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "vault_connection_name", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "project_secrets_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	if err := s.addColumnIfMissing("pipeline_jobs", "artifacts_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {

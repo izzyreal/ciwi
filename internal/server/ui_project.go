@@ -116,10 +116,15 @@ const projectHTML = `<!doctype html>
               '<select id="projectInspectView" class="inspect-select">' +
                 '<option value="raw_yaml">Raw YAML</option>' +
                 '<option value="executor_script">Executor script</option>' +
+                '<option value="secret_mappings">Secret mappings</option>' +
               '</select>' +
               '<label class="inspect-checkbox">' +
                 '<input id="projectInspectDryRun" type="checkbox" />' +
                 '<span>Dry run</span>' +
+              '</label>' +
+              '<label class="inspect-checkbox">' +
+                '<input id="projectInspectTestSecrets" type="checkbox" />' +
+                '<span>Test secrets against Vault</span>' +
               '</label>' +
             '</div>' +
             '<pre id="projectInspectContent" class="inspect-content">Loading...</pre>' +
@@ -139,10 +144,18 @@ const projectHTML = `<!doctype html>
         };
       }
       const dryRunInput = document.getElementById('projectInspectDryRun');
+      const testSecretsInput = document.getElementById('projectInspectTestSecrets');
       if (dryRunInput) {
         dryRunInput.onchange = () => {
           if (!inspectModalState) return;
           inspectModalState.dryRun = !!dryRunInput.checked;
+          loadProjectInspectContent();
+        };
+      }
+      if (testSecretsInput) {
+        testSecretsInput.onchange = () => {
+          if (!inspectModalState) return;
+          inspectModalState.testSecrets = !!testSecretsInput.checked;
           loadProjectInspectContent();
         };
       }
@@ -160,6 +173,7 @@ const projectHTML = `<!doctype html>
         req: req || {},
         view: 'raw_yaml',
         dryRun: false,
+        testSecrets: false,
         title: String(title || 'Inspect').trim(),
         subtitle: String(subtitle || '').trim(),
       };
@@ -168,10 +182,12 @@ const projectHTML = `<!doctype html>
       const subtitleEl = document.getElementById('projectInspectSubtitle');
       const viewSelect = document.getElementById('projectInspectView');
       const dryRunInput = document.getElementById('projectInspectDryRun');
+      const testSecretsInput = document.getElementById('projectInspectTestSecrets');
       if (titleEl) titleEl.textContent = inspectModalState.title;
       if (subtitleEl) subtitleEl.textContent = inspectModalState.subtitle;
       if (viewSelect) viewSelect.value = inspectModalState.view;
       if (dryRunInput) dryRunInput.checked = inspectModalState.dryRun;
+      if (testSecretsInput) testSecretsInput.checked = inspectModalState.testSecrets;
       syncProjectInspectControls();
       openModalOverlay(overlay, '900px', '78vh');
       loadProjectInspectContent();
@@ -179,9 +195,17 @@ const projectHTML = `<!doctype html>
 
     function syncProjectInspectControls() {
       const dryRunInput = document.getElementById('projectInspectDryRun');
-      if (!dryRunInput || !inspectModalState) return;
-      const isScript = String(inspectModalState.view || '').trim() === 'executor_script';
-      dryRunInput.disabled = !isScript;
+      const testSecretsInput = document.getElementById('projectInspectTestSecrets');
+      if (!inspectModalState) return;
+      const currentView = String(inspectModalState.view || '').trim();
+      if (dryRunInput) {
+        const isScript = currentView === 'executor_script';
+        dryRunInput.disabled = !isScript;
+      }
+      if (testSecretsInput) {
+        const isMappings = currentView === 'secret_mappings';
+        testSecretsInput.disabled = !isMappings;
+      }
     }
 
     async function loadProjectInspectContent() {
@@ -193,6 +217,7 @@ const projectHTML = `<!doctype html>
         ...(inspectModalState.req || {}),
         view: inspectModalState.view || 'raw_yaml',
         dry_run: !!inspectModalState.dryRun,
+        test_secrets: !!inspectModalState.testSecrets,
       };
       try {
         const data = await apiJSON('/api/v1/projects/' + encodeURIComponent(String(currentProjectID || '')) + '/inspect', {

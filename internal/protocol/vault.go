@@ -42,22 +42,3 @@ type ProjectSecretSpec struct {
 	Key       string `json:"key"`
 	KVVersion int    `json:"kv_version,omitempty"`
 }
-
-type ProjectVaultSettings struct {
-	ProjectID           int64               `json:"project_id"`
-	VaultConnectionID   int64               `json:"vault_connection_id,omitempty"`
-	VaultConnectionName string              `json:"vault_connection_name,omitempty"`
-	Secrets             []ProjectSecretSpec `json:"secrets,omitempty"`
-}
-
-type UpdateProjectVaultRequest struct {
-	VaultConnectionID   int64               `json:"vault_connection_id"`
-	VaultConnectionName string              `json:"vault_connection_name,omitempty"`
-	Secrets             []ProjectSecretSpec `json:"secrets"`
-}
-
-type TestProjectVaultResponse struct {
-	OK      bool              `json:"ok"`
-	Details map[string]string `json:"details,omitempty"`
-	Message string            `json:"message,omitempty"`
-}

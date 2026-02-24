@@ -378,7 +378,7 @@ pipelines:
 	}
 }
 
-func TestStoreLoadConfigRejectsLegacyProjectVaultSettings(t *testing.T) {
+func TestStoreLoadConfigRejectsDeprecatedProjectVaultConfig(t *testing.T) {
 	_, err := config.Parse([]byte(`
 version: 1
 project:

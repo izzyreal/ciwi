@@ -247,10 +247,6 @@ pipelines:
 	if err := s.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	project, err := s.GetProjectByName("ciwi")
-	if err != nil {
-		t.Fatalf("GetProjectByName: %v", err)
-	}
 
 	conn, err := s.UpsertVaultConnection(protocol.UpsertVaultConnectionRequest{
 		Name:         "ciwi-vault",
@@ -269,24 +265,6 @@ pipelines:
 	}
 	if len(list) != 1 || list[0].Name != "ciwi-vault" {
 		t.Fatalf("unexpected vault connection list: %+v", list)
-	}
-
-	settings, err := s.UpdateProjectVaultSettings(project.ID, protocol.UpdateProjectVaultRequest{
-		VaultConnectionID: conn.ID,
-		Secrets: []protocol.ProjectSecretSpec{{
-			Name: "github_token",
-			Path: "kv/data/ciwi",
-			Key:  "token",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("UpdateProjectVaultSettings: %v", err)
-	}
-	if settings.VaultConnectionID != conn.ID || settings.VaultConnectionName != "ciwi-vault" {
-		t.Fatalf("unexpected vault settings after update: %+v", settings)
-	}
-	if len(settings.Secrets) != 1 || settings.Secrets[0].Name != "github_token" {
-		t.Fatalf("unexpected project secrets in settings: %+v", settings.Secrets)
 	}
 
 	if err := s.DeleteVaultConnection(conn.ID); err != nil {
@@ -320,30 +298,9 @@ pipelines:
 	if err := s.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	project, err := s.GetProjectByName("ciwi")
-	if err != nil {
-		t.Fatalf("GetProjectByName: %v", err)
-	}
 
 	if _, err := s.GetVaultConnectionByName("missing"); err == nil {
 		t.Fatalf("expected missing vault connection by name to fail")
-	}
-
-	if _, err := s.UpdateProjectVaultSettings(project.ID, protocol.UpdateProjectVaultRequest{
-		VaultConnectionID: 9999,
-	}); err == nil {
-		t.Fatalf("expected unknown vault connection id to fail")
-	}
-
-	settings, err := s.UpdateProjectVaultSettings(project.ID, protocol.UpdateProjectVaultRequest{
-		VaultConnectionName: "unknown-vault",
-		Secrets:             []protocol.ProjectSecretSpec{{Name: "token", Path: "kv/data/ciwi", Key: "token"}},
-	})
-	if err != nil {
-		t.Fatalf("UpdateProjectVaultSettings unknown name: %v", err)
-	}
-	if settings.VaultConnectionID != 0 || settings.VaultConnectionName != "unknown-vault" {
-		t.Fatalf("expected unresolved vault name to persist with zero id, got %+v", settings)
 	}
 
 	conn, err := s.UpsertVaultConnection(protocol.UpsertVaultConnectionRequest{
@@ -357,16 +314,12 @@ pipelines:
 	if err != nil {
 		t.Fatalf("UpsertVaultConnection: %v", err)
 	}
-
-	if _, err := s.db.Exec(`UPDATE projects SET vault_connection_id = NULL, vault_connection_name = ? WHERE id = ?`, conn.Name, project.ID); err != nil {
-		t.Fatalf("manual vault backfill setup: %v", err)
-	}
-	backfilled, err := s.GetProjectVaultSettings(project.ID)
+	got, err := s.GetVaultConnectionByID(conn.ID)
 	if err != nil {
-		t.Fatalf("GetProjectVaultSettings after name-only update: %v", err)
+		t.Fatalf("GetVaultConnectionByID: %v", err)
 	}
-	if backfilled.VaultConnectionID != conn.ID {
-		t.Fatalf("expected name-only settings to resolve vault id %d, got %+v", conn.ID, backfilled)
+	if got.Name != "ciwi-vault" {
+		t.Fatalf("unexpected vault connection fetched by id: %+v", got)
 	}
 }
 

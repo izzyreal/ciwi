@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -17,6 +20,7 @@ type projectInspectRequest struct {
 	PipelineJobID string `json:"pipeline_job_id,omitempty"`
 	MatrixIndex   *int   `json:"matrix_index,omitempty"`
 	DryRun        bool   `json:"dry_run,omitempty"`
+	TestSecrets   bool   `json:"test_secrets,omitempty"`
 	View          string `json:"view,omitempty"`
 }
 
@@ -48,8 +52,8 @@ func (s *stateStore) projectInspectHandler(w http.ResponseWriter, r *http.Reques
 	if view == "" {
 		view = "raw_yaml"
 	}
-	if view != "raw_yaml" && view != "executor_script" {
-		http.Error(w, "view must be one of raw_yaml,executor_script", http.StatusBadRequest)
+	if view != "raw_yaml" && view != "executor_script" && view != "secret_mappings" {
+		http.Error(w, "view must be one of raw_yaml,executor_script,secret_mappings", http.StatusBadRequest)
 		return
 	}
 
@@ -90,6 +94,25 @@ func (s *stateStore) projectInspectHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if view == "secret_mappings" {
+		ctx := r.Context()
+		if req.TestSecrets {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+		}
+		content, title, err := s.renderInspectableSecretMappings(ctx, p, pending, req.TestSecrets)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, projectInspectResponse{
+			View:    view,
+			Title:   title,
+			Content: content,
+		})
+		return
+	}
 	content := renderInspectableExecutorScript(pending)
 	if strings.TrimSpace(content) == "" {
 		http.Error(w, "no executable scripts after rendering", http.StatusBadRequest)
@@ -104,6 +127,154 @@ func (s *stateStore) projectInspectHandler(w http.ResponseWriter, r *http.Reques
 		Title:   title,
 		Content: content,
 	})
+}
+
+func (s *stateStore) renderInspectableSecretMappings(ctx context.Context, p store.PersistedPipeline, pending []pendingJob, testSecrets bool) (string, string, error) {
+	title := "Pipeline " + strings.TrimSpace(p.PipelineID) + " secret mappings"
+	lines := make([]string, 0, 64)
+	if testSecrets {
+		lines = append(lines, "mode: live Vault secret test")
+	} else {
+		lines = append(lines, "mode: mapping inspection only")
+	}
+	lines = append(lines, "pipeline: "+strings.TrimSpace(p.PipelineID), "")
+
+	type secretCacheKey struct {
+		connID int64
+		spec   string
+	}
+	connByName := map[string]protocol.VaultConnection{}
+	secretTestCache := map[secretCacheKey]string{}
+	totalMappings := 0
+
+	for _, spec := range pending {
+		jobLabel := strings.TrimSpace(spec.pipelineJobID)
+		if matrix := strings.TrimSpace(spec.metadata["matrix_name"]); matrix != "" {
+			jobLabel += " / " + matrix
+		}
+		if jobLabel == "" {
+			jobLabel = "<job>"
+		}
+		jobHeaderAdded := false
+		for stepIdx, step := range spec.stepPlan {
+			hasVaultConfig := strings.TrimSpace(step.VaultConnection) != "" || len(step.VaultSecrets) > 0
+			referenced := map[string]struct{}{}
+			for _, rawVal := range step.Env {
+				matches := secretPlaceholderRE.FindAllStringSubmatch(rawVal, -1)
+				for _, m := range matches {
+					if len(m) < 2 {
+						continue
+					}
+					name := strings.TrimSpace(m[1])
+					if name != "" {
+						referenced[name] = struct{}{}
+					}
+				}
+			}
+			if !hasVaultConfig && len(referenced) == 0 {
+				continue
+			}
+			if !jobHeaderAdded {
+				lines = append(lines, "job: "+jobLabel)
+				jobHeaderAdded = true
+			}
+			stepName := strings.TrimSpace(step.Name)
+			if stepName == "" {
+				stepName = fmt.Sprintf("step %d", stepIdx+1)
+			}
+			lines = append(lines, fmt.Sprintf("  step: %s", stepName))
+			connName := strings.TrimSpace(step.VaultConnection)
+			if connName == "" {
+				lines = append(lines, "    vault_connection: <missing>")
+			} else {
+				lines = append(lines, "    vault_connection: "+connName)
+			}
+			secretByName := map[string]protocol.ProjectSecretSpec{}
+			for _, sec := range step.VaultSecrets {
+				name := strings.TrimSpace(sec.Name)
+				if name == "" {
+					continue
+				}
+				secretByName[name] = sec
+			}
+
+			refNames := make([]string, 0, len(referenced))
+			for name := range referenced {
+				refNames = append(refNames, name)
+			}
+			sort.Strings(refNames)
+			if len(refNames) == 0 && len(secretByName) > 0 {
+				declared := make([]string, 0, len(secretByName))
+				for name := range secretByName {
+					declared = append(declared, name)
+				}
+				sort.Strings(declared)
+				lines = append(lines, "    referenced_placeholders: (none)")
+				lines = append(lines, "    declared_secrets: "+strings.Join(declared, ", "))
+			}
+
+			var conn protocol.VaultConnection
+			connResolved := false
+			if testSecrets && connName != "" {
+				if cached, ok := connByName[connName]; ok {
+					conn = cached
+					connResolved = true
+				} else {
+					c, err := s.vaultStore().GetVaultConnectionByName(connName)
+					if err != nil {
+						lines = append(lines, "    test_connection: failed ("+err.Error()+")")
+					} else {
+						conn = c
+						connByName[connName] = c
+						connResolved = true
+						lines = append(lines, "    test_connection: ok")
+					}
+				}
+			}
+
+			for _, secretName := range refNames {
+				totalMappings++
+				sec, ok := secretByName[secretName]
+				if !ok {
+					lines = append(lines, "    - "+secretName+": missing in step.vault.secrets")
+					continue
+				}
+				mount := strings.TrimSpace(sec.Mount)
+				path := strings.TrimSpace(sec.Path)
+				key := strings.TrimSpace(sec.Key)
+				kvVer := sec.KVVersion
+				specLine := fmt.Sprintf("    - %s: mount=%s path=%s key=%s kv_version=%d", secretName, mount, path, key, kvVer)
+				if !testSecrets {
+					lines = append(lines, specLine)
+					continue
+				}
+				if !connResolved {
+					lines = append(lines, specLine+" | test=skipped (no connection)")
+					continue
+				}
+				cacheKey := secretCacheKey{
+					connID: conn.ID,
+					spec:   fmt.Sprintf("%s|%s|%s|%d", mount, path, key, kvVer),
+				}
+				testResult, ok := secretTestCache[cacheKey]
+				if !ok {
+					_, err := s.readVaultSecret(ctx, conn, sec)
+					if err != nil {
+						testResult = "error: " + err.Error()
+					} else {
+						testResult = "ok"
+					}
+					secretTestCache[cacheKey] = testResult
+				}
+				lines = append(lines, specLine+" | test="+testResult)
+			}
+		}
+	}
+
+	if totalMappings == 0 {
+		lines = append(lines, "no secret mappings found")
+	}
+	return strings.Join(lines, "\n"), title, nil
 }
 
 func renderInspectableRawYAML(p store.PersistedPipeline, req projectInspectRequest) (content string, title string, err error) {
