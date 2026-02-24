@@ -518,7 +518,13 @@ const projectHTML = `<!doctype html>
                   runLabel: label,
                 });
                 if (runResult.cancelled) return;
-                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started');
+                const response = runResult.response || {};
+                const ids = Array.isArray(response.job_execution_ids) ? response.job_execution_ids : [];
+                if (ids.length === 1) {
+                  showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started', ids[0]);
+                } else {
+                  showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started');
+                }
                 await loadHistory();
               } catch (e) {
                 await showAlertDialog({ title: errorPrefix, message: errorPrefix + ': ' + e.message });
