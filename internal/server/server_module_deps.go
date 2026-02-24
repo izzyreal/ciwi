@@ -48,6 +48,7 @@ type pipelineStore interface {
 type projectStore interface {
 	LoadConfig(cfg config.File, configPath, repoURL, repoRef, configFile string) error
 	SetProjectLoadedCommit(projectID int64, loadedCommit string) error
+	DeleteProjectByID(id int64) error
 	GetProjectByID(id int64) (protocol.ProjectSummary, error)
 	GetProjectByName(name string) (protocol.ProjectSummary, error)
 	GetProjectDetail(id int64) (protocol.ProjectDetail, error)

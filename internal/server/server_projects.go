@@ -87,17 +87,32 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if len(parts) == 1 {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			detail, err := s.projectStore().GetProjectDetail(projectID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			writeJSON(w, http.StatusOK, projectDetailViewResponse{Project: detail})
+			return
+		case http.MethodDelete:
+			if err := s.projectStore().DeleteProjectByID(projectID); err != nil {
+				if strings.Contains(strings.ToLower(err.Error()), "not found") {
+					http.Error(w, err.Error(), http.StatusNotFound)
+					return
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			// Remove in-memory icon cache entry for deleted project.
+			s.setProjectIcon(projectID, "", nil)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		detail, err := s.projectStore().GetProjectDetail(projectID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		writeJSON(w, http.StatusOK, projectDetailViewResponse{Project: detail})
-		return
 	}
 
 	if len(parts) != 2 {

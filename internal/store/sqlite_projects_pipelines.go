@@ -196,6 +196,45 @@ func (s *Store) GetProjectByID(id int64) (protocol.ProjectSummary, error) {
 	return p, nil
 }
 
+func (s *Store) DeleteProjectByID(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`
+		DELETE FROM pipeline_jobs
+		WHERE pipeline_id IN (
+			SELECT id FROM pipelines WHERE project_id = ?
+		)
+	`, id); err != nil {
+		return fmt.Errorf("delete pipeline jobs: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM pipeline_chains WHERE project_id = ?`, id); err != nil {
+		return fmt.Errorf("delete pipeline chains: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM pipelines WHERE project_id = ?`, id); err != nil {
+		return fmt.Errorf("delete pipelines: %w", err)
+	}
+	res, err := tx.Exec(`DELETE FROM projects WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete project: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("project rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("project not found")
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) GetProjectByName(name string) (protocol.ProjectSummary, error) {
 	var p protocol.ProjectSummary
 	row := s.db.QueryRow(`

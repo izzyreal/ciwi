@@ -112,6 +112,44 @@ func TestProjectReloadHandlerBranches(t *testing.T) {
 	}
 }
 
+func TestProjectDeleteHandler(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	cfg, err := config.Parse([]byte(testConfigYAML), "ciwi-project.yaml")
+	if err != nil {
+		t.Fatalf("parse test config: %v", err)
+	}
+	if err := s.db.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	projectSummary, err := s.db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("GetProjectByName: %v", err)
+	}
+	projectURL := ts.URL + "/api/v1/projects/" + int64ToString(projectSummary.ID)
+
+	methodResp := mustJSONRequest(t, ts.Client(), http.MethodPut, projectURL, map[string]any{})
+	if methodResp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for PUT project root, got %d", methodResp.StatusCode)
+	}
+
+	delResp := mustJSONRequest(t, ts.Client(), http.MethodDelete, projectURL, nil)
+	if delResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204 for delete, got %d body=%s", delResp.StatusCode, readBody(t, delResp))
+	}
+
+	afterGet := mustJSONRequest(t, ts.Client(), http.MethodGet, projectURL, nil)
+	if afterGet.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got %d body=%s", afterGet.StatusCode, readBody(t, afterGet))
+	}
+
+	delAgain := mustJSONRequest(t, ts.Client(), http.MethodDelete, projectURL, nil)
+	if delAgain.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 on delete missing project, got %d body=%s", delAgain.StatusCode, readBody(t, delAgain))
+	}
+}
+
 func TestImportProjectHandlerValidationBranches(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()

@@ -99,7 +99,40 @@ const settingsRenderJS = `
             reloadBtn.disabled = false;
           }
         };
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'secondary';
+        deleteBtn.textContent = 'Delete Project';
+        deleteBtn.onclick = async () => {
+          const projectName = String(project.name || '').trim() || 'project';
+          const confirmed = await showConfirmDialog({
+            title: 'Delete project',
+            message:
+              'Delete project "' + projectName + '"? This removes its pipelines/chains from ciwi. ' +
+              'Existing job execution history remains.',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            danger: true,
+          });
+          if (!confirmed) return;
+          reloadStatus.textContent = 'Deleting...';
+          reloadStatus.style.color = '#5f6f67';
+          reloadBtn.disabled = true;
+          deleteBtn.disabled = true;
+          try {
+            await apiJSON('/api/v1/projects/' + project.id, { method: 'DELETE' });
+            setProjectReloadState(project.id, 'Deleted', '#1f8a4c');
+            await refreshSettingsProjects();
+          } catch (e) {
+            const msg = 'Delete failed: ' + String(e && e.message || e);
+            setProjectReloadState(project.id, msg, '#b23a48');
+            reloadStatus.textContent = msg;
+            reloadStatus.style.color = '#b23a48';
+            reloadBtn.disabled = false;
+            deleteBtn.disabled = false;
+          }
+        };
         controls.appendChild(reloadBtn);
+        controls.appendChild(deleteBtn);
         controls.appendChild(reloadStatus);
         top.appendChild(controls);
         wrap.appendChild(top);

@@ -27,6 +27,7 @@
   - `GET /api/v1/projects`
   - `POST /api/v1/projects/import`
   - `GET /api/v1/projects/{projectId}`
+  - `DELETE /api/v1/projects/{projectId}`
   - `GET /api/v1/projects/{projectId}/icon`
   - `POST /api/v1/projects/{projectId}/reload`
   - `POST /api/v1/pipelines/{pipelineDbId}/run-selection`
