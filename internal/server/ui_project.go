@@ -256,13 +256,115 @@ const projectHTML = `<!doctype html>
       icon.onerror = () => { icon.style.display = 'none'; };
 
       const structure = document.getElementById('structure');
-      if (!p.pipelines || p.pipelines.length === 0) {
+      const pipelines = Array.isArray(p.pipelines) ? p.pipelines : [];
+      const chains = Array.isArray(p.pipeline_chains) ? p.pipeline_chains : [];
+      if (pipelines.length === 0 && chains.length === 0) {
         structure.innerHTML = '<div class="muted">No pipelines</div>';
         return;
       }
 
       structure.innerHTML = '';
-      p.pipelines.forEach(pl => {
+      if (chains.length > 0) {
+        const chainBlock = document.createElement('div');
+        chainBlock.className = 'pipeline';
+        const chainTitle = document.createElement('div');
+        chainTitle.className = 'muted';
+        chainTitle.style.marginBottom = '8px';
+        chainTitle.innerHTML = '<strong>Pipeline Chains</strong>';
+        chainBlock.appendChild(chainTitle);
+        chains.forEach(ch => {
+          const chainRow = document.createElement('div');
+          chainRow.className = 'jobbox';
+          const chainHead = document.createElement('div');
+          chainHead.className = 'job-head';
+          const chainDesc = document.createElement('div');
+          chainDesc.className = 'job-desc';
+          const chainActions = document.createElement('div');
+          chainActions.className = 'job-actions';
+          const chainPipes = (ch.pipelines || []).join(' -> ');
+          chainDesc.innerHTML =
+            '<div><strong>Chain: <code>' + escapeHtml(ch.chain_id || '') + '</code></strong></div>' +
+            '<div class="muted">' + escapeHtml(chainPipes) + '</div>';
+          chainHead.appendChild(chainDesc);
+          chainHead.appendChild(chainActions);
+          chainRow.appendChild(chainHead);
+
+          const runBtn = document.createElement('button');
+          runBtn.textContent = 'Run Chain';
+          runBtn.className = 'secondary';
+          runBtn.onclick = async (ev) => {
+            runBtn.disabled = true;
+            try {
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: '/api/v1/pipeline-chains/' + ch.id + '/run',
+                sourceRefsPath: '/api/v1/pipeline-chains/' + ch.id + '/source-refs',
+                eligibleAgentsPath: '/api/v1/pipeline-chains/' + ch.id + '/eligible-agents',
+                payload: {},
+                title: 'Run Chain With Source Ref',
+                subtitle: String(ch.chain_id || ''),
+                runLabel: 'Run Chain',
+              });
+              if (runResult.cancelled) return;
+              showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (ch.chain_id || 'chain') + ' started');
+              await loadHistory();
+            } catch (e) {
+              await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
+            } finally {
+              runBtn.disabled = false;
+            }
+          };
+          chainActions.appendChild(runBtn);
+
+          if (ch.supports_dry_run) {
+            const dryBtn = document.createElement('button');
+            dryBtn.textContent = 'Dry Run Chain';
+            dryBtn.className = 'secondary';
+            dryBtn.onclick = async (ev) => {
+              dryBtn.disabled = true;
+              try {
+                const runResult = await runWithOptionalSourceRef(ev, {
+                  runPath: '/api/v1/pipeline-chains/' + ch.id + '/run',
+                  sourceRefsPath: '/api/v1/pipeline-chains/' + ch.id + '/source-refs',
+                  eligibleAgentsPath: '/api/v1/pipeline-chains/' + ch.id + '/eligible-agents',
+                  payload: { dry_run: true },
+                  title: 'Dry Run Chain With Source Ref',
+                  subtitle: String(ch.chain_id || ''),
+                  runLabel: 'Dry Run Chain',
+                });
+                if (runResult.cancelled) return;
+                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (ch.chain_id || 'chain') + ' started');
+                await loadHistory();
+              } catch (e) {
+                await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
+              } finally {
+                dryBtn.disabled = false;
+              }
+            };
+            chainActions.appendChild(dryBtn);
+          }
+
+          const previewBtn = document.createElement('button');
+          previewBtn.textContent = 'Preview Dry Run';
+          previewBtn.className = 'secondary';
+          previewBtn.onclick = () => {
+            openDryRunPreviewModal({
+              title: 'Preview Chain Dry Run',
+              subtitle: String(ch.chain_id || ''),
+              previewPath: '/api/v1/pipeline-chains/' + ch.id + '/dry-run-preview',
+              runPath: '/api/v1/pipeline-chains/' + ch.id + '/run',
+              sourceRefsPath: '/api/v1/pipeline-chains/' + ch.id + '/source-refs',
+              eligibleAgentsPath: '/api/v1/pipeline-chains/' + ch.id + '/eligible-agents',
+              payload: { dry_run: true },
+            });
+          };
+          chainActions.appendChild(previewBtn);
+
+          chainBlock.appendChild(chainRow);
+        });
+        structure.appendChild(chainBlock);
+      }
+
+      pipelines.forEach(pl => {
         const pipelineSupportsDryRun = (pl.jobs || []).some(job =>
           (job.steps || []).some(step => !!step.skip_dry_run)
         );
