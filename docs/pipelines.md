@@ -13,6 +13,22 @@ Agent checkout behavior:
 - `git fetch origin <ref>`
 - `git checkout --force FETCH_HEAD`
 
+UI run controls:
+- `Run` / `Dry Run` without modifiers: enqueue immediately with default source resolution.
+- `Shift+Run` / `Shift+Dry Run`: opens the run modal first.
+
+Run modal fields include:
+- source branch selector (from `.../source-refs`)
+- eligible agent selector (from `.../eligible-agents`), default is `Any eligible agent` to keep normal lease matching.
+
+Dry-run preview controls:
+- `Preview Dry Run` is available on pipeline and chain rows (index and project pages).
+
+Preview modal can:
+- render planned pending jobs and required capabilities without enqueueing
+- optionally filter to `offline_cached_only`
+- enqueue an offline execution directly via `Execute Offline` (uses `execution_mode=offline_cached`)
+
 Git identity behavior for source-backed jobs:
 - After checkout, ciwi configures repository-local git identity:
 - `user.name=ciwi-agent`
@@ -99,6 +115,18 @@ Resolved just-in-time when agent leases a job.
 - If stored source ref is commit SHA, rerun uses same commit.
 - If stored source ref is branch/tag, rerun may resolve newer commit.
 - Existing artifacts/logs remain tied to old execution ID.
+
+## Project import identity and naming
+
+Project identity for import/reload is:
+- `repo_url`
+- `repo_ref`
+- `config_file`
+
+Behavior:
+- Import with the same identity updates/reloads the existing project.
+- Import with different identity does not replace an existing project, even if `project.name` inside YAML matches.
+- If the YAML project name collides, ciwi derives a unique display name like `<name>@<ref>` (with numeric suffix when needed).
 
 ## Cache notes
 

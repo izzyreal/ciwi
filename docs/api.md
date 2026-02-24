@@ -70,3 +70,8 @@
 - Machine behavior should rely on structured API payloads, not output log scraping.
 - `POST /api/v1/pipelines/{id}/run-selection` and `POST /api/v1/pipeline-chains/{id}/run` accept optional `execution_mode`:
   - `offline_cached` executes from cached pinned source context with safety guardrails.
+- Run payload fields (pipeline/chain run and preview family) may include:
+  - `source_ref`: one-off source branch/tag/SHA override
+  - `agent_id`: pin execution to a specific eligible agent
+  - `dry_run`: preview/non-writing mode
+  - `offline_cached_only`: preview-time filter for cached-source feasibility

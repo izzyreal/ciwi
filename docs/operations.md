@@ -30,6 +30,11 @@
 - Guardrails: source must resolve to a pinned cached commit; non-dry offline runs are blocked for jobs containing `skip_dry_run` steps.
 - Use preview endpoints first: `POST /api/v1/pipelines/{id}/dry-run-preview` and `POST /api/v1/pipeline-chains/{id}/dry-run-preview`.
 
+UI flow:
+- use `Preview Dry Run`
+- optionally enable `offline_cached_only` in preview modal
+- use `Execute Offline` to enqueue with `execution_mode=offline_cached`
+
 ## Tool refresh
 
 - `/agents` -> **Refresh Tools** triggers an on-demand tool rescan on agent.
@@ -41,3 +46,9 @@
 - Server identity: `GET /api/v1/server-info`
 - Agent service status via system service manager
 - Job detail page for runtime capabilities, cache stats, unmet requirements
+
+## Project import/reload behavior
+
+- Identity key is `(repo_url, repo_ref, config_file)`.
+- Reload updates the same identity in place.
+- Importing same repo with a different branch creates/keeps a distinct project identity; it does not overwrite another branch project.

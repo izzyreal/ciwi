@@ -36,6 +36,9 @@ curl -s -X POST http://127.0.0.1:8112/api/v1/projects/import \
 ## 4. Run a pipeline
 
 From UI: open project, run pipeline/chain.
+- `Run` / `Dry Run` starts immediately.
+- Hold `Shift` while clicking to open the custom run modal (choose branch and optional eligible agent).
+- `Preview Dry Run` shows the planned jobs/capabilities without enqueueing.
 
 API equivalent:
 
@@ -43,6 +46,14 @@ API equivalent:
 curl -s http://127.0.0.1:8112/api/v1/projects
 curl -s -X POST http://127.0.0.1:8112/api/v1/pipelines/1/run-selection -d '{}'
 curl -s http://127.0.0.1:8112/api/v1/jobs
+```
+
+Offline cached execution example:
+
+```bash
+curl -s -X POST http://127.0.0.1:8112/api/v1/pipelines/1/run-selection \
+  -H 'Content-Type: application/json' \
+  -d '{"execution_mode":"offline_cached","dry_run":true}'
 ```
 
 ## 5. Optional: manual runtime modes
