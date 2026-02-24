@@ -194,6 +194,58 @@ func TestImportProjectHandlerFetchFailureAndSuccess(t *testing.T) {
 	}
 }
 
+func TestImportProjectSameRepoDifferentRefDoesNotReplaceExistingProject(t *testing.T) {
+	ts, _ := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	oldFetch := fetchProjectConfigAndIcon
+	t.Cleanup(func() { fetchProjectConfigAndIcon = oldFetch })
+	fetchProjectConfigAndIcon = func(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (project.RepoFetchResult, error) {
+		return project.RepoFetchResult{
+			ConfigContent: testConfigYAML,
+			SourceCommit:  "deadbeef",
+		}, nil
+	}
+	mainResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/import", map[string]any{
+		"repo_url": "https://github.com/izzyreal/ciwi.git",
+		"repo_ref": "main",
+	})
+	if mainResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 for main import, got %d body=%s", mainResp.StatusCode, readBody(t, mainResp))
+	}
+	featureResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/import", map[string]any{
+		"repo_url": "https://github.com/izzyreal/ciwi.git",
+		"repo_ref": "feature/test",
+	})
+	if featureResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 for feature import, got %d body=%s", featureResp.StatusCode, readBody(t, featureResp))
+	}
+	var featurePayload protocol.ImportProjectResponse
+	decodeJSONBody(t, featureResp, &featurePayload)
+	if strings.TrimSpace(featurePayload.ProjectName) == "ciwi" {
+		t.Fatalf("expected second import to get unique project name, got %q", featurePayload.ProjectName)
+	}
+
+	listResp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/projects", nil)
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("list projects status=%d body=%s", listResp.StatusCode, readBody(t, listResp))
+	}
+	var listPayload struct {
+		Projects []protocol.ProjectSummary `json:"projects"`
+	}
+	decodeJSONBody(t, listResp, &listPayload)
+	refs := map[string]bool{}
+	for _, p := range listPayload.Projects {
+		if strings.TrimSpace(p.RepoURL) != "https://github.com/izzyreal/ciwi.git" {
+			continue
+		}
+		refs[strings.TrimSpace(p.RepoRef)] = true
+	}
+	if !refs["main"] || !refs["feature/test"] {
+		t.Fatalf("expected both refs to exist without replacement, got refs=%v", refs)
+	}
+}
+
 func TestDetectServerUpdateCapabilityModes(t *testing.T) {
 	oldVersion := version.Version
 	t.Cleanup(func() { version.Version = oldVersion })

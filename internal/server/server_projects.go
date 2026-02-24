@@ -252,6 +252,11 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	if err != nil {
 		return protocol.ImportProjectResponse{}, err
 	}
+	resolvedName, err := s.resolveImportedProjectName(strings.TrimSpace(cfg.Project.Name), req)
+	if err != nil {
+		return protocol.ImportProjectResponse{}, err
+	}
+	cfg.Project.Name = resolvedName
 
 	for i := range cfg.Pipelines {
 		if cfg.Pipelines[i].VCSSource != nil {
@@ -285,4 +290,48 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 		ConfigFile:  req.ConfigFile,
 		Pipelines:   len(cfg.Pipelines),
 	}, nil
+}
+
+func (s *stateStore) resolveImportedProjectName(baseName string, req protocol.ImportProjectRequest) (string, error) {
+	baseName = strings.TrimSpace(baseName)
+	if baseName == "" {
+		return "", fmt.Errorf("project.name is required")
+	}
+	repoURL := strings.TrimSpace(req.RepoURL)
+	repoRef := strings.TrimSpace(req.RepoRef)
+	configFile := strings.TrimSpace(req.ConfigFile)
+	if configFile == "" {
+		configFile = "ciwi-project.yaml"
+	}
+	projects, err := s.projectStore().ListProjects()
+	if err != nil {
+		return "", err
+	}
+	used := map[string]struct{}{}
+	for _, p := range projects {
+		used[strings.TrimSpace(p.Name)] = struct{}{}
+		if strings.TrimSpace(p.RepoURL) == repoURL &&
+			strings.TrimSpace(p.RepoRef) == repoRef &&
+			strings.TrimSpace(p.ConfigFile) == configFile {
+			return strings.TrimSpace(p.Name), nil
+		}
+	}
+	if _, exists := used[baseName]; !exists {
+		return baseName, nil
+	}
+	refLabel := repoRef
+	if refLabel == "" {
+		refLabel = "default"
+	}
+	candidate := fmt.Sprintf("%s@%s", baseName, refLabel)
+	if _, exists := used[candidate]; !exists {
+		return candidate, nil
+	}
+	for i := 2; i < 1000; i++ {
+		candidate = fmt.Sprintf("%s@%s-%d", baseName, refLabel, i)
+		if _, exists := used[candidate]; !exists {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("failed to resolve unique project name for %q", baseName)
 }
