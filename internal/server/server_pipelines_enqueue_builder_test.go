@@ -436,6 +436,129 @@ pipelines:
 	}
 }
 
+func TestEnqueuePersistedPipelineOfflineCachedUsesPinnedCachedCommit(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    vcs_source:
+      repo: https://github.com/acme/repo.git
+      ref: refs/heads/main
+    versioning:
+      file: VERSION
+      tag_prefix: v
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`), "offline-cached-success")
+	exec, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo previous",
+		TimeoutSeconds: 30,
+		Metadata: map[string]string{
+			"project":                      "ciwi",
+			"pipeline_id":                  "release",
+			"pipeline_run_id":              "run-release-prev",
+			"pipeline_version_raw":         "1.2.3",
+			"pipeline_version":             "v1.2.3",
+			"pipeline_source_repo":         "https://github.com/acme/repo.git",
+			"pipeline_source_ref_raw":      "refs/heads/main",
+			"pipeline_source_ref_resolved": "0123456789abcdef0123456789abcdef01234567",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create previous execution: %v", err)
+	}
+	if _, err := s.db.UpdateJobExecutionStatus(exec.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  protocol.JobExecutionStatusSucceeded,
+	}); err != nil {
+		t.Fatalf("mark previous execution succeeded: %v", err)
+	}
+	resp, err := s.enqueuePersistedPipeline(p, &protocol.RunPipelineSelectionRequest{
+		ExecutionMode: executionModeOfflineCached,
+	})
+	if err != nil {
+		t.Fatalf("enqueue offline_cached: %v", err)
+	}
+	if resp.Enqueued != 1 || len(resp.JobExecutionIDs) != 1 {
+		t.Fatalf("expected one execution, got enqueued=%d ids=%d", resp.Enqueued, len(resp.JobExecutionIDs))
+	}
+	job, err := s.db.GetJobExecution(resp.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if job.Source == nil {
+		t.Fatalf("expected source to be set")
+	}
+	if got := strings.TrimSpace(job.Source.Ref); got != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("expected pinned cached sha, got %q", got)
+	}
+}
+
+func TestEnqueuePersistedPipelineOfflineCachedBlocksSkipDryRunStepsWhenNotDryRun(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    vcs_source:
+      repo: https://github.com/acme/repo.git
+      ref: refs/heads/main
+    versioning:
+      file: VERSION
+      tag_prefix: v
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo safe
+          - run: echo wet
+            skip_dry_run: true
+`), "offline-cached-guard")
+	exec, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo previous",
+		TimeoutSeconds: 30,
+		Metadata: map[string]string{
+			"project":                      "ciwi",
+			"pipeline_id":                  "release",
+			"pipeline_run_id":              "run-release-prev",
+			"pipeline_version_raw":         "1.2.3",
+			"pipeline_version":             "v1.2.3",
+			"pipeline_source_repo":         "https://github.com/acme/repo.git",
+			"pipeline_source_ref_raw":      "refs/heads/main",
+			"pipeline_source_ref_resolved": "0123456789abcdef0123456789abcdef01234567",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create previous execution: %v", err)
+	}
+	if _, err := s.db.UpdateJobExecutionStatus(exec.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  protocol.JobExecutionStatusSucceeded,
+	}); err != nil {
+		t.Fatalf("mark previous execution succeeded: %v", err)
+	}
+	_, err = s.enqueuePersistedPipeline(p, &protocol.RunPipelineSelectionRequest{
+		ExecutionMode: executionModeOfflineCached,
+		DryRun:        false,
+	})
+	if err == nil {
+		t.Fatalf("expected offline_cached non-dry run to fail for skip_dry_run steps")
+	}
+	if !strings.Contains(err.Error(), "contains skip_dry_run step") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func createTestRemoteGitRepo(t *testing.T) (repoURL, featureRef, featureSHA string) {
 	t.Helper()
 	root := t.TempDir()

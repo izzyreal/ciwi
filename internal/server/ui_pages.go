@@ -524,4 +524,288 @@ async function runWithOptionalSourceRef(event, opts) {
   const resp = await apiJSON(runPath, { method: 'POST', body: JSON.stringify(payload) });
   return { cancelled: false, response: resp, sourceRef: selectedSourceRef };
 }
+
+function renderRuntimeStateBanner(state, bannerID) {
+  const id = String(bannerID || 'runtimeStateBanner').trim() || 'runtimeStateBanner';
+  const node = document.getElementById(id);
+  if (!node) return;
+  const payload = state || {};
+  const mode = String(payload.mode || '').trim();
+  if (mode !== 'degraded_offline') {
+    node.style.display = 'none';
+    node.classList.remove('runtime-banner-warn');
+    node.textContent = '';
+    return;
+  }
+  const reasons = Array.isArray(payload.reasons) ? payload.reasons.map(v => String(v || '').trim()).filter(Boolean) : [];
+  const bits = [];
+  bits.push('Runtime state: degraded_offline');
+  bits.push('online=' + String(Number(payload.online_agents || 0)));
+  bits.push('stale=' + String(Number(payload.stale_agents || 0)));
+  bits.push('offline=' + String(Number(payload.offline_agents || 0)));
+  if (reasons.length > 0) bits.push('reasons: ' + reasons.join(', '));
+  if (payload.last_agent_seen_utc) bits.push('last_seen: ' + formatTimestamp(payload.last_agent_seen_utc));
+  node.textContent = bits.join(' | ');
+  node.style.display = 'block';
+  node.classList.add('runtime-banner-warn');
+}
+
+async function refreshRuntimeStateBanner(bannerID) {
+  try {
+    const stateResp = await apiJSON('/api/v1/runtime-state');
+    renderRuntimeStateBanner(stateResp || {}, bannerID);
+  } catch (_) {
+    renderRuntimeStateBanner({ mode: 'degraded_offline', reasons: ['runtime state unavailable'] }, bannerID);
+  }
+}
+
+function ensureDryRunPreviewStyles() {
+  if (document.getElementById('__ciwiDryRunPreviewStyles')) return;
+  const style = document.createElement('style');
+  style.id = '__ciwiDryRunPreviewStyles';
+  style.textContent = [
+    '.dryrun-preview-modal{--ciwi-modal-width:min(940px,95vw);--ciwi-modal-height:min(84vh,760px);}',
+    '.dryrun-preview-body{display:grid;grid-template-rows:auto 1fr;gap:10px;height:100%;min-height:0;}',
+    '.dryrun-preview-controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;}',
+    '.dryrun-preview-label{font-size:13px;color:#1f2a24;font-weight:600;}',
+    '.dryrun-preview-select{width:100%;font-size:13px;border:1px solid #c4ddd0;border-radius:8px;padding:8px;background:#fff;color:#1f2a24;}',
+    '.dryrun-preview-check{display:flex;align-items:center;gap:8px;font-size:13px;color:#1f2a24;user-select:none;}',
+    '.dryrun-preview-note{font-size:12px;line-height:1.35;color:#6a5726;background:#fff8e8;border:1px solid #ead7a8;border-radius:8px;padding:8px 10px;}',
+    '.dryrun-preview-output{margin:0;background:#0f1412;color:#cde7dc;border-radius:8px;border:1px solid #22352d;padding:12px;width:100%;height:100%;overflow:auto;font-size:12px;line-height:1.35;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;}',
+    '.dryrun-preview-actions{display:flex;justify-content:flex-end;gap:8px;padding:8px 12px 12px;}',
+  ].join('');
+  document.head.appendChild(style);
+}
+
+function ensureDryRunPreviewModal() {
+  let overlay = document.getElementById('__ciwiDryRunPreviewOverlay');
+  if (overlay) return overlay;
+  ensureModalBaseStyles();
+  ensureDryRunPreviewStyles();
+  overlay = document.createElement('div');
+  overlay.id = '__ciwiDryRunPreviewOverlay';
+  overlay.className = 'ciwi-modal-overlay';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.innerHTML = [
+    '<div class="ciwi-modal dryrun-preview-modal" role="dialog" aria-modal="true" aria-label="Dry run preview">',
+    '  <div class="ciwi-modal-head">',
+    '    <div>',
+    '      <div id="dryRunPreviewTitle" class="ciwi-modal-title">Preview Dry Run</div>',
+    '      <div id="dryRunPreviewSubtitle" class="ciwi-modal-subtitle"></div>',
+    '    </div>',
+    '    <button type="button" id="dryRunPreviewCloseBtn" class="secondary">Close</button>',
+    '  </div>',
+    '  <div class="ciwi-modal-body dryrun-preview-body">',
+    '    <div class="dryrun-preview-controls">',
+    '      <div>',
+    '        <label class="dryrun-preview-label" for="dryRunPreviewSourceRef">Branch</label>',
+    '        <select id="dryRunPreviewSourceRef" class="dryrun-preview-select"></select>',
+    '      </div>',
+    '      <div>',
+    '        <label class="dryrun-preview-label" for="dryRunPreviewAgent">Agent</label>',
+    '        <select id="dryRunPreviewAgent" class="dryrun-preview-select"></select>',
+    '      </div>',
+    '      <label class="dryrun-preview-check">',
+    '        <input id="dryRunPreviewCachedOnly" type="checkbox" />',
+    '        <span>offline_cached_only</span>',
+    '      </label>',
+    '      <div class="dryrun-preview-note">',
+    '        Offline execution guardrails: requires a pinned cached source commit. Non-dry execution is blocked when selected jobs contain <code>skip_dry_run</code> steps.',
+    '      </div>',
+    '    </div>',
+    '    <pre id="dryRunPreviewOutput" class="dryrun-preview-output">Loading...</pre>',
+    '  </div>',
+    '  <div class="dryrun-preview-actions">',
+    '    <button type="button" id="dryRunPreviewExecuteBtn" class="secondary">Execute Offline</button>',
+    '    <button type="button" id="dryRunPreviewRunBtn">Preview</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function formatDryRunPreviewOutput(resp) {
+  const data = resp || {};
+  const lines = [];
+  lines.push('mode: ' + String(data.mode || ''));
+  lines.push('offline_cached_only: ' + String(!!data.offline_cached_only));
+  lines.push('cache_used: ' + String(!!data.cache_used));
+  if (data.cache_source) lines.push('cache_source: ' + String(data.cache_source));
+  lines.push('pipeline: ' + String(data.pipeline_id || ''));
+  const eligible = Array.isArray(data.eligible_agent_ids) ? data.eligible_agent_ids.map(v => String(v || '').trim()).filter(Boolean) : [];
+  lines.push('eligible_agents: ' + (eligible.length ? eligible.join(', ') : '(none)'));
+  const warnings = Array.isArray(data.warnings) ? data.warnings.map(v => String(v || '').trim()).filter(Boolean) : [];
+  if (warnings.length) lines.push('warnings: ' + warnings.join(' | '));
+  const jobs = Array.isArray(data.pending_jobs) ? data.pending_jobs : [];
+  lines.push('pending_jobs: ' + String(jobs.length));
+  jobs.forEach((job, idx) => {
+    lines.push('');
+    lines.push('[' + String(idx + 1) + '] ' + String(job.pipeline_job_id || ''));
+    if (job.matrix_name) lines.push('matrix: ' + String(job.matrix_name));
+    if (job.source_repo) lines.push('source_repo: ' + String(job.source_repo));
+    if (job.source_ref) lines.push('source_ref: ' + String(job.source_ref));
+    lines.push('step_count: ' + String(Number(job.step_count || 0)));
+    lines.push('dependency_blocked: ' + String(!!job.dependency_blocked));
+    const caps = job.required_capabilities || {};
+    const capKeys = Object.keys(caps).sort();
+    lines.push('required_capabilities: ' + (capKeys.length ? capKeys.map(k => k + '=' + String(caps[k] || '')).join(', ') : '(none)'));
+    const arts = Array.isArray(job.artifact_globs) ? job.artifact_globs : [];
+    lines.push('artifact_globs: ' + (arts.length ? arts.join(', ') : '(none)'));
+  });
+  return lines.join('\n');
+}
+
+function openDryRunPreviewModal(opts) {
+  const options = opts || {};
+  const previewPath = String(options.previewPath || '').trim();
+  const sourceRefsPath = String(options.sourceRefsPath || '').trim();
+  const eligibleAgentsPath = String(options.eligibleAgentsPath || '').trim();
+  if (!previewPath || !sourceRefsPath) return Promise.reject(new Error('previewPath and sourceRefsPath are required'));
+  const overlay = ensureDryRunPreviewModal();
+  const titleEl = document.getElementById('dryRunPreviewTitle');
+  const subtitleEl = document.getElementById('dryRunPreviewSubtitle');
+  const sourceSel = document.getElementById('dryRunPreviewSourceRef');
+  const agentSel = document.getElementById('dryRunPreviewAgent');
+  const cachedOnly = document.getElementById('dryRunPreviewCachedOnly');
+  const outputEl = document.getElementById('dryRunPreviewOutput');
+  const closeBtn = document.getElementById('dryRunPreviewCloseBtn');
+  const previewBtn = document.getElementById('dryRunPreviewRunBtn');
+  const executeBtn = document.getElementById('dryRunPreviewExecuteBtn');
+  if (!titleEl || !subtitleEl || !sourceSel || !agentSel || !cachedOnly || !outputEl || !closeBtn || !previewBtn || !executeBtn) {
+    return Promise.reject(new Error('dry run preview modal elements unavailable'));
+  }
+  titleEl.textContent = String(options.title || 'Preview Dry Run').trim() || 'Preview Dry Run';
+  subtitleEl.textContent = String(options.subtitle || '').trim();
+  sourceSel.innerHTML = '';
+  agentSel.innerHTML = '';
+  outputEl.textContent = 'Loading branches...';
+  sourceSel.disabled = true;
+  agentSel.disabled = true;
+  previewBtn.disabled = true;
+  executeBtn.disabled = true;
+  executeBtn.style.display = String(options.runPath || '').trim() ? 'inline-block' : 'none';
+  cachedOnly.checked = !!options.offlineCachedOnlyDefault;
+  const basePayload = { ...((options.payload || {})) };
+  const buildPayload = () => {
+    const payload = { ...basePayload };
+    const ref = String(sourceSel.value || '').trim();
+    const agentID = String(agentSel.value || '').trim();
+    if (ref) payload.source_ref = ref;
+    if (agentID) payload.agent_id = agentID;
+    if (cachedOnly.checked) payload.offline_cached_only = true;
+    return payload;
+  };
+  const refreshEligibleAgents = () => {
+    agentSel.innerHTML = '';
+    const anyOpt = document.createElement('option');
+    anyOpt.value = '';
+    anyOpt.textContent = 'Any eligible agent';
+    agentSel.appendChild(anyOpt);
+    if (!eligibleAgentsPath) {
+      agentSel.disabled = false;
+      previewBtn.disabled = !String(sourceSel.value || '').trim();
+      executeBtn.disabled = !String(sourceSel.value || '').trim();
+      return Promise.resolve();
+    }
+    agentSel.disabled = true;
+    return apiJSON(eligibleAgentsPath, { method: 'POST', body: JSON.stringify(buildPayload()) })
+      .then((data) => {
+        const ids = Array.isArray((data || {}).eligible_agent_ids) ? data.eligible_agent_ids : [];
+        ids.forEach((id) => {
+          const v = String(id || '').trim();
+          if (!v) return;
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          agentSel.appendChild(opt);
+        });
+        agentSel.disabled = false;
+        previewBtn.disabled = !String(sourceSel.value || '').trim();
+        executeBtn.disabled = !String(sourceSel.value || '').trim();
+      });
+  };
+  const runPreview = () => {
+    outputEl.textContent = 'Previewing...';
+    previewBtn.disabled = true;
+    return apiJSON(previewPath, { method: 'POST', body: JSON.stringify(buildPayload()) })
+      .then((resp) => {
+        outputEl.textContent = formatDryRunPreviewOutput(resp);
+      })
+      .catch((err) => {
+        outputEl.textContent = 'Preview failed: ' + String(err && err.message || err);
+      })
+      .finally(() => {
+        previewBtn.disabled = !String(sourceSel.value || '').trim();
+        executeBtn.disabled = !String(sourceSel.value || '').trim();
+      });
+  };
+  const runOffline = () => {
+    const runPath = String(options.runPath || '').trim();
+    if (!runPath) return Promise.resolve();
+    const payload = buildPayload();
+    payload.execution_mode = 'offline_cached';
+    outputEl.textContent += '\n\n[execute] enqueueing offline_cached...';
+    previewBtn.disabled = true;
+    executeBtn.disabled = true;
+    return apiJSON(runPath, { method: 'POST', body: JSON.stringify(payload) })
+      .then((resp) => {
+        const enqueued = Number((resp || {}).enqueued || 0);
+        const ids = Array.isArray((resp || {}).job_execution_ids) ? resp.job_execution_ids : [];
+        outputEl.textContent += '\n[execute] enqueued=' + String(enqueued) + (ids.length ? (' ids=' + ids.join(',')) : '');
+        if (typeof showQueuedJobsSnackbar === 'function') {
+          showQueuedJobsSnackbar('Offline execution started');
+        }
+      })
+      .catch((err) => {
+        outputEl.textContent += '\n[execute] failed: ' + String(err && err.message || err);
+      })
+      .finally(() => {
+        previewBtn.disabled = !String(sourceSel.value || '').trim();
+        executeBtn.disabled = !String(sourceSel.value || '').trim();
+      });
+  };
+  wireModalCloseBehavior(overlay, () => closeModalOverlay(overlay));
+  closeBtn.onclick = () => closeModalOverlay(overlay);
+  previewBtn.onclick = () => { runPreview(); };
+  executeBtn.onclick = () => { runOffline(); };
+  sourceSel.onchange = () => {
+    refreshEligibleAgents().catch((err) => {
+      outputEl.textContent = 'Eligible agent lookup failed: ' + String(err && err.message || err);
+    });
+  };
+  cachedOnly.onchange = () => {
+    refreshEligibleAgents().catch((err) => {
+      outputEl.textContent = 'Eligible agent lookup failed: ' + String(err && err.message || err);
+    });
+  };
+  openModalOverlay(overlay, 'min(940px,95vw)', 'min(84vh,760px)');
+  return apiJSON(sourceRefsPath)
+    .then((data) => {
+      const refs = Array.isArray((data || {}).refs) ? data.refs : [];
+      const defaultRef = String((data || {}).default_ref || '').trim();
+      sourceSel.innerHTML = '';
+      refs.forEach((entry) => {
+        const ref = String((entry || {}).ref || '').trim();
+        const name = String((entry || {}).name || '').trim();
+        if (!ref) return;
+        const opt = document.createElement('option');
+        opt.value = ref;
+        opt.textContent = name ? (name + ' (' + ref + ')') : ref;
+        sourceSel.appendChild(opt);
+      });
+      if (defaultRef) sourceSel.value = defaultRef;
+      if (!String(sourceSel.value || '').trim() && sourceSel.options.length > 0) sourceSel.selectedIndex = 0;
+      sourceSel.disabled = false;
+      return refreshEligibleAgents();
+    })
+    .then(() => runPreview())
+    .catch((err) => {
+      outputEl.textContent = 'Failed to initialize dry run preview: ' + String(err && err.message || err);
+      previewBtn.disabled = true;
+      executeBtn.disabled = true;
+      sourceSel.disabled = true;
+      agentSel.disabled = true;
+    });
+}
 `

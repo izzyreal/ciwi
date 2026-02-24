@@ -7,6 +7,7 @@
   - `GET /api/v1/jobs/{id}/artifacts`
 - Frontend + installer:
   - `GET /healthz`
+  - `GET /api/v1/runtime-state`
 
 ## Consumed by agent runtime
 
@@ -29,7 +30,13 @@
   - `GET /api/v1/projects/{projectId}/icon`
   - `POST /api/v1/projects/{projectId}/reload`
   - `POST /api/v1/pipelines/{pipelineDbId}/run-selection`
+  - `POST /api/v1/pipelines/{pipelineDbId}/dry-run-preview`
+  - `GET /api/v1/pipelines/{pipelineDbId}/source-refs`
+  - `POST /api/v1/pipelines/{pipelineDbId}/eligible-agents`
   - `POST /api/v1/pipeline-chains/{chainDbId}/run`
+  - `POST /api/v1/pipeline-chains/{chainDbId}/dry-run-preview`
+  - `GET /api/v1/pipeline-chains/{chainDbId}/source-refs`
+  - `POST /api/v1/pipeline-chains/{chainDbId}/eligible-agents`
   - `GET /api/v1/pipelines/{pipelineDbId}/version-resolve` (SSE)
 - Jobs:
   - `GET /api/v1/jobs`
@@ -61,3 +68,5 @@
 
 - Config parsing uses strict YAML field validation.
 - Machine behavior should rely on structured API payloads, not output log scraping.
+- `POST /api/v1/pipelines/{id}/run-selection` and `POST /api/v1/pipeline-chains/{id}/run` accept optional `execution_mode`:
+  - `offline_cached` executes from cached pinned source context with safety guardrails.

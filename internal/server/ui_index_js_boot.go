@@ -42,7 +42,7 @@ const uiIndexBootJS = `
       }
       refreshInFlight = true;
       try {
-        await Promise.all([refreshProjects(), refreshJobs()]);
+        await Promise.all([refreshProjects(), refreshJobs(), refreshRuntimeStateBanner('runtimeStateBanner')]);
       } catch (e) {
         console.error(e);
       } finally {

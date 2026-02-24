@@ -42,7 +42,7 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || (parts[1] != "run-selection" && parts[1] != "version-resolve" && parts[1] != "source-refs" && parts[1] != "eligible-agents") {
+	if len(parts) != 2 || (parts[1] != "run-selection" && parts[1] != "version-resolve" && parts[1] != "source-refs" && parts[1] != "eligible-agents" && parts[1] != "dry-run-preview") {
 		http.NotFound(w, r)
 		return
 	}
@@ -76,6 +76,10 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		s.pipelineEligibleAgentsHandler(w, p, r)
 		return
 	}
+	if parts[1] == "dry-run-preview" {
+		s.pipelineDryRunPreviewHandler(w, p, r)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -100,7 +104,7 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "source-refs" && parts[1] != "eligible-agents") {
+	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "source-refs" && parts[1] != "eligible-agents" && parts[1] != "dry-run-preview") {
 		http.NotFound(w, r)
 		return
 	}
@@ -130,6 +134,10 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 		s.pipelineChainEligibleAgentsHandler(w, ch, r)
 		return
 	}
+	if parts[1] == "dry-run-preview" {
+		s.pipelineChainDryRunPreviewHandler(w, ch, r)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -148,6 +156,9 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 }
 
 func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineChain, selection *protocol.RunPipelineSelectionRequest) (protocol.RunPipelineResponse, error) {
+	if normalizeExecutionMode(selection) == executionModeOfflineCached {
+		return s.enqueuePersistedPipelineChainOfflineCached(ch, selection)
+	}
 	if len(ch.Pipelines) == 0 {
 		return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline chain has no pipelines")
 	}

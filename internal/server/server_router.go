@@ -28,6 +28,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	// Health/info
 	r.Get("/healthz", healthzHandler)
 	r.Get("/api/v1/server-info", serverInfoHandler)
+	r.Get("/api/v1/runtime-state", s.runtimeStateHandler)
 
 	// Agent API
 	r.Post("/api/v1/heartbeat", s.heartbeatHandler)

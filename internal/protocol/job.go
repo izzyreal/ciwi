@@ -224,6 +224,7 @@ type RunPipelineSelectionRequest struct {
 	DryRun        bool   `json:"dry_run,omitempty"`
 	SourceRef     string `json:"source_ref,omitempty"`
 	AgentID       string `json:"agent_id,omitempty"`
+	ExecutionMode string `json:"execution_mode,omitempty"`
 }
 
 type JobExecutionArtifact struct {

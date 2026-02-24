@@ -24,6 +24,12 @@
 - **Flush History** removes non-active execution records from sqlite.
 - Artifact files are not automatically GC’d by history flush.
 
+## Offline-cached execution
+
+- `execution_mode=offline_cached` can be used on pipeline/chain run APIs for cached-source execution.
+- Guardrails: source must resolve to a pinned cached commit; non-dry offline runs are blocked for jobs containing `skip_dry_run` steps.
+- Use preview endpoints first: `POST /api/v1/pipelines/{id}/dry-run-preview` and `POST /api/v1/pipeline-chains/{id}/dry-run-preview`.
+
 ## Tool refresh
 
 - `/agents` -> **Refresh Tools** triggers an on-demand tool rescan on agent.
@@ -31,6 +37,7 @@
 ## Troubleshooting quick checks
 
 - Server health: `GET /healthz`
+- Runtime mode (normal/degraded_offline): `GET /api/v1/runtime-state`
 - Server identity: `GET /api/v1/server-info`
 - Agent service status via system service manager
 - Job detail page for runtime capabilities, cache stats, unmet requirements

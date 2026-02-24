@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func loadPipelineTestConfig(t *testing.T, s *stateStore, yaml string) {
@@ -535,5 +536,238 @@ pipeline_chains:
 	}
 	if len(payload.EligibleAgentIDs) != 1 || payload.EligibleAgentIDs[0] != "agent-linux" {
 		t.Fatalf("unexpected eligible agents: %+v", payload.EligibleAgentIDs)
+	}
+}
+
+func TestPipelineDryRunPreviewOfflineCachedOnlyUsesCachedContext(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/acme/repo.git
+      ref: refs/heads/main
+    versioning:
+      file: VERSION
+      tag_prefix: v
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`)
+	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+	buildExec, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo cached",
+		TimeoutSeconds: 30,
+		Metadata: map[string]string{
+			"project":                      "ciwi",
+			"pipeline_id":                  "release",
+			"pipeline_run_id":              "run-release-1",
+			"pipeline_version_raw":         "1.2.3",
+			"pipeline_version":             "v1.2.3",
+			"pipeline_source_repo":         "https://github.com/acme/repo.git",
+			"pipeline_source_ref_raw":      "refs/heads/main",
+			"pipeline_source_ref_resolved": "0123456789abcdef0123456789abcdef01234567",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create cached run job: %v", err)
+	}
+	if _, err := s.db.UpdateJobExecutionStatus(buildExec.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  protocol.JobExecutionStatusSucceeded,
+	}); err != nil {
+		t.Fatalf("mark cached run succeeded: %v", err)
+	}
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/dry-run-preview", map[string]any{
+		"offline_cached_only": true,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for dry-run-preview, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		CacheUsed   bool `json:"cache_used"`
+		PendingJobs []struct {
+			SourceRef string `json:"source_ref"`
+			StepCount int    `json:"step_count"`
+		} `json:"pending_jobs"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if !payload.CacheUsed {
+		t.Fatalf("expected cache_used=true")
+	}
+	if len(payload.PendingJobs) != 1 {
+		t.Fatalf("expected one pending job, got %+v", payload.PendingJobs)
+	}
+	if payload.PendingJobs[0].SourceRef != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("unexpected preview source ref: %q", payload.PendingJobs[0].SourceRef)
+	}
+	if payload.PendingJobs[0].StepCount != 1 {
+		t.Fatalf("unexpected step_count: %+v", payload.PendingJobs[0].StepCount)
+	}
+}
+
+func TestPipelineDryRunPreviewOfflineCachedOnlyFailsWithoutCacheForVersionedPipeline(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/acme/repo.git
+      ref: refs/heads/main
+    versioning:
+      file: VERSION
+      tag_prefix: v
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`)
+	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/dry-run-preview", map[string]any{
+		"offline_cached_only": true,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for dry-run-preview without cache, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	body := readBody(t, resp)
+	if !strings.Contains(body, "offline_cached_only requires a prior successful") {
+		t.Fatalf("unexpected error body: %s", body)
+	}
+}
+
+func TestPipelineChainDryRunPreview(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    jobs:
+      - id: build
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: package
+    trigger: manual
+    jobs:
+      - id: package
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+pipeline_chains:
+  - id: build-package
+    pipelines:
+      - build
+      - package
+`)
+	_, chainID := firstPipelineAndChainIDs(t, s, "ciwi")
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/dry-run-preview", map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for chain dry-run-preview, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		PendingJobs []map[string]any `json:"pending_jobs"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if len(payload.PendingJobs) != 2 {
+		t.Fatalf("expected 2 pending jobs in chain preview, got %d", len(payload.PendingJobs))
+	}
+}
+
+func TestPipelineRunSelectionOfflineCachedExecutionMode(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/acme/repo.git
+      ref: refs/heads/main
+    versioning:
+      file: VERSION
+      tag_prefix: v
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`)
+	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+	prev, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo previous",
+		TimeoutSeconds: 30,
+		Metadata: map[string]string{
+			"project":                      "ciwi",
+			"pipeline_id":                  "release",
+			"pipeline_run_id":              "run-release-prev",
+			"pipeline_version_raw":         "1.2.3",
+			"pipeline_version":             "v1.2.3",
+			"pipeline_source_repo":         "https://github.com/acme/repo.git",
+			"pipeline_source_ref_raw":      "refs/heads/main",
+			"pipeline_source_ref_resolved": "0123456789abcdef0123456789abcdef01234567",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create previous job execution: %v", err)
+	}
+	if _, err := s.db.UpdateJobExecutionStatus(prev.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  protocol.JobExecutionStatusSucceeded,
+	}); err != nil {
+		t.Fatalf("mark previous job succeeded: %v", err)
+	}
+
+	runResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/run-selection", map[string]any{
+		"execution_mode": "offline_cached",
+	})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 for offline_cached run-selection, got %d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	var payload struct {
+		Enqueued int `json:"enqueued"`
+	}
+	decodeJSONBody(t, runResp, &payload)
+	if payload.Enqueued != 1 {
+		t.Fatalf("expected one enqueued offline_cached job, got %d", payload.Enqueued)
 	}
 }

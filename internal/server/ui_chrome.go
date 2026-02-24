@@ -46,6 +46,21 @@ const uiPageChromeCSS = `
       image-rendering: pixelated;
     }
     .muted { color: var(--muted); font-size: 13px; }
+    .runtime-banner {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      background: #f7fcf9;
+      color: #295748;
+      display: none;
+    }
+    .runtime-banner.runtime-banner-warn {
+      border-color: #e7d5aa;
+      background: #fff9eb;
+      color: #7c5a1f;
+    }
     .ciwi-modal-overlay { display: none; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }

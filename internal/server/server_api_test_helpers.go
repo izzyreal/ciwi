@@ -80,6 +80,7 @@ func newTestHTTPServerWithState(t *testing.T) (*httptest.Server, *stateStore) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/server-info", serverInfoHandler)
+	mux.HandleFunc("/api/v1/runtime-state", s.runtimeStateHandler)
 	mux.HandleFunc("/api/v1/projects", s.listProjectsHandler)
 	mux.HandleFunc("/api/v1/projects/import", s.importProjectHandler)
 	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)

@@ -34,6 +34,9 @@ type pendingJob struct {
 }
 
 func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest) (protocol.RunPipelineResponse, error) {
+	if normalizeExecutionMode(selection) == executionModeOfflineCached {
+		return s.enqueuePersistedPipelineOfflineCached(p, selection)
+	}
 	opts := enqueuePipelineOptions{}
 	if sourceRef := normalizeSourceRef(selection); sourceRef != "" {
 		if strings.TrimSpace(p.SourceRepo) == "" {

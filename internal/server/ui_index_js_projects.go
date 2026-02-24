@@ -140,6 +140,20 @@ const uiIndexProjectsJS = `
           resolveBtn.className = 'secondary';
           resolveBtn.textContent = 'Resolve Upcoming Build Version';
           resolveBtn.onclick = () => openVersionResolveModal(p.id, p.pipeline_id);
+          const previewBtn = document.createElement('button');
+          previewBtn.className = 'secondary';
+          previewBtn.textContent = 'Preview Dry Run';
+          previewBtn.onclick = () => {
+            openDryRunPreviewModal({
+              title: 'Preview Dry Run',
+              subtitle: String(p.pipeline_id || ''),
+              previewPath: '/api/v1/pipelines/' + p.id + '/dry-run-preview',
+              runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
+              sourceRefsPath: '/api/v1/pipelines/' + p.id + '/source-refs',
+              eligibleAgentsPath: '/api/v1/pipelines/' + p.id + '/eligible-agents',
+              payload: { dry_run: true },
+            });
+          };
 
           row.appendChild(info);
           const actions = document.createElement('div');
@@ -148,6 +162,7 @@ const uiIndexProjectsJS = `
           btnRow.className = 'row';
           btnRow.appendChild(btn);
           if (supportsDryRun) btnRow.appendChild(dryBtn);
+          btnRow.appendChild(previewBtn);
           btnRow.appendChild(resolveBtn);
           actions.appendChild(btnRow);
           row.appendChild(actions);
@@ -220,6 +235,20 @@ const uiIndexProjectsJS = `
           } else {
             resolveBtn.disabled = true;
           }
+          const previewBtn = document.createElement('button');
+          previewBtn.className = 'secondary';
+          previewBtn.textContent = 'Preview Dry Run';
+          previewBtn.onclick = () => {
+            openDryRunPreviewModal({
+              title: 'Preview Chain Dry Run',
+              subtitle: String(c.chain_id || ''),
+              previewPath: '/api/v1/pipeline-chains/' + c.id + '/dry-run-preview',
+              runPath: '/api/v1/pipeline-chains/' + c.id + '/run',
+              sourceRefsPath: '/api/v1/pipeline-chains/' + c.id + '/source-refs',
+              eligibleAgentsPath: '/api/v1/pipeline-chains/' + c.id + '/eligible-agents',
+              payload: { dry_run: true },
+            });
+          };
 
           const actions = document.createElement('div');
           actions.className = 'pipeline-actions';
@@ -227,6 +256,7 @@ const uiIndexProjectsJS = `
           btnRow.className = 'row';
           btnRow.appendChild(runBtn);
           if (c.supports_dry_run) btnRow.appendChild(dryBtn);
+          btnRow.appendChild(previewBtn);
           btnRow.appendChild(resolveBtn);
           actions.appendChild(btnRow);
           row.appendChild(info);

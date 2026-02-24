@@ -61,6 +61,7 @@ const projectHTML = `<!doctype html>
         </div>
       </div>
       <div><a class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a></div>
+      <div id="runtimeStateBanner" class="runtime-banner"></div>
     </div>
 
     <div class="card">
@@ -308,6 +309,20 @@ const projectHTML = `<!doctype html>
         resolveBtn.textContent = 'Resolve Upcoming Build Version';
         resolveBtn.className = 'secondary';
         resolveBtn.onclick = () => openVersionResolveModal(pl.id, pl.pipeline_id);
+        const previewBtn = document.createElement('button');
+        previewBtn.textContent = 'Preview Dry Run';
+        previewBtn.className = 'secondary';
+        previewBtn.onclick = () => {
+          openDryRunPreviewModal({
+            title: 'Preview Dry Run',
+            subtitle: String(pl.pipeline_id || ''),
+            previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
+            runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
+            sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+            eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
+            payload: { dry_run: true },
+          });
+        };
         const inspectPipelineBtn = document.createElement('button');
         inspectPipelineBtn.textContent = 'Inspect Pipeline';
         inspectPipelineBtn.className = 'secondary';
@@ -327,6 +342,7 @@ const projectHTML = `<!doctype html>
         if (pipelineSupportsDryRun) {
           headControls.appendChild(dryAll);
         }
+        headControls.appendChild(previewBtn);
         headControls.appendChild(resolveBtn);
         headControls.appendChild(inspectPipelineBtn);
         headControls.appendChild(toggleBtn);
@@ -404,6 +420,21 @@ const projectHTML = `<!doctype html>
                 const dryBtn = createActionButton('Dry Run', { pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true }, name, 'Dry run selection failed', 'Dry Run Matrix Entry With Source Ref');
                 actions.appendChild(dryBtn);
               }
+              const previewBtn = document.createElement('button');
+              previewBtn.textContent = 'Preview Dry Run';
+              previewBtn.className = 'secondary';
+              previewBtn.onclick = () => {
+                openDryRunPreviewModal({
+                  title: 'Preview Matrix Dry Run',
+                  subtitle: String(pl.pipeline_id || '') + ' / ' + String(j.id || '') + ' / ' + name,
+                  previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
+                  runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
+                  sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+                  eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
+                  payload: { dry_run: true, pipeline_job_id: j.id, matrix_index: mi.index },
+                });
+              };
+              actions.appendChild(previewBtn);
               const inspectBtn = document.createElement('button');
               inspectBtn.textContent = 'Inspect';
               inspectBtn.className = 'secondary';
@@ -425,6 +456,21 @@ const projectHTML = `<!doctype html>
               const dryBtn = createActionButton('Dry Run Job', { pipeline_job_id: j.id, dry_run: true }, (j.id || 'job'), 'Dry run selection failed', 'Dry Run Job With Source Ref');
               jobActions.appendChild(dryBtn);
             }
+            const previewBtn = document.createElement('button');
+            previewBtn.textContent = 'Preview Dry Run';
+            previewBtn.className = 'secondary';
+            previewBtn.onclick = () => {
+              openDryRunPreviewModal({
+                title: 'Preview Job Dry Run',
+                subtitle: String(pl.pipeline_id || '') + ' / ' + String(j.id || ''),
+                previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
+                runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
+                sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
+                eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
+                payload: { dry_run: true, pipeline_job_id: j.id },
+              });
+            };
+            jobActions.appendChild(previewBtn);
             const inspectBtn = document.createElement('button');
             inspectBtn.textContent = 'Inspect Job';
             inspectBtn.className = 'secondary';
@@ -467,6 +513,7 @@ const projectHTML = `<!doctype html>
 
     async function tick() {
       try {
+        await refreshRuntimeStateBanner('runtimeStateBanner');
         await loadProject();
         await loadHistory(true);
       } catch (e) {
@@ -476,7 +523,10 @@ const projectHTML = `<!doctype html>
 
     refreshGuard.bindSelectionListener();
     tick();
-    setInterval(() => loadHistory(false), 4000);
+    setInterval(() => {
+      refreshRuntimeStateBanner('runtimeStateBanner');
+      loadHistory(false);
+    }, 4000);
   </script>
 </body>
 </html>`

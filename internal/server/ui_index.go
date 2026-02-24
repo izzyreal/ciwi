@@ -27,6 +27,7 @@ const indexHTML = `<!doctype html>
           <a class="nav-btn" href="/settings" aria-label="Global Settings" title="Global Settings">Global Settings <span class="nav-emoji" aria-hidden="true">⚙️</span></a>
         </div>
       </div>
+      <div id="runtimeStateBanner" class="runtime-banner"></div>
     </div>
     <div class="card">
       <h2>Projects</h2>
