@@ -126,7 +126,7 @@ Project identity for import/reload is:
 Behavior:
 - Import with the same identity updates/reloads the existing project.
 - Import with different identity does not replace an existing project, even if `project.name` inside YAML matches.
-- If the YAML project name collides, ciwi derives a unique display name like `<name>@<ref>` (with numeric suffix when needed).
+- Project name is kept as declared in YAML; branch/ref disambiguation is shown in UI via the `branch:<ref>` badge.
 
 ## Cache notes
 

@@ -94,7 +94,6 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
-			applyDisplayProjectNameDetail(&detail)
 			writeJSON(w, http.StatusOK, projectDetailViewResponse{Project: detail})
 			return
 		case http.MethodDelete:
@@ -260,7 +259,6 @@ func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	applyDisplayProjectNames(projects)
 	writeJSON(w, http.StatusOK, projectListViewResponse{Projects: projects})
 }
 
@@ -273,9 +271,9 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	if effectiveRepoRef == "" {
 		effectiveRepoRef = strings.TrimSpace(resolvedRepoRef)
 	}
-	resolvedName, err := s.resolveImportedProjectName(strings.TrimSpace(cfg.Project.Name), req, effectiveRepoRef)
-	if err != nil {
-		return protocol.ImportProjectResponse{}, err
+	resolvedName := strings.TrimSpace(cfg.Project.Name)
+	if resolvedName == "" {
+		return protocol.ImportProjectResponse{}, fmt.Errorf("project.name is required")
 	}
 	cfg.Project.Name = resolvedName
 
@@ -305,20 +303,10 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	}
 
 	return protocol.ImportProjectResponse{
-		ProjectName: displayProjectName(cfg.Project.Name),
+		ProjectName: cfg.Project.Name,
 		RepoURL:     req.RepoURL,
 		RepoRef:     effectiveRepoRef,
 		ConfigFile:  req.ConfigFile,
 		Pipelines:   len(cfg.Pipelines),
 	}, nil
-}
-
-func (s *stateStore) resolveImportedProjectName(baseName string, req protocol.ImportProjectRequest, effectiveRepoRef string) (string, error) {
-	baseName = strings.TrimSpace(baseName)
-	if baseName == "" {
-		return "", fmt.Errorf("project.name is required")
-	}
-	_ = req
-	_ = effectiveRepoRef
-	return baseName, nil
 }

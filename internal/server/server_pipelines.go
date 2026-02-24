@@ -259,7 +259,7 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
 	return protocol.RunPipelineResponse{
-		ProjectName:     displayProjectName(ch.ProjectName),
+		ProjectName:     ch.ProjectName,
 		PipelineID:      ch.ChainID,
 		Enqueued:        len(allJobIDs),
 		JobExecutionIDs: allJobIDs,
