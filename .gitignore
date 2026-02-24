@@ -44,3 +44,4 @@ ciwi-artifacts
 
 # Codex build cache
 .cache
+.gocache

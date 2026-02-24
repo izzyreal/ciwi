@@ -52,9 +52,9 @@ const uiIndexProjectsJS = `
         const top = document.createElement('div');
         top.className = 'project-head';
         const topInfo = document.createElement('div');
-        const projectRepoRef = String(project.repo_ref || '').trim();
+        const projectRepoRef = String(project.repo_ref || '').trim() || 'default';
         topInfo.innerHTML = '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + project.name + '</a></strong> <span class="pill">' + (project.repo_url || '') + '</span> ' +
-          (projectRepoRef ? ('<span class="pill">' + escapeHtml(projectRepoRef) + '</span> ') : '') +
+          '<span class="pill">' + escapeHtml('branch:' + projectRepoRef) + '</span> ' +
           '<span class="pill">' + (project.config_file || project.config_path || '') + '</span>';
         const topRight = document.createElement('div');
         topRight.innerHTML = '<span class="pill">' + String((project.pipelines || []).length) + ' pipeline(s)</span>';

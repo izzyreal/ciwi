@@ -16,6 +16,7 @@ type RepoFetchResult struct {
 	IconContentType  string
 	IconContentBytes []byte
 	SourceCommit     string
+	ResolvedRef      string
 }
 
 func FetchConfigFileFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (string, error) {
@@ -34,7 +35,8 @@ func FetchConfigAndIconFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, c
 		return RepoFetchResult{}, fmt.Errorf("git remote add failed: %v\n%s", err, out)
 	}
 
-	ref := strings.TrimSpace(repoRef)
+	requestedRef := strings.TrimSpace(repoRef)
+	ref := requestedRef
 	if ref == "" {
 		ref = "HEAD"
 	}
@@ -53,12 +55,36 @@ func FetchConfigAndIconFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, c
 	}
 
 	iconType, iconBytes := fetchProjectIconBytes(ctx, tmpDir)
+	resolvedRef := requestedRef
+	if resolvedRef == "" {
+		resolvedRef = resolveDefaultBranchFromRemoteHead(ctx, tmpDir)
+	}
 	return RepoFetchResult{
 		ConfigContent:    out,
 		IconContentType:  iconType,
 		IconContentBytes: iconBytes,
 		SourceCommit:     strings.TrimSpace(shaOut),
+		ResolvedRef:      strings.TrimSpace(resolvedRef),
 	}, nil
+}
+
+func resolveDefaultBranchFromRemoteHead(ctx context.Context, tmpDir string) string {
+	out, err := runCmd(ctx, "", "git", "-C", tmpDir, "ls-remote", "--symref", "origin", "HEAD")
+	if err != nil {
+		return ""
+	}
+	for _, raw := range strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n") {
+		line := strings.TrimSpace(raw)
+		if !strings.HasPrefix(line, "ref: ") || !strings.HasSuffix(line, "\tHEAD") {
+			continue
+		}
+		ref := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "ref: "), "\tHEAD"))
+		const headsPrefix = "refs/heads/"
+		if strings.HasPrefix(ref, headsPrefix) {
+			return strings.TrimSpace(strings.TrimPrefix(ref, headsPrefix))
+		}
+	}
+	return ""
 }
 
 func runCmd(ctx context.Context, dir, name string, args ...string) (string, error) {

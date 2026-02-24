@@ -309,6 +309,9 @@ function ensureSourceRefRunStyles() {
     '.source-ref-run-label{font-size:13px;color:#1f2a24;font-weight:600;}',
     '.source-ref-run-select{width:100%;font-size:13px;border:1px solid #c4ddd0;border-radius:8px;padding:8px;background:#fff;color:#1f2a24;}',
     '.source-ref-run-grid{display:grid;grid-template-columns:1fr;gap:10px;}',
+    '.source-ref-run-agent-status{min-height:18px;font-size:12px;color:#5f6f67;display:flex;align-items:center;gap:8px;}',
+    '.source-ref-run-agent-status.loading::before{content:"";width:12px;height:12px;border-radius:50%;border:2px solid #b8d6c6;border-top-color:#2d7255;animation:ciwi-spin .8s linear infinite;}',
+    '@keyframes ciwi-spin{to{transform:rotate(360deg);}}',
     '.source-ref-run-actions{padding:8px 16px 14px;display:flex;justify-content:flex-end;gap:8px;}',
   ].join('');
   document.head.appendChild(style);
@@ -342,6 +345,7 @@ function ensureSourceRefRunModal() {
     '      <div>',
     '        <label class="source-ref-run-label" for="sourceRefRunAgentSelect">Agent</label>',
     '        <select id="sourceRefRunAgentSelect" class="source-ref-run-select"></select>',
+    '        <div id="sourceRefRunAgentStatus" class="source-ref-run-agent-status"></div>',
     '      </div>',
     '    </div>',
     '  </div>',
@@ -368,10 +372,11 @@ function openSourceRefRunDialog(opts) {
   const noteEl = document.getElementById('sourceRefRunNote');
   const selectEl = document.getElementById('sourceRefRunSelect');
   const agentSelectEl = document.getElementById('sourceRefRunAgentSelect');
+  const agentStatusEl = document.getElementById('sourceRefRunAgentStatus');
   const closeBtn = document.getElementById('sourceRefRunCloseBtn');
   const cancelBtn = document.getElementById('sourceRefRunCancelBtn');
   const confirmBtn = document.getElementById('sourceRefRunConfirmBtn');
-  if (!titleEl || !subtitleEl || !noteEl || !selectEl || !agentSelectEl || !closeBtn || !cancelBtn || !confirmBtn) {
+  if (!titleEl || !subtitleEl || !noteEl || !selectEl || !agentSelectEl || !agentStatusEl || !closeBtn || !cancelBtn || !confirmBtn) {
     return Promise.reject(new Error('source ref modal elements unavailable'));
   }
   titleEl.textContent = title;
@@ -379,6 +384,8 @@ function openSourceRefRunDialog(opts) {
   noteEl.textContent = 'Loading branches...';
   selectEl.innerHTML = '';
   agentSelectEl.innerHTML = '';
+  agentStatusEl.textContent = '';
+  agentStatusEl.classList.remove('loading');
   selectEl.disabled = true;
   agentSelectEl.disabled = true;
   confirmBtn.textContent = runLabel;
@@ -388,6 +395,8 @@ function openSourceRefRunDialog(opts) {
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let eligibleReqSeq = 0;
+    let eligibleFetchInFlight = false;
     const settle = (value) => {
       if (settled) return;
       settled = true;
@@ -406,29 +415,41 @@ function openSourceRefRunDialog(opts) {
       const agentID = String(agentSelectEl.value || '').trim();
       settle({ sourceRef, agentID });
     };
+    const setAgentStatus = (text, loading) => {
+      agentStatusEl.textContent = String(text || '').trim();
+      if (loading) {
+        agentStatusEl.classList.add('loading');
+      } else {
+        agentStatusEl.classList.remove('loading');
+      }
+    };
+    const setRunEnabled = () => {
+      confirmBtn.disabled = !String(selectEl.value || '').trim();
+    };
     const refreshEligibleAgents = () => {
       const eligibleAgentsPath = String(options.eligibleAgentsPath || '').trim();
       agentSelectEl.innerHTML = '';
+      const anyOpt = document.createElement('option');
+      anyOpt.value = '';
+      anyOpt.textContent = 'Any eligible agent';
+      agentSelectEl.appendChild(anyOpt);
+      agentSelectEl.disabled = false;
+      setRunEnabled();
       if (!eligibleAgentsPath) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'Any eligible agent';
-        agentSelectEl.appendChild(opt);
-        agentSelectEl.disabled = false;
-        confirmBtn.disabled = !String(selectEl.value || '').trim();
+        setAgentStatus('Using default lease matching.', false);
         return Promise.resolve();
       }
-      agentSelectEl.disabled = true;
       const reqPayload = { ...((options.payload || {})) };
       const sourceRef = String(selectEl.value || '').trim();
       if (sourceRef) reqPayload.source_ref = sourceRef;
+      const reqID = ++eligibleReqSeq;
+      eligibleFetchInFlight = true;
+      setAgentStatus('Finding eligible agents...', true);
       return apiJSON(eligibleAgentsPath, { method: 'POST', body: JSON.stringify(reqPayload) })
         .then((agentsResp) => {
+          if (settled || reqID !== eligibleReqSeq) return;
+          eligibleFetchInFlight = false;
           const ids = Array.isArray((agentsResp || {}).eligible_agent_ids) ? agentsResp.eligible_agent_ids : [];
-          const anyOpt = document.createElement('option');
-          anyOpt.value = '';
-          anyOpt.textContent = 'Any eligible agent';
-          agentSelectEl.appendChild(anyOpt);
           ids.forEach((id) => {
             const agentID = String(id || '').trim();
             if (!agentID) return;
@@ -437,16 +458,19 @@ function openSourceRefRunDialog(opts) {
             opt.textContent = agentID;
             agentSelectEl.appendChild(opt);
           });
-          agentSelectEl.disabled = false;
-          confirmBtn.disabled = !String(selectEl.value || '').trim();
+          if (ids.length > 0) {
+            setAgentStatus(String(ids.length) + ' eligible agent(s) found.', false);
+          } else {
+            setAgentStatus('No specific agent candidates found; Any eligible agent remains available.', false);
+          }
+          setRunEnabled();
         })
         .catch((err) => {
-          const opt = document.createElement('option');
-          opt.value = '';
-          opt.textContent = 'Eligibility check failed';
-          agentSelectEl.appendChild(opt);
-          agentSelectEl.disabled = true;
-          throw err;
+          if (settled || reqID !== eligibleReqSeq) return;
+          eligibleFetchInFlight = false;
+          setAgentStatus('Could not load eligible agents; using Any eligible agent.', false);
+          setRunEnabled();
+          return err;
         });
     };
     openModalOverlay(overlay, '520px', 'auto');
@@ -477,16 +501,13 @@ function openSourceRefRunDialog(opts) {
         closeBtn.disabled = false;
         cancelBtn.disabled = false;
         refreshEligibleAgents()
-          .then(() => setTimeout(() => selectEl.focus(), 0))
-          .catch((err) => {
-            noteEl.textContent = 'Failed to load eligible agents.';
-            reject(err);
-          });
+          .then(() => setTimeout(() => selectEl.focus(), 0));
         selectEl.onchange = () => {
-          refreshEligibleAgents().catch((err) => {
-            noteEl.textContent = 'Failed to load eligible agents.';
-            reject(err);
-          });
+          if (eligibleFetchInFlight) {
+            setAgentStatus('Refreshing eligible agents...', true);
+          }
+          setRunEnabled();
+          refreshEligibleAgents();
         };
       })
       .catch((err) => {

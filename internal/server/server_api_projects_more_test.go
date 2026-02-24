@@ -246,6 +246,41 @@ func TestImportProjectSameRepoDifferentRefDoesNotReplaceExistingProject(t *testi
 	}
 }
 
+func TestImportProjectWithoutRepoRefPersistsResolvedDefaultBranch(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	oldFetch := fetchProjectConfigAndIcon
+	t.Cleanup(func() { fetchProjectConfigAndIcon = oldFetch })
+	fetchProjectConfigAndIcon = func(ctx context.Context, tmpDir, repoURL, repoRef, configFile string) (project.RepoFetchResult, error) {
+		return project.RepoFetchResult{
+			ConfigContent: testConfigYAML,
+			SourceCommit:  "deadbeef",
+			ResolvedRef:   "main",
+		}, nil
+	}
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/import", map[string]any{
+		"repo_url": "https://github.com/izzyreal/ciwi.git",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 for import, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload protocol.ImportProjectResponse
+	decodeJSONBody(t, resp, &payload)
+	if strings.TrimSpace(payload.RepoRef) != "main" {
+		t.Fatalf("expected resolved repo_ref main in response, got %q", payload.RepoRef)
+	}
+
+	projectSummary, err := s.db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("GetProjectByName after import: %v", err)
+	}
+	if strings.TrimSpace(projectSummary.RepoRef) != "main" {
+		t.Fatalf("expected stored project repo_ref main, got %q", projectSummary.RepoRef)
+	}
+}
+
 func TestDetectServerUpdateCapabilityModes(t *testing.T) {
 	oldVersion := version.Version
 	t.Cleanup(func() { version.Version = oldVersion })
@@ -403,7 +438,7 @@ func TestPersistImportedProjectParseError(t *testing.T) {
 		RepoURL:    "https://github.com/izzyreal/ciwi.git",
 		RepoRef:    "main",
 		ConfigFile: "ciwi-project.yaml",
-	}, "not: [valid", "abc", "", nil)
+	}, "not: [valid", "abc", "main", "", nil)
 	if err == nil {
 		t.Fatalf("expected parse error from persistImportedProject")
 	}

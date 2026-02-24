@@ -45,7 +45,7 @@ const settingsRenderJS = `
 
         const topInfo = document.createElement('div');
         const loadedCommit = String(project.loaded_commit || '').trim();
-        const projectRepoRef = String(project.repo_ref || '').trim();
+        const projectRepoRef = String(project.repo_ref || '').trim() || 'default';
         const shortCommit = shortCommitHash(loadedCommit);
         const commitURL = deriveCommitURL(project.repo_url, loadedCommit);
         const lastUpdated = String(project.updated_utc || '').trim();
@@ -60,7 +60,7 @@ const settingsRenderJS = `
         topInfo.innerHTML =
           '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + escapeHtml(project.name) + '</a></strong> ' +
           '<span class="pill">' + escapeHtml(project.repo_url || '') + '</span> ' +
-          (projectRepoRef ? ('<span class="pill">' + escapeHtml(projectRepoRef) + '</span> ') : '') +
+          '<span class="pill">' + escapeHtml('branch:' + projectRepoRef) + '</span> ' +
           '<span class="pill">' + escapeHtml(project.config_file || project.config_path || '') + '</span>' +
           '<div style="margin-top:6px;font-size:12px;color:#3a4f44;">Loaded commit: ' + commitPart + ' | Last update time: ' + updatedPart + '</div>';
         top.appendChild(topInfo);

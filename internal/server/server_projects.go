@@ -65,7 +65,7 @@ func (s *stateStore) importProjectHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp, err := s.persistImportedProject(req, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.IconContentType, fetchRes.IconContentBytes)
+	resp, err := s.persistImportedProject(req, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.ResolvedRef, fetchRes.IconContentType, fetchRes.IconContentBytes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -168,7 +168,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			RepoURL:    project.RepoURL,
 			RepoRef:    project.RepoRef,
 			ConfigFile: configFile,
-		}, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.IconContentType, fetchRes.IconContentBytes)
+		}, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.ResolvedRef, fetchRes.IconContentType, fetchRes.IconContentBytes)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -230,7 +230,7 @@ func (s *stateStore) reloadProjectFromRepo(ctx context.Context, project protocol
 		RepoURL:    project.RepoURL,
 		RepoRef:    project.RepoRef,
 		ConfigFile: configFile,
-	}, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.IconContentType, fetchRes.IconContentBytes)
+	}, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.ResolvedRef, fetchRes.IconContentType, fetchRes.IconContentBytes)
 	return err
 }
 
@@ -247,12 +247,16 @@ func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, projectListViewResponse{Projects: projects})
 }
 
-func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent, loadedCommit, iconContentType string, iconContent []byte) (protocol.ImportProjectResponse, error) {
+func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent, loadedCommit, resolvedRepoRef, iconContentType string, iconContent []byte) (protocol.ImportProjectResponse, error) {
 	cfg, err := config.Parse([]byte(cfgContent), req.ConfigFile)
 	if err != nil {
 		return protocol.ImportProjectResponse{}, err
 	}
-	resolvedName, err := s.resolveImportedProjectName(strings.TrimSpace(cfg.Project.Name), req)
+	effectiveRepoRef := strings.TrimSpace(req.RepoRef)
+	if effectiveRepoRef == "" {
+		effectiveRepoRef = strings.TrimSpace(resolvedRepoRef)
+	}
+	resolvedName, err := s.resolveImportedProjectName(strings.TrimSpace(cfg.Project.Name), req, effectiveRepoRef)
 	if err != nil {
 		return protocol.ImportProjectResponse{}, err
 	}
@@ -264,16 +268,16 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 				cfg.Pipelines[i].VCSSource.Repo = req.RepoURL
 			}
 			if strings.TrimSpace(cfg.Pipelines[i].VCSSource.Ref) == "" {
-				cfg.Pipelines[i].VCSSource.Ref = req.RepoRef
+				cfg.Pipelines[i].VCSSource.Ref = effectiveRepoRef
 			}
 		}
 	}
 
 	configPath := fmt.Sprintf("%s:%s", req.RepoURL, req.ConfigFile)
-	if req.RepoRef != "" {
-		configPath = fmt.Sprintf("%s@%s:%s", req.RepoURL, req.RepoRef, req.ConfigFile)
+	if effectiveRepoRef != "" {
+		configPath = fmt.Sprintf("%s@%s:%s", req.RepoURL, effectiveRepoRef, req.ConfigFile)
 	}
-	if err := s.projectStore().LoadConfig(cfg, configPath, req.RepoURL, req.RepoRef, req.ConfigFile); err != nil {
+	if err := s.projectStore().LoadConfig(cfg, configPath, req.RepoURL, effectiveRepoRef, req.ConfigFile); err != nil {
 		return protocol.ImportProjectResponse{}, err
 	}
 	if project, err := s.projectStore().GetProjectByName(cfg.Project.Name); err == nil {
@@ -286,19 +290,19 @@ func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, c
 	return protocol.ImportProjectResponse{
 		ProjectName: cfg.Project.Name,
 		RepoURL:     req.RepoURL,
-		RepoRef:     req.RepoRef,
+		RepoRef:     effectiveRepoRef,
 		ConfigFile:  req.ConfigFile,
 		Pipelines:   len(cfg.Pipelines),
 	}, nil
 }
 
-func (s *stateStore) resolveImportedProjectName(baseName string, req protocol.ImportProjectRequest) (string, error) {
+func (s *stateStore) resolveImportedProjectName(baseName string, req protocol.ImportProjectRequest, effectiveRepoRef string) (string, error) {
 	baseName = strings.TrimSpace(baseName)
 	if baseName == "" {
 		return "", fmt.Errorf("project.name is required")
 	}
 	repoURL := strings.TrimSpace(req.RepoURL)
-	repoRef := strings.TrimSpace(req.RepoRef)
+	repoRef := strings.TrimSpace(effectiveRepoRef)
 	configFile := strings.TrimSpace(req.ConfigFile)
 	if configFile == "" {
 		configFile = "ciwi-project.yaml"
