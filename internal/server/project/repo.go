@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -41,11 +42,11 @@ func FetchConfigAndIconFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, c
 		ref = "HEAD"
 	}
 
-	if out, err := runCmd(ctx, "", "git", "-C", tmpDir, "fetch", "-q", "--depth", "1", "origin", ref); err != nil {
+	fetchArgs := []string{"-C", tmpDir, "fetch", "-q", "--depth", "1", "origin", ref}
+	if out, err := runGitFetchWithFallback(ctx, repoURL, fetchArgs...); err != nil {
 		return RepoFetchResult{}, fmt.Errorf("git fetch failed: %v\n%s", err, out)
 	}
-
-	out, err := runCmd(ctx, "", "git", "-C", tmpDir, "show", "FETCH_HEAD:"+configFile)
+	configOut, err := runCmd(ctx, "", "git", "-C", tmpDir, "show", "FETCH_HEAD:"+configFile)
 	if err != nil {
 		return RepoFetchResult{}, fmt.Errorf("repo is not a valid ciwi project: missing root file %q", configFile)
 	}
@@ -60,12 +61,34 @@ func FetchConfigAndIconFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, c
 		resolvedRef = resolveDefaultBranchFromRemoteHead(ctx, tmpDir)
 	}
 	return RepoFetchResult{
-		ConfigContent:    out,
+		ConfigContent:    configOut,
 		IconContentType:  iconType,
 		IconContentBytes: iconBytes,
 		SourceCommit:     strings.TrimSpace(shaOut),
 		ResolvedRef:      strings.TrimSpace(resolvedRef),
 	}, nil
+}
+
+func runGitFetchWithFallback(ctx context.Context, repoURL string, fetchArgs ...string) (string, error) {
+	if shouldPreferFetchWithoutGitConfig(repoURL) {
+		out, err := runCmdWithEnv(ctx, "", gitFetchNoConfigEnv(), "git", fetchArgs...)
+		if err == nil {
+			return out, nil
+		}
+		if shouldFallbackToDefaultGitConfig(out) {
+			return runCmd(ctx, "", "git", fetchArgs...)
+		}
+		return out, err
+	}
+
+	out, err := runCmd(ctx, "", "git", fetchArgs...)
+	if err != nil && shouldRetryFetchWithoutGitConfig(repoURL, out) {
+		retryOut, retryErr := runCmdWithEnv(ctx, "", gitFetchNoConfigEnv(), "git", fetchArgs...)
+		if retryErr == nil {
+			return retryOut, nil
+		}
+	}
+	return out, err
 }
 
 func resolveDefaultBranchFromRemoteHead(ctx context.Context, tmpDir string) string {
@@ -88,8 +111,15 @@ func resolveDefaultBranchFromRemoteHead(ctx context.Context, tmpDir string) stri
 }
 
 func runCmd(ctx context.Context, dir, name string, args ...string) (string, error) {
+	return runCmdWithEnv(ctx, dir, nil, name, args...)
+}
+
+func runCmdWithEnv(ctx context.Context, dir string, env map[string]string, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = mergeEnvWithOverrides(env)
+	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -98,6 +128,57 @@ func runCmdBytes(ctx context.Context, dir, name string, args ...string) ([]byte,
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	return cmd.CombinedOutput()
+}
+
+func gitFetchNoConfigEnv() map[string]string {
+	return map[string]string{
+		"GIT_CONFIG_GLOBAL":   "/dev/null",
+		"GIT_CONFIG_SYSTEM":   "/dev/null",
+		"GIT_TERMINAL_PROMPT": "0",
+	}
+}
+
+func mergeEnvWithOverrides(overrides map[string]string) []string {
+	env := map[string]string{}
+	for _, kv := range os.Environ() {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		env[parts[0]] = parts[1]
+	}
+	for k, v := range overrides {
+		env[k] = v
+	}
+	out := make([]string, 0, len(env))
+	for k, v := range env {
+		out = append(out, k+"="+v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func shouldRetryFetchWithoutGitConfig(repoURL, fetchOutput string) bool {
+	url := strings.ToLower(strings.TrimSpace(repoURL))
+	if !strings.HasPrefix(url, "https://github.com/") {
+		return false
+	}
+	text := strings.ToLower(fetchOutput)
+	return strings.Contains(text, "permission denied (publickey)") ||
+		strings.Contains(text, "sign_and_send_pubkey") ||
+		strings.Contains(text, "could not read from remote repository")
+}
+
+func shouldPreferFetchWithoutGitConfig(repoURL string) bool {
+	url := strings.ToLower(strings.TrimSpace(repoURL))
+	return strings.HasPrefix(url, "https://github.com/")
+}
+
+func shouldFallbackToDefaultGitConfig(fetchOutput string) bool {
+	text := strings.ToLower(fetchOutput)
+	return strings.Contains(text, "authentication failed") ||
+		strings.Contains(text, "could not read username") ||
+		strings.Contains(text, "terminal prompts disabled")
 }
 
 func fetchProjectIconBytes(ctx context.Context, tmpDir string) (string, []byte) {

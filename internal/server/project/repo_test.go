@@ -105,6 +105,89 @@ func TestFetchConfigAndIconFromRepoFetchFailureForInvalidRemote(t *testing.T) {
 	}
 }
 
+func TestShouldRetryFetchWithoutGitConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		repoURL   string
+		output    string
+		wantRetry bool
+	}{
+		{
+			name:      "github https with publickey failure",
+			repoURL:   "https://github.com/izzyreal/ciwi",
+			output:    "Permission denied (publickey)",
+			wantRetry: true,
+		},
+		{
+			name:      "github https with ssh signing failure",
+			repoURL:   "https://github.com/izzyreal/ciwi",
+			output:    `sign_and_send_pubkey: signing failed for RSA "SSH Key for GitHub" from agent: communication with agent failed`,
+			wantRetry: true,
+		},
+		{
+			name:      "github https different fetch failure",
+			repoURL:   "https://github.com/izzyreal/ciwi",
+			output:    "fatal: could not find remote ref no-such-branch",
+			wantRetry: false,
+		},
+		{
+			name:      "ssh url should not retry",
+			repoURL:   "git@github.com:izzyreal/ciwi.git",
+			output:    "Permission denied (publickey)",
+			wantRetry: false,
+		},
+		{
+			name:      "other host should not retry",
+			repoURL:   "https://example.com/repo.git",
+			output:    "Permission denied (publickey)",
+			wantRetry: false,
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldRetryFetchWithoutGitConfig(tc.repoURL, tc.output)
+			if got != tc.wantRetry {
+				t.Fatalf("shouldRetryFetchWithoutGitConfig(%q, %q) = %v, want %v", tc.repoURL, tc.output, got, tc.wantRetry)
+			}
+		})
+	}
+}
+
+func TestShouldPreferFetchWithoutGitConfig(t *testing.T) {
+	tests := []struct {
+		repoURL string
+		want    bool
+	}{
+		{repoURL: "https://github.com/izzyreal/ciwi", want: true},
+		{repoURL: "HTTPS://GITHUB.COM/izzyreal/ciwi", want: true},
+		{repoURL: "http://github.com/izzyreal/ciwi", want: false},
+		{repoURL: "git@github.com:izzyreal/ciwi.git", want: false},
+		{repoURL: "https://gitlab.com/izzyreal/ciwi", want: false},
+	}
+	for _, tc := range tests {
+		if got := shouldPreferFetchWithoutGitConfig(tc.repoURL); got != tc.want {
+			t.Fatalf("shouldPreferFetchWithoutGitConfig(%q)=%v, want %v", tc.repoURL, got, tc.want)
+		}
+	}
+}
+
+func TestShouldFallbackToDefaultGitConfig(t *testing.T) {
+	tests := []struct {
+		output string
+		want   bool
+	}{
+		{output: "fatal: Authentication failed for 'https://github.com/org/repo'", want: true},
+		{output: "fatal: could not read Username for 'https://github.com': terminal prompts disabled", want: true},
+		{output: "fatal: remote error: upload-pack: not our ref deadbeef", want: false},
+	}
+	for _, tc := range tests {
+		if got := shouldFallbackToDefaultGitConfig(tc.output); got != tc.want {
+			t.Fatalf("shouldFallbackToDefaultGitConfig(%q)=%v, want %v", tc.output, got, tc.want)
+		}
+	}
+}
+
 func initTestGitRepo(t *testing.T, files map[string]string, decodeBase64ForPNG bool) string {
 	t.Helper()
 	repoDir := t.TempDir()

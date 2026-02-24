@@ -20,6 +20,8 @@ const settingsHTML = `<!doctype html>
     }
     input { width: 280px; max-width: 100%; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+    .top-nav { margin-left: auto; justify-content: flex-end; }
     .project { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
@@ -37,14 +39,14 @@ const settingsHTML = `<!doctype html>
 </head>
 <body>
   <main>
-    <div class="card">
+    <div class="card top">
       <div class="brand">
         <img src="/ciwi-logo.png" alt="ciwi logo" />
         <div>
           <h1>ciwi global settings</h1>
         </div>
       </div>
-      <div class="row">
+      <div class="row top-nav">
         <a class="nav-btn" href="/">Back to Main <span class="nav-emoji" aria-hidden="true">↩</span></a>
         <a class="nav-btn" href="/agents">Agents <span class="nav-emoji" aria-hidden="true">🖥️</span></a>
         <a id="restartServerBtn" class="nav-btn" href="#" role="button">Restart Server <span class="nav-emoji" aria-hidden="true">⟳</span></a>
