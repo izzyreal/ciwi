@@ -9,7 +9,7 @@ import (
 const (
 	agentUpdateFirstAttemptBaseDelay = 10 * time.Second
 	agentUpdateFirstAttemptStepDelay = 2 * time.Second
-	agentUpdateRestartAllowance      = 20 * time.Second
+	agentUpdateRestartAllowance      = 70 * time.Second
 	agentUpdateInProgressGrace       = (2 * protocol.AgentHeartbeatInterval) + agentUpdateRestartAllowance
 )
 
