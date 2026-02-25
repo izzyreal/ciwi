@@ -108,6 +108,7 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 
 	staged := 0
 	helperStarts := 0
+	exitScheduled := 0
 	agentFetchReleaseAssetsForTagFn = func(context.Context, string, string, string, string, string) (githubReleaseAsset, githubReleaseAsset, error) {
 		return githubReleaseAsset{Name: expectedAssetName(runtime.GOOS, runtime.GOARCH), URL: "https://example.invalid/asset"},
 			githubReleaseAsset{}, nil
@@ -129,6 +130,7 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 		helperStarts++
 		return nil
 	}
+	agentScheduleExitAfterUpdateFn = func() { exitScheduled++ }
 
 	err := selfUpdateAndRestart(context.Background(), "v999.9.4", "izzyreal/ciwi", "https://api.github.com", []string{"serve"})
 	if err != nil {
@@ -139,6 +141,9 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 	}
 	if helperStarts != 0 {
 		t.Fatalf("helper should not be started on darwin staging path")
+	}
+	if exitScheduled != 1 {
+		t.Fatalf("expected one scheduled exit on darwin staging path, got %d", exitScheduled)
 	}
 }
 

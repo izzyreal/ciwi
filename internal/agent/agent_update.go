@@ -139,6 +139,7 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		}
 		slog.Info("agent self-update phase complete", "phase", "stage_and_trigger_darwin_updater", "elapsed", time.Since(phaseStarted).Round(time.Millisecond))
 		slog.Info("agent self-update handed off to darwin updater", "target_version", targetVersion, "elapsed_total", time.Since(updateStarted).Round(time.Millisecond))
+		agentScheduleExitAfterUpdateFn()
 		return nil
 	}
 
