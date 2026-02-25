@@ -495,13 +495,15 @@ func TestStoreFailTimedOutRunningJobExecutions(t *testing.T) {
 
 	startedAt := time.Now().UTC().Add(-20 * time.Second)
 	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-a",
-		Status:       protocol.JobExecutionStatusRunning,
-		CurrentStep:  "Checking out source",
-		Output:       "[checkout] repo=example ref=abc",
-		TimestampUTC: startedAt,
+		AgentID:     "agent-a",
+		Status:      protocol.JobExecutionStatusRunning,
+		CurrentStep: "Checking out source",
+		Output:      "[checkout] repo=example ref=abc",
 	}); err != nil {
 		t.Fatalf("mark running: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE job_executions SET started_utc = ? WHERE id = ?`, startedAt.Format(time.RFC3339Nano), job.ID); err != nil {
+		t.Fatalf("backdate started_utc: %v", err)
 	}
 
 	failed, err := s.FailTimedOutRunningJobExecutions(startedAt.Add(20*time.Second), 2*time.Second, "job timed out while running (server maintenance)")

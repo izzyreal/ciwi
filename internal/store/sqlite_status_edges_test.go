@@ -151,11 +151,13 @@ func TestFailTimedOutRunningJobExecutionsDefaults(t *testing.T) {
 	}
 	started := time.Now().UTC().Add(-10 * time.Second)
 	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-a",
-		Status:       protocol.JobExecutionStatusRunning,
-		TimestampUTC: started,
+		AgentID: "agent-a",
+		Status:  protocol.JobExecutionStatusRunning,
 	}); err != nil {
 		t.Fatalf("UpdateJobExecutionStatus running: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE job_executions SET started_utc = ? WHERE id = ?`, started.Format(time.RFC3339Nano), job.ID); err != nil {
+		t.Fatalf("backdate started_utc: %v", err)
 	}
 
 	failed, err := s.FailTimedOutRunningJobExecutions(time.Time{}, -1*time.Second, "")

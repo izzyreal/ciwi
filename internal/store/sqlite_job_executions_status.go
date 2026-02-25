@@ -33,10 +33,10 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 		return protocol.JobExecution{}, fmt.Errorf("job is leased by another agent")
 	}
 
-	now := req.TimestampUTC
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
+	// Lifecycle timestamps are server-authoritative so agent clock skew
+	// cannot create impossible timelines (for example started_utc < created_utc)
+	// or trigger premature timeout reaping.
+	now := time.Now().UTC()
 
 	status := reqStatus
 	started := nullableTime(job.StartedUTC)

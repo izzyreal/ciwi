@@ -112,7 +112,7 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 		_ = deps.Store.AppendJobExecutionEvents(jobID, req.Events)
 	}
 	if deps.MarkAgentSeen != nil {
-		deps.MarkAgentSeen(req.AgentID, req.TimestampUTC)
+		deps.MarkAgentSeen(req.AgentID, nowUTC(deps))
 	}
 	if protocol.NormalizeJobExecutionStatus(job.Status) == protocol.JobExecutionStatusRunning &&
 		strings.TrimSpace(job.CurrentStep) != "" && strings.TrimSpace(job.Output) == "" {

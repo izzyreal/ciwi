@@ -58,10 +58,6 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent_id is required", http.StatusBadRequest)
 		return
 	}
-	if hb.TimestampUTC.IsZero() {
-		hb.TimestampUTC = time.Now().UTC()
-	}
-
 	now := time.Now().UTC()
 	hasActiveJob := false
 	if active, err := s.agentJobExecutionStore().AgentHasActiveJobExecution(hb.AgentID); err == nil {
@@ -187,7 +183,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		Arch:                 hb.Arch,
 		Version:              hb.Version,
 		Capabilities:         hb.Capabilities,
-		LastSeenUTC:          hb.TimestampUTC,
+		LastSeenUTC:          now,
 		RecentLog:            append([]string(nil), prev.RecentLog...),
 		UpdateTarget:         prev.UpdateTarget,
 		UpdateSource:         prev.UpdateSource,
