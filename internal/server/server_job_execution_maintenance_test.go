@@ -36,18 +36,17 @@ func TestServerMaintenanceRecoversOrphanedCheckoutJobAfterRestart(t *testing.T) 
 		t.Fatalf("expected leased job %q", job.ID)
 	}
 
-	startedAt := time.Now().UTC().Add(-20 * time.Second)
+	now := time.Now().UTC()
 	if _, err := db.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-bhakti",
-		Status:       protocol.JobExecutionStatusRunning,
-		CurrentStep:  "Checking out source",
-		Output:       "[checkout] repo=https://example ref=abc",
-		TimestampUTC: startedAt,
+		AgentID:     "agent-bhakti",
+		Status:      protocol.JobExecutionStatusRunning,
+		CurrentStep: "Checking out source",
+		Output:      "[checkout] repo=https://example ref=abc",
 	}); err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
 
-	if err := s.runJobExecutionMaintenancePass(startedAt.Add(20 * time.Second)); err != nil {
+	if err := s.runJobExecutionMaintenancePass(now.Add(30 * time.Second)); err != nil {
 		t.Fatalf("maintenance pass: %v", err)
 	}
 
