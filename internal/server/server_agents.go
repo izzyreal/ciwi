@@ -143,15 +143,41 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 				prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
 				updateAttemptFailed = true
 				updateAttemptFailureReason = reportedUpdateFailure
+				slog.Warn("agent update attempt reported failure",
+					"agent_id", hb.AgentID,
+					"target_version", target,
+					"attempt", prev.UpdateAttempts,
+					"next_retry_utc", prev.UpdateNextRetryUTC,
+					"error", reportedUpdateFailure,
+				)
 			} else if prev.UpdateLastRequestUTC.IsZero() || !now.Before(prev.UpdateLastRequestUTC.Add(agentUpdateInProgressGrace)) {
+				elapsed := time.Duration(0)
+				if !prev.UpdateLastRequestUTC.IsZero() {
+					elapsed = now.Sub(prev.UpdateLastRequestUTC)
+				}
 				prev.UpdateInProgress = false
 				// If the agent is still busy with a job, treat stale in-progress as deferred
 				// instead of failed so we don't enter unnecessary backoff loops.
 				if hasActiveJob {
 					prev.UpdateNextRetryUTC = time.Time{}
+					slog.Info("agent update attempt exceeded in-progress grace while busy; deferring retry",
+						"agent_id", hb.AgentID,
+						"target_version", target,
+						"attempt", prev.UpdateAttempts,
+						"elapsed", elapsed.Round(time.Millisecond),
+						"grace", agentUpdateInProgressGrace,
+					)
 				} else {
 					prev.UpdateNextRetryUTC = now.Add(agentUpdateBackoff(prev.UpdateAttempts))
 					updateAttemptFailed = true
+					slog.Warn("agent update attempt marked stale after grace window",
+						"agent_id", hb.AgentID,
+						"target_version", target,
+						"attempt", prev.UpdateAttempts,
+						"elapsed", elapsed.Round(time.Millisecond),
+						"grace", agentUpdateInProgressGrace,
+						"next_retry_utc", prev.UpdateNextRetryUTC,
+					)
 				}
 			}
 		}

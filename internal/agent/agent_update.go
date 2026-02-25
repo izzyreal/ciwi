@@ -79,6 +79,8 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 	if reason := agentSelfUpdateServiceReasonFn(); reason != "" {
 		return fmt.Errorf("%s", reason)
 	}
+	updateStarted := time.Now()
+	slog.Info("agent self-update started", "target_version", targetVersion, "current_version", currentVersion(), "os", agentUpdateRuntimeGOOS, "arch", runtime.GOARCH)
 
 	apiBase = strings.TrimRight(strings.TrimSpace(apiBase), "/")
 	if apiBase == "" {
@@ -98,36 +100,55 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		checksumName = "ciwi-checksums.txt"
 	}
 
+	phaseStarted := time.Now()
 	asset, checksumAsset, err := agentFetchReleaseAssetsForTagFn(ctx, apiBase, repository, targetVersion, assetName, checksumName)
 	if err != nil {
+		slog.Warn("agent self-update phase failed", "phase", "fetch_release_assets", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 		return err
 	}
+	slog.Info("agent self-update phase complete", "phase", "fetch_release_assets", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "asset", strings.TrimSpace(asset.Name), "has_checksum_asset", strings.TrimSpace(checksumAsset.URL) != "")
 
+	phaseStarted = time.Now()
 	newBinPath, err := agentDownloadUpdateAssetFn(ctx, asset.URL, asset.Name)
 	if err != nil {
+		slog.Warn("agent self-update phase failed", "phase", "download_asset", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("download update asset: %w", err)
 	}
+	slog.Info("agent self-update phase complete", "phase", "download_asset", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "asset", strings.TrimSpace(asset.Name))
 	if checksumAsset.URL != "" {
+		phaseStarted = time.Now()
 		checksumText, err := agentDownloadTextAssetFn(ctx, checksumAsset.URL)
 		if err != nil {
+			slog.Warn("agent self-update phase failed", "phase", "download_checksum", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 			return fmt.Errorf("download checksum asset: %w", err)
 		}
+		slog.Info("agent self-update phase complete", "phase", "download_checksum", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "checksum_asset", strings.TrimSpace(checksumAsset.Name))
+		phaseStarted = time.Now()
 		if err := agentVerifyFileSHA256Fn(newBinPath, asset.Name, checksumText); err != nil {
+			slog.Warn("agent self-update phase failed", "phase", "verify_checksum", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 			return fmt.Errorf("checksum verification failed: %w", err)
 		}
+		slog.Info("agent self-update phase complete", "phase", "verify_checksum", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "asset", strings.TrimSpace(asset.Name))
 	}
 
 	if agentUpdateRuntimeGOOS == "darwin" && agentHasDarwinUpdaterConfigFn() {
+		phaseStarted = time.Now()
 		if err := agentStageDarwinUpdaterFn(targetVersion, asset.Name, exePath, newBinPath); err != nil {
+			slog.Warn("agent self-update phase failed", "phase", "stage_and_trigger_darwin_updater", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 			return err
 		}
+		slog.Info("agent self-update phase complete", "phase", "stage_and_trigger_darwin_updater", "elapsed", time.Since(phaseStarted).Round(time.Millisecond))
+		slog.Info("agent self-update handed off to darwin updater", "target_version", targetVersion, "elapsed_total", time.Since(updateStarted).Round(time.Millisecond))
 		return nil
 	}
 
+	phaseStarted = time.Now()
 	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
 	if err := agentCopyFileFn(exePath, helperPath, 0o755); err != nil {
+		slog.Warn("agent self-update phase failed", "phase", "prepare_update_helper", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("prepare update helper: %w", err)
 	}
+	slog.Info("agent self-update phase complete", "phase", "prepare_update_helper", "elapsed", time.Since(phaseStarted).Round(time.Millisecond))
 	serviceName := ""
 	if agentUpdateRuntimeGOOS == "windows" {
 		if active, name := agentWindowsServiceInfoFn(); active {
@@ -135,9 +156,13 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		}
 	}
 
+	phaseStarted = time.Now()
 	if err := agentStartUpdateHelperFn(helperPath, exePath, newBinPath, agentPIDFn(), restartArgs, serviceName); err != nil {
+		slog.Warn("agent self-update phase failed", "phase", "start_update_helper", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("start update helper: %w", err)
 	}
+	slog.Info("agent self-update phase complete", "phase", "start_update_helper", "elapsed", time.Since(phaseStarted).Round(time.Millisecond))
+	slog.Info("agent self-update handed off to update helper", "target_version", targetVersion, "elapsed_total", time.Since(updateStarted).Round(time.Millisecond))
 	agentScheduleExitAfterUpdateFn()
 	return nil
 }
