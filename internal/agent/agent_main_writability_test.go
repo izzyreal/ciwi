@@ -20,3 +20,10 @@ func TestSelfUpdateWritabilityWarningServiceModeReason(t *testing.T) {
 		t.Fatalf("expected writability preflight warning when service-mode requirement is unmet")
 	}
 }
+
+func TestStartupHeartbeatGreeting(t *testing.T) {
+	msg := startupHeartbeatGreeting()
+	if !strings.Contains(msg, "ciwi agent has (re)started") {
+		t.Fatalf("unexpected startup heartbeat greeting: %q", msg)
+	}
+}

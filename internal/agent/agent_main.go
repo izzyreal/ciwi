@@ -156,7 +156,7 @@ func runLoop(ctx context.Context) error {
 	}
 
 	pendingUpdateFailure := ""
-	pendingRestartStatus := ""
+	pendingRestartStatus := startupHeartbeatGreeting()
 	var heartbeatStateMu sync.Mutex
 	getHeartbeatState := func() (string, string) {
 		heartbeatStateMu.Lock()
@@ -357,4 +357,8 @@ func selfUpdateWritabilityWarning() string {
 	}
 	_ = f.Close()
 	return ""
+}
+
+func startupHeartbeatGreeting() string {
+	return fmt.Sprintf("ciwi agent has (re)started (pid=%d)", os.Getpid())
 }
