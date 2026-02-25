@@ -608,10 +608,10 @@ function ensureDryRunPreviewModal() {
   overlay.className = 'ciwi-modal-overlay';
   overlay.setAttribute('aria-hidden', 'true');
   overlay.innerHTML = [
-    '<div class="ciwi-modal dryrun-preview-modal" role="dialog" aria-modal="true" aria-label="Dry run preview">',
+    '<div class="ciwi-modal dryrun-preview-modal" role="dialog" aria-modal="true" aria-label="Execution plan">',
     '  <div class="ciwi-modal-head">',
     '    <div>',
-    '      <div id="dryRunPreviewTitle" class="ciwi-modal-title">Preview Dry Run</div>',
+    '      <div id="dryRunPreviewTitle" class="ciwi-modal-title">Execution Plan</div>',
     '      <div id="dryRunPreviewSubtitle" class="ciwi-modal-subtitle"></div>',
     '    </div>',
     '    <button type="button" id="dryRunPreviewCloseBtn" class="secondary">Close</button>',
@@ -638,7 +638,7 @@ function ensureDryRunPreviewModal() {
     '  </div>',
     '  <div class="dryrun-preview-actions">',
     '    <button type="button" id="dryRunPreviewExecuteBtn" class="secondary">Execute Offline</button>',
-    '    <button type="button" id="dryRunPreviewRunBtn">Preview</button>',
+    '    <button type="button" id="dryRunPreviewRunBtn">Refresh</button>',
     '  </div>',
     '</div>',
   ].join('');
@@ -696,7 +696,7 @@ function openDryRunPreviewModal(opts) {
   if (!titleEl || !subtitleEl || !sourceSel || !agentSel || !cachedOnly || !outputEl || !closeBtn || !previewBtn || !executeBtn) {
     return Promise.reject(new Error('dry run preview modal elements unavailable'));
   }
-  titleEl.textContent = String(options.title || 'Preview Dry Run').trim() || 'Preview Dry Run';
+  titleEl.textContent = String(options.title || 'Execution Plan').trim() || 'Execution Plan';
   subtitleEl.textContent = String(options.subtitle || '').trim();
   sourceSel.innerHTML = '';
   agentSel.innerHTML = '';

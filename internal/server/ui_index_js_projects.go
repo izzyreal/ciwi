@@ -146,10 +146,10 @@ const uiIndexProjectsJS = `
           resolveBtn.onclick = () => openVersionResolveModal(p.id, p.pipeline_id);
           const previewBtn = document.createElement('button');
           previewBtn.className = 'secondary';
-          previewBtn.textContent = 'Preview Dry Run';
+          previewBtn.textContent = 'Execution Plan';
           previewBtn.onclick = () => {
             openDryRunPreviewModal({
-              title: 'Preview Dry Run',
+              title: 'Execution Plan',
               subtitle: String(p.pipeline_id || ''),
               previewPath: '/api/v1/pipelines/' + p.id + '/dry-run-preview',
               runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
@@ -241,10 +241,10 @@ const uiIndexProjectsJS = `
           }
           const previewBtn = document.createElement('button');
           previewBtn.className = 'secondary';
-          previewBtn.textContent = 'Preview Dry Run';
+          previewBtn.textContent = 'Execution Plan';
           previewBtn.onclick = () => {
             openDryRunPreviewModal({
-              title: 'Preview Chain Dry Run',
+              title: 'Execution Plan',
               subtitle: String(c.chain_id || ''),
               previewPath: '/api/v1/pipeline-chains/' + c.id + '/dry-run-preview',
               runPath: '/api/v1/pipeline-chains/' + c.id + '/run',

@@ -344,11 +344,11 @@ const projectHTML = `<!doctype html>
           }
 
           const previewBtn = document.createElement('button');
-          previewBtn.textContent = 'Preview Dry Run';
+          previewBtn.textContent = 'Execution Plan';
           previewBtn.className = 'secondary';
           previewBtn.onclick = () => {
             openDryRunPreviewModal({
-              title: 'Preview Chain Dry Run',
+              title: 'Execution Plan',
               subtitle: String(ch.chain_id || ''),
               previewPath: '/api/v1/pipeline-chains/' + ch.id + '/dry-run-preview',
               runPath: '/api/v1/pipeline-chains/' + ch.id + '/run',
@@ -439,11 +439,11 @@ const projectHTML = `<!doctype html>
         resolveBtn.className = 'secondary';
         resolveBtn.onclick = () => openVersionResolveModal(pl.id, pl.pipeline_id);
         const previewBtn = document.createElement('button');
-        previewBtn.textContent = 'Preview Dry Run';
+        previewBtn.textContent = 'Execution Plan';
         previewBtn.className = 'secondary';
         previewBtn.onclick = () => {
           openDryRunPreviewModal({
-            title: 'Preview Dry Run',
+            title: 'Execution Plan',
             subtitle: String(pl.pipeline_id || ''),
             previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
             runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
@@ -556,11 +556,11 @@ const projectHTML = `<!doctype html>
                 actions.appendChild(dryBtn);
               }
               const previewBtn = document.createElement('button');
-              previewBtn.textContent = 'Preview Dry Run';
+              previewBtn.textContent = 'Execution Plan';
               previewBtn.className = 'secondary';
               previewBtn.onclick = () => {
                 openDryRunPreviewModal({
-                  title: 'Preview Matrix Dry Run',
+                  title: 'Execution Plan',
                   subtitle: String(pl.pipeline_id || '') + ' / ' + String(j.id || '') + ' / ' + name,
                   previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
                   runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
@@ -592,11 +592,11 @@ const projectHTML = `<!doctype html>
               jobActions.appendChild(dryBtn);
             }
             const previewBtn = document.createElement('button');
-            previewBtn.textContent = 'Preview Dry Run';
+            previewBtn.textContent = 'Execution Plan';
             previewBtn.className = 'secondary';
             previewBtn.onclick = () => {
               openDryRunPreviewModal({
-                title: 'Preview Job Dry Run',
+                title: 'Execution Plan',
                 subtitle: String(pl.pipeline_id || '') + ' / ' + String(j.id || ''),
                 previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
                 runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
