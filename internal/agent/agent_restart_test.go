@@ -104,6 +104,7 @@ func TestRestartAgentViaSystemdInvokesConfiguredBinary(t *testing.T) {
 
 	t.Setenv("CIWI_SYSTEMCTL_PATH", systemctl)
 	t.Setenv("CIWI_AGENT_SYSTEMD_SERVICE_NAME", "ciwi-agent-custom.service")
+	t.Setenv("INVOCATION_ID", "")
 	msg, err, attempted := restartAgentViaSystemd()
 	if !attempted {
 		t.Fatalf("expected attempted=true")
