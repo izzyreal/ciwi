@@ -139,6 +139,22 @@ func TestRestartAgentViaSystemdNotAttemptedWhenServiceNameBlank(t *testing.T) {
 	}
 }
 
+func TestRestartAgentViaSystemdServiceContextUsesSelfExitPath(t *testing.T) {
+	t.Setenv("CIWI_AGENT_SYSTEMD_SERVICE_NAME", "ciwi-agent.service")
+	t.Setenv("CIWI_SYSTEMCTL_PATH", "/definitely/missing/systemctl")
+	t.Setenv("INVOCATION_ID", "abc123")
+	msg, err, attempted := restartAgentViaSystemd()
+	if !attempted {
+		t.Fatalf("expected attempted=true")
+	}
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.Contains(msg, "self-exit requested (ciwi-agent.service)") {
+		t.Fatalf("unexpected msg: %q", msg)
+	}
+}
+
 func TestRestartAgentViaLaunchdBranches(t *testing.T) {
 	t.Run("not attempted when label is missing", func(t *testing.T) {
 		t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "")

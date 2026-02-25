@@ -93,6 +93,13 @@ func restartAgentViaSystemd() (string, error, bool) {
 	if service == "" {
 		return "", nil, false
 	}
+	// When running as a systemd service (INVOCATION_ID present), prefer
+	// self-exit and let Restart=always handle the restart. Calling
+	// "systemctl restart" from the service user commonly requires
+	// interactive polkit auth and is unnecessary for this path.
+	if strings.TrimSpace(os.Getenv("INVOCATION_ID")) != "" {
+		return "restart via systemd self-exit requested (" + service + ")", nil, true
+	}
 	systemctlPath := strings.TrimSpace(envOrDefault("CIWI_SYSTEMCTL_PATH", "/bin/systemctl"))
 	if systemctlPath == "" {
 		systemctlPath = "/bin/systemctl"
