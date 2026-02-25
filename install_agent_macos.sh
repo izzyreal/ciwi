@@ -224,36 +224,6 @@ EOF
   printf '%s\n%s\n' "$list" "$item"
 }
 
-discover_search_domains() {
-  out=""
-  if [ -f /etc/resolv.conf ]; then
-    domains="$(awk '
-      /^[[:space:]]*(search|domain)[[:space:]]+/ {
-        for (i = 2; i <= NF; i++) print tolower($i)
-      }
-    ' /etc/resolv.conf | sed 's/\.$//' | sed '/^$/d' | sort -u || true)"
-    if [ -n "$domains" ]; then
-      out="$domains"
-    fi
-  fi
-  if [ -z "$out" ]; then
-    d="$(scutil --dns 2>/dev/null | awk '/search domain\[/{print tolower($NF)}' | sed 's/\.$//' | sed '/^$/d' | sort -u || true)"
-    if [ -n "$d" ]; then
-      out="$d"
-    fi
-  fi
-  if [ -z "$out" ] && command -v hostname >/dev/null 2>&1; then
-    d="$(hostname | awk -F. 'NF>1{for(i=2;i<=NF;i++){printf("%s%s",$i,(i<NF?".":"\n"))}}' | tr '[:upper:]' '[:lower:]' | sed 's/\.$//' || true)"
-    if [ -n "$d" ]; then
-      out="$d"
-    fi
-  fi
-  if [ -z "$out" ]; then
-    out="local lan"
-  fi
-  printf '%s\n' "$out" | sed '/^$/d' | sort -u
-}
-
 discover_servers() {
   found=""
   if probe_server "http://127.0.0.1:8112"; then
@@ -304,47 +274,6 @@ discover_servers() {
     rm -f "$browse_tmp"
   fi
 
-  if command -v dig >/dev/null 2>&1; then
-    for domain in $(discover_search_domains); do
-      [ -n "$domain" ] || continue
-      for ptr in $(dig +short "PTR" "_ciwi._tcp.${domain}" 2>/dev/null | sed 's/\.$//' | sort -u); do
-        [ -n "$ptr" ] || continue
-        srv_lines="$(dig +short "SRV" "$ptr" 2>/dev/null || true)"
-        while read -r p1 p2 port host; do
-          host="$(printf '%s' "${host:-}" | sed 's/\.$//' | tr '[:upper:]' '[:lower:]')"
-          port="$(printf '%s' "${port:-}" | tr -d '[:space:]')"
-          [ -n "$host" ] && [ -n "$port" ] || continue
-          endpoint="http://${host}:${port}"
-          if probe_server "$endpoint"; then
-            found="$(append_unique "$found" "$endpoint")"
-          fi
-        done <<EOF
-$srv_lines
-EOF
-      done
-    done
-  fi
-
-  if [ -f /etc/hosts ]; then
-    for host in $(awk '
-      /^[[:space:]]*#/ { next }
-      NF >= 2 {
-        for (i = 2; i <= NF; i++) {
-          h=tolower($i)
-          sub(/\.$/, "", h)
-          if (h == "localhost") continue
-          if (h ~ /localhost$/) continue
-          print h
-        }
-      }
-    ' /etc/hosts | sort -u); do
-      url="http://${host}:8112"
-      if probe_server "$url"; then
-        found="$(append_unique "$found" "$url")"
-      fi
-    done
-  fi
-
   if command -v arp >/dev/null 2>&1; then
     for ip in $(arp -an | awk '{print $2}' | tr -d '()' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u); do
       host="$(resolve_hostname_for_ip "$ip")"
@@ -356,27 +285,6 @@ EOF
       if probe_server "$url"; then
         found="$(append_unique "$found" "$url")"
       fi
-    done
-  fi
-
-  if command -v nc >/dev/null 2>&1; then
-    prefixes="$( (ifconfig 2>/dev/null | awk '/inet / && $2 !~ /^127\./ { split($2,o,"."); if (length(o)==4) print o[1]"."o[2]"."o[3] }'; printf '%s\n' '192.168.1' '192.168.0' '10.0.0' '10.0.1' '172.16.0' '172.20.0') | sed '/^$/d' | sort -u)"
-    probes=0
-    for prefix in $prefixes; do
-      for n in $(seq 1 254); do
-        probes=$((probes + 1))
-        if [ "$probes" -gt 768 ]; then
-          break 2
-        fi
-        ip="${prefix}.${n}"
-        if nc -z -w 1 "$ip" 8112 >/dev/null 2>&1; then
-          url="http://${ip}:8112"
-          if probe_server "$url"; then
-            found="$(append_unique "$found" "$url")"
-            break 2
-          fi
-        fi
-      done
     done
   fi
 
