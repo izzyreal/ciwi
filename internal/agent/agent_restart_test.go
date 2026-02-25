@@ -138,6 +138,98 @@ func TestRestartAgentViaLaunchdBranches(t *testing.T) {
 	})
 }
 
+func TestRestartAgentViaWindowsServiceBranches(t *testing.T) {
+	origInfo := windowsServiceInfoFn
+	origStart := startWindowsServiceRestartHelperFn
+	t.Cleanup(func() {
+		windowsServiceInfoFn = origInfo
+		startWindowsServiceRestartHelperFn = origStart
+	})
+
+	t.Run("not attempted when service is inactive", func(t *testing.T) {
+		windowsServiceInfoFn = func() (bool, string) { return false, "" }
+		startWindowsServiceRestartHelperFn = func(string) error {
+			t.Fatalf("helper launcher should not be called when service is inactive")
+			return nil
+		}
+
+		msg, err, attempted := restartAgentViaWindowsService()
+		if attempted {
+			t.Fatalf("expected attempted=false")
+		}
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if msg != "" {
+			t.Fatalf("unexpected msg: %q", msg)
+		}
+	})
+
+	t.Run("attempted helper error", func(t *testing.T) {
+		windowsServiceInfoFn = func() (bool, string) { return true, "ciwi-agent" }
+		startWindowsServiceRestartHelperFn = func(string) error { return errors.New("spawn failed") }
+
+		msg, err, attempted := restartAgentViaWindowsService()
+		if !attempted {
+			t.Fatalf("expected attempted=true")
+		}
+		if err == nil || !strings.Contains(err.Error(), "spawn failed") {
+			t.Fatalf("expected spawn failure, got %v", err)
+		}
+		if msg != "" {
+			t.Fatalf("unexpected msg on error: %q", msg)
+		}
+	})
+
+	t.Run("attempted helper success", func(t *testing.T) {
+		windowsServiceInfoFn = func() (bool, string) { return true, "ciwi-agent" }
+		launched := ""
+		startWindowsServiceRestartHelperFn = func(name string) error {
+			launched = name
+			return nil
+		}
+
+		msg, err, attempted := restartAgentViaWindowsService()
+		if !attempted {
+			t.Fatalf("expected attempted=true")
+		}
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if launched != "ciwi-agent" {
+			t.Fatalf("expected helper launch for ciwi-agent, got %q", launched)
+		}
+		if !strings.Contains(msg, "restart via windows service requested (ciwi-agent)") {
+			t.Fatalf("unexpected msg: %q", msg)
+		}
+	})
+}
+
+func TestBuildWindowsServiceRestartHelperCommand(t *testing.T) {
+	origPowerShell := windowsPowerShellCommandFn
+	t.Cleanup(func() {
+		windowsPowerShellCommandFn = origPowerShell
+	})
+
+	windowsPowerShellCommandFn = func() string { return `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` }
+	cmd := buildWindowsServiceRestartHelperCommand("ciwi-agent")
+	if cmd == nil {
+		t.Fatalf("expected command")
+	}
+	if cmd.Path != `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` {
+		t.Fatalf("unexpected powershell path: %q", cmd.Path)
+	}
+	if len(cmd.Args) < 7 {
+		t.Fatalf("unexpected args: %#v", cmd.Args)
+	}
+	if cmd.Args[1] != "-NoProfile" || cmd.Args[2] != "-NonInteractive" || cmd.Args[3] != "-ExecutionPolicy" || cmd.Args[4] != "Bypass" || cmd.Args[5] != "-Command" {
+		t.Fatalf("unexpected prologue args: %#v", cmd.Args)
+	}
+	if !strings.Contains(cmd.Args[6], "Stop-Service -Name $name") {
+		t.Fatalf("expected restart script payload, got %q", cmd.Args[6])
+	}
+}
+
 func TestEscapePowerShellSingleQuoted(t *testing.T) {
 	if got := escapePowerShellSingleQuoted("O'Hara"); got != "O''Hara" {
 		t.Fatalf("unexpected escaped string: %q", got)

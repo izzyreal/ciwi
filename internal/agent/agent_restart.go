@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -11,11 +12,14 @@ import (
 )
 
 var (
-	agentRuntimeGOOS    = runtime.GOOS
-	restartViaLaunchd   = restartAgentViaLaunchd
-	restartViaSystemd   = restartAgentViaSystemd
-	restartViaWinSvc    = restartAgentViaWindowsService
-	scheduleAgentExitFn = scheduleAgentExit
+	agentRuntimeGOOS                   = runtime.GOOS
+	restartViaLaunchd                  = restartAgentViaLaunchd
+	restartViaSystemd                  = restartAgentViaSystemd
+	restartViaWinSvc                   = restartAgentViaWindowsService
+	scheduleAgentExitFn                = scheduleAgentExit
+	windowsServiceInfoFn               = windowsServiceInfo
+	startWindowsServiceRestartHelperFn = startWindowsServiceRestartHelper
+	windowsPowerShellCommandFn         = windowsPowerShellCommand
 )
 
 func requestAgentRestart() string {
@@ -91,7 +95,7 @@ func restartAgentViaSystemd() (string, error, bool) {
 }
 
 func restartAgentViaWindowsService() (string, error, bool) {
-	active, name := windowsServiceInfo()
+	active, name := windowsServiceInfoFn()
 	name = strings.TrimSpace(name)
 	if !active || name == "" {
 		return "", nil, false
@@ -99,26 +103,53 @@ func restartAgentViaWindowsService() (string, error, bool) {
 
 	// Run restart logic in a detached process so it survives this service instance
 	// being stopped.
-	script := windowsServiceRestartScript(name)
+	if err := startWindowsServiceRestartHelperFn(name); err != nil {
+		return "", fmt.Errorf("start detached windows restart helper for %q: %w", name, err), true
+	}
+	return "restart via windows service requested (" + name + ")", nil, true
+}
 
+func startWindowsServiceRestartHelper(name string) error {
+	cmd := buildWindowsServiceRestartHelperCommand(name)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	if cmd.Process != nil {
+		_ = cmd.Process.Release()
+	}
+	return nil
+}
+
+func buildWindowsServiceRestartHelperCommand(name string) *exec.Cmd {
 	cmd := exec.Command(
-		"cmd.exe",
-		"/C",
-		"start",
-		"\"\"",
-		"/min",
-		"powershell.exe",
+		windowsPowerShellCommandFn(),
 		"-NoProfile",
 		"-NonInteractive",
 		"-ExecutionPolicy",
 		"Bypass",
 		"-Command",
-		script,
+		windowsServiceRestartScript(name),
 	)
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("start detached windows restart helper for %q: %w", name, err), true
+	prepareDetachedWindowsRestartCommand(cmd)
+	return cmd
+}
+
+func windowsPowerShellCommand() string {
+	roots := []string{
+		strings.TrimSpace(os.Getenv("SystemRoot")),
+		strings.TrimSpace(os.Getenv("WINDIR")),
+		`C:\Windows`,
 	}
-	return "restart via windows service requested (" + name + ")", nil, true
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		candidate := filepath.Join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return "powershell.exe"
 }
 
 func windowsServiceRestartScript(name string) string {
