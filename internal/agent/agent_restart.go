@@ -47,7 +47,8 @@ func requestAgentRestart() string {
 	case "windows":
 		if msg, err, attempted := restartViaWinSvc(); attempted {
 			if err == nil {
-				scheduleAgentExitWithCodeFn(windowsServiceRestartExitCode)
+				// Helper has been launched; exit cleanly and let helper stop/start the service.
+				scheduleAgentExitFn()
 				return msg
 			}
 			serviceErr = err.Error()

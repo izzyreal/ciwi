@@ -63,7 +63,7 @@ func TestRequestAgentRestartUsesServicePathByRuntime(t *testing.T) {
 	}
 }
 
-func TestRequestAgentRestartWindowsSchedulesNonZeroExit(t *testing.T) {
+func TestRequestAgentRestartWindowsSuccessUsesCleanExit(t *testing.T) {
 	origGOOS := agentRuntimeGOOS
 	origWinSvc := restartViaWinSvc
 	origExit := scheduleAgentExitFn
@@ -79,16 +79,53 @@ func TestRequestAgentRestartWindowsSchedulesNonZeroExit(t *testing.T) {
 	restartViaWinSvc = func() (string, error, bool) {
 		return "restart via windows service requested (ciwi-agent)", nil, true
 	}
-	scheduleAgentExitFn = func() {}
-	exitCode := -1
-	scheduleAgentExitWithCodeFn = func(code int) { exitCode = code }
+	exitCalls := 0
+	scheduleAgentExitFn = func() { exitCalls++ }
+	exitCodeCalls := 0
+	scheduleAgentExitWithCodeFn = func(int) { exitCodeCalls++ }
 
 	msg := requestAgentRestart()
 	if !strings.Contains(msg, "restart via windows service requested (ciwi-agent)") {
 		t.Fatalf("unexpected message: %q", msg)
 	}
+	if exitCalls != 1 {
+		t.Fatalf("expected clean exit scheduling once, got %d", exitCalls)
+	}
+	if exitCodeCalls != 0 {
+		t.Fatalf("expected no non-zero exit scheduling on successful helper launch, got %d", exitCodeCalls)
+	}
+}
+
+func TestRequestAgentRestartWindowsFallbackUsesNonZeroExit(t *testing.T) {
+	origGOOS := agentRuntimeGOOS
+	origWinSvc := restartViaWinSvc
+	origExit := scheduleAgentExitFn
+	origExitCode := scheduleAgentExitWithCodeFn
+	t.Cleanup(func() {
+		agentRuntimeGOOS = origGOOS
+		restartViaWinSvc = origWinSvc
+		scheduleAgentExitFn = origExit
+		scheduleAgentExitWithCodeFn = origExitCode
+	})
+
+	agentRuntimeGOOS = "windows"
+	restartViaWinSvc = func() (string, error, bool) {
+		return "", errors.New("helper launch failed"), true
+	}
+	cleanExitCalls := 0
+	scheduleAgentExitFn = func() { cleanExitCalls++ }
+	exitCode := -1
+	scheduleAgentExitWithCodeFn = func(code int) { exitCode = code }
+
+	msg := requestAgentRestart()
+	if !strings.Contains(msg, "service restart failed; fallback exit requested: helper launch failed") {
+		t.Fatalf("unexpected message: %q", msg)
+	}
+	if cleanExitCalls != 0 {
+		t.Fatalf("expected no clean-exit scheduling on fallback, got %d", cleanExitCalls)
+	}
 	if exitCode != windowsServiceRestartExitCode {
-		t.Fatalf("expected windows restart exit code %d, got %d", windowsServiceRestartExitCode, exitCode)
+		t.Fatalf("expected fallback windows restart exit code %d, got %d", windowsServiceRestartExitCode, exitCode)
 	}
 }
 
