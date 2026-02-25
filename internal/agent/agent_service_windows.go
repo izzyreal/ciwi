@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os/exec"
 	"strings"
 	"sync"
 
@@ -33,6 +34,9 @@ func runAsWindowsServiceIfNeeded(runFn func(context.Context) error) (bool, error
 	}
 	setWindowsServiceInfo(true, name)
 	defer setWindowsServiceInfo(false, "")
+	if err := ensureWindowsServiceRecovery(name); err != nil {
+		slog.Warn("windows service recovery configuration failed", "service", name, "error", err)
+	}
 
 	if err := svc.Run(name, &agentWindowsService{runFn: runFn}); err != nil {
 		return true, fmt.Errorf("run windows service %q: %w", name, err)
@@ -51,6 +55,29 @@ func setWindowsServiceInfo(active bool, name string) {
 	defer serviceStateMu.Unlock()
 	serviceActive = active
 	serviceName = name
+}
+
+func ensureWindowsServiceRecovery(name string) error {
+	service := strings.TrimSpace(name)
+	if service == "" {
+		return nil
+	}
+	commands := [][]string{
+		{"failure", service, "reset=", "0", "actions=", "restart/5000/restart/5000/restart/5000"},
+		{"failureflag", service, "1"},
+	}
+	for _, args := range commands {
+		cmd := exec.Command("sc.exe", args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			text := strings.TrimSpace(string(out))
+			if text == "" {
+				text = "(no output)"
+			}
+			return fmt.Errorf("sc.exe %s: %w (%s)", strings.Join(args, " "), err, text)
+		}
+	}
+	return nil
 }
 
 type agentWindowsService struct {

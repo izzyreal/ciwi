@@ -14,16 +14,19 @@ func TestRequestAgentRestartUsesServicePathByRuntime(t *testing.T) {
 	origSystemd := restartViaSystemd
 	origWinSvc := restartViaWinSvc
 	origExit := scheduleAgentExitFn
+	origExitCode := scheduleAgentExitWithCodeFn
 	t.Cleanup(func() {
 		agentRuntimeGOOS = origGOOS
 		restartViaLaunchd = origLaunchd
 		restartViaSystemd = origSystemd
 		restartViaWinSvc = origWinSvc
 		scheduleAgentExitFn = origExit
+		scheduleAgentExitWithCodeFn = origExitCode
 	})
 
 	exitCalls := 0
 	scheduleAgentExitFn = func() { exitCalls++ }
+	scheduleAgentExitWithCodeFn = func(int) {}
 
 	t.Run("linux success", func(t *testing.T) {
 		agentRuntimeGOOS = "linux"
@@ -57,6 +60,35 @@ func TestRequestAgentRestartUsesServicePathByRuntime(t *testing.T) {
 
 	if exitCalls != 3 {
 		t.Fatalf("expected one scheduled exit per request, got %d", exitCalls)
+	}
+}
+
+func TestRequestAgentRestartWindowsSchedulesNonZeroExit(t *testing.T) {
+	origGOOS := agentRuntimeGOOS
+	origWinSvc := restartViaWinSvc
+	origExit := scheduleAgentExitFn
+	origExitCode := scheduleAgentExitWithCodeFn
+	t.Cleanup(func() {
+		agentRuntimeGOOS = origGOOS
+		restartViaWinSvc = origWinSvc
+		scheduleAgentExitFn = origExit
+		scheduleAgentExitWithCodeFn = origExitCode
+	})
+
+	agentRuntimeGOOS = "windows"
+	restartViaWinSvc = func() (string, error, bool) {
+		return "restart via windows service requested (ciwi-agent)", nil, true
+	}
+	scheduleAgentExitFn = func() {}
+	exitCode := -1
+	scheduleAgentExitWithCodeFn = func(code int) { exitCode = code }
+
+	msg := requestAgentRestart()
+	if !strings.Contains(msg, "restart via windows service requested (ciwi-agent)") {
+		t.Fatalf("unexpected message: %q", msg)
+	}
+	if exitCode != windowsServiceRestartExitCode {
+		t.Fatalf("expected windows restart exit code %d, got %d", windowsServiceRestartExitCode, exitCode)
 	}
 }
 

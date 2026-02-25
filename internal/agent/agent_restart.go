@@ -17,10 +17,13 @@ var (
 	restartViaSystemd                  = restartAgentViaSystemd
 	restartViaWinSvc                   = restartAgentViaWindowsService
 	scheduleAgentExitFn                = scheduleAgentExit
+	scheduleAgentExitWithCodeFn        = scheduleAgentExitWithCode
 	windowsServiceInfoFn               = windowsServiceInfo
 	startWindowsServiceRestartHelperFn = startWindowsServiceRestartHelper
 	windowsPowerShellCommandFn         = windowsPowerShellCommand
 )
+
+const windowsServiceRestartExitCode = 23
 
 func requestAgentRestart() string {
 	var serviceErr string
@@ -44,13 +47,17 @@ func requestAgentRestart() string {
 	case "windows":
 		if msg, err, attempted := restartViaWinSvc(); attempted {
 			if err == nil {
-				scheduleAgentExitFn()
+				scheduleAgentExitWithCodeFn(windowsServiceRestartExitCode)
 				return msg
 			}
 			serviceErr = err.Error()
 		}
 	}
-	scheduleAgentExitFn()
+	if agentRuntimeGOOS == "windows" {
+		scheduleAgentExitWithCodeFn(windowsServiceRestartExitCode)
+	} else {
+		scheduleAgentExitFn()
+	}
 	if strings.TrimSpace(serviceErr) != "" {
 		return "service restart failed; fallback exit requested: " + serviceErr
 	}
@@ -58,9 +65,13 @@ func requestAgentRestart() string {
 }
 
 func scheduleAgentExit() {
+	scheduleAgentExitWithCode(0)
+}
+
+func scheduleAgentExitWithCode(code int) {
 	go func() {
 		time.Sleep(250 * time.Millisecond)
-		os.Exit(0)
+		os.Exit(code)
 	}()
 }
 
