@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -51,6 +52,7 @@ func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedS
 }
 
 func RunApplyStagedAgent(args []string) error {
+	started := time.Now()
 	fs := flag.NewFlagSet("apply-staged-agent-update", flag.ContinueOnError)
 	manifestPath := fs.String("manifest", strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATE_MANIFEST", "")), "path to staged update manifest")
 	if err := fs.Parse(args); err != nil {
@@ -59,11 +61,15 @@ func RunApplyStagedAgent(args []string) error {
 	if strings.TrimSpace(*manifestPath) == "" {
 		return fmt.Errorf("apply-staged-agent-update requires --manifest or CIWI_AGENT_UPDATE_MANIFEST")
 	}
+	slog.Info("darwin updater started", "manifest_path", *manifestPath)
 
+	stepStarted := time.Now()
 	manifest, err := readManifest(*manifestPath)
 	if err != nil {
+		slog.Warn("darwin updater step failed", "step", "read_manifest", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
 		return err
 	}
+	slog.Info("darwin updater step complete", "step", "read_manifest", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "target_version", strings.TrimSpace(manifest.TargetVersion))
 	if strings.TrimSpace(manifest.TargetBinary) == "" {
 		return fmt.Errorf("manifest missing target_binary")
 	}
@@ -83,14 +89,17 @@ func RunApplyStagedAgent(args []string) error {
 		return fmt.Errorf("staged binary not found: %w", err)
 	}
 
+	stepStarted = time.Now()
 	gotHash, err := fileSHA256(manifest.StagedBinary)
 	if err != nil {
+		slog.Warn("darwin updater step failed", "step", "hash_staged_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("hash staged binary: %w", err)
 	}
 	wantHash := strings.ToLower(strings.TrimSpace(manifest.StagedSHA256))
 	if gotHash != wantHash {
 		return fmt.Errorf("staged binary hash mismatch: got=%s want=%s", gotHash, wantHash)
 	}
+	slog.Info("darwin updater step complete", "step", "hash_staged_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
 
 	launchctlPath := strings.TrimSpace(envOrDefault("CIWI_LAUNCHCTL_PATH", "/bin/launchctl"))
 	if launchctlPath == "" {
@@ -100,44 +109,68 @@ func RunApplyStagedAgent(args []string) error {
 	domain := "gui/" + strconv.Itoa(uid)
 	service := domain + "/" + manifest.AgentLabel
 
+	stepStarted = time.Now()
 	_ = runCmd(launchctlPath, "bootout", service)
 	_ = runCmd(launchctlPath, "bootout", domain, manifest.AgentPlist)
 	_ = runCmd(launchctlPath, "disable", service)
 	_ = runCmd(launchctlPath, "enable", service)
+	slog.Info("darwin updater step complete", "step", "launchctl_bootout_disable_enable", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "service", service)
 
 	if manifest.AgentPID > 0 {
-		_ = waitForProcessExit(manifest.AgentPID, 45*time.Second)
+		stepStarted = time.Now()
+		if err := waitForProcessExit(manifest.AgentPID, 45*time.Second); err != nil {
+			slog.Warn("darwin updater wait for agent exit timed out", "agent_pid", manifest.AgentPID, "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+		} else {
+			slog.Info("darwin updater step complete", "step", "wait_for_agent_exit", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "agent_pid", manifest.AgentPID)
+		}
 	}
 
 	backupPath := manifest.TargetBinary + ".prev"
 	_ = os.Remove(backupPath)
+	stepStarted = time.Now()
 	if err := os.Rename(manifest.TargetBinary, backupPath); err != nil {
+		slog.Warn("darwin updater step failed", "step", "backup_current_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("backup current binary: %w", err)
 	}
 	if err := os.Rename(manifest.StagedBinary, manifest.TargetBinary); err != nil {
 		_ = os.Rename(backupPath, manifest.TargetBinary)
+		slog.Warn("darwin updater step failed", "step", "move_staged_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("move staged binary into place: %w", err)
 	}
 	if err := os.Chmod(manifest.TargetBinary, 0o755); err != nil {
 		_ = os.Rename(manifest.TargetBinary, manifest.StagedBinary)
 		_ = os.Rename(backupPath, manifest.TargetBinary)
+		slog.Warn("darwin updater step failed", "step", "chmod_target_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("chmod target binary: %w", err)
 	}
+	slog.Info("darwin updater step complete", "step", "swap_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
 	if strings.TrimSpace(envOrDefault("CIWI_DARWIN_ADHOC_SIGN", "true")) != "false" {
+		stepStarted = time.Now()
 		if err := adHocSignBinary(manifest.TargetBinary); err != nil {
 			_ = os.Rename(manifest.TargetBinary, manifest.StagedBinary)
 			_ = os.Rename(backupPath, manifest.TargetBinary)
+			slog.Warn("darwin updater step failed", "step", "adhoc_sign_target_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
 			return fmt.Errorf("ad-hoc sign target binary: %w", err)
 		}
+		slog.Info("darwin updater step complete", "step", "adhoc_sign_target_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
 	}
+	stepStarted = time.Now()
 	_ = os.Remove(*manifestPath)
+	slog.Info("darwin updater step complete", "step", "remove_manifest", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
 
+	stepStarted = time.Now()
 	if err := runCmd(launchctlPath, "bootstrap", domain, manifest.AgentPlist); err != nil && !isAlreadyLoadedErr(err) {
+		slog.Warn("darwin updater step failed", "step", "launchctl_bootstrap_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("bootstrap agent launchd plist: %w", err)
 	}
+	slog.Info("darwin updater step complete", "step", "launchctl_bootstrap_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "service", service)
+	stepStarted = time.Now()
 	if err := runCmd(launchctlPath, "kickstart", "-k", service); err != nil {
+		slog.Warn("darwin updater step failed", "step", "launchctl_kickstart_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("kickstart agent launchd service: %w", err)
 	}
+	slog.Info("darwin updater step complete", "step", "launchctl_kickstart_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "service", service)
+	slog.Info("darwin updater finished", "target_version", strings.TrimSpace(manifest.TargetVersion), "elapsed_total", time.Since(started).Round(time.Millisecond))
 	return nil
 }
 
