@@ -214,13 +214,6 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 			return fmt.Errorf("ad-hoc sign current binary: %w", err)
 		}
 	}
-	if strings.TrimSpace(updaterPlist) != "" {
-		domain := "gui/" + strconv.Itoa(os.Getuid())
-		if err := runLaunchctl("bootstrap", domain, updaterPlist); err != nil && !isLaunchctlAlreadyLoadedErr(err) {
-			_ = os.Remove(manifestPath)
-			return fmt.Errorf("bootstrap updater launchagent: %w", err)
-		}
-	}
 	if err := runLaunchctl("kickstart", "-k", "gui/"+strconv.Itoa(os.Getuid())+"/"+updaterLabel); err != nil {
 		_ = os.Remove(manifestPath)
 		return fmt.Errorf("trigger updater launchagent: %w", err)
@@ -590,14 +583,6 @@ func runLaunchctl(args ...string) error {
 		return fmt.Errorf("%s %s: %w (%s)", launchctlPath, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-func isLaunchctlAlreadyLoadedErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "already loaded")
 }
 
 func adHocSignBinary(path string) error {
