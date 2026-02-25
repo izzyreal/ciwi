@@ -712,6 +712,92 @@ pipelines:
 	}
 }
 
+func TestPipelineDryRunPreviewIncludesStepPlanDetails(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    trigger: manual
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo setup
+            env:
+              PREP: ok
+          - run: echo publish
+            skip_dry_run: true
+            env:
+              RELEASE: skipped
+`)
+	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/dry-run-preview", map[string]any{
+		"pipeline_job_id": "publish",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for dry-run-preview with step plan details, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+
+	var payload struct {
+		PendingJobs []struct {
+			PipelineJobID string `json:"pipeline_job_id"`
+			StepCount     int    `json:"step_count"`
+			StepPlan      []struct {
+				Index      int               `json:"index"`
+				Name       string            `json:"name"`
+				Kind       string            `json:"kind"`
+				Script     string            `json:"script"`
+				SkipDryRun bool              `json:"skip_dry_run"`
+				Env        map[string]string `json:"env"`
+			} `json:"step_plan"`
+		} `json:"pending_jobs"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if len(payload.PendingJobs) != 1 {
+		t.Fatalf("expected one pending job in preview payload, got %+v", payload.PendingJobs)
+	}
+	job := payload.PendingJobs[0]
+	if got := strings.TrimSpace(job.PipelineJobID); got != "publish" {
+		t.Fatalf("expected publish job in preview payload, got %q", got)
+	}
+	if job.StepCount != 2 {
+		t.Fatalf("expected step_count=2 for publish preview, got %d", job.StepCount)
+	}
+	if len(job.StepPlan) != 2 {
+		t.Fatalf("expected two step plan items in preview payload, got %+v", job.StepPlan)
+	}
+	if got := strings.TrimSpace(job.StepPlan[0].Kind); got != "run" {
+		t.Fatalf("expected first step kind=run, got %q", got)
+	}
+	if got := strings.TrimSpace(job.StepPlan[0].Script); got != "echo setup" {
+		t.Fatalf("expected first step script echo setup, got %q", got)
+	}
+	if got := strings.TrimSpace(job.StepPlan[0].Env["PREP"]); got != "ok" {
+		t.Fatalf("expected first step env PREP=ok, got %q", got)
+	}
+	if got := strings.TrimSpace(job.StepPlan[1].Kind); got != "dryrun_skip" {
+		t.Fatalf("expected second step kind=dryrun_skip, got %q", got)
+	}
+	if !job.StepPlan[1].SkipDryRun {
+		t.Fatalf("expected second step skip_dry_run=true")
+	}
+	if got := strings.TrimSpace(job.StepPlan[1].Env["RELEASE"]); got != "skipped" {
+		t.Fatalf("expected second step env RELEASE=skipped, got %q", got)
+	}
+	if got := strings.TrimSpace(job.StepPlan[1].Script); got != "" {
+		t.Fatalf("expected second step script empty for dryrun_skip, got %q", got)
+	}
+}
+
 func TestPipelineDryRunPreviewOfflineCachedOnlyFailsWithoutCacheForVersionedPipeline(t *testing.T) {
 	ts, s := newTestHTTPServerWithState(t)
 	defer ts.Close()

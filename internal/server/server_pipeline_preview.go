@@ -27,8 +27,26 @@ type runPreviewJobView struct {
 	SourceRepo        string            `json:"source_repo,omitempty"`
 	SourceRef         string            `json:"source_ref,omitempty"`
 	StepCount         int               `json:"step_count"`
+	StepPlan          []runPreviewStep  `json:"step_plan,omitempty"`
 	ArtifactGlobs     []string          `json:"artifact_globs,omitempty"`
 	DependencyBlocked bool              `json:"dependency_blocked,omitempty"`
+}
+
+type runPreviewStep struct {
+	Index           int                          `json:"index"`
+	Total           int                          `json:"total,omitempty"`
+	Name            string                       `json:"name,omitempty"`
+	Kind            string                       `json:"kind,omitempty"`
+	Script          string                       `json:"script,omitempty"`
+	SkipDryRun      bool                         `json:"skip_dry_run,omitempty"`
+	Env             map[string]string            `json:"env,omitempty"`
+	VaultConnection string                       `json:"vault_connection,omitempty"`
+	VaultSecrets    []protocol.ProjectSecretSpec `json:"vault_secrets,omitempty"`
+	TestName        string                       `json:"test_name,omitempty"`
+	TestFormat      string                       `json:"test_format,omitempty"`
+	TestReport      string                       `json:"test_report,omitempty"`
+	CoverageFormat  string                       `json:"coverage_format,omitempty"`
+	CoverageReport  string                       `json:"coverage_report,omitempty"`
 }
 
 type runPreviewResponse struct {
@@ -309,15 +327,57 @@ func sourceRefMatchesCached(reqRef, cachedRaw string) bool {
 func toRunPreviewJobs(in []pendingJob) []runPreviewJobView {
 	out := make([]runPreviewJobView, 0, len(in))
 	for _, p := range in {
+		steps := toRunPreviewSteps(p.stepPlan)
 		out = append(out, runPreviewJobView{
 			PipelineJobID:     strings.TrimSpace(p.pipelineJobID),
 			MatrixName:        strings.TrimSpace(p.metadata["matrix_name"]),
 			RequiredCaps:      cloneMap(p.requiredCaps),
 			SourceRepo:        strings.TrimSpace(p.sourceRepo),
 			SourceRef:         strings.TrimSpace(p.sourceRef),
-			StepCount:         len(p.stepPlan),
+			StepCount:         len(steps),
+			StepPlan:          steps,
 			ArtifactGlobs:     append([]string(nil), p.artifactGlobs...),
 			DependencyBlocked: strings.TrimSpace(p.metadata["needs_blocked"]) == "1" || strings.TrimSpace(p.metadata["chain_blocked"]) == "1",
+		})
+	}
+	return out
+}
+
+func toRunPreviewSteps(in []protocol.JobStepPlanItem) []runPreviewStep {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]runPreviewStep, 0, len(in))
+	for _, step := range in {
+		kind := strings.TrimSpace(step.Kind)
+		if kind == "" {
+			kind = "run"
+		}
+		secrets := make([]protocol.ProjectSecretSpec, 0, len(step.VaultSecrets))
+		for _, sec := range step.VaultSecrets {
+			secrets = append(secrets, protocol.ProjectSecretSpec{
+				Name:      strings.TrimSpace(sec.Name),
+				Mount:     strings.TrimSpace(sec.Mount),
+				Path:      strings.TrimSpace(sec.Path),
+				Key:       strings.TrimSpace(sec.Key),
+				KVVersion: sec.KVVersion,
+			})
+		}
+		out = append(out, runPreviewStep{
+			Index:           step.Index,
+			Total:           step.Total,
+			Name:            strings.TrimSpace(step.Name),
+			Kind:            kind,
+			Script:          step.Script,
+			SkipDryRun:      strings.TrimSpace(step.Kind) == "dryrun_skip",
+			Env:             cloneMap(step.Env),
+			VaultConnection: strings.TrimSpace(step.VaultConnection),
+			VaultSecrets:    secrets,
+			TestName:        strings.TrimSpace(step.TestName),
+			TestFormat:      strings.TrimSpace(step.TestFormat),
+			TestReport:      strings.TrimSpace(step.TestReport),
+			CoverageFormat:  strings.TrimSpace(step.CoverageFormat),
+			CoverageReport:  strings.TrimSpace(step.CoverageReport),
 		})
 	}
 	return out

@@ -592,7 +592,26 @@ function ensureDryRunPreviewStyles() {
     '.dryrun-preview-select{width:100%;font-size:13px;border:1px solid #c4ddd0;border-radius:8px;padding:8px;background:#fff;color:#1f2a24;}',
     '.dryrun-preview-check{display:flex;align-items:center;gap:8px;font-size:13px;color:#1f2a24;user-select:none;}',
     '.dryrun-preview-note{font-size:12px;line-height:1.35;color:#6a5726;background:#fff8e8;border:1px solid #ead7a8;border-radius:8px;padding:8px 10px;}',
-    '.dryrun-preview-output{margin:0;background:#0f1412;color:#cde7dc;border-radius:8px;border:1px solid #22352d;padding:12px;width:100%;height:100%;overflow:auto;font-size:12px;line-height:1.35;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;}',
+    '.dryrun-preview-output{margin:0;background:#0f1412;color:#cde7dc;border-radius:8px;border:1px solid #22352d;padding:12px;width:100%;height:100%;overflow:auto;font-size:12px;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;}',
+    '.dryrun-preview-report{display:flex;flex-direction:column;gap:10px;}',
+    '.dryrun-preview-section-title{font-size:12px;font-weight:700;color:#9bc4b1;}',
+    '.dryrun-preview-kv-table{display:grid;grid-template-columns:180px 1fr;gap:4px 10px;}',
+    '.dryrun-preview-kv-table .key{color:#8ea89d;}',
+    '.dryrun-preview-list{margin:0;padding-left:18px;}',
+    '.dryrun-preview-list li{margin:2px 0;}',
+    '.dryrun-preview-empty{color:#8ea89d;}',
+    '.dryrun-preview-output details.log-fold{margin:4px 0;border-left:3px solid #365547;background:rgba(54,85,71,0.2);border-radius:4px;padding:4px 8px;}',
+    '.dryrun-preview-output details.log-fold > summary{cursor:pointer;color:#9bc4b1;}',
+    '.dryrun-preview-output details.log-fold > pre{margin:8px 0 2px;white-space:pre-wrap;color:#b7d3c7;font:inherit;}',
+    '.dryrun-preview-job-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}',
+    '.dryrun-preview-pill{display:inline-flex;align-items:center;border:1px solid #355949;border-radius:999px;padding:1px 8px;font-size:11px;color:#b7d3c7;background:rgba(53,89,73,0.2);}',
+    '.dryrun-preview-pill.warn{border-color:#b48a47;color:#ffd68c;background:rgba(180,138,71,0.15);}',
+    '.dryrun-preview-steps{margin-top:8px;}',
+    '.dryrun-preview-step{margin-left:10px;}',
+    '.dryrun-preview-step-meta{margin:6px 0 0;}',
+    '.dryrun-preview-step-script{margin:6px 0 0;background:rgba(8,12,10,0.75);border:1px solid #22352d;border-radius:6px;padding:8px;white-space:pre-wrap;color:#cde7dc;font:inherit;}',
+    '.dryrun-preview-exec-log{margin-top:10px;border-top:1px solid #22352d;padding-top:8px;}',
+    '.dryrun-preview-exec-line{margin:2px 0;color:#9bc4b1;white-space:pre-wrap;}',
     '.dryrun-preview-actions{display:flex;justify-content:flex-end;gap:8px;padding:8px 12px 12px;}',
   ].join('');
   document.head.appendChild(style);
@@ -634,7 +653,7 @@ function ensureDryRunPreviewModal() {
     '        Offline execution guardrails: requires a pinned cached source commit. Non-dry execution is blocked when selected jobs contain <code>skip_dry_run</code> steps.',
     '      </div>',
     '    </div>',
-    '    <pre id="dryRunPreviewOutput" class="dryrun-preview-output">Loading...</pre>',
+    '    <div id="dryRunPreviewOutput" class="dryrun-preview-output">Loading...</div>',
     '  </div>',
     '  <div class="dryrun-preview-actions">',
     '    <button type="button" id="dryRunPreviewExecuteBtn" class="secondary">Execute Offline</button>',
@@ -646,35 +665,163 @@ function ensureDryRunPreviewModal() {
   return overlay;
 }
 
+function renderExecutionPlanRows(rows) {
+  const normalized = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (!normalized.length) return '';
+  return '<div class="dryrun-preview-kv-table">' + normalized.map((row) => {
+    const key = Array.isArray(row) ? row[0] : '';
+    const val = Array.isArray(row) ? row[1] : '';
+    return '<div class="key">' + escapeHtml(String(key || '')) + '</div><div>' + escapeHtml(String(val || '')) + '</div>';
+  }).join('') + '</div>';
+}
+
+function renderExecutionPlanMap(raw) {
+  const obj = raw && typeof raw === 'object' ? raw : {};
+  const keys = Object.keys(obj).sort();
+  if (!keys.length) return '<span class="dryrun-preview-empty">(none)</span>';
+  return '<ul class="dryrun-preview-list">' + keys.map((k) => {
+    const value = obj[k];
+    const text = value === null || value === undefined ? '' : String(value);
+    return '<li><code>' + escapeHtml(k) + '</code>=<code>' + escapeHtml(text) + '</code></li>';
+  }).join('') + '</ul>';
+}
+
+function renderExecutionPlanStringList(raw) {
+  const values = Array.isArray(raw) ? raw.map(v => String(v || '').trim()).filter(Boolean) : [];
+  if (!values.length) return '<span class="dryrun-preview-empty">(none)</span>';
+  return '<ul class="dryrun-preview-list">' + values.map((v) => '<li><code>' + escapeHtml(v) + '</code></li>').join('') + '</ul>';
+}
+
+function renderExecutionPlanVaultSecrets(raw) {
+  const secrets = Array.isArray(raw) ? raw : [];
+  if (!secrets.length) return '<span class="dryrun-preview-empty">(none)</span>';
+  return '<ul class="dryrun-preview-list">' + secrets.map((entry) => {
+    const sec = entry || {};
+    const name = String(sec.name || '').trim() || '(unnamed)';
+    const parts = [];
+    if (String(sec.mount || '').trim()) parts.push('mount=' + String(sec.mount).trim());
+    if (String(sec.path || '').trim()) parts.push('path=' + String(sec.path).trim());
+    if (String(sec.key || '').trim()) parts.push('key=' + String(sec.key).trim());
+    if (Number(sec.kv_version || 0) > 0) parts.push('kv_version=' + String(Number(sec.kv_version)));
+    const suffix = parts.length ? (' (' + escapeHtml(parts.join(', ')) + ')') : '';
+    return '<li><code>' + escapeHtml(name) + '</code>' + suffix + '</li>';
+  }).join('') + '</ul>';
+}
+
+function renderExecutionPlanStep(step, stepIndex) {
+  const data = step || {};
+  const index = Number(data.index || (stepIndex + 1));
+  const total = Number(data.total || 0);
+  const name = String(data.name || '').trim() || ('step ' + String(index));
+  const kind = String(data.kind || '').trim() || 'run';
+  const skipDryRun = !!data.skip_dry_run || kind === 'dryrun_skip';
+  const summary = 'Step ' + String(index) + (total > 0 ? ('/' + String(total)) : '') + ': ' + escapeHtml(name) +
+    ' <span class="dryrun-preview-pill">' + escapeHtml(kind) + '</span>' +
+    (skipDryRun ? ' <span class="dryrun-preview-pill warn">skip_dry_run</span>' : '');
+  const rows = [
+    ['kind', kind],
+    ['skip_dry_run', skipDryRun ? 'true' : 'false'],
+  ];
+  const testName = String(data.test_name || '').trim();
+  const testFormat = String(data.test_format || '').trim();
+  const testReport = String(data.test_report || '').trim();
+  const coverageFormat = String(data.coverage_format || '').trim();
+  const coverageReport = String(data.coverage_report || '').trim();
+  const vaultConnection = String(data.vault_connection || '').trim();
+  if (testName) rows.push(['test_name', testName]);
+  if (testFormat) rows.push(['test_format', testFormat]);
+  if (testReport) rows.push(['test_report', testReport]);
+  if (coverageFormat) rows.push(['coverage_format', coverageFormat]);
+  if (coverageReport) rows.push(['coverage_report', coverageReport]);
+  if (vaultConnection) rows.push(['vault_connection', vaultConnection]);
+  const script = String(data.script || '');
+  const scriptHTML = script
+    ? ('<div class="dryrun-preview-section-title">Script</div><pre class="dryrun-preview-step-script">' + escapeHtml(script) + '</pre>')
+    : '<div class="dryrun-preview-section-title">Script</div><div class="dryrun-preview-empty">(none)</div>';
+  return '<details class="log-fold dryrun-preview-step"' + (stepIndex === 0 ? ' open' : '') + '>' +
+    '<summary>' + summary + '</summary>' +
+    '<div class="dryrun-preview-step-meta">' + renderExecutionPlanRows(rows) + '</div>' +
+    scriptHTML +
+    '<div class="dryrun-preview-section-title">Env</div>' + renderExecutionPlanMap(data.env) +
+    '<div class="dryrun-preview-section-title">Vault Secrets</div>' + renderExecutionPlanVaultSecrets(data.vault_secrets) +
+    '</details>';
+}
+
+function renderExecutionPlanJob(job, index) {
+  const data = job || {};
+  const pipelineJobID = String(data.pipeline_job_id || '').trim();
+  const matrixName = String(data.matrix_name || '').trim();
+  const title = '[' + String(index + 1) + '] ' + (pipelineJobID || '(unknown job)') + (matrixName ? (' / ' + matrixName) : '');
+  const stepPlan = Array.isArray(data.step_plan) ? data.step_plan : [];
+  const stepCount = Number(data.step_count || stepPlan.length || 0);
+  const rows = [
+    ['step_count', String(stepCount)],
+    ['dependency_blocked', String(!!data.dependency_blocked)],
+  ];
+  const sourceRepo = String(data.source_repo || '').trim();
+  const sourceRef = String(data.source_ref || '').trim();
+  if (sourceRepo) rows.push(['source_repo', sourceRepo]);
+  if (sourceRef) rows.push(['source_ref', sourceRef]);
+  const capsHTML = renderExecutionPlanMap(data.required_capabilities);
+  const artifactHTML = renderExecutionPlanStringList(data.artifact_globs);
+  const stepsHTML = stepPlan.length
+    ? stepPlan.map((step, stepIdx) => renderExecutionPlanStep(step, stepIdx)).join('')
+    : '<div class="dryrun-preview-empty">No step plan details available.</div>';
+  return '<details class="log-fold dryrun-preview-job"' + (index === 0 ? ' open' : '') + '>' +
+    '<summary><span class="dryrun-preview-job-head"><span>' + escapeHtml(title) + '</span>' +
+    '<span class="dryrun-preview-pill">steps=' + escapeHtml(String(stepCount)) + '</span>' +
+    (data.dependency_blocked ? '<span class="dryrun-preview-pill warn">dependency_blocked</span>' : '') +
+    '</span></summary>' +
+    renderExecutionPlanRows(rows) +
+    '<div class="dryrun-preview-section-title">Required Capabilities</div>' + capsHTML +
+    '<div class="dryrun-preview-section-title">Artifact Globs</div>' + artifactHTML +
+    '<div class="dryrun-preview-section-title">Steps</div>' +
+    '<div class="dryrun-preview-steps">' + stepsHTML + '</div>' +
+    '</details>';
+}
+
 function formatDryRunPreviewOutput(resp) {
   const data = resp || {};
-  const lines = [];
-  lines.push('mode: ' + String(data.mode || ''));
-  lines.push('offline_cached_only: ' + String(!!data.offline_cached_only));
-  lines.push('cache_used: ' + String(!!data.cache_used));
-  if (data.cache_source) lines.push('cache_source: ' + String(data.cache_source));
-  lines.push('pipeline: ' + String(data.pipeline_id || ''));
-  const eligible = Array.isArray(data.eligible_agent_ids) ? data.eligible_agent_ids.map(v => String(v || '').trim()).filter(Boolean) : [];
-  lines.push('eligible_agents: ' + (eligible.length ? eligible.join(', ') : '(none)'));
-  const warnings = Array.isArray(data.warnings) ? data.warnings.map(v => String(v || '').trim()).filter(Boolean) : [];
-  if (warnings.length) lines.push('warnings: ' + warnings.join(' | '));
   const jobs = Array.isArray(data.pending_jobs) ? data.pending_jobs : [];
-  lines.push('pending_jobs: ' + String(jobs.length));
-  jobs.forEach((job, idx) => {
-    lines.push('');
-    lines.push('[' + String(idx + 1) + '] ' + String(job.pipeline_job_id || ''));
-    if (job.matrix_name) lines.push('matrix: ' + String(job.matrix_name));
-    if (job.source_repo) lines.push('source_repo: ' + String(job.source_repo));
-    if (job.source_ref) lines.push('source_ref: ' + String(job.source_ref));
-    lines.push('step_count: ' + String(Number(job.step_count || 0)));
-    lines.push('dependency_blocked: ' + String(!!job.dependency_blocked));
-    const caps = job.required_capabilities || {};
-    const capKeys = Object.keys(caps).sort();
-    lines.push('required_capabilities: ' + (capKeys.length ? capKeys.map(k => k + '=' + String(caps[k] || '')).join(', ') : '(none)'));
-    const arts = Array.isArray(job.artifact_globs) ? job.artifact_globs : [];
-    lines.push('artifact_globs: ' + (arts.length ? arts.join(', ') : '(none)'));
-  });
-  return lines.join('\n');
+  const warnings = Array.isArray(data.warnings) ? data.warnings.map(v => String(v || '').trim()).filter(Boolean) : [];
+  const eligible = Array.isArray(data.eligible_agent_ids) ? data.eligible_agent_ids.map(v => String(v || '').trim()).filter(Boolean) : [];
+  const overviewRows = [
+    ['mode', String(data.mode || '')],
+    ['offline_cached_only', String(!!data.offline_cached_only)],
+    ['cache_used', String(!!data.cache_used)],
+    ['cache_source', String(data.cache_source || '')],
+    ['pipeline', String(data.pipeline_id || '')],
+    ['eligible_agents', eligible.length ? eligible.join(', ') : '(none)'],
+    ['pending_jobs', String(jobs.length)],
+  ];
+  const warningsHTML = warnings.length
+    ? ('<div class="dryrun-preview-section-title">Warnings</div><ul class="dryrun-preview-list">' + warnings.map((w) => '<li>' + escapeHtml(w) + '</li>').join('') + '</ul>')
+    : '';
+  const jobsHTML = jobs.length
+    ? jobs.map((job, idx) => renderExecutionPlanJob(job, idx)).join('')
+    : '<div class="dryrun-preview-empty">No pending jobs matched this selection.</div>';
+  return '<div class="dryrun-preview-report">' +
+    '<div class="dryrun-preview-section-title">Overview</div>' +
+    renderExecutionPlanRows(overviewRows) +
+    warningsHTML +
+    '<div class="dryrun-preview-section-title">Pending Jobs</div>' +
+    jobsHTML +
+    '</div>';
+}
+
+function appendExecutionPlanStatus(outputEl, line) {
+  if (!outputEl) return;
+  let host = outputEl.querySelector('.dryrun-preview-exec-log');
+  if (!host) {
+    host = document.createElement('div');
+    host.className = 'dryrun-preview-exec-log';
+    outputEl.appendChild(host);
+  }
+  const row = document.createElement('div');
+  row.className = 'dryrun-preview-exec-line';
+  row.textContent = String(line || '');
+  host.appendChild(row);
+  outputEl.scrollTop = outputEl.scrollHeight;
 }
 
 function openDryRunPreviewModal(opts) {
@@ -751,7 +898,7 @@ function openDryRunPreviewModal(opts) {
     previewBtn.disabled = true;
     return apiJSON(previewPath, { method: 'POST', body: JSON.stringify(buildPayload()) })
       .then((resp) => {
-        outputEl.textContent = formatDryRunPreviewOutput(resp);
+        outputEl.innerHTML = formatDryRunPreviewOutput(resp);
       })
       .catch((err) => {
         outputEl.textContent = 'Execution plan failed: ' + String(err && err.message || err);
@@ -766,20 +913,20 @@ function openDryRunPreviewModal(opts) {
     if (!runPath) return Promise.resolve();
     const payload = buildPayload();
     payload.execution_mode = 'offline_cached';
-    outputEl.textContent += '\n\n[execute] enqueueing offline_cached...';
+    appendExecutionPlanStatus(outputEl, '[execute] enqueueing offline_cached...');
     previewBtn.disabled = true;
     executeBtn.disabled = true;
     return apiJSON(runPath, { method: 'POST', body: JSON.stringify(payload) })
       .then((resp) => {
         const enqueued = Number((resp || {}).enqueued || 0);
         const ids = Array.isArray((resp || {}).job_execution_ids) ? resp.job_execution_ids : [];
-        outputEl.textContent += '\n[execute] enqueued=' + String(enqueued) + (ids.length ? (' ids=' + ids.join(',')) : '');
+        appendExecutionPlanStatus(outputEl, '[execute] enqueued=' + String(enqueued) + (ids.length ? (' ids=' + ids.join(',')) : ''));
         if (typeof showQueuedJobsSnackbar === 'function') {
           showQueuedJobsSnackbar('Offline execution started');
         }
       })
       .catch((err) => {
-        outputEl.textContent += '\n[execute] failed: ' + String(err && err.message || err);
+        appendExecutionPlanStatus(outputEl, '[execute] failed: ' + String(err && err.message || err));
       })
       .finally(() => {
         previewBtn.disabled = !String(sourceSel.value || '').trim();
