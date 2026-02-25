@@ -7,9 +7,16 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
+)
+
+const (
+	agentJobHTTPTimeout       = 10 * time.Minute
+	agentHeartbeatHTTPTimeout = 3 * time.Second
+	agentLeaseHTTPTimeout     = 5 * time.Second
 )
 
 type pendingUpdateRequest struct {
@@ -24,6 +31,13 @@ type deferredControl struct {
 	pendingRestart        bool
 	pendingCacheWipe      bool
 	pendingJobHistoryWipe bool
+}
+
+type heartbeatResult struct {
+	resp              protocol.HeartbeatResponse
+	err               error
+	sentUpdateFailure string
+	sentRestartStatus string
 }
 
 func (d *deferredControl) setJobInProgress(v bool) {
@@ -123,20 +137,66 @@ func runLoop(ctx context.Context) error {
 	slog.Info("ciwi agent started", "agent_id", agentID, "server_url", serverURL)
 	defer slog.Info("ciwi agent stopped", "agent_id", agentID)
 
-	client := &http.Client{Timeout: 10 * time.Minute}
-	heartbeatTicker := time.NewTicker(protocol.AgentHeartbeatInterval)
-	defer heartbeatTicker.Stop()
+	jobClient := &http.Client{Timeout: agentJobHTTPTimeout}
+	heartbeatClient := &http.Client{Timeout: agentHeartbeatHTTPTimeout}
+	leaseClient := &http.Client{Timeout: agentLeaseHTTPTimeout}
 	leaseTicker := time.NewTicker(3 * time.Second)
 	defer leaseTicker.Stop()
 	capabilities := detectAgentCapabilities()
+	var capabilitiesMu sync.Mutex
+	getCapabilities := func() map[string]string {
+		capabilitiesMu.Lock()
+		defer capabilitiesMu.Unlock()
+		return cloneMap(capabilities)
+	}
+	setCapabilities := func(next map[string]string) {
+		capabilitiesMu.Lock()
+		capabilities = next
+		capabilitiesMu.Unlock()
+	}
+
 	pendingUpdateFailure := ""
 	pendingRestartStatus := ""
+	var heartbeatStateMu sync.Mutex
+	getHeartbeatState := func() (string, string) {
+		heartbeatStateMu.Lock()
+		defer heartbeatStateMu.Unlock()
+		return pendingUpdateFailure, pendingRestartStatus
+	}
+	setPendingUpdateFailure := func(value string) {
+		heartbeatStateMu.Lock()
+		pendingUpdateFailure = strings.TrimSpace(value)
+		heartbeatStateMu.Unlock()
+	}
+	setPendingRestartStatus := func(value string) {
+		heartbeatStateMu.Lock()
+		pendingRestartStatus = strings.TrimSpace(value)
+		heartbeatStateMu.Unlock()
+	}
+	ackHeartbeatState := func(sentUpdateFailure, sentRestartStatus string) {
+		heartbeatStateMu.Lock()
+		defer heartbeatStateMu.Unlock()
+		if pendingUpdateFailure == sentUpdateFailure {
+			pendingUpdateFailure = ""
+		}
+		if pendingRestartStatus == sentRestartStatus {
+			pendingRestartStatus = ""
+		}
+	}
 	control := &deferredControl{}
 	type jobResult struct {
 		jobID string
 		err   error
 	}
 	jobDoneCh := make(chan jobResult, 1)
+	heartbeatRespCh := make(chan heartbeatResult, 4)
+	heartbeatKickCh := make(chan struct{}, 1)
+	triggerHeartbeat := func() {
+		select {
+		case heartbeatKickCh <- struct{}{}:
+		default:
+		}
+	}
 
 	runOrDeferUpdate := func(target, repository, apiBase string) {
 		control.requestUpdate(target, repository, apiBase, func() {
@@ -145,25 +205,20 @@ func runLoop(ctx context.Context) error {
 			slog.Info("server requested agent update", "target_version", target)
 			if err := selfUpdateAndRestart(ctx, target, repository, apiBase, os.Args[1:]); err != nil {
 				slog.Error("agent self-update failed", "error", err)
-				pendingUpdateFailure = err.Error()
+				setPendingUpdateFailure(err.Error())
+				triggerHeartbeat()
 			}
 		})
 	}
 	runOrDeferRestart := func() {
 		control.requestRestart(func() {
-			pendingRestartStatus = "restart deferred: agent busy with active job"
+			setPendingRestartStatus("restart deferred: agent busy with active job")
+			triggerHeartbeat()
 			slog.Info("server requested agent restart; deferring until current job completes")
 		}, func() {
 			slog.Info("server requested agent restart")
-			pendingRestartStatus = requestAgentRestart()
-			if pendingRestartStatus != "" {
-				if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
-					slog.Error("heartbeat failed while reporting restart status", "error", err)
-				} else {
-					pendingUpdateFailure = ""
-					pendingRestartStatus = ""
-				}
-			}
+			setPendingRestartStatus(requestAgentRestart())
+			triggerHeartbeat()
 		})
 	}
 	runOrDeferCacheWipe := func() {
@@ -193,20 +248,11 @@ func runLoop(ctx context.Context) error {
 		})
 	}
 
-	if hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
-		slog.Error("initial heartbeat failed", "error", err)
-	} else {
-		pendingUpdateFailure = ""
-		pendingRestartStatus = ""
+	processHeartbeat := func(hb protocol.HeartbeatResponse) {
 		if hb.RefreshToolsRequested {
-			capabilities = detectAgentCapabilities()
+			setCapabilities(detectAgentCapabilities())
 			slog.Info("server requested tools refresh")
-			if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
-				slog.Error("heartbeat failed", "error", err)
-			} else {
-				pendingUpdateFailure = ""
-				pendingRestartStatus = ""
-			}
+			triggerHeartbeat()
 		}
 		if hb.UpdateRequested {
 			runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
@@ -222,6 +268,38 @@ func runLoop(ctx context.Context) error {
 		}
 	}
 
+	go func() {
+		ticker := time.NewTicker(protocol.AgentHeartbeatInterval)
+		defer ticker.Stop()
+
+		send := func() {
+			updateFailure, restartStatus := getHeartbeatState()
+			hb, err := sendHeartbeat(ctx, heartbeatClient, serverURL, agentID, hostname, getCapabilities(), updateFailure, restartStatus)
+			res := heartbeatResult{
+				resp:              hb,
+				err:               err,
+				sentUpdateFailure: updateFailure,
+				sentRestartStatus: restartStatus,
+			}
+			select {
+			case heartbeatRespCh <- res:
+			case <-ctx.Done():
+			}
+		}
+
+		send()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				send()
+			case <-heartbeatKickCh:
+				send()
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -231,41 +309,18 @@ func runLoop(ctx context.Context) error {
 				slog.Error("execute job failed", "job_execution_id", done.jobID, "error", done.err)
 			}
 			control.flushDeferred(runOrDeferUpdate, runOrDeferRestart, runOrDeferCacheWipe, runOrDeferJobHistoryWipe)
-		case <-heartbeatTicker.C:
-			hb, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus)
-			if err != nil {
-				slog.Error("heartbeat failed", "error", err)
+		case hbRes := <-heartbeatRespCh:
+			if hbRes.err != nil {
+				slog.Error("heartbeat failed", "error", hbRes.err)
 			} else {
-				pendingUpdateFailure = ""
-				pendingRestartStatus = ""
-				if hb.RefreshToolsRequested {
-					capabilities = detectAgentCapabilities()
-					slog.Info("server requested tools refresh")
-					if _, err := sendHeartbeat(ctx, client, serverURL, agentID, hostname, capabilities, pendingUpdateFailure, pendingRestartStatus); err != nil {
-						slog.Error("heartbeat failed", "error", err)
-					} else {
-						pendingUpdateFailure = ""
-						pendingRestartStatus = ""
-					}
-				}
-				if hb.UpdateRequested {
-					runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
-				}
-				if hb.RestartRequested {
-					runOrDeferRestart()
-				}
-				if hb.WipeCacheRequested {
-					runOrDeferCacheWipe()
-				}
-				if hb.FlushJobHistoryRequested {
-					runOrDeferJobHistoryWipe()
-				}
+				ackHeartbeatState(hbRes.sentUpdateFailure, hbRes.sentRestartStatus)
+				processHeartbeat(hbRes.resp)
 			}
 		case <-leaseTicker.C:
 			if control.jobInProgress {
 				continue
 			}
-			job, err := leaseJob(ctx, client, serverURL, agentID, capabilities)
+			job, err := leaseJob(ctx, leaseClient, serverURL, agentID, getCapabilities())
 			if err != nil {
 				slog.Error("lease failed", "error", err)
 				continue
@@ -274,11 +329,11 @@ func runLoop(ctx context.Context) error {
 				continue
 			}
 			control.setJobInProgress(true)
-			jobCaps := cloneMap(capabilities)
+			jobCaps := getCapabilities()
 			go func(leased protocol.JobExecution, caps map[string]string) {
 				jobDoneCh <- jobResult{
 					jobID: leased.ID,
-					err:   executeLeasedJob(ctx, client, serverURL, agentID, workDir, caps, leased),
+					err:   executeLeasedJob(ctx, jobClient, serverURL, agentID, workDir, caps, leased),
 				}
 			}(*job, jobCaps)
 		}
