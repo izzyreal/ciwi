@@ -10,12 +10,13 @@ import (
 )
 
 type enqueuePipelineOptions struct {
-	forcedDep             *pipelineDependencyContext
-	forcedRun             *pipelineRunContext
-	metaPatch             map[string]string
-	blocked               bool
-	sourceRefOverride     string
-	sourceRefOverrideRepo string
+	forcedDep              *pipelineDependencyContext
+	forcedRun              *pipelineRunContext
+	metaPatch              map[string]string
+	blocked                bool
+	allowSelectionNeedsGap bool
+	sourceRefOverride      string
+	sourceRefOverrideRepo  string
 }
 
 type pendingJob struct {

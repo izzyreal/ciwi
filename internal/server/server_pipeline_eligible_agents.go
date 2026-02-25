@@ -28,7 +28,7 @@ func (s *stateStore) pipelineEligibleAgentsHandler(w http.ResponseWriter, p stor
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	_, pending, err := s.preparePendingPipelineJobs(p, &selection, enqueuePipelineOptions{})
+	_, pending, err := s.preparePendingPipelineJobs(p, &selection, enqueuePipelineOptions{allowSelectionNeedsGap: true})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -121,10 +121,11 @@ func (s *stateStore) preparePendingPipelineChainJobs(ch store.PersistedPipelineC
 			meta["chain_depends_on_pipelines"] = strings.Join(chainDeps, ",")
 		}
 		opts := enqueuePipelineOptions{
-			metaPatch:             meta,
-			blocked:               len(chainDeps) > 0,
-			sourceRefOverride:     overrideSourceRef,
-			sourceRefOverrideRepo: overrideRepo,
+			metaPatch:              meta,
+			blocked:                len(chainDeps) > 0,
+			allowSelectionNeedsGap: true,
+			sourceRefOverride:      overrideSourceRef,
+			sourceRefOverrideRepo:  overrideRepo,
 		}
 		if i > 0 {
 			opts.forcedDep = &pipelineDependencyContext{

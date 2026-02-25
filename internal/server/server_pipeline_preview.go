@@ -113,7 +113,7 @@ func decodeRunPreviewRequest(r *http.Request) (runPreviewRequest, *protocol.RunP
 }
 
 func (s *stateStore) previewSinglePipelineDryRun(p store.PersistedPipeline, req runPreviewRequest, sel *protocol.RunPipelineSelectionRequest) ([]pendingJob, bool, string, []string, error) {
-	opts := enqueuePipelineOptions{}
+	opts := enqueuePipelineOptions{allowSelectionNeedsGap: true}
 	if sourceRef := normalizeSourceRef(sel); sourceRef != "" {
 		if strings.TrimSpace(p.SourceRepo) == "" {
 			return nil, false, "", nil, fmt.Errorf("source_ref override requires pipeline vcs_source.repo")
@@ -142,7 +142,11 @@ func (s *stateStore) previewSinglePipelineDryRun(p store.PersistedPipeline, req 
 		pCopy.SourceRef = strings.TrimSpace(runCtx.SourceRefRaw)
 	}
 	runID := fmt.Sprintf("preview-%d", time.Now().UTC().UnixNano())
-	pending, err := s.buildPendingPipelineJobs(pCopy, sel, enqueuePipelineOptions{forcedDep: &depCtx, forcedRun: &runCtx}, runCtx, depCtx, runID)
+	pending, err := s.buildPendingPipelineJobs(pCopy, sel, enqueuePipelineOptions{
+		forcedDep:              &depCtx,
+		forcedRun:              &runCtx,
+		allowSelectionNeedsGap: true,
+	}, runCtx, depCtx, runID)
 	if err != nil {
 		return nil, false, "", nil, err
 	}
@@ -196,8 +200,9 @@ func (s *stateStore) previewPipelineChainDryRun(ch store.PersistedPipelineChain,
 			meta["chain_depends_on_pipelines"] = strings.Join(chainDeps, ",")
 		}
 		opts := enqueuePipelineOptions{
-			metaPatch: meta,
-			blocked:   len(chainDeps) > 0,
+			metaPatch:              meta,
+			blocked:                len(chainDeps) > 0,
+			allowSelectionNeedsGap: true,
 		}
 		depCtx := firstDep
 		runCtx := firstCtx

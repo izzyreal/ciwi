@@ -694,7 +694,7 @@ function openDryRunPreviewModal(opts) {
   const previewBtn = document.getElementById('dryRunPreviewRunBtn');
   const executeBtn = document.getElementById('dryRunPreviewExecuteBtn');
   if (!titleEl || !subtitleEl || !sourceSel || !agentSel || !cachedOnly || !outputEl || !closeBtn || !previewBtn || !executeBtn) {
-    return Promise.reject(new Error('dry run preview modal elements unavailable'));
+    return Promise.reject(new Error('execution plan modal elements unavailable'));
   }
   titleEl.textContent = String(options.title || 'Execution Plan').trim() || 'Execution Plan';
   subtitleEl.textContent = String(options.subtitle || '').trim();
@@ -747,14 +747,14 @@ function openDryRunPreviewModal(opts) {
       });
   };
   const runPreview = () => {
-    outputEl.textContent = 'Previewing...';
+    outputEl.textContent = 'Loading execution plan...';
     previewBtn.disabled = true;
     return apiJSON(previewPath, { method: 'POST', body: JSON.stringify(buildPayload()) })
       .then((resp) => {
         outputEl.textContent = formatDryRunPreviewOutput(resp);
       })
       .catch((err) => {
-        outputEl.textContent = 'Preview failed: ' + String(err && err.message || err);
+        outputEl.textContent = 'Execution plan failed: ' + String(err && err.message || err);
       })
       .finally(() => {
         previewBtn.disabled = !String(sourceSel.value || '').trim();
@@ -822,7 +822,7 @@ function openDryRunPreviewModal(opts) {
     })
     .then(() => runPreview())
     .catch((err) => {
-      outputEl.textContent = 'Failed to initialize dry run preview: ' + String(err && err.message || err);
+      outputEl.textContent = 'Failed to initialize execution plan: ' + String(err && err.message || err);
       previewBtn.disabled = true;
       executeBtn.disabled = true;
       sourceSel.disabled = true;

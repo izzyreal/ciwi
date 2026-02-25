@@ -618,6 +618,100 @@ pipelines:
 	}
 }
 
+func TestPipelineDryRunPreviewSelectionAllowsMissingNeeds(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    jobs:
+      - id: unit-tests
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo unit
+      - id: build-cross-platform
+        needs:
+          - unit-tests
+        runs_on:
+          os: linux
+          arch: amd64
+        matrix:
+          include:
+            - name: linux-amd64
+              goos: linux
+              goarch: amd64
+            - name: linux-arm64
+              goos: linux
+              goarch: arm64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+`)
+	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+
+	s.mu.Lock()
+	s.agents["agent-linux"] = agentState{
+		OS:           "linux",
+		Arch:         "amd64",
+		Capabilities: map[string]string{"shells": "posix"},
+	}
+	s.mu.Unlock()
+
+	selection := map[string]any{
+		"pipeline_job_id": "build-cross-platform",
+		"matrix_index":    0,
+	}
+
+	eligibleResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/eligible-agents", selection)
+	if eligibleResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for eligible-agents with selection, got %d body=%s", eligibleResp.StatusCode, readBody(t, eligibleResp))
+	}
+	var eligiblePayload struct {
+		EligibleAgentIDs []string `json:"eligible_agent_ids"`
+		PendingJobs      int      `json:"pending_jobs"`
+	}
+	decodeJSONBody(t, eligibleResp, &eligiblePayload)
+	if eligiblePayload.PendingJobs != 1 {
+		t.Fatalf("expected pending_jobs=1 for selected matrix entry, got %d", eligiblePayload.PendingJobs)
+	}
+	if len(eligiblePayload.EligibleAgentIDs) != 1 || eligiblePayload.EligibleAgentIDs[0] != "agent-linux" {
+		t.Fatalf("unexpected eligible agents payload: %+v", eligiblePayload.EligibleAgentIDs)
+	}
+
+	previewResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/dry-run-preview", selection)
+	if previewResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for dry-run-preview with selection, got %d body=%s", previewResp.StatusCode, readBody(t, previewResp))
+	}
+	var previewPayload struct {
+		PendingJobs []struct {
+			PipelineJobID     string `json:"pipeline_job_id"`
+			MatrixName        string `json:"matrix_name"`
+			DependencyBlocked bool   `json:"dependency_blocked"`
+		} `json:"pending_jobs"`
+	}
+	decodeJSONBody(t, previewResp, &previewPayload)
+	if len(previewPayload.PendingJobs) != 1 {
+		t.Fatalf("expected one selected preview job, got %+v", previewPayload.PendingJobs)
+	}
+	if got := strings.TrimSpace(previewPayload.PendingJobs[0].PipelineJobID); got != "build-cross-platform" {
+		t.Fatalf("expected selected preview job build-cross-platform, got %q", got)
+	}
+	if got := strings.TrimSpace(previewPayload.PendingJobs[0].MatrixName); got != "linux-amd64" {
+		t.Fatalf("expected matrix_name linux-amd64 for matrix_index=0, got %q", got)
+	}
+	if !previewPayload.PendingJobs[0].DependencyBlocked {
+		t.Fatalf("expected preview selection to remain dependency-blocked when upstream needs are excluded")
+	}
+}
+
 func TestPipelineDryRunPreviewOfflineCachedOnlyFailsWithoutCacheForVersionedPipeline(t *testing.T) {
 	ts, s := newTestHTTPServerWithState(t)
 	defer ts.Close()

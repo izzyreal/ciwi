@@ -21,6 +21,7 @@ func (s *stateStore) buildPendingPipelineJobs(
 	pending := make([]pendingJob, 0)
 	sortedJobs := p.SortedJobs()
 	selectedJobIDs := map[string]bool{}
+	missingNeedsByJobID := map[string][]string{}
 	for _, pj := range sortedJobs {
 		if selection != nil && strings.TrimSpace(selection.PipelineJobID) != "" && selection.PipelineJobID != pj.ID {
 			continue
@@ -37,7 +38,10 @@ func (s *stateStore) buildPendingPipelineJobs(
 				continue
 			}
 			if !selectedJobIDs[need] {
-				return nil, fmt.Errorf("selection excludes required job %q needed by %q", need, pj.ID)
+				if !opts.allowSelectionNeedsGap {
+					return nil, fmt.Errorf("selection excludes required job %q needed by %q", need, pj.ID)
+				}
+				missingNeedsByJobID[pj.ID] = append(missingNeedsByJobID[pj.ID], need)
 			}
 		}
 		needs := normalizePipelineJobNeeds(pj.Needs)
@@ -73,6 +77,7 @@ func (s *stateStore) buildPendingPipelineJobs(
 				vars,
 				originalMatrixEntries,
 				needs,
+				missingNeedsByJobID[pj.ID],
 				selection,
 				opts,
 				runCtx,
@@ -106,6 +111,7 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	matrixVars map[string]string,
 	originalMatrixEntries []map[string]string,
 	needs []string,
+	missingNeeds []string,
 	selection *protocol.RunPipelineSelectionRequest,
 	opts enqueuePipelineOptions,
 	runCtx pipelineRunContext,
@@ -258,6 +264,9 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	if len(needs) > 0 {
 		metadata["needs_job_ids"] = strings.Join(needs, ",")
 		metadata["needs_blocked"] = "1"
+	}
+	if len(missingNeeds) > 0 {
+		metadata["missing_needs_job_ids"] = strings.Join(missingNeeds, ",")
 	}
 	if selection != nil && selection.DryRun {
 		env["CIWI_DRY_RUN"] = "1"
