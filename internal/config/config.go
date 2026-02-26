@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -49,9 +50,11 @@ type PipelineChain struct {
 }
 
 type PipelineVersioning struct {
-	File      string `yaml:"file,omitempty" json:"file,omitempty"`
-	TagPrefix string `yaml:"tag_prefix,omitempty" json:"tag_prefix,omitempty"`
-	AutoBump  string `yaml:"auto_bump,omitempty" json:"auto_bump,omitempty"`
+	File             string     `yaml:"file,omitempty" json:"file,omitempty"`
+	TagPrefix        string     `yaml:"tag_prefix,omitempty" json:"tag_prefix,omitempty"`
+	AutoBump         string     `yaml:"auto_bump,omitempty" json:"auto_bump,omitempty"`
+	AutoBumpVCSToken string     `yaml:"auto_bump_vcs_token,omitempty" json:"auto_bump_vcs_token,omitempty"`
+	AutoBumpVault    *StepVault `yaml:"auto_bump_vault,omitempty" json:"auto_bump_vault,omitempty"`
 }
 
 type Source struct {
@@ -185,10 +188,44 @@ func (cfg File) Validate() []string {
 					errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.file must be a relative in-repo path", i))
 				}
 			}
-			switch strings.TrimSpace(p.Versioning.AutoBump) {
+			autoBump := strings.TrimSpace(p.Versioning.AutoBump)
+			autoBumpVCSToken := strings.TrimSpace(p.Versioning.AutoBumpVCSToken)
+			switch autoBump {
 			case "", "patch", "minor", "major":
 			default:
 				errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.auto_bump must be one of patch,minor,major", i))
+			}
+			if autoBump != "" && autoBumpVCSToken == "" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.auto_bump_vcs_token is required when auto_bump is set", i))
+			}
+			if autoBump == "" && autoBumpVCSToken != "" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.auto_bump_vcs_token requires auto_bump to be set", i))
+			}
+			if p.Versioning.AutoBumpVault != nil {
+				errs = append(errs, validateVaultRef(fmt.Sprintf("pipelines[%d].versioning.auto_bump_vault", i), p.Versioning.AutoBumpVault)...)
+			}
+			if p.Versioning.AutoBumpVault != nil && autoBumpVCSToken == "" {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.auto_bump_vault requires auto_bump_vcs_token to be set", i))
+			}
+			placeholderNames := secretPlaceholderNames(autoBumpVCSToken)
+			if len(placeholderNames) > 0 {
+				if p.Versioning.AutoBumpVault == nil {
+					errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.auto_bump_vault is required when auto_bump_vcs_token uses secret placeholders", i))
+				} else {
+					secretNames := map[string]struct{}{}
+					for _, sec := range p.Versioning.AutoBumpVault.Secrets {
+						name := strings.TrimSpace(sec.Name)
+						if name == "" {
+							continue
+						}
+						secretNames[name] = struct{}{}
+					}
+					for _, name := range placeholderNames {
+						if _, ok := secretNames[name]; !ok {
+							errs = append(errs, fmt.Sprintf("pipelines[%d].versioning.auto_bump_vcs_token references secret %q which is not declared in versioning.auto_bump_vault.secrets", i, name))
+						}
+					}
+				}
 			}
 		}
 
@@ -327,21 +364,7 @@ func (cfg File) Validate() []string {
 					}
 				}
 				if st.Vault != nil {
-					if strings.TrimSpace(st.Vault.Connection) == "" {
-						errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].vault.connection is required", i, j, k))
-					}
-					seenStepSecrets := map[string]struct{}{}
-					for si, sec := range st.Vault.Secrets {
-						if strings.TrimSpace(sec.Name) == "" || strings.TrimSpace(sec.Path) == "" || strings.TrimSpace(sec.Key) == "" {
-							errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].vault.secrets[%d] requires name, path and key", i, j, k, si))
-						}
-						if strings.TrimSpace(sec.Name) != "" {
-							if _, ok := seenStepSecrets[sec.Name]; ok {
-								errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].vault.secrets[%d] duplicate name %q", i, j, k, si, sec.Name))
-							}
-							seenStepSecrets[sec.Name] = struct{}{}
-						}
-					}
+					errs = append(errs, validateVaultRef(fmt.Sprintf("pipelines[%d].jobs[%d].steps[%d].vault", i, j, k), st.Vault)...)
 				}
 			}
 		}
@@ -418,6 +441,59 @@ func (cfg File) Validate() []string {
 		}
 	}
 
+	return errs
+}
+
+var secretPlaceholderPattern = regexp.MustCompile(`\{\{\s*secret\.([a-zA-Z0-9_\-]+)\s*\}\}`)
+
+func secretPlaceholderNames(value string) []string {
+	matches := secretPlaceholderPattern.FindAllStringSubmatch(value, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(matches))
+	seen := map[string]struct{}{}
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		name := strings.TrimSpace(match[1])
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		names = append(names, name)
+		seen[name] = struct{}{}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return names
+}
+
+func validateVaultRef(pathPrefix string, vault *StepVault) []string {
+	if vault == nil {
+		return nil
+	}
+	errs := []string{}
+	if strings.TrimSpace(vault.Connection) == "" {
+		errs = append(errs, fmt.Sprintf("%s.connection is required", pathPrefix))
+	}
+	seenSecrets := map[string]struct{}{}
+	for i, sec := range vault.Secrets {
+		name := strings.TrimSpace(sec.Name)
+		if name == "" || strings.TrimSpace(sec.Path) == "" || strings.TrimSpace(sec.Key) == "" {
+			errs = append(errs, fmt.Sprintf("%s.secrets[%d] requires name, path and key", pathPrefix, i))
+		}
+		if name != "" {
+			if _, ok := seenSecrets[name]; ok {
+				errs = append(errs, fmt.Sprintf("%s.secrets[%d] duplicate name %q", pathPrefix, i, sec.Name))
+			}
+			seenSecrets[name] = struct{}{}
+		}
+	}
 	return errs
 }
 

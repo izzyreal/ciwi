@@ -14,7 +14,10 @@ func TestBuildAutoBumpStepScriptUsesSafeBranchResolution(t *testing.T) {
 	assertScriptContains(t, script, "auto bump skipped: branch $BRANCH moved from ${CIWI_PIPELINE_VERSION_RAW} to ${CURRENT_VERSION}")
 	assertScriptContains(t, script, "failed to resolve target branch for auto bump push")
 	assertScriptContains(t, script, "auto bump push failed; branch $BRANCH advanced during release")
-	assertScriptContains(t, script, `git push origin "HEAD:refs/heads/${BRANCH}"`)
+	assertScriptContains(t, script, `AUTH_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"`)
+	assertScriptContains(t, script, `PUSH_REMOTE="origin"`)
+	assertScriptContains(t, script, `PUSH_REMOTE="https://x-access-token:${AUTH_TOKEN}@github.com/${CIWI_PIPELINE_SOURCE_REPO#https://github.com/}"`)
+	assertScriptContains(t, script, `git push "$PUSH_REMOTE" "HEAD:refs/heads/${BRANCH}"`)
 	if strings.Contains(script, `BRANCH="main"`) {
 		t.Fatalf("auto bump script must not hardcode main fallback")
 	}

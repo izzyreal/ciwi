@@ -97,13 +97,21 @@ func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selec
 		if len(pending) != 1 {
 			return pipelineRunContext{}, nil, fmt.Errorf("versioning.auto_bump requires exactly one job execution in the pipeline run")
 		}
+		if strings.TrimSpace(runCtx.AutoBumpVCSToken) == "" {
+			return pipelineRunContext{}, nil, fmt.Errorf("versioning.auto_bump_vcs_token is required when auto_bump is set")
+		}
 		autoBumpScript := buildAutoBumpStepScript(runCtx.AutoBump)
+		autoBumpEnv := map[string]string{"GITHUB_TOKEN": strings.TrimSpace(runCtx.AutoBumpVCSToken)}
+		autoBumpSecrets := append([]protocol.ProjectSecretSpec(nil), runCtx.AutoBumpSecrets...)
 		pending[0].script = pending[0].script + "\n" + autoBumpScript
 		pending[0].stepPlan = append(pending[0].stepPlan, protocol.JobStepPlanItem{
-			Index:  len(pending[0].stepPlan) + 1,
-			Total:  len(pending[0].stepPlan) + 1,
-			Name:   "auto bump",
-			Script: autoBumpScript,
+			Index:           len(pending[0].stepPlan) + 1,
+			Total:           len(pending[0].stepPlan) + 1,
+			Name:            "auto bump",
+			Script:          autoBumpScript,
+			Env:             autoBumpEnv,
+			VaultConnection: strings.TrimSpace(runCtx.AutoBumpVaultConn),
+			VaultSecrets:    autoBumpSecrets,
 		})
 		if next := buildAutoBumpNextVersion(runCtx.VersionRaw, runCtx.AutoBump); next != "" {
 			pending[0].metadata["next_version"] = next

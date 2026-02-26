@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
@@ -20,11 +22,17 @@ func resolvePipelineRunContextWithReporter(p store.PersistedPipeline, dep pipeli
 	file := strings.TrimSpace(p.Versioning.File)
 	tagPrefix := strings.TrimSpace(p.Versioning.TagPrefix)
 	autoBump := strings.TrimSpace(p.Versioning.AutoBump)
+	autoBumpVCSToken := strings.TrimSpace(p.Versioning.AutoBumpVCSToken)
 	versioningEnabled := file != "" || tagPrefix != "" || autoBump != ""
 	if versioningEnabled {
 		ctx.VersionFile = file
 		ctx.TagPrefix = tagPrefix
 		ctx.AutoBump = autoBump
+		ctx.AutoBumpVCSToken = autoBumpVCSToken
+		if p.Versioning.AutoBumpVault != nil {
+			ctx.AutoBumpVaultConn = strings.TrimSpace(p.Versioning.AutoBumpVault.Connection)
+			ctx.AutoBumpSecrets = toProtocolStepVaultSecrets(p.Versioning.AutoBumpVault.Secrets)
+		}
 		if ctx.VersionFile == "" {
 			ctx.VersionFile = "VERSION"
 		}
@@ -88,6 +96,23 @@ func resolvePipelineRunContextWithReporter(p store.PersistedPipeline, dep pipeli
 
 func resolvePipelineRunContext(p store.PersistedPipeline, dep pipelineDependencyContext) (pipelineRunContext, error) {
 	return resolvePipelineRunContextWithReporter(p, dep, nil)
+}
+
+func toProtocolStepVaultSecrets(in []config.StepVaultSecretRef) []protocol.ProjectSecretSpec {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.ProjectSecretSpec, 0, len(in))
+	for _, sec := range in {
+		out = append(out, protocol.ProjectSecretSpec{
+			Name:      strings.TrimSpace(sec.Name),
+			Mount:     strings.TrimSpace(sec.Mount),
+			Path:      strings.TrimSpace(sec.Path),
+			Key:       strings.TrimSpace(sec.Key),
+			KVVersion: sec.KVVersion,
+		})
+	}
+	return out
 }
 
 func readVersionFromRepo(repoURL, sourceRef, versionFile string, report resolveStepReporter) (string, string, error) {
@@ -220,7 +245,16 @@ EOF
   printf '%%s\n' "$NEXT_VERSION" > "${CIWI_PIPELINE_VERSION_FILE}"
   git add "${CIWI_PIPELINE_VERSION_FILE}"
   git commit -m "chore: bump ${CIWI_PIPELINE_VERSION_FILE} to ${NEXT_VERSION} [skip ci]"
-  if ! git push origin "HEAD:refs/heads/${BRANCH}"; then
+  PUSH_REMOTE="origin"
+  AUTH_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  if [ -n "$AUTH_TOKEN" ] && [ -n "${CIWI_PIPELINE_SOURCE_REPO:-}" ]; then
+    case "${CIWI_PIPELINE_SOURCE_REPO}" in
+      https://github.com/*)
+        PUSH_REMOTE="https://x-access-token:${AUTH_TOKEN}@github.com/${CIWI_PIPELINE_SOURCE_REPO#https://github.com/}"
+        ;;
+    esac
+  fi
+  if ! git push "$PUSH_REMOTE" "HEAD:refs/heads/${BRANCH}"; then
     echo "auto bump push failed; branch $BRANCH advanced during release"
     exit 1
   fi

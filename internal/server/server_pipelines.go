@@ -33,6 +33,9 @@ type pipelineRunContext struct {
 	VersionFile       string
 	TagPrefix         string
 	AutoBump          string
+	AutoBumpVCSToken  string
+	AutoBumpVaultConn string
+	AutoBumpSecrets   []protocol.ProjectSecretSpec
 }
 
 func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request) {

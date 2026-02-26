@@ -191,6 +191,67 @@ pipelines:
 	}
 }
 
+func TestPreparePendingPipelineJobsAutoBumpUsesExplicitAuthContext(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    vcs_source:
+      repo: https://github.com/acme/repo.git
+      ref: refs/heads/main
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`), "auto-bump-explicit-auth")
+
+	runCtx := pipelineRunContext{
+		VersionRaw:        "1.2.3",
+		Version:           "v1.2.3",
+		TagPrefix:         "v",
+		VersionFile:       "VERSION",
+		AutoBump:          "patch",
+		AutoBumpVCSToken:  "{{ secret.github-secret }}",
+		AutoBumpVaultConn: "home-vault",
+		AutoBumpSecrets: []protocol.ProjectSecretSpec{
+			{Name: "github-secret", Mount: "kv", Path: "gh", Key: "token"},
+		},
+		SourceRefRaw: "refs/heads/main",
+	}
+	depCtx := pipelineDependencyContext{}
+	_, pending, err := s.preparePendingPipelineJobs(p, nil, enqueuePipelineOptions{
+		forcedRun: &runCtx,
+		forcedDep: &depCtx,
+	})
+	if err != nil {
+		t.Fatalf("prepare pending with auto bump explicit auth: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending job, got %d", len(pending))
+	}
+	if len(pending[0].stepPlan) != 2 {
+		t.Fatalf("expected run step + auto bump step, got %d", len(pending[0].stepPlan))
+	}
+	auto := pending[0].stepPlan[1]
+	if got := strings.TrimSpace(auto.Name); got != "auto bump" {
+		t.Fatalf("expected auto bump step name, got %q", got)
+	}
+	if got := strings.TrimSpace(auto.Env["GITHUB_TOKEN"]); got != "{{ secret.github-secret }}" {
+		t.Fatalf("expected explicit auto bump token env, got %q", got)
+	}
+	if got := strings.TrimSpace(auto.VaultConnection); got != "home-vault" {
+		t.Fatalf("expected explicit auto bump vault connection, got %q", got)
+	}
+	if len(auto.VaultSecrets) != 1 || auto.VaultSecrets[0].Name != "github-secret" {
+		t.Fatalf("expected explicit auto bump vault secrets, got %+v", auto.VaultSecrets)
+	}
+}
+
 func TestEnqueuePersistedPipelineWithoutSourceCreatesArtifactOnlyJob(t *testing.T) {
 	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
 version: 1

@@ -591,6 +591,14 @@ pipelines:
       file: VERSION
       tag_prefix: v
       auto_bump: patch
+      auto_bump_vcs_token: "{{ secret.github-secret }}"
+      auto_bump_vault:
+        connection: home-vault
+        secrets:
+          - name: github-secret
+            mount: kv
+            path: gh
+            key: token
     jobs:
       - id: publish
         timeout_seconds: 60
@@ -605,6 +613,15 @@ pipelines:
 	}
 	if got := cfg.Pipelines[0].Versioning.AutoBump; got != "patch" {
 		t.Fatalf("unexpected auto_bump: %q", got)
+	}
+	if got := cfg.Pipelines[0].Versioning.AutoBumpVCSToken; got != "{{ secret.github-secret }}" {
+		t.Fatalf("unexpected auto_bump_vcs_token: %q", got)
+	}
+	if cfg.Pipelines[0].Versioning.AutoBumpVault == nil {
+		t.Fatalf("expected auto_bump_vault to be parsed")
+	}
+	if got := cfg.Pipelines[0].Versioning.AutoBumpVault.Connection; got != "home-vault" {
+		t.Fatalf("unexpected auto_bump_vault.connection: %q", got)
 	}
 }
 
@@ -625,6 +642,81 @@ pipelines:
 `), "test-invalid-auto-bump")
 	if err == nil || !strings.Contains(err.Error(), "auto_bump") {
 		t.Fatalf("expected auto_bump validation error, got: %v", err)
+	}
+}
+
+func TestParseRejectsAutoBumpWithoutVCSToken(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    versioning:
+      auto_bump: patch
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - run: echo publish
+`), "test-auto-bump-missing-token")
+	if err == nil || !strings.Contains(err.Error(), "auto_bump_vcs_token is required") {
+		t.Fatalf("expected auto_bump_vcs_token required validation error, got: %v", err)
+	}
+}
+
+func TestParseRejectsAutoBumpSecretTokenWithoutVault(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    versioning:
+      auto_bump: patch
+      auto_bump_vcs_token: "{{ secret.github-secret }}"
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - run: echo publish
+`), "test-auto-bump-secret-token-no-vault")
+	if err == nil || !strings.Contains(err.Error(), "auto_bump_vault is required") {
+		t.Fatalf("expected auto_bump_vault required validation error, got: %v", err)
+	}
+}
+
+func TestParseRejectsAutoBumpSecretTokenNotInVaultSecrets(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: release
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    versioning:
+      auto_bump: patch
+      auto_bump_vcs_token: "{{ secret.github-secret }}"
+      auto_bump_vault:
+        connection: home-vault
+        secrets:
+          - name: other-secret
+            mount: kv
+            path: gh
+            key: token
+    jobs:
+      - id: publish
+        timeout_seconds: 60
+        steps:
+          - run: echo publish
+`), "test-auto-bump-secret-token-missing-secret-map")
+	if err == nil || !strings.Contains(err.Error(), "is not declared in versioning.auto_bump_vault.secrets") {
+		t.Fatalf("expected auto_bump_vault secret mapping validation error, got: %v", err)
 	}
 }
 
