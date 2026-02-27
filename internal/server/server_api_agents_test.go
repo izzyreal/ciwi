@@ -154,6 +154,7 @@ func TestAgentListAndDetailUseConsistentViewFields(t *testing.T) {
 		AgentID         string `json:"agent_id"`
 		Hostname        string `json:"hostname"`
 		Version         string `json:"version"`
+		Deactivated     bool   `json:"deactivated"`
 		NeedsUpdate     bool   `json:"needs_update"`
 		UpdateRequested bool   `json:"update_requested"`
 		UpdateTarget    string `json:"update_target"`
@@ -191,6 +192,9 @@ func TestAgentListAndDetailUseConsistentViewFields(t *testing.T) {
 	}
 	if listAgent.Version != detailAgent.Version {
 		t.Fatalf("version mismatch list=%q detail=%q", listAgent.Version, detailAgent.Version)
+	}
+	if listAgent.Deactivated != detailAgent.Deactivated {
+		t.Fatalf("deactivated mismatch list=%v detail=%v", listAgent.Deactivated, detailAgent.Deactivated)
 	}
 	if listAgent.NeedsUpdate != detailAgent.NeedsUpdate {
 		t.Fatalf("needs_update mismatch list=%v detail=%v", listAgent.NeedsUpdate, detailAgent.NeedsUpdate)

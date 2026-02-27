@@ -42,8 +42,9 @@ const agentRuntimeJS = `
         }
         const s = statusForLastSeen(a.last_seen_utc || '');
         document.getElementById('subtitle').textContent = a.agent_id || agentID;
-        document.getElementById('statusText').innerHTML = 'Health: <span class="' + s.cls + '">' + s.label + '</span>';
+        document.getElementById('statusText').innerHTML = 'Health: <span class="' + s.cls + '">' + s.label + '</span> | Activation: ' + (a.deactivated ? '<span class="offline">deactivated</span>' : '<span class="ok">active</span>');
 
+        const activationButton = document.getElementById('activationBtn');
         const updateButton = document.getElementById('updateBtn');
         const restartButton = document.getElementById('restartBtn');
         const wipeCacheButton = document.getElementById('wipeCacheBtn');
@@ -52,6 +53,7 @@ const agentRuntimeJS = `
         const runAdhocButton = document.getElementById('runAdhocBtn');
         adhocShells = parseAgentShells(a.capabilities || {});
         const showUpdate = (!a.update_in_progress) && (!!a.update_requested || (!!a.needs_update && s.label !== 'offline'));
+        activationButton.textContent = a.deactivated ? 'Activate' : 'Deactivate';
         updateButton.style.display = showUpdate ? 'inline-block' : 'none';
         updateButton.textContent = a.update_requested ? 'Retry Update Now' : 'Update';
         restartButton.style.display = s.label !== 'offline' ? 'inline-block' : 'none';
@@ -74,6 +76,7 @@ const agentRuntimeJS = `
           metaRow('Hostname', escapeHtml(a.hostname || '')) +
           metaRow('Platform', escapeHtml((a.os || '') + '/' + (a.arch || ''))) +
           metaRow('Version', escapeHtml(a.version || '')) +
+          metaRow('Activation', a.deactivated ? '<span class="offline">Deactivated</span>' : '<span class="ok">Active</span>') +
           metaRow('Last Seen', escapeHtml(formatTimestamp(a.last_seen_utc || ''))) +
           metaRow('Capabilities', formatCapabilitiesInlineCode(a.capabilities || {})) +
           metaRow('Update status', updateState || '<span class="muted">No pending update</span>');
@@ -90,6 +93,27 @@ const agentRuntimeJS = `
     }
 
     document.getElementById('refreshBtn').onclick = () => refreshAgent(true);
+    document.getElementById('activationBtn').onclick = async () => {
+      try {
+        const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const a = data.agent || {};
+        const isDeactivated = !!a.deactivated;
+        if (!isDeactivated) {
+          const confirmed = await showConfirmDialog({
+            title: 'Deactivate Agent',
+            message: 'Deactivate this agent? Active jobs will be cancelled.',
+            okLabel: 'Deactivate',
+          });
+          if (!confirmed) return;
+        }
+        await postAction(isDeactivated ? 'activate' : 'deactivate');
+        await refreshAgent(true);
+      } catch (e) {
+        await showAlertDialog({ title: 'Activation change failed', message: 'Activation change failed: ' + e.message });
+      }
+    };
     document.getElementById('updateBtn').onclick = async () => {
       try {
         await postAction('update');

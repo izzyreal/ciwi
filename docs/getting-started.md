@@ -74,3 +74,4 @@ In manual mode, read [`docs/configuration.md`](configuration.md) for env vars an
 - Config format and pipeline behavior: [`docs/pipelines.md`](pipelines.md)
 - Host/container tool requirements: [`docs/configuration.md`](configuration.md)
 - Runtime architecture and flows: [`docs/architecture.md`](architecture.md)
+- Runtime operations (including agent activate/deactivate): [`docs/operations.md`](operations.md)

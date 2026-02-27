@@ -69,6 +69,15 @@
 
 - Config parsing uses strict YAML field validation.
 - Machine behavior should rely on structured API payloads, not output log scraping.
+- `POST /api/v1/agents/{agentId}/actions` supports:
+  - `{"action":"activate"}`: marks agent active; leasing is allowed.
+  - `{"action":"deactivate"}`: marks agent deactivated; leasing is blocked.
+- Deactivation is server-side only (agent protocol is unchanged).
+- While deactivated, `POST /api/v1/agent/lease` returns `assigned=false` with message `agent is deactivated`.
+- If deactivation occurs while the agent has an active leased/running job, server applies the same terminal mutation as `POST /api/v1/jobs/{id}/cancel`:
+  - `status=failed`
+  - `error="cancelled by user"`
+  - append `[control] job cancelled by user` to output
 - `POST /api/v1/pipelines/{id}/run-selection` and `POST /api/v1/pipeline-chains/{id}/run` accept optional `execution_mode`:
   - `offline_cached` executes from cached pinned source context with safety guardrails.
 - Run payload fields (pipeline/chain run and preview family) may include:

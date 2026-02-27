@@ -140,6 +140,7 @@ const agentHTML = `<!doctype html>
       <div class="row" style="margin-bottom:10px;">
         <div id="statusText" class="muted"></div>
         <div>
+          <button id="activationBtn">Deactivate</button>
           <button id="updateBtn" style="display:none;">Update</button>
           <button id="restartBtn" style="display:none;">Restart Agent</button>
           <button id="wipeCacheBtn" style="display:none;">Wipe Cache</button>

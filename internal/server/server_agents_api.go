@@ -76,6 +76,72 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "action is required", http.StatusBadRequest)
 		return
 	}
+	if action == "activate" {
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		a.Deactivated = false
+		s.agentDeactivated[agentID] = false
+		a.RecentLog = appendAgentLog(a.RecentLog, "manual activation requested")
+		s.agents[agentID] = a
+		s.mu.Unlock()
+		if err := s.updateStateStore().SetAppState(agentDeactivatedStateKey(agentID), "0"); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   "agent activated",
+		})
+		return
+	}
+	if action == "deactivate" {
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		a.Deactivated = true
+		s.agentDeactivated[agentID] = true
+		a.RecentLog = appendAgentLog(a.RecentLog, "manual deactivation requested")
+		s.agents[agentID] = a
+		s.mu.Unlock()
+		if err := s.updateStateStore().SetAppState(agentDeactivatedStateKey(agentID), "1"); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		cancelled, err := s.cancelActiveJobsForAgent(agentID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if cancelled > 0 {
+			s.mu.Lock()
+			if a, ok := s.agents[agentID]; ok {
+				a.RecentLog = appendAgentLog(a.RecentLog, "deactivation cancelled active job count="+strconv.Itoa(cancelled))
+				s.agents[agentID] = a
+			}
+			s.mu.Unlock()
+		}
+		msg := "agent deactivated"
+		if cancelled > 0 {
+			msg += "; cancelled active jobs=" + strconv.Itoa(cancelled)
+		}
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   msg,
+		})
+		return
+	}
 	if action == "refresh-tools" {
 		s.mu.Lock()
 		a, ok := s.agents[agentID]

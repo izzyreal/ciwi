@@ -64,7 +64,11 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		hasActiveJob = active
 	}
 	s.mu.Lock()
-	prev := s.agents[hb.AgentID]
+	prev, hadPrev := s.agents[hb.AgentID]
+	deactivated := prev.Deactivated
+	if !hadPrev {
+		deactivated = s.agentDeactivated[hb.AgentID]
+	}
 	refreshTools := s.agentToolRefresh[hb.AgentID]
 	if refreshTools {
 		delete(s.agentToolRefresh, hb.AgentID)
@@ -208,6 +212,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		OS:                   hb.OS,
 		Arch:                 hb.Arch,
 		Version:              hb.Version,
+		Deactivated:          deactivated,
 		Capabilities:         hb.Capabilities,
 		LastSeenUTC:          now,
 		RecentLog:            append([]string(nil), prev.RecentLog...),
@@ -361,6 +366,14 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 	agentCaps := req.Capabilities
 	s.mu.Lock()
 	if a, ok := s.agents[req.AgentID]; ok {
+		if a.Deactivated {
+			s.mu.Unlock()
+			writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{
+				Assigned: false,
+				Message:  "agent is deactivated",
+			})
+			return
+		}
 		agentCaps = mergeCapabilities(a, req.Capabilities)
 	}
 	s.mu.Unlock()

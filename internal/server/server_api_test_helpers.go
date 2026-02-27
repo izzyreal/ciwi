@@ -73,6 +73,7 @@ func newTestHTTPServerWithState(t *testing.T) (*httptest.Server, *stateStore) {
 		agentRestarts:     make(map[string]bool),
 		agentCacheWipes:   make(map[string]bool),
 		agentHistoryWipes: make(map[string]bool),
+		agentDeactivated:  make(map[string]bool),
 		projectIcons:      make(map[int64]projectIconState),
 		db:                db,
 		artifactsDir:      artifactsDir,

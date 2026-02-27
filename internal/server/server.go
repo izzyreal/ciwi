@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ type agentState struct {
 	OS                   string            `json:"os"`
 	Arch                 string            `json:"arch"`
 	Version              string            `json:"version,omitempty"`
+	Deactivated          bool              `json:"deactivated,omitempty"`
 	Capabilities         map[string]string `json:"capabilities"`
 	LastSeenUTC          time.Time         `json:"last_seen_utc"`
 	RecentLog            []string          `json:"recent_log,omitempty"`
@@ -47,6 +49,7 @@ type stateStore struct {
 	agentRestarts     map[string]bool
 	agentCacheWipes   map[string]bool
 	agentHistoryWipes map[string]bool
+	agentDeactivated  map[string]bool
 	agentRollout      agentUpdateRolloutState
 	projectIcons      map[int64]projectIconState
 	db                *store.Store
@@ -83,6 +86,7 @@ func Run(ctx context.Context) error {
 		agentRestarts:     make(map[string]bool),
 		agentCacheWipes:   make(map[string]bool),
 		agentHistoryWipes: make(map[string]bool),
+		agentDeactivated:  make(map[string]bool),
 		agentRollout: agentUpdateRolloutState{
 			Slots: make(map[string]int),
 		},
@@ -98,6 +102,20 @@ func Run(ctx context.Context) error {
 		s.update.mu.Lock()
 		s.update.agentTarget = target
 		s.update.mu.Unlock()
+	}
+	if appState, err := db.ListAppState(); err == nil {
+		for key, value := range appState {
+			if !strings.HasPrefix(key, agentDeactivatedStatePrefix) {
+				continue
+			}
+			agentID := strings.TrimSpace(strings.TrimPrefix(key, agentDeactivatedStatePrefix))
+			if agentID == "" {
+				continue
+			}
+			if parseBooleanStateValue(value) {
+				s.agentDeactivated[agentID] = true
+			}
+		}
 	}
 	go s.warmProjectIconsOnStartup(ctx)
 	s.maybeRunPostUpdateProjectReload(ctx)

@@ -226,3 +226,164 @@ func TestAgentLeaseHandlerValidationAndBranches(t *testing.T) {
 		t.Fatalf("unexpected second lease payload: %+v", secondLeasePayload)
 	}
 }
+
+func TestAgentDeactivationBlocksLeaseUntilActivated(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	hbResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-toggle",
+		"hostname":      "host-toggle",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-12T00:00:00Z",
+	})
+	if hbResp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
+	}
+	_ = readBody(t, hbResp)
+
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-toggle/actions", map[string]any{
+		"action": "run-script",
+		"shell":  "posix",
+		"script": "echo queued",
+	})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("run-script status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	var runPayload struct {
+		JobExecutionID string `json:"job_execution_id"`
+	}
+	decodeJSONBody(t, runResp, &runPayload)
+
+	deactivateResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-toggle/actions", map[string]any{"action": "deactivate"})
+	if deactivateResp.StatusCode != http.StatusOK {
+		t.Fatalf("deactivate status=%d body=%s", deactivateResp.StatusCode, readBody(t, deactivateResp))
+	}
+	_ = readBody(t, deactivateResp)
+
+	leaseBlocked := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-toggle",
+	})
+	if leaseBlocked.StatusCode != http.StatusOK {
+		t.Fatalf("blocked lease status=%d body=%s", leaseBlocked.StatusCode, readBody(t, leaseBlocked))
+	}
+	var leaseBlockedPayload struct {
+		Assigned bool   `json:"assigned"`
+		Message  string `json:"message"`
+	}
+	decodeJSONBody(t, leaseBlocked, &leaseBlockedPayload)
+	if leaseBlockedPayload.Assigned || !strings.Contains(leaseBlockedPayload.Message, "deactivated") {
+		t.Fatalf("unexpected blocked lease payload: %+v", leaseBlockedPayload)
+	}
+
+	activateResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-toggle/actions", map[string]any{"action": "activate"})
+	if activateResp.StatusCode != http.StatusOK {
+		t.Fatalf("activate status=%d body=%s", activateResp.StatusCode, readBody(t, activateResp))
+	}
+	_ = readBody(t, activateResp)
+
+	leaseAllowed := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-toggle",
+	})
+	if leaseAllowed.StatusCode != http.StatusOK {
+		t.Fatalf("allowed lease status=%d body=%s", leaseAllowed.StatusCode, readBody(t, leaseAllowed))
+	}
+	var leaseAllowedPayload struct {
+		Assigned bool `json:"assigned"`
+		Job      struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, leaseAllowed, &leaseAllowedPayload)
+	if !leaseAllowedPayload.Assigned || leaseAllowedPayload.Job.ID != runPayload.JobExecutionID {
+		t.Fatalf("unexpected allowed lease payload: %+v", leaseAllowedPayload)
+	}
+}
+
+func TestAgentDeactivationCancelsActiveJob(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	hbResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-cancel-on-deactivate",
+		"hostname":      "host-cancel-on-deactivate",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-12T00:00:00Z",
+	})
+	if hbResp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
+	}
+	_ = readBody(t, hbResp)
+
+	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-cancel-on-deactivate/actions", map[string]any{
+		"action": "run-script",
+		"shell":  "posix",
+		"script": "echo active",
+	})
+	if runResp.StatusCode != http.StatusCreated {
+		t.Fatalf("run-script status=%d body=%s", runResp.StatusCode, readBody(t, runResp))
+	}
+	var runPayload struct {
+		JobExecutionID string `json:"job_execution_id"`
+	}
+	decodeJSONBody(t, runResp, &runPayload)
+
+	firstLease := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-cancel-on-deactivate",
+	})
+	if firstLease.StatusCode != http.StatusOK {
+		t.Fatalf("first lease status=%d body=%s", firstLease.StatusCode, readBody(t, firstLease))
+	}
+	var firstLeasePayload struct {
+		Assigned bool `json:"assigned"`
+		Job      struct {
+			ID string `json:"id"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, firstLease, &firstLeasePayload)
+	if !firstLeasePayload.Assigned || firstLeasePayload.Job.ID != runPayload.JobExecutionID {
+		t.Fatalf("unexpected first lease payload: %+v", firstLeasePayload)
+	}
+
+	deactivateResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-cancel-on-deactivate/actions", map[string]any{"action": "deactivate"})
+	if deactivateResp.StatusCode != http.StatusOK {
+		t.Fatalf("deactivate status=%d body=%s", deactivateResp.StatusCode, readBody(t, deactivateResp))
+	}
+	var deactivatePayload struct {
+		Message string `json:"message"`
+	}
+	decodeJSONBody(t, deactivateResp, &deactivatePayload)
+	if !strings.Contains(deactivatePayload.Message, "cancelled active jobs=1") {
+		t.Fatalf("unexpected deactivate response message: %q", deactivatePayload.Message)
+	}
+
+	jobResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+runPayload.JobExecutionID, nil)
+	if jobResp.StatusCode != http.StatusOK {
+		t.Fatalf("get job status=%d body=%s", jobResp.StatusCode, readBody(t, jobResp))
+	}
+	var jobPayload struct {
+		Job struct {
+			Status string `json:"status"`
+			Error  string `json:"error"`
+			Output string `json:"output"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, jobResp, &jobPayload)
+	if jobPayload.Job.Status != "failed" {
+		t.Fatalf("expected failed status, got %q", jobPayload.Job.Status)
+	}
+	if jobPayload.Job.Error != "cancelled by user" {
+		t.Fatalf("expected cancelled by user error, got %q", jobPayload.Job.Error)
+	}
+	if !strings.Contains(jobPayload.Job.Output, "[control] job cancelled by user") {
+		t.Fatalf("expected cancel marker in output, got %q", jobPayload.Job.Output)
+	}
+}

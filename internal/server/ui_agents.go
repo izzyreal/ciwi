@@ -137,9 +137,14 @@ const agentsHTML = `<!doctype html>
           const refreshBtn = (s.label !== 'offline')
             ? '<button data-action="refresh-tools" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Refresh Tools</button>'
             : '';
+          const activationBtn = a.deactivated
+            ? '<button data-action="activate" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Activate</button>'
+            : '<button data-action="deactivate" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Deactivate</button>';
           const primaryUpdateText = formatUpdatePrimaryText(a);
           const retryText = formatUpdateRetryText(a);
+          const activationBadge = a.deactivated ? '<div class="badge badge-warn">Deactivated</div>' : '';
           const versionCell = escapeHtml(a.version || '') +
+            activationBadge +
             primaryUpdateText +
             retryText;
           const agentID = String(a.agent_id || '');
@@ -170,18 +175,25 @@ const agentsHTML = `<!doctype html>
             '<td class="heartbeat-cell"><div class="heartbeat-wrap"><span class="heartbeat-icon ' + pulseClass + '"' + pulseStyle + ' role="img" aria-label="heartbeat">❤️</span><span class="heartbeat-age">' + escapeHtml(humanizeHeartbeat(lastSeen)) + '</span></div></td>' +
             '<td class="' + s.cls + '">' + s.label + '</td>' +
             '<td class="run-mode">' + runModeLabel + '</td>' +
-            '<td>' + updateBtn + ' ' + refreshBtn + '</td>';
+            '<td>' + activationBtn + ' ' + updateBtn + ' ' + refreshBtn + '</td>';
           rows.appendChild(tr);
         }
-        rows.querySelectorAll('button[data-action="update"], button[data-action="refresh-tools"]').forEach(btn => {
+        rows.querySelectorAll('button[data-action]').forEach(btn => {
           btn.addEventListener('click', async () => {
             const id = btn.getAttribute('data-agent-id') || '';
             if (!id) return;
             const action = btn.getAttribute('data-action') || '';
+            if (action === 'deactivate') {
+              const confirmed = await showConfirmDialog({
+                title: 'Deactivate Agent',
+                message: 'Deactivate this agent? Active jobs will be cancelled.',
+                okLabel: 'Deactivate',
+              });
+              if (!confirmed) return;
+            }
             btn.disabled = true;
             try {
-              const reqAction = action === 'refresh-tools' ? 'refresh-tools' : 'update';
-              const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/actions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: reqAction }) });
+              const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/actions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action }) });
               if (!res.ok) throw new Error(await res.text());
               await refreshAgents();
             } catch (e) {

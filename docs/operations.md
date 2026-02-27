@@ -39,6 +39,18 @@ UI flow:
 
 - `/agents` -> **Refresh Tools** triggers an on-demand tool rescan on agent.
 
+## Agent activation/deactivation
+
+- `/agents` and `/agents/{id}` expose **Activate** / **Deactivate** controls.
+- Deactivation is enforced on the server:
+  - deactivated agents remain visible and continue heartbeat updates
+  - deactivated agents do not lease jobs
+- Deactivating an agent with an active leased/running job triggers the same server-side effect as job **Cancel**:
+  - job becomes `failed`
+  - error is `cancelled by user`
+  - output gets `[control] job cancelled by user`
+- Activation state is persisted by the server and survives server restart.
+
 ## Troubleshooting quick checks
 
 - Server health: `GET /healthz`

@@ -10,6 +10,7 @@ type agentView struct {
 	Hostname             string            `json:"hostname"`
 	OS                   string            `json:"os"`
 	Arch                 string            `json:"arch"`
+	Deactivated          bool              `json:"deactivated,omitempty"`
 	JobInProgress        bool              `json:"job_in_progress,omitempty"`
 	Version              string            `json:"version,omitempty"`
 	Capabilities         map[string]string `json:"capabilities"`
@@ -67,6 +68,7 @@ func agentViewFromState(agentID string, state agentState, pendingTarget, serverV
 		Hostname:             state.Hostname,
 		OS:                   state.OS,
 		Arch:                 state.Arch,
+		Deactivated:          state.Deactivated,
 		JobInProgress:        jobInProgress,
 		Version:              state.Version,
 		Capabilities:         cloneMap(state.Capabilities),
