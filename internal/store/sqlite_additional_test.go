@@ -53,6 +53,16 @@ func TestStoreAppStateRoundTrip(t *testing.T) {
 	if all["update.status"] != "success" {
 		t.Fatalf("unexpected list app state payload: %v", all)
 	}
+	if err := s.DeleteAppState("update.status"); err != nil {
+		t.Fatalf("DeleteAppState: %v", err)
+	}
+	_, found, err = s.GetAppState("update.status")
+	if err != nil {
+		t.Fatalf("GetAppState after delete: %v", err)
+	}
+	if found {
+		t.Fatalf("expected deleted app state key to be absent")
+	}
 
 	if err := s.Ping(context.Background()); err != nil {
 		t.Fatalf("Ping: %v", err)

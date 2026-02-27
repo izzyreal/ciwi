@@ -128,6 +128,7 @@ const agentsHTML = `<!doctype html>
         agents.sort((a, b) => String(a.agent_id || '').localeCompare(String(b.agent_id || '')));
         for (const a of agents) {
           const s = statusForLastSeen(a.last_seen_utc || '');
+          const authorized = !!a.authorized;
           const tr = document.createElement('tr');
           const updateBtn = (a.update_requested && !a.update_in_progress)
             ? '<button data-action="update" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Retry Update Now</button>'
@@ -140,6 +141,10 @@ const agentsHTML = `<!doctype html>
           const activationBtn = a.deactivated
             ? '<button data-action="activate" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Activate</button>'
             : '<button data-action="deactivate" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Deactivate</button>';
+          const authBtn = authorized
+            ? '<button data-action="unauthorize" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Unauthorize</button>'
+            : '<button data-action="authorize" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Authorize</button>';
+          const deleteBtn = '<button data-action="delete" data-agent-id="' + escapeHtml(a.agent_id || '') + '">Delete</button>';
           const primaryUpdateText = formatUpdatePrimaryText(a);
           const retryText = formatUpdateRetryText(a);
           const activationBadge = a.deactivated ? '<div class="badge badge-warn">Deactivated</div>' : '';
@@ -167,6 +172,9 @@ const agentsHTML = `<!doctype html>
           }
           const runModeRaw = String((a.capabilities && a.capabilities.run_mode) || '').trim().toLowerCase();
           const runModeLabel = runModeRaw === 'service' ? 'Service' : 'Manual';
+          const actionHTML = authorized
+            ? (authBtn + ' ' + activationBtn + ' ' + deleteBtn + ' ' + updateBtn + ' ' + refreshBtn)
+            : authBtn;
           tr.innerHTML =
             '<td><a href="/agents/' + encodeURIComponent(a.agent_id || '') + '">' + escapeHtml(a.agent_id || '') + '</a></td>' +
             '<td>' + escapeHtml(a.hostname || '') + '</td>' +
@@ -175,7 +183,7 @@ const agentsHTML = `<!doctype html>
             '<td class="heartbeat-cell"><div class="heartbeat-wrap"><span class="heartbeat-icon ' + pulseClass + '"' + pulseStyle + ' role="img" aria-label="heartbeat">❤️</span><span class="heartbeat-age">' + escapeHtml(humanizeHeartbeat(lastSeen)) + '</span></div></td>' +
             '<td class="' + s.cls + '">' + s.label + '</td>' +
             '<td class="run-mode">' + runModeLabel + '</td>' +
-            '<td>' + activationBtn + ' ' + updateBtn + ' ' + refreshBtn + '</td>';
+            '<td>' + actionHTML + '</td>';
           rows.appendChild(tr);
         }
         rows.querySelectorAll('button[data-action]').forEach(btn => {
@@ -188,6 +196,22 @@ const agentsHTML = `<!doctype html>
                 title: 'Deactivate Agent',
                 message: 'Deactivate this agent? Active jobs will be cancelled.',
                 okLabel: 'Deactivate',
+              });
+              if (!confirmed) return;
+            }
+            if (action === 'unauthorize') {
+              const confirmed = await showConfirmDialog({
+                title: 'Unauthorize Agent',
+                message: 'Revoke authorization for this agent? It will stop leasing new jobs.',
+                okLabel: 'Unauthorize',
+              });
+              if (!confirmed) return;
+            }
+            if (action === 'delete') {
+              const confirmed = await showConfirmDialog({
+                title: 'Delete Agent Snapshot',
+                message: 'Delete this agent snapshot from server state? It will reappear if the agent heartbeats again.',
+                okLabel: 'Delete',
               });
               if (!confirmed) return;
             }

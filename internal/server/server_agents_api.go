@@ -76,6 +76,84 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "action is required", http.StatusBadRequest)
 		return
 	}
+	if action == "authorize" {
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		a.Authorized = true
+		a.RecentLog = appendAgentLog(a.RecentLog, "manual authorization granted")
+		s.agents[agentID] = a
+		s.mu.Unlock()
+		if err := s.persistAgentSnapshot(agentID, a); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   "agent authorized",
+		})
+		return
+	}
+	if action == "unauthorize" {
+		s.mu.Lock()
+		a, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		a.Authorized = false
+		a.RecentLog = appendAgentLog(a.RecentLog, "manual authorization revoked")
+		s.agents[agentID] = a
+		s.mu.Unlock()
+		if err := s.persistAgentSnapshot(agentID, a); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   "agent unauthorized",
+		})
+		return
+	}
+	if action == "delete" {
+		s.mu.Lock()
+		_, ok := s.agents[agentID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		delete(s.agents, agentID)
+		delete(s.agentUpdates, agentID)
+		delete(s.agentToolRefresh, agentID)
+		delete(s.agentRestarts, agentID)
+		delete(s.agentCacheWipes, agentID)
+		delete(s.agentHistoryWipes, agentID)
+		delete(s.agentDeactivated, agentID)
+		delete(s.agentRollout.Slots, agentID)
+		s.mu.Unlock()
+		if err := s.updateStateStore().DeleteAppState(agentSnapshotStateKey(agentID)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.updateStateStore().DeleteAppState(agentDeactivatedStateKey(agentID)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, agentActionResponse{
+			Requested: true,
+			AgentID:   agentID,
+			Message:   "agent snapshot deleted",
+		})
+		return
+	}
 	if action == "activate" {
 		s.mu.Lock()
 		a, ok := s.agents[agentID]
@@ -90,6 +168,10 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		s.agents[agentID] = a
 		s.mu.Unlock()
 		if err := s.updateStateStore().SetAppState(agentDeactivatedStateKey(agentID), "0"); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.persistAgentSnapshot(agentID, a); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -134,6 +216,15 @@ func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
 		msg := "agent deactivated"
 		if cancelled > 0 {
 			msg += "; cancelled active jobs=" + strconv.Itoa(cancelled)
+		}
+		s.mu.Lock()
+		persistState, ok := s.agents[agentID]
+		s.mu.Unlock()
+		if ok {
+			if err := s.persistAgentSnapshot(agentID, persistState); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		writeJSON(w, http.StatusOK, agentActionResponse{
 			Requested: true,

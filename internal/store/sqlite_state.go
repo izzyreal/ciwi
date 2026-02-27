@@ -49,3 +49,10 @@ func (s *Store) ListAppState() (map[string]string, error) {
 	}
 	return out, nil
 }
+
+func (s *Store) DeleteAppState(key string) error {
+	if _, err := s.db.Exec(`DELETE FROM app_state WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("delete app state: %w", err)
+	}
+	return nil
+}

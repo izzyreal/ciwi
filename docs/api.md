@@ -70,9 +70,14 @@
 - Config parsing uses strict YAML field validation.
 - Machine behavior should rely on structured API payloads, not output log scraping.
 - `POST /api/v1/agents/{agentId}/actions` supports:
-  - `{"action":"activate"}`: marks agent active; leasing is allowed.
+  - `{"action":"authorize"}`: allows the agent to lease jobs.
+  - `{"action":"unauthorize"}`: prevents the agent from leasing new jobs.
+  - `{"action":"activate"}`: marks agent active; leasing is allowed when also authorized.
   - `{"action":"deactivate"}`: marks agent deactivated; leasing is blocked.
+  - `{"action":"delete"}`: deletes server-side agent snapshot/state; agent disappears from list until next heartbeat.
 - Deactivation is server-side only (agent protocol is unchanged).
+- New/unknown agents are unauthorized until explicitly authorized.
+- `POST /api/v1/agent/lease` requires a known + authorized + non-deactivated agent snapshot.
 - While deactivated, `POST /api/v1/agent/lease` returns `assigned=false` with message `agent is deactivated`.
 - If deactivation occurs while the agent has an active leased/running job, server applies the same terminal mutation as `POST /api/v1/jobs/{id}/cancel`:
   - `status=failed`

@@ -80,6 +80,12 @@ func TestAgentRunScriptQueuesTargetedJobExecution(t *testing.T) {
 		t.Fatalf("expected other agent lease to be rejected")
 	}
 
+	authResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-run/actions", map[string]any{"action": "authorize"})
+	if authResp.StatusCode != http.StatusOK {
+		t.Fatalf("authorize status=%d body=%s", authResp.StatusCode, readBody(t, authResp))
+	}
+	_ = readBody(t, authResp)
+
 	leaseTarget := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
 		"agent_id":     "agent-run",
 		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
@@ -162,7 +168,7 @@ func TestAgentLeaseHandlerValidationAndBranches(t *testing.T) {
 		Message  string `json:"message"`
 	}
 	decodeJSONBody(t, noJob, &noJobPayload)
-	if noJobPayload.Assigned || !strings.Contains(noJobPayload.Message, "no matching queued job") {
+	if noJobPayload.Assigned || !strings.Contains(noJobPayload.Message, "not registered") {
 		t.Fatalf("unexpected no-job lease payload: %+v", noJobPayload)
 	}
 
@@ -179,6 +185,27 @@ func TestAgentLeaseHandlerValidationAndBranches(t *testing.T) {
 		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
 	}
 	_ = readBody(t, hbResp)
+
+	unauthLease := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-busy",
+	})
+	if unauthLease.StatusCode != http.StatusOK {
+		t.Fatalf("expected unauthorized lease 200, got %d body=%s", unauthLease.StatusCode, readBody(t, unauthLease))
+	}
+	var unauthLeasePayload struct {
+		Assigned bool   `json:"assigned"`
+		Message  string `json:"message"`
+	}
+	decodeJSONBody(t, unauthLease, &unauthLeasePayload)
+	if unauthLeasePayload.Assigned || !strings.Contains(unauthLeasePayload.Message, "not authorized") {
+		t.Fatalf("unexpected unauthorized lease payload: %+v", unauthLeasePayload)
+	}
+
+	authResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-busy/actions", map[string]any{"action": "authorize"})
+	if authResp.StatusCode != http.StatusOK {
+		t.Fatalf("authorize status=%d body=%s", authResp.StatusCode, readBody(t, authResp))
+	}
+	_ = readBody(t, authResp)
 
 	createResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-busy/actions", map[string]any{
 		"action":          "run-script",
@@ -245,6 +272,12 @@ func TestAgentDeactivationBlocksLeaseUntilActivated(t *testing.T) {
 		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
 	}
 	_ = readBody(t, hbResp)
+
+	authResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-toggle/actions", map[string]any{"action": "authorize"})
+	if authResp.StatusCode != http.StatusOK {
+		t.Fatalf("authorize status=%d body=%s", authResp.StatusCode, readBody(t, authResp))
+	}
+	_ = readBody(t, authResp)
 
 	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-toggle/actions", map[string]any{
 		"action": "run-script",
@@ -322,6 +355,12 @@ func TestAgentDeactivationCancelsActiveJob(t *testing.T) {
 		t.Fatalf("heartbeat status=%d body=%s", hbResp.StatusCode, readBody(t, hbResp))
 	}
 	_ = readBody(t, hbResp)
+
+	authResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-cancel-on-deactivate/actions", map[string]any{"action": "authorize"})
+	if authResp.StatusCode != http.StatusOK {
+		t.Fatalf("authorize status=%d body=%s", authResp.StatusCode, readBody(t, authResp))
+	}
+	_ = readBody(t, authResp)
 
 	runResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-cancel-on-deactivate/actions", map[string]any{
 		"action": "run-script",

@@ -66,6 +66,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	prev, hadPrev := s.agents[hb.AgentID]
 	deactivated := prev.Deactivated
+	authorized := prev.Authorized
 	if !hadPrev {
 		deactivated = s.agentDeactivated[hb.AgentID]
 	}
@@ -212,6 +213,7 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		OS:                   hb.OS,
 		Arch:                 hb.Arch,
 		Version:              hb.Version,
+		Authorized:           authorized,
 		Deactivated:          deactivated,
 		Capabilities:         hb.Capabilities,
 		LastSeenUTC:          now,
@@ -262,6 +264,9 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	s.agents[hb.AgentID] = state
 	s.mu.Unlock()
+	if err := s.persistAgentSnapshot(hb.AgentID, state); err != nil {
+		slog.Warn("persist agent snapshot failed", "agent_id", hb.AgentID, "error", err)
+	}
 
 	resp := protocol.HeartbeatResponse{
 		Accepted: true,
@@ -365,17 +370,32 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	agentCaps := req.Capabilities
 	s.mu.Lock()
-	if a, ok := s.agents[req.AgentID]; ok {
-		if a.Deactivated {
-			s.mu.Unlock()
-			writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{
-				Assigned: false,
-				Message:  "agent is deactivated",
-			})
-			return
-		}
-		agentCaps = mergeCapabilities(a, req.Capabilities)
+	a, ok := s.agents[req.AgentID]
+	if !ok {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{
+			Assigned: false,
+			Message:  "agent is not registered; send heartbeat first",
+		})
+		return
 	}
+	if !a.Authorized {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{
+			Assigned: false,
+			Message:  "agent is not authorized",
+		})
+		return
+	}
+	if a.Deactivated {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{
+			Assigned: false,
+			Message:  "agent is deactivated",
+		})
+		return
+	}
+	agentCaps = mergeCapabilities(a, req.Capabilities)
 	s.mu.Unlock()
 	if agentCaps == nil {
 		agentCaps = map[string]string{}

@@ -611,3 +611,151 @@ func TestManualAgentFlushJobHistory(t *testing.T) {
 		t.Fatalf("expected flush_job_history_requested=false after delivery")
 	}
 }
+
+func TestAgentDeleteSnapshot(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	firstHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-delete",
+		"hostname":      "host-delete",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:00Z",
+	})
+	if firstHB.StatusCode != http.StatusOK {
+		t.Fatalf("first heartbeat status=%d body=%s", firstHB.StatusCode, readBody(t, firstHB))
+	}
+	_ = readBody(t, firstHB)
+
+	deleteResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-delete/actions", map[string]any{"action": "delete"})
+	if deleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("delete action status=%d body=%s", deleteResp.StatusCode, readBody(t, deleteResp))
+	}
+	_ = readBody(t, deleteResp)
+
+	agentsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents", nil)
+	if agentsResp.StatusCode != http.StatusOK {
+		t.Fatalf("agents status=%d body=%s", agentsResp.StatusCode, readBody(t, agentsResp))
+	}
+	var agentsPayload struct {
+		Agents []struct {
+			AgentID string `json:"agent_id"`
+		} `json:"agents"`
+	}
+	decodeJSONBody(t, agentsResp, &agentsPayload)
+	if len(agentsPayload.Agents) != 0 {
+		t.Fatalf("expected 0 agents after delete, got %d", len(agentsPayload.Agents))
+	}
+
+	getResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents/agent-delete", nil)
+	if getResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got status=%d body=%s", getResp.StatusCode, readBody(t, getResp))
+	}
+	_ = readBody(t, getResp)
+
+	secondHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-delete",
+		"hostname":      "host-delete-2",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:10Z",
+	})
+	if secondHB.StatusCode != http.StatusOK {
+		t.Fatalf("second heartbeat status=%d body=%s", secondHB.StatusCode, readBody(t, secondHB))
+	}
+	_ = readBody(t, secondHB)
+
+	getResp2 := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents/agent-delete", nil)
+	if getResp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected agent to reappear after heartbeat, status=%d body=%s", getResp2.StatusCode, readBody(t, getResp2))
+	}
+	var getPayload struct {
+		Agent struct {
+			Hostname string `json:"hostname"`
+		} `json:"agent"`
+	}
+	decodeJSONBody(t, getResp2, &getPayload)
+	if getPayload.Agent.Hostname != "host-delete-2" {
+		t.Fatalf("unexpected reappeared agent hostname: %q", getPayload.Agent.Hostname)
+	}
+}
+
+func TestAgentAuthorizationActions(t *testing.T) {
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	firstHB := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/heartbeat", map[string]any{
+		"agent_id":      "agent-auth",
+		"hostname":      "host-auth",
+		"os":            "linux",
+		"arch":          "amd64",
+		"version":       "v1.0.0",
+		"capabilities":  map[string]string{"executor": "script", "shells": "posix"},
+		"timestamp_utc": "2026-02-11T00:00:00Z",
+	})
+	if firstHB.StatusCode != http.StatusOK {
+		t.Fatalf("first heartbeat status=%d body=%s", firstHB.StatusCode, readBody(t, firstHB))
+	}
+	_ = readBody(t, firstHB)
+
+	getResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents/agent-auth", nil)
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("initial get status=%d body=%s", getResp.StatusCode, readBody(t, getResp))
+	}
+	var initialPayload struct {
+		Agent struct {
+			Authorized bool `json:"authorized"`
+		} `json:"agent"`
+	}
+	decodeJSONBody(t, getResp, &initialPayload)
+	if initialPayload.Agent.Authorized {
+		t.Fatalf("expected new agent to start unauthorized")
+	}
+
+	authResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-auth/actions", map[string]any{"action": "authorize"})
+	if authResp.StatusCode != http.StatusOK {
+		t.Fatalf("authorize status=%d body=%s", authResp.StatusCode, readBody(t, authResp))
+	}
+	_ = readBody(t, authResp)
+
+	getResp2 := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents/agent-auth", nil)
+	if getResp2.StatusCode != http.StatusOK {
+		t.Fatalf("authorized get status=%d body=%s", getResp2.StatusCode, readBody(t, getResp2))
+	}
+	var authorizedPayload struct {
+		Agent struct {
+			Authorized bool `json:"authorized"`
+		} `json:"agent"`
+	}
+	decodeJSONBody(t, getResp2, &authorizedPayload)
+	if !authorizedPayload.Agent.Authorized {
+		t.Fatalf("expected agent to be authorized")
+	}
+
+	unauthResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agents/agent-auth/actions", map[string]any{"action": "unauthorize"})
+	if unauthResp.StatusCode != http.StatusOK {
+		t.Fatalf("unauthorize status=%d body=%s", unauthResp.StatusCode, readBody(t, unauthResp))
+	}
+	_ = readBody(t, unauthResp)
+
+	getResp3 := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/agents/agent-auth", nil)
+	if getResp3.StatusCode != http.StatusOK {
+		t.Fatalf("unauthorized get status=%d body=%s", getResp3.StatusCode, readBody(t, getResp3))
+	}
+	var unauthorizedPayload struct {
+		Agent struct {
+			Authorized bool `json:"authorized"`
+		} `json:"agent"`
+	}
+	decodeJSONBody(t, getResp3, &unauthorizedPayload)
+	if unauthorizedPayload.Agent.Authorized {
+		t.Fatalf("expected agent to be unauthorized after unauthorize action")
+	}
+}

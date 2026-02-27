@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +19,7 @@ type agentState struct {
 	OS                   string            `json:"os"`
 	Arch                 string            `json:"arch"`
 	Version              string            `json:"version,omitempty"`
+	Authorized           bool              `json:"authorized"`
 	Deactivated          bool              `json:"deactivated,omitempty"`
 	Capabilities         map[string]string `json:"capabilities"`
 	LastSeenUTC          time.Time         `json:"last_seen_utc"`
@@ -104,18 +104,7 @@ func Run(ctx context.Context) error {
 		s.update.mu.Unlock()
 	}
 	if appState, err := db.ListAppState(); err == nil {
-		for key, value := range appState {
-			if !strings.HasPrefix(key, agentDeactivatedStatePrefix) {
-				continue
-			}
-			agentID := strings.TrimSpace(strings.TrimPrefix(key, agentDeactivatedStatePrefix))
-			if agentID == "" {
-				continue
-			}
-			if parseBooleanStateValue(value) {
-				s.agentDeactivated[agentID] = true
-			}
-		}
+		s.hydrateAgentStateFromAppState(appState)
 	}
 	go s.warmProjectIconsOnStartup(ctx)
 	s.maybeRunPostUpdateProjectReload(ctx)

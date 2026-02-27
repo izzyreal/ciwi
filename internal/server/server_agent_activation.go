@@ -7,21 +7,6 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-const agentDeactivatedStatePrefix = "agent_deactivated:"
-
-func agentDeactivatedStateKey(agentID string) string {
-	return agentDeactivatedStatePrefix + strings.TrimSpace(agentID)
-}
-
-func parseBooleanStateValue(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
 func (s *stateStore) cancelActiveJobsForAgent(agentID string) (int, error) {
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {

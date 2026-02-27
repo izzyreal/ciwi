@@ -67,6 +67,7 @@ type vaultStore interface {
 type updateStateStore interface {
 	SetAppState(key, value string) error
 	ListAppState() (map[string]string, error)
+	DeleteAppState(key string) error
 }
 
 func (s *stateStore) agentJobExecutionStore() agentJobExecutionStore {

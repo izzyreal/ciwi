@@ -42,6 +42,11 @@ UI flow:
 ## Agent activation/deactivation
 
 - `/agents` and `/agents/{id}` expose **Activate** / **Deactivate** controls.
+- `/agents` also exposes **Delete** to remove a stored agent snapshot.
+- New agents start unauthorized and must be explicitly authorized before leasing jobs.
+- In Agents overview:
+  - unauthorized agent rows show only **Authorize** in Actions
+  - authorized agent rows show normal actions plus **Unauthorize**
 - Deactivation is enforced on the server:
   - deactivated agents remain visible and continue heartbeat updates
   - deactivated agents do not lease jobs
@@ -50,6 +55,7 @@ UI flow:
   - error is `cancelled by user`
   - output gets `[control] job cancelled by user`
 - Activation state is persisted by the server and survives server restart.
+- Deleting a snapshot removes the agent from server state/UI immediately; if the real agent is still running, it reappears on the next heartbeat.
 
 ## Troubleshooting quick checks
 
