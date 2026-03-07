@@ -38,7 +38,8 @@ Build-time version embedding:
 Agent reports tool versions in heartbeat.
 
 Supported tool keys include:
-- `git`, `go`, `gh`, `cmake`, `ninja`, `docker`, `gcc`, `clang`
+- `git`, `go`, `gh`, `lftp`, `cmake`, `ninja`, `docker`, `gcc`, `clang`
+- `sphinx-build`, `rinoh`
 - `ccache`, `sccache`
 - macOS signing/packaging tools
 - Windows `msvc`, `iscc`, `signtool`
