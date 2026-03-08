@@ -43,6 +43,7 @@ if [ "$1" = "exec" ]; then
     *"ninja --version"*) echo "1.11.1"; exit 0 ;;
     *"go version"*) echo "go version go1.26.0 linux/amd64"; exit 0 ;;
     *"lftp --version"*) echo "LFTP | Version 4.9.2"; exit 0 ;;
+    *"lcov --version"*) echo "lcov: LCOV version 2.0"; exit 0 ;;
     *"rinoh --version"*) echo "rinoh 0.5.5 (2024-07-13)"; exit 0 ;;
     *"sphinx-build --version"*) echo "sphinx-build 7.3.7"; exit 0 ;;
     *) exit 1 ;;
@@ -105,6 +106,7 @@ if [ "$1" = "exec" ]; then
     *"ninja --version"*) echo "1.11.1"; exit 0 ;;
     *"go version"*) echo "go version go1.26.0 linux/amd64"; exit 0 ;;
     *"lftp --version"*) echo "LFTP | Version 4.9.2"; exit 0 ;;
+    *"lcov --version"*) echo "lcov: LCOV version 2.0"; exit 0 ;;
     *"rinoh --version"*) echo "rinoh 0.5.5 (2024-07-13)"; exit 0 ;;
     *"sphinx-build --version"*) echo "sphinx-build 7.3.7"; exit 0 ;;
     *) exit 1 ;;
@@ -130,7 +132,7 @@ exit 0
 	if caps["host.tool.git"] != "2.39.5" {
 		t.Fatalf("expected host tool capability propagation, got %v", caps)
 	}
-	if caps["container.tool.cmake"] != "3.31.5" || caps["container.tool.ninja"] != "1.11.1" || caps["container.tool.go"] != "1.26.0" || caps["container.tool.lftp"] != "4.9.2" || caps["container.tool.rinoh"] != "0.5.5" || caps["container.tool.sphinx-build"] != "7.3.7" {
+	if caps["container.tool.cmake"] != "3.31.5" || caps["container.tool.ninja"] != "1.11.1" || caps["container.tool.go"] != "1.26.0" || caps["container.tool.lftp"] != "4.9.2" || caps["container.tool.lcov"] != "2.0" || caps["container.tool.rinoh"] != "0.5.5" || caps["container.tool.sphinx-build"] != "7.3.7" {
 		t.Fatalf("expected probed container tools, got %v", caps)
 	}
 }

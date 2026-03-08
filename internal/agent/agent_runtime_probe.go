@@ -47,6 +47,7 @@ func collectRuntimeCapabilities(agentCapabilities map[string]string, probeContai
 		{name: "go", cmd: "go", args: []string{"version"}},
 		{name: "gh", cmd: "gh", args: []string{"--version"}},
 		{name: "lftp", cmd: "lftp", args: []string{"--version"}},
+		{name: "lcov", cmd: "lcov", args: []string{"--version"}},
 		{name: "cmake", cmd: "cmake", args: []string{"--version"}},
 		{name: "ccache", cmd: "ccache", args: []string{"--version"}},
 		{name: "ninja", cmd: "ninja", args: []string{"--version"}},
