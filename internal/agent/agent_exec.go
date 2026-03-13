@@ -398,11 +398,17 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				}
 			}
 			if stepErr != nil {
+				timedOut := runCtx.Err() == context.DeadlineExceeded
+				if timedOut {
+					fmt.Fprintf(&output, "[control] job timed out after %d seconds\n", job.TimeoutSeconds)
+				}
 				scriptLiteral := strings.TrimSpace(step.script)
 				if scriptLiteral != "" {
 					fmt.Fprintf(&output, "[run] failed step script literal:\n%s\n", scriptLiteral)
 				}
-				if code := exitCodeFromErr(stepErr); code != nil {
+				if timedOut {
+					fmt.Fprintf(&output, "[run] step failed: %s (timed out after %d seconds)\n", currentStep, job.TimeoutSeconds)
+				} else if code := exitCodeFromErr(stepErr); code != nil {
 					fmt.Fprintf(&output, "[run] step failed: %s (exit=%d)\n", currentStep, *code)
 				} else {
 					fmt.Fprintf(&output, "[run] step failed: %s (%v)\n", currentStep, stepErr)
@@ -489,7 +495,13 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	exitCode := exitCodeFromErr(err)
 	failMsg := err.Error()
 	if runCtx.Err() == context.DeadlineExceeded {
-		failMsg = "job timed out"
+		failMsg = fmt.Sprintf("job timed out after %d seconds", job.TimeoutSeconds)
+		if !strings.Contains(trimmedOutput, "[control] job timed out after ") {
+			if trimmedOutput != "" && !strings.HasSuffix(trimmedOutput, "\n") {
+				trimmedOutput += "\n"
+			}
+			trimmedOutput += fmt.Sprintf("[control] job timed out after %d seconds\n", job.TimeoutSeconds)
+		}
 	}
 	cacheStats = refreshCacheStats()
 	if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
