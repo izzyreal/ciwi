@@ -12,6 +12,18 @@ import (
 	"time"
 )
 
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for file: %s", path)
+}
+
 func TestFetchReleaseAssetsForTag(t *testing.T) {
 	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "/releases/tags/") {
@@ -111,18 +123,7 @@ func TestStartUpdateHelperBuildsProcess(t *testing.T) {
 	if err := startUpdateHelper(help, "/tmp/target", "/tmp/new", 1234, []string{"agent", "--flag"}, ""); err != nil {
 		t.Fatalf("startUpdateHelper: %v", err)
 	}
-	// Give process a moment to write args.
-	found := false
-	for i := 0; i < 50; i++ {
-		if _, err := os.Stat(argsLog); err == nil {
-			found = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !found {
-		t.Fatalf("helper did not write args log: %s", argsLog)
-	}
+	waitForFile(t, argsLog, 5*time.Second)
 	raw, err := os.ReadFile(argsLog)
 	if err != nil {
 		t.Fatalf("read helper args log: %v", err)
@@ -150,17 +151,7 @@ func TestStartUpdateHelperIncludesServiceName(t *testing.T) {
 	if err := startUpdateHelper(help, "/tmp/target", "/tmp/new", 1234, []string{"agent"}, "ciwi-agent"); err != nil {
 		t.Fatalf("startUpdateHelper: %v", err)
 	}
-	found := false
-	for i := 0; i < 50; i++ {
-		if _, err := os.Stat(argsLog); err == nil {
-			found = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !found {
-		t.Fatalf("helper did not write args log: %s", argsLog)
-	}
+	waitForFile(t, argsLog, 5*time.Second)
 	raw, err := os.ReadFile(argsLog)
 	if err != nil {
 		t.Fatalf("read helper args log: %v", err)
