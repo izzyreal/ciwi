@@ -42,7 +42,7 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	started := nullableTime(job.StartedUTC)
 	finished := nullableTime(job.FinishedUTC)
 	errorText := req.Error
-	output := req.Output
+	outputAppend := req.OutputAppend
 	exitCode := nullableInt(req.ExitCode)
 	currentStep := strings.TrimSpace(req.CurrentStep)
 	if currentStep == "" {
@@ -50,8 +50,13 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	}
 	// Treat status updates as partial patches: when output is omitted by the caller,
 	// keep the latest persisted log snapshot instead of clearing it.
-	if output == "" {
-		output = job.Output
+	output := job.Output
+	if outputAppend != "" {
+		var ok bool
+		output, ok = appendPersistedJobOutputAtOffset(job.Output, outputAppend, req.OutputOffsetBytes)
+		if !ok {
+			return protocol.JobExecution{}, fmt.Errorf("output append offset mismatch")
+		}
 	}
 	cacheStatsJSON := "[]"
 	if len(job.CacheStats) > 0 {

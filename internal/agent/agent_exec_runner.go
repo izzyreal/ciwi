@@ -25,6 +25,7 @@ func runJobScript(
 	container *executionContainerContext,
 	env []string,
 	output *syncBuffer,
+	progress *outputReportState,
 	defaultCurrentStep string,
 	sensitive []string,
 	traceShell bool,
@@ -72,7 +73,7 @@ func runJobScript(
 	cmd.Stdout = output
 	cmd.Stderr = output
 
-	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, sensitive, defaultCurrentStep)
+	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, progress, sensitive, defaultCurrentStep)
 	defer stopStreaming()
 	return runCancelableCommand(runCtx, cmd)
 }
@@ -216,6 +217,13 @@ type syncBuffer struct {
 	b  bytes.Buffer
 }
 
+type outputReportState struct {
+	mu                 sync.Mutex
+	sentRawLen         int
+	sentPersistedBytes int
+	lastStep           string
+}
+
 type executionContainerContext struct {
 	name    string
 	workdir string
@@ -239,19 +247,46 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, sensitive []string, defaultCurrentStep string) func() {
+func (s *syncBuffer) SliceFrom(offset int) (string, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	all := s.b.String()
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(all) {
+		offset = len(all)
+	}
+	return all[offset:], len(all)
+}
+
+func (s *outputReportState) unsentFrom(output *syncBuffer) (string, int, int, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delta, totalLen := output.SliceFrom(s.sentRawLen)
+	return delta, totalLen, s.sentPersistedBytes, s.lastStep
+}
+
+func (s *outputReportState) markSent(totalRawLen, deltaPersistedBytes int, currentStep string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sentRawLen = totalRawLen
+	s.sentPersistedBytes += deltaPersistedBytes
+	s.lastStep = currentStep
+}
+
+func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, progress *outputReportState, sensitive []string, defaultCurrentStep string) func() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	done := make(chan struct{})
 	stopCh := make(chan struct{})
 
 	go func() {
 		defer close(done)
-		lastSent := ""
-		lastStep := ""
 		reportedEmptySnapshot := false
 		sendSnapshot := func() {
-			rawSnapshot := trimOutput(output.String())
-			snapshot := redactSensitive(rawSnapshot, sensitive)
+			deltaRaw, totalLen, outputOffsetBytes, lastStep := progress.unsentFrom(output)
+			snapshot := redactSensitive(output.String(), sensitive)
+			delta := redactSensitive(deltaRaw, sensitive)
 			currentStep := defaultCurrentStep
 			if strings.TrimSpace(snapshot) == "" && strings.TrimSpace(currentStep) != "" {
 				if !reportedEmptySnapshot {
@@ -261,20 +296,21 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 			} else if strings.TrimSpace(snapshot) != "" {
 				reportedEmptySnapshot = false
 			}
-			if snapshot == lastSent && currentStep == lastStep {
+			if delta == "" && currentStep == lastStep {
 				return
 			}
-			lastSent = snapshot
-			lastStep = currentStep
 			if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:      agentID,
-				Status:       protocol.JobExecutionStatusRunning,
-				Output:       snapshot,
-				CurrentStep:  currentStep,
-				TimestampUTC: time.Now().UTC(),
+				AgentID:           agentID,
+				Status:            protocol.JobExecutionStatusRunning,
+				OutputAppend:      delta,
+				OutputOffsetBytes: outputOffsetBytes,
+				CurrentStep:       currentStep,
+				TimestampUTC:      time.Now().UTC(),
 			}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				slog.Error("stream running update failed", "job_execution_id", jobID, "error", err)
+				return
 			}
+			progress.markSent(totalLen, len(delta), currentStep)
 		}
 		// Don't wait for the first ticker interval; publish an initial snapshot immediately.
 		sendSnapshot()

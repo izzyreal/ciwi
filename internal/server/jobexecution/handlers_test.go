@@ -129,14 +129,14 @@ func TestHandleByIDCancelActiveJob(t *testing.T) {
 		if req.AgentID != "agent-1" || req.Status != protocol.JobExecutionStatusFailed {
 			t.Fatalf("unexpected update request: %+v", req)
 		}
-		if !strings.Contains(req.Output, "[control] job cancelled by user") {
-			t.Fatalf("expected cancel marker in output, got %q", req.Output)
+		if !strings.Contains(req.OutputAppend, "[control] job cancelled by user") {
+			t.Fatalf("expected cancel marker in output append, got %q", req.OutputAppend)
 		}
 		return protocol.JobExecution{
 			ID:     id,
 			Status: protocol.JobExecutionStatusFailed,
 			Error:  req.Error,
-			Output: req.Output,
+			Output: "line1\n[control] job cancelled by user",
 		}, nil
 	}
 

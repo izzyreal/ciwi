@@ -68,13 +68,6 @@ func boolEnv(key string, defaultValue bool) bool {
 	}
 }
 
-func trimOutput(output string) string {
-	if len(output) <= maxReportedOutputBytes {
-		return output
-	}
-	return output[len(output)-maxReportedOutputBytes:]
-}
-
 func exitCodeFromErr(err error) *int {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

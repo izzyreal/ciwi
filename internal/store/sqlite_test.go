@@ -441,9 +441,10 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 	}
 
 	_, err = s.UpdateJobExecutionStatus(jHistory.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID: "agent-1",
-		Status:  "succeeded",
-		Output:  "ok",
+		AgentID:           "agent-1",
+		Status:            "succeeded",
+		OutputAppend:      "ok",
+		OutputOffsetBytes: 0,
 	})
 	if err != nil {
 		t.Fatalf("mark history job succeeded: %v", err)

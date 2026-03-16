@@ -112,10 +112,11 @@ pipeline_chains:
 		t.Fatalf("expected build job lease, got %+v", leased)
 	}
 	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusSucceeded,
-		Output:       "ok",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusSucceeded,
+		OutputAppend:      "ok",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark build job succeeded: %v", err)
@@ -174,11 +175,12 @@ pipeline_chains:
 		t.Fatalf("lease first job: %v", err)
 	}
 	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusFailed,
-		Error:        "boom",
-		Output:       "boom",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusFailed,
+		Error:             "boom",
+		OutputAppend:      "boom",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark build job failed: %v", err)
@@ -252,10 +254,11 @@ pipeline_chains:
 		t.Fatalf("lease first job: %v", err)
 	}
 	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusSucceeded,
-		Output:       "ok",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusSucceeded,
+		OutputAppend:      "ok",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark build job succeeded: %v", err)
@@ -382,10 +385,11 @@ pipeline_chains:
 
 	buildJob := findPipelineJobExecution(t, s, "build")
 	buildUpdated, err := s.db.UpdateJobExecutionStatus(buildJob.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusSucceeded,
-		Output:       "ok",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusSucceeded,
+		OutputAppend:      "ok",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark build succeeded: %v", err)
@@ -401,10 +405,11 @@ pipeline_chains:
 	}
 
 	signUpdated, err := s.db.UpdateJobExecutionStatus(signJob.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusSucceeded,
-		Output:       "ok",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusSucceeded,
+		OutputAppend:      "ok",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark sign succeeded: %v", err)
@@ -433,10 +438,11 @@ pipeline_chains:
 
 	for _, pjob := range []protocol.JobExecution{pMac, pWin, pLin} {
 		updated, err := s.db.UpdateJobExecutionStatus(pjob.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:      "agent-1",
-			Status:       protocol.JobExecutionStatusSucceeded,
-			Output:       "ok",
-			TimestampUTC: time.Now().UTC(),
+			AgentID:           "agent-1",
+			Status:            protocol.JobExecutionStatusSucceeded,
+			OutputAppend:      "ok",
+			OutputOffsetBytes: 0,
+			TimestampUTC:      time.Now().UTC(),
 		})
 		if err != nil {
 			t.Fatalf("mark package job succeeded (%s): %v", pjob.ID, err)

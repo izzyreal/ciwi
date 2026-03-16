@@ -185,9 +185,10 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 	}
 
 	done, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID: "agent-1",
-		Status:  "succeeded",
-		Output:  "final output",
+		AgentID:           "agent-1",
+		Status:            "succeeded",
+		OutputAppend:      "final output",
+		OutputOffsetBytes: 0,
 	})
 	if err != nil {
 		t.Fatalf("mark succeeded: %v", err)
@@ -197,9 +198,10 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 	}
 
 	got, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID: "agent-1",
-		Status:  "running",
-		Output:  "late running output",
+		AgentID:           "agent-1",
+		Status:            "running",
+		OutputAppend:      "late running output",
+		OutputOffsetBytes: 0,
 	})
 	if err != nil {
 		t.Fatalf("late running update: %v", err)
@@ -209,6 +211,116 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 	}
 	if got.Output != "final output" {
 		t.Fatalf("expected output to remain terminal output, got %q", got.Output)
+	}
+}
+
+func TestStoreAppendsRunningOutputDeltas(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo done",
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	first, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusRunning,
+		OutputAppend:      "line-1\n",
+		OutputOffsetBytes: 0,
+	})
+	if err != nil {
+		t.Fatalf("first running update: %v", err)
+	}
+	if first.Output != "line-1\n" {
+		t.Fatalf("expected first delta to persist, got %q", first.Output)
+	}
+
+	second, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusRunning,
+		OutputAppend:      "line-2\n",
+		OutputOffsetBytes: len("line-1\n"),
+	})
+	if err != nil {
+		t.Fatalf("second running update: %v", err)
+	}
+	if second.Output != "line-1\nline-2\n" {
+		t.Fatalf("expected appended output, got %q", second.Output)
+	}
+}
+
+func TestStoreTrimsPersistedOutputTailToMax(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo done",
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	firstChunk := strings.Repeat("a", maxPersistedJobOutputBytes)
+	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusRunning,
+		OutputAppend:      firstChunk,
+		OutputOffsetBytes: 0,
+	}); err != nil {
+		t.Fatalf("first running update: %v", err)
+	}
+	got, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusRunning,
+		OutputAppend:      "bc",
+		OutputOffsetBytes: maxPersistedJobOutputBytes,
+	})
+	if err != nil {
+		t.Fatalf("second running update: %v", err)
+	}
+	if len(got.Output) != maxPersistedJobOutputBytes {
+		t.Fatalf("expected trimmed len %d, got %d", maxPersistedJobOutputBytes, len(got.Output))
+	}
+	want := firstChunk[2:] + "bc"
+	if got.Output != want {
+		t.Fatalf("expected tail trim to keep most recent bytes")
+	}
+}
+
+func TestStoreAppendAtSameOffsetIsIdempotent(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:         "echo done",
+		TimeoutSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	first, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusRunning,
+		OutputAppend:      "hello",
+		OutputOffsetBytes: 0,
+	})
+	if err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	second, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusRunning,
+		OutputAppend:      "hello",
+		OutputOffsetBytes: 0,
+	})
+	if err != nil {
+		t.Fatalf("retry append: %v", err)
+	}
+	if first.Output != "hello" || second.Output != "hello" {
+		t.Fatalf("expected idempotent retry, first=%q second=%q", first.Output, second.Output)
 	}
 }
 
@@ -266,9 +378,10 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 		t.Fatalf("create job: %v", err)
 	}
 	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID: "agent-1",
-		Status:  "running",
-		Output:  "stream-1",
+		AgentID:           "agent-1",
+		Status:            "running",
+		OutputAppend:      "stream-1",
+		OutputOffsetBytes: 0,
 	}); err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
@@ -282,10 +395,11 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 		defer wg.Done()
 		for attempt := 0; attempt < 8; attempt++ {
 			_, uerr := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:  "agent-1",
-				Status:   "succeeded",
-				ExitCode: &exitCode,
-				Output:   "final",
+				AgentID:           "agent-1",
+				Status:            "succeeded",
+				ExitCode:          &exitCode,
+				OutputAppend:      "final",
+				OutputOffsetBytes: len("stream-1"),
 			})
 			if uerr != nil && strings.Contains(strings.ToLower(uerr.Error()), "database is locked") {
 				time.Sleep(10 * time.Millisecond)
@@ -302,9 +416,10 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 		defer wg.Done()
 		for attempt := 0; attempt < 8; attempt++ {
 			_, uerr := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID: "agent-1",
-				Status:  "running",
-				Output:  "late-stream",
+				AgentID:           "agent-1",
+				Status:            "running",
+				OutputAppend:      "late-stream",
+				OutputOffsetBytes: len("stream-1"),
 			})
 			if uerr != nil && strings.Contains(strings.ToLower(uerr.Error()), "database is locked") {
 				time.Sleep(10 * time.Millisecond)
@@ -350,10 +465,11 @@ func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 	}
 
 	running, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:     "agent-1",
-		Status:      "running",
-		Output:      "stream-1",
-		CurrentStep: "Step 1/3: checkout source",
+		AgentID:           "agent-1",
+		Status:            "running",
+		OutputAppend:      "stream-1",
+		OutputOffsetBytes: 0,
+		CurrentStep:       "Step 1/3: checkout source",
 	})
 	if err != nil {
 		t.Fatalf("mark running: %v", err)
@@ -363,9 +479,10 @@ func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 	}
 
 	done, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID: "agent-1",
-		Status:  "succeeded",
-		Output:  "done",
+		AgentID:           "agent-1",
+		Status:            "succeeded",
+		OutputAppend:      "done",
+		OutputOffsetBytes: len("stream-1"),
 	})
 	if err != nil {
 		t.Fatalf("mark succeeded: %v", err)
@@ -387,10 +504,11 @@ func TestStorePreservesOutputWhenRunningUpdateOmitsOutput(t *testing.T) {
 	}
 
 	first, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:     "agent-1",
-		Status:      "running",
-		Output:      "line-1\nline-2",
-		CurrentStep: "Step 1/3: checkout",
+		AgentID:           "agent-1",
+		Status:            "running",
+		OutputAppend:      "line-1\nline-2",
+		OutputOffsetBytes: 0,
+		CurrentStep:       "Step 1/3: checkout",
 	})
 	if err != nil {
 		t.Fatalf("mark first running: %v", err)
@@ -495,10 +613,11 @@ func TestStoreFailTimedOutRunningJobExecutions(t *testing.T) {
 
 	startedAt := time.Now().UTC().Add(-20 * time.Second)
 	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:     "agent-a",
-		Status:      protocol.JobExecutionStatusRunning,
-		CurrentStep: "Checking out source",
-		Output:      "[checkout] repo=example ref=abc",
+		AgentID:           "agent-a",
+		Status:            protocol.JobExecutionStatusRunning,
+		CurrentStep:       "Checking out source",
+		OutputAppend:      "[checkout] repo=example ref=abc",
+		OutputOffsetBytes: 0,
 	}); err != nil {
 		t.Fatalf("mark running: %v", err)
 	}

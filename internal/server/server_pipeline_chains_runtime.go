@@ -152,11 +152,12 @@ func cancelChainJob(s *stateStore, job protocol.JobExecution, reason string) {
 		"chain_blocked":   "",
 	})
 	_, _ = s.pipelineStore().UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "server-chain",
-		Status:       protocol.JobExecutionStatusFailed,
-		Error:        reason,
-		Output:       "[chain] " + reason,
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "server-chain",
+		Status:            protocol.JobExecutionStatusFailed,
+		Error:             reason,
+		OutputAppend:      "[chain] " + reason,
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 }
 
@@ -259,11 +260,12 @@ func (s *stateStore) onJobExecutionUpdatedNeeds(job protocol.JobExecution) {
 				"needs_blocked": "",
 			})
 			_, _ = s.pipelineStore().UpdateJobExecutionStatus(candidate.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:      "server-needs",
-				Status:       protocol.JobExecutionStatusFailed,
-				Error:        reason,
-				Output:       "[needs] " + reason,
-				TimestampUTC: time.Now().UTC(),
+				AgentID:           "server-needs",
+				Status:            protocol.JobExecutionStatusFailed,
+				Error:             reason,
+				OutputAppend:      "[needs] " + reason,
+				OutputOffsetBytes: 0,
+				TimestampUTC:      time.Now().UTC(),
 			})
 		}
 		return

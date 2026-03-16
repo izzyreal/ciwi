@@ -216,7 +216,10 @@ func TestReportFailureAndReportJobStatus(t *testing.T) {
 	}
 
 	exitCode := 12
-	err := reportFailure(context.Background(), client, "http://ciwi.local", "agent-1", protocol.JobExecution{ID: "job-1"}, &exitCode, "boom", "logs")
+	var output syncBuffer
+	output.WriteString("logs")
+	progress := &outputReportState{}
+	err := reportFailure(context.Background(), client, "http://ciwi.local", "agent-1", protocol.JobExecution{ID: "job-1"}, progress, &output, &exitCode, "boom")
 	if err != nil {
 		t.Fatalf("reportFailure returned error: %v", err)
 	}
@@ -226,7 +229,7 @@ func TestReportFailureAndReportJobStatus(t *testing.T) {
 	if got.ExitCode == nil || *got.ExitCode != 12 {
 		t.Fatalf("expected exit code 12 in payload: %+v", got)
 	}
-	if got.Error != "boom" || got.Output != "logs" {
+	if got.Error != "boom" || got.OutputAppend != "logs" || got.OutputOffsetBytes != 0 {
 		t.Fatalf("unexpected failure payload: %+v", got)
 	}
 	if got.TimestampUTC.IsZero() {

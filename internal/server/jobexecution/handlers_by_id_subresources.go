@@ -30,17 +30,17 @@ func handleJobCancel(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 	if agentID == "" {
 		agentID = "server-control"
 	}
-	output := strings.TrimSpace(job.Output)
-	if output != "" {
-		output += "\n"
+	outputAppend := "[control] job cancelled by user"
+	if strings.TrimSpace(job.Output) != "" {
+		outputAppend = "\n" + outputAppend
 	}
-	output += "[control] job cancelled by user"
 	updated, err := deps.Store.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      agentID,
-		Status:       protocol.JobExecutionStatusFailed,
-		Error:        "cancelled by user",
-		Output:       output,
-		TimestampUTC: nowUTC(deps),
+		AgentID:           agentID,
+		Status:            protocol.JobExecutionStatusFailed,
+		Error:             "cancelled by user",
+		OutputAppend:      outputAppend,
+		OutputOffsetBytes: len(job.Output),
+		TimestampUTC:      nowUTC(deps),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

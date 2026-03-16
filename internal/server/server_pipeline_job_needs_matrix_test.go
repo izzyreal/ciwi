@@ -98,10 +98,11 @@ func TestNeedsMatrixUnblocksOnlyAfterAllUpstreamVariantsSucceed(t *testing.T) {
 		t.Fatalf("expected smoke first, got %+v", first.Metadata)
 	}
 	firstDone, err := s.db.UpdateJobExecutionStatus(first.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusSucceeded,
-		Output:       "ok",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusSucceeded,
+		OutputAppend:      "ok",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark first smoke success: %v", err)
@@ -121,10 +122,11 @@ func TestNeedsMatrixUnblocksOnlyAfterAllUpstreamVariantsSucceed(t *testing.T) {
 		t.Fatalf("lease second smoke: job=%+v err=%v", second, err)
 	}
 	secondDone, err := s.db.UpdateJobExecutionStatus(second.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusSucceeded,
-		Output:       "ok",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusSucceeded,
+		OutputAppend:      "ok",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark second smoke success: %v", err)
@@ -151,11 +153,12 @@ func TestNeedsMatrixCancelsOnlyAfterAllUpstreamVariantsTerminal(t *testing.T) {
 		t.Fatalf("lease first smoke: job=%+v err=%v", first, err)
 	}
 	firstDone, err := s.db.UpdateJobExecutionStatus(first.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusFailed,
-		Error:        "boom",
-		Output:       "boom",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusFailed,
+		Error:             "boom",
+		OutputAppend:      "boom",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark first smoke failure: %v", err)
@@ -175,10 +178,11 @@ func TestNeedsMatrixCancelsOnlyAfterAllUpstreamVariantsTerminal(t *testing.T) {
 		t.Fatalf("lease second smoke: job=%+v err=%v", second, err)
 	}
 	secondDone, err := s.db.UpdateJobExecutionStatus(second.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusSucceeded,
-		Output:       "ok",
-		TimestampUTC: time.Now().UTC(),
+		AgentID:           "agent-1",
+		Status:            protocol.JobExecutionStatusSucceeded,
+		OutputAppend:      "ok",
+		OutputOffsetBytes: 0,
+		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark second smoke success: %v", err)

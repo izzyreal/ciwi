@@ -48,11 +48,6 @@ func TestBoolTrimExitEnvHelpers(t *testing.T) {
 		t.Fatalf("unexpected default handling for weird bool env")
 	}
 
-	trimmed := trimOutput("0123456789")
-	if trimmed == "" {
-		t.Fatalf("trimOutput should not return empty for short inputs")
-	}
-
 	if code := exitCodeFromErr(os.ErrNotExist); code != nil {
 		t.Fatalf("expected non-exit error to produce nil code")
 	}

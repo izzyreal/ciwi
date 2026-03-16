@@ -254,7 +254,8 @@ type JobExecutionStatusUpdateRequest struct {
 	Status              string              `json:"status"`
 	ExitCode            *int                `json:"exit_code,omitempty"`
 	Error               string              `json:"error,omitempty"`
-	Output              string              `json:"output,omitempty"`
+	OutputAppend        string              `json:"output_append,omitempty"`
+	OutputOffsetBytes   int                 `json:"output_offset_bytes,omitempty"`
 	CurrentStep         string              `json:"current_step,omitempty"`
 	CacheStats          []JobCacheStats     `json:"cache_stats,omitempty"`
 	RuntimeCapabilities map[string]string   `json:"runtime_capabilities,omitempty"`

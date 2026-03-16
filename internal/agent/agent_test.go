@@ -26,6 +26,27 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
+func reconstructedStatusOutput(t *testing.T, statuses []protocol.JobExecutionStatusUpdateRequest) string {
+	t.Helper()
+	var out string
+	for _, st := range statuses {
+		delta := st.OutputAppend
+		if delta == "" {
+			continue
+		}
+		offset := st.OutputOffsetBytes
+		switch {
+		case offset == len(out):
+			out += delta
+		case offset >= 0 && len(out) == offset+len(delta) && out[offset:] == delta:
+			// Idempotent retry of the same append.
+		default:
+			t.Fatalf("unexpected output append offset=%d len=%d delta=%q", offset, len(out), delta)
+		}
+	}
+	return out
+}
+
 func TestWithGoVerbose(t *testing.T) {
 	base := []string{"PATH=/usr/bin"}
 	got := withGoVerbose(base, true)
@@ -171,22 +192,6 @@ func TestCheckoutSourceWithCommitHashRef(t *testing.T) {
 	}
 	if strings.TrimSpace(string(data)) != "feature" {
 		t.Fatalf("unexpected checked out content: %q", string(data))
-	}
-}
-
-func TestTrimOutput(t *testing.T) {
-	short := "hello"
-	if trimOutput(short) != short {
-		t.Fatalf("short output should remain unchanged")
-	}
-
-	long := strings.Repeat("x", maxReportedOutputBytes+128)
-	trimmed := trimOutput(long)
-	if len(trimmed) != maxReportedOutputBytes {
-		t.Fatalf("expected trimmed len %d, got %d", maxReportedOutputBytes, len(trimmed))
-	}
-	if trimmed != long[len(long)-maxReportedOutputBytes:] {
-		t.Fatal("expected trimOutput to keep tail of output")
 	}
 }
 
@@ -661,8 +666,9 @@ func TestExecuteLeasedJobCancelsWhenServerCancels(t *testing.T) {
 	if last.Status != "failed" {
 		t.Fatalf("expected final status failed, got %q", last.Status)
 	}
-	if !strings.Contains(last.Output, "[control] job marked failed on server: cancelled by user") {
-		t.Fatalf("expected control cancel marker in output, got:\n%s", last.Output)
+	output := reconstructedStatusOutput(t, statuses)
+	if !strings.Contains(output, "[control] job marked failed on server: cancelled by user") {
+		t.Fatalf("expected control cancel marker in output, got:\n%s", output)
 	}
 }
 
@@ -727,11 +733,12 @@ func TestExecuteLeasedJobReportsTimeoutClearly(t *testing.T) {
 	if got := strings.TrimSpace(last.Error); got != "job timed out after 1 seconds" {
 		t.Fatalf("expected timeout error, got %q", got)
 	}
-	if !strings.Contains(last.Output, "[control] job timed out after 1 seconds") {
-		t.Fatalf("expected timeout control marker in output, got:\n%s", last.Output)
+	output := reconstructedStatusOutput(t, statuses)
+	if !strings.Contains(output, "[control] job timed out after 1 seconds") {
+		t.Fatalf("expected timeout control marker in output, got:\n%s", output)
 	}
-	if !strings.Contains(last.Output, "[run] step failed: Step 1/1: sleep (timed out after 1 seconds)") {
-		t.Fatalf("expected explicit timed out step marker in output, got:\n%s", last.Output)
+	if !strings.Contains(output, "[run] step failed: Step 1/1: sleep (timed out after 1 seconds)") {
+		t.Fatalf("expected explicit timed out step marker in output, got:\n%s", output)
 	}
 }
 
@@ -972,7 +979,7 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 			continue
 		}
 		foundRunningStep = true
-		if strings.TrimSpace(st.Output) == "" {
+		if strings.TrimSpace(st.OutputAppend) == "" {
 			t.Fatalf("expected running step status to include output snapshot")
 		}
 		for _, event := range st.Events {
@@ -1043,9 +1050,9 @@ func TestExecuteLeasedJobIncludesDryRunSkippedStepNoteInOutput(t *testing.T) {
 	if len(statuses) == 0 {
 		t.Fatalf("expected status updates")
 	}
-	last := statuses[len(statuses)-1]
-	if !strings.Contains(last.Output, "[dry-run] skipped step: step 2") {
-		t.Fatalf("expected dry-run skipped step note in output, got:\n%s", last.Output)
+	output := reconstructedStatusOutput(t, statuses)
+	if !strings.Contains(output, "[dry-run] skipped step: step 2") {
+		t.Fatalf("expected dry-run skipped step note in output, got:\n%s", output)
 	}
 }
 
@@ -1103,8 +1110,9 @@ func TestExecuteLeasedJobDisablesShellTraceForAdhoc(t *testing.T) {
 	if last.Status != "succeeded" {
 		t.Fatalf("expected succeeded status, got %q", last.Status)
 	}
-	if !strings.Contains(last.Output, "[run] shell_trace=false") {
-		t.Fatalf("expected shell trace disabled in output, got:\n%s", last.Output)
+	output := reconstructedStatusOutput(t, statuses)
+	if !strings.Contains(output, "[run] shell_trace=false") {
+		t.Fatalf("expected shell trace disabled in output, got:\n%s", output)
 	}
 }
 

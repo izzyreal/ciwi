@@ -39,10 +39,10 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 
 	workspaceDir := workspaceDirForJob(workDir, job)
 	if err := os.RemoveAll(workspaceDir); err != nil {
-		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("prepare workdir: %v", err), "")
+		return reportFailure(ctx, client, serverURL, agentID, job, nil, nil, nil, fmt.Sprintf("prepare workdir: %v", err))
 	}
 	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
-		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("create workdir: %v", err), "")
+		return reportFailure(ctx, client, serverURL, agentID, job, nil, nil, nil, fmt.Sprintf("create workdir: %v", err))
 	}
 
 	runCtx := ctx
@@ -55,10 +55,50 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	defer cancelRun()
 
 	var output syncBuffer
+	progress := &outputReportState{}
 	fmt.Fprintf(&output, "[meta] agent=%s os=%s arch=%s\n", agentID, runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&output, "[meta] job_execution_id=%s timeout_seconds=%d\n", job.ID, job.TimeoutSeconds)
 	stopControlMonitor := monitorServerTerminalJobState(runCtx, client, serverURL, agentID, job.ID, &output, cancelRun)
 	defer stopControlMonitor()
+	reportRunningUpdate := func(currentStep string, events []protocol.JobExecutionEvent, runtimeCaps map[string]string) error {
+		deltaRaw, totalLen, outputOffsetBytes, _ := progress.unsentFrom(&output)
+		delta := redactSensitive(deltaRaw, job.SensitiveValues)
+		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID:             agentID,
+			Status:              protocol.JobExecutionStatusRunning,
+			OutputAppend:        delta,
+			OutputOffsetBytes:   outputOffsetBytes,
+			CurrentStep:         currentStep,
+			Events:              events,
+			RuntimeCapabilities: runtimeCaps,
+			TimestampUTC:        time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
+		progress.markSent(totalLen, len(delta), currentStep)
+		return nil
+	}
+	reportTerminalUpdate := func(status string, exitCode *int, failMsg string, cacheStats []protocol.JobCacheStats, runtimeCaps map[string]string) error {
+		deltaRaw, totalLen, outputOffsetBytes, _ := progress.unsentFrom(&output)
+		delta := redactSensitive(deltaRaw, job.SensitiveValues)
+		req := protocol.JobExecutionStatusUpdateRequest{
+			AgentID:             agentID,
+			Status:              status,
+			ExitCode:            exitCode,
+			Error:               failMsg,
+			OutputAppend:        delta,
+			OutputOffsetBytes:   outputOffsetBytes,
+			CacheStats:          cacheStats,
+			RuntimeCapabilities: runtimeCaps,
+			CurrentStep:         "",
+			TimestampUTC:        time.Now().UTC(),
+		}
+		if err := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, req); err != nil {
+			return err
+		}
+		progress.markSent(totalLen, len(delta), "")
+		return nil
+	}
 
 	fmt.Fprintf(&output, "[meta] workspace=%s\n", workspaceDir)
 	execDir := workspaceDir
@@ -66,13 +106,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		sourceDir := filepath.Join(workspaceDir, "src")
 		checkoutStart := time.Now()
 		fmt.Fprintf(&output, "[checkout] repo=%s ref=%s\n", job.Source.Repo, job.Source.Ref)
-		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:      agentID,
-			Status:       protocol.JobExecutionStatusRunning,
-			Output:       redactSensitive(trimOutput(output.String()), job.SensitiveValues),
-			CurrentStep:  "Checking out source",
-			TimestampUTC: time.Now().UTC(),
-		}); err != nil {
+		if err := reportRunningUpdate("Checking out source", nil, nil); err != nil {
 			return fmt.Errorf("report checkout status: %w", err)
 		}
 		checkoutOutput, checkoutErr := checkoutSource(runCtx, sourceDir, *job.Source)
@@ -81,8 +115,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		if checkoutErr != nil {
 			exitCode := exitCodeFromErr(checkoutErr)
 			failMsg := "checkout failed: " + checkoutErr.Error()
-			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-			if reportErr := reportFailure(ctx, client, serverURL, agentID, job, exitCode, failMsg, trimmedOutput); reportErr != nil {
+			if reportErr := reportFailure(ctx, client, serverURL, agentID, job, progress, &output, exitCode, failMsg); reportErr != nil {
 				return reportErr
 			}
 			slog.Error("job failed during checkout", "job_execution_id", job.ID, "error", failMsg)
@@ -109,8 +142,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			if depErr != nil {
 				exitCode := exitCodeFromErr(depErr)
 				failMsg := "dependency artifact download failed: " + depErr.Error()
-				trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-				if reportErr := reportFailure(ctx, client, serverURL, agentID, job, exitCode, failMsg, trimmedOutput); reportErr != nil {
+				if reportErr := reportFailure(ctx, client, serverURL, agentID, job, progress, &output, exitCode, failMsg); reportErr != nil {
 					return reportErr
 				}
 				slog.Error("job failed during dependency artifact download", "job_execution_id", job.ID, "error", failMsg)
@@ -142,15 +174,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	if requireContainerTools && strings.TrimSpace(probeContainerImage) == "" {
 		err := fmt.Errorf("container tool requirements require runs_on.container_image")
 		fmt.Fprintf(&output, "[runtime] %v\n", err)
-		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:      agentID,
-			Status:       protocol.JobExecutionStatusFailed,
-			Error:        err.Error(),
-			Output:       trimmedOutput,
-			CacheStats:   cacheStats,
-			TimestampUTC: time.Now().UTC(),
-		}); reportErr != nil {
+		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, err.Error(), cacheStats, nil); reportErr != nil {
 			return reportErr
 		}
 		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
@@ -188,15 +212,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		})
 		if startErr != nil {
 			fmt.Fprintf(&output, "[runtime] %v\n", startErr)
-			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-			if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:      agentID,
-				Status:       protocol.JobExecutionStatusFailed,
-				Error:        startErr.Error(),
-				Output:       trimmedOutput,
-				CacheStats:   cacheStats,
-				TimestampUTC: time.Now().UTC(),
-			}); reportErr != nil {
+			if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, startErr.Error(), cacheStats, nil); reportErr != nil {
 				return reportErr
 			}
 			slog.Error("job failed", "job_execution_id", job.ID, "error", startErr.Error())
@@ -236,15 +252,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	if ensureErr := validateProbeContainerReady(runCtx, probeContainer, probeContainerImage); ensureErr != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", ensureErr)
-		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:      agentID,
-			Status:       protocol.JobExecutionStatusFailed,
-			Error:        ensureErr.Error(),
-			Output:       trimmedOutput,
-			CacheStats:   cacheStats,
-			TimestampUTC: time.Now().UTC(),
-		}); reportErr != nil {
+		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, ensureErr.Error(), cacheStats, nil); reportErr != nil {
 			return reportErr
 		}
 		slog.Error("job failed", "job_execution_id", job.ID, "error", ensureErr.Error())
@@ -252,7 +260,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	shell, err := resolveJobShell(job.RequiredCapabilities)
 	if err != nil {
-		return reportFailure(ctx, client, serverURL, agentID, job, nil, fmt.Sprintf("resolve job shell: %v", err), "")
+		return reportFailure(ctx, client, serverURL, agentID, job, nil, nil, nil, fmt.Sprintf("resolve job shell: %v", err))
 	}
 
 	runtimeCaps := collectRuntimeCapabilities(agentCapabilities, probeContainer)
@@ -262,16 +270,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	if err := validateHostToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", err)
-		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:             agentID,
-			Status:              protocol.JobExecutionStatusFailed,
-			Error:               err.Error(),
-			Output:              trimmedOutput,
-			CacheStats:          cacheStats,
-			RuntimeCapabilities: runtimeCaps,
-			TimestampUTC:        time.Now().UTC(),
-		}); reportErr != nil {
+		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, err.Error(), cacheStats, runtimeCaps); reportErr != nil {
 			return reportErr
 		}
 		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
@@ -279,29 +278,13 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	if err := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", err)
-		trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
-		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:             agentID,
-			Status:              protocol.JobExecutionStatusFailed,
-			Error:               err.Error(),
-			Output:              trimmedOutput,
-			CacheStats:          cacheStats,
-			RuntimeCapabilities: runtimeCaps,
-			TimestampUTC:        time.Now().UTC(),
-		}); reportErr != nil {
+		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, err.Error(), cacheStats, runtimeCaps); reportErr != nil {
 			return reportErr
 		}
 		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
 		return nil
 	}
-	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:             agentID,
-		Status:              protocol.JobExecutionStatusRunning,
-		Output:              redactSensitive(trimOutput(output.String()), job.SensitiveValues),
-		CurrentStep:         "Preparing execution",
-		RuntimeCapabilities: runtimeCaps,
-		TimestampUTC:        time.Now().UTC(),
-	}); err != nil {
+	if err := reportRunningUpdate("Preparing execution", nil, runtimeCaps); err != nil {
 		return fmt.Errorf("report runtime capabilities: %w", err)
 	}
 
@@ -331,7 +314,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	runStart := time.Now()
 	if len(scriptSteps) == 0 {
-		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, execContainer, runEnv, &output, "Running job script", job.SensitiveValues, traceShell)
+		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, execContainer, runEnv, &output, progress, "Running job script", job.SensitiveValues, traceShell)
 	} else {
 		for _, step := range scriptSteps {
 			currentStep := formatCurrentStep(step.meta)
@@ -356,14 +339,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 					TimestampUTC: time.Now().UTC(),
 				},
 			}
-			if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:      agentID,
-				Status:       protocol.JobExecutionStatusRunning,
-				Output:       redactSensitive(trimOutput(output.String()), job.SensitiveValues),
-				CurrentStep:  currentStep,
-				Events:       events,
-				TimestampUTC: time.Now().UTC(),
-			}); err != nil {
+			if err := reportRunningUpdate(currentStep, events, nil); err != nil {
 				return fmt.Errorf("report step status: %w", err)
 			}
 			if step.meta.kind == "dryrun_skip" {
@@ -373,7 +349,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			if len(step.env) > 0 {
 				stepRunEnv = mergeEnv(runEnv, step.env)
 			}
-			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, stepRunEnv, &output, currentStep, job.SensitiveValues, traceShell)
+			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, stepRunEnv, &output, progress, currentStep, job.SensitiveValues, traceShell)
 			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
 				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)
 				if parseErr != nil {
@@ -434,18 +410,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		if uploadErr != nil {
 			fmt.Fprintf(&output, "[artifacts] upload_failed=%v\n", uploadErr)
-			trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 			failMsg := "artifact upload failed: " + uploadErr.Error()
 			cacheStats = refreshCacheStats()
-			if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:             agentID,
-				Status:              protocol.JobExecutionStatusFailed,
-				Error:               failMsg,
-				Output:              trimmedOutput,
-				CacheStats:          cacheStats,
-				RuntimeCapabilities: runtimeCaps,
-				TimestampUTC:        time.Now().UTC(),
-			}); reportErr != nil {
+			if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, failMsg, cacheStats, runtimeCaps); reportErr != nil {
 				return reportErr
 			}
 			slog.Error("job failed", "job_execution_id", job.ID, "error", failMsg)
@@ -453,7 +420,6 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 	}
 
-	trimmedOutput := redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 	testReport := protocol.JobExecutionTestReport{Suites: collectedSuites, Coverage: collectedCoverage}
 	for _, s := range collectedSuites {
 		testReport.Total += s.Total
@@ -470,22 +436,12 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		if err == nil && testReport.Failed > 0 {
 			err = fmt.Errorf("test report contains failures: failed=%d", testReport.Failed)
 		}
-		trimmedOutput = redactSensitive(trimOutput(output.String()), job.SensitiveValues)
 	}
 
 	if err == nil {
 		exitCode := 0
 		cacheStats = refreshCacheStats()
-		if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:             agentID,
-			Status:              protocol.JobExecutionStatusSucceeded,
-			ExitCode:            &exitCode,
-			Output:              trimmedOutput,
-			CacheStats:          cacheStats,
-			RuntimeCapabilities: runtimeCaps,
-			CurrentStep:         "",
-			TimestampUTC:        time.Now().UTC(),
-		}); reportErr != nil {
+		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusSucceeded, &exitCode, "", cacheStats, runtimeCaps); reportErr != nil {
 			return fmt.Errorf("report succeeded status: %w", reportErr)
 		}
 		slog.Info("job succeeded", "job_execution_id", job.ID)
@@ -496,25 +452,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	failMsg := err.Error()
 	if runCtx.Err() == context.DeadlineExceeded {
 		failMsg = fmt.Sprintf("job timed out after %d seconds", job.TimeoutSeconds)
-		if !strings.Contains(trimmedOutput, "[control] job timed out after ") {
-			if trimmedOutput != "" && !strings.HasSuffix(trimmedOutput, "\n") {
-				trimmedOutput += "\n"
-			}
-			trimmedOutput += fmt.Sprintf("[control] job timed out after %d seconds\n", job.TimeoutSeconds)
-		}
 	}
 	cacheStats = refreshCacheStats()
-	if reportErr := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:             agentID,
-		Status:              protocol.JobExecutionStatusFailed,
-		ExitCode:            exitCode,
-		Error:               failMsg,
-		Output:              trimmedOutput,
-		CacheStats:          cacheStats,
-		RuntimeCapabilities: runtimeCaps,
-		CurrentStep:         "",
-		TimestampUTC:        time.Now().UTC(),
-	}); reportErr != nil {
+	if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, exitCode, failMsg, cacheStats, runtimeCaps); reportErr != nil {
 		return reportErr
 	}
 	slog.Error("job failed", "job_execution_id", job.ID, "exit_code", exitCode, "error", failMsg)

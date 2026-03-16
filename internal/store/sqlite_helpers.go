@@ -13,6 +13,8 @@ import (
 	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
+const maxPersistedJobOutputBytes = 2 * 1024 * 1024
+
 func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.JobExecution, error) {
 	var (
 		job                                                                                                               protocol.JobExecution
@@ -151,6 +153,40 @@ func cloneMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func trimPersistedJobOutput(output string) string {
+	if len(output) <= maxPersistedJobOutputBytes {
+		return output
+	}
+	return output[len(output)-maxPersistedJobOutputBytes:]
+}
+
+func appendPersistedJobOutput(current, delta string) string {
+	if delta == "" {
+		return trimPersistedJobOutput(current)
+	}
+	if current == "" {
+		return trimPersistedJobOutput(delta)
+	}
+	return trimPersistedJobOutput(current + delta)
+}
+
+func appendPersistedJobOutputAtOffset(current, delta string, offset int) (string, bool) {
+	if delta == "" {
+		return trimPersistedJobOutput(current), true
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset == len(current) {
+		return appendPersistedJobOutput(current, delta), true
+	}
+	// Idempotent retry: the same delta already landed at the same offset.
+	if offset <= len(current) && len(current) == offset+len(delta) && current[offset:] == delta {
+		return current, true
+	}
+	return current, false
 }
 
 func cloneJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {
