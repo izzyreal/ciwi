@@ -62,3 +62,25 @@ func TestDeferredControlIgnoresEmptyUpdateTarget(t *testing.T) {
 		t.Fatalf("expected empty target to not be queued")
 	}
 }
+
+func TestDeferredControlCanRequeueJobHistoryWipe(t *testing.T) {
+	c := &deferredControl{}
+	if c.hasDeferred() {
+		t.Fatalf("expected no deferred actions initially")
+	}
+	c.requeueJobHistoryWipe()
+	if !c.hasDeferred() {
+		t.Fatalf("expected deferred actions after requeue")
+	}
+
+	events := make([]string, 0, 1)
+	c.flushDeferred(func(string, string, string) {}, func() {}, func() {}, func() {
+		events = append(events, "history")
+	})
+	if !reflect.DeepEqual(events, []string{"history"}) {
+		t.Fatalf("unexpected deferred flush events: got=%v", events)
+	}
+	if c.hasDeferred() {
+		t.Fatalf("expected deferred actions cleared after flush")
+	}
+}

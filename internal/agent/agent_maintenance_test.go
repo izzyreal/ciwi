@@ -93,3 +93,21 @@ func TestWipeAgentJobHistoryReadError(t *testing.T) {
 		t.Fatalf("expected wipeAgentJobHistory read error for missing work dir")
 	}
 }
+
+func TestRemoveAllWithRetryRemovesDirectory(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "nested")
+	if err := os.MkdirAll(filepath.Join(path, "child"), 0o755); err != nil {
+		t.Fatalf("create nested dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "child", "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write nested file: %v", err)
+	}
+
+	if err := removeAllWithRetry(path); err != nil {
+		t.Fatalf("removeAllWithRetry: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected path removed, stat err=%v", err)
+	}
+}

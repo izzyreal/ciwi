@@ -24,7 +24,7 @@ func wipeAgentJobHistory(workDir string) (string, error) {
 			if readErr != nil {
 				return "", fmt.Errorf("read workspaces dir %q: %w", workspaceRoot, readErr)
 			}
-			if err := os.RemoveAll(workspaceRoot); err != nil {
+			if err := removeAllWithRetry(workspaceRoot); err != nil {
 				return "", fmt.Errorf("remove workspace root %q: %w", workspaceRoot, err)
 			}
 			if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
@@ -36,7 +36,7 @@ func wipeAgentJobHistory(workDir string) (string, error) {
 		if !strings.HasPrefix(name, "job-") {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(workDir, name)); err != nil {
+		if err := removeAllWithRetry(filepath.Join(workDir, name)); err != nil {
 			return "", fmt.Errorf("remove legacy job dir %q: %w", name, err)
 		}
 		removed++

@@ -92,6 +92,17 @@ func (d *deferredControl) requestJobHistoryWipe(onDefer func(), runNow func()) {
 	runNow()
 }
 
+func (d *deferredControl) requeueJobHistoryWipe() {
+	d.pendingJobHistoryWipe = true
+}
+
+func (d *deferredControl) hasDeferred() bool {
+	return d.pendingUpdate != nil ||
+		d.pendingRestart ||
+		d.pendingCacheWipe ||
+		d.pendingJobHistoryWipe
+}
+
 func (d *deferredControl) flushDeferred(runUpdate func(string, string, string), runRestart, runCacheWipe, runJobHistoryWipe func()) {
 	d.jobInProgress = false
 	if d.pendingUpdate != nil {
@@ -241,6 +252,7 @@ func runLoop(ctx context.Context) error {
 			slog.Info("server requested local job history wipe")
 			msg, err := wipeAgentJobHistory(workDir)
 			if err != nil {
+				control.requeueJobHistoryWipe()
 				slog.Error("agent local job history wipe failed", "error", err)
 				return
 			}
@@ -315,8 +327,14 @@ func runLoop(ctx context.Context) error {
 			} else {
 				ackHeartbeatState(hbRes.sentUpdateFailure, hbRes.sentRestartStatus)
 				processHeartbeat(hbRes.resp)
+				if !control.jobInProgress && control.hasDeferred() {
+					control.flushDeferred(runOrDeferUpdate, runOrDeferRestart, runOrDeferCacheWipe, runOrDeferJobHistoryWipe)
+				}
 			}
 		case <-leaseTicker.C:
+			if !control.jobInProgress && control.hasDeferred() {
+				control.flushDeferred(runOrDeferUpdate, runOrDeferRestart, runOrDeferCacheWipe, runOrDeferJobHistoryWipe)
+			}
 			if control.jobInProgress {
 				continue
 			}

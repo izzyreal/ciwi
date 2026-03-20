@@ -38,7 +38,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 
 	workspaceDir := workspaceDirForJob(workDir, job)
-	if err := os.RemoveAll(workspaceDir); err != nil {
+	if err := removeAllWithRetry(workspaceDir); err != nil {
 		return reportFailure(ctx, client, serverURL, agentID, job, nil, nil, nil, fmt.Sprintf("prepare workdir: %v", err))
 	}
 	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
