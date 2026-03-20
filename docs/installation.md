@@ -83,6 +83,15 @@ curl -fsSL -o /tmp/install_ciwi_agent_macos.sh \
 sh /tmp/install_ciwi_agent_macos.sh
 ```
 
+Update token:
+
+```bash
+export CIWI_GITHUB_TOKEN="<new-token>"
+curl -fsSL -o /tmp/update_ciwi_agent_macos_token.sh \
+  https://raw.githubusercontent.com/izzyreal/ciwi/main/update_agent_macos_token.sh && \
+sh /tmp/update_ciwi_agent_macos_token.sh
+```
+
 Uninstall:
 
 ```bash
