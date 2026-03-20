@@ -133,6 +133,16 @@ Invoke-WebRequest -Uri $uri -OutFile $script
 powershell -NoProfile -ExecutionPolicy Bypass -File $script
 ```
 
+Update token:
+
+```powershell
+$env:CIWI_GITHUB_TOKEN = "<new-token>"
+$script = Join-Path $env:TEMP ("update_ciwi_agent_windows_token_" + [Guid]::NewGuid().ToString("N") + ".ps1")
+$uri = "https://raw.githubusercontent.com/izzyreal/ciwi/main/update_agent_windows_token.ps1?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+Invoke-WebRequest -Uri $uri -OutFile $script
+powershell -NoProfile -ExecutionPolicy Bypass -File $script
+```
+
 Uninstall:
 
 ```powershell
