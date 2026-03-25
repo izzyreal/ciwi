@@ -42,7 +42,7 @@ Supported tool keys include:
 - `sphinx-build`, `rinoh`
 - `ccache`, `sccache`
 - macOS signing/packaging tools
-- Windows `msvc`, `iscc`, `signtool`
+- Windows `msvc`, `iscc`, `wix`, `signtool`
 - synthetic host capability `xorg-dev`
 
 Use `requires.tools` in job config:

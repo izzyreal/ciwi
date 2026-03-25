@@ -78,6 +78,7 @@ func detectToolVersions() map[string]string {
 		{name: "sphinx-build", cmd: "sphinx-build", args: []string{"--version"}},
 		{name: "xcodebuild", cmd: "xcodebuild", args: []string{"-version"}},
 		{name: "iscc", cmd: "iscc", args: []string{"/?"}},
+		{name: "wix", cmd: "wix", args: []string{"--version"}},
 		{name: "signtool", cmd: "signtool", args: []string{"/?"}},
 		{name: "packagesbuild", cmd: "packagesbuild", args: []string{"--version"}},
 		{name: "packagesutil", cmd: "packagesutil", args: []string{"version"}},
