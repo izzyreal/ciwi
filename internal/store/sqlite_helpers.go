@@ -13,7 +13,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
-const maxPersistedJobOutputBytes = 2 * 1024 * 1024
+const maxPersistedJobOutputBytes = protocol.JobExecutionOutputTailMaxBytes
 
 func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.JobExecution, error) {
 	var (

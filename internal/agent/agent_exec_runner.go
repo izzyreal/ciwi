@@ -272,6 +272,9 @@ func (s *outputReportState) markSent(totalRawLen, deltaPersistedBytes int, curre
 	defer s.mu.Unlock()
 	s.sentRawLen = totalRawLen
 	s.sentPersistedBytes += deltaPersistedBytes
+	if s.sentPersistedBytes > protocol.JobExecutionOutputTailMaxBytes {
+		s.sentPersistedBytes = protocol.JobExecutionOutputTailMaxBytes
+	}
 	s.lastStep = currentStep
 }
 

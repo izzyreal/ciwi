@@ -2,6 +2,8 @@ package protocol
 
 import "time"
 
+const JobExecutionOutputTailMaxBytes = 2 * 1024 * 1024
+
 type AgentInfo struct {
 	AgentID              string            `json:"agent_id"`
 	Hostname             string            `json:"hostname"`

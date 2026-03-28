@@ -87,6 +87,35 @@ func TestBoolEnv(t *testing.T) {
 	}
 }
 
+func TestOutputReportStateClampsPersistedOffsetToTailWindow(t *testing.T) {
+	st := &outputReportState{}
+	st.markSent(protocol.JobExecutionOutputTailMaxBytes+123, protocol.JobExecutionOutputTailMaxBytes+123, "step")
+	if st.sentPersistedBytes != protocol.JobExecutionOutputTailMaxBytes {
+		t.Fatalf("expected persisted offset clamp=%d got=%d", protocol.JobExecutionOutputTailMaxBytes, st.sentPersistedBytes)
+	}
+}
+
+func TestOutputReportStateUsesClampedOffsetForSubsequentDeltas(t *testing.T) {
+	st := &outputReportState{}
+	var buf syncBuffer
+
+	initial := strings.Repeat("a", protocol.JobExecutionOutputTailMaxBytes) + "bc"
+	buf.WriteString(initial)
+	st.markSent(len(initial), len(initial), "build")
+
+	buf.WriteString("de")
+	delta, totalRawLen, outputOffsetBytes, _ := st.unsentFrom(&buf)
+	if delta != "de" {
+		t.Fatalf("expected unsent delta %q got %q", "de", delta)
+	}
+	if totalRawLen != len(initial)+2 {
+		t.Fatalf("unexpected total raw len %d", totalRawLen)
+	}
+	if outputOffsetBytes != protocol.JobExecutionOutputTailMaxBytes {
+		t.Fatalf("expected capped offset %d got %d", protocol.JobExecutionOutputTailMaxBytes, outputOffsetBytes)
+	}
+}
+
 func TestIsRetryableGitTransportError(t *testing.T) {
 	tests := []struct {
 		name   string
