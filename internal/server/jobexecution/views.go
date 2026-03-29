@@ -38,18 +38,6 @@ type CreateViewResponse struct {
 	JobExecution View `json:"job_execution"`
 }
 
-type SummaryViewResponse struct {
-	View              string                `json:"view"`
-	Max               int                   `json:"max"`
-	Total             int                   `json:"total"`
-	QueuedCount       int                   `json:"queued_count"`
-	HistoryCount      int                   `json:"history_count"`
-	QueuedGroupCount  int                   `json:"queued_group_count"`
-	HistoryGroupCount int                   `json:"history_group_count"`
-	QueuedGroups      []DisplayGroupSummary `json:"queued_groups"`
-	HistoryGroups     []DisplayGroupSummary `json:"history_groups"`
-}
-
 type PagedViewResponse struct {
 	View          string `json:"view"`
 	Total         int    `json:"total"`

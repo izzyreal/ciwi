@@ -51,37 +51,15 @@ func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 	switch r.Method {
 	case http.MethodGet:
 		view := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("view")))
-		maxJobs := ParseQueryInt(r, "max", 150, 1, 2000)
 
 		jobs, err := deps.Store.ListJobExecutions()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		jobs = CapDisplayJobs(jobs, maxJobs)
-
-		queuedJobs, historyJobs := SplitByState(jobs)
 		switch view {
-		case "summary":
-			queuedGroups := SummarizeDisplayGroups(queuedJobs)
-			historyGroups := SummarizeDisplayGroups(historyJobs)
-			httpx.WriteJSON(w, http.StatusOK, SummaryViewResponse{
-				View:              "summary",
-				Max:               maxJobs,
-				Total:             len(jobs),
-				QueuedCount:       len(queuedJobs),
-				HistoryCount:      len(historyJobs),
-				QueuedGroupCount:  len(queuedGroups),
-				HistoryGroupCount: len(historyGroups),
-				QueuedGroups:      queuedGroups,
-				HistoryGroups:     historyGroups,
-			})
-			return
-		case "queued", "history":
-			source := queuedJobs
-			if view == "history" {
-				source = historyJobs
-			}
+		case "history":
+			source := finishedJobs(jobs)
 			offset := ParseQueryInt(r, "offset", 0, 0, 1_000_000)
 			limit := ParseQueryInt(r, "limit", 25, 1, 200)
 			page := Paginate(source, offset, limit)
@@ -93,7 +71,7 @@ func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 			}
 			pageViews := ViewsFromProtocol(page)
 			httpx.WriteJSON(w, http.StatusOK, PagedViewResponse{
-				View:          view,
+				View:          "history",
 				Total:         len(source),
 				Offset:        offset,
 				Limit:         limit,

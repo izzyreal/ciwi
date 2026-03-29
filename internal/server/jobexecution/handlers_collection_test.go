@@ -10,41 +10,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func TestHandleCollectionSummaryView(t *testing.T) {
-	store := &stubStore{}
-	store.listJobExecutionsFn = func() ([]protocol.JobExecution, error) {
-		return []protocol.JobExecution{
-			{ID: "q-1", Status: protocol.JobExecutionStatusQueued, Metadata: map[string]string{"pipeline_run_id": "run-a", "project_id": "p1", "pipeline_id": "build"}},
-			{ID: "q-2", Status: protocol.JobExecutionStatusRunning, Metadata: map[string]string{"pipeline_run_id": "run-a", "project_id": "p1", "pipeline_id": "build"}},
-			{ID: "h-1", Status: protocol.JobExecutionStatusFailed},
-			{ID: "h-2", Status: protocol.JobExecutionStatusSucceeded},
-		}, nil
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?view=summary&max=3", nil)
-	HandleCollection(rec, req, HandlerDeps{Store: store})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var got SummaryViewResponse
-	mustDecodeCollectionJSON(t, rec, &got)
-	if got.View != "summary" || got.Max != 3 {
-		t.Fatalf("unexpected summary metadata: %+v", got)
-	}
-	if got.Total != 3 || got.QueuedCount != 2 || got.HistoryCount != 1 {
-		t.Fatalf("unexpected summary counts: %+v", got)
-	}
-	if len(got.QueuedGroups) != 1 || got.QueuedGroups[0].RunID != "run-a|p1|build" {
-		t.Fatalf("unexpected queued groups: %+v", got.QueuedGroups)
-	}
-	if len(got.HistoryGroups) != 1 || got.HistoryGroups[0].Key != "job:h-1" {
-		t.Fatalf("unexpected history groups: %+v", got.HistoryGroups)
-	}
-}
-
-func TestHandleCollectionPagedViewQueued(t *testing.T) {
+func TestHandleCollectionPagedViewHistory(t *testing.T) {
 	store := &stubStore{}
 	store.listJobExecutionsFn = func() ([]protocol.JobExecution, error) {
 		return []protocol.JobExecution{
@@ -52,6 +18,7 @@ func TestHandleCollectionPagedViewQueued(t *testing.T) {
 			{ID: "q-2", Status: protocol.JobExecutionStatusLeased},
 			{ID: "q-3", Status: protocol.JobExecutionStatusRunning},
 			{ID: "h-1", Status: protocol.JobExecutionStatusSucceeded},
+			{ID: "h-2", Status: protocol.JobExecutionStatusFailed},
 		}, nil
 	}
 	deps := HandlerDeps{Store: store}
@@ -67,7 +34,7 @@ func TestHandleCollectionPagedViewQueued(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?view=queued&offset=1&limit=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?view=history&offset=1&limit=1", nil)
 	HandleCollection(rec, req, deps)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -75,10 +42,10 @@ func TestHandleCollectionPagedViewQueued(t *testing.T) {
 
 	var got PagedViewResponse
 	mustDecodeCollectionJSON(t, rec, &got)
-	if got.View != "queued" || got.Total != 3 || got.Offset != 1 || got.Limit != 1 {
+	if got.View != "history" || got.Total != 2 || got.Offset != 1 || got.Limit != 1 {
 		t.Fatalf("unexpected page metadata: %+v", got)
 	}
-	if len(got.JobExecutions) != 1 || got.JobExecutions[0].ID != "q-2" {
+	if len(got.JobExecutions) != 1 || got.JobExecutions[0].ID != "h-2" {
 		t.Fatalf("unexpected page jobs: %+v", got.JobExecutions)
 	}
 	if got.JobExecutions[0].TestSummary == nil || len(got.JobExecutions[0].UnmetRequirements) != 1 {
