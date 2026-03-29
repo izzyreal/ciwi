@@ -127,3 +127,38 @@ func TestResolveJobSecretsNoopAndMissingSecret(t *testing.T) {
 		t.Fatalf("expected resolveJobSecrets to fail for unknown secret")
 	}
 }
+
+func TestResolveJobSecretsDryRunSkipsVaultResolution(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	job := protocol.JobExecution{
+		Metadata: map[string]string{
+			"dry_run": "1",
+		},
+		StepPlan: []protocol.JobStepPlanItem{{
+			Script:          "echo dry-run",
+			VaultConnection: "missing-vault",
+			VaultSecrets: []protocol.ProjectSecretSpec{{
+				Name: "github_token",
+				Path: "ciwi",
+				Key:  "token",
+			}},
+			Env: map[string]string{
+				"GITHUB_TOKEN": "{{secret.github_token}}",
+			},
+		}},
+	}
+	if err := s.resolveJobSecrets(context.Background(), &job); err != nil {
+		t.Fatalf("resolveJobSecrets dry-run: %v", err)
+	}
+	if got := job.StepPlan[0].Env["GITHUB_TOKEN"]; got != "{{secret.github_token}}" {
+		t.Fatalf("expected dry-run secret placeholder to remain unchanged, got %q", got)
+	}
+	if job.Metadata["has_secrets"] != "" {
+		t.Fatalf("expected dry-run to skip has_secrets marking, got %q", job.Metadata["has_secrets"])
+	}
+	if len(job.SensitiveValues) != 0 {
+		t.Fatalf("expected no sensitive values for dry-run, got %+v", job.SensitiveValues)
+	}
+}
