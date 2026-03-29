@@ -194,6 +194,36 @@ const uiIndexCSS = `
       display: grid;
       gap: 8px;
     }
+    .ciwi-job-history-sections {
+      display: grid;
+      gap: 0;
+      border-top: 1px solid var(--line);
+    }
+    .ciwi-job-history-section + .ciwi-job-history-section {
+      border-top: 1px solid var(--line);
+    }
+    .ciwi-job-history-section-head {
+      padding: 8px 10px;
+      background: #fbfefd;
+      color: #5f6f67;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: .01em;
+    }
+    .ciwi-job-history-matrix-head {
+      padding: 8px 10px;
+      background: #fdfefe;
+      color: #5f6f67;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .ciwi-job-history-empty-card {
+      padding: 10px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      font-size: 13px;
+    }
     a.job-link { color: var(--accent); }
     @media (max-width: 760px) {
       table { font-size: 12px; }

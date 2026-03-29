@@ -48,6 +48,10 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.HandleFunc("/api/v1/vault/connections/*", s.vaultConnectionByIDHandler)
 
 	// Job APIs
+	r.Get("/api/v1/job-queue/layout", s.jobQueueLayoutHandler)
+	r.Get("/api/v1/job-queue/cards", s.jobQueueCardsHandler)
+	r.Get("/api/v1/job-history/layout", s.jobHistoryLayoutHandler)
+	r.Get("/api/v1/job-history/cards", s.jobHistoryCardsHandler)
 	r.Post("/api/v1/jobs/clear-queue", s.clearJobExecutionQueueHandler)
 	r.Post("/api/v1/jobs/flush-history", s.flushJobExecutionHistoryHandler)
 	r.HandleFunc("/api/v1/jobs", s.jobExecutionsHandler)

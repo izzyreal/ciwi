@@ -7,6 +7,10 @@ const uiIndexStateJS = `
     let lastProjectsSignature = '';
     let lastQueuedJobsSignature = '';
     let lastHistoryJobsSignature = '';
+    let lastQueuedLayoutSignature = '';
+    let lastHistoryLayoutSignature = '';
+    const queueCardDetailsByKey = Object.create(null);
+    const historyCardDetailsByKey = Object.create(null);
     const PROJECT_GROUPS_STORAGE_KEY = 'ciwi.index.projectGroupsCollapsed.v1';
     const JOB_GROUPS_STORAGE_KEY = 'ciwi.index.jobGroupsExpanded.v1';
 
@@ -32,6 +36,8 @@ const uiIndexStateJS = `
     const expandedJobGroups = loadStringSet(JOB_GROUPS_STORAGE_KEY);
     const JOBS_WINDOW = 150;
     const JOBS_BATCH_SIZE = 5;
+    const HISTORY_CARD_WINDOW = 40;
+    const HISTORY_CARD_BATCH = 5;
     const projectIconURLByName = Object.create(null);
 
     function projectIconURLForJob(job) {
