@@ -600,6 +600,22 @@ const uiIndexJobExecutionsJS = `
           } catch (e) {
             await showAlertDialog({ title: 'Remove failed', message: 'Remove failed: ' + e.message });
           }
+        },
+        onCancel: async (j) => {
+          const confirmed = await showConfirmDialog({
+            title: 'Cancel Job',
+            message: 'Cancel this running job?',
+            okLabel: 'Cancel job',
+          });
+          if (!confirmed) {
+            return;
+          }
+          try {
+            await apiJSON('/api/v1/jobs/' + j.id + '/cancel', { method: 'POST', body: '{}' });
+            await refreshJobs();
+          } catch (e) {
+            await showAlertDialog({ title: 'Cancel failed', message: 'Cancel failed: ' + e.message });
+          }
         }
       };
       const historyOpts = {

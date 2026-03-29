@@ -53,6 +53,7 @@ function buildJobExecutionRow(job, opts = {}) {
   const fixedLines = Math.max(0, Number(opts.fixedLines || 0));
   const backPath = opts.backPath || (window.location.pathname || '/');
   const onRemove = opts.onRemove || null;
+  const onCancel = opts.onCancel || null;
   const linkClass = opts.linkClass || '';
   const projectIconURLFn = (typeof opts.projectIconURL === 'function') ? opts.projectIconURL : null;
 
@@ -122,6 +123,21 @@ function buildJobExecutionRow(job, opts = {}) {
         try {
           if (onRemove) {
             await onRemove(job);
+          }
+        } finally {
+          btn.disabled = false;
+        }
+      };
+      actionTd.appendChild(btn);
+    } else if (isRunningJobStatus(job.status)) {
+      const btn = document.createElement('button');
+      btn.className = 'secondary';
+      btn.textContent = 'Cancel';
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          if (onCancel) {
+            await onCancel(job);
           }
         } finally {
           btn.disabled = false;
