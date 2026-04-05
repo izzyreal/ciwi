@@ -22,7 +22,7 @@
 ## Job history and cleanup
 
 - **Flush History** removes non-active execution records from sqlite.
-- Artifact files are not automatically GC’d by history flush.
+- **Flush History** also removes artifact directories for the flushed jobs.
 
 ## Offline-cached execution
 

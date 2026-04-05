@@ -27,7 +27,7 @@ type Store interface {
 	GetJobExecutionTestReport(id string) (protocol.JobExecutionTestReport, bool, error)
 	SaveJobExecutionTestReport(id string, report protocol.JobExecutionTestReport) error
 	ClearQueuedJobExecutions() (int64, error)
-	FlushJobExecutionHistory() (int64, error)
+	FlushJobExecutionHistory() ([]string, error)
 }
 
 type HandlerDeps struct {
@@ -391,12 +391,15 @@ func HandleFlushHistory(w http.ResponseWriter, r *http.Request, deps HandlerDeps
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	n, err := deps.Store.FlushJobExecutionHistory()
+	deletedIDs, err := deps.Store.FlushJobExecutionHistory()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, FlushHistoryViewResponse{Flushed: n})
+	for _, jobID := range deletedIDs {
+		_ = os.RemoveAll(filepath.Join(deps.ArtifactsDir, jobID))
+	}
+	httpx.WriteJSON(w, http.StatusOK, FlushHistoryViewResponse{Flushed: int64(len(deletedIDs))})
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

@@ -28,7 +28,7 @@ type stubStore struct {
 	getJobExecutionTestReportFn  func(id string) (protocol.JobExecutionTestReport, bool, error)
 	saveJobExecutionTestReportFn func(id string, report protocol.JobExecutionTestReport) error
 	clearQueuedJobExecutionsFn   func() (int64, error)
-	flushJobExecutionHistoryFn   func() (int64, error)
+	flushJobExecutionHistoryFn   func() ([]string, error)
 }
 
 func (s *stubStore) ListJobExecutions() ([]protocol.JobExecution, error) {
@@ -108,11 +108,11 @@ func (s *stubStore) ClearQueuedJobExecutions() (int64, error) {
 	return 0, fmt.Errorf("unexpected ClearQueuedJobExecutions call")
 }
 
-func (s *stubStore) FlushJobExecutionHistory() (int64, error) {
+func (s *stubStore) FlushJobExecutionHistory() ([]string, error) {
 	if s.flushJobExecutionHistoryFn != nil {
 		return s.flushJobExecutionHistoryFn()
 	}
-	return 0, fmt.Errorf("unexpected FlushJobExecutionHistory call")
+	return nil, fmt.Errorf("unexpected FlushJobExecutionHistory call")
 }
 
 func TestHandleByIDCancelActiveJob(t *testing.T) {

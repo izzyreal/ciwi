@@ -470,8 +470,8 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("flush history: %v", err)
 	}
-	if flushed != 1 {
-		t.Fatalf("expected flush count 1, got %d", flushed)
+	if len(flushed) != 1 {
+		t.Fatalf("expected flush count 1, got %d", len(flushed))
 	}
 
 	jobs, err := s.ListJobExecutions()

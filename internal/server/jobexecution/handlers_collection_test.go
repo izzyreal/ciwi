@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -167,7 +169,7 @@ func TestHandleFlushHistory(t *testing.T) {
 
 	t.Run("store error", func(t *testing.T) {
 		store := &stubStore{}
-		store.flushJobExecutionHistoryFn = func() (int64, error) { return 0, protocolError("nope") }
+		store.flushJobExecutionHistoryFn = func() ([]string, error) { return nil, protocolError("nope") }
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/flush-history", nil)
 		HandleFlushHistory(rec, req, HandlerDeps{Store: store})
@@ -177,18 +179,37 @@ func TestHandleFlushHistory(t *testing.T) {
 	})
 
 	t.Run("success", func(t *testing.T) {
+		artifactsDir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(artifactsDir, "job-1"), 0o755); err != nil {
+			t.Fatalf("mkdir job-1 artifact dir: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(artifactsDir, "job-2"), 0o755); err != nil {
+			t.Fatalf("mkdir job-2 artifact dir: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(artifactsDir, "job-keep"), 0o755); err != nil {
+			t.Fatalf("mkdir job-keep artifact dir: %v", err)
+		}
 		store := &stubStore{}
-		store.flushJobExecutionHistoryFn = func() (int64, error) { return 11, nil }
+		store.flushJobExecutionHistoryFn = func() ([]string, error) { return []string{"job-1", "job-2"}, nil }
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/flush-history", nil)
-		HandleFlushHistory(rec, req, HandlerDeps{Store: store})
+		HandleFlushHistory(rec, req, HandlerDeps{Store: store, ArtifactsDir: artifactsDir})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
 		var got FlushHistoryViewResponse
 		mustDecodeCollectionJSON(t, rec, &got)
-		if got.Flushed != 11 {
+		if got.Flushed != 2 {
 			t.Fatalf("unexpected flushed count: %+v", got)
+		}
+		if _, err := os.Stat(filepath.Join(artifactsDir, "job-1")); !os.IsNotExist(err) {
+			t.Fatalf("expected job-1 artifacts removed, stat err=%v", err)
+		}
+		if _, err := os.Stat(filepath.Join(artifactsDir, "job-2")); !os.IsNotExist(err) {
+			t.Fatalf("expected job-2 artifacts removed, stat err=%v", err)
+		}
+		if _, err := os.Stat(filepath.Join(artifactsDir, "job-keep")); err != nil {
+			t.Fatalf("expected job-keep artifacts preserved: %v", err)
 		}
 	})
 }
