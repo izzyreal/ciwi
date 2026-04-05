@@ -128,7 +128,7 @@ func TestResolveJobSecretsNoopAndMissingSecret(t *testing.T) {
 	}
 }
 
-func TestResolveJobSecretsDryRunSkipsVaultResolution(t *testing.T) {
+func TestResolveJobSecretsDryRunSkipsVaultResolutionForSkippedSteps(t *testing.T) {
 	ts, s := newTestHTTPServerWithState(t)
 	defer ts.Close()
 
@@ -137,6 +137,7 @@ func TestResolveJobSecretsDryRunSkipsVaultResolution(t *testing.T) {
 			"dry_run": "1",
 		},
 		StepPlan: []protocol.JobStepPlanItem{{
+			Kind:            "dryrun_skip",
 			Script:          "echo dry-run",
 			VaultConnection: "missing-vault",
 			VaultSecrets: []protocol.ProjectSecretSpec{{
@@ -160,5 +161,70 @@ func TestResolveJobSecretsDryRunSkipsVaultResolution(t *testing.T) {
 	}
 	if len(job.SensitiveValues) != 0 {
 		t.Fatalf("expected no sensitive values for dry-run, got %+v", job.SensitiveValues)
+	}
+}
+
+func TestResolveJobSecretsDryRunStillResolvesNonSkippedSteps(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	vaultAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/auth/approle/login"):
+			_, _ = w.Write([]byte(`{"auth":{"client_token":"token-123","lease_duration":3600}}`))
+			return
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/kv/data/ciwi"):
+			_, _ = w.Write([]byte(`{"data":{"data":{"token":"secret-value"}}}`))
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer vaultAPI.Close()
+
+	t.Setenv("CIWI_VAULT_SECRET_ID", "sid-1")
+	conn, err := s.db.UpsertVaultConnection(protocol.UpsertVaultConnectionRequest{
+		Name:           "vault-main",
+		URL:            vaultAPI.URL,
+		AuthMethod:     "approle",
+		AppRoleMount:   "approle",
+		RoleID:         "role-1",
+		SecretIDEnv:    "CIWI_VAULT_SECRET_ID",
+		KVDefaultMount: "kv",
+		KVDefaultVer:   2,
+	})
+	if err != nil {
+		t.Fatalf("upsert vault connection: %v", err)
+	}
+
+	job := protocol.JobExecution{
+		Metadata: map[string]string{
+			"dry_run": "1",
+		},
+		StepPlan: []protocol.JobStepPlanItem{{
+			Kind:            "run",
+			Script:          "echo dry-run",
+			VaultConnection: conn.Name,
+			VaultSecrets: []protocol.ProjectSecretSpec{{
+				Name: "github_token",
+				Path: "ciwi",
+				Key:  "token",
+			}},
+			Env: map[string]string{
+				"GITHUB_TOKEN": "{{secret.github_token}}",
+			},
+		}},
+	}
+	if err := s.resolveJobSecrets(context.Background(), &job); err != nil {
+		t.Fatalf("resolveJobSecrets dry-run active step: %v", err)
+	}
+	if got := job.StepPlan[0].Env["GITHUB_TOKEN"]; got != "secret-value" {
+		t.Fatalf("expected dry-run active step secret to resolve, got %q", got)
+	}
+	if job.Metadata["has_secrets"] != "1" {
+		t.Fatalf("expected has_secrets metadata flag for active dry-run step")
+	}
+	if len(job.SensitiveValues) != 1 || job.SensitiveValues[0] != "secret-value" {
+		t.Fatalf("unexpected sensitive values: %+v", job.SensitiveValues)
 	}
 }

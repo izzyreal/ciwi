@@ -21,9 +21,6 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 	if job == nil {
 		return nil
 	}
-	if job.Metadata != nil && strings.TrimSpace(job.Metadata["dry_run"]) == "1" {
-		return nil
-	}
 
 	for _, value := range job.Env {
 		if len(secretPlaceholderRE.FindAllStringSubmatch(value, -1)) > 0 {
@@ -36,6 +33,9 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 	hasSecrets := false
 	for i := range job.StepPlan {
 		step := &job.StepPlan[i]
+		if strings.TrimSpace(step.Kind) == "dryrun_skip" {
+			continue
+		}
 		if len(step.Env) == 0 {
 			continue
 		}
