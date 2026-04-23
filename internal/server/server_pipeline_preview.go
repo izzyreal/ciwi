@@ -132,19 +132,42 @@ func decodeRunPreviewRequest(r *http.Request) (runPreviewRequest, *protocol.RunP
 
 func (s *stateStore) previewSinglePipelineDryRun(p store.PersistedPipeline, req runPreviewRequest, sel *protocol.RunPipelineSelectionRequest) ([]pendingJob, bool, string, []string, error) {
 	opts := enqueuePipelineOptions{allowSelectionNeedsGap: true}
-	if sourceRef := normalizeSourceRef(sel); sourceRef != "" {
+	sourceRef := normalizeSourceRef(sel)
+	if sourceRef != "" {
 		if strings.TrimSpace(p.SourceRepo) == "" {
 			return nil, false, "", nil, fmt.Errorf("source_ref override requires pipeline vcs_source.repo")
 		}
 		opts.sourceRefOverride = sourceRef
 		opts.sourceRefOverrideRepo = strings.TrimSpace(p.SourceRepo)
+		if shouldApplySourceRefOverride(p.SourceRepo, opts.sourceRefOverrideRepo) {
+			p.SourceRef = sourceRef
+		}
 	}
 	if !req.OfflineCachedOnly {
-		_, pending, err := s.preparePendingPipelineJobs(p, sel, opts)
+		depCtx, warns, depBlocked, err := s.inspectPipelineDependenciesWithReporter(p, nil)
 		if err != nil {
 			return nil, false, "", nil, err
 		}
-		return pending, false, "", nil, nil
+		runCtx, err := resolvePipelineRunContextWithReporter(p, depCtx, nil)
+		if err != nil {
+			return nil, false, "", nil, err
+		}
+		if runCtx.SourceRefResolved == "" && sourceRef != "" && shouldApplySourceRefOverride(p.SourceRepo, opts.sourceRefOverrideRepo) {
+			resolved, err := resolveSourceRefFromRepo(strings.TrimSpace(p.SourceRepo), strings.TrimSpace(p.SourceRef))
+			if err != nil {
+				return nil, false, "", nil, err
+			}
+			runCtx.SourceRefResolved = resolved
+		}
+		runID := fmt.Sprintf("preview-%d", time.Now().UTC().UnixNano())
+		pending, err := s.buildPendingPipelineJobs(p, sel, enqueuePipelineOptions{
+			allowSelectionNeedsGap: true,
+			dependencyBlocked:      depBlocked,
+		}, runCtx, depCtx, runID)
+		if err != nil {
+			return nil, false, "", nil, err
+		}
+		return pending, false, "", warns, nil
 	}
 
 	depCtx, err := s.checkPipelineDependenciesWithReporter(p, nil)
@@ -337,7 +360,7 @@ func toRunPreviewJobs(in []pendingJob) []runPreviewJobView {
 			StepCount:         len(steps),
 			StepPlan:          steps,
 			ArtifactGlobs:     append([]string(nil), p.artifactGlobs...),
-			DependencyBlocked: strings.TrimSpace(p.metadata["needs_blocked"]) == "1" || strings.TrimSpace(p.metadata["chain_blocked"]) == "1",
+			DependencyBlocked: strings.TrimSpace(p.metadata["dependency_blocked"]) == "1" || strings.TrimSpace(p.metadata["needs_blocked"]) == "1" || strings.TrimSpace(p.metadata["chain_blocked"]) == "1",
 		})
 	}
 	return out

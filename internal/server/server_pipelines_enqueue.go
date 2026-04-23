@@ -14,7 +14,9 @@ type enqueuePipelineOptions struct {
 	forcedRun              *pipelineRunContext
 	metaPatch              map[string]string
 	blocked                bool
+	dependencyBlocked      bool
 	allowSelectionNeedsGap bool
+	allowUnsatisfiedDeps   bool
 	sourceRefOverride      string
 	sourceRefOverrideRepo  string
 }
@@ -58,11 +60,18 @@ func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selec
 		p.SourceRef = overrideSourceRef
 	}
 	depCtx := pipelineDependencyContext{}
+	depBlocked := false
 	if opts.forcedDep != nil {
 		depCtx = *opts.forcedDep
 	} else {
 		var err error
-		depCtx, err = s.checkPipelineDependenciesWithReporter(p, nil)
+		if opts.allowUnsatisfiedDeps {
+			var warnings []string
+			depCtx, warnings, depBlocked, err = s.inspectPipelineDependenciesWithReporter(p, nil)
+			_ = warnings
+		} else {
+			depCtx, err = s.checkPipelineDependenciesWithReporter(p, nil)
+		}
 		if err != nil {
 			return pipelineRunContext{}, nil, err
 		}
@@ -84,8 +93,12 @@ func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selec
 		}
 		runCtx.SourceRefResolved = resolved
 	}
+	buildOpts := opts
+	if depBlocked {
+		buildOpts.dependencyBlocked = true
+	}
 	runID := fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
-	pending, err := s.buildPendingPipelineJobs(p, selection, opts, runCtx, depCtx, runID)
+	pending, err := s.buildPendingPipelineJobs(p, selection, buildOpts, runCtx, depCtx, runID)
 	if err != nil {
 		return pipelineRunContext{}, nil, err
 	}

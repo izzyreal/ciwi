@@ -712,6 +712,175 @@ pipelines:
 	}
 }
 
+func TestPipelineVersionResolveAllowsMissingDependencyHistory(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    jobs:
+      - id: build
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: release
+    trigger: manual
+    depends_on:
+      - build
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`)
+	releasePipeline, err := s.pipelineStore().GetPipelineByProjectAndID("ciwi", "release")
+	if err != nil {
+		t.Fatalf("load release pipeline: %v", err)
+	}
+	resp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/pipelines/"+int64ToString(releasePipeline.DBID)+"/version-resolve", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for version-resolve with missing dependency history, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	body := readBody(t, resp)
+	if !strings.Contains(body, `"status":"ok","step":"done"`) {
+		t.Fatalf("expected successful version-resolve completion, got %q", body)
+	}
+	if strings.Contains(body, `"step":"done","status":"error"`) {
+		t.Fatalf("expected version resolve not to fail on missing dependency history, got %q", body)
+	}
+}
+
+func TestPipelineDryRunPreviewAllowsMissingDependencyHistory(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    jobs:
+      - id: build
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: release
+    trigger: manual
+    depends_on:
+      - build
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`)
+	releasePipeline, err := s.pipelineStore().GetPipelineByProjectAndID("ciwi", "release")
+	if err != nil {
+		t.Fatalf("load release pipeline: %v", err)
+	}
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(releasePipeline.DBID)+"/dry-run-preview", map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for dry-run-preview with missing dependency history, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		Warnings    []string `json:"warnings"`
+		PendingJobs []struct {
+			PipelineJobID     string `json:"pipeline_job_id"`
+			DependencyBlocked bool   `json:"dependency_blocked"`
+		} `json:"pending_jobs"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if len(payload.PendingJobs) != 1 || strings.TrimSpace(payload.PendingJobs[0].PipelineJobID) != "publish" {
+		t.Fatalf("unexpected pending jobs payload: %+v", payload.PendingJobs)
+	}
+	if !payload.PendingJobs[0].DependencyBlocked {
+		t.Fatalf("expected preview job to remain dependency-blocked")
+	}
+	if len(payload.Warnings) == 0 || !strings.Contains(payload.Warnings[0], `dependency "build" unresolved`) {
+		t.Fatalf("expected warning about unresolved dependency, got %+v", payload.Warnings)
+	}
+}
+
+func TestPipelineEligibleAgentsAllowsMissingDependencyHistory(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    jobs:
+      - id: build
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: release
+    trigger: manual
+    depends_on:
+      - build
+    jobs:
+      - id: publish
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo publish
+`)
+	s.mu.Lock()
+	s.agents["agent-linux"] = agentState{
+		OS:           "linux",
+		Arch:         "amd64",
+		Capabilities: map[string]string{"shells": "posix"},
+	}
+	s.mu.Unlock()
+
+	releasePipeline, err := s.pipelineStore().GetPipelineByProjectAndID("ciwi", "release")
+	if err != nil {
+		t.Fatalf("load release pipeline: %v", err)
+	}
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(releasePipeline.DBID)+"/eligible-agents", map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for eligible-agents with missing dependency history, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		PendingJobs      int      `json:"pending_jobs"`
+		EligibleAgentIDs []string `json:"eligible_agent_ids"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.PendingJobs != 1 {
+		t.Fatalf("expected one pending job, got %+v", payload)
+	}
+	if len(payload.EligibleAgentIDs) != 1 || payload.EligibleAgentIDs[0] != "agent-linux" {
+		t.Fatalf("unexpected eligible agents payload: %+v", payload)
+	}
+}
+
 func TestPipelineDryRunPreviewIncludesStepPlanDetails(t *testing.T) {
 	ts, s := newTestHTTPServerWithState(t)
 	defer ts.Close()

@@ -42,69 +42,8 @@ func (s *stateStore) checkPipelineDependenciesWithReporter(p store.PersistedPipe
 			}
 			return pipelineDependencyContext{}, fmt.Errorf("pipeline %q dependency %q not satisfied: %w", p.PipelineID, depID, err)
 		}
-		if ctx.Version != "" {
-			if out.Version != "" && out.Version != ctx.Version {
-				return pipelineDependencyContext{}, fmt.Errorf("dependency versions conflict: %q vs %q", out.Version, ctx.Version)
-			}
-			out.Version = ctx.Version
-			out.VersionRaw = ctx.VersionRaw
-		}
-		if strings.TrimSpace(ctx.SourceRepo) != "" && ctx.SourceRefResolved != "" {
-			if out.SourceRefResolved == "" {
-				out.SourceRepo = strings.TrimSpace(ctx.SourceRepo)
-				out.SourceRefResolved = ctx.SourceRefResolved
-			} else if sameSourceRepo(out.SourceRepo, ctx.SourceRepo) {
-				if out.SourceRefResolved != ctx.SourceRefResolved {
-					return pipelineDependencyContext{}, fmt.Errorf("dependency source refs conflict: %q vs %q", out.SourceRefResolved, ctx.SourceRefResolved)
-				}
-			} else {
-				// Dependencies from different repos cannot provide one shared pinned source ref.
-				out.SourceRepo = ""
-				out.SourceRefResolved = ""
-			}
-		}
-		if len(ctx.ArtifactJobIDs) > 0 {
-			if out.ArtifactJobIDs == nil {
-				out.ArtifactJobIDs = map[string]string{}
-			}
-			for k, v := range ctx.ArtifactJobIDs {
-				key := depID + ":" + strings.TrimSpace(k)
-				if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
-					continue
-				}
-				out.ArtifactJobIDs[key] = strings.TrimSpace(v)
-			}
-		}
-		if len(ctx.ArtifactJobIDsAll) > 0 {
-			if out.ArtifactJobIDsAll == nil {
-				out.ArtifactJobIDsAll = map[string][]string{}
-			}
-			for ctxDepID, ids := range ctx.ArtifactJobIDsAll {
-				targetDepID := strings.TrimSpace(ctxDepID)
-				if targetDepID == "" {
-					targetDepID = depID
-				}
-				existing := out.ArtifactJobIDsAll[targetDepID]
-				seen := map[string]struct{}{}
-				for _, v := range existing {
-					if strings.TrimSpace(v) == "" {
-						continue
-					}
-					seen[strings.TrimSpace(v)] = struct{}{}
-				}
-				for _, v := range ids {
-					v = strings.TrimSpace(v)
-					if v == "" {
-						continue
-					}
-					if _, ok := seen[v]; ok {
-						continue
-					}
-					existing = append(existing, v)
-					seen[v] = struct{}{}
-				}
-				out.ArtifactJobIDsAll[targetDepID] = existing
-			}
+		if err := mergePipelineDependencyContext(&out, depID, ctx); err != nil {
+			return pipelineDependencyContext{}, err
 		}
 	}
 	if report != nil {
@@ -119,6 +58,137 @@ func (s *stateStore) checkPipelineDependenciesWithReporter(p store.PersistedPipe
 
 func (s *stateStore) checkPipelineDependencies(p store.PersistedPipeline) (pipelineDependencyContext, error) {
 	return s.checkPipelineDependenciesWithReporter(p, nil)
+}
+
+func (s *stateStore) inspectPipelineDependenciesWithReporter(p store.PersistedPipeline, report resolveStepReporter) (pipelineDependencyContext, []string, bool, error) {
+	if len(p.DependsOn) == 0 {
+		if report != nil {
+			report("dependencies", "ok", "no dependencies declared")
+		}
+		return pipelineDependencyContext{}, nil, false, nil
+	}
+	if report != nil {
+		report("dependencies", "running", fmt.Sprintf("checking %d dependency pipeline(s)", len(p.DependsOn)))
+	}
+	jobs, err := s.pipelineStore().ListJobExecutions()
+	if err != nil {
+		if report != nil {
+			report("dependencies", "error", "failed to read job history: "+err.Error())
+		}
+		return pipelineDependencyContext{}, nil, false, fmt.Errorf("check dependencies: %w", err)
+	}
+	out := pipelineDependencyContext{}
+	warnings := make([]string, 0)
+	blocked := false
+	for _, depID := range p.DependsOn {
+		depID = strings.TrimSpace(depID)
+		if depID == "" {
+			continue
+		}
+		if report != nil {
+			report("dependencies", "running", fmt.Sprintf("checking latest run for dependency %q", depID))
+		}
+		ctx, err := verifyDependencyRun(jobs, p.ProjectName, depID)
+		if err != nil {
+			blocked = true
+			msg := fmt.Sprintf("dependency %q unresolved for preview: %v", depID, err)
+			warnings = append(warnings, msg)
+			if report != nil {
+				report("dependencies", "warning", msg)
+			}
+			continue
+		}
+		if err := mergePipelineDependencyContext(&out, depID, ctx); err != nil {
+			if report != nil {
+				report("dependencies", "error", err.Error())
+			}
+			return pipelineDependencyContext{}, nil, false, err
+		}
+	}
+	if report != nil {
+		switch {
+		case blocked && out.Version != "":
+			report("dependencies", "warning", fmt.Sprintf("dependency history incomplete; preview remains blocked, inherited version=%s where available", out.Version))
+		case blocked:
+			report("dependencies", "warning", "dependency history incomplete; preview remains blocked")
+		case out.Version != "":
+			report("dependencies", "ok", fmt.Sprintf("dependencies satisfied; inherited version=%s", out.Version))
+		default:
+			report("dependencies", "ok", "dependencies satisfied")
+		}
+	}
+	return out, warnings, blocked, nil
+}
+
+func mergePipelineDependencyContext(out *pipelineDependencyContext, depID string, ctx pipelineDependencyContext) error {
+	if out == nil {
+		return nil
+	}
+	if ctx.Version != "" {
+		if out.Version != "" && out.Version != ctx.Version {
+			return fmt.Errorf("dependency versions conflict: %q vs %q", out.Version, ctx.Version)
+		}
+		out.Version = ctx.Version
+		out.VersionRaw = ctx.VersionRaw
+	}
+	if strings.TrimSpace(ctx.SourceRepo) != "" && ctx.SourceRefResolved != "" {
+		if out.SourceRefResolved == "" {
+			out.SourceRepo = strings.TrimSpace(ctx.SourceRepo)
+			out.SourceRefResolved = ctx.SourceRefResolved
+		} else if sameSourceRepo(out.SourceRepo, ctx.SourceRepo) {
+			if out.SourceRefResolved != ctx.SourceRefResolved {
+				return fmt.Errorf("dependency source refs conflict: %q vs %q", out.SourceRefResolved, ctx.SourceRefResolved)
+			}
+		} else {
+			// Dependencies from different repos cannot provide one shared pinned source ref.
+			out.SourceRepo = ""
+			out.SourceRefResolved = ""
+		}
+	}
+	if len(ctx.ArtifactJobIDs) > 0 {
+		if out.ArtifactJobIDs == nil {
+			out.ArtifactJobIDs = map[string]string{}
+		}
+		for k, v := range ctx.ArtifactJobIDs {
+			key := depID + ":" + strings.TrimSpace(k)
+			if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+				continue
+			}
+			out.ArtifactJobIDs[key] = strings.TrimSpace(v)
+		}
+	}
+	if len(ctx.ArtifactJobIDsAll) > 0 {
+		if out.ArtifactJobIDsAll == nil {
+			out.ArtifactJobIDsAll = map[string][]string{}
+		}
+		for ctxDepID, ids := range ctx.ArtifactJobIDsAll {
+			targetDepID := strings.TrimSpace(ctxDepID)
+			if targetDepID == "" {
+				targetDepID = depID
+			}
+			existing := out.ArtifactJobIDsAll[targetDepID]
+			seen := map[string]struct{}{}
+			for _, v := range existing {
+				if strings.TrimSpace(v) == "" {
+					continue
+				}
+				seen[strings.TrimSpace(v)] = struct{}{}
+			}
+			for _, v := range ids {
+				v = strings.TrimSpace(v)
+				if v == "" {
+					continue
+				}
+				if _, ok := seen[v]; ok {
+					continue
+				}
+				existing = append(existing, v)
+				seen[v] = struct{}{}
+			}
+			out.ArtifactJobIDsAll[targetDepID] = existing
+		}
+	}
+	return nil
 }
 
 func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID string) (pipelineDependencyContext, error) {

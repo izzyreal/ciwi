@@ -28,7 +28,10 @@ func (s *stateStore) pipelineEligibleAgentsHandler(w http.ResponseWriter, p stor
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	_, pending, err := s.preparePendingPipelineJobs(p, &selection, enqueuePipelineOptions{allowSelectionNeedsGap: true})
+	_, pending, err := s.preparePendingPipelineJobs(p, &selection, enqueuePipelineOptions{
+		allowSelectionNeedsGap: true,
+		allowUnsatisfiedDeps:   true,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

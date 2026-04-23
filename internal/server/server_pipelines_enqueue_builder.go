@@ -261,6 +261,9 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	if opts.blocked {
 		metadata["chain_blocked"] = "1"
 	}
+	if opts.dependencyBlocked {
+		metadata["dependency_blocked"] = "1"
+	}
 	if len(needs) > 0 {
 		metadata["needs_job_ids"] = strings.Join(needs, ",")
 		metadata["needs_blocked"] = "1"

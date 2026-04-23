@@ -34,7 +34,7 @@ func (s *stateStore) streamVersionResolve(w http.ResponseWriter, p store.Persist
 	}
 
 	send("start", "running", fmt.Sprintf("resolving version for pipeline %q", p.PipelineID), nil)
-	depCtx, depErr := s.checkPipelineDependenciesWithReporter(p, func(step, status, message string) {
+	depCtx, _, _, depErr := s.inspectPipelineDependenciesWithReporter(p, func(step, status, message string) {
 		send(step, status, message, nil)
 	})
 	if depErr != nil {
