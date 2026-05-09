@@ -202,6 +202,58 @@ pipeline_chains:
 	}
 }
 
+func TestPipelineChainPinsSameSourceCommitAcrossQueuedJobs(t *testing.T) {
+	repoURL, _, _ := createTestRemoteGitRepo(t)
+	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
+	enqueueSingleChain(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    vcs_source:
+      repo: `+repoURL+`
+      ref: refs/heads/main
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+  - id: package
+    vcs_source:
+      repo: `+repoURL+`
+      ref: refs/heads/main
+    jobs:
+      - id: pkg
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+pipeline_chains:
+  - id: build-package
+    pipelines:
+      - build
+      - package
+`)
+
+	buildJob := findPipelineJobExecution(t, s, "build")
+	packageJob := findPipelineJobExecution(t, s, "package")
+	if buildJob.Source == nil || packageJob.Source == nil {
+		t.Fatalf("expected source for both queued jobs, build=%+v package=%+v", buildJob.Source, packageJob.Source)
+	}
+	buildRef := strings.TrimSpace(buildJob.Source.Ref)
+	packageRef := strings.TrimSpace(packageJob.Source.Ref)
+	if buildRef == "" || packageRef == "" {
+		t.Fatalf("expected pinned source refs, build=%q package=%q", buildRef, packageRef)
+	}
+	if buildRef != packageRef {
+		t.Fatalf("expected chain jobs to share pinned commit, build=%q package=%q", buildRef, packageRef)
+	}
+}
+
 func TestPipelineChainDependencyBindFailureCancelsBlockedJobs(t *testing.T) {
 	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
 	enqueueSingleChain(t, s, `

@@ -162,9 +162,6 @@ func resolveSourceRefFromRepo(repoURL, sourceRef string) (string, error) {
 	if repoURL == "" {
 		return "", fmt.Errorf("resolve source ref: empty repo url")
 	}
-	if sourceRef == "" {
-		return "", fmt.Errorf("resolve source ref: empty source ref")
-	}
 	tmpDir, err := os.MkdirTemp("", "ciwi-source-ref-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp dir for source ref resolution: %w", err)
@@ -176,15 +173,20 @@ func resolveSourceRefFromRepo(repoURL, sourceRef string) (string, error) {
 	if _, err := runCmd(ctx, "", "git", "clone", "--depth", "1", repoURL, tmpDir); err != nil {
 		return "", fmt.Errorf("clone source for source ref resolution: %w", err)
 	}
-	if _, err := runCmd(ctx, "", "git", "-C", tmpDir, "fetch", "--depth", "1", "origin", sourceRef); err != nil {
-		return "", fmt.Errorf("fetch source ref %q: %w", sourceRef, err)
-	}
-	if _, err := runCmd(ctx, "", "git", "-C", tmpDir, "checkout", "--force", "FETCH_HEAD"); err != nil {
-		return "", fmt.Errorf("checkout source ref %q: %w", sourceRef, err)
+	if sourceRef != "" {
+		if _, err := runCmd(ctx, "", "git", "-C", tmpDir, "fetch", "--depth", "1", "origin", sourceRef); err != nil {
+			return "", fmt.Errorf("fetch source ref %q: %w", sourceRef, err)
+		}
+		if _, err := runCmd(ctx, "", "git", "-C", tmpDir, "checkout", "--force", "FETCH_HEAD"); err != nil {
+			return "", fmt.Errorf("checkout source ref %q: %w", sourceRef, err)
+		}
 	}
 	sha, err := runCmd(ctx, "", "git", "-C", tmpDir, "rev-parse", "HEAD")
 	if err != nil {
-		return "", fmt.Errorf("resolve source ref %q commit: %w", sourceRef, err)
+		if sourceRef != "" {
+			return "", fmt.Errorf("resolve source ref %q commit: %w", sourceRef, err)
+		}
+		return "", fmt.Errorf("resolve default branch commit: %w", err)
 	}
 	return strings.TrimSpace(sha), nil
 }

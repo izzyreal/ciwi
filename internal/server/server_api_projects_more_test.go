@@ -390,6 +390,7 @@ func TestReloadProjectFromRepoBranches(t *testing.T) {
 func TestProjectInspectHandlerRawYAMLAndExecutorScript(t *testing.T) {
 	ts, s := newTestHTTPServerWithState(t)
 	defer ts.Close()
+	repoURL, _, _ := createTestRemoteGitRepo(t)
 
 	cfg, err := config.Parse([]byte(`
 version: 1
@@ -399,7 +400,7 @@ pipelines:
   - id: release
     trigger: manual
     vcs_source:
-      repo: https://github.com/acme/inspect-project.git
+      repo: `+repoURL+`
       ref: main
     jobs:
       - id: publish
@@ -417,7 +418,7 @@ pipelines:
 	if err != nil {
 		t.Fatalf("parse test config: %v", err)
 	}
-	if err := s.db.LoadConfig(cfg, "inspect-project.yaml", "https://github.com/acme/inspect-project.git", "main", "inspect-project.yaml"); err != nil {
+	if err := s.db.LoadConfig(cfg, "inspect-project.yaml", repoURL, "main", "inspect-project.yaml"); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
 	projectSummary, err := s.db.GetProjectByName("inspect-project")
@@ -473,6 +474,7 @@ pipelines:
 func TestProjectInspectHandlerSecretMappingsView(t *testing.T) {
 	ts, s := newTestHTTPServerWithState(t)
 	defer ts.Close()
+	repoURL, _, _ := createTestRemoteGitRepo(t)
 
 	cfg, err := config.Parse([]byte(`
 version: 1
@@ -482,7 +484,7 @@ pipelines:
   - id: release
     trigger: manual
     vcs_source:
-      repo: https://github.com/acme/inspect-secrets.git
+      repo: `+repoURL+`
       ref: main
     jobs:
       - id: publish
@@ -506,7 +508,7 @@ pipelines:
 	if err != nil {
 		t.Fatalf("parse test config: %v", err)
 	}
-	if err := s.db.LoadConfig(cfg, "inspect-secrets.yaml", "https://github.com/acme/inspect-secrets.git", "main", "inspect-secrets.yaml"); err != nil {
+	if err := s.db.LoadConfig(cfg, "inspect-secrets.yaml", repoURL, "main", "inspect-secrets.yaml"); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
 	projectSummary, err := s.db.GetProjectByName("inspect-secrets")

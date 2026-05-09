@@ -112,8 +112,7 @@ Resolved just-in-time when agent leases a job.
 ## Job history actions behavior
 
 - **Run Again** creates a new job execution from existing definition.
-- If stored source ref is commit SHA, rerun uses same commit.
-- If stored source ref is branch/tag, rerun may resolve newer commit.
+- Rerun uses the same pinned commit as the original queued job.
 - Existing artifacts/logs remain tied to old execution ID.
 
 ## Project import identity and naming

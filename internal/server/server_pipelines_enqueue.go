@@ -93,6 +93,13 @@ func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selec
 		}
 		runCtx.SourceRefResolved = resolved
 	}
+	if runCtx.SourceRefResolved == "" && strings.TrimSpace(p.SourceRepo) != "" {
+		resolved, err := resolveSourceRefFromRepo(strings.TrimSpace(p.SourceRepo), strings.TrimSpace(p.SourceRef))
+		if err != nil {
+			return pipelineRunContext{}, nil, err
+		}
+		runCtx.SourceRefResolved = resolved
+	}
 	buildOpts := opts
 	if depBlocked {
 		buildOpts.dependencyBlocked = true

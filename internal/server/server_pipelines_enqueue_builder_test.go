@@ -221,7 +221,8 @@ pipelines:
 		AutoBumpSecrets: []protocol.ProjectSecretSpec{
 			{Name: "github-secret", Mount: "kv", Path: "gh", Key: "token"},
 		},
-		SourceRefRaw: "refs/heads/main",
+		SourceRefRaw:      "refs/heads/main",
+		SourceRefResolved: "0123456789abcdef0123456789abcdef01234567",
 	}
 	depCtx := pipelineDependencyContext{}
 	_, pending, err := s.preparePendingPipelineJobs(p, nil, enqueuePipelineOptions{
@@ -286,6 +287,7 @@ pipelines:
 }
 
 func TestEnqueuePersistedPipelineDependencyVersionFromOtherRepoDoesNotOverrideSourceRef(t *testing.T) {
+	packageRepoURL, _, _ := createTestRemoteGitRepo(t)
 	db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -313,8 +315,8 @@ pipelines:
     depends_on:
       - build
     vcs_source:
-      repo: https://github.com/acme/source-b.git
-      ref: refs/heads/release
+      repo: `+packageRepoURL+`
+      ref: refs/heads/main
     jobs:
       - id: package-job
         runs_on:
@@ -371,17 +373,61 @@ pipelines:
 	if job.Source == nil {
 		t.Fatalf("expected package source to be set")
 	}
-	if got := strings.TrimSpace(job.Source.Repo); got != "https://github.com/acme/source-b.git" {
+	if got := strings.TrimSpace(job.Source.Repo); got != packageRepoURL {
 		t.Fatalf("unexpected source repo: %q", got)
 	}
-	if got := strings.TrimSpace(job.Source.Ref); got != "refs/heads/release" {
-		t.Fatalf("expected package source ref to remain pipeline ref, got %q", got)
+	if got := strings.TrimSpace(job.Source.Ref); got == "" || got == "refs/heads/main" {
+		t.Fatalf("expected package source ref to be pinned commit sha, got %q", got)
 	}
-	if got := strings.TrimSpace(job.Metadata["pipeline_source_ref_resolved"]); got != "" {
-		t.Fatalf("expected no resolved source ref metadata for cross-repo dependency inheritance, got %q", got)
+	if got := strings.TrimSpace(job.Metadata["pipeline_source_ref_raw"]); got != "refs/heads/main" {
+		t.Fatalf("expected raw package source ref to remain pipeline ref, got %q", got)
 	}
-	if got := strings.TrimSpace(job.Env["CIWI_PIPELINE_SOURCE_REF"]); got != "" {
-		t.Fatalf("expected no CIWI_PIPELINE_SOURCE_REF for cross-repo dependency inheritance, got %q", got)
+	if got := strings.TrimSpace(job.Metadata["pipeline_source_ref_resolved"]); got != strings.TrimSpace(job.Source.Ref) {
+		t.Fatalf("expected resolved source ref metadata to match pinned source ref, got meta=%q source=%q", got, job.Source.Ref)
+	}
+	if got := strings.TrimSpace(job.Env["CIWI_PIPELINE_SOURCE_REF"]); got != strings.TrimSpace(job.Source.Ref) {
+		t.Fatalf("expected CIWI_PIPELINE_SOURCE_REF to match pinned source ref, got %q", got)
+	}
+}
+
+func TestEnqueuePersistedPipelineWithoutExplicitRefPinsDefaultBranchCommit(t *testing.T) {
+	repoURL, _, _ := createTestRemoteGitRepo(t)
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    vcs_source:
+      repo: `+repoURL+`
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo compile
+`), "default-branch-pin")
+
+	resp, err := s.enqueuePersistedPipeline(p, nil)
+	if err != nil {
+		t.Fatalf("enqueue pipeline: %v", err)
+	}
+	if resp.Enqueued != 1 || len(resp.JobExecutionIDs) != 1 {
+		t.Fatalf("expected one execution, got enqueued=%d ids=%d", resp.Enqueued, len(resp.JobExecutionIDs))
+	}
+	job, err := s.db.GetJobExecution(resp.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get job execution: %v", err)
+	}
+	if job.Source == nil {
+		t.Fatalf("expected source to be set")
+	}
+	if got := strings.TrimSpace(job.Source.Ref); got == "" {
+		t.Fatalf("expected pinned source ref sha, got empty")
+	}
+	if got := strings.TrimSpace(job.Metadata["pipeline_source_ref_resolved"]); got != strings.TrimSpace(job.Source.Ref) {
+		t.Fatalf("expected resolved source ref metadata to match pinned source ref, got meta=%q source=%q", got, job.Source.Ref)
 	}
 }
 
@@ -636,6 +682,7 @@ func createTestRemoteGitRepo(t *testing.T) (repoURL, featureRef, featureSHA stri
 	runGit(t, work, "add", "README.md")
 	runGit(t, work, "commit", "-m", "main commit")
 	runGit(t, work, "push", "-u", "origin", "main")
+	runGit(t, "", "--git-dir", remote, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGit(t, work, "checkout", "-b", "feature/one-off")
 	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("feature\n"), 0o644); err != nil {
 		t.Fatalf("write README feature: %v", err)

@@ -347,8 +347,7 @@ const jobExecutionDataJS = `
           '<strong>What Run Job Again does</strong><br />' +
           'It enqueues a new job execution with the same script, environment, requirements, source repo/ref, and step plan as this run.<br /><br />' +
           '<strong>Source checkout behavior</strong><br />' +
-          'If this job was already pinned to a commit (for example via pipeline version resolution), rerun uses that same pinned commit. ' +
-          'If source ref is a moving branch/tag name, rerun fetches that ref again at execution time and may build a newer commit.<br /><br />' +
+          'Rerun keeps the same pinned source commit as the original queued job.<br /><br />' +
           '<strong>Artifacts and logs</strong><br />' +
           'Rerun creates a fresh job execution ID with fresh logs and artifact records. Previous job artifacts are kept; they are not replaced.<br /><br />' +
           '<strong>When this is useful</strong><br />' +
