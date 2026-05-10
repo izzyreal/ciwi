@@ -29,10 +29,11 @@ type stagedManifest struct {
 	RequestedAtUTC  string `json:"requested_at_utc"`
 	UpdaterLabel    string `json:"updater_label,omitempty"`
 	UpdaterPlist    string `json:"updater_plist,omitempty"`
+	TargetSignPath  string `json:"target_sign_path,omitempty"`
 	TriggerSourceID string `json:"trigger_source_id,omitempty"`
 }
 
-func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedSHA256, agentLabel, agentPlist, updaterLabel, updaterPlist, triggerSourceID string, agentPID int) ([]byte, error) {
+func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedSHA256, agentLabel, agentPlist, updaterLabel, updaterPlist, targetSignPath, triggerSourceID string, agentPID int) ([]byte, error) {
 	m := stagedManifest{
 		VersionUTC:      time.Now().UTC().Format(time.RFC3339Nano),
 		TargetVersion:   strings.TrimSpace(targetVersion),
@@ -44,6 +45,7 @@ func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedS
 		AgentPlist:      strings.TrimSpace(agentPlist),
 		UpdaterLabel:    strings.TrimSpace(updaterLabel),
 		UpdaterPlist:    strings.TrimSpace(updaterPlist),
+		TargetSignPath:  strings.TrimSpace(targetSignPath),
 		TriggerSourceID: strings.TrimSpace(triggerSourceID),
 		AgentPID:        agentPID,
 		RequestedAtUTC:  time.Now().UTC().Format(time.RFC3339Nano),
@@ -146,13 +148,17 @@ func RunApplyStagedAgent(args []string) error {
 	slog.Info("darwin updater step complete", "step", "swap_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
 	if strings.TrimSpace(envOrDefault("CIWI_DARWIN_ADHOC_SIGN", "true")) != "false" {
 		stepStarted = time.Now()
-		if err := adHocSignBinary(manifest.TargetBinary); err != nil {
+		signTarget := strings.TrimSpace(manifest.TargetSignPath)
+		if signTarget == "" {
+			signTarget = manifest.TargetBinary
+		}
+		if err := adHocSignPath(signTarget); err != nil {
 			_ = os.Rename(manifest.TargetBinary, manifest.StagedBinary)
 			_ = os.Rename(backupPath, manifest.TargetBinary)
-			slog.Warn("darwin updater step failed", "step", "adhoc_sign_target_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
-			return fmt.Errorf("ad-hoc sign target binary: %w", err)
+			slog.Warn("darwin updater step failed", "step", "adhoc_sign_target", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("ad-hoc sign target: %w", err)
 		}
-		slog.Info("darwin updater step complete", "step", "adhoc_sign_target_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
+		slog.Info("darwin updater step complete", "step", "adhoc_sign_target", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "target", signTarget)
 	}
 	stepStarted = time.Now()
 	_ = os.Remove(*manifestPath)
@@ -241,6 +247,10 @@ func isAlreadyLoadedErr(err error) bool {
 }
 
 func adHocSignBinary(path string) error {
+	return adHocSignPath(path)
+}
+
+func adHocSignPath(path string) error {
 	p := strings.TrimSpace(path)
 	if p == "" {
 		return fmt.Errorf("empty path")
@@ -249,5 +259,9 @@ func adHocSignBinary(path string) error {
 	if codesignPath == "" {
 		codesignPath = "/usr/bin/codesign"
 	}
-	return runCmd(codesignPath, "--force", "--sign", "-", p)
+	args := []string{"--force", "--sign", "-", p}
+	if info, err := os.Stat(p); err == nil && info.IsDir() {
+		args = []string{"--force", "--deep", "--sign", "-", p}
+	}
+	return runCmd(codesignPath, args...)
 }

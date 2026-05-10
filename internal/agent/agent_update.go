@@ -177,6 +177,13 @@ func hasDarwinUpdaterConfig() bool {
 		strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATER_LABEL", "")) != ""
 }
 
+func darwinUpdateSignTarget(targetBinary string) string {
+	if bundlePath := strings.TrimSpace(envOrDefault("CIWI_AGENT_APP_BUNDLE", "")); bundlePath != "" {
+		return bundlePath
+	}
+	return strings.TrimSpace(targetBinary)
+}
+
 func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, stagedBinary string) error {
 	agentLabel := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_LABEL", ""))
 	agentPlist := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", ""))
@@ -202,7 +209,8 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	if err != nil {
 		return fmt.Errorf("hash staged update binary: %w", err)
 	}
-	manifest, err := darwinupdater.BuildManifest(targetVersion, assetName, targetBinary, stagePath, hash, agentLabel, agentPlist, updaterLabel, updaterPlist, defaultAgentID(), os.Getpid())
+	signTarget := darwinUpdateSignTarget(targetBinary)
+	manifest, err := darwinupdater.BuildManifest(targetVersion, assetName, targetBinary, stagePath, hash, agentLabel, agentPlist, updaterLabel, updaterPlist, signTarget, defaultAgentID(), os.Getpid())
 	if err != nil {
 		return fmt.Errorf("build update manifest: %w", err)
 	}
@@ -210,9 +218,9 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 		return fmt.Errorf("write update manifest: %w", err)
 	}
 	if strings.TrimSpace(envOrDefault("CIWI_DARWIN_ADHOC_SIGN", "true")) != "false" {
-		if err := adHocSignBinary(targetBinary); err != nil {
+		if err := adHocSignPath(signTarget); err != nil {
 			_ = os.Remove(manifestPath)
-			return fmt.Errorf("ad-hoc sign current binary: %w", err)
+			return fmt.Errorf("ad-hoc sign current target: %w", err)
 		}
 	}
 	if err := runLaunchctl("kickstart", "-k", "gui/"+strconv.Itoa(os.Getuid())+"/"+updaterLabel); err != nil {
@@ -587,6 +595,10 @@ func runLaunchctl(args ...string) error {
 }
 
 func adHocSignBinary(path string) error {
+	return adHocSignPath(path)
+}
+
+func adHocSignPath(path string) error {
 	p := strings.TrimSpace(path)
 	if p == "" {
 		return fmt.Errorf("empty path")
@@ -595,10 +607,14 @@ func adHocSignBinary(path string) error {
 	if codesignPath == "" {
 		codesignPath = "/usr/bin/codesign"
 	}
-	cmd := exec.Command(codesignPath, "--force", "--sign", "-", p)
+	args := []string{"--force", "--sign", "-", p}
+	if info, err := os.Stat(p); err == nil && info.IsDir() {
+		args = []string{"--force", "--deep", "--sign", "-", p}
+	}
+	cmd := exec.Command(codesignPath, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s --force --sign - %s: %w (%s)", codesignPath, p, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%s %s: %w (%s)", codesignPath, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

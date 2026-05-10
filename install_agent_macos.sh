@@ -337,15 +337,49 @@ choose_server_url() {
 
 install_binary() {
   src="$1"
-  target_dir="$HOME/.local/bin"
+  bundle_path="$HOME/Library/Application Support/ciwi/CiwiAgent.app"
+  contents_dir="${bundle_path}/Contents"
+  macos_dir="${contents_dir}/MacOS"
+  target_path="${macos_dir}/ciwi"
+  version="${2:-0.0.0}"
+
   # Keep agent binary user-writable so ciwi self-update can replace it in-place.
-  mkdir -p "$target_dir"
-  target_path="${target_dir}/ciwi"
+  mkdir -p "$macos_dir"
   install -m 0755 "$src" "$target_path"
+  cat >"${contents_dir}/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>Ciwi Agent</string>
+  <key>CFBundleExecutable</key>
+  <string>ciwi</string>
+  <key>CFBundleIdentifier</key>
+  <string>nl.izmar.ciwi.agent-app</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>CiwiAgent</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>${version}</string>
+  <key>CFBundleVersion</key>
+  <string>${version}</string>
+  <key>LSBackgroundOnly</key>
+  <true/>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>ciwi agent connects to your ciwi server on the local network to send heartbeats and run jobs.</string>
+</dict>
+</plist>
+EOF
   if command -v codesign >/dev/null 2>&1; then
-    codesign --force --sign - "$target_path" >/dev/null
+    codesign --force --deep --sign - "$bundle_path" >/dev/null
   fi
-  printf '%s\n' "$target_dir"
+  printf '%s\n' "$bundle_path"
 }
 
 if [ "$(uname -s)" != "Darwin" ]; then
@@ -365,6 +399,7 @@ require_cmd install
 REPO="izzyreal/ciwi"
 LABEL="nl.izmar.ciwi.agent"
 UPDATER_LABEL="nl.izmar.ciwi.agent-updater"
+APP_BUNDLE_ID="nl.izmar.ciwi.agent-app"
 LOG_DIR="$HOME/Library/Logs/ciwi"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 UPDATER_PLIST_PATH="$HOME/Library/LaunchAgents/${UPDATER_LABEL}.plist"
@@ -452,7 +487,9 @@ fi
 
 echo "[3/6] Installing binary..."
 mkdir -p "$WORKDIR" "$UPDATES_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
-INSTALL_DIR="$(install_binary "${TMP_DIR}/${ASSET}")"
+APP_BUNDLE_PATH="$(install_binary "${TMP_DIR}/${ASSET}" "${TARGET_VERSION:-0.0.0}")"
+APP_MACOS_DIR="${APP_BUNDLE_PATH}/Contents/MacOS"
+APP_BINARY_PATH="${APP_MACOS_DIR}/ciwi"
 
 echo "[3.5/6] Configuring 100MB log caps (newsyslog)..."
 if command -v sudo >/dev/null 2>&1; then
@@ -482,9 +519,13 @@ cat >"$PLIST_PATH" <<EOF
 <dict>
   <key>Label</key>
   <string>${LABEL}</string>
+  <key>AssociatedBundleIdentifiers</key>
+  <array>
+    <string>${APP_BUNDLE_ID}</string>
+  </array>
   <key>ProgramArguments</key>
   <array>
-    <string>${INSTALL_DIR}/ciwi</string>
+    <string>${APP_BINARY_PATH}</string>
     <string>agent</string>
   </array>
   <key>EnvironmentVariables</key>
@@ -505,9 +546,11 @@ cat >"$PLIST_PATH" <<EOF
     <string>${UPDATER_LABEL}</string>
     <key>CIWI_AGENT_UPDATER_PLIST</key>
     <string>${UPDATER_PLIST_PATH}</string>
+    <key>CIWI_AGENT_APP_BUNDLE</key>
+    <string>${APP_BUNDLE_PATH}</string>
 ${GITHUB_TOKEN_ENV_BLOCK}
     <key>PATH</key>
-    <string>${INSTALL_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>${APP_MACOS_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>KeepAlive</key>
   <true/>
@@ -530,7 +573,7 @@ cat >"$UPDATER_PLIST_PATH" <<EOF
   <string>${UPDATER_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${INSTALL_DIR}/ciwi</string>
+    <string>${APP_BINARY_PATH}</string>
     <string>apply-staged-agent-update</string>
     <string>--manifest</string>
     <string>${MANIFEST_PATH}</string>
@@ -541,8 +584,10 @@ cat >"$UPDATER_PLIST_PATH" <<EOF
     <string>${MANIFEST_PATH}</string>
     <key>CIWI_LAUNCHCTL_PATH</key>
     <string>/bin/launchctl</string>
+    <key>CIWI_AGENT_APP_BUNDLE</key>
+    <string>${APP_BUNDLE_PATH}</string>
     <key>PATH</key>
-    <string>${INSTALL_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>${APP_MACOS_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>KeepAlive</key>
   <false/>
@@ -598,7 +643,8 @@ echo
 echo "ciwi agent installed and started."
 echo "Label:       ${LABEL}"
 echo "Updater:     ${UPDATER_LABEL}"
-echo "Binary:      ${INSTALL_DIR}/ciwi"
+echo "Bundle:      ${APP_BUNDLE_PATH}"
+echo "Binary:      ${APP_BINARY_PATH}"
 echo "Plist:       ${PLIST_PATH}"
 echo "Updater plist: ${UPDATER_PLIST_PATH}"
 echo "Server URL:  ${SERVER_URL} (${SERVER_URL_SOURCE})"
@@ -617,4 +663,5 @@ echo
 echo "To uninstall:"
 echo "  launchctl bootout gui/\$(id -u) ${PLIST_PATH} || true"
 echo "  launchctl bootout gui/\$(id -u) ${UPDATER_PLIST_PATH} || true"
-echo "  rm -f ${PLIST_PATH} ${UPDATER_PLIST_PATH} ${INSTALL_DIR}/ciwi"
+echo "  rm -f ${PLIST_PATH} ${UPDATER_PLIST_PATH}"
+echo "  rm -rf \"${APP_BUNDLE_PATH}\""

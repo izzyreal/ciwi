@@ -28,6 +28,7 @@ UID_NUM="$(id -u)"
 # Try both common install locations used by installer versions.
 BINARY_USER="$HOME/.local/bin/ciwi"
 BINARY_SYSTEM="/usr/local/bin/ciwi"
+APP_BUNDLE="$HOME/Library/Application Support/ciwi/CiwiAgent.app"
 
 echo "[1/4] Stopping LaunchAgent if loaded..."
 launchctl bootout "gui/${UID_NUM}" "$PLIST_PATH" >/dev/null 2>&1 || true
@@ -40,6 +41,10 @@ rm -f "$PLIST_PATH"
 rm -f "$UPDATER_PLIST_PATH"
 
 echo "[3/4] Removing ciwi binary..."
+if [ -d "$APP_BUNDLE" ]; then
+  rm -rf "$APP_BUNDLE"
+  echo "Removed $APP_BUNDLE"
+fi
 if [ -f "$BINARY_USER" ]; then
   rm -f "$BINARY_USER"
   echo "Removed $BINARY_USER"

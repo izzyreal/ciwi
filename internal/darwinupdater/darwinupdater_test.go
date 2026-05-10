@@ -22,6 +22,7 @@ func TestBuildManifestAndReadManifest(t *testing.T) {
 		"/Users/test/Library/LaunchAgents/io.github.ciwi.agent.plist",
 		"io.github.ciwi.updater",
 		"/Users/test/Library/LaunchAgents/io.github.ciwi.updater.plist",
+		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app",
 		"source-1",
 		123,
 	)
@@ -34,6 +35,9 @@ func TestBuildManifestAndReadManifest(t *testing.T) {
 	}
 	if parsed.TargetVersion != "v2.0.0" || parsed.AgentPID != 123 {
 		t.Fatalf("unexpected manifest fields: %+v", parsed)
+	}
+	if parsed.TargetSignPath != "/Users/test/Library/Application Support/ciwi/CiwiAgent.app" {
+		t.Fatalf("unexpected target sign path: %+v", parsed)
 	}
 
 	path := filepath.Join(t.TempDir(), "pending.json")

@@ -103,3 +103,14 @@ func TestDarwinUpdaterConfigGates(t *testing.T) {
 		}
 	}
 }
+
+func TestDarwinUpdateSignTarget(t *testing.T) {
+	t.Setenv("CIWI_AGENT_APP_BUNDLE", "")
+	if got := darwinUpdateSignTarget("/tmp/ciwi"); got != "/tmp/ciwi" {
+		t.Fatalf("expected binary path fallback, got %q", got)
+	}
+	t.Setenv("CIWI_AGENT_APP_BUNDLE", " /tmp/CiwiAgent.app ")
+	if got := darwinUpdateSignTarget("/tmp/ciwi"); got != "/tmp/CiwiAgent.app" {
+		t.Fatalf("expected bundle sign target, got %q", got)
+	}
+}
