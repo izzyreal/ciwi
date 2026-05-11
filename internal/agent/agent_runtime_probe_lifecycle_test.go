@@ -95,6 +95,34 @@ exit 0
 	}
 }
 
+func TestStartRuntimeContainerIncludesDockerOutputOnFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake docker shell script tests are posix-only")
+	}
+
+	binDir, _ := writeFakeDocker(t, `
+echo "docker: cannot allocate memory" >&2
+kill -9 $$
+`)
+	t.Setenv("PATH", binDir)
+	t.Setenv("CIWI_DOCKER_LOG", filepath.Join(binDir, "docker.log"))
+
+	err := startRuntimeContainer(context.Background(), runtimeContainerConfig{
+		name:  "ciwi-probe-fail",
+		image: "ubuntu-vmpc",
+	})
+	if err == nil {
+		t.Fatal("expected startRuntimeContainer to fail")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "docker run -d --name ciwi-probe-fail ubuntu-vmpc sleep infinity") {
+		t.Fatalf("expected docker command in error, got: %v", err)
+	}
+	if !strings.Contains(msg, "docker: cannot allocate memory") {
+		t.Fatalf("expected docker output in error, got: %v", err)
+	}
+}
+
 func TestCollectRuntimeCapabilitiesWithContainerProbe(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake docker shell script tests are posix-only")

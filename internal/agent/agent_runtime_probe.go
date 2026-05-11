@@ -111,6 +111,17 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
+func shellJoin(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		quoted = append(quoted, shellQuote(arg))
+	}
+	return strings.Join(quoted, " ")
+}
+
 func runtimeProbeContainerImageFromMetadata(meta map[string]string) string {
 	if len(meta) == 0 {
 		return ""
@@ -293,8 +304,13 @@ func startRuntimeContainer(ctx context.Context, cfg runtimeContainerConfig) erro
 
 	startCtx, startCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer startCancel()
-	if _, err := runCommandCapture(startCtx, "", "docker", args...); err != nil {
-		return fmt.Errorf("start runtime container %q from %q: %w", name, image, err)
+	if out, err := runCommandCapture(startCtx, "", "docker", args...); err != nil {
+		cmdLine := "docker " + shellJoin(args)
+		out = strings.TrimSpace(out)
+		if out != "" {
+			return fmt.Errorf("start runtime container %q from %q with %s: %w; output: %s", name, image, cmdLine, err, out)
+		}
+		return fmt.Errorf("start runtime container %q from %q with %s: %w", name, image, cmdLine, err)
 	}
 	return nil
 }
