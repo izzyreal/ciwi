@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -127,7 +128,7 @@ func RunApplyStagedAgent(args []string) error {
 		}
 	}
 
-	backupPath := manifest.TargetBinary + ".prev"
+	backupPath := backupPathForTarget(manifest.TargetBinary, manifest.StagedBinary)
 	_ = os.Remove(backupPath)
 	stepStarted = time.Now()
 	if err := os.Rename(manifest.TargetBinary, backupPath); err != nil {
@@ -190,6 +191,19 @@ func readManifest(path string) (stagedManifest, error) {
 		return stagedManifest{}, fmt.Errorf("decode manifest: %w", err)
 	}
 	return m, nil
+}
+
+func backupPathForTarget(targetBinary, stagedBinary string) string {
+	targetBinary = strings.TrimSpace(targetBinary)
+	stagedBinary = strings.TrimSpace(stagedBinary)
+	name := filepath.Base(targetBinary)
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		name = "ciwi"
+	}
+	if stagedBinary != "" {
+		return filepath.Join(filepath.Dir(stagedBinary), name+".prev")
+	}
+	return targetBinary + ".prev"
 }
 
 func fileSHA256(path string) (string, error) {

@@ -167,6 +167,22 @@ func TestAdHocSignBinaryEmptyPath(t *testing.T) {
 	}
 }
 
+func TestBackupPathForTarget(t *testing.T) {
+	got := backupPathForTarget(
+		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app/Contents/MacOS/ciwi",
+		"/Users/test/.ciwi-agent/work/updates/ciwi-darwin-arm64",
+	)
+	want := "/Users/test/.ciwi-agent/work/updates/ciwi.prev"
+	if got != want {
+		t.Fatalf("unexpected backup path: got=%q want=%q", got, want)
+	}
+
+	fallback := backupPathForTarget("/tmp/ciwi", "")
+	if fallback != "/tmp/ciwi.prev" {
+		t.Fatalf("unexpected fallback backup path: %q", fallback)
+	}
+}
+
 type fixedErr string
 
 func (e fixedErr) Error() string { return string(e) }
