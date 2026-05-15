@@ -41,7 +41,7 @@ Supported tool keys include:
 - `git`, `go`, `gh`, `lftp`, `lcov`, `cmake`, `ninja`, `docker`, `gcc`, `clang`
 - `sphinx-build`, `rinoh`
 - `ccache`, `sccache`
-- macOS signing/packaging tools
+- macOS signing/packaging tools such as `xcodebuild`, `dmgbuild`, `codesign`, `productsign`, `notarytool`, `stapler`, `packagesbuild`, `packagesutil`, `plistbuddy`
 - Windows `msvc`, `iscc`, `wix`, `signtool`
 - synthetic host capability `xorg-dev`
 
