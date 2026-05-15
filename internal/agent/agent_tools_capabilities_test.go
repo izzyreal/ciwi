@@ -11,7 +11,7 @@ func TestDetectToolVersionsIncludesDocsAndTransferTools(t *testing.T) {
 		case "lftp":
 			return "4.9.2"
 		case "dmgbuild":
-			return "1.6.7"
+			return "1"
 		case "rinoh":
 			return "0.5.5"
 		case "sphinx-build":
@@ -25,8 +25,8 @@ func TestDetectToolVersionsIncludesDocsAndTransferTools(t *testing.T) {
 	if got["lftp"] != "4.9.2" {
 		t.Fatalf("expected lftp probe, got %#v", got)
 	}
-	if got["dmgbuild"] != "1.6.7" {
-		t.Fatalf("expected dmgbuild probe, got %#v", got)
+	if got["dmgbuild"] != "1" {
+		t.Fatalf("expected dmgbuild presence probe, got %#v", got)
 	}
 	if got["rinoh"] != "0.5.5" {
 		t.Fatalf("expected rinoh probe, got %#v", got)

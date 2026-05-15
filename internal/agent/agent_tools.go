@@ -77,7 +77,6 @@ func detectToolVersions() map[string]string {
 		{name: "rinoh", cmd: "rinoh", args: []string{"--version"}},
 		{name: "sphinx-build", cmd: "sphinx-build", args: []string{"--version"}},
 		{name: "xcodebuild", cmd: "xcodebuild", args: []string{"-version"}},
-		{name: "dmgbuild", cmd: "dmgbuild", args: []string{"--version"}},
 		{name: "iscc", cmd: "iscc", args: []string{"/?"}},
 		{name: "wix", cmd: "wix", args: []string{"--version"}},
 		{name: "signtool", cmd: "signtool", args: []string{"/?"}},
@@ -104,6 +103,9 @@ func detectToolVersions() map[string]string {
 	}
 	if v := detectZipVersion(); v != "" {
 		out["zip"] = v
+	}
+	if v := detectDmgbuildVersion(); v != "" {
+		out["dmgbuild"] = v
 	}
 	if fileExists("/usr/libexec/PlistBuddy") {
 		out["plistbuddy"] = "1"
@@ -147,6 +149,10 @@ func detectZipVersion() string {
 		return v
 	}
 	return detectToolPresence("zip")
+}
+
+func detectDmgbuildVersion() string {
+	return detectToolPresence("dmgbuild")
 }
 
 func detectToolPresence(cmd string) string {
