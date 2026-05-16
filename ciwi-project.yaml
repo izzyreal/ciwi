@@ -207,6 +207,8 @@ pipelines:
     trigger: manual
     depends_on:
       - build
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: macos-codesign
         runs_on:
