@@ -222,6 +222,7 @@ pipelines:
         timeout_seconds: 1200
         artifacts:
           - dist/codesigned-macos/**
+          - dist/codesigned-macos/*.zip
         steps:
           - run: test -n "$DEV_IDENTITY_APP"
             vault:
