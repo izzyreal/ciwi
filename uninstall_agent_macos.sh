@@ -17,9 +17,7 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 LABEL="nl.izmar.ciwi.agent"
-UPDATER_LABEL="nl.izmar.ciwi.agent-updater"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
-UPDATER_PLIST_PATH="$HOME/Library/LaunchAgents/${UPDATER_LABEL}.plist"
 LOG_DIR="$HOME/Library/Logs/ciwi"
 WORKDIR="$HOME/.ciwi-agent"
 NEWSYSLOG_FILE="/etc/newsyslog.d/ciwi-$(id -un).conf"
@@ -33,12 +31,9 @@ APP_BUNDLE="$HOME/Library/Application Support/ciwi/CiwiAgent.app"
 echo "[1/4] Stopping LaunchAgent if loaded..."
 launchctl bootout "gui/${UID_NUM}" "$PLIST_PATH" >/dev/null 2>&1 || true
 launchctl disable "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
-launchctl bootout "gui/${UID_NUM}" "$UPDATER_PLIST_PATH" >/dev/null 2>&1 || true
-launchctl disable "gui/${UID_NUM}/${UPDATER_LABEL}" >/dev/null 2>&1 || true
 
 echo "[2/4] Removing LaunchAgent plist..."
 rm -f "$PLIST_PATH"
-rm -f "$UPDATER_PLIST_PATH"
 
 echo "[3/4] Removing ciwi binary..."
 if [ -d "$APP_BUNDLE" ]; then

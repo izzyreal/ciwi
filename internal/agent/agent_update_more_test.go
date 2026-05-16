@@ -64,8 +64,7 @@ func TestRunLaunchctl(t *testing.T) {
 func TestDarwinUpdaterConfigGates(t *testing.T) {
 	t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "")
 	t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", "")
-	t.Setenv("CIWI_AGENT_UPDATER_LABEL", "")
-	if err := stageAndTriggerDarwinUpdater("v1.0.0", "asset", "/tmp/target", "/tmp/staged"); err == nil || !strings.Contains(err.Error(), "missing launchd updater configuration") {
+	if err := stageAndTriggerDarwinUpdater("v1.0.0", "asset", "/tmp/target", "/tmp/staged"); err == nil || !strings.Contains(err.Error(), "missing launchd agent configuration") {
 		t.Fatalf("expected missing launchd config error, got %v", err)
 	}
 
@@ -73,7 +72,6 @@ func TestDarwinUpdaterConfigGates(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "agent")
 		t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", "/tmp/agent.plist")
-		t.Setenv("CIWI_AGENT_UPDATER_LABEL", "updater")
 		if hasDarwinUpdaterConfig() {
 			t.Fatalf("expected hasDarwinUpdaterConfig=false on non-darwin")
 		}
@@ -81,7 +79,6 @@ func TestDarwinUpdaterConfigGates(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "agent")
 		t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", "/tmp/agent.plist")
-		t.Setenv("CIWI_AGENT_UPDATER_LABEL", "updater")
 		if !hasDarwinUpdaterConfig() {
 			t.Fatalf("expected hasDarwinUpdaterConfig=true on darwin with launchd env")
 		}
@@ -95,5 +92,69 @@ func TestFindAppBundleRoot(t *testing.T) {
 	}
 	if got := findAppBundleRoot("/tmp/ciwi"); got != "" {
 		t.Fatalf("expected empty bundle root, got %q", got)
+	}
+}
+
+func TestStageAndTriggerDarwinUpdaterStartsDetachedHelper(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin-specific launchd updater staging")
+	}
+
+	tmp := t.TempDir()
+	targetBundle := filepath.Join(tmp, "installed", "CiwiAgent.app")
+	targetBinary := filepath.Join(targetBundle, "Contents", "MacOS", "ciwi")
+	stagedBundle := filepath.Join(tmp, "downloaded", "CiwiAgent.app")
+	stagedBinary := filepath.Join(stagedBundle, "Contents", "MacOS", "ciwi")
+	manifestPath := filepath.Join(tmp, "updates", "pending.json")
+
+	if err := os.MkdirAll(filepath.Dir(targetBinary), 0o755); err != nil {
+		t.Fatalf("mkdir target binary dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(stagedBinary), 0o755); err != nil {
+		t.Fatalf("mkdir staged binary dir: %v", err)
+	}
+	if err := os.WriteFile(targetBinary, []byte("installed"), 0o755); err != nil {
+		t.Fatalf("write target binary: %v", err)
+	}
+	if err := os.WriteFile(stagedBinary, []byte("staged"), 0o755); err != nil {
+		t.Fatalf("write staged binary: %v", err)
+	}
+
+	t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "nl.izmar.ciwi.agent")
+	t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", filepath.Join(tmp, "nl.izmar.ciwi.agent.plist"))
+	t.Setenv("CIWI_AGENT_APP_BUNDLE", targetBundle)
+	t.Setenv("CIWI_AGENT_UPDATE_MANIFEST", manifestPath)
+
+	origStartDarwinUpdater := agentStartDarwinUpdaterFn
+	defer func() { agentStartDarwinUpdaterFn = origStartDarwinUpdater }()
+
+	var gotHelperPath string
+	var gotManifestPath string
+	agentStartDarwinUpdaterFn = func(helperPath, manifestPath string) error {
+		gotHelperPath = helperPath
+		gotManifestPath = manifestPath
+		return nil
+	}
+
+	if err := stageAndTriggerDarwinUpdater("v1.0.0", "ciwi-darwin-arm64.zip", targetBinary, stagedBinary); err != nil {
+		t.Fatalf("stageAndTriggerDarwinUpdater: %v", err)
+	}
+	if gotHelperPath == "" || gotManifestPath == "" {
+		t.Fatalf("expected detached helper launch, got helper=%q manifest=%q", gotHelperPath, gotManifestPath)
+	}
+	if gotManifestPath != manifestPath {
+		t.Fatalf("unexpected manifest path: got %q want %q", gotManifestPath, manifestPath)
+	}
+	if !strings.Contains(filepath.Base(gotHelperPath), "ciwi-darwin-updater-helper-") {
+		t.Fatalf("unexpected helper name: %q", gotHelperPath)
+	}
+	if _, err := os.Stat(gotHelperPath); err != nil {
+		t.Fatalf("expected helper copy to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(manifestPath), "CiwiAgent.app", "Contents", "MacOS", "ciwi")); err != nil {
+		t.Fatalf("expected staged bundle in update dir: %v", err)
+	}
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("expected manifest written: %v", err)
 	}
 }

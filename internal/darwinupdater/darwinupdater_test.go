@@ -20,8 +20,6 @@ func TestBuildManifestAndReadManifest(t *testing.T) {
 		strings.Repeat("b", 64),
 		"io.github.ciwi.agent",
 		"/Users/test/Library/LaunchAgents/io.github.ciwi.agent.plist",
-		"io.github.ciwi.updater",
-		"/Users/test/Library/LaunchAgents/io.github.ciwi.updater.plist",
 		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app",
 		"/tmp/staged/CiwiAgent.app",
 		"source-1",

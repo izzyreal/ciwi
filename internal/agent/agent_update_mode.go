@@ -22,8 +22,7 @@ func selfUpdateServiceModeReasonFor(goos string, getenv func(string) string) str
 	case "darwin":
 		// macOS installer wires launchd update support via these env vars.
 		if strings.TrimSpace(getenv("CIWI_AGENT_LAUNCHD_LABEL")) != "" &&
-			strings.TrimSpace(getenv("CIWI_AGENT_LAUNCHD_PLIST")) != "" &&
-			strings.TrimSpace(getenv("CIWI_AGENT_UPDATER_LABEL")) != "" {
+			strings.TrimSpace(getenv("CIWI_AGENT_LAUNCHD_PLIST")) != "" {
 			return ""
 		}
 		return "agent is not running as a service; self-update disabled"

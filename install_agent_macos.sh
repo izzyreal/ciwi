@@ -376,11 +376,11 @@ require_cmd ditto
 
 REPO="izzyreal/ciwi"
 LABEL="nl.izmar.ciwi.agent"
-UPDATER_LABEL="nl.izmar.ciwi.agent-updater"
+LEGACY_UPDATER_LABEL="nl.izmar.ciwi.agent-updater"
 APP_BUNDLE_ID="nl.izmar.ciwi.agent-app"
 LOG_DIR="$HOME/Library/Logs/ciwi"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
-UPDATER_PLIST_PATH="$HOME/Library/LaunchAgents/${UPDATER_LABEL}.plist"
+LEGACY_UPDATER_PLIST_PATH="$HOME/Library/LaunchAgents/${LEGACY_UPDATER_LABEL}.plist"
 WORKDIR="$HOME/.ciwi-agent/work"
 UPDATES_DIR="$WORKDIR/updates"
 MANIFEST_PATH="$UPDATES_DIR/pending.json"
@@ -475,8 +475,6 @@ if command -v sudo >/dev/null 2>&1; then
     sudo tee "$NEWSYSLOG_FILE" >/dev/null <<EOF
 ${LOG_DIR}/agent.out.log  644  3  102400  *  Z
 ${LOG_DIR}/agent.err.log  644  3  102400  *  Z
-${LOG_DIR}/agent-updater.out.log  644  3  102400  *  Z
-${LOG_DIR}/agent-updater.err.log  644  3  102400  *  Z
 ${LOG_DIR}/server.out.log  644  3  102400  *  Z
 ${LOG_DIR}/server.err.log  644  3  102400  *  Z
 EOF
@@ -520,10 +518,6 @@ cat >"$PLIST_PATH" <<EOF
     <string>${LABEL}</string>
     <key>CIWI_AGENT_LAUNCHD_PLIST</key>
     <string>${PLIST_PATH}</string>
-    <key>CIWI_AGENT_UPDATER_LABEL</key>
-    <string>${UPDATER_LABEL}</string>
-    <key>CIWI_AGENT_UPDATER_PLIST</key>
-    <string>${UPDATER_PLIST_PATH}</string>
     <key>CIWI_AGENT_APP_BUNDLE</key>
     <string>${APP_BUNDLE_PATH}</string>
 ${GITHUB_TOKEN_ENV_BLOCK}
@@ -541,67 +535,16 @@ ${GITHUB_TOKEN_ENV_BLOCK}
 </dict>
 </plist>
 EOF
-
-cat >"$UPDATER_PLIST_PATH" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>${UPDATER_LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${APP_BINARY_PATH}</string>
-    <string>apply-staged-agent-update</string>
-    <string>--manifest</string>
-    <string>${MANIFEST_PATH}</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>CIWI_AGENT_UPDATE_MANIFEST</key>
-    <string>${MANIFEST_PATH}</string>
-    <key>CIWI_LAUNCHCTL_PATH</key>
-    <string>/bin/launchctl</string>
-    <key>CIWI_AGENT_APP_BUNDLE</key>
-    <string>${APP_BUNDLE_PATH}</string>
-    <key>PATH</key>
-    <string>${APP_MACOS_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-  </dict>
-  <key>KeepAlive</key>
-  <false/>
-  <key>RunAtLoad</key>
-  <false/>
-  <key>StandardOutPath</key>
-  <string>${LOG_DIR}/agent-updater.out.log</string>
-  <key>StandardErrorPath</key>
-  <string>${LOG_DIR}/agent-updater.err.log</string>
-</dict>
-</plist>
-EOF
 chmod 0644 "$PLIST_PATH"
-chmod 0644 "$UPDATER_PLIST_PATH"
 chown "$(id -un)":staff "$PLIST_PATH" 2>/dev/null || true
-chown "$(id -un)":staff "$UPDATER_PLIST_PATH" 2>/dev/null || true
 plutil -lint "$PLIST_PATH" >/dev/null
-plutil -lint "$UPDATER_PLIST_PATH" >/dev/null
 
-echo "[5/6] Bootstrapping updater LaunchAgent..."
+echo "[5/5] Bootstrapping agent LaunchAgent..."
 UID_NUM="$(id -u)"
-launchctl bootout "gui/${UID_NUM}/${UPDATER_LABEL}" >/dev/null 2>&1 || true
-launchctl bootout "gui/${UID_NUM}" "$UPDATER_PLIST_PATH" >/dev/null 2>&1 || true
-launchctl disable "gui/${UID_NUM}/${UPDATER_LABEL}" >/dev/null 2>&1 || true
-launchctl enable "gui/${UID_NUM}/${UPDATER_LABEL}" >/dev/null 2>&1 || true
-
-if ! launchctl bootstrap "gui/${UID_NUM}" "$UPDATER_PLIST_PATH"; then
-  echo "Updater LaunchAgent bootstrap failed. Diagnostics:" >&2
-  launchctl print-disabled "gui/${UID_NUM}" | grep "${UPDATER_LABEL}" >&2 || true
-  launchctl print "gui/${UID_NUM}/${UPDATER_LABEL}" >&2 || true
-  log show --style syslog --last 5m --info --debug \
-    --predicate "process == \"launchd\" AND composedMessage CONTAINS \"${UPDATER_LABEL}\"" 2>/dev/null | tail -n 50 >&2 || true
-  exit 1
-fi
-
-echo "[6/6] Bootstrapping agent LaunchAgent..."
+launchctl bootout "gui/${UID_NUM}/${LEGACY_UPDATER_LABEL}" >/dev/null 2>&1 || true
+launchctl bootout "gui/${UID_NUM}" "$LEGACY_UPDATER_PLIST_PATH" >/dev/null 2>&1 || true
+launchctl disable "gui/${UID_NUM}/${LEGACY_UPDATER_LABEL}" >/dev/null 2>&1 || true
+rm -f "$LEGACY_UPDATER_PLIST_PATH"
 launchctl bootout "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 launchctl bootout "gui/${UID_NUM}" "$PLIST_PATH" >/dev/null 2>&1 || true
 launchctl disable "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
@@ -620,11 +563,9 @@ launchctl kickstart -k "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 echo
 echo "ciwi agent installed and started."
 echo "Label:       ${LABEL}"
-echo "Updater:     ${UPDATER_LABEL}"
 echo "Bundle:      ${APP_BUNDLE_PATH}"
 echo "Binary:      ${APP_BINARY_PATH}"
 echo "Plist:       ${PLIST_PATH}"
-echo "Updater plist: ${UPDATER_PLIST_PATH}"
 echo "Server URL:  ${SERVER_URL} (${SERVER_URL_SOURCE})"
 echo "Agent ID:    ${AGENT_ID}"
 echo "Workdir:     ${WORKDIR}"
@@ -640,6 +581,5 @@ echo "  100MB via ${NEWSYSLOG_FILE} (agent + optional server logs)"
 echo
 echo "To uninstall:"
 echo "  launchctl bootout gui/\$(id -u) ${PLIST_PATH} || true"
-echo "  launchctl bootout gui/\$(id -u) ${UPDATER_PLIST_PATH} || true"
-echo "  rm -f ${PLIST_PATH} ${UPDATER_PLIST_PATH}"
+echo "  rm -f ${PLIST_PATH}"
 echo "  rm -rf \"${APP_BUNDLE_PATH}\""

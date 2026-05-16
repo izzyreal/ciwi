@@ -30,12 +30,10 @@ type stagedManifest struct {
 	AgentPlist      string `json:"agent_plist"`
 	AgentPID        int    `json:"agent_pid"`
 	RequestedAtUTC  string `json:"requested_at_utc"`
-	UpdaterLabel    string `json:"updater_label,omitempty"`
-	UpdaterPlist    string `json:"updater_plist,omitempty"`
 	TriggerSourceID string `json:"trigger_source_id,omitempty"`
 }
 
-func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedSHA256, agentLabel, agentPlist, updaterLabel, updaterPlist, targetBundle, stagedBundle, triggerSourceID string, agentPID int) ([]byte, error) {
+func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedSHA256, agentLabel, agentPlist, targetBundle, stagedBundle, triggerSourceID string, agentPID int) ([]byte, error) {
 	m := stagedManifest{
 		VersionUTC:      time.Now().UTC().Format(time.RFC3339Nano),
 		TargetVersion:   strings.TrimSpace(targetVersion),
@@ -47,8 +45,6 @@ func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedS
 		StagedBundle:    strings.TrimSpace(stagedBundle),
 		AgentLabel:      strings.TrimSpace(agentLabel),
 		AgentPlist:      strings.TrimSpace(agentPlist),
-		UpdaterLabel:    strings.TrimSpace(updaterLabel),
-		UpdaterPlist:    strings.TrimSpace(updaterPlist),
 		TriggerSourceID: strings.TrimSpace(triggerSourceID),
 		AgentPID:        agentPID,
 		RequestedAtUTC:  time.Now().UTC().Format(time.RFC3339Nano),

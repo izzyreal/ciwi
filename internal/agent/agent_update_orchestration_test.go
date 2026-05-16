@@ -184,6 +184,7 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 	origCopyDir := agentCopyDirFn
 	origWinSvc := agentWindowsServiceInfoFn
 	origStartHelper := agentStartUpdateHelperFn
+	origStartDarwinUpdater := agentStartDarwinUpdaterFn
 	origPID := agentPIDFn
 	origExit := agentScheduleExitAfterUpdateFn
 
@@ -203,6 +204,7 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 	agentCopyDirFn = func(string, string) error { return nil }
 	agentWindowsServiceInfoFn = func() (bool, string) { return false, "" }
 	agentStartUpdateHelperFn = func(string, string, string, int, []string, string) error { return nil }
+	agentStartDarwinUpdaterFn = func(string, string) error { return nil }
 	agentPIDFn = func() int { return 4242 }
 	agentScheduleExitAfterUpdateFn = func() {}
 
@@ -221,6 +223,7 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 		agentCopyDirFn = origCopyDir
 		agentWindowsServiceInfoFn = origWinSvc
 		agentStartUpdateHelperFn = origStartHelper
+		agentStartDarwinUpdaterFn = origStartDarwinUpdater
 		agentPIDFn = origPID
 		agentScheduleExitAfterUpdateFn = origExit
 	}

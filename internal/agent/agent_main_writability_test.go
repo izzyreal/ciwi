@@ -13,7 +13,6 @@ func TestSelfUpdateWritabilityWarningServiceModeReason(t *testing.T) {
 	case "darwin":
 		t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "")
 		t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", "")
-		t.Setenv("CIWI_AGENT_UPDATER_LABEL", "")
 	}
 	warn := selfUpdateWritabilityWarning()
 	if strings.TrimSpace(warn) == "" {

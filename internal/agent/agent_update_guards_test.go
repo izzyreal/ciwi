@@ -31,7 +31,6 @@ func TestSelfUpdateAndRestartServiceModeGuard(t *testing.T) {
 	case "darwin":
 		t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "")
 		t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", "")
-		t.Setenv("CIWI_AGENT_UPDATER_LABEL", "")
 	case "windows":
 		t.Setenv("CIWI_AGENT_WINDOWS_SERVICE_NAME", "")
 	}

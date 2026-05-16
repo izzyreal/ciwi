@@ -55,6 +55,7 @@ var (
 	agentCopyDirFn                  = copyDir
 	agentWindowsServiceInfoFn       = windowsServiceInfo
 	agentStartUpdateHelperFn        = startUpdateHelper
+	agentStartDarwinUpdaterFn       = startDarwinUpdater
 	agentPIDFn                      = os.Getpid
 	agentScheduleExitAfterUpdateFn  = func() {
 		go func() {
@@ -187,17 +188,14 @@ func hasDarwinUpdaterConfig() bool {
 		return false
 	}
 	return strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_LABEL", "")) != "" &&
-		strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", "")) != "" &&
-		strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATER_LABEL", "")) != ""
+		strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", "")) != ""
 }
 
 func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, stagedBinary string) error {
 	agentLabel := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_LABEL", ""))
 	agentPlist := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", ""))
-	updaterLabel := strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATER_LABEL", ""))
-	updaterPlist := strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATER_PLIST", ""))
-	if agentLabel == "" || agentPlist == "" || updaterLabel == "" {
-		return fmt.Errorf("missing launchd updater configuration")
+	if agentLabel == "" || agentPlist == "" {
+		return fmt.Errorf("missing launchd agent configuration")
 	}
 
 	workDir := agentWorkDir()
@@ -230,16 +228,22 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	if err != nil {
 		return fmt.Errorf("hash staged update binary: %w", err)
 	}
-	manifest, err := darwinupdater.BuildManifest(targetVersion, assetName, targetBinary, stagePath, hash, agentLabel, agentPlist, updaterLabel, updaterPlist, targetBundle, stagedBundle, defaultAgentID(), os.Getpid())
+	manifest, err := darwinupdater.BuildManifest(targetVersion, assetName, targetBinary, stagePath, hash, agentLabel, agentPlist, targetBundle, stagedBundle, defaultAgentID(), os.Getpid())
 	if err != nil {
 		return fmt.Errorf("build update manifest: %w", err)
 	}
 	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
 		return fmt.Errorf("write update manifest: %w", err)
 	}
-	if err := runLaunchctl("kickstart", "-k", "gui/"+strconv.Itoa(os.Getuid())+"/"+updaterLabel); err != nil {
+	helperPath := filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
+	if err := agentCopyFileFn(targetBinary, helperPath, 0o755); err != nil {
 		_ = os.Remove(manifestPath)
-		return fmt.Errorf("trigger updater launchagent: %w", err)
+		return fmt.Errorf("prepare darwin updater helper: %w", err)
+	}
+	if err := agentStartDarwinUpdaterFn(helperPath, manifestPath); err != nil {
+		_ = os.Remove(manifestPath)
+		_ = os.Remove(helperPath)
+		return fmt.Errorf("start darwin updater helper: %w", err)
 	}
 	return nil
 }
@@ -328,6 +332,17 @@ func startUpdateHelper(helperPath, targetPath, newBinaryPath string, parentPID i
 	}
 
 	cmd := exec.Command(helperPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = nil
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func startDarwinUpdater(helperPath, manifestPath string) error {
+	cmd := exec.Command(helperPath, "apply-staged-agent-update", "--manifest", manifestPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = nil
