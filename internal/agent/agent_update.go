@@ -56,8 +56,12 @@ var (
 	agentWindowsServiceInfoFn       = windowsServiceInfo
 	agentStartUpdateHelperFn        = startUpdateHelper
 	agentStartDarwinUpdaterFn       = startDarwinUpdater
+	agentStopOwnDarwinLaunchAgentFn = stopOwnDarwinLaunchAgentForUpdate
 	agentPIDFn                      = os.Getpid
-	agentScheduleExitAfterUpdateFn  = func() {
+	agentExitAfterDarwinUpdateFn    = func() {
+		go os.Exit(0)
+	}
+	agentScheduleExitAfterUpdateFn = func() {
 		go func() {
 			time.Sleep(250 * time.Millisecond)
 			os.Exit(0)
@@ -154,7 +158,10 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		}
 		slog.Info("agent self-update phase complete", "phase", "stage_and_trigger_darwin_updater", "elapsed", time.Since(phaseStarted).Round(time.Millisecond))
 		slog.Info("agent self-update handed off to darwin updater", "target_version", targetVersion, "elapsed_total", time.Since(updateStarted).Round(time.Millisecond))
-		agentScheduleExitAfterUpdateFn()
+		if err := agentStopOwnDarwinLaunchAgentFn(); err != nil {
+			slog.Warn("agent self-update failed to stop own launchagent before exit", "error", err)
+		}
+		agentExitAfterDarwinUpdateFn()
 		return nil
 	}
 
@@ -361,6 +368,27 @@ func startDarwinUpdater(helperPath, manifestPath string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = nil
 	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func stopOwnDarwinLaunchAgentForUpdate() error {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	label := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_LABEL", ""))
+	plist := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", ""))
+	if label == "" || plist == "" {
+		return nil
+	}
+	uid := strconv.Itoa(os.Getuid())
+	service := "gui/" + uid + "/" + label
+	domain := "gui/" + uid
+	if err := runLaunchctl("bootout", service); err != nil {
+		_ = runLaunchctl("bootout", domain, plist)
+	}
+	if err := runLaunchctl("disable", service); err != nil {
 		return err
 	}
 	return nil

@@ -98,6 +98,7 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 
 	staged := 0
 	helperStarts := 0
+	stoppedOwnLaunchAgent := 0
 	exitScheduled := 0
 	agentFetchReleaseAssetsForTagFn = func(context.Context, string, string, string, string, string) (githubReleaseAsset, githubReleaseAsset, error) {
 		return githubReleaseAsset{Name: expectedAssetName(runtime.GOOS, runtime.GOARCH), URL: "https://example.invalid/asset"},
@@ -116,7 +117,12 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 		helperStarts++
 		return nil
 	}
-	agentScheduleExitAfterUpdateFn = func() { exitScheduled++ }
+	agentStopOwnDarwinLaunchAgentFn = func() error {
+		stoppedOwnLaunchAgent++
+		return nil
+	}
+	agentExitAfterDarwinUpdateFn = func() { exitScheduled++ }
+	agentScheduleExitAfterUpdateFn = func() { t.Fatalf("generic delayed exit should not be used on darwin staging path") }
 
 	err := selfUpdateAndRestart(context.Background(), "v999.9.4", "izzyreal/ciwi", "https://api.github.com", []string{"serve"})
 	if err != nil {
@@ -127,6 +133,9 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 	}
 	if helperStarts != 0 {
 		t.Fatalf("helper should not be started on darwin staging path")
+	}
+	if stoppedOwnLaunchAgent != 1 {
+		t.Fatalf("expected own launchagent stop once, got %d", stoppedOwnLaunchAgent)
 	}
 	if exitScheduled != 1 {
 		t.Fatalf("expected one scheduled exit on darwin staging path, got %d", exitScheduled)
@@ -185,7 +194,9 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 	origWinSvc := agentWindowsServiceInfoFn
 	origStartHelper := agentStartUpdateHelperFn
 	origStartDarwinUpdater := agentStartDarwinUpdaterFn
+	origStopOwnDarwinLaunchAgent := agentStopOwnDarwinLaunchAgentFn
 	origPID := agentPIDFn
+	origDarwinExit := agentExitAfterDarwinUpdateFn
 	origExit := agentScheduleExitAfterUpdateFn
 
 	agentExecutablePathFn = func() (string, error) { return "/opt/ciwi/ciwi-agent", nil }
@@ -205,7 +216,9 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 	agentWindowsServiceInfoFn = func() (bool, string) { return false, "" }
 	agentStartUpdateHelperFn = func(string, string, string, int, []string, string) error { return nil }
 	agentStartDarwinUpdaterFn = func(string, string) error { return nil }
+	agentStopOwnDarwinLaunchAgentFn = func() error { return nil }
 	agentPIDFn = func() int { return 4242 }
+	agentExitAfterDarwinUpdateFn = func() {}
 	agentScheduleExitAfterUpdateFn = func() {}
 
 	return func() {
@@ -224,7 +237,9 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 		agentWindowsServiceInfoFn = origWinSvc
 		agentStartUpdateHelperFn = origStartHelper
 		agentStartDarwinUpdaterFn = origStartDarwinUpdater
+		agentStopOwnDarwinLaunchAgentFn = origStopOwnDarwinLaunchAgent
 		agentPIDFn = origPID
+		agentExitAfterDarwinUpdateFn = origDarwinExit
 		agentScheduleExitAfterUpdateFn = origExit
 	}
 }
