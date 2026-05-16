@@ -14,6 +14,7 @@ import (
 
 var versionPattern = regexp.MustCompile(`([0-9]+(?:\.[0-9]+){1,3})`)
 var detectToolVersionInShellFn = detectToolVersionInShell
+var lookPathFn = exec.LookPath
 
 func detectAgentCapabilities() map[string]string {
 	shells := supportedShellsForRuntime()
@@ -160,7 +161,7 @@ func detectToolPresence(cmd string) string {
 	if cmd == "" {
 		return ""
 	}
-	if _, err := exec.LookPath(cmd); err != nil {
+	if _, err := lookPathFn(cmd); err != nil {
 		return ""
 	}
 	return "1"
@@ -196,7 +197,7 @@ func detectToolVersion(cmd string, args ...string) string {
 			return v
 		}
 	}
-	if _, err := exec.LookPath(cmd); err != nil {
+	if _, err := lookPathFn(cmd); err != nil {
 		return ""
 	}
 	return detectToolVersionByPath(cmd, args...)
