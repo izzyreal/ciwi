@@ -20,9 +20,9 @@ func ExpectedAssetName(goos, goarch string) string {
 	case goos == "linux" && goarch == "arm64":
 		return "ciwi-linux-arm64"
 	case goos == "darwin" && goarch == "amd64":
-		return "ciwi-darwin-amd64"
+		return "ciwi-darwin-amd64.zip"
 	case goos == "darwin" && goarch == "arm64":
-		return "ciwi-darwin-arm64"
+		return "ciwi-darwin-arm64.zip"
 	case goos == "windows" && goarch == "amd64":
 		return "ciwi-windows-amd64.exe"
 	case goos == "windows" && goarch == "arm64":

@@ -97,95 +97,6 @@ resolve_hostname_for_ip() {
   printf '%s\n' ""
 }
 
-resolve_ipv4_for_host() {
-  host="$(normalize_host "$1")"
-  if [ -z "$host" ]; then
-    printf '%s\n' ""
-    return
-  fi
-  if is_ipv4 "$host"; then
-    printf '%s\n' "$host"
-    return
-  fi
-  if command -v dscacheutil >/dev/null 2>&1; then
-    ip="$(dscacheutil -q host -a name "$host" 2>/dev/null | awk '/^ip_address:/{print $2; exit}' || true)"
-    if is_ipv4 "$ip"; then
-      printf '%s\n' "$ip"
-      return
-    fi
-  fi
-  if command -v dig >/dev/null 2>&1; then
-    ip="$(dig +short "$host" A 2>/dev/null | sed -n '1p' || true)"
-    if is_ipv4 "$ip"; then
-      printf '%s\n' "$ip"
-      return
-    fi
-  fi
-  printf '%s\n' ""
-}
-
-is_private_or_link_local_ipv4() {
-  ip="$1"
-  case "$ip" in
-    10.*|192.168.*|169.254.*) return 0 ;;
-    172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) return 0 ;;
-  esac
-  return 1
-}
-
-extract_host_from_url() {
-  url="$(printf '%s' "$1" | tr -d '[:space:]')"
-  hostport="${url#http://}"
-  if [ "$hostport" = "$url" ]; then
-    hostport="${url#https://}"
-  fi
-  host="${hostport%%/*}"
-  host="${host%%:*}"
-  normalize_host "$host"
-}
-
-local_network_exception_cidr() {
-  url="$1"
-  host="$(extract_host_from_url "$url")"
-  if [ -z "$host" ]; then
-    printf '%s\n' ""
-    return
-  fi
-  ip="$(resolve_ipv4_for_host "$host")"
-  if ! is_private_or_link_local_ipv4 "$ip"; then
-    printf '%s\n' ""
-    return
-  fi
-  printf '%s/32\n' "$ip"
-}
-
-configure_local_network_bypass() {
-  url="$1"
-  if [ "$(trim_single_line "${CIWI_MACOS_LOCAL_NETWORK_BYPASS:-true}")" = "false" ]; then
-    printf '%s\n' "skipped (disabled by CIWI_MACOS_LOCAL_NETWORK_BYPASS=false)"
-    return
-  fi
-  cidr="$(local_network_exception_cidr "$url")"
-  if [ -z "$cidr" ]; then
-    printf '%s\n' "not needed (server is not on a private/local IPv4 address)"
-    return
-  fi
-  if ! command -v sudo >/dev/null 2>&1; then
-    printf '%s\n' "not configured for ${cidr} (sudo not found)"
-    return
-  fi
-  if ! (sudo -n true >/dev/null 2>&1 || sudo -v >/dev/null 2>&1); then
-    printf '%s\n' "not configured for ${cidr} (sudo unavailable)"
-    return
-  fi
-  if sudo defaults write com.apple.network.local-network AllowedEthernetLocalNetworkAddresses -array-add "$cidr" >/dev/null 2>&1 &&
-     sudo defaults write com.apple.network.local-network AllowedWiFiLocalNetworkAddresses -array-add "$cidr" >/dev/null 2>&1; then
-    printf '%s\n' "configured ${cidr} for Ethernet and Wi-Fi (restart required by macOS)"
-    return
-  fi
-  printf '%s\n' "failed to configure ${cidr} via com.apple.network.local-network defaults"
-}
-
 canonicalize_url() {
   url="$(printf '%s' "$1" | tr -d '[:space:]')"
   hostport="${url#http://}"
@@ -425,49 +336,26 @@ choose_server_url() {
 }
 
 install_binary() {
-  src="$1"
+  src_zip="$1"
   bundle_path="$HOME/Library/Application Support/ciwi/CiwiAgent.app"
-  contents_dir="${bundle_path}/Contents"
-  macos_dir="${contents_dir}/MacOS"
-  target_path="${macos_dir}/ciwi"
-  version="${2:-0.0.0}"
-
-  # Keep agent binary user-writable so ciwi self-update can replace it in-place.
-  mkdir -p "$macos_dir"
-  install -m 0755 "$src" "$target_path"
-  cat >"${contents_dir}/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
-  <key>CFBundleDisplayName</key>
-  <string>Ciwi Agent</string>
-  <key>CFBundleExecutable</key>
-  <string>ciwi</string>
-  <key>CFBundleIdentifier</key>
-  <string>nl.izmar.ciwi.agent-app</string>
-  <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
-  <key>CFBundleName</key>
-  <string>CiwiAgent</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>CFBundleShortVersionString</key>
-  <string>${version}</string>
-  <key>CFBundleVersion</key>
-  <string>${version}</string>
-  <key>LSBackgroundOnly</key>
-  <true/>
-  <key>NSLocalNetworkUsageDescription</key>
-  <string>ciwi agent connects to your ciwi server on the local network to send heartbeats and run jobs.</string>
-</dict>
-</plist>
-EOF
-  if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$bundle_path" >/dev/null
+  work_dir="$(mktemp -d -t ciwi-agent-bundle-install.XXXXXX)"
+  unzip_dir="${work_dir}/unzipped"
+  mkdir -p "$unzip_dir"
+  if ! ditto -x -k "$src_zip" "$unzip_dir"; then
+    rm -rf "$work_dir"
+    echo "failed to extract signed app bundle from $src_zip" >&2
+    exit 1
   fi
+  extracted_bundle="${unzip_dir}/CiwiAgent.app"
+  if [ ! -d "$extracted_bundle" ]; then
+    rm -rf "$work_dir"
+    echo "signed app bundle not found in $src_zip" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$bundle_path")"
+  rm -rf "$bundle_path"
+  cp -R "$extracted_bundle" "$bundle_path"
+  rm -rf "$work_dir"
   printf '%s\n' "$bundle_path"
 }
 
@@ -484,6 +372,7 @@ require_cmd curl
 require_cmd shasum
 require_cmd launchctl
 require_cmd install
+require_cmd ditto
 
 REPO="izzyreal/ciwi"
 LABEL="nl.izmar.ciwi.agent"
@@ -500,7 +389,6 @@ HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname)"
 AGENT_ID="agent-${HOST_NAME}"
 SERVER_URL_SOURCE=""
 SERVER_URL="$(choose_server_url)"
-LOCAL_NETWORK_BYPASS_STATUS="$(configure_local_network_bypass "$SERVER_URL")"
 INSTALL_GITHUB_TOKEN="$(trim_single_line "${CIWI_GITHUB_TOKEN:-}")"
 TOKEN_SOURCE="none"
 if [ -n "$INSTALL_GITHUB_TOKEN" ]; then
@@ -531,7 +419,7 @@ case "$ARCH_RAW" in
     ;;
 esac
 
-ASSET="ciwi-darwin-${GOARCH}"
+ASSET="ciwi-darwin-${GOARCH}.zip"
 CHECKSUM_ASSET="ciwi-checksums.txt"
 RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
 
@@ -577,7 +465,7 @@ fi
 
 echo "[3/6] Installing binary..."
 mkdir -p "$WORKDIR" "$UPDATES_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
-APP_BUNDLE_PATH="$(install_binary "${TMP_DIR}/${ASSET}" "${TARGET_VERSION:-0.0.0}")"
+APP_BUNDLE_PATH="$(install_binary "${TMP_DIR}/${ASSET}")"
 APP_MACOS_DIR="${APP_BUNDLE_PATH}/Contents/MacOS"
 APP_BINARY_PATH="${APP_MACOS_DIR}/ciwi"
 
@@ -738,7 +626,6 @@ echo "Binary:      ${APP_BINARY_PATH}"
 echo "Plist:       ${PLIST_PATH}"
 echo "Updater plist: ${UPDATER_PLIST_PATH}"
 echo "Server URL:  ${SERVER_URL} (${SERVER_URL_SOURCE})"
-echo "Local network bypass: ${LOCAL_NETWORK_BYPASS_STATUS}"
 echo "Agent ID:    ${AGENT_ID}"
 echo "Workdir:     ${WORKDIR}"
 case "$TOKEN_SOURCE" in

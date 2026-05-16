@@ -23,6 +23,7 @@ func TestBuildManifestAndReadManifest(t *testing.T) {
 		"io.github.ciwi.updater",
 		"/Users/test/Library/LaunchAgents/io.github.ciwi.updater.plist",
 		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app",
+		"/tmp/staged/CiwiAgent.app",
 		"source-1",
 		123,
 	)
@@ -36,10 +37,6 @@ func TestBuildManifestAndReadManifest(t *testing.T) {
 	if parsed.TargetVersion != "v2.0.0" || parsed.AgentPID != 123 {
 		t.Fatalf("unexpected manifest fields: %+v", parsed)
 	}
-	if parsed.TargetSignPath != "/Users/test/Library/Application Support/ciwi/CiwiAgent.app" {
-		t.Fatalf("unexpected target sign path: %+v", parsed)
-	}
-
 	path := filepath.Join(t.TempDir(), "pending.json")
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -161,25 +158,31 @@ func TestWaitForProcessExit(t *testing.T) {
 	}
 }
 
-func TestAdHocSignBinaryEmptyPath(t *testing.T) {
-	if err := adHocSignBinary("   "); err == nil {
-		t.Fatalf("expected empty path error")
-	}
-}
-
 func TestBackupPathForTarget(t *testing.T) {
 	got := backupPathForTarget(
 		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app/Contents/MacOS/ciwi",
 		"/Users/test/.ciwi-agent/work/updates/ciwi-darwin-arm64",
+		"",
+		"",
 	)
 	want := "/Users/test/.ciwi-agent/work/updates/ciwi.prev"
 	if got != want {
 		t.Fatalf("unexpected backup path: got=%q want=%q", got, want)
 	}
 
-	fallback := backupPathForTarget("/tmp/ciwi", "")
+	fallback := backupPathForTarget("/tmp/ciwi", "", "", "")
 	if fallback != "/tmp/ciwi.prev" {
 		t.Fatalf("unexpected fallback backup path: %q", fallback)
+	}
+
+	bundleBackup := backupPathForTarget(
+		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app/Contents/MacOS/ciwi",
+		"/tmp/staged/CiwiAgent.app/Contents/MacOS/ciwi",
+		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app",
+		"/tmp/staged/CiwiAgent.app",
+	)
+	if bundleBackup != "/tmp/staged/CiwiAgent.app.prev" {
+		t.Fatalf("unexpected bundle backup path: %q", bundleBackup)
 	}
 }
 

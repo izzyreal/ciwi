@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -51,6 +52,7 @@ var (
 	agentHasDarwinUpdaterConfigFn   = hasDarwinUpdaterConfig
 	agentStageDarwinUpdaterFn       = stageAndTriggerDarwinUpdater
 	agentCopyFileFn                 = copyFile
+	agentCopyDirFn                  = copyDir
 	agentWindowsServiceInfoFn       = windowsServiceInfo
 	agentStartUpdateHelperFn        = startUpdateHelper
 	agentPIDFn                      = os.Getpid
@@ -109,7 +111,7 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 	slog.Info("agent self-update phase complete", "phase", "fetch_release_assets", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "asset", strings.TrimSpace(asset.Name), "has_checksum_asset", strings.TrimSpace(checksumAsset.URL) != "")
 
 	phaseStarted = time.Now()
-	newBinPath, err := agentDownloadUpdateAssetFn(ctx, asset.URL, asset.Name)
+	assetPath, err := agentDownloadUpdateAssetFn(ctx, asset.URL, asset.Name)
 	if err != nil {
 		slog.Warn("agent self-update phase failed", "phase", "download_asset", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 		return fmt.Errorf("download update asset: %w", err)
@@ -124,11 +126,23 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		}
 		slog.Info("agent self-update phase complete", "phase", "download_checksum", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "checksum_asset", strings.TrimSpace(checksumAsset.Name))
 		phaseStarted = time.Now()
-		if err := agentVerifyFileSHA256Fn(newBinPath, asset.Name, checksumText); err != nil {
+		if err := agentVerifyFileSHA256Fn(assetPath, asset.Name, checksumText); err != nil {
 			slog.Warn("agent self-update phase failed", "phase", "verify_checksum", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
 			return fmt.Errorf("checksum verification failed: %w", err)
 		}
 		slog.Info("agent self-update phase complete", "phase", "verify_checksum", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "asset", strings.TrimSpace(asset.Name))
+	}
+
+	newBinPath := assetPath
+	if agentUpdateRuntimeGOOS == "darwin" && strings.HasSuffix(strings.ToLower(strings.TrimSpace(asset.Name)), ".zip") {
+		phaseStarted = time.Now()
+		extractedBinPath, err := extractDarwinAppExecutable(assetPath)
+		if err != nil {
+			slog.Warn("agent self-update phase failed", "phase", "extract_darwin_app_bundle", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("extract darwin app bundle: %w", err)
+		}
+		newBinPath = extractedBinPath
+		slog.Info("agent self-update phase complete", "phase", "extract_darwin_app_bundle", "elapsed", time.Since(phaseStarted).Round(time.Millisecond), "binary_path", extractedBinPath)
 	}
 
 	if agentUpdateRuntimeGOOS == "darwin" && agentHasDarwinUpdaterConfigFn() {
@@ -177,13 +191,6 @@ func hasDarwinUpdaterConfig() bool {
 		strings.TrimSpace(envOrDefault("CIWI_AGENT_UPDATER_LABEL", "")) != ""
 }
 
-func darwinUpdateSignTarget(targetBinary string) string {
-	if bundlePath := strings.TrimSpace(envOrDefault("CIWI_AGENT_APP_BUNDLE", "")); bundlePath != "" {
-		return bundlePath
-	}
-	return strings.TrimSpace(targetBinary)
-}
-
 func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, stagedBinary string) error {
 	agentLabel := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_LABEL", ""))
 	agentPlist := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", ""))
@@ -201,27 +208,34 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		return fmt.Errorf("create update manifest directory: %w", err)
 	}
+	targetBundle := strings.TrimSpace(envOrDefault("CIWI_AGENT_APP_BUNDLE", ""))
 	stagePath := filepath.Join(filepath.Dir(manifestPath), filepath.Base(stagedBinary))
-	if err := moveOrCopyFile(stagedBinary, stagePath, 0o755); err != nil {
-		return fmt.Errorf("stage update binary: %w", err)
+	stagedBundle := ""
+	if targetBundle != "" {
+		bundleRoot := findAppBundleRoot(stagedBinary)
+		if bundleRoot == "" {
+			return fmt.Errorf("staged darwin app bundle not found for %s", stagedBinary)
+		}
+		stagedBundle = filepath.Join(filepath.Dir(manifestPath), filepath.Base(bundleRoot))
+		if err := moveOrCopyDir(bundleRoot, stagedBundle); err != nil {
+			return fmt.Errorf("stage update app bundle: %w", err)
+		}
+		stagePath = filepath.Join(stagedBundle, "Contents", "MacOS", "ciwi")
+	} else {
+		if err := moveOrCopyFile(stagedBinary, stagePath, 0o755); err != nil {
+			return fmt.Errorf("stage update binary: %w", err)
+		}
 	}
 	hash, err := fileSHA256(stagePath)
 	if err != nil {
 		return fmt.Errorf("hash staged update binary: %w", err)
 	}
-	signTarget := darwinUpdateSignTarget(targetBinary)
-	manifest, err := darwinupdater.BuildManifest(targetVersion, assetName, targetBinary, stagePath, hash, agentLabel, agentPlist, updaterLabel, updaterPlist, signTarget, defaultAgentID(), os.Getpid())
+	manifest, err := darwinupdater.BuildManifest(targetVersion, assetName, targetBinary, stagePath, hash, agentLabel, agentPlist, updaterLabel, updaterPlist, targetBundle, stagedBundle, defaultAgentID(), os.Getpid())
 	if err != nil {
 		return fmt.Errorf("build update manifest: %w", err)
 	}
 	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
 		return fmt.Errorf("write update manifest: %w", err)
-	}
-	if strings.TrimSpace(envOrDefault("CIWI_DARWIN_ADHOC_SIGN", "true")) != "false" {
-		if err := adHocSignPath(signTarget); err != nil {
-			_ = os.Remove(manifestPath)
-			return fmt.Errorf("ad-hoc sign current target: %w", err)
-		}
 	}
 	if err := runLaunchctl("kickstart", "-k", "gui/"+strconv.Itoa(os.Getuid())+"/"+updaterLabel); err != nil {
 		_ = os.Remove(manifestPath)
@@ -404,6 +418,84 @@ func downloadUpdateAsset(ctx context.Context, assetURL, assetName string) (strin
 	return tmp, nil
 }
 
+func extractDarwinAppExecutable(assetPath string) (string, error) {
+	assetPath = strings.TrimSpace(assetPath)
+	if assetPath == "" {
+		return "", fmt.Errorf("empty darwin asset path")
+	}
+	extractRoot := filepath.Join(os.TempDir(), "ciwi-agent-update-app-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+	if err := os.MkdirAll(extractRoot, 0o755); err != nil {
+		return "", err
+	}
+	if err := unzipArchive(assetPath, extractRoot); err != nil {
+		return "", err
+	}
+	var bundlePath string
+	_ = filepath.WalkDir(extractRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || bundlePath != "" || !d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ".app") {
+			bundlePath = path
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if bundlePath == "" {
+		return "", fmt.Errorf("no .app bundle found in %s", assetPath)
+	}
+	binPath := filepath.Join(bundlePath, "Contents", "MacOS", "ciwi")
+	if _, err := os.Stat(binPath); err != nil {
+		return "", fmt.Errorf("app bundle executable missing: %w", err)
+	}
+	return binPath, nil
+}
+
+func unzipArchive(src, dst string) error {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	for _, f := range r.File {
+		targetPath := filepath.Join(dst, f.Name)
+		cleanTarget := filepath.Clean(targetPath)
+		if !strings.HasPrefix(cleanTarget, filepath.Clean(dst)+string(filepath.Separator)) && cleanTarget != filepath.Clean(dst) {
+			return fmt.Errorf("zip entry escapes destination: %s", f.Name)
+		}
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(cleanTarget, 0o755); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(cleanTarget), 0o755); err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		mode := f.Mode()
+		if mode == 0 {
+			mode = 0o644
+		}
+		out, err := os.OpenFile(cleanTarget, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		if err != nil {
+			_ = rc.Close()
+			return err
+		}
+		if _, err := io.Copy(out, rc); err != nil {
+			_ = out.Close()
+			_ = rc.Close()
+			return err
+		}
+		_ = out.Close()
+		_ = rc.Close()
+	}
+	return nil
+}
+
 func downloadTextAsset(ctx context.Context, assetURL string) (string, error) {
 	client := updateHTTPClient(30 * time.Second)
 	var resp *http.Response
@@ -462,6 +554,23 @@ func exeExt() string {
 
 func copyFile(src, dst string, mode os.FileMode) error {
 	return updateutil.CopyFile(src, dst, mode)
+}
+
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(targetPath, info.Mode())
+		}
+		return copyFile(path, targetPath, info.Mode())
+	})
 }
 
 func applyGitHubAuthHeader(req *http.Request) {
@@ -568,6 +677,36 @@ func moveOrCopyFile(src, dst string, mode fs.FileMode) error {
 	return nil
 }
 
+func moveOrCopyDir(src, dst string) error {
+	if strings.TrimSpace(src) == strings.TrimSpace(dst) {
+		return nil
+	}
+	_ = os.RemoveAll(dst)
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	if err := agentCopyDirFn(src, dst); err != nil {
+		return err
+	}
+	_ = os.RemoveAll(src)
+	return nil
+}
+
+func findAppBundleRoot(path string) string {
+	cur := filepath.Clean(strings.TrimSpace(path))
+	for cur != "" && cur != "." && cur != string(filepath.Separator) {
+		if strings.EqualFold(filepath.Ext(cur), ".app") {
+			return cur
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return ""
+}
+
 func fileSHA256(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -590,31 +729,6 @@ func runLaunchctl(args ...string) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s %s: %w (%s)", launchctlPath, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func adHocSignBinary(path string) error {
-	return adHocSignPath(path)
-}
-
-func adHocSignPath(path string) error {
-	p := strings.TrimSpace(path)
-	if p == "" {
-		return fmt.Errorf("empty path")
-	}
-	codesignPath := strings.TrimSpace(envOrDefault("CIWI_CODESIGN_PATH", "/usr/bin/codesign"))
-	if codesignPath == "" {
-		codesignPath = "/usr/bin/codesign"
-	}
-	args := []string{"--force", "--sign", "-", p}
-	if info, err := os.Stat(p); err == nil && info.IsDir() {
-		args = []string{"--force", "--deep", "--sign", "-", p}
-	}
-	cmd := exec.Command(codesignPath, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s %s: %w (%s)", codesignPath, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

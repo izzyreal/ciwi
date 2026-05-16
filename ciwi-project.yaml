@@ -72,6 +72,7 @@ pipelines:
     trigger: manual
     depends_on:
       - build
+      - codesign-macos
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     versioning:
@@ -143,12 +144,16 @@ pipelines:
               test -f dist/ciwi-linux-amd64
               test -f dist/ciwi-darwin-amd64
               test -f dist/ciwi-darwin-arm64
+              test -f dist/codesigned-macos/ciwi-darwin-amd64.zip
+              test -f dist/codesigned-macos/ciwi-darwin-arm64.zip
               test -f dist/ciwi-windows-amd64.exe
               test -f dist/ciwi-windows-arm64.exe
               for f in \
                 dist/ciwi-linux-amd64 \
                 dist/ciwi-darwin-amd64 \
                 dist/ciwi-darwin-arm64 \
+                dist/codesigned-macos/ciwi-darwin-amd64.zip \
+                dist/codesigned-macos/ciwi-darwin-arm64.zip \
                 dist/ciwi-windows-amd64.exe \
                 dist/ciwi-windows-arm64.exe; do
                 shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
@@ -170,6 +175,8 @@ pipelines:
                 dist/ciwi-linux-amd64 \
                 dist/ciwi-darwin-amd64 \
                 dist/ciwi-darwin-arm64 \
+                dist/codesigned-macos/ciwi-darwin-amd64.zip \
+                dist/codesigned-macos/ciwi-darwin-arm64.zip \
                 dist/ciwi-windows-amd64.exe \
                 dist/ciwi-windows-arm64.exe \
                 dist/ciwi-checksums.txt
@@ -196,8 +203,63 @@ pipelines:
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
 
+  - id: codesign-macos
+    trigger: manual
+    depends_on:
+      - build
+    jobs:
+      - id: macos-codesign
+        runs_on:
+          executor: script
+          shell: posix
+          os: darwin
+          arch: arm64
+        requires:
+          tools:
+            codesign: "*"
+            ditto: "*"
+            python3: "*"
+        timeout_seconds: 1200
+        artifacts:
+          - dist/codesigned-macos/**
+        steps:
+          - run: test -n "$DEV_IDENTITY_APP"
+            vault:
+              connection: home-vault
+              secrets:
+                - name: dev-identity-app
+                  mount: kv
+                  path: apple-id
+                  key: dev-identity-app
+            env:
+              DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+          - run: APPLE_TEAM_ID="$(python3 macos-codesign-details-extractor.py --common-name 'Developer ID Application')" && test -n "$APPLE_TEAM_ID" && echo "$APPLE_TEAM_ID" > dist/apple-team-id.txt
+          - run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
+          - run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
+          - run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-amd64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-amd64.app dist/codesigned-macos/ciwi-darwin-amd64.zip
+            vault:
+              connection: home-vault
+              secrets:
+                - name: dev-identity-app
+                  mount: kv
+                  path: apple-id
+                  key: dev-identity-app
+            env:
+              DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+          - run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-arm64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-arm64.app dist/codesigned-macos/ciwi-darwin-arm64.zip
+            vault:
+              connection: home-vault
+              secrets:
+                - name: dev-identity-app
+                  mount: kv
+                  path: apple-id
+                  key: dev-identity-app
+            env:
+              DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+
 pipeline_chains:
   - id: build-release
     pipelines:
       - build
+      - codesign-macos
       - release

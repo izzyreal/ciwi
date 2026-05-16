@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -20,11 +22,7 @@ func TestSelfUpdateAndRestartChecksumFailureStopsBeforeHelper(t *testing.T) {
 			githubReleaseAsset{Name: "ciwi-checksums.txt", URL: "https://example.invalid/sums"}, nil
 	}
 	agentDownloadUpdateAssetFn = func(context.Context, string, string) (string, error) {
-		p := filepath.Join(t.TempDir(), "ciwi-new"+exeExt())
-		if err := os.WriteFile(p, []byte("bin"), 0o755); err != nil {
-			t.Fatalf("write staged binary: %v", err)
-		}
-		return p, nil
+		return writeStubUpdateAsset(t, runtime.GOOS, runtime.GOARCH)
 	}
 	agentDownloadTextAssetFn = func(context.Context, string) (string, error) { return "dummy", nil }
 	agentVerifyFileSHA256Fn = func(string, string, string) error { return errors.New("bad checksum") }
@@ -51,11 +49,7 @@ func TestSelfUpdateAndRestartHelperStartFailure(t *testing.T) {
 			githubReleaseAsset{}, nil
 	}
 	agentDownloadUpdateAssetFn = func(context.Context, string, string) (string, error) {
-		p := filepath.Join(t.TempDir(), "ciwi-new"+exeExt())
-		if err := os.WriteFile(p, []byte("bin"), 0o755); err != nil {
-			t.Fatalf("write staged binary: %v", err)
-		}
-		return p, nil
+		return writeStubUpdateAsset(t, runtime.GOOS, runtime.GOARCH)
 	}
 	agentStartUpdateHelperFn = func(string, string, string, int, []string, string) error {
 		return errors.New("helper start failed")
@@ -78,11 +72,7 @@ func TestSelfUpdateAndRestartSuccessSchedulesExit(t *testing.T) {
 			githubReleaseAsset{}, nil
 	}
 	agentDownloadUpdateAssetFn = func(context.Context, string, string) (string, error) {
-		p := filepath.Join(t.TempDir(), "ciwi-new"+exeExt())
-		if err := os.WriteFile(p, []byte("bin"), 0o755); err != nil {
-			t.Fatalf("write staged binary: %v", err)
-		}
-		return p, nil
+		return writeStubUpdateAsset(t, runtime.GOOS, runtime.GOARCH)
 	}
 	agentStartUpdateHelperFn = func(_ string, _ string, _ string, _ int, args []string, _ string) error {
 		startArgs = append([]string{}, args...)
@@ -114,11 +104,7 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 			githubReleaseAsset{}, nil
 	}
 	agentDownloadUpdateAssetFn = func(context.Context, string, string) (string, error) {
-		p := filepath.Join(t.TempDir(), "ciwi-new"+exeExt())
-		if err := os.WriteFile(p, []byte("bin"), 0o755); err != nil {
-			t.Fatalf("write staged binary: %v", err)
-		}
-		return p, nil
+		return writeStubUpdateAsset(t, "darwin", runtime.GOARCH)
 	}
 	agentHasDarwinUpdaterConfigFn = func() bool { return true }
 	agentUpdateRuntimeGOOS = "darwin"
@@ -147,6 +133,41 @@ func TestSelfUpdateAndRestartDarwinStagingBranch(t *testing.T) {
 	}
 }
 
+func writeStubUpdateAsset(t *testing.T, goos, goarch string) (string, error) {
+	t.Helper()
+	name := expectedAssetName(goos, goarch)
+	tmp := t.TempDir()
+	if strings.HasSuffix(name, ".zip") {
+		assetPath := filepath.Join(tmp, name)
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		fh := &zip.FileHeader{
+			Name:   "CiwiAgent.app/Contents/MacOS/ciwi",
+			Method: zip.Deflate,
+		}
+		fh.SetMode(0o755)
+		w, err := zw.CreateHeader(fh)
+		if err != nil {
+			t.Fatalf("create zip entry: %v", err)
+		}
+		if _, err := w.Write([]byte("bin")); err != nil {
+			t.Fatalf("write zip entry: %v", err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatalf("close zip writer: %v", err)
+		}
+		if err := os.WriteFile(assetPath, buf.Bytes(), 0o644); err != nil {
+			t.Fatalf("write zip asset: %v", err)
+		}
+		return assetPath, nil
+	}
+	assetPath := filepath.Join(tmp, "ciwi-new"+exeExt())
+	if err := os.WriteFile(assetPath, []byte("bin"), 0o755); err != nil {
+		t.Fatalf("write staged binary: %v", err)
+	}
+	return assetPath, nil
+}
+
 func stubSelfUpdateOrchestration(t *testing.T) func() {
 	t.Helper()
 	origExecutable := agentExecutablePathFn
@@ -160,6 +181,7 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 	origHasDarwin := agentHasDarwinUpdaterConfigFn
 	origStageDarwin := agentStageDarwinUpdaterFn
 	origCopy := agentCopyFileFn
+	origCopyDir := agentCopyDirFn
 	origWinSvc := agentWindowsServiceInfoFn
 	origStartHelper := agentStartUpdateHelperFn
 	origPID := agentPIDFn
@@ -178,6 +200,7 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 	agentHasDarwinUpdaterConfigFn = func() bool { return false }
 	agentStageDarwinUpdaterFn = func(string, string, string, string) error { return nil }
 	agentCopyFileFn = func(string, string, os.FileMode) error { return nil }
+	agentCopyDirFn = func(string, string) error { return nil }
 	agentWindowsServiceInfoFn = func() (bool, string) { return false, "" }
 	agentStartUpdateHelperFn = func(string, string, string, int, []string, string) error { return nil }
 	agentPIDFn = func() int { return 4242 }
@@ -195,6 +218,7 @@ func stubSelfUpdateOrchestration(t *testing.T) func() {
 		agentHasDarwinUpdaterConfigFn = origHasDarwin
 		agentStageDarwinUpdaterFn = origStageDarwin
 		agentCopyFileFn = origCopy
+		agentCopyDirFn = origCopyDir
 		agentWindowsServiceInfoFn = origWinSvc
 		agentStartUpdateHelperFn = origStartHelper
 		agentPIDFn = origPID

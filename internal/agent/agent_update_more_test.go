@@ -50,7 +50,7 @@ func TestAgentUpdateUtilityWrappers(t *testing.T) {
 	}
 }
 
-func TestRunLaunchctlAndAdHocSignBinary(t *testing.T) {
+func TestRunLaunchctl(t *testing.T) {
 	t.Setenv("CIWI_LAUNCHCTL_PATH", "/usr/bin/true")
 	if err := runLaunchctl("kickstart", "-k", "dummy/service"); err != nil {
 		t.Fatalf("runLaunchctl with /usr/bin/true: %v", err)
@@ -58,22 +58,6 @@ func TestRunLaunchctlAndAdHocSignBinary(t *testing.T) {
 	t.Setenv("CIWI_LAUNCHCTL_PATH", "/usr/bin/false")
 	if err := runLaunchctl("kickstart", "-k", "dummy/service"); err == nil {
 		t.Fatalf("expected runLaunchctl failure with /usr/bin/false")
-	}
-
-	if err := adHocSignBinary("   "); err == nil {
-		t.Fatalf("expected empty path error")
-	}
-	bin := filepath.Join(t.TempDir(), "bin")
-	if err := os.WriteFile(bin, []byte("payload"), 0o755); err != nil {
-		t.Fatalf("write binary: %v", err)
-	}
-	t.Setenv("CIWI_CODESIGN_PATH", "/usr/bin/true")
-	if err := adHocSignBinary(bin); err != nil {
-		t.Fatalf("adHocSignBinary with /usr/bin/true: %v", err)
-	}
-	t.Setenv("CIWI_CODESIGN_PATH", "/usr/bin/false")
-	if err := adHocSignBinary(bin); err == nil {
-		t.Fatalf("expected adHocSignBinary failure with /usr/bin/false")
 	}
 }
 
@@ -104,13 +88,12 @@ func TestDarwinUpdaterConfigGates(t *testing.T) {
 	}
 }
 
-func TestDarwinUpdateSignTarget(t *testing.T) {
-	t.Setenv("CIWI_AGENT_APP_BUNDLE", "")
-	if got := darwinUpdateSignTarget("/tmp/ciwi"); got != "/tmp/ciwi" {
-		t.Fatalf("expected binary path fallback, got %q", got)
+func TestFindAppBundleRoot(t *testing.T) {
+	got := findAppBundleRoot("/tmp/CiwiAgent.app/Contents/MacOS/ciwi")
+	if got != "/tmp/CiwiAgent.app" {
+		t.Fatalf("unexpected bundle root: %q", got)
 	}
-	t.Setenv("CIWI_AGENT_APP_BUNDLE", " /tmp/CiwiAgent.app ")
-	if got := darwinUpdateSignTarget("/tmp/ciwi"); got != "/tmp/CiwiAgent.app" {
-		t.Fatalf("expected bundle sign target, got %q", got)
+	if got := findAppBundleRoot("/tmp/ciwi"); got != "" {
+		t.Fatalf("expected empty bundle root, got %q", got)
 	}
 }

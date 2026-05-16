@@ -17,8 +17,8 @@ func TestExpectedAssetName(t *testing.T) {
 	}{
 		{"linux", "amd64", "ciwi-linux-amd64"},
 		{"linux", "arm64", "ciwi-linux-arm64"},
-		{"darwin", "amd64", "ciwi-darwin-amd64"},
-		{"darwin", "arm64", "ciwi-darwin-arm64"},
+		{"darwin", "amd64", "ciwi-darwin-amd64.zip"},
+		{"darwin", "arm64", "ciwi-darwin-arm64.zip"},
 		{"windows", "amd64", "ciwi-windows-amd64.exe"},
 		{"windows", "arm64", "ciwi-windows-arm64.exe"},
 		{"plan9", "amd64", ""},

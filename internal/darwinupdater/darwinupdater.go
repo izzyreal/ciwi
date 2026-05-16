@@ -24,17 +24,18 @@ type stagedManifest struct {
 	TargetBinary    string `json:"target_binary"`
 	StagedBinary    string `json:"staged_binary"`
 	StagedSHA256    string `json:"staged_sha256"`
+	TargetBundle    string `json:"target_bundle,omitempty"`
+	StagedBundle    string `json:"staged_bundle,omitempty"`
 	AgentLabel      string `json:"agent_label"`
 	AgentPlist      string `json:"agent_plist"`
 	AgentPID        int    `json:"agent_pid"`
 	RequestedAtUTC  string `json:"requested_at_utc"`
 	UpdaterLabel    string `json:"updater_label,omitempty"`
 	UpdaterPlist    string `json:"updater_plist,omitempty"`
-	TargetSignPath  string `json:"target_sign_path,omitempty"`
 	TriggerSourceID string `json:"trigger_source_id,omitempty"`
 }
 
-func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedSHA256, agentLabel, agentPlist, updaterLabel, updaterPlist, targetSignPath, triggerSourceID string, agentPID int) ([]byte, error) {
+func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedSHA256, agentLabel, agentPlist, updaterLabel, updaterPlist, targetBundle, stagedBundle, triggerSourceID string, agentPID int) ([]byte, error) {
 	m := stagedManifest{
 		VersionUTC:      time.Now().UTC().Format(time.RFC3339Nano),
 		TargetVersion:   strings.TrimSpace(targetVersion),
@@ -42,11 +43,12 @@ func BuildManifest(targetVersion, assetName, targetBinary, stagedBinary, stagedS
 		TargetBinary:    strings.TrimSpace(targetBinary),
 		StagedBinary:    strings.TrimSpace(stagedBinary),
 		StagedSHA256:    strings.ToLower(strings.TrimSpace(stagedSHA256)),
+		TargetBundle:    strings.TrimSpace(targetBundle),
+		StagedBundle:    strings.TrimSpace(stagedBundle),
 		AgentLabel:      strings.TrimSpace(agentLabel),
 		AgentPlist:      strings.TrimSpace(agentPlist),
 		UpdaterLabel:    strings.TrimSpace(updaterLabel),
 		UpdaterPlist:    strings.TrimSpace(updaterPlist),
-		TargetSignPath:  strings.TrimSpace(targetSignPath),
 		TriggerSourceID: strings.TrimSpace(triggerSourceID),
 		AgentPID:        agentPID,
 		RequestedAtUTC:  time.Now().UTC().Format(time.RFC3339Nano),
@@ -128,39 +130,43 @@ func RunApplyStagedAgent(args []string) error {
 		}
 	}
 
-	backupPath := backupPathForTarget(manifest.TargetBinary, manifest.StagedBinary)
-	_ = os.Remove(backupPath)
+	backupPath := backupPathForTarget(manifest.TargetBinary, manifest.StagedBinary, manifest.TargetBundle, manifest.StagedBundle)
+	_ = os.RemoveAll(backupPath)
 	stepStarted = time.Now()
-	if err := os.Rename(manifest.TargetBinary, backupPath); err != nil {
-		slog.Warn("darwin updater step failed", "step", "backup_current_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
-		return fmt.Errorf("backup current binary: %w", err)
-	}
-	if err := os.Rename(manifest.StagedBinary, manifest.TargetBinary); err != nil {
-		_ = os.Rename(backupPath, manifest.TargetBinary)
-		slog.Warn("darwin updater step failed", "step", "move_staged_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
-		return fmt.Errorf("move staged binary into place: %w", err)
-	}
-	if err := os.Chmod(manifest.TargetBinary, 0o755); err != nil {
-		_ = os.Rename(manifest.TargetBinary, manifest.StagedBinary)
-		_ = os.Rename(backupPath, manifest.TargetBinary)
-		slog.Warn("darwin updater step failed", "step", "chmod_target_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
-		return fmt.Errorf("chmod target binary: %w", err)
-	}
-	slog.Info("darwin updater step complete", "step", "swap_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
-	if strings.TrimSpace(envOrDefault("CIWI_DARWIN_ADHOC_SIGN", "true")) != "false" {
-		stepStarted = time.Now()
-		signTarget := strings.TrimSpace(manifest.TargetSignPath)
-		if signTarget == "" {
-			signTarget = manifest.TargetBinary
+	if strings.TrimSpace(manifest.TargetBundle) != "" && strings.TrimSpace(manifest.StagedBundle) != "" {
+		if err := os.Rename(manifest.TargetBundle, backupPath); err != nil {
+			slog.Warn("darwin updater step failed", "step", "backup_current_bundle", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("backup current bundle: %w", err)
 		}
-		if err := adHocSignPath(signTarget); err != nil {
+		if err := os.Rename(manifest.StagedBundle, manifest.TargetBundle); err != nil {
+			_ = os.Rename(backupPath, manifest.TargetBundle)
+			slog.Warn("darwin updater step failed", "step", "move_staged_bundle", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("move staged bundle into place: %w", err)
+		}
+		if err := os.Chmod(manifest.TargetBinary, 0o755); err != nil {
+			_ = os.Rename(manifest.TargetBundle, manifest.StagedBundle)
+			_ = os.Rename(backupPath, manifest.TargetBundle)
+			slog.Warn("darwin updater step failed", "step", "chmod_target_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("chmod target binary: %w", err)
+		}
+	} else {
+		if err := os.Rename(manifest.TargetBinary, backupPath); err != nil {
+			slog.Warn("darwin updater step failed", "step", "backup_current_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("backup current binary: %w", err)
+		}
+		if err := os.Rename(manifest.StagedBinary, manifest.TargetBinary); err != nil {
+			_ = os.Rename(backupPath, manifest.TargetBinary)
+			slog.Warn("darwin updater step failed", "step", "move_staged_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("move staged binary into place: %w", err)
+		}
+		if err := os.Chmod(manifest.TargetBinary, 0o755); err != nil {
 			_ = os.Rename(manifest.TargetBinary, manifest.StagedBinary)
 			_ = os.Rename(backupPath, manifest.TargetBinary)
-			slog.Warn("darwin updater step failed", "step", "adhoc_sign_target", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
-			return fmt.Errorf("ad-hoc sign target: %w", err)
+			slog.Warn("darwin updater step failed", "step", "chmod_target_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("chmod target binary: %w", err)
 		}
-		slog.Info("darwin updater step complete", "step", "adhoc_sign_target", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "target", signTarget)
 	}
+	slog.Info("darwin updater step complete", "step", "swap_binary", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
 	stepStarted = time.Now()
 	_ = os.Remove(*manifestPath)
 	slog.Info("darwin updater step complete", "step", "remove_manifest", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
@@ -193,7 +199,17 @@ func readManifest(path string) (stagedManifest, error) {
 	return m, nil
 }
 
-func backupPathForTarget(targetBinary, stagedBinary string) string {
+func backupPathForTarget(targetBinary, stagedBinary, targetBundle, stagedBundle string) string {
+	if strings.TrimSpace(targetBundle) != "" {
+		name := filepath.Base(strings.TrimSpace(targetBundle))
+		if name == "" || name == "." || name == string(filepath.Separator) {
+			name = "CiwiAgent.app"
+		}
+		if strings.TrimSpace(stagedBundle) != "" {
+			return filepath.Join(filepath.Dir(strings.TrimSpace(stagedBundle)), name+".prev")
+		}
+		return filepath.Join(filepath.Dir(strings.TrimSpace(targetBundle)), name+".prev")
+	}
 	targetBinary = strings.TrimSpace(targetBinary)
 	stagedBinary = strings.TrimSpace(stagedBinary)
 	name := filepath.Base(targetBinary)
@@ -258,24 +274,4 @@ func isAlreadyLoadedErr(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "already loaded")
-}
-
-func adHocSignBinary(path string) error {
-	return adHocSignPath(path)
-}
-
-func adHocSignPath(path string) error {
-	p := strings.TrimSpace(path)
-	if p == "" {
-		return fmt.Errorf("empty path")
-	}
-	codesignPath := strings.TrimSpace(envOrDefault("CIWI_CODESIGN_PATH", "/usr/bin/codesign"))
-	if codesignPath == "" {
-		codesignPath = "/usr/bin/codesign"
-	}
-	args := []string{"--force", "--sign", "-", p}
-	if info, err := os.Stat(p); err == nil && info.IsDir() {
-		args = []string{"--force", "--deep", "--sign", "-", p}
-	}
-	return runCmd(codesignPath, args...)
 }

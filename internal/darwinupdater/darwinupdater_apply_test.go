@@ -59,8 +59,6 @@ func TestRunApplyStagedAgentSuccessWithLaunchctlScript(t *testing.T) {
 	}
 
 	t.Setenv("CIWI_LAUNCHCTL_PATH", launchctlPath)
-	t.Setenv("CIWI_DARWIN_ADHOC_SIGN", "false")
-
 	if err := RunApplyStagedAgent([]string{"--manifest", manifestPath}); err != nil {
 		t.Fatalf("RunApplyStagedAgent: %v", err)
 	}
@@ -131,8 +129,6 @@ func TestRunApplyStagedAgentAllowsBootstrapAlreadyLoaded(t *testing.T) {
 	}
 
 	t.Setenv("CIWI_LAUNCHCTL_PATH", launchctlPath)
-	t.Setenv("CIWI_DARWIN_ADHOC_SIGN", "false")
-
 	if err := RunApplyStagedAgent([]string{"--manifest", manifestPath}); err != nil {
 		t.Fatalf("RunApplyStagedAgent with bootstrap already loaded: %v", err)
 	}
