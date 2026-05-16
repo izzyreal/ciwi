@@ -235,14 +235,28 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
 		return fmt.Errorf("write update manifest: %w", err)
 	}
-	helperPath := filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
-	if err := agentCopyFileFn(targetBinary, helperPath, 0o755); err != nil {
-		_ = os.Remove(manifestPath)
-		return fmt.Errorf("prepare darwin updater helper: %w", err)
+	helperPath := ""
+	if targetBundle != "" {
+		helperBundle := filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".app")
+		if err := agentCopyDirFn(targetBundle, helperBundle); err != nil {
+			_ = os.Remove(manifestPath)
+			return fmt.Errorf("prepare darwin updater helper app bundle: %w", err)
+		}
+		helperPath = filepath.Join(helperBundle, "Contents", "MacOS", "ciwi")
+	} else {
+		helperPath = filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
+		if err := agentCopyFileFn(targetBinary, helperPath, 0o755); err != nil {
+			_ = os.Remove(manifestPath)
+			return fmt.Errorf("prepare darwin updater helper: %w", err)
+		}
 	}
 	if err := agentStartDarwinUpdaterFn(helperPath, manifestPath); err != nil {
 		_ = os.Remove(manifestPath)
-		_ = os.Remove(helperPath)
+		if targetBundle != "" {
+			_ = os.RemoveAll(findAppBundleRoot(helperPath))
+		} else {
+			_ = os.Remove(helperPath)
+		}
 		return fmt.Errorf("start darwin updater helper: %w", err)
 	}
 	return nil

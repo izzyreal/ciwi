@@ -145,7 +145,14 @@ func TestStageAndTriggerDarwinUpdaterStartsDetachedHelper(t *testing.T) {
 	if gotManifestPath != manifestPath {
 		t.Fatalf("unexpected manifest path: got %q want %q", gotManifestPath, manifestPath)
 	}
-	if !strings.Contains(filepath.Base(gotHelperPath), "ciwi-darwin-updater-helper-") {
+	if filepath.Base(gotHelperPath) != "ciwi" {
+		t.Fatalf("unexpected helper executable name: %q", gotHelperPath)
+	}
+	helperBundle := findAppBundleRoot(gotHelperPath)
+	if helperBundle == "" {
+		t.Fatalf("expected helper executable inside app bundle, got %q", gotHelperPath)
+	}
+	if !strings.Contains(filepath.Base(helperBundle), "ciwi-darwin-updater-helper-") {
 		t.Fatalf("unexpected helper name: %q", gotHelperPath)
 	}
 	if _, err := os.Stat(gotHelperPath); err != nil {
