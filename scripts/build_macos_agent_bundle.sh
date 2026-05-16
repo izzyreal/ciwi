@@ -11,6 +11,15 @@ VERSION="$2"
 BUNDLE_DIR="$3"
 ZIP_OUTPUT="$4"
 
+case "$BUNDLE_DIR" in
+  /*) ;;
+  *) BUNDLE_DIR="$(pwd)/$BUNDLE_DIR" ;;
+esac
+case "$ZIP_OUTPUT" in
+  /*) ;;
+  *) ZIP_OUTPUT="$(pwd)/$ZIP_OUTPUT" ;;
+esac
+
 if [ ! -f "$BIN_PATH" ]; then
   echo "binary not found: $BIN_PATH" >&2
   exit 1
