@@ -20,17 +20,18 @@ const (
 	terminalStatusAttemptTTL  = 30 * time.Second
 )
 
-func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string, capabilities map[string]string, updateFailure, restartStatus string) (protocol.HeartbeatResponse, error) {
+func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID, hostname string, capabilities map[string]string, updateFailure string, updateInProgress bool, restartStatus string) (protocol.HeartbeatResponse, error) {
 	payload := protocol.HeartbeatRequest{
-		AgentID:       agentID,
-		Hostname:      hostname,
-		OS:            runtime.GOOS,
-		Arch:          runtime.GOARCH,
-		Version:       currentVersion(),
-		Capabilities:  cloneMap(capabilities),
-		UpdateFailure: strings.TrimSpace(updateFailure),
-		RestartStatus: strings.TrimSpace(restartStatus),
-		TimestampUTC:  time.Now().UTC(),
+		AgentID:          agentID,
+		Hostname:         hostname,
+		OS:               runtime.GOOS,
+		Arch:             runtime.GOARCH,
+		Version:          currentVersion(),
+		Capabilities:     cloneMap(capabilities),
+		UpdateFailure:    strings.TrimSpace(updateFailure),
+		UpdateInProgress: updateInProgress,
+		RestartStatus:    strings.TrimSpace(restartStatus),
+		TimestampUTC:     time.Now().UTC(),
 	}
 
 	body, err := json.Marshal(payload)
@@ -60,7 +61,7 @@ func sendHeartbeat(ctx context.Context, client *http.Client, serverURL, agentID,
 		return protocol.HeartbeatResponse{}, fmt.Errorf("decode heartbeat response: %w", err)
 	}
 
-	slog.Info("heartbeat sent", "agent_id", agentID, "os", runtime.GOOS, "arch", runtime.GOARCH)
+	slog.Info("heartbeat sent", "agent_id", agentID, "version", currentVersion(), "os", runtime.GOOS, "arch", runtime.GOARCH)
 	return hbResp, nil
 }
 

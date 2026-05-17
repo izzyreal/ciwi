@@ -46,6 +46,9 @@ func TestSendHeartbeatSuccessAndPayload(t *testing.T) {
 			if req.UpdateFailure != "failed once" {
 				t.Fatalf("expected trimmed update failure, got %q", req.UpdateFailure)
 			}
+			if !req.UpdateInProgress {
+				t.Fatalf("expected update_in_progress=true")
+			}
 			if req.RestartStatus != "restart requested" {
 				t.Fatalf("expected trimmed restart status, got %q", req.RestartStatus)
 			}
@@ -59,7 +62,7 @@ func TestSendHeartbeatSuccessAndPayload(t *testing.T) {
 		}),
 	}
 
-	resp, err := sendHeartbeat(context.Background(), client, "http://ciwi.local", "agent-1", "host-1", map[string]string{"executor": "script"}, " failed once ", " restart requested ")
+	resp, err := sendHeartbeat(context.Background(), client, "http://ciwi.local", "agent-1", "host-1", map[string]string{"executor": "script"}, " failed once ", true, " restart requested ")
 	if err != nil {
 		t.Fatalf("sendHeartbeat returned error: %v", err)
 	}
@@ -73,7 +76,7 @@ func TestSendHeartbeatErrors(t *testing.T) {
 
 	t.Run("request creation error", func(t *testing.T) {
 		t.Parallel()
-		_, err := sendHeartbeat(context.Background(), &http.Client{}, "://bad-url", "a", "h", nil, "", "")
+		_, err := sendHeartbeat(context.Background(), &http.Client{}, "://bad-url", "a", "h", nil, "", false, "")
 		if err == nil || !strings.Contains(err.Error(), "create heartbeat request") {
 			t.Fatalf("expected create request error, got %v", err)
 		}
@@ -84,7 +87,7 @@ func TestSendHeartbeatErrors(t *testing.T) {
 		client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return nil, errors.New("boom")
 		})}
-		_, err := sendHeartbeat(context.Background(), client, "http://ciwi.local", "a", "h", nil, "", "")
+		_, err := sendHeartbeat(context.Background(), client, "http://ciwi.local", "a", "h", nil, "", false, "")
 		if err == nil || !strings.Contains(err.Error(), "send heartbeat") {
 			t.Fatalf("expected transport error, got %v", err)
 		}
@@ -95,7 +98,7 @@ func TestSendHeartbeatErrors(t *testing.T) {
 		client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return jsonHTTPResponse(http.StatusForbidden, `forbidden`), nil
 		})}
-		_, err := sendHeartbeat(context.Background(), client, "http://ciwi.local", "a", "h", nil, "", "")
+		_, err := sendHeartbeat(context.Background(), client, "http://ciwi.local", "a", "h", nil, "", false, "")
 		if err == nil || !strings.Contains(err.Error(), "heartbeat rejected") {
 			t.Fatalf("expected heartbeat rejected error, got %v", err)
 		}
@@ -106,7 +109,7 @@ func TestSendHeartbeatErrors(t *testing.T) {
 		client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return jsonHTTPResponse(http.StatusOK, `{not-json`), nil
 		})}
-		_, err := sendHeartbeat(context.Background(), client, "http://ciwi.local", "a", "h", nil, "", "")
+		_, err := sendHeartbeat(context.Background(), client, "http://ciwi.local", "a", "h", nil, "", false, "")
 		if err == nil || !strings.Contains(err.Error(), "decode heartbeat response") {
 			t.Fatalf("expected decode error, got %v", err)
 		}

@@ -155,6 +155,12 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 					"next_retry_utc", prev.UpdateNextRetryUTC,
 					"error", reportedUpdateFailure,
 				)
+			} else if hb.UpdateInProgress {
+				slog.Debug("agent update attempt still in progress",
+					"agent_id", hb.AgentID,
+					"target_version", target,
+					"attempt", prev.UpdateAttempts,
+				)
 			} else if prev.UpdateLastRequestUTC.IsZero() || !now.Before(prev.UpdateLastRequestUTC.Add(agentUpdateInProgressGrace)) {
 				elapsed := time.Duration(0)
 				if !prev.UpdateLastRequestUTC.IsZero() {

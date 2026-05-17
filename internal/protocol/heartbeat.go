@@ -7,15 +7,16 @@ const (
 )
 
 type HeartbeatRequest struct {
-	AgentID       string            `json:"agent_id"`
-	Hostname      string            `json:"hostname"`
-	OS            string            `json:"os"`
-	Arch          string            `json:"arch"`
-	Version       string            `json:"version,omitempty"`
-	Capabilities  map[string]string `json:"capabilities"`
-	UpdateFailure string            `json:"update_failure,omitempty"`
-	RestartStatus string            `json:"restart_status,omitempty"`
-	TimestampUTC  time.Time         `json:"timestamp_utc"`
+	AgentID          string            `json:"agent_id"`
+	Hostname         string            `json:"hostname"`
+	OS               string            `json:"os"`
+	Arch             string            `json:"arch"`
+	Version          string            `json:"version,omitempty"`
+	Capabilities     map[string]string `json:"capabilities"`
+	UpdateFailure    string            `json:"update_failure,omitempty"`
+	UpdateInProgress bool              `json:"update_in_progress,omitempty"`
+	RestartStatus    string            `json:"restart_status,omitempty"`
+	TimestampUTC     time.Time         `json:"timestamp_utc"`
 }
 
 type HeartbeatResponse struct {

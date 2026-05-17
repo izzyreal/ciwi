@@ -225,6 +225,59 @@ func TestHeartbeatAutomaticUpdateMarksFailedAttemptAndSchedulesBackoff(t *testin
 	}
 }
 
+func TestHeartbeatAutomaticUpdateKeepsReportedInProgressAttemptActive(t *testing.T) {
+	oldVersion := version.Version
+	version.Version = "v1.2.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	s := newAgentUpdateTestStateStore(t)
+	if err := s.setAgentUpdateTarget("v1.2.0"); err != nil {
+		t.Fatalf("set agent update target: %v", err)
+	}
+
+	lastRequest := time.Now().UTC().Add(-agentUpdateInProgressGrace - time.Second)
+	s.mu.Lock()
+	s.agents["agent-auto"] = agentState{
+		Hostname:             "host-a",
+		OS:                   "linux",
+		Arch:                 "amd64",
+		Version:              "v1.1.0",
+		Capabilities:         map[string]string{"executor": "script", "shells": "posix"},
+		UpdateTarget:         "v1.2.0",
+		UpdateAttempts:       1,
+		UpdateInProgress:     true,
+		UpdateLastRequestUTC: lastRequest,
+	}
+	s.mu.Unlock()
+
+	resp := heartbeatForTest(t, s, protocol.HeartbeatRequest{
+		AgentID:          "agent-auto",
+		Hostname:         "host-a",
+		OS:               "linux",
+		Arch:             "amd64",
+		Version:          "v1.1.0",
+		Capabilities:     map[string]string{"executor": "script", "shells": "posix"},
+		UpdateInProgress: true,
+		TimestampUTC:     time.Now().UTC(),
+	})
+	if resp.UpdateRequested {
+		t.Fatalf("expected active in-progress attempt to avoid immediate re-request")
+	}
+
+	s.mu.Lock()
+	state := s.agents["agent-auto"]
+	s.mu.Unlock()
+	if !state.UpdateInProgress {
+		t.Fatalf("expected update_in_progress to remain true")
+	}
+	if !state.UpdateNextRetryUTC.IsZero() {
+		t.Fatalf("expected no retry schedule while agent reports active update, got %s", state.UpdateNextRetryUTC)
+	}
+	if !state.UpdateLastRequestUTC.Equal(lastRequest) {
+		t.Fatalf("expected original request timestamp to remain unchanged")
+	}
+}
+
 func TestHeartbeatAutomaticUpdateUsesReportedFailureReasonAndSchedulesBackoff(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v1.2.0"

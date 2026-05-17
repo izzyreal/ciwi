@@ -145,7 +145,7 @@ func runLoop(ctx context.Context) error {
 		slog.Warn("agent self-update preflight warning", "reason", reason)
 	}
 
-	slog.Info("ciwi agent started", "agent_id", agentID, "server_url", serverURL)
+	slog.Info("ciwi agent started", "agent_id", agentID, "version", currentVersion(), "server_url", serverURL)
 	defer slog.Info("ciwi agent stopped", "agent_id", agentID)
 
 	jobClient := &http.Client{Timeout: agentJobHTTPTimeout}
@@ -167,16 +167,22 @@ func runLoop(ctx context.Context) error {
 	}
 
 	pendingUpdateFailure := ""
+	updateInProgress := false
 	pendingRestartStatus := startupHeartbeatGreeting()
 	var heartbeatStateMu sync.Mutex
-	getHeartbeatState := func() (string, string) {
+	getHeartbeatState := func() (string, bool, string) {
 		heartbeatStateMu.Lock()
 		defer heartbeatStateMu.Unlock()
-		return pendingUpdateFailure, pendingRestartStatus
+		return pendingUpdateFailure, updateInProgress, pendingRestartStatus
 	}
 	setPendingUpdateFailure := func(value string) {
 		heartbeatStateMu.Lock()
 		pendingUpdateFailure = strings.TrimSpace(value)
+		heartbeatStateMu.Unlock()
+	}
+	setUpdateInProgress := func(value bool) {
+		heartbeatStateMu.Lock()
+		updateInProgress = value
 		heartbeatStateMu.Unlock()
 	}
 	setPendingRestartStatus := func(value string) {
@@ -214,8 +220,11 @@ func runLoop(ctx context.Context) error {
 			slog.Info("server requested agent update; deferring until current job completes", "target_version", target)
 		}, func(target, repository, apiBase string) {
 			slog.Info("server requested agent update", "target_version", target)
+			setUpdateInProgress(true)
+			triggerHeartbeat()
 			if err := selfUpdateAndRestart(ctx, target, repository, apiBase, os.Args[1:]); err != nil {
 				slog.Error("agent self-update failed", "error", err)
+				setUpdateInProgress(false)
 				setPendingUpdateFailure(err.Error())
 				triggerHeartbeat()
 			}
@@ -285,8 +294,8 @@ func runLoop(ctx context.Context) error {
 		defer ticker.Stop()
 
 		send := func() {
-			updateFailure, restartStatus := getHeartbeatState()
-			hb, err := sendHeartbeat(ctx, heartbeatClient, serverURL, agentID, hostname, getCapabilities(), updateFailure, restartStatus)
+			updateFailure, updateInProgress, restartStatus := getHeartbeatState()
+			hb, err := sendHeartbeat(ctx, heartbeatClient, serverURL, agentID, hostname, getCapabilities(), updateFailure, updateInProgress, restartStatus)
 			res := heartbeatResult{
 				resp:              hb,
 				err:               err,
