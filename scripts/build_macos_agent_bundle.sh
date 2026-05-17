@@ -24,6 +24,10 @@ if [ ! -f "$BIN_PATH" ]; then
   echo "binary not found: $BIN_PATH" >&2
   exit 1
 fi
+if [ ! -f "scripts/macos_service_helper.swift" ]; then
+  echo "macOS service helper source not found" >&2
+  exit 1
+fi
 
 if [ -z "${DEV_IDENTITY_APP:-}" ]; then
   echo "DEV_IDENTITY_APP is required" >&2
@@ -52,9 +56,14 @@ APP_NAME="CiwiAgent.app"
 APP_PATH="${WORK_DIR}/${APP_NAME}"
 CONTENTS_DIR="${APP_PATH}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
+LAUNCH_AGENTS_DIR="${CONTENTS_DIR}/Library/LaunchAgents"
 
-mkdir -p "$MACOS_DIR"
+mkdir -p "$MACOS_DIR" "$LAUNCH_AGENTS_DIR"
 install -m 0755 "$BIN_PATH" "${MACOS_DIR}/ciwi"
+mkdir -p "${WORK_DIR}/swift-module-cache" "${WORK_DIR}/clang-module-cache"
+SWIFT_MODULE_CACHE_PATH="${SWIFT_MODULE_CACHE_PATH:-${WORK_DIR}/swift-module-cache}" \
+CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-${WORK_DIR}/clang-module-cache}" \
+  xcrun swiftc scripts/macos_service_helper.swift -o "${MACOS_DIR}/ciwi-service"
 
 cat >"${CONTENTS_DIR}/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -83,6 +92,32 @@ cat >"${CONTENTS_DIR}/Info.plist" <<EOF
   <true/>
   <key>NSLocalNetworkUsageDescription</key>
   <string>ciwi agent connects to your ciwi server on the local network to send heartbeats and run jobs.</string>
+</dict>
+</plist>
+EOF
+
+cat >"${LAUNCH_AGENTS_DIR}/nl.izmar.ciwi.agent.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>nl.izmar.ciwi.agent</string>
+  <key>AssociatedBundleIdentifiers</key>
+  <array>
+    <string>nl.izmar.ciwi.agent-app</string>
+  </array>
+  <key>BundleProgram</key>
+  <string>Contents/MacOS/ciwi</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>ciwi</string>
+    <string>agent</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
 </dict>
 </plist>
 EOF

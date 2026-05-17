@@ -22,18 +22,26 @@ LOG_DIR="$HOME/Library/Logs/ciwi"
 WORKDIR="$HOME/.ciwi-agent"
 NEWSYSLOG_FILE="/etc/newsyslog.d/ciwi-$(id -un).conf"
 UID_NUM="$(id -u)"
+APP_SUPPORT_DIR="$HOME/Library/Application Support/ciwi"
+AGENT_ENV_FILE="$APP_SUPPORT_DIR/agent.env"
 
 # Try both common install locations used by installer versions.
 BINARY_USER="$HOME/.local/bin/ciwi"
 BINARY_SYSTEM="/usr/local/bin/ciwi"
-APP_BUNDLE="$HOME/Library/Application Support/ciwi/CiwiAgent.app"
+APP_BUNDLE="$APP_SUPPORT_DIR/CiwiAgent.app"
+SERVICE_HELPER_PATH="$APP_BUNDLE/Contents/MacOS/ciwi-service"
 
 echo "[1/4] Stopping LaunchAgent if loaded..."
+if [ -x "$SERVICE_HELPER_PATH" ]; then
+  "$SERVICE_HELPER_PATH" unregister-agent >/dev/null 2>&1 || true
+fi
+launchctl bootout "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 launchctl bootout "gui/${UID_NUM}" "$PLIST_PATH" >/dev/null 2>&1 || true
 launchctl disable "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
 
-echo "[2/4] Removing LaunchAgent plist..."
+echo "[2/4] Removing LaunchAgent/config files..."
 rm -f "$PLIST_PATH"
+rm -f "$AGENT_ENV_FILE"
 
 echo "[3/4] Removing ciwi binary..."
 if [ -d "$APP_BUNDLE" ]; then

@@ -58,9 +58,10 @@ var (
 	agentStartDarwinUpdaterFn       = startDarwinUpdater
 	agentPIDFn                      = os.Getpid
 	agentExitAfterDarwinUpdateFn    = func() {
-		// Let the detached updater boot out this LaunchAgent; exiting here lets
-		// KeepAlive respawn the old agent before the bundle swap starts.
-		select {}
+		go func() {
+			time.Sleep(250 * time.Millisecond)
+			os.Exit(0)
+		}()
 	}
 	agentScheduleExitAfterUpdateFn = func() {
 		go func() {

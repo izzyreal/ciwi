@@ -167,12 +167,22 @@ func RunApplyStagedAgent(args []string) error {
 	_ = os.Remove(*manifestPath)
 	slog.Info("darwin updater step complete", "step", "remove_manifest", "elapsed", time.Since(stepStarted).Round(time.Millisecond))
 
-	stepStarted = time.Now()
-	if err := runCmd(launchctlPath, "bootstrap", domain, manifest.AgentPlist); err != nil && !isAlreadyLoadedErr(err) {
-		slog.Warn("darwin updater step failed", "step", "launchctl_bootstrap_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
-		return fmt.Errorf("bootstrap agent launchd plist: %w", err)
+	if strings.TrimSpace(manifest.TargetBundle) != "" {
+		stepStarted = time.Now()
+		serviceHelper := filepath.Join(strings.TrimSpace(manifest.TargetBundle), "Contents", "MacOS", "ciwi-service")
+		if err := runCmd(serviceHelper, "register-agent"); err != nil {
+			slog.Warn("darwin updater step failed", "step", "register_agent_service", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("register agent service: %w", err)
+		}
+		slog.Info("darwin updater step complete", "step", "register_agent_service", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "service", service)
+	} else {
+		stepStarted = time.Now()
+		if err := runCmd(launchctlPath, "bootstrap", domain, manifest.AgentPlist); err != nil && !isAlreadyLoadedErr(err) {
+			slog.Warn("darwin updater step failed", "step", "launchctl_bootstrap_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)
+			return fmt.Errorf("bootstrap agent launchd plist: %w", err)
+		}
+		slog.Info("darwin updater step complete", "step", "launchctl_bootstrap_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "service", service)
 	}
-	slog.Info("darwin updater step complete", "step", "launchctl_bootstrap_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "service", service)
 	stepStarted = time.Now()
 	if err := runCmd(launchctlPath, "kickstart", "-k", service); err != nil {
 		slog.Warn("darwin updater step failed", "step", "launchctl_kickstart_agent", "elapsed", time.Since(stepStarted).Round(time.Millisecond), "error", err)

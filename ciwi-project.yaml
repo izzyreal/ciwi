@@ -219,8 +219,6 @@ pipelines:
         requires:
           tools:
             codesign: "*"
-            notarytool: "*"
-            stapler: "*"
         timeout_seconds: 1200
         artifacts:
           - dist/codesigned-macos/*.zip
