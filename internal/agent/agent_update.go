@@ -244,7 +244,8 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	}
 	helperPath := ""
 	if targetBundle != "" {
-		helperBundle := filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".app")
+		helperBundle := filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper.app")
+		_ = os.RemoveAll(helperBundle)
 		if err := agentCopyDirFn(targetBundle, helperBundle); err != nil {
 			_ = os.Remove(manifestPath)
 			return fmt.Errorf("prepare darwin updater helper app bundle: %w", err)
