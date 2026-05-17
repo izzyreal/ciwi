@@ -17,15 +17,6 @@ trim_single_line() {
   printf '%s' "$1" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
 
-xml_escape() {
-  printf '%s' "$1" \
-    | sed -e 's/&/\&amp;/g' \
-          -e 's/</\&lt;/g' \
-          -e 's/>/\&gt;/g' \
-          -e 's/"/\&quot;/g' \
-          -e "s/'/\&apos;/g"
-}
-
 read_existing_github_token() {
   env_path="$1"
   legacy_plist_path="${2:-}"
@@ -385,13 +376,11 @@ fi
 require_cmd curl
 require_cmd shasum
 require_cmd launchctl
-require_cmd install
 require_cmd ditto
 
 REPO="izzyreal/ciwi"
 LABEL="nl.izmar.ciwi.agent"
 LEGACY_UPDATER_LABEL="nl.izmar.ciwi.agent-updater"
-APP_BUNDLE_ID="nl.izmar.ciwi.agent-app"
 LOG_DIR="$HOME/Library/Logs/ciwi"
 LEGACY_PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 LEGACY_UPDATER_PLIST_PATH="$HOME/Library/LaunchAgents/${LEGACY_UPDATER_LABEL}.plist"
