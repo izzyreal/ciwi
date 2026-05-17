@@ -148,8 +148,9 @@ func TestStageAndTriggerDarwinUpdaterStartsDetachedHelper(t *testing.T) {
 	if filepath.Base(gotHelperPath) != "ciwi" {
 		t.Fatalf("unexpected helper executable name: %q", gotHelperPath)
 	}
-	if gotHelperPath != targetBinary {
-		t.Fatalf("expected installed signed binary as helper, got %q want %q", gotHelperPath, targetBinary)
+	wantHelperPath := filepath.Join(filepath.Dir(manifestPath), "CiwiAgent.app", "Contents", "MacOS", "ciwi")
+	if gotHelperPath != wantHelperPath {
+		t.Fatalf("expected staged bundle binary as helper, got %q want %q", gotHelperPath, wantHelperPath)
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(manifestPath), "CiwiAgent.app", "Contents", "MacOS", "ciwi")); err != nil {
 		t.Fatalf("expected staged bundle in update dir: %v", err)

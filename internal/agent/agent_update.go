@@ -243,7 +243,9 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	}
 	helperPath := ""
 	if targetBundle != "" {
-		helperPath = targetBinary
+		// SMAppService-managed app executables may not be directly executable
+		// outside launchd/xpcproxy, so hand off via the staged binary instead.
+		helperPath = stagePath
 	} else {
 		helperPath = filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
 		if err := agentCopyFileFn(targetBinary, helperPath, 0o755); err != nil {
