@@ -12,7 +12,6 @@ func prepareDetachedDarwinUpdaterCommand(cmd *exec.Cmd) {
 		return
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid:  true,
-		Setpgid: true,
+		Setsid: true,
 	}
 }
