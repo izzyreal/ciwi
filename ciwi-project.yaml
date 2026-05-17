@@ -223,7 +223,6 @@ pipelines:
             stapler: "*"
         timeout_seconds: 1200
         artifacts:
-          - dist/codesigned-macos/**
           - dist/codesigned-macos/*.zip
         steps:
           - run: test -n "$DEV_IDENTITY_APP" && test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
