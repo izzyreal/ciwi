@@ -249,6 +249,18 @@ func TestParseSimpleEnv(t *testing.T) {
 	}
 }
 
+func TestEnvFileShouldOverrideExisting(t *testing.T) {
+	if !envFileShouldOverrideExisting("PATH") {
+		t.Fatal("expected PATH to override existing environment")
+	}
+	if !envFileShouldOverrideExisting(" path ") {
+		t.Fatal("expected PATH matching to be case-insensitive and trimmed")
+	}
+	if envFileShouldOverrideExisting("CIWI_SERVER_URL") {
+		t.Fatal("did not expect CIWI_SERVER_URL to override existing environment")
+	}
+}
+
 func TestCommandForScript(t *testing.T) {
 	bin, args, err := commandForScript(shellPosix, "echo hi")
 	if err != nil {

@@ -27,3 +27,7 @@ func parseSimpleEnv(content string) map[string]string {
 	}
 	return out
 }
+
+func envFileShouldOverrideExisting(key string) bool {
+	return strings.EqualFold(strings.TrimSpace(key), "PATH")
+}

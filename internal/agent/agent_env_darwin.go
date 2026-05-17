@@ -24,7 +24,10 @@ func loadAgentPlatformEnv() {
 		return
 	}
 	for k, v := range parseSimpleEnv(string(raw)) {
-		if strings.TrimSpace(k) == "" || os.Getenv(k) != "" {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		if os.Getenv(k) != "" && !envFileShouldOverrideExisting(k) {
 			continue
 		}
 		if err := os.Setenv(k, v); err != nil {

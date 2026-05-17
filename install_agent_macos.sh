@@ -471,7 +471,6 @@ echo "[3.5/6] Configuring 100MB log caps (newsyslog)..."
 if command -v sudo >/dev/null 2>&1; then
   if sudo -n true >/dev/null 2>&1 || sudo -v >/dev/null 2>&1; then
     sudo tee "$NEWSYSLOG_FILE" >/dev/null <<EOF
-${LOG_DIR}/agent.out.log  644  3  102400  *  Z
 ${LOG_DIR}/agent.err.log  644  3  102400  *  Z
 ${LOG_DIR}/server.out.log  644  3  102400  *  Z
 ${LOG_DIR}/server.err.log  644  3  102400  *  Z
