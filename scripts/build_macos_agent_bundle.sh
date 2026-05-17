@@ -29,6 +29,18 @@ if [ -z "${DEV_IDENTITY_APP:-}" ]; then
   echo "DEV_IDENTITY_APP is required" >&2
   exit 1
 fi
+if [ -z "${APPLE_ID:-}" ]; then
+  echo "APPLE_ID is required" >&2
+  exit 1
+fi
+if [ -z "${NOTARYTOOL_PASSWORD:-}" ]; then
+  echo "NOTARYTOOL_PASSWORD is required" >&2
+  exit 1
+fi
+if [ -z "${APPLE_TEAM_ID:-}" ]; then
+  echo "APPLE_TEAM_ID is required" >&2
+  exit 1
+fi
 
 WORK_DIR="$(mktemp -d -t ciwi-macos-bundle.XXXXXX)"
 cleanup() {
@@ -77,9 +89,24 @@ EOF
 
 codesign --force --deep --strict --options=runtime --timestamp --sign "$DEV_IDENTITY_APP" -v "$APP_PATH"
 
+NOTARY_ZIP="${WORK_DIR}/notary-${APP_NAME}.zip"
+(
+  cd "$WORK_DIR"
+  ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "$NOTARY_ZIP"
+)
+xcrun notarytool submit "$NOTARY_ZIP" \
+  --apple-id "$APPLE_ID" \
+  --password "$NOTARYTOOL_PASSWORD" \
+  --team-id "$APPLE_TEAM_ID" \
+  --wait
+xcrun stapler staple "$APP_PATH"
+xcrun stapler validate "$APP_PATH"
+spctl --assess --type execute --verbose=4 "$APP_PATH"
+codesign --verify --deep --strict --verbose=4 "$APP_PATH"
+
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$(dirname "$BUNDLE_DIR")"
-cp -R "$APP_PATH" "$BUNDLE_DIR"
+ditto "$APP_PATH" "$BUNDLE_DIR"
 
 rm -f "$ZIP_OUTPUT"
 mkdir -p "$(dirname "$ZIP_OUTPUT")"

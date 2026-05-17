@@ -219,12 +219,14 @@ pipelines:
         requires:
           tools:
             codesign: "*"
+            notarytool: "*"
+            stapler: "*"
         timeout_seconds: 1200
         artifacts:
           - dist/codesigned-macos/**
           - dist/codesigned-macos/*.zip
         steps:
-          - run: test -n "$DEV_IDENTITY_APP"
+          - run: test -n "$DEV_IDENTITY_APP" && test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
             vault:
               connection: home-vault
               secrets:
@@ -232,9 +234,23 @@ pipelines:
                   mount: kv
                   path: apple-id
                   key: dev-identity-app
+                - name: notarytool-password
+                  mount: kv
+                  path: notarytool
+                  key: password
+                - name: apple-team-id
+                  mount: kv
+                  path: apple-id
+                  key: team-id
+                - name: apple-id
+                  mount: kv
+                  path: apple-id
+                  key: email
             env:
               DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
-          - run: APPLE_TEAM_ID="$(python3 macos-codesign-details-extractor.py --common-name 'Developer ID Application')" && test -n "$APPLE_TEAM_ID" && echo "$APPLE_TEAM_ID" > dist/apple-team-id.txt
+              NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
+              APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
+              APPLE_ID: "{{ secret.apple-id }}"
           - run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
           - run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
           - run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-amd64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-amd64.app dist/codesigned-macos/ciwi-darwin-amd64.zip
@@ -245,8 +261,23 @@ pipelines:
                   mount: kv
                   path: apple-id
                   key: dev-identity-app
+                - name: notarytool-password
+                  mount: kv
+                  path: notarytool
+                  key: password
+                - name: apple-team-id
+                  mount: kv
+                  path: apple-id
+                  key: team-id
+                - name: apple-id
+                  mount: kv
+                  path: apple-id
+                  key: email
             env:
               DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+              NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
+              APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
+              APPLE_ID: "{{ secret.apple-id }}"
           - run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-arm64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-arm64.app dist/codesigned-macos/ciwi-darwin-arm64.zip
             vault:
               connection: home-vault
@@ -255,8 +286,23 @@ pipelines:
                   mount: kv
                   path: apple-id
                   key: dev-identity-app
+                - name: notarytool-password
+                  mount: kv
+                  path: notarytool
+                  key: password
+                - name: apple-team-id
+                  mount: kv
+                  path: apple-id
+                  key: team-id
+                - name: apple-id
+                  mount: kv
+                  path: apple-id
+                  key: email
             env:
               DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+              NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
+              APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
+              APPLE_ID: "{{ secret.apple-id }}"
 
 pipeline_chains:
   - id: build-release
