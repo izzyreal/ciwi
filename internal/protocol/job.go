@@ -326,20 +326,20 @@ type TestSuiteReport struct {
 
 type CoverageFileReport struct {
 	Path              string  `json:"path,omitempty"`
-	TotalLines        int     `json:"total_lines,omitempty"`
-	CoveredLines      int     `json:"covered_lines,omitempty"`
-	TotalStatements   int     `json:"total_statements,omitempty"`
-	CoveredStatements int     `json:"covered_statements,omitempty"`
-	Percent           float64 `json:"percent,omitempty"`
+	TotalLines        int     `json:"total_lines"`
+	CoveredLines      int     `json:"covered_lines"`
+	TotalStatements   int     `json:"total_statements"`
+	CoveredStatements int     `json:"covered_statements"`
+	Percent           float64 `json:"percent"`
 }
 
 type CoverageReport struct {
 	Format            string               `json:"format"`
-	TotalLines        int                  `json:"total_lines,omitempty"`
-	CoveredLines      int                  `json:"covered_lines,omitempty"`
-	TotalStatements   int                  `json:"total_statements,omitempty"`
-	CoveredStatements int                  `json:"covered_statements,omitempty"`
-	Percent           float64              `json:"percent,omitempty"`
+	TotalLines        int                  `json:"total_lines"`
+	CoveredLines      int                  `json:"covered_lines"`
+	TotalStatements   int                  `json:"total_statements"`
+	CoveredStatements int                  `json:"covered_statements"`
+	Percent           float64              `json:"percent"`
 	Files             []CoverageFileReport `json:"files,omitempty"`
 }
 

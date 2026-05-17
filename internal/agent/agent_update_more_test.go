@@ -203,3 +203,65 @@ func TestStageAndTriggerDarwinUpdaterNonBundleStartFailureRemovesManifestAndHelp
 		t.Fatalf("expected helper removed on start failure, stat err=%v", err)
 	}
 }
+
+func TestStageAndTriggerDarwinUpdaterNonBundleHelperPrepareFailureRemovesManifest(t *testing.T) {
+	tmp := t.TempDir()
+	targetBinary := filepath.Join(tmp, "installed", "ciwi")
+	stagedBinary := filepath.Join(tmp, "downloaded", "ciwi")
+	manifestPath := filepath.Join(tmp, "updates", "pending.json")
+
+	if err := os.MkdirAll(filepath.Dir(stagedBinary), 0o755); err != nil {
+		t.Fatalf("mkdir staged dir: %v", err)
+	}
+	if err := os.WriteFile(stagedBinary, []byte("staged"), 0o755); err != nil {
+		t.Fatalf("write staged binary: %v", err)
+	}
+
+	t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "nl.izmar.ciwi.agent")
+	t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", filepath.Join(tmp, "nl.izmar.ciwi.agent.plist"))
+	t.Setenv("CIWI_AGENT_APP_BUNDLE", "")
+	t.Setenv("CIWI_AGENT_UPDATE_MANIFEST", manifestPath)
+
+	origCopyFile := agentCopyFileFn
+	defer func() { agentCopyFileFn = origCopyFile }()
+	agentCopyFileFn = func(string, string, os.FileMode) error { return os.ErrPermission }
+
+	err := stageAndTriggerDarwinUpdater("v1.0.0", "ciwi-darwin-arm64.zip", targetBinary, stagedBinary)
+	if err == nil || !strings.Contains(err.Error(), "prepare darwin updater helper") {
+		t.Fatalf("expected helper prepare error, got %v", err)
+	}
+	if _, err := os.Stat(manifestPath); !os.IsNotExist(err) {
+		t.Fatalf("expected manifest removed on helper prepare failure, stat err=%v", err)
+	}
+}
+
+func TestStageAndTriggerDarwinUpdaterBundledAppRequiresBundleRoot(t *testing.T) {
+	tmp := t.TempDir()
+	targetBundle := filepath.Join(tmp, "installed", "CiwiAgent.app")
+	targetBinary := filepath.Join(targetBundle, "Contents", "MacOS", "ciwi")
+	stagedBinary := filepath.Join(tmp, "downloaded", "ciwi")
+	manifestPath := filepath.Join(tmp, "updates", "pending.json")
+
+	if err := os.MkdirAll(filepath.Dir(targetBinary), 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(stagedBinary), 0o755); err != nil {
+		t.Fatalf("mkdir staged dir: %v", err)
+	}
+	if err := os.WriteFile(stagedBinary, []byte("staged"), 0o755); err != nil {
+		t.Fatalf("write staged binary: %v", err)
+	}
+
+	t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "nl.izmar.ciwi.agent")
+	t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", filepath.Join(tmp, "nl.izmar.ciwi.agent.plist"))
+	t.Setenv("CIWI_AGENT_APP_BUNDLE", targetBundle)
+	t.Setenv("CIWI_AGENT_UPDATE_MANIFEST", manifestPath)
+
+	err := stageAndTriggerDarwinUpdater("v1.0.0", "ciwi-darwin-arm64.zip", targetBinary, stagedBinary)
+	if err == nil || !strings.Contains(err.Error(), "staged darwin app bundle not found") {
+		t.Fatalf("expected missing bundle root error, got %v", err)
+	}
+	if _, err := os.Stat(manifestPath); !os.IsNotExist(err) {
+		t.Fatalf("did not expect manifest on bundle-root failure, stat err=%v", err)
+	}
+}

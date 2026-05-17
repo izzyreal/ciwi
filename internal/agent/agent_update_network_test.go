@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -210,6 +212,23 @@ func TestFetchReleaseAssetsForTagCancelledDuringBackoff(t *testing.T) {
 	}
 }
 
+func TestFetchReleaseAssetsForTagDoesNotRetryClientError(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "nope", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, _, err := fetchReleaseAssetsForTag(context.Background(), srv.URL, "izzyreal/ciwi", "v1.2.3", "asset.bin", "ciwi-checksums.txt")
+	if err == nil || !strings.Contains(err.Error(), "status=404") {
+		t.Fatalf("expected non-retryable 404 error, got %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected exactly one request for non-retryable 404, got %d", calls)
+	}
+}
+
 func TestDownloadUpdateAssetRetryAndAuthHeader(t *testing.T) {
 	calls := 0
 	var authHeader string
@@ -260,4 +279,90 @@ func TestDownloadTextAssetCancelledDuringBackoff(t *testing.T) {
 	if !strings.Contains(strings.ToLower(err.Error()), "canceled") {
 		t.Fatalf("expected canceled error, got %v", err)
 	}
+}
+
+func TestDownloadAssetsDoNotRetryClientError(t *testing.T) {
+	updateCalls := 0
+	updateSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		updateCalls++
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	defer updateSrv.Close()
+
+	if _, err := downloadUpdateAsset(context.Background(), updateSrv.URL, "ciwi-test"); err == nil || !strings.Contains(err.Error(), "status=400") {
+		t.Fatalf("expected non-retryable update asset 400, got %v", err)
+	}
+	if updateCalls != 1 {
+		t.Fatalf("expected exactly one update asset request, got %d", updateCalls)
+	}
+
+	textCalls := 0
+	textSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		textCalls++
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer textSrv.Close()
+
+	if _, err := downloadTextAsset(context.Background(), textSrv.URL); err == nil || !strings.Contains(err.Error(), "status=403") {
+		t.Fatalf("expected non-retryable checksum asset 403, got %v", err)
+	}
+	if textCalls != 1 {
+		t.Fatalf("expected exactly one checksum asset request, got %d", textCalls)
+	}
+}
+
+func TestExtractDarwinAppExecutableFailures(t *testing.T) {
+	if _, err := extractDarwinAppExecutable("   "); err == nil || !strings.Contains(err.Error(), "empty darwin asset path") {
+		t.Fatalf("expected empty path error, got %v", err)
+	}
+
+	t.Run("zip without app bundle", func(t *testing.T) {
+		tmp := t.TempDir()
+		assetPath := filepath.Join(tmp, "no-app.zip")
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		w, err := zw.Create("README.txt")
+		if err != nil {
+			t.Fatalf("create zip entry: %v", err)
+		}
+		if _, err := w.Write([]byte("hello")); err != nil {
+			t.Fatalf("write zip entry: %v", err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatalf("close zip: %v", err)
+		}
+		if err := os.WriteFile(assetPath, buf.Bytes(), 0o644); err != nil {
+			t.Fatalf("write asset zip: %v", err)
+		}
+
+		_, err = extractDarwinAppExecutable(assetPath)
+		if err == nil || !strings.Contains(err.Error(), "no .app bundle found") {
+			t.Fatalf("expected missing .app error, got %v", err)
+		}
+	})
+
+	t.Run("app bundle without ciwi executable", func(t *testing.T) {
+		tmp := t.TempDir()
+		assetPath := filepath.Join(tmp, "missing-ciwi.zip")
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		w, err := zw.Create("CiwiAgent.app/Contents/Info.plist")
+		if err != nil {
+			t.Fatalf("create zip entry: %v", err)
+		}
+		if _, err := w.Write([]byte("<plist/>")); err != nil {
+			t.Fatalf("write zip entry: %v", err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatalf("close zip: %v", err)
+		}
+		if err := os.WriteFile(assetPath, buf.Bytes(), 0o644); err != nil {
+			t.Fatalf("write asset zip: %v", err)
+		}
+
+		_, err = extractDarwinAppExecutable(assetPath)
+		if err == nil || !strings.Contains(err.Error(), "app bundle executable missing") {
+			t.Fatalf("expected missing executable error, got %v", err)
+		}
+	})
 }

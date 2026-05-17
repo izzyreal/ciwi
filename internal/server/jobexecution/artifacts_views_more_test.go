@@ -1,8 +1,10 @@
 package jobexecution
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +37,57 @@ func TestPersistCoverageReportArtifactCreateAndRemove(t *testing.T) {
 	}
 	if _, err := os.Stat(coveragePath); !os.IsNotExist(err) {
 		t.Fatalf("expected coverage artifact removed, stat err=%v", err)
+	}
+}
+
+func TestPersistCoverageReportArtifactPreservesZeroCoverageFields(t *testing.T) {
+	root := t.TempDir()
+	jobID := "job-1"
+
+	withCoverage := protocol.JobExecutionTestReport{
+		Coverage: &protocol.CoverageReport{
+			Format:       "lcov",
+			TotalLines:   2,
+			CoveredLines: 0,
+			Percent:      0,
+			Files: []protocol.CoverageFileReport{
+				{
+					Path:         "src/a.hpp",
+					TotalLines:   2,
+					CoveredLines: 0,
+					Percent:      0,
+				},
+			},
+		},
+	}
+	if err := PersistCoverageReportArtifact(root, jobID, withCoverage); err != nil {
+		t.Fatalf("PersistCoverageReportArtifact zero coverage: %v", err)
+	}
+
+	coveragePath := filepath.Join(root, jobID, coverageReportArtifactPath)
+	raw, err := os.ReadFile(coveragePath)
+	if err != nil {
+		t.Fatalf("read coverage artifact: %v", err)
+	}
+
+	text := string(raw)
+	for _, needle := range []string{
+		`"covered_lines": 0`,
+		`"percent": 0`,
+		`"total_statements": 0`,
+		`"covered_statements": 0`,
+	} {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("expected coverage artifact to contain %s, got: %s", needle, text)
+		}
+	}
+
+	var got protocol.CoverageReport
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal coverage artifact: %v", err)
+	}
+	if got.CoveredLines != 0 || len(got.Files) != 1 || got.Files[0].CoveredLines != 0 {
+		t.Fatalf("unexpected decoded zero coverage report: %+v", got)
 	}
 }
 
