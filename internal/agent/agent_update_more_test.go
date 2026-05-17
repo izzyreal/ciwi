@@ -155,3 +155,51 @@ func TestStageAndTriggerDarwinUpdaterWithBundledAppStartsDetachedHelper(t *testi
 		t.Fatalf("expected manifest written: %v", err)
 	}
 }
+
+func TestStageAndTriggerDarwinUpdaterNonBundleStartFailureRemovesManifestAndHelper(t *testing.T) {
+	tmp := t.TempDir()
+	targetBinary := filepath.Join(tmp, "installed", "ciwi")
+	stagedBinary := filepath.Join(tmp, "downloaded", "ciwi")
+	manifestPath := filepath.Join(tmp, "updates", "pending.json")
+
+	if err := os.MkdirAll(filepath.Dir(targetBinary), 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(stagedBinary), 0o755); err != nil {
+		t.Fatalf("mkdir staged dir: %v", err)
+	}
+	if err := os.WriteFile(targetBinary, []byte("installed"), 0o755); err != nil {
+		t.Fatalf("write target binary: %v", err)
+	}
+	if err := os.WriteFile(stagedBinary, []byte("staged"), 0o755); err != nil {
+		t.Fatalf("write staged binary: %v", err)
+	}
+
+	t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "nl.izmar.ciwi.agent")
+	t.Setenv("CIWI_AGENT_LAUNCHD_PLIST", filepath.Join(tmp, "nl.izmar.ciwi.agent.plist"))
+	t.Setenv("CIWI_AGENT_APP_BUNDLE", "")
+	t.Setenv("CIWI_AGENT_UPDATE_MANIFEST", manifestPath)
+
+	origStartDarwinUpdater := agentStartDarwinUpdaterFn
+	defer func() { agentStartDarwinUpdaterFn = origStartDarwinUpdater }()
+
+	var gotHelperPath string
+	agentStartDarwinUpdaterFn = func(helperPath, manifestPath string) error {
+		gotHelperPath = helperPath
+		return os.ErrPermission
+	}
+
+	err := stageAndTriggerDarwinUpdater("v1.0.0", "ciwi-darwin-arm64.zip", targetBinary, stagedBinary)
+	if err == nil || !strings.Contains(err.Error(), "start darwin updater helper") {
+		t.Fatalf("expected helper start error, got %v", err)
+	}
+	if _, err := os.Stat(manifestPath); !os.IsNotExist(err) {
+		t.Fatalf("expected manifest removed on helper start failure, stat err=%v", err)
+	}
+	if gotHelperPath == "" {
+		t.Fatalf("expected helper path to be prepared before failure")
+	}
+	if _, err := os.Stat(gotHelperPath); !os.IsNotExist(err) {
+		t.Fatalf("expected helper removed on start failure, stat err=%v", err)
+	}
+}

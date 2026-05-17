@@ -49,6 +49,19 @@ func TestWipeAgentCacheWhenCachePathIsFile(t *testing.T) {
 	}
 }
 
+func TestWipeAgentCachePropagatesRemoveError(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(workDir, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write work dir placeholder: %v", err)
+	}
+
+	_, err := wipeAgentCache(workDir)
+	if err == nil || !strings.Contains(err.Error(), "remove cache dir") {
+		t.Fatalf("expected remove cache dir failure, got %v", err)
+	}
+}
+
 func TestWipeAgentJobHistory(t *testing.T) {
 	workDir := t.TempDir()
 	workspacesDir := filepath.Join(workDir, "workspaces")

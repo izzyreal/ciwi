@@ -7,24 +7,30 @@ import (
 	"time"
 )
 
+var (
+	removeAllWithRetryGOOSFn  = func() string { return runtime.GOOS }
+	removeAllWithRetryFn      = os.RemoveAll
+	removeAllWithRetrySleepFn = time.Sleep
+)
+
 func removeAllWithRetry(path string) error {
 	const (
 		windowsAttempts = 8
 		windowsDelay    = 500 * time.Millisecond
 	)
 
-	if runtime.GOOS != "windows" {
-		return os.RemoveAll(path)
+	if removeAllWithRetryGOOSFn() != "windows" {
+		return removeAllWithRetryFn(path)
 	}
 
 	var lastErr error
 	for attempt := 1; attempt <= windowsAttempts; attempt++ {
-		if err := os.RemoveAll(path); err != nil {
+		if err := removeAllWithRetryFn(path); err != nil {
 			lastErr = err
 			if attempt == windowsAttempts {
 				break
 			}
-			time.Sleep(windowsDelay)
+			removeAllWithRetrySleepFn(windowsDelay)
 			continue
 		}
 		return nil

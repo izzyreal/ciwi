@@ -76,6 +76,27 @@ func TestAgentUpdateFirstAttemptDelayBySlot(t *testing.T) {
 	}
 }
 
+func TestAgentUpdateBackoffBoundsAndGrowth(t *testing.T) {
+	tests := []struct {
+		attempt int
+		want    time.Duration
+	}{
+		{attempt: -1, want: 30 * time.Second},
+		{attempt: 0, want: 30 * time.Second},
+		{attempt: 1, want: 30 * time.Second},
+		{attempt: 2, want: 60 * time.Second},
+		{attempt: 3, want: 120 * time.Second},
+		{attempt: 6, want: 15 * time.Minute},
+		{attempt: 7, want: 15 * time.Minute},
+		{attempt: 20, want: 15 * time.Minute},
+	}
+	for _, tt := range tests {
+		if got := agentUpdateBackoff(tt.attempt); got != tt.want {
+			t.Fatalf("attempt %d backoff=%s want=%s", tt.attempt, got, tt.want)
+		}
+	}
+}
+
 func TestAgentUpdateInProgressGraceDerivedFromHeartbeatInterval(t *testing.T) {
 	minGrace := (2 * protocol.AgentHeartbeatInterval) + agentUpdateRestartAllowance
 	if got := agentUpdateInProgressGrace; got != minGrace {

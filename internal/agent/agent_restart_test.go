@@ -50,6 +50,28 @@ func TestRequestAgentRestartUsesServicePathByRuntime(t *testing.T) {
 		}
 	})
 
+	t.Run("darwin success", func(t *testing.T) {
+		agentRuntimeGOOS = "darwin"
+		restartViaLaunchd = func() (string, error, bool) {
+			return "restart via launchctl requested (gui/501/nl.izmar.ciwi.agent)", nil, true
+		}
+		msg := requestAgentRestart()
+		if !strings.Contains(msg, "restart via launchctl requested") {
+			t.Fatalf("unexpected message: %q", msg)
+		}
+	})
+
+	t.Run("darwin attempted failure falls back to exit", func(t *testing.T) {
+		agentRuntimeGOOS = "darwin"
+		restartViaLaunchd = func() (string, error, bool) {
+			return "", errors.New("kickstart failed"), true
+		}
+		msg := requestAgentRestart()
+		if !strings.Contains(msg, "service restart failed; fallback exit requested: kickstart failed") {
+			t.Fatalf("unexpected message: %q", msg)
+		}
+	})
+
 	t.Run("unknown runtime fallback", func(t *testing.T) {
 		agentRuntimeGOOS = "plan9"
 		msg := requestAgentRestart()
@@ -58,7 +80,7 @@ func TestRequestAgentRestartUsesServicePathByRuntime(t *testing.T) {
 		}
 	})
 
-	if exitCalls != 3 {
+	if exitCalls != 5 {
 		t.Fatalf("expected one scheduled exit per request, got %d", exitCalls)
 	}
 }

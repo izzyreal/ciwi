@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,6 +18,13 @@ const (
 	agentJobHTTPTimeout       = 10 * time.Minute
 	agentHeartbeatHTTPTimeout = 3 * time.Second
 	agentLeaseHTTPTimeout     = 5 * time.Second
+)
+
+var (
+	selfUpdateExecutablePathFn = os.Executable
+	selfUpdateOpenFileFn       = func(name string, flag int, perm fs.FileMode) (*os.File, error) {
+		return os.OpenFile(name, flag, perm)
+	}
 )
 
 type pendingUpdateRequest struct {
@@ -38,6 +46,76 @@ type heartbeatResult struct {
 	err               error
 	sentUpdateFailure string
 	sentRestartStatus string
+}
+
+type jobResult struct {
+	jobID string
+	err   error
+}
+
+type agentHeartbeatState struct {
+	mu                   sync.Mutex
+	pendingUpdateFailure string
+	updateInProgress     bool
+	pendingRestartStatus string
+}
+
+func (s *agentHeartbeatState) snapshot() (string, bool, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pendingUpdateFailure, s.updateInProgress, s.pendingRestartStatus
+}
+
+func (s *agentHeartbeatState) setPendingUpdateFailure(value string) {
+	s.mu.Lock()
+	s.pendingUpdateFailure = strings.TrimSpace(value)
+	s.mu.Unlock()
+}
+
+func (s *agentHeartbeatState) setUpdateInProgress(value bool) {
+	s.mu.Lock()
+	s.updateInProgress = value
+	s.mu.Unlock()
+}
+
+func (s *agentHeartbeatState) setPendingRestartStatus(value string) {
+	s.mu.Lock()
+	s.pendingRestartStatus = strings.TrimSpace(value)
+	s.mu.Unlock()
+}
+
+func (s *agentHeartbeatState) ack(sentUpdateFailure, sentRestartStatus string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pendingUpdateFailure == sentUpdateFailure {
+		s.pendingUpdateFailure = ""
+	}
+	if s.pendingRestartStatus == sentRestartStatus {
+		s.pendingRestartStatus = ""
+	}
+}
+
+type agentLoopDeps struct {
+	ctx              context.Context
+	serverURL        string
+	agentID          string
+	workDir          string
+	restartArgs      []string
+	jobClient        *http.Client
+	leaseClient      *http.Client
+	control          *deferredControl
+	heartbeatState   *agentHeartbeatState
+	jobDoneCh        chan jobResult
+	triggerHeartbeat func()
+	detectCapsFn     func() map[string]string
+	getCapsFn        func() map[string]string
+	setCapsFn        func(map[string]string)
+	selfUpdateFn     func(context.Context, string, string, string, []string) error
+	requestRestartFn func() string
+	wipeCacheFn      func(string) (string, error)
+	wipeHistoryFn    func(string) (string, error)
+	leaseJobFn       func(context.Context, *http.Client, string, string, map[string]string) (*protocol.JobExecution, error)
+	executeJobFn     func(context.Context, *http.Client, string, string, string, map[string]string, protocol.JobExecution) error
 }
 
 func (d *deferredControl) setJobInProgress(v bool) {
@@ -124,6 +202,124 @@ func (d *deferredControl) flushDeferred(runUpdate func(string, string, string), 
 	}
 }
 
+func (d *agentLoopDeps) runOrDeferUpdate(target, repository, apiBase string) {
+	d.control.requestUpdate(target, repository, apiBase, func() {
+		slog.Info("server requested agent update; deferring until current job completes", "target_version", target)
+	}, func(target, repository, apiBase string) {
+		slog.Info("server requested agent update", "target_version", target)
+		d.heartbeatState.setUpdateInProgress(true)
+		d.triggerHeartbeat()
+		if err := d.selfUpdateFn(d.ctx, target, repository, apiBase, d.restartArgs); err != nil {
+			slog.Error("agent self-update failed", "error", err)
+			d.heartbeatState.setUpdateInProgress(false)
+			d.heartbeatState.setPendingUpdateFailure(err.Error())
+			d.triggerHeartbeat()
+		}
+	})
+}
+
+func (d *agentLoopDeps) runOrDeferRestart() {
+	d.control.requestRestart(func() {
+		d.heartbeatState.setPendingRestartStatus("restart deferred: agent busy with active job")
+		d.triggerHeartbeat()
+		slog.Info("server requested agent restart; deferring until current job completes")
+	}, func() {
+		slog.Info("server requested agent restart")
+		d.heartbeatState.setPendingRestartStatus(d.requestRestartFn())
+		d.triggerHeartbeat()
+	})
+}
+
+func (d *agentLoopDeps) runOrDeferCacheWipe() {
+	d.control.requestCacheWipe(func() {
+		slog.Info("server requested cache wipe; deferring until current job completes")
+	}, func() {
+		slog.Info("server requested cache wipe")
+		msg, err := d.wipeCacheFn(d.workDir)
+		if err != nil {
+			slog.Error("agent cache wipe failed", "error", err)
+			return
+		}
+		slog.Info(msg)
+	})
+}
+
+func (d *agentLoopDeps) runOrDeferJobHistoryWipe() {
+	d.control.requestJobHistoryWipe(func() {
+		slog.Info("server requested local job history wipe; deferring until current job completes")
+	}, func() {
+		slog.Info("server requested local job history wipe")
+		msg, err := d.wipeHistoryFn(d.workDir)
+		if err != nil {
+			d.control.requeueJobHistoryWipe()
+			slog.Error("agent local job history wipe failed", "error", err)
+			return
+		}
+		slog.Info(msg)
+	})
+}
+
+func (d *agentLoopDeps) flushDeferred() {
+	d.control.flushDeferred(d.runOrDeferUpdate, d.runOrDeferRestart, d.runOrDeferCacheWipe, d.runOrDeferJobHistoryWipe)
+}
+
+func (d *agentLoopDeps) processHeartbeat(hb protocol.HeartbeatResponse) {
+	if hb.RefreshToolsRequested {
+		d.setCapsFn(d.detectCapsFn())
+		slog.Info("server requested tools refresh")
+		d.triggerHeartbeat()
+	}
+	if hb.UpdateRequested {
+		d.runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
+	}
+	if hb.RestartRequested {
+		d.runOrDeferRestart()
+	}
+	if hb.WipeCacheRequested {
+		d.runOrDeferCacheWipe()
+	}
+	if hb.FlushJobHistoryRequested {
+		d.runOrDeferJobHistoryWipe()
+	}
+}
+
+func (d *agentLoopDeps) handleHeartbeatResult(hbRes heartbeatResult) {
+	if hbRes.err != nil {
+		slog.Error("heartbeat failed", "error", hbRes.err)
+		return
+	}
+	d.heartbeatState.ack(hbRes.sentUpdateFailure, hbRes.sentRestartStatus)
+	d.processHeartbeat(hbRes.resp)
+	if !d.control.jobInProgress && d.control.hasDeferred() {
+		d.flushDeferred()
+	}
+}
+
+func (d *agentLoopDeps) handleLeaseTick() {
+	if !d.control.jobInProgress && d.control.hasDeferred() {
+		d.flushDeferred()
+	}
+	if d.control.jobInProgress {
+		return
+	}
+	job, err := d.leaseJobFn(d.ctx, d.leaseClient, d.serverURL, d.agentID, d.getCapsFn())
+	if err != nil {
+		slog.Error("lease failed", "error", err)
+		return
+	}
+	if job == nil {
+		return
+	}
+	d.control.setJobInProgress(true)
+	jobCaps := d.getCapsFn()
+	go func(leased protocol.JobExecution, caps map[string]string) {
+		d.jobDoneCh <- jobResult{
+			jobID: leased.ID,
+			err:   d.executeJobFn(d.ctx, d.jobClient, d.serverURL, d.agentID, d.workDir, caps, leased),
+		}
+	}(*job, jobCaps)
+}
+
 func Run(ctx context.Context) error {
 	loadAgentPlatformEnv()
 	if handled, err := runAsWindowsServiceIfNeeded(runLoop); handled {
@@ -166,45 +362,8 @@ func runLoop(ctx context.Context) error {
 		capabilitiesMu.Unlock()
 	}
 
-	pendingUpdateFailure := ""
-	updateInProgress := false
-	pendingRestartStatus := startupHeartbeatGreeting()
-	var heartbeatStateMu sync.Mutex
-	getHeartbeatState := func() (string, bool, string) {
-		heartbeatStateMu.Lock()
-		defer heartbeatStateMu.Unlock()
-		return pendingUpdateFailure, updateInProgress, pendingRestartStatus
-	}
-	setPendingUpdateFailure := func(value string) {
-		heartbeatStateMu.Lock()
-		pendingUpdateFailure = strings.TrimSpace(value)
-		heartbeatStateMu.Unlock()
-	}
-	setUpdateInProgress := func(value bool) {
-		heartbeatStateMu.Lock()
-		updateInProgress = value
-		heartbeatStateMu.Unlock()
-	}
-	setPendingRestartStatus := func(value string) {
-		heartbeatStateMu.Lock()
-		pendingRestartStatus = strings.TrimSpace(value)
-		heartbeatStateMu.Unlock()
-	}
-	ackHeartbeatState := func(sentUpdateFailure, sentRestartStatus string) {
-		heartbeatStateMu.Lock()
-		defer heartbeatStateMu.Unlock()
-		if pendingUpdateFailure == sentUpdateFailure {
-			pendingUpdateFailure = ""
-		}
-		if pendingRestartStatus == sentRestartStatus {
-			pendingRestartStatus = ""
-		}
-	}
+	heartbeatState := &agentHeartbeatState{pendingRestartStatus: startupHeartbeatGreeting()}
 	control := &deferredControl{}
-	type jobResult struct {
-		jobID string
-		err   error
-	}
 	jobDoneCh := make(chan jobResult, 1)
 	heartbeatRespCh := make(chan heartbeatResult, 4)
 	heartbeatKickCh := make(chan struct{}, 1)
@@ -214,79 +373,27 @@ func runLoop(ctx context.Context) error {
 		default:
 		}
 	}
-
-	runOrDeferUpdate := func(target, repository, apiBase string) {
-		control.requestUpdate(target, repository, apiBase, func() {
-			slog.Info("server requested agent update; deferring until current job completes", "target_version", target)
-		}, func(target, repository, apiBase string) {
-			slog.Info("server requested agent update", "target_version", target)
-			setUpdateInProgress(true)
-			triggerHeartbeat()
-			if err := selfUpdateAndRestart(ctx, target, repository, apiBase, os.Args[1:]); err != nil {
-				slog.Error("agent self-update failed", "error", err)
-				setUpdateInProgress(false)
-				setPendingUpdateFailure(err.Error())
-				triggerHeartbeat()
-			}
-		})
-	}
-	runOrDeferRestart := func() {
-		control.requestRestart(func() {
-			setPendingRestartStatus("restart deferred: agent busy with active job")
-			triggerHeartbeat()
-			slog.Info("server requested agent restart; deferring until current job completes")
-		}, func() {
-			slog.Info("server requested agent restart")
-			setPendingRestartStatus(requestAgentRestart())
-			triggerHeartbeat()
-		})
-	}
-	runOrDeferCacheWipe := func() {
-		control.requestCacheWipe(func() {
-			slog.Info("server requested cache wipe; deferring until current job completes")
-		}, func() {
-			slog.Info("server requested cache wipe")
-			msg, err := wipeAgentCache(workDir)
-			if err != nil {
-				slog.Error("agent cache wipe failed", "error", err)
-				return
-			}
-			slog.Info(msg)
-		})
-	}
-	runOrDeferJobHistoryWipe := func() {
-		control.requestJobHistoryWipe(func() {
-			slog.Info("server requested local job history wipe; deferring until current job completes")
-		}, func() {
-			slog.Info("server requested local job history wipe")
-			msg, err := wipeAgentJobHistory(workDir)
-			if err != nil {
-				control.requeueJobHistoryWipe()
-				slog.Error("agent local job history wipe failed", "error", err)
-				return
-			}
-			slog.Info(msg)
-		})
-	}
-
-	processHeartbeat := func(hb protocol.HeartbeatResponse) {
-		if hb.RefreshToolsRequested {
-			setCapabilities(detectAgentCapabilities())
-			slog.Info("server requested tools refresh")
-			triggerHeartbeat()
-		}
-		if hb.UpdateRequested {
-			runOrDeferUpdate(hb.UpdateTarget, hb.UpdateRepository, hb.UpdateAPIBase)
-		}
-		if hb.RestartRequested {
-			runOrDeferRestart()
-		}
-		if hb.WipeCacheRequested {
-			runOrDeferCacheWipe()
-		}
-		if hb.FlushJobHistoryRequested {
-			runOrDeferJobHistoryWipe()
-		}
+	loopDeps := &agentLoopDeps{
+		ctx:              ctx,
+		serverURL:        serverURL,
+		agentID:          agentID,
+		workDir:          workDir,
+		restartArgs:      os.Args[1:],
+		jobClient:        jobClient,
+		leaseClient:      leaseClient,
+		control:          control,
+		heartbeatState:   heartbeatState,
+		jobDoneCh:        jobDoneCh,
+		triggerHeartbeat: triggerHeartbeat,
+		detectCapsFn:     detectAgentCapabilities,
+		getCapsFn:        getCapabilities,
+		setCapsFn:        setCapabilities,
+		selfUpdateFn:     selfUpdateAndRestart,
+		requestRestartFn: requestAgentRestart,
+		wipeCacheFn:      wipeAgentCache,
+		wipeHistoryFn:    wipeAgentJobHistory,
+		leaseJobFn:       leaseJob,
+		executeJobFn:     executeLeasedJob,
 	}
 
 	go func() {
@@ -294,7 +401,7 @@ func runLoop(ctx context.Context) error {
 		defer ticker.Stop()
 
 		send := func() {
-			updateFailure, updateInProgress, restartStatus := getHeartbeatState()
+			updateFailure, updateInProgress, restartStatus := heartbeatState.snapshot()
 			hb, err := sendHeartbeat(ctx, heartbeatClient, serverURL, agentID, hostname, getCapabilities(), updateFailure, updateInProgress, restartStatus)
 			res := heartbeatResult{
 				resp:              hb,
@@ -329,40 +436,11 @@ func runLoop(ctx context.Context) error {
 			if done.err != nil {
 				slog.Error("execute job failed", "job_execution_id", done.jobID, "error", done.err)
 			}
-			control.flushDeferred(runOrDeferUpdate, runOrDeferRestart, runOrDeferCacheWipe, runOrDeferJobHistoryWipe)
+			loopDeps.flushDeferred()
 		case hbRes := <-heartbeatRespCh:
-			if hbRes.err != nil {
-				slog.Error("heartbeat failed", "error", hbRes.err)
-			} else {
-				ackHeartbeatState(hbRes.sentUpdateFailure, hbRes.sentRestartStatus)
-				processHeartbeat(hbRes.resp)
-				if !control.jobInProgress && control.hasDeferred() {
-					control.flushDeferred(runOrDeferUpdate, runOrDeferRestart, runOrDeferCacheWipe, runOrDeferJobHistoryWipe)
-				}
-			}
+			loopDeps.handleHeartbeatResult(hbRes)
 		case <-leaseTicker.C:
-			if !control.jobInProgress && control.hasDeferred() {
-				control.flushDeferred(runOrDeferUpdate, runOrDeferRestart, runOrDeferCacheWipe, runOrDeferJobHistoryWipe)
-			}
-			if control.jobInProgress {
-				continue
-			}
-			job, err := leaseJob(ctx, leaseClient, serverURL, agentID, getCapabilities())
-			if err != nil {
-				slog.Error("lease failed", "error", err)
-				continue
-			}
-			if job == nil {
-				continue
-			}
-			control.setJobInProgress(true)
-			jobCaps := getCapabilities()
-			go func(leased protocol.JobExecution, caps map[string]string) {
-				jobDoneCh <- jobResult{
-					jobID: leased.ID,
-					err:   executeLeasedJob(ctx, jobClient, serverURL, agentID, workDir, caps, leased),
-				}
-			}(*job, jobCaps)
+			loopDeps.handleLeaseTick()
 		}
 	}
 }
@@ -371,14 +449,14 @@ func selfUpdateWritabilityWarning() string {
 	if reason := selfUpdateServiceModeReason(); reason != "" {
 		return reason
 	}
-	exePath, err := os.Executable()
+	exePath, err := selfUpdateExecutablePathFn()
 	if err != nil {
 		return "cannot resolve executable path: " + err.Error()
 	}
 	if looksLikeGoRunBinary(exePath) {
 		return "running via go run binary path; self-update is unavailable"
 	}
-	f, err := os.OpenFile(exePath, os.O_WRONLY, 0)
+	f, err := selfUpdateOpenFileFn(exePath, os.O_WRONLY, 0)
 	if err != nil {
 		return "binary path is not writable by current user (" + strings.TrimSpace(exePath) + "): " + err.Error()
 	}

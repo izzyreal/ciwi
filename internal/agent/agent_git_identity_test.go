@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -28,6 +29,19 @@ func TestEnsureRepoGitIdentity(t *testing.T) {
 	}
 	if got := stringTrimLine(gotEmail); got != defaultRepoGitUserEmail {
 		t.Fatalf("unexpected repo user.email: %q", got)
+	}
+}
+
+func TestEnsureRepoGitIdentityRejectsEmptyRepoDir(t *testing.T) {
+	if err := ensureRepoGitIdentity(context.Background(), " \t "); err == nil || !strings.Contains(err.Error(), "empty repository directory") {
+		t.Fatalf("expected empty repository directory error, got %v", err)
+	}
+}
+
+func TestEnsureRepoGitIdentityReturnsGitConfigFailure(t *testing.T) {
+	err := ensureRepoGitIdentity(context.Background(), "/definitely/missing/ciwi-repo")
+	if err == nil || !strings.Contains(err.Error(), "set repo git user.name") {
+		t.Fatalf("expected git user.name failure, got %v", err)
 	}
 }
 
