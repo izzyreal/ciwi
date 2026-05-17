@@ -56,10 +56,12 @@ var (
 	agentWindowsServiceInfoFn       = windowsServiceInfo
 	agentStartUpdateHelperFn        = startUpdateHelper
 	agentStartDarwinUpdaterFn       = startDarwinUpdater
-	agentStopOwnDarwinLaunchAgentFn = stopOwnDarwinLaunchAgentForUpdate
 	agentPIDFn                      = os.Getpid
 	agentExitAfterDarwinUpdateFn    = func() {
-		go os.Exit(0)
+		go func() {
+			time.Sleep(250 * time.Millisecond)
+			os.Exit(0)
+		}()
 	}
 	agentScheduleExitAfterUpdateFn = func() {
 		go func() {
@@ -158,9 +160,6 @@ func selfUpdateAndRestart(ctx context.Context, targetVersion, repository, apiBas
 		}
 		slog.Info("agent self-update phase complete", "phase", "stage_and_trigger_darwin_updater", "elapsed", time.Since(phaseStarted).Round(time.Millisecond))
 		slog.Info("agent self-update handed off to darwin updater", "target_version", targetVersion, "elapsed_total", time.Since(updateStarted).Round(time.Millisecond))
-		if err := agentStopOwnDarwinLaunchAgentFn(); err != nil {
-			slog.Warn("agent self-update failed to stop own launchagent before exit", "error", err)
-		}
 		agentExitAfterDarwinUpdateFn()
 		return nil
 	}
@@ -244,13 +243,7 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	}
 	helperPath := ""
 	if targetBundle != "" {
-		helperBundle := filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper.app")
-		_ = os.RemoveAll(helperBundle)
-		if err := agentCopyDirFn(targetBundle, helperBundle); err != nil {
-			_ = os.Remove(manifestPath)
-			return fmt.Errorf("prepare darwin updater helper app bundle: %w", err)
-		}
-		helperPath = filepath.Join(helperBundle, "Contents", "MacOS", "ciwi")
+		helperPath = targetBinary
 	} else {
 		helperPath = filepath.Join(filepath.Dir(manifestPath), "ciwi-darwin-updater-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+exeExt())
 		if err := agentCopyFileFn(targetBinary, helperPath, 0o755); err != nil {
@@ -260,9 +253,7 @@ func stageAndTriggerDarwinUpdater(targetVersion, assetName, targetBinary, staged
 	}
 	if err := agentStartDarwinUpdaterFn(helperPath, manifestPath); err != nil {
 		_ = os.Remove(manifestPath)
-		if targetBundle != "" {
-			_ = os.RemoveAll(findAppBundleRoot(helperPath))
-		} else {
+		if targetBundle == "" {
 			_ = os.Remove(helperPath)
 		}
 		return fmt.Errorf("start darwin updater helper: %w", err)
@@ -374,27 +365,6 @@ func startDarwinUpdater(helperPath, manifestPath string) error {
 	return nil
 }
 
-func stopOwnDarwinLaunchAgentForUpdate() error {
-	if runtime.GOOS != "darwin" {
-		return nil
-	}
-	label := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_LABEL", ""))
-	plist := strings.TrimSpace(envOrDefault("CIWI_AGENT_LAUNCHD_PLIST", ""))
-	if label == "" || plist == "" {
-		return nil
-	}
-	uid := strconv.Itoa(os.Getuid())
-	service := "gui/" + uid + "/" + label
-	domain := "gui/" + uid
-	if err := runLaunchctl("bootout", service); err != nil {
-		_ = runLaunchctl("bootout", domain, plist)
-	}
-	if err := runLaunchctl("disable", service); err != nil {
-		return err
-	}
-	return nil
-}
-
 func expectedAssetName(goos, goarch string) string {
 	return updateutil.ExpectedAssetName(goos, goarch)
 }
@@ -485,7 +455,7 @@ func extractDarwinAppExecutable(assetPath string) (string, error) {
 	if err := os.MkdirAll(extractRoot, 0o755); err != nil {
 		return "", err
 	}
-	if err := unzipArchive(assetPath, extractRoot); err != nil {
+	if err := extractZipArchive(assetPath, extractRoot); err != nil {
 		return "", err
 	}
 	var bundlePath string
@@ -507,6 +477,30 @@ func extractDarwinAppExecutable(assetPath string) (string, error) {
 		return "", fmt.Errorf("app bundle executable missing: %w", err)
 	}
 	return binPath, nil
+}
+
+func extractZipArchive(src, dst string) error {
+	if runtime.GOOS == "darwin" {
+		if err := dittoExtractZip(src, dst); err == nil {
+			return nil
+		} else {
+			slog.Warn("ditto zip extraction failed; falling back to Go unzip", "error", err)
+		}
+	}
+	return unzipArchive(src, dst)
+}
+
+func dittoExtractZip(src, dst string) error {
+	dittoPath := strings.TrimSpace(envOrDefault("CIWI_DITTO_PATH", "/usr/bin/ditto"))
+	if dittoPath == "" {
+		dittoPath = "/usr/bin/ditto"
+	}
+	cmd := exec.Command(dittoPath, "-x", "-k", src, dst)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s -x -k %s %s: %w (%s)", dittoPath, src, dst, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func unzipArchive(src, dst string) error {
@@ -615,6 +609,13 @@ func copyFile(src, dst string, mode os.FileMode) error {
 }
 
 func copyDir(src, dst string) error {
+	if runtime.GOOS == "darwin" {
+		if err := dittoCopyDir(src, dst); err == nil {
+			return nil
+		} else {
+			slog.Warn("ditto directory copy failed; falling back to Go copy", "src", src, "dst", dst, "error", err)
+		}
+	}
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -629,6 +630,23 @@ func copyDir(src, dst string) error {
 		}
 		return copyFile(path, targetPath, info.Mode())
 	})
+}
+
+func dittoCopyDir(src, dst string) error {
+	dittoPath := strings.TrimSpace(envOrDefault("CIWI_DITTO_PATH", "/usr/bin/ditto"))
+	if dittoPath == "" {
+		dittoPath = "/usr/bin/ditto"
+	}
+	_ = os.RemoveAll(dst)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	cmd := exec.Command(dittoPath, src, dst)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s %s %s: %w (%s)", dittoPath, src, dst, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func applyGitHubAuthHeader(req *http.Request) {
