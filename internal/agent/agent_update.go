@@ -361,8 +361,12 @@ func startDarwinUpdater(helperPath, manifestPath string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = nil
+	prepareDetachedDarwinUpdaterCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
+	}
+	if cmd.Process != nil {
+		_ = cmd.Process.Release()
 	}
 	return nil
 }
