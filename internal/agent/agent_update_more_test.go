@@ -95,11 +95,7 @@ func TestFindAppBundleRoot(t *testing.T) {
 	}
 }
 
-func TestStageAndTriggerDarwinUpdaterStartsDetachedHelper(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("darwin-specific launchd updater staging")
-	}
-
+func TestStageAndTriggerDarwinUpdaterWithBundledAppStartsDetachedHelper(t *testing.T) {
 	tmp := t.TempDir()
 	targetBundle := filepath.Join(tmp, "installed", "CiwiAgent.app")
 	targetBinary := filepath.Join(targetBundle, "Contents", "MacOS", "ciwi")
