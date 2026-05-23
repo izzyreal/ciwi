@@ -75,13 +75,14 @@ const uiIndexCSS = `
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
     th, td {
-      border-bottom: 1px solid var(--line);
       text-align: left;
       padding: 8px 6px;
       vertical-align: top;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
+    th { border-bottom: none; }
+    td { border-bottom: 1px solid var(--line); }
     table th:first-child { padding-left: 10px; }
     table tbody tr:not(.ciwi-job-group-row):not(.ciwi-empty-row) td:first-child { padding-left: 10px; }
     td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
@@ -90,6 +91,7 @@ const uiIndexCSS = `
     .status-blocked { color: #8a5a14; font-weight: 600; }
     .status-running { color: #a56a00; font-weight: 600; }
     .status-queued, .status-leased { color: var(--muted); }
+    .ciwi-empty-row td { border-bottom: none; }
     .ciwi-job-group-row td { padding: 4px 0; border-bottom: none; }
     .ciwi-job-group-details {
       margin: 0;
