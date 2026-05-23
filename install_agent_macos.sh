@@ -467,7 +467,7 @@ APP_BINARY_PATH="${APP_MACOS_DIR}/ciwi"
 SERVICE_HELPER_PATH="${APP_MACOS_DIR}/ciwi-service"
 BUNDLED_PLIST_PATH="${APP_BUNDLE_PATH}/Contents/Library/LaunchAgents/${LABEL}.plist"
 
-echo "[3.5/6] Configuring 100MB log caps (newsyslog)..."
+echo "[4/6] Configuring 100MB log caps (newsyslog)..."
 if command -v sudo >/dev/null 2>&1; then
   if sudo -n true >/dev/null 2>&1 || sudo -v >/dev/null 2>&1; then
     sudo tee "$NEWSYSLOG_FILE" >/dev/null <<EOF
@@ -482,7 +482,7 @@ else
   echo "Could not configure newsyslog cap (sudo not found)." >&2
 fi
 
-echo "[4/6] Writing agent config..."
+echo "[5/6] Writing agent config..."
 echo "[info] Configuring CIWI_SERVER_URL=${SERVER_URL} (source: ${SERVER_URL_SOURCE})"
 cat >"$AGENT_ENV_FILE" <<EOF
 CIWI_SERVER_URL=$(env_quote "$SERVER_URL")
@@ -511,7 +511,7 @@ if [ ! -f "$BUNDLED_PLIST_PATH" ]; then
 fi
 plutil -lint "$BUNDLED_PLIST_PATH" >/dev/null
 
-echo "[5/5] Registering bundled agent service..."
+echo "[6/6] Registering bundled agent service..."
 UID_NUM="$(id -u)"
 launchctl bootout "gui/${UID_NUM}/${LEGACY_UPDATER_LABEL}" >/dev/null 2>&1 || true
 launchctl bootout "gui/${UID_NUM}" "$LEGACY_UPDATER_PLIST_PATH" >/dev/null 2>&1 || true
