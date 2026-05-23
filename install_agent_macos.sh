@@ -471,9 +471,8 @@ echo "[3.5/6] Configuring 100MB log caps (newsyslog)..."
 if command -v sudo >/dev/null 2>&1; then
   if sudo -n true >/dev/null 2>&1 || sudo -v >/dev/null 2>&1; then
     sudo tee "$NEWSYSLOG_FILE" >/dev/null <<EOF
-${LOG_DIR}/agent.err.log  644  3  102400  *  Z
-${LOG_DIR}/server.out.log  644  3  102400  *  Z
-${LOG_DIR}/server.err.log  644  3  102400  *  Z
+${LOG_DIR}/agent.log      644  3  102400  *  Z
+${LOG_DIR}/server.log     644  3  102400  *  Z
 EOF
     sudo chmod 0644 "$NEWSYSLOG_FILE"
   else
@@ -493,7 +492,7 @@ CIWI_AGENT_UPDATE_MANIFEST=$(env_quote "$MANIFEST_PATH")
 CIWI_AGENT_LAUNCHD_LABEL=$(env_quote "$LABEL")
 CIWI_AGENT_LAUNCHD_PLIST=$(env_quote "$BUNDLED_PLIST_PATH")
 CIWI_AGENT_APP_BUNDLE=$(env_quote "$APP_BUNDLE_PATH")
-CIWI_AGENT_LOG_FILE=$(env_quote "${LOG_DIR}/agent.err.log")
+CIWI_AGENT_LOG_FILE=$(env_quote "${LOG_DIR}/agent.log")
 PATH=$(env_quote "${APP_MACOS_DIR}:/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
 EOF
 if [ -n "$INSTALL_GITHUB_TOKEN" ]; then
@@ -548,7 +547,7 @@ case "$TOKEN_SOURCE" in
   *) echo "GitHub token: not set (set CIWI_GITHUB_TOKEN before install to avoid API rate limits)" ;;
 esac
 echo "Logs:"
-echo "  tail -f ${LOG_DIR}/agent.err.log"
+echo "  tail -f ${LOG_DIR}/agent.log"
 echo "Log cap:"
 echo "  100MB via ${NEWSYSLOG_FILE} (agent + optional server logs)"
 echo

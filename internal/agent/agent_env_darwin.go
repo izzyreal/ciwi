@@ -44,7 +44,7 @@ func configureDarwinAgentFileLogging() {
 		if err != nil || strings.TrimSpace(home) == "" {
 			return
 		}
-		path = filepath.Join(home, "Library", "Logs", "ciwi", "agent.err.log")
+		path = filepath.Join(home, "Library", "Logs", "ciwi", "agent.log")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		slog.Warn("create agent log directory failed", "path", filepath.Dir(path), "error", err)

@@ -163,8 +163,8 @@ ExecStart=${BINARY_PATH} server
 Restart=always
 RestartSec=2
 WorkingDirectory=${DATA_DIR}
-StandardOutput=append:${LOG_DIR}/server.out.log
-StandardError=append:${LOG_DIR}/server.err.log
+StandardOutput=append:${LOG_DIR}/server.log
+StandardError=append:${LOG_DIR}/server.log
 
 [Install]
 WantedBy=multi-user.target
@@ -202,7 +202,7 @@ sudo chmod 0644 "${POLKIT_RULE_FILE}"
 
 echo "[6.5/7] Writing logrotate policy..."
 sudo tee "${LOGROTATE_FILE}" >/dev/null <<EOF
-${LOG_DIR}/server.out.log ${LOG_DIR}/server.err.log {
+${LOG_DIR}/server.log {
   size 100M
   rotate 3
   missingok

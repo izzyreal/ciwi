@@ -179,8 +179,8 @@ ExecStart=${BINARY_PATH} agent
 Restart=always
 RestartSec=2
 WorkingDirectory=${DATA_DIR}
-StandardOutput=append:${LOG_DIR}/agent.out.log
-StandardError=append:${LOG_DIR}/agent.err.log
+StandardOutput=append:${LOG_DIR}/agent.log
+StandardError=append:${LOG_DIR}/agent.log
 
 [Install]
 WantedBy=multi-user.target
@@ -188,7 +188,7 @@ EOF
 
 echo "[5.5/6] Writing logrotate policy..."
 sudo tee "${LOGROTATE_FILE}" >/dev/null <<EOF
-${LOG_DIR}/agent.out.log ${LOG_DIR}/agent.err.log {
+${LOG_DIR}/agent.log {
   size 100M
   rotate 3
   missingok
@@ -216,7 +216,7 @@ echo
 echo "Useful commands:"
 echo "  sudo systemctl status ${SERVICE_NAME}"
 echo "  sudo journalctl -u ${SERVICE_NAME} -f"
-echo "  sudo tail -f ${LOG_DIR}/agent.out.log ${LOG_DIR}/agent.err.log"
+echo "  sudo tail -f ${LOG_DIR}/agent.log"
 echo
 echo "To change target server:"
 echo "  sudoedit ${ENV_FILE}"

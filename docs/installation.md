@@ -26,7 +26,7 @@ Default paths:
 - DB: `/var/lib/ciwi/ciwi.db`
 - Artifacts: `/var/lib/ciwi/artifacts`
 - Update staging: `/var/lib/ciwi/updates`
-- Logs: `/var/log/ciwi/server.out.log`, `/var/log/ciwi/server.err.log`
+- Logs: `/var/log/ciwi/server.log`
 
 ## Linux agent (systemd)
 
@@ -63,6 +63,13 @@ sudo usermod -aG audio ciwi-agent
 sudo systemctl restart ciwi-agent
 id ciwi-agent; getent group docker; getent group audio
 ```
+
+Default paths:
+- Binary: `/usr/local/bin/ciwi`
+- Env file: `/etc/default/ciwi-agent`
+- Data dir: `/var/lib/ciwi-agent`
+- Workdir: `/var/lib/ciwi-agent/work`
+- Logs: `/var/log/ciwi-agent/agent.log`
 
 ## macOS agent (LaunchAgent)
 
@@ -110,6 +117,12 @@ launchctl bootout gui/$(id -u)/nl.izmar.ciwi.agent
 launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/nl.izmar.ciwi.agent.plist
 ```
 
+Default paths:
+- App bundle: `$HOME/Library/Application Support/ciwi/CiwiAgent.app`
+- Env file: `$HOME/Library/Application Support/ciwi/agent.env`
+- Workdir: `$HOME/.ciwi-agent/work`
+- Log file: `$HOME/Library/Logs/ciwi/agent.log`
+
 ## Windows agent (Service)
 
 Run in elevated PowerShell.
@@ -152,6 +165,13 @@ Invoke-WebRequest -Uri $uri -OutFile $script
 powershell -NoProfile -ExecutionPolicy Bypass -File $script
 ```
 
+Default paths:
+- Binary: `%ProgramFiles%\ciwi\ciwi.exe`
+- Env file: `%ProgramData%\ciwi-agent\agent.env`
+- Data dir: `%ProgramData%\ciwi-agent`
+- Workdir: `%ProgramData%\ciwi-agent\work`
+- Logs dir: `%ProgramData%\ciwi-agent\logs`
+
 ## Notes
 
 Installer scripts perform server identity checks via:
@@ -159,3 +179,4 @@ Installer scripts perform server identity checks via:
 - `GET /api/v1/server-info`
 
 For update behavior and self-update capability rules, see [`docs/operations.md`](operations.md).
+For a fuller path inventory across server and agent platforms, see [`docs/files.md`](files.md).
