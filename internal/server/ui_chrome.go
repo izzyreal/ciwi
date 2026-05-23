@@ -36,12 +36,14 @@ const uiPageChromeCSS = `
       margin-bottom: 16px;
       box-shadow: 0 8px 24px rgba(21,127,102,.08);
     }
-    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
+    .brand > div { min-width: 0; flex: 1 1 auto; }
     .brand img {
       width: 110px;
       height: 91px;
       object-fit: contain;
       display: block;
+      flex: 0 0 auto;
       image-rendering: crisp-edges;
       image-rendering: pixelated;
     }

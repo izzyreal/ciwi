@@ -9,7 +9,7 @@ const jobExecutionHTML = `<!doctype html>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <style>
 ` + uiPageChromeCSS + `
-    .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:nowrap; }
     .detail-split { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom: 16px; }
     .detail-split > .card { margin-bottom: 0; }
     .meta-grid { display:grid; grid-template-columns: 160px 1fr; gap:8px 12px; font-size:14px; }
@@ -32,6 +32,8 @@ const jobExecutionHTML = `<!doctype html>
       gap: 8px;
       align-items: center;
       flex-wrap: wrap;
+      justify-content: flex-end;
+      flex: 0 0 auto;
     }
     .rerun-action-wrap {
       position: relative;
@@ -55,6 +57,31 @@ const jobExecutionHTML = `<!doctype html>
     .status-blocked { color: #8a5a14; font-weight: 700; }
     .status-running { color: #a56a00; font-weight: 700; }
     .status-queued, .status-leased { color: var(--muted); font-weight: 700; }
+    .job-subtitle-detail {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #42574b;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      max-width: min(90vw, 960px);
+      min-width: 0;
+    }
+    .job-subtitle-detail code {
+      display: block;
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      background: #eef6f1;
+      border: 1px solid #d7e6dd;
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: #1f2a24;
+    }
     .log {
       margin: 0;
       background: #0f1412;
@@ -246,6 +273,11 @@ const jobExecutionHTML = `<!doctype html>
     .req-issues ul { margin:6px 0 0 18px; padding:0; }
     @media (max-width: 980px) {
       .detail-split { grid-template-columns: 1fr; }
+      .top { flex-wrap: wrap; }
+      .job-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
     }
   </style>
 </head>

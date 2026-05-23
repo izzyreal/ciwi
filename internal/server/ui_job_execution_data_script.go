@@ -64,6 +64,31 @@ const jobExecutionDataJS = `
       link.href = '/';
       link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
     }
+
+    function activeStepIndexFromCurrentStep(currentStep) {
+      const text = String(currentStep || '').trim();
+      if (!text) return -1;
+      const m = text.match(/^Step\s+(\d+)(?:\/\d+)?\s*:/i);
+      if (!m) return -1;
+      const idx = Number.parseInt(String(m[1] || '').trim(), 10);
+      if (!Number.isFinite(idx) || idx <= 0) return -1;
+      return idx - 1;
+    }
+
+    function subtitleStepDetail(job) {
+      const stepPlan = Array.isArray(job && job.step_plan) ? job.step_plan : [];
+      const idx = activeStepIndexFromCurrentStep(job && job.current_step);
+      if (idx < 0 || idx >= stepPlan.length) return '';
+      const step = stepPlan[idx] || {};
+      const script = String(step.script || '').trim();
+      if (script) return script.replace(/\s+/g, ' ');
+      const kind = String(step.kind || '').trim();
+      const testName = String(step.test_name || '').trim();
+      if (kind === 'test' && testName) return 'test ' + testName;
+      if (kind === 'dryrun_skip') return 'skipped during dry run';
+      return '';
+    }
+
     async function resolveProjectIDByName(projectName) {
       const name = String(projectName || '').trim();
       if (!name) return '';
@@ -270,6 +295,10 @@ const jobExecutionDataJS = `
         let subtitle = 'Status: <span class="' + statusClassForJob(job) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
         if (stepDescription) {
           subtitle += ' <span class="label"> - ' + escapeHtml(stepDescription) + '</span>';
+        }
+        const stepDetail = subtitleStepDetail(job);
+        if (stepDetail) {
+          subtitle += '<div class="job-subtitle-detail">Command: <code>' + escapeHtml(stepDetail) + '</code></div>';
         }
         document.getElementById('subtitle').innerHTML = subtitle;
 
