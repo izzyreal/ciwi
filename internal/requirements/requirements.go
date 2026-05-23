@@ -51,6 +51,13 @@ func DiagnoseUnmetRequirements(required map[string]string, agents []AgentSnapsho
 			continue
 		}
 
+		if strings.HasPrefix(key, "requires.container.tool.") {
+			// Container tool requirements are validated by the agent runtime
+			// probe after lease, so queued-job diagnosis should not treat them
+			// as agent-selection mismatches.
+			continue
+		}
+
 		if key == "shell" {
 			requiredShell := strings.TrimSpace(value)
 			ok := false

@@ -67,3 +67,32 @@ func TestDiagnoseUnmetRequirementsNoAgents(t *testing.T) {
 		t.Fatalf("unexpected reasons: %v", reasons)
 	}
 }
+
+func TestDiagnoseUnmetRequirementsIgnoresContainerToolRequirements(t *testing.T) {
+	required := map[string]string{
+		"os":                            "linux",
+		"arch":                          "amd64",
+		"shell":                         "posix",
+		"requires.tool.docker":          "*",
+		"requires.container.tool.cmake": "*",
+		"requires.container.tool.ninja": "*",
+		"requires.container.tool.ccache": "*",
+	}
+
+	agents := []AgentSnapshot{
+		{
+			ID:   "agent-a",
+			OS:   "linux",
+			Arch: "amd64",
+			Capabilities: map[string]string{
+				"shells":      "posix",
+				"tool.docker": "28.0.0",
+			},
+		},
+	}
+
+	reasons := DiagnoseUnmetRequirements(required, agents)
+	if len(reasons) != 0 {
+		t.Fatalf("expected container tool requirements to be ignored in diagnosis, got %v", reasons)
+	}
+}
