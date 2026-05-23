@@ -60,7 +60,7 @@ const projectHTML = `<!doctype html>
           <div id="subtitle" class="muted">Loading...</div>
         </div>
       </div>
-      <div><a class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a></div>
+      <div><a id="backLink" class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a></div>
       <div id="runtimeStateBanner" class="runtime-banner"></div>
     </div>
 
@@ -89,6 +89,19 @@ const projectHTML = `<!doctype html>
     function projectIdFromPath() {
       const parts = window.location.pathname.split('/').filter(Boolean);
       return parts.length >= 2 ? parts[1] : '';
+    }
+    function setBackLink() {
+      const link = document.getElementById('backLink');
+      if (!link) return;
+      const params = new URLSearchParams(window.location.search || '');
+      const back = String(params.get('back') || '').trim();
+      if (back && back.startsWith('/')) {
+        link.href = back;
+        link.innerHTML = (back === '/settings' ? 'Back to Global Settings' : 'Back to Projects') + ' <span class="nav-emoji" aria-hidden="true">↩</span>';
+        return;
+      }
+      link.href = '/';
+      link.innerHTML = 'Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span>';
     }
     let currentProjectName = '';
     let currentProjectID = 0;
@@ -664,6 +677,7 @@ const projectHTML = `<!doctype html>
     }
 
     refreshGuard.bindSelectionListener();
+    setBackLink();
     tick();
     setInterval(() => {
       refreshRuntimeStateBanner('runtimeStateBanner');

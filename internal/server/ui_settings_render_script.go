@@ -58,7 +58,7 @@ const settingsRenderJS = `
           ? escapeHtml(formatTimestamp(lastUpdated))
           : '<span style="color:#5f6f67;">n/a</span>';
         topInfo.innerHTML =
-          '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + escapeHtml(project.name) + '</a></strong> ' +
+          '<strong>Project: <a class="job-link" href="/projects/' + project.id + '?back=' + encodeURIComponent('/settings') + '">' + escapeHtml(project.name) + '</a></strong> ' +
           '<span class="pill">' + escapeHtml(project.repo_url || '') + '</span> ' +
           '<span class="pill">' + escapeHtml('branch:' + projectRepoRef) + '</span> ' +
           '<span class="pill">' + escapeHtml(project.config_file || project.config_path || '') + '</span>' +
