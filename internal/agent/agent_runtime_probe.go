@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -17,6 +18,8 @@ import (
 
 const containerToolRequirementPrefix = "requires.container.tool."
 const hostToolRequirementPrefix = "requires.tool."
+
+var runtimeContainerStartTimeout = 60 * time.Second
 
 func collectRuntimeCapabilities(agentCapabilities map[string]string, probeContainer string) map[string]string {
 	out := map[string]string{}
@@ -302,11 +305,17 @@ func startRuntimeContainer(ctx context.Context, cfg runtimeContainerConfig) erro
 	}
 	args = append(args, image, "sleep", "infinity")
 
-	startCtx, startCancel := context.WithTimeout(ctx, 15*time.Second)
+	startCtx, startCancel := context.WithTimeout(ctx, runtimeContainerStartTimeout)
 	defer startCancel()
 	if out, err := runCommandCapture(startCtx, "", "docker", args...); err != nil {
 		cmdLine := "docker " + shellJoin(args)
 		out = strings.TrimSpace(out)
+		if errors.Is(startCtx.Err(), context.DeadlineExceeded) {
+			if out != "" {
+				return fmt.Errorf("start runtime container %q from %q with %s timed out after %s; output: %s", name, image, cmdLine, runtimeContainerStartTimeout, out)
+			}
+			return fmt.Errorf("start runtime container %q from %q with %s timed out after %s", name, image, cmdLine, runtimeContainerStartTimeout)
+		}
 		if out != "" {
 			return fmt.Errorf("start runtime container %q from %q with %s: %w; output: %s", name, image, cmdLine, err, out)
 		}

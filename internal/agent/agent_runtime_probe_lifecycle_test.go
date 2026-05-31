@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeFakeDocker(t *testing.T, scriptBody string) (binDir string, logPath string) {
@@ -120,6 +121,39 @@ kill -9 $$
 	}
 	if !strings.Contains(msg, "docker: cannot allocate memory") {
 		t.Fatalf("expected docker output in error, got: %v", err)
+	}
+}
+
+func TestStartRuntimeContainerReportsTimeoutClearly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake docker shell script tests are posix-only")
+	}
+
+	binDir, _ := writeFakeDocker(t, `
+/bin/sleep 5
+`)
+	t.Setenv("PATH", binDir)
+	t.Setenv("CIWI_DOCKER_LOG", filepath.Join(binDir, "docker.log"))
+
+	prev := runtimeContainerStartTimeout
+	runtimeContainerStartTimeout = 50 * time.Millisecond
+	t.Cleanup(func() {
+		runtimeContainerStartTimeout = prev
+	})
+
+	err := startRuntimeContainer(context.Background(), runtimeContainerConfig{
+		name:  "ciwi-probe-timeout",
+		image: "ubuntu-vmpc",
+	})
+	if err == nil {
+		t.Fatal("expected startRuntimeContainer to time out")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "timed out after 50ms") {
+		t.Fatalf("expected timeout detail in error, got: %v", err)
+	}
+	if strings.Contains(msg, "signal: killed") {
+		t.Fatalf("expected timeout error instead of raw signal, got: %v", err)
 	}
 }
 
