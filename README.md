@@ -38,6 +38,7 @@ Note on artifact log verbosity:
 - Installation scripts: [`docs/installation.md`](docs/installation.md)
 - Env vars, prerequisites, tool requirements: [`docs/configuration.md`](docs/configuration.md)
 - Pipeline config and runtime model: [`docs/pipelines.md`](docs/pipelines.md)
+- Progress indicators and duration estimates: [`docs/progress-indicators.md`](docs/progress-indicators.md)
 - Backend API reference (grouped by consumer): [`docs/api.md`](docs/api.md)
 - Vault/AppRole integration: [`docs/vault.md`](docs/vault.md)
 - Operations (update policy, maintenance, troubleshooting): [`docs/operations.md`](docs/operations.md)

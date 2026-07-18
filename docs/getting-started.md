@@ -72,6 +72,7 @@ In manual mode, read [`docs/configuration.md`](configuration.md) for env vars an
 ## Next
 
 - Config format and pipeline behavior: [`docs/pipelines.md`](pipelines.md)
+- Progress indicators and historical duration estimates: [`docs/progress-indicators.md`](progress-indicators.md)
 - Host/container tool requirements: [`docs/configuration.md`](configuration.md)
 - Runtime architecture and flows: [`docs/architecture.md`](architecture.md)
 - Runtime operations (including agent activate/deactivate): [`docs/operations.md`](operations.md)
