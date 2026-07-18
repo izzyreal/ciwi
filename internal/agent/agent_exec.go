@@ -314,42 +314,60 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	runStart := time.Now()
 	if len(scriptSteps) == 0 {
-		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, execContainer, runEnv, &output, progress, "Running job script", job.SensitiveValues, traceShell)
+		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, execContainer, runEnv, &output, nil, progress, "Running job script", job.SensitiveValues, traceShell)
 	} else {
 		for _, step := range scriptSteps {
 			currentStep := formatCurrentStep(step.meta)
 			slog.Info("job step started", "job_execution_id", job.ID, "current_step", currentStep)
+			stepStart := time.Now().UTC()
+			eventYAMLLiteral := redactSensitive(step.meta.yamlLiteral, job.SensitiveValues)
+			eventScript := redactSensitive(step.script, job.SensitiveValues)
 			if step.meta.kind == "dryrun_skip" {
 				fmt.Fprintf(&output, "[dry-run] skipped step: %s\n", strings.TrimSpace(step.meta.name))
 			}
 			events := []protocol.JobExecutionEvent{
 				{
-					Type: protocol.JobExecutionEventTypeStepStarted,
-					Step: &protocol.JobStepPlanItem{
-						Index:          step.meta.index,
-						Total:          step.meta.total,
-						Name:           step.meta.name,
-						Kind:           step.meta.kind,
-						TestName:       step.meta.testName,
-						TestFormat:     step.meta.testFormat,
-						TestReport:     step.meta.testReport,
-						CoverageFormat: step.meta.coverageFormat,
-						CoverageReport: step.meta.coverageReport,
-					},
-					TimestampUTC: time.Now().UTC(),
+					Type:         protocol.JobExecutionEventTypeStepStarted,
+					Step:         jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript),
+					TimestampUTC: stepStart,
 				},
 			}
 			if err := reportRunningUpdate(currentStep, events, nil); err != nil {
 				return fmt.Errorf("report step status: %w", err)
 			}
 			if step.meta.kind == "dryrun_skip" {
+				skippedMessage := fmt.Sprintf("skipped step: %s", strings.TrimSpace(step.meta.name))
+				_ = reportRunningUpdate(currentStep, []protocol.JobExecutionEvent{
+					{
+						Type:         protocol.JobExecutionEventTypeStepOutput,
+						Step:         jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript),
+						Output:       redactSensitive("[dry-run] "+skippedMessage+"\n", job.SensitiveValues),
+						TimestampUTC: time.Now().UTC(),
+					},
+					{
+						Type:         protocol.JobExecutionEventTypeStepFinished,
+						Step:         jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript),
+						Message:      "skipped during dry run",
+						DurationMS:   time.Since(stepStart).Milliseconds(),
+						TimestampUTC: time.Now().UTC(),
+					},
+				}, nil)
 				continue
 			}
 			stepRunEnv := runEnv
 			if len(step.env) > 0 {
 				stepRunEnv = mergeEnv(runEnv, step.env)
 			}
-			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, stepRunEnv, &output, progress, currentStep, job.SensitiveValues, traceShell)
+			var stepOutput syncBuffer
+			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, stepRunEnv, &output, &stepOutput, progress, currentStep, job.SensitiveValues, traceShell)
+			stepEvents := []protocol.JobExecutionEvent{
+				{
+					Type:         protocol.JobExecutionEventTypeStepOutput,
+					Step:         jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript),
+					Output:       redactSensitive(stepOutput.String(), job.SensitiveValues),
+					TimestampUTC: time.Now().UTC(),
+				},
+			}
 			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
 				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)
 				if parseErr != nil {
@@ -375,7 +393,17 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			}
 			if stepErr != nil {
 				timedOut := runCtx.Err() == context.DeadlineExceeded
+				finishedEvent := protocol.JobExecutionEvent{
+					Type:         protocol.JobExecutionEventTypeStepFinished,
+					Step:         jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript),
+					DurationMS:   time.Since(stepStart).Milliseconds(),
+					TimestampUTC: time.Now().UTC(),
+				}
+				if code := exitCodeFromErr(stepErr); code != nil {
+					finishedEvent.ExitCode = code
+				}
 				if timedOut {
+					finishedEvent.Error = fmt.Sprintf("timed out after %d seconds", job.TimeoutSeconds)
 					fmt.Fprintf(&output, "[control] job timed out after %d seconds\n", job.TimeoutSeconds)
 				}
 				scriptLiteral := strings.TrimSpace(step.script)
@@ -385,13 +413,24 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				if timedOut {
 					fmt.Fprintf(&output, "[run] step failed: %s (timed out after %d seconds)\n", currentStep, job.TimeoutSeconds)
 				} else if code := exitCodeFromErr(stepErr); code != nil {
+					finishedEvent.Error = fmt.Sprintf("exit=%d", *code)
 					fmt.Fprintf(&output, "[run] step failed: %s (exit=%d)\n", currentStep, *code)
 				} else {
+					finishedEvent.Error = stepErr.Error()
 					fmt.Fprintf(&output, "[run] step failed: %s (%v)\n", currentStep, stepErr)
 				}
+				stepEvents = append(stepEvents, finishedEvent)
+				_ = reportRunningUpdate(currentStep, stepEvents, nil)
 				err = fmt.Errorf("%s: %w", currentStep, stepErr)
 				break
 			}
+			stepEvents = append(stepEvents, protocol.JobExecutionEvent{
+				Type:         protocol.JobExecutionEventTypeStepFinished,
+				Step:         jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript),
+				DurationMS:   time.Since(stepStart).Milliseconds(),
+				TimestampUTC: time.Now().UTC(),
+			})
+			_ = reportRunningUpdate(currentStep, stepEvents, nil)
 		}
 	}
 	duration := time.Since(runStart).Round(time.Millisecond)
@@ -594,6 +633,7 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 				index:          index,
 				total:          itemTotal,
 				name:           name,
+				yamlLiteral:    strings.TrimSpace(step.YAMLLiteral),
 				kind:           kind,
 				testName:       strings.TrimSpace(step.TestName),
 				testFormat:     strings.TrimSpace(step.TestFormat),

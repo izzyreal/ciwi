@@ -279,13 +279,17 @@ type JobCacheStats struct {
 }
 
 const (
-	JobExecutionEventTypeStepStarted = "step.started"
+	JobExecutionEventTypeStepStarted   = "step.started"
+	JobExecutionEventTypeStepOutput    = "step.output"
+	JobExecutionEventTypeStepFinished  = "step.finished"
+	JobExecutionEventTypeSystemMessage = "system.message"
 )
 
 type JobStepPlanItem struct {
 	Index           int                 `json:"index"`
 	Total           int                 `json:"total,omitempty"`
 	Name            string              `json:"name,omitempty"`
+	YAMLLiteral     string              `json:"yaml_literal,omitempty"`
 	Script          string              `json:"script,omitempty"`
 	Kind            string              `json:"kind,omitempty"`
 	Env             map[string]string   `json:"env,omitempty"`
@@ -302,6 +306,11 @@ type JobExecutionEvent struct {
 	Type         string           `json:"type"`
 	TimestampUTC time.Time        `json:"timestamp_utc,omitempty"`
 	Step         *JobStepPlanItem `json:"step,omitempty"`
+	Message      string           `json:"message,omitempty"`
+	Output       string           `json:"output,omitempty"`
+	Error        string           `json:"error,omitempty"`
+	ExitCode     *int             `json:"exit_code,omitempty"`
+	DurationMS   int64            `json:"duration_ms,omitempty"`
 }
 
 type TestCase struct {

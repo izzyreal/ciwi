@@ -127,6 +127,37 @@ const jobExecutionHTML = `<!doctype html>
       color: #b7d3c7;
       font: inherit;
     }
+    details.log-step {
+      margin: 8px 0;
+      border-left: 3px solid #5a806c;
+      background: rgba(35, 58, 48, 0.55);
+      border-radius: 6px;
+      padding: 6px 10px;
+    }
+    details.log-step > summary {
+      cursor: pointer;
+      color: #dff3ea;
+      font-weight: 700;
+    }
+    .log-step-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0;
+      color: #a7c7b9;
+      font-size: 11px;
+    }
+    .log-step-label {
+      color: #9bc4b1;
+      font-weight: 700;
+      margin: 8px 0 3px;
+    }
+    .log-step pre {
+      margin: 0 0 8px;
+      white-space: pre-wrap;
+      color: #cde7dc;
+      font: inherit;
+    }
     .tok-version { color: #ffd68c; font-weight: 700; }
     .tok-sha { color: #8fd8ff; }
     .tok-duration { color: #a6e3a1; font-weight: 700; }
@@ -222,6 +253,12 @@ const jobExecutionHTML = `<!doctype html>
       gap: 8px;
       margin: 0 0 10px;
       flex-wrap: wrap;
+      align-items: center;
+    }
+    .log-download-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
     .log-search-input {
       min-width: 180px;
@@ -332,6 +369,14 @@ const jobExecutionHTML = `<!doctype html>
       <div class="log-toolbar">
         <button id="tailToggleBtn" class="copy-btn tail-on" type="button">Tailing: On</button>
         <button id="copyOutputBtn" class="copy-btn" type="button">Copy Output</button>
+        <span class="log-download-wrap">
+          <a id="downloadCleanLogBtn" class="copy-btn nav-btn" href="#">Download Clean Log</a>
+          <span class="mode-info log-info" tabindex="0" aria-label="Clean log info" data-log-info="clean"><span aria-hidden="true">ⓘ</span></span>
+        </span>
+        <span class="log-download-wrap">
+          <a id="downloadRawLogBtn" class="copy-btn nav-btn" href="#">Download Raw Log</a>
+          <span class="mode-info log-info" tabindex="0" aria-label="Raw log info" data-log-info="raw"><span aria-hidden="true">ⓘ</span></span>
+        </span>
         <input id="logSearchInput" class="log-search-input" type="search" placeholder="Search output" aria-label="Search output" />
         <button id="logSearchPrevBtn" class="copy-btn" type="button" aria-label="Previous match">▲</button>
         <button id="logSearchNextBtn" class="copy-btn" type="button" aria-label="Next match">▼</button>

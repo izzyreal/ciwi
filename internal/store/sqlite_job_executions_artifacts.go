@@ -133,6 +133,21 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 			if event.Step != nil {
 				payload["step"] = event.Step
 			}
+			if strings.TrimSpace(event.Message) != "" {
+				payload["message"] = event.Message
+			}
+			if event.Output != "" {
+				payload["output"] = event.Output
+			}
+			if strings.TrimSpace(event.Error) != "" {
+				payload["error"] = event.Error
+			}
+			if event.ExitCode != nil {
+				payload["exit_code"] = *event.ExitCode
+			}
+			if event.DurationMS > 0 {
+				payload["duration_ms"] = event.DurationMS
+			}
 			payloadJSON, _ := json.Marshal(payload)
 			if _, err := tx.Exec(`
 				INSERT INTO job_execution_events (job_execution_id, event_type, timestamp_utc, payload_json, created_utc)
@@ -182,6 +197,24 @@ func (s *Store) ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEve
 				if err := json.Unmarshal(raw, &step); err == nil {
 					event.Step = &step
 				}
+			}
+			if raw := payload["message"]; len(raw) > 0 {
+				_ = json.Unmarshal(raw, &event.Message)
+			}
+			if raw := payload["output"]; len(raw) > 0 {
+				_ = json.Unmarshal(raw, &event.Output)
+			}
+			if raw := payload["error"]; len(raw) > 0 {
+				_ = json.Unmarshal(raw, &event.Error)
+			}
+			if raw := payload["exit_code"]; len(raw) > 0 {
+				var exitCode int
+				if err := json.Unmarshal(raw, &exitCode); err == nil {
+					event.ExitCode = &exitCode
+				}
+			}
+			if raw := payload["duration_ms"]; len(raw) > 0 {
+				_ = json.Unmarshal(raw, &event.DurationMS)
 			}
 		}
 		out = append(out, event)

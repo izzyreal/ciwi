@@ -156,6 +156,7 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		if selection != nil && selection.DryRun && step.SkipDryRun {
 			stepPlan = append(stepPlan, protocol.JobStepPlanItem{
 				Name:            describeSkippedPipelineStepLiteral(step, idx, pipelineJobID),
+				YAMLLiteral:     pipelineStepYAMLLiteral(step),
 				Kind:            "dryrun_skip",
 				Env:             stepEnv,
 				VaultConnection: stepVaultConnection,
@@ -179,6 +180,7 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 			rendered = append(rendered, command)
 			stepPlan = append(stepPlan, protocol.JobStepPlanItem{
 				Name:            "test " + name,
+				YAMLLiteral:     pipelineStepYAMLLiteral(step),
 				Script:          command,
 				Kind:            "test",
 				Env:             stepEnv,
@@ -199,6 +201,7 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		rendered = append(rendered, line)
 		stepPlan = append(stepPlan, protocol.JobStepPlanItem{
 			Name:            describePipelineStep(step, idx, pipelineJobID),
+			YAMLLiteral:     pipelineStepYAMLLiteral(step),
 			Script:          line,
 			Env:             stepEnv,
 			VaultConnection: stepVaultConnection,

@@ -22,6 +22,7 @@ type Store interface {
 	DeleteQueuedJobExecution(id string) error
 	UpdateJobExecutionStatus(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	AppendJobExecutionEvents(id string, events []protocol.JobExecutionEvent) error
+	ListJobExecutionEvents(id string) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error)
 	SaveJobExecutionArtifacts(id string, artifacts []protocol.JobExecutionArtifact) error
 	GetJobExecutionTestReport(id string) (protocol.JobExecutionTestReport, bool, error)
@@ -152,6 +153,16 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 
 	if parsed.IsResource("artifacts") {
 		handleJobArtifacts(w, r, deps, jobID)
+		return
+	}
+
+	if parsed.IsResource("events") {
+		handleJobEvents(w, r, deps, jobID)
+		return
+	}
+
+	if parsed.IsResource("log") {
+		handleJobLog(w, r, deps, jobID)
 		return
 	}
 
@@ -451,6 +462,7 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 			Index:           step.Index,
 			Total:           step.Total,
 			Name:            step.Name,
+			YAMLLiteral:     step.YAMLLiteral,
 			Script:          step.Script,
 			Kind:            step.Kind,
 			Env:             cloneStringMap(step.Env),

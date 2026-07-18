@@ -23,6 +23,7 @@ type stubStore struct {
 	deleteQueuedJobExecutionFn   func(id string) error
 	updateJobExecutionStatusFn   func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	appendJobExecutionEventsFn   func(id string, events []protocol.JobExecutionEvent) error
+	listJobExecutionEventsFn     func(id string) ([]protocol.JobExecutionEvent, error)
 	listJobExecutionArtifactsFn  func(id string) ([]protocol.JobExecutionArtifact, error)
 	saveJobExecutionArtifactsFn  func(id string, artifacts []protocol.JobExecutionArtifact) error
 	getJobExecutionTestReportFn  func(id string) (protocol.JobExecutionTestReport, bool, error)
@@ -71,6 +72,13 @@ func (s *stubStore) AppendJobExecutionEvents(id string, events []protocol.JobExe
 		return s.appendJobExecutionEventsFn(id, events)
 	}
 	return fmt.Errorf("unexpected AppendJobExecutionEvents call")
+}
+
+func (s *stubStore) ListJobExecutionEvents(id string) ([]protocol.JobExecutionEvent, error) {
+	if s.listJobExecutionEventsFn != nil {
+		return s.listJobExecutionEventsFn(id)
+	}
+	return nil, fmt.Errorf("unexpected ListJobExecutionEvents call")
 }
 
 func (s *stubStore) ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error) {
@@ -232,6 +240,109 @@ func TestHandleByIDStatusUpdatesAndCallbacks(t *testing.T) {
 	}
 	if !appendCalled || !seenCalled || !updatedCalled {
 		t.Fatalf("expected callbacks called append=%v seen=%v updated=%v", appendCalled, seenCalled, updatedCalled)
+	}
+}
+
+func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
+	store := &stubStore{}
+	exitCode := 2
+	started := time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC)
+	finished := started.Add(2 * time.Second)
+	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
+		return protocol.JobExecution{
+			ID:          id,
+			Status:      protocol.JobExecutionStatusFailed,
+			StartedUTC:  started,
+			FinishedUTC: finished,
+			ExitCode:    &exitCode,
+			Error:       "failed",
+		}, nil
+	}
+	store.listJobExecutionEventsFn = func(id string) ([]protocol.JobExecutionEvent, error) {
+		return []protocol.JobExecutionEvent{
+			{
+				Type:         protocol.JobExecutionEventTypeStepStarted,
+				TimestampUTC: started,
+				Step:         &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "build", YAMLLiteral: "run: go test {{pkg}}", Script: "go test ./..."},
+			},
+			{
+				Type:         protocol.JobExecutionEventTypeStepOutput,
+				TimestampUTC: started.Add(time.Second),
+				Step:         &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "build", YAMLLiteral: "run: go test {{pkg}}", Script: "go test ./..."},
+				Output:       "\x1b[31mFAIL\x1b[0m\r\n",
+			},
+			{
+				Type:         protocol.JobExecutionEventTypeStepFinished,
+				TimestampUTC: finished,
+				Step:         &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "build", YAMLLiteral: "run: go test {{pkg}}", Script: "go test ./..."},
+				Error:        "exit=2",
+				ExitCode:     &exitCode,
+				DurationMS:   2000,
+			},
+		}, nil
+	}
+
+	recClean := httptest.NewRecorder()
+	reqClean := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-1/log?format=clean", nil)
+	HandleByID(recClean, reqClean, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
+	if recClean.Code != http.StatusOK {
+		t.Fatalf("expected clean 200, got %d: %s", recClean.Code, recClean.Body.String())
+	}
+	clean := recClean.Body.String()
+	if !strings.Contains(clean, "Step 1/1: build") || !strings.Contains(clean, "run: go test {{pkg}}") || !strings.Contains(clean, "go test ./...") || !strings.Contains(clean, "FAIL") || strings.Contains(clean, "\x1b[31m") {
+		t.Fatalf("unexpected clean log:\n%s", clean)
+	}
+	if got := recClean.Header().Get("Content-Disposition"); !strings.Contains(got, "ciwi-job-1-clean.log") {
+		t.Fatalf("unexpected content disposition %q", got)
+	}
+
+	recRaw := httptest.NewRecorder()
+	reqRaw := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-1/log?format=raw", nil)
+	HandleByID(recRaw, reqRaw, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
+	if recRaw.Code != http.StatusOK {
+		t.Fatalf("expected raw 200, got %d: %s", recRaw.Code, recRaw.Body.String())
+	}
+	if raw := recRaw.Body.String(); !strings.Contains(raw, "\x1b[31mFAIL\x1b[0m") {
+		t.Fatalf("expected raw log to preserve ANSI output, got:\n%s", raw)
+	}
+}
+
+func TestHandleByIDLogDownloadFallsBackForStartOnlyEvents(t *testing.T) {
+	store := &stubStore{}
+	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
+		return protocol.JobExecution{
+			ID:     id,
+			Status: protocol.JobExecutionStatusSucceeded,
+			Output: "\x1b[32mlegacy output\x1b[0m\n",
+		}, nil
+	}
+	store.listJobExecutionEventsFn = func(id string) ([]protocol.JobExecutionEvent, error) {
+		return []protocol.JobExecutionEvent{{
+			Type:         protocol.JobExecutionEventTypeStepStarted,
+			TimestampUTC: time.Now().UTC(),
+			Step:         &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "TAG=\"${CIWI PIPELINE TAG}\"\ngit tag"},
+		}}, nil
+	}
+
+	recRaw := httptest.NewRecorder()
+	reqRaw := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-legacy/log?format=raw", nil)
+	HandleByID(recRaw, reqRaw, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
+	if recRaw.Code != http.StatusOK {
+		t.Fatalf("expected raw 200, got %d: %s", recRaw.Code, recRaw.Body.String())
+	}
+	if raw := recRaw.Body.String(); !strings.Contains(raw, "\x1b[32mlegacy output\x1b[0m") {
+		t.Fatalf("expected raw fallback to legacy output, got:\n%s", raw)
+	}
+
+	recClean := httptest.NewRecorder()
+	reqClean := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-legacy/log?format=clean", nil)
+	HandleByID(recClean, reqClean, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
+	if recClean.Code != http.StatusOK {
+		t.Fatalf("expected clean 200, got %d: %s", recClean.Code, recClean.Body.String())
+	}
+	clean := recClean.Body.String()
+	if !strings.Contains(clean, "legacy output") || strings.Contains(clean, "\x1b[32m") {
+		t.Fatalf("expected clean fallback to stripped legacy output, got:\n%s", clean)
 	}
 }
 

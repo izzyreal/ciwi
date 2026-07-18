@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -25,6 +26,7 @@ func runJobScript(
 	container *executionContainerContext,
 	env []string,
 	output *syncBuffer,
+	stepOutput *syncBuffer,
 	progress *outputReportState,
 	defaultCurrentStep string,
 	sensitive []string,
@@ -70,8 +72,12 @@ func runJobScript(
 		cmd.Env = env
 	}
 	prepareCommandForCancellation(cmd)
-	cmd.Stdout = output
-	cmd.Stderr = output
+	var writer io.Writer = output
+	if stepOutput != nil {
+		writer = &syncBufferTee{primary: output, secondary: stepOutput}
+	}
+	cmd.Stdout = writer
+	cmd.Stderr = writer
 
 	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, progress, sensitive, defaultCurrentStep)
 	defer stopStreaming()
@@ -217,6 +223,11 @@ type syncBuffer struct {
 	b  bytes.Buffer
 }
 
+type syncBufferTee struct {
+	primary   *syncBuffer
+	secondary *syncBuffer
+}
+
 type outputReportState struct {
 	mu                 sync.Mutex
 	sentRawLen         int
@@ -233,6 +244,20 @@ func (s *syncBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.Write(p)
+}
+
+func (s *syncBufferTee) Write(p []byte) (int, error) {
+	if s.primary != nil {
+		if _, err := s.primary.Write(p); err != nil {
+			return 0, err
+		}
+	}
+	if s.secondary != nil {
+		if _, err := s.secondary.Write(p); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
 }
 
 func (s *syncBuffer) WriteString(str string) (int, error) {

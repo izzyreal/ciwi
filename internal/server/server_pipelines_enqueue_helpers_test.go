@@ -70,6 +70,7 @@ func TestCloneJobStepPlan(t *testing.T) {
 		Index:           1,
 		Total:           2,
 		Name:            "compile",
+		YAMLLiteral:     "run: cmake --build .",
 		Script:          "cmake --build .",
 		Kind:            "run",
 		Env:             map[string]string{"GITHUB_TOKEN": "{{ secret.github-secret }}"},

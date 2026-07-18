@@ -3,12 +3,15 @@ package agent
 import (
 	"fmt"
 	"strings"
+
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 type stepMarkerMeta struct {
 	index          int
 	total          int
 	name           string
+	yamlLiteral    string
 	kind           string
 	testName       string
 	testFormat     string
@@ -28,4 +31,20 @@ func formatCurrentStep(meta stepMarkerMeta) string {
 		return fmt.Sprintf("Step %d/%d: %s", meta.index, meta.total, name)
 	}
 	return fmt.Sprintf("Step %d: %s", meta.index, name)
+}
+
+func jobExecutionEventStep(meta stepMarkerMeta, yamlLiteral, script string) *protocol.JobStepPlanItem {
+	return &protocol.JobStepPlanItem{
+		Index:          meta.index,
+		Total:          meta.total,
+		Name:           meta.name,
+		Kind:           meta.kind,
+		YAMLLiteral:    yamlLiteral,
+		Script:         script,
+		TestName:       meta.testName,
+		TestFormat:     meta.testFormat,
+		TestReport:     meta.testReport,
+		CoverageFormat: meta.coverageFormat,
+		CoverageReport: meta.coverageReport,
+	}
 }

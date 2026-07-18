@@ -739,6 +739,130 @@ const jobExecutionRenderJS = `
       return '<details class="log-fold"><summary>git detached HEAD advice (collapsed)</summary><pre>' + escapeHtml(text) + '</pre></details>';
     }
 
+    function stepEventTitle(step) {
+      step = step || {};
+      const idx = Number(step.index || 0);
+      const total = Number(step.total || 0);
+      let name = String(step.name || '').trim();
+      if (name.indexOf('\n') >= 0) {
+        name = name.split('\n').map(s => s.trim()).filter(Boolean)[0] || name;
+      }
+      name = name.replace(/\s+/g, ' ');
+      if (!name) name = idx > 0 ? ('Step ' + idx) : 'Step';
+      name = name.replace(/_/g, ' ');
+      if (idx > 0 && total > 0) return 'Step ' + idx + '/' + total + ': ' + name;
+      if (idx > 0) return 'Step ' + idx + ': ' + name;
+      return name;
+    }
+
+    function structuredStepGroups(events) {
+      const groups = [];
+      const byIndex = Object.create(null);
+      (Array.isArray(events) ? events : []).forEach(ev => {
+        if (!ev || !ev.step) return;
+        const step = ev.step || {};
+        const idx = Number(step.index || 0) || (groups.length + 1);
+        let group = byIndex[idx];
+        if (!group) {
+          group = { key: String(idx), step: step, started: '', output: '', finish: null };
+          byIndex[idx] = group;
+          groups.push(group);
+        }
+        if (!group.step || !String(group.step.name || '').trim()) group.step = step;
+        if (ev.type === 'step.started') group.started = String(ev.timestamp_utc || '');
+        if (ev.type === 'step.output') group.output += String(ev.output || '');
+        if (ev.type === 'step.finished') group.finish = ev;
+      });
+      groups.sort((a, b) => Number(a.key) - Number(b.key));
+      return groups;
+    }
+
+    function hasStructuredLogEvents(events) {
+      return (Array.isArray(events) ? events : []).some(ev => ev && ev.step && (ev.type === 'step.started' || ev.type === 'step.output' || ev.type === 'step.finished'));
+    }
+
+    function hasCompleteStructuredLogEvents(events) {
+      return (Array.isArray(events) ? events : []).some(ev => ev && ev.step && (ev.type === 'step.output' || ev.type === 'step.finished'));
+    }
+
+    // CIWI_LEGACY_LOG_FALLBACK: remove with historical start-only step event support.
+    function legacyFallbackCommandFromStepName(step) {
+      const name = String((step && step.name) || '').trim();
+      if (name.indexOf('\n') < 0) return '';
+      return name.split('\n').map(s => s.trimEnd()).filter(Boolean).join('\n');
+    }
+
+    function renderStructuredOutputLog(job, events) {
+      const groups = structuredStepGroups(events);
+      if (!groups.length) return renderOutputLog((job && job.output) || '');
+      const activeIdx = activeStepIndexFromCurrentStep(job && job.current_step);
+      return groups.map((group, pos) => {
+        const finish = group.finish || null;
+        const failed = !!(finish && (String(finish.error || '').trim() || finish.exit_code !== null && finish.exit_code !== undefined));
+        const running = activeIdx === pos && isRunningJobStatus((job && job.status) || '');
+        const remembered = (typeof logStepOpenState !== 'undefined') ? logStepOpenState[group.key] : undefined;
+        const open = (remembered === true || remembered === false) ? remembered : (failed || running || pos === 0);
+        const meta = [];
+        if (group.started) meta.push('Started: ' + escapeHtml(formatTimestamp(group.started)));
+        if (finish && Number(finish.duration_ms || 0) > 0) meta.push('Duration: ' + escapeHtml(formatDurationMs(Number(finish.duration_ms || 0))));
+        if (finish && finish.exit_code !== null && finish.exit_code !== undefined) meta.push('Exit code: ' + escapeHtml(String(finish.exit_code)));
+        if (finish && String(finish.error || '').trim()) meta.push('Error: ' + escapeHtml(String(finish.error || '').trim()));
+        const legacyCommand = legacyFallbackCommandFromStepName(group.step);
+        const script = String((group.step && group.step.script) || legacyCommand);
+        const yamlLiteral = String((group.step && group.step.yaml_literal) || '');
+        const output = String(group.output || '');
+        const historicalNote = (!group.finish && !output) ? '<div class="log-step-meta"><span>Historical preview: this run has step boundaries, but per-step output was not stored separately.</span></div>' : '';
+        return '' +
+          '<details class="log-step" data-step-key="' + escapeHtml(group.key) + '"' + (open ? ' open' : '') + '>' +
+            '<summary>' + escapeHtml(stepEventTitle(group.step)) + '</summary>' +
+            (meta.length ? ('<div class="log-step-meta">' + meta.map(m => '<span>' + m + '</span>').join('') + '</div>') : '') +
+            historicalNote +
+            '<div class="log-step-label">YAML literal</div>' +
+            '<pre>' + escapeHtml(yamlLiteral || '(not available for this historical run)') + '</pre>' +
+            '<div class="log-step-label">Expanded command</div>' +
+            '<pre>' + escapeHtml(script || '(none)') + '</pre>' +
+            '<div class="log-step-label">Output</div>' +
+            '<div>' + renderOutputLog(output || '(no output)') + '</div>' +
+          '</details>';
+      }).join('');
+    }
+
+    function plainTextFromStructuredEvents(job, events) {
+      const groups = structuredStepGroups(events);
+      if (!groups.length) return String((job && job.output) || '');
+      const lines = [];
+      lines.push('ciwi job log');
+      lines.push('Job execution ID: ' + String((job && job.id) || ''));
+      lines.push('Status: ' + String((job && job.status) || ''));
+      lines.push('');
+      groups.forEach(group => {
+        lines.push('--------------------------------------------------------------------------------');
+        lines.push(stepEventTitle(group.step));
+        lines.push('--------------------------------------------------------------------------------');
+        if (group.started) lines.push('Start time: ' + formatTimestamp(group.started));
+        if (group.finish && Number(group.finish.duration_ms || 0) > 0) lines.push('Step duration: ' + formatDurationMs(Number(group.finish.duration_ms || 0)));
+        if (group.finish && group.finish.exit_code !== null && group.finish.exit_code !== undefined) lines.push('Exit code: ' + String(group.finish.exit_code));
+        if (group.finish && String(group.finish.error || '').trim()) lines.push('Error: ' + String(group.finish.error || '').trim());
+        lines.push('');
+        lines.push('YAML literal:');
+        lines.push("'''");
+        lines.push(String((group.step && (group.step.yaml_literal || group.step.script)) || ''));
+        lines.push("'''");
+        lines.push('');
+        lines.push('Expanded command:');
+        lines.push("'''");
+        lines.push(String((group.step && group.step.script) || ''));
+        lines.push("'''");
+        lines.push('');
+        lines.push('Output:');
+        lines.push("'''");
+        lines.push(String(group.output || ''));
+        lines.push("'''");
+        lines.push('');
+      });
+      return lines.join('\n');
+    }
+
     function renderOutputLog(raw) {
       const text = String(raw || '');
       if (!text) return '<span class="log-empty">&lt;no output yet&gt;</span>';

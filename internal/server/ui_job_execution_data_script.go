@@ -4,6 +4,8 @@ const jobExecutionDataJS = `
     let refreshInFlight = false;
     let lastRenderedOutput = null;
     let lastOutputRaw = '';
+    let lastStructuredEvents = [];
+    let logStepOpenState = Object.create(null);
     let tailingEnabled = true;
     let suppressLogScrollEvent = false;
     let projectIDByNameCache = null;
@@ -177,10 +179,31 @@ const jobExecutionDataJS = `
           const text = String(lastOutputRaw || '');
           const old = copyBtn.textContent;
           try {
-            await navigator.clipboard.writeText(text);
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+              await navigator.clipboard.writeText(text);
+            } else {
+              throw new Error('navigator.clipboard unavailable');
+            }
             copyBtn.textContent = 'Copied';
-          } catch (_) {
-            copyBtn.textContent = 'Copy failed';
+          } catch (primaryErr) {
+            try {
+              const ta = document.createElement('textarea');
+              ta.value = text;
+              ta.setAttribute('readonly', '');
+              ta.style.position = 'fixed';
+              ta.style.left = '-9999px';
+              ta.style.top = '0';
+              document.body.appendChild(ta);
+              ta.focus();
+              ta.select();
+              const ok = document.execCommand && document.execCommand('copy');
+              document.body.removeChild(ta);
+              if (!ok) throw new Error('execCommand copy returned false');
+              copyBtn.textContent = 'Copied';
+            } catch (fallbackErr) {
+              console.warn('Copy output failed', primaryErr, fallbackErr);
+              copyBtn.textContent = 'Copy failed';
+            }
           }
           setTimeout(() => { copyBtn.textContent = old; }, 1200);
         });
@@ -194,7 +217,32 @@ const jobExecutionDataJS = `
           countEl: document.getElementById('logSearchCount'),
         });
       }
+      bindLogInfoTooltips();
       setTailingEnabled(tailingEnabled);
+    }
+
+    function bindLogInfoTooltips() {
+      document.querySelectorAll('.log-info[data-log-info]').forEach(el => {
+        if (el.__ciwiHoverTooltip) return;
+        const kind = String(el.getAttribute('data-log-info') || '').trim();
+        const tooltipHTML = kind === 'raw'
+          ? '<strong>Raw log</strong><br />Downloads the redacted stored event stream with ANSI escape sequences preserved where structured step output is available. For older jobs without complete structured events, this uses the legacy fallback: the persisted output tail.'
+          : '<strong>Clean log</strong><br />Downloads an editor-friendly plain text log generated from structured events. ANSI escape sequences and terminal control characters are stripped. For older jobs without complete structured events, this uses the legacy fallback: the persisted output tail with cleanup.';
+        createHoverTooltip(el, { html: tooltipHTML, lingerMs: 2000, owner: 'log-info-' + kind });
+      });
+    }
+
+    function bindLogStepToggles() {
+      const logBox = document.getElementById('logBox');
+      if (!logBox) return;
+      logBox.querySelectorAll('details.log-step[data-step-key]').forEach(d => {
+        const key = String(d.getAttribute('data-step-key') || '').trim();
+        if (!key || d.__ciwiStepToggleBound) return;
+        d.__ciwiStepToggleBound = true;
+        d.addEventListener('toggle', () => {
+          logStepOpenState[key] = !!d.open;
+        });
+      });
     }
 
     async function loadJobExecution(force) {
@@ -217,6 +265,19 @@ const jobExecutionDataJS = `
         }
         const data = await res.json();
         const job = data.job_execution || {};
+        let events = [];
+        try {
+          const evRes = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/events', { cache: 'no-store' });
+          if (evRes.ok) {
+            const evData = await evRes.json();
+            events = Array.isArray(evData.events) ? evData.events : [];
+          }
+        } catch (_) {}
+        lastStructuredEvents = events;
+        const cleanBtn = document.getElementById('downloadCleanLogBtn');
+        const rawBtn = document.getElementById('downloadRawLogBtn');
+        if (cleanBtn) cleanBtn.href = '/api/v1/jobs/' + encodeURIComponent(jobId) + '/log?format=clean';
+        if (rawBtn) rawBtn.href = '/api/v1/jobs/' + encodeURIComponent(jobId) + '/log?format=raw';
 
         const desc = jobDescription(job);
         const metaSource = (job && job.metadata) || {};
@@ -280,10 +341,17 @@ const jobExecutionDataJS = `
         }
 
         const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
-        lastOutputRaw = output;
-        if (output !== lastRenderedOutput) {
-          document.getElementById('logBox').innerHTML = renderOutputLog(output);
-          lastRenderedOutput = output;
+        const eventSignature = JSON.stringify(events.map(ev => [ev.type, ev.timestamp_utc, ev.step && ev.step.index, ev.output, ev.error, ev.duration_ms]));
+        const hasStructured = hasStructuredLogEvents(events);
+        const hasCompleteStructured = hasCompleteStructuredLogEvents(events);
+        // CIWI_LEGACY_LOG_FALLBACK: start-only historical events still render preview sections,
+        // but copy falls back to output_text when no event projection can provide complete text.
+        const renderSignature = hasStructured ? ('structured:' + eventSignature + ':' + String(job.current_step || '') + ':' + String(job.status || '')) : ('raw:' + output);
+        lastOutputRaw = hasCompleteStructured ? plainTextFromStructuredEvents(job, events) : output;
+        if (renderSignature !== lastRenderedOutput) {
+          document.getElementById('logBox').innerHTML = hasStructured ? renderStructuredOutputLog(job, events) : renderOutputLog(output);
+          bindLogStepToggles();
+          lastRenderedOutput = renderSignature;
           if (logSearchController && typeof logSearchController.refresh === 'function') {
             logSearchController.refresh();
           }

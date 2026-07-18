@@ -92,9 +92,11 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	}
 
 	ts := time.Now().UTC().Add(-time.Minute)
+	exitCode := 7
 	events := []protocol.JobExecutionEvent{
 		{Type: "step.started", TimestampUTC: ts, Step: &protocol.JobStepPlanItem{Index: 1, Name: "build"}},
-		{Type: "step.finished", TimestampUTC: ts.Add(time.Second)},
+		{Type: "step.output", TimestampUTC: ts.Add(500 * time.Millisecond), Output: "\x1b[31mhello\x1b[0m\n"},
+		{Type: "step.finished", TimestampUTC: ts.Add(time.Second), Error: "exit=7", ExitCode: &exitCode, DurationMS: 1234},
 		{Type: "", TimestampUTC: ts.Add(2 * time.Second)},
 	}
 	if err := s.AppendJobExecutionEvents(job.ID, events); err != nil {
@@ -104,11 +106,17 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListJobExecutionEvents: %v", err)
 	}
-	if len(gotEvents) != 2 {
-		t.Fatalf("expected 2 non-empty events, got %d (%+v)", len(gotEvents), gotEvents)
+	if len(gotEvents) != 3 {
+		t.Fatalf("expected 3 non-empty events, got %d (%+v)", len(gotEvents), gotEvents)
 	}
 	if gotEvents[0].Step == nil || gotEvents[0].Step.Name != "build" {
 		t.Fatalf("expected step payload roundtrip, got %+v", gotEvents[0])
+	}
+	if gotEvents[1].Output != "\x1b[31mhello\x1b[0m\n" {
+		t.Fatalf("expected output payload roundtrip, got %+v", gotEvents[1])
+	}
+	if gotEvents[2].ExitCode == nil || *gotEvents[2].ExitCode != 7 || gotEvents[2].Error != "exit=7" || gotEvents[2].DurationMS != 1234 {
+		t.Fatalf("expected finish payload roundtrip, got %+v", gotEvents[2])
 	}
 }
 

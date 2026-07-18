@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -119,6 +120,7 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 			Index:           step.Index,
 			Total:           step.Total,
 			Name:            step.Name,
+			YAMLLiteral:     step.YAMLLiteral,
 			Script:          step.Script,
 			Kind:            step.Kind,
 			Env:             cloneMap(step.Env),
@@ -209,6 +211,47 @@ func describeSkippedPipelineStepLiteral(step config.PipelineJobStep, idx int, jo
 		}
 	}
 	return describePipelineStep(step, idx, jobID)
+}
+
+func pipelineStepYAMLLiteral(step config.PipelineJobStep) string {
+	lines := []string{}
+	if strings.TrimSpace(step.Run) != "" {
+		lines = append(lines, "run: "+strings.TrimSpace(step.Run))
+	}
+	if step.Test != nil {
+		if strings.TrimSpace(step.Test.Name) != "" {
+			lines = append(lines, "test.name: "+strings.TrimSpace(step.Test.Name))
+		}
+		if strings.TrimSpace(step.Test.Command) != "" {
+			lines = append(lines, "test.command: "+strings.TrimSpace(step.Test.Command))
+		}
+		if strings.TrimSpace(step.Test.Format) != "" {
+			lines = append(lines, "test.format: "+strings.TrimSpace(step.Test.Format))
+		}
+		if strings.TrimSpace(step.Test.Report) != "" {
+			lines = append(lines, "test.report: "+strings.TrimSpace(step.Test.Report))
+		}
+		if strings.TrimSpace(step.Test.CoverageFormat) != "" {
+			lines = append(lines, "test.coverage_format: "+strings.TrimSpace(step.Test.CoverageFormat))
+		}
+		if strings.TrimSpace(step.Test.CoverageReport) != "" {
+			lines = append(lines, "test.coverage_report: "+strings.TrimSpace(step.Test.CoverageReport))
+		}
+	}
+	if step.SkipDryRun {
+		lines = append(lines, "skip_dry_run: true")
+	}
+	if len(step.Env) > 0 {
+		keys := make([]string, 0, len(step.Env))
+		for k := range step.Env {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			lines = append(lines, "env."+strings.TrimSpace(k)+": "+strings.TrimSpace(step.Env[k]))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func cloneJobCachesFromPersisted(in []config.PipelineJobCacheSpec) []protocol.JobCacheSpec {
