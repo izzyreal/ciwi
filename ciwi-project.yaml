@@ -168,6 +168,7 @@ pipelines:
                 shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
               done > dist/ciwi-checksums.txt
               test -f dist/ciwi-checksums.txt
+            skip_dry_run: true
           - name: Create release tag
             run: |
               TAG="${CIWI_PIPELINE_TAG}"
@@ -236,6 +237,7 @@ pipelines:
         steps:
           - name: Check credentials
             run: test -n "$DEV_IDENTITY_APP" && test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
+            skip_dry_run: true
             vault:
               connection: home-vault
               secrets:
@@ -264,8 +266,10 @@ pipelines:
             run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
           - name: Prepare codesign output
             run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
+            skip_dry_run: true
           - name: Copy app bundle
             run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-amd64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-amd64.app dist/codesigned-macos/ciwi-darwin-amd64.zip
+            skip_dry_run: true
             vault:
               connection: home-vault
               secrets:
@@ -292,6 +296,7 @@ pipelines:
               APPLE_ID: "{{ secret.apple-id }}"
           - name: Copy app bundle
             run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-arm64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-arm64.app dist/codesigned-macos/ciwi-darwin-arm64.zip
+            skip_dry_run: true
             vault:
               connection: home-vault
               secrets:
