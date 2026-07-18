@@ -219,6 +219,10 @@ func detectToolVersionInShell(shell, cmd string, args ...string) string {
 	if err != nil && len(raw) == 0 {
 		return ""
 	}
+	return parseToolVersionOutput(raw)
+}
+
+func parseToolVersionOutput(raw []byte) string {
 	text := strings.TrimSpace(string(raw))
 	if text == "" {
 		return ""
@@ -290,17 +294,7 @@ func detectToolVersionByPath(cmd string, args ...string) string {
 	if err != nil && len(raw) == 0 {
 		return ""
 	}
-	text := strings.TrimSpace(string(raw))
-	if text == "" {
-		return ""
-	}
-	if strings.Contains(text, "go version go") {
-		text = strings.ReplaceAll(text, "go version go", "go version ")
-	}
-	if m := versionPattern.FindStringSubmatch(text); len(m) >= 2 {
-		return m[1]
-	}
-	return ""
+	return parseToolVersionOutput(raw)
 }
 
 func detectMSVCVersion() string {

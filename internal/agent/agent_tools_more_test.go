@@ -9,39 +9,19 @@ import (
 )
 
 func TestDetectToolVersionByPathParsesSemver(t *testing.T) {
-	binDir := t.TempDir()
-	tool := filepath.Join(binDir, "mytool")
+	cmd := "/bin/sh"
+	args := []string{"-c", "printf '%s\\n' 'mytool version 1.2.3'"}
 	if runtime.GOOS == "windows" {
-		tool += ".bat"
-		if err := os.WriteFile(tool, []byte("@echo mytool version 1.2.3\r\n"), 0o755); err != nil {
-			t.Fatalf("write fake tool: %v", err)
-		}
-	} else {
-		if err := os.WriteFile(tool, []byte("#!/bin/sh\necho 'mytool version 1.2.3'\n"), 0o755); err != nil {
-			t.Fatalf("write fake tool: %v", err)
-		}
+		cmd = "cmd.exe"
+		args = []string{"/d", "/c", "echo mytool version 1.2.3"}
 	}
-	if got := detectToolVersionByPath(tool); got != "1.2.3" {
+	if got := detectToolVersionByPath(cmd, args...); got != "1.2.3" {
 		t.Fatalf("expected parsed version 1.2.3, got %q", got)
 	}
 }
 
-func TestDetectToolVersionParsesGoVersionOutput(t *testing.T) {
-	binDir := t.TempDir()
-	name := "go"
-	path := filepath.Join(binDir, name)
-	if runtime.GOOS == "windows" {
-		path += ".bat"
-		if err := os.WriteFile(path, []byte("@echo go version go1.26.0 windows/amd64\r\n"), 0o755); err != nil {
-			t.Fatalf("write fake go: %v", err)
-		}
-	} else {
-		if err := os.WriteFile(path, []byte("#!/bin/sh\necho 'go version go1.26.0 linux/amd64'\n"), 0o755); err != nil {
-			t.Fatalf("write fake go: %v", err)
-		}
-	}
-	t.Setenv("PATH", binDir)
-	if got := detectToolVersion("go", "version"); got != "1.26.0" {
+func TestParseToolVersionOutputParsesGoVersionOutput(t *testing.T) {
+	if got := parseToolVersionOutput([]byte("go version go1.26.0 darwin/arm64\n")); got != "1.26.0" {
 		t.Fatalf("expected go version 1.26.0, got %q", got)
 	}
 }
@@ -50,19 +30,7 @@ func TestDetectToolVersionByPathEdgeCases(t *testing.T) {
 	if got := detectToolVersionByPath(""); got != "" {
 		t.Fatalf("expected empty version for empty command path, got %q", got)
 	}
-	binDir := t.TempDir()
-	tool := filepath.Join(binDir, "noversion")
-	if runtime.GOOS == "windows" {
-		tool += ".bat"
-		if err := os.WriteFile(tool, []byte("@echo hello\r\n"), 0o755); err != nil {
-			t.Fatalf("write fake tool: %v", err)
-		}
-	} else {
-		if err := os.WriteFile(tool, []byte("#!/bin/sh\necho hello\n"), 0o755); err != nil {
-			t.Fatalf("write fake tool: %v", err)
-		}
-	}
-	if got := detectToolVersionByPath(tool); got != "" {
+	if got := parseToolVersionOutput([]byte("hello\n")); got != "" {
 		t.Fatalf("expected empty version for output without semver, got %q", got)
 	}
 }
