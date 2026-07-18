@@ -439,6 +439,7 @@ func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []pro
 			if step.Test != nil {
 				d.Steps = append(d.Steps, protocol.PipelineStep{
 					Type:           "test",
+					Name:           step.Name,
 					TestName:       step.Test.Name,
 					TestCommand:    step.Test.Command,
 					TestFormat:     step.Test.Format,
@@ -452,6 +453,7 @@ func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []pro
 			}
 			d.Steps = append(d.Steps, protocol.PipelineStep{
 				Type:       "run",
+				Name:       step.Name,
 				Run:        step.Run,
 				SkipDryRun: step.SkipDryRun,
 				Env:        cloneMap(step.Env),

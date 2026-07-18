@@ -107,8 +107,10 @@ pipelines:
           os: linux
         timeout_seconds: 30
         steps:
-          - run: echo build
-          - run: echo publish
+          - name: Build project
+            run: echo build
+          - name: Publish release
+            run: echo publish
             skip_dry_run: true
 `), "dryrun-skip")
 
@@ -142,6 +144,55 @@ pipelines:
 	if got := strings.TrimSpace(job.StepPlan[1].Kind); got != "dryrun_skip" {
 		t.Fatalf("expected second step kind=dryrun_skip, got %q", got)
 	}
+	if got := strings.TrimSpace(job.StepPlan[0].Name); got != "Build project" {
+		t.Fatalf("expected executable step display name, got %q", got)
+	}
+	if got := strings.TrimSpace(job.StepPlan[1].Name); got != "Publish release" {
+		t.Fatalf("expected skipped step to retain display name, got %q", got)
+	}
+}
+
+func TestEnqueuePersistedPipelineTestStepSeparatesDisplayAndReportNames(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: test
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: linux
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - name: Run Vmpc Juce Tests
+            test:
+              name: vmpc-juce-tests
+              command: ./vmpc-juce-tests
+              format: junit-xml
+              report: result.xml
+`), "test-step-names")
+
+	resp, err := s.enqueuePersistedPipeline(p, &protocol.RunPipelineSelectionRequest{PipelineJobID: "linux"})
+	if err != nil {
+		t.Fatalf("enqueue pipeline: %v", err)
+	}
+	job, err := s.db.GetJobExecution(resp.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get enqueued job: %v", err)
+	}
+	if len(job.StepPlan) != 1 {
+		t.Fatalf("expected one step, got %+v", job.StepPlan)
+	}
+	step := job.StepPlan[0]
+	if got := strings.TrimSpace(step.Name); got != "Run Vmpc Juce Tests" {
+		t.Fatalf("expected outer display name, got %q", got)
+	}
+	if got := strings.TrimSpace(step.TestName); got != "vmpc-juce-tests" {
+		t.Fatalf("expected inner report name, got %q", got)
+	}
 }
 
 func TestEnqueuePersistedPipelineDryRunAllStepsSkippedUsesPlaceholderScript(t *testing.T) {
@@ -159,9 +210,11 @@ pipelines:
           os: linux
         timeout_seconds: 30
         steps:
-          - run: echo publish
+          - name: Publish release
+            run: echo publish
             skip_dry_run: true
-          - run: echo upload
+          - name: Upload assets
+            run: echo upload
             skip_dry_run: true
 `), "dryrun-all-skipped")
 
@@ -188,6 +241,9 @@ pipelines:
 	}
 	if strings.TrimSpace(job.StepPlan[0].Kind) != "dryrun_skip" || strings.TrimSpace(job.StepPlan[1].Kind) != "dryrun_skip" {
 		t.Fatalf("expected all step plan items dryrun_skip, got %+v", job.StepPlan)
+	}
+	if strings.TrimSpace(job.StepPlan[0].Name) != "Publish release" || strings.TrimSpace(job.StepPlan[1].Name) != "Upload assets" {
+		t.Fatalf("expected all skipped steps to retain names, got %+v", job.StepPlan)
 	}
 }
 

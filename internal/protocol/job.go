@@ -163,6 +163,7 @@ type PipelineJobDetail struct {
 
 type PipelineStep struct {
 	Type           string            `json:"type"`
+	Name           string            `json:"name,omitempty"`
 	Run            string            `json:"run,omitempty"`
 	TestName       string            `json:"test_name,omitempty"`
 	TestCommand    string            `json:"test_command,omitempty"`

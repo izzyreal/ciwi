@@ -39,8 +39,10 @@ pipelines:
               goos: windows
               goarch: amd64
         steps:
-          - run: mkdir -p dist
-          - run: GOOS={{goos}} GOARCH={{goarch}} go build -o dist/ciwi-{{goos}}-{{goarch}} ./cmd/ciwi
+          - name: Prepare dist
+            run: mkdir -p dist
+          - name: Build binary
+            run: GOOS={{goos}} GOARCH={{goarch}} go build -o dist/ciwi-{{goos}}-{{goarch}} ./cmd/ciwi
 `
 
 func openTestStore(t *testing.T) *Store {
@@ -154,6 +156,10 @@ func TestStoreLoadConfigAndProjectDetail(t *testing.T) {
 	}
 	if got := len(detail.Pipelines[0].Jobs[0].MatrixIncludes); got != 2 {
 		t.Fatalf("expected 2 matrix includes, got %d", got)
+	}
+	steps := detail.Pipelines[0].Jobs[0].Steps
+	if len(steps) != 2 || steps[0].Name != "Prepare dist" || steps[1].Name != "Build binary" {
+		t.Fatalf("expected step names in project detail, got %+v", steps)
 	}
 }
 

@@ -155,7 +155,7 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		}
 		if selection != nil && selection.DryRun && step.SkipDryRun {
 			stepPlan = append(stepPlan, protocol.JobStepPlanItem{
-				Name:            describeSkippedPipelineStepLiteral(step, idx, pipelineJobID),
+				Name:            describePipelineStep(step, idx, pipelineJobID),
 				YAMLLiteral:     pipelineStepYAMLLiteral(step),
 				Kind:            "dryrun_skip",
 				Env:             stepEnv,
@@ -177,9 +177,13 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 			if format == "" {
 				format = "go-test-json"
 			}
+			displayName := strings.TrimSpace(step.Name)
+			if displayName == "" {
+				displayName = "test " + name
+			}
 			rendered = append(rendered, command)
 			stepPlan = append(stepPlan, protocol.JobStepPlanItem{
-				Name:            "test " + name,
+				Name:            displayName,
 				YAMLLiteral:     pipelineStepYAMLLiteral(step),
 				Script:          command,
 				Kind:            "test",

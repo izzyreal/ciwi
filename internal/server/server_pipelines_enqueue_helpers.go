@@ -203,19 +203,6 @@ func describePipelineStep(step config.PipelineJobStep, idx int, jobID string) st
 	return fmt.Sprintf("step %d", idx+1)
 }
 
-func describeSkippedPipelineStepLiteral(step config.PipelineJobStep, idx int, jobID string) string {
-	if strings.TrimSpace(step.Run) != "" {
-		return strings.TrimSpace(step.Run)
-	}
-	if step.Test != nil {
-		command := strings.TrimSpace(step.Test.Command)
-		if command != "" {
-			return command
-		}
-	}
-	return describePipelineStep(step, idx, jobID)
-}
-
 func pipelineStepYAMLLiteral(step config.PipelineJobStep) string {
 	lines := []string{}
 	if strings.TrimSpace(step.Name) != "" {

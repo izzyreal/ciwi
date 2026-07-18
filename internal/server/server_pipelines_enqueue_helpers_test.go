@@ -154,15 +154,9 @@ func TestDescribePipelineSteps(t *testing.T) {
 	if got := describePipelineStep(testStepNamed, 1, "job-a"); got != "test unit" {
 		t.Fatalf("unexpected named test description: %q", got)
 	}
-
-	if got := describeSkippedPipelineStepLiteral(config.PipelineJobStep{Run: "  make "}, 0, "job-a"); got != "make" {
-		t.Fatalf("unexpected skipped run literal: %q", got)
-	}
-	if got := describeSkippedPipelineStepLiteral(config.PipelineJobStep{Test: &config.PipelineJobTestStep{Command: "  ctest -R foo  "}}, 0, "job-a"); got != "ctest -R foo" {
-		t.Fatalf("unexpected skipped test command literal: %q", got)
-	}
-	if got := describeSkippedPipelineStepLiteral(config.PipelineJobStep{}, 2, "job-a"); got != "step 3" {
-		t.Fatalf("unexpected skipped fallback literal: %q", got)
+	outerNamedTest := config.PipelineJobStep{Name: "Run unit tests", Test: &config.PipelineJobTestStep{Name: "unit", Command: "ctest"}}
+	if got := describePipelineStep(outerNamedTest, 1, "job-a"); got != "Run unit tests" {
+		t.Fatalf("unexpected outer-named test description: %q", got)
 	}
 }
 
