@@ -71,6 +71,8 @@ type JobExecution struct {
 	TestSummary          *JobExecutionTestSummary `json:"test_summary,omitempty"`
 	UnmetRequirements    []string                 `json:"unmet_requirements,omitempty"`
 	SensitiveValues      []string                 `json:"sensitive_values,omitempty"`
+	ExpectedDurationMS   int64                    `json:"expected_duration_ms,omitempty"`
+	StepExpectedDuration map[int]int64            `json:"step_expected_duration_ms,omitempty"`
 }
 
 type CreateJobExecutionResponse struct {

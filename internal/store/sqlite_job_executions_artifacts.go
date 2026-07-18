@@ -184,43 +184,91 @@ func (s *Store) ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEve
 		if err := rows.Scan(&eventType, &tsRaw, &payloadRaw); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
-		event := protocol.JobExecutionEvent{
-			Type: strings.TrimSpace(eventType),
-		}
-		if ts, err := time.Parse(time.RFC3339Nano, tsRaw); err == nil {
-			event.TimestampUTC = ts
-		}
-		payload := map[string]json.RawMessage{}
-		if err := json.Unmarshal([]byte(payloadRaw), &payload); err == nil {
-			if raw := payload["step"]; len(raw) > 0 {
-				var step protocol.JobStepPlanItem
-				if err := json.Unmarshal(raw, &step); err == nil {
-					event.Step = &step
-				}
-			}
-			if raw := payload["message"]; len(raw) > 0 {
-				_ = json.Unmarshal(raw, &event.Message)
-			}
-			if raw := payload["output"]; len(raw) > 0 {
-				_ = json.Unmarshal(raw, &event.Output)
-			}
-			if raw := payload["error"]; len(raw) > 0 {
-				_ = json.Unmarshal(raw, &event.Error)
-			}
-			if raw := payload["exit_code"]; len(raw) > 0 {
-				var exitCode int
-				if err := json.Unmarshal(raw, &exitCode); err == nil {
-					event.ExitCode = &exitCode
-				}
-			}
-			if raw := payload["duration_ms"]; len(raw) > 0 {
-				_ = json.Unmarshal(raw, &event.DurationMS)
-			}
-		}
-		out = append(out, event)
+		out = append(out, decodeJobExecutionEvent(eventType, tsRaw, payloadRaw))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate events: %w", err)
 	}
 	return out, nil
+}
+
+func (s *Store) ListJobExecutionEventsForJobs(jobIDs []string, eventType string) (map[string][]protocol.JobExecutionEvent, error) {
+	out := make(map[string][]protocol.JobExecutionEvent, len(jobIDs))
+	if len(jobIDs) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, 0, len(jobIDs))
+	args := make([]any, 0, len(jobIDs)+1)
+	for _, jobID := range jobIDs {
+		jobID = strings.TrimSpace(jobID)
+		if jobID == "" {
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, jobID)
+	}
+	if len(placeholders) == 0 {
+		return out, nil
+	}
+	query := `
+		SELECT job_execution_id, event_type, timestamp_utc, payload_json
+		FROM job_execution_events
+		WHERE job_execution_id IN (` + strings.Join(placeholders, ",") + `)`
+	if strings.TrimSpace(eventType) != "" {
+		query += ` AND event_type = ?`
+		args = append(args, strings.TrimSpace(eventType))
+	}
+	query += ` ORDER BY job_execution_id ASC, id ASC`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list events for jobs: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var jobID, rowType, tsRaw, payloadRaw string
+		if err := rows.Scan(&jobID, &rowType, &tsRaw, &payloadRaw); err != nil {
+			return nil, fmt.Errorf("scan event for jobs: %w", err)
+		}
+		out[jobID] = append(out[jobID], decodeJobExecutionEvent(rowType, tsRaw, payloadRaw))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate events for jobs: %w", err)
+	}
+	return out, nil
+}
+
+func decodeJobExecutionEvent(eventType, tsRaw, payloadRaw string) protocol.JobExecutionEvent {
+	event := protocol.JobExecutionEvent{Type: strings.TrimSpace(eventType)}
+	if ts, err := time.Parse(time.RFC3339Nano, tsRaw); err == nil {
+		event.TimestampUTC = ts
+	}
+	payload := map[string]json.RawMessage{}
+	if err := json.Unmarshal([]byte(payloadRaw), &payload); err != nil {
+		return event
+	}
+	if raw := payload["step"]; len(raw) > 0 {
+		var step protocol.JobStepPlanItem
+		if err := json.Unmarshal(raw, &step); err == nil {
+			event.Step = &step
+		}
+	}
+	if raw := payload["message"]; len(raw) > 0 {
+		_ = json.Unmarshal(raw, &event.Message)
+	}
+	if raw := payload["output"]; len(raw) > 0 {
+		_ = json.Unmarshal(raw, &event.Output)
+	}
+	if raw := payload["error"]; len(raw) > 0 {
+		_ = json.Unmarshal(raw, &event.Error)
+	}
+	if raw := payload["exit_code"]; len(raw) > 0 {
+		var exitCode int
+		if err := json.Unmarshal(raw, &exitCode); err == nil {
+			event.ExitCode = &exitCode
+		}
+	}
+	if raw := payload["duration_ms"]; len(raw) > 0 {
+		_ = json.Unmarshal(raw, &event.DurationMS)
+	}
+	return event
 }

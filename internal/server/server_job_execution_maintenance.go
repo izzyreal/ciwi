@@ -31,6 +31,11 @@ func (s *stateStore) runJobExecutionMaintenancePass(now time.Time) error {
 	if requeued > 0 || failed > 0 {
 		slog.Warn("job execution maintenance applied", "requeued_stale_leased", requeued, "failed_timed_out_running", failed)
 	}
+	if failed > 0 {
+		if err := s.reconcileBlockedJobExecutions(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -38,6 +38,7 @@ type HandlerDeps struct {
 	AttachUnmetRequirements            func([]protocol.JobExecution)
 	AttachTestSummary                  func(*protocol.JobExecution)
 	AttachUnmetRequirementsToExecution func(*protocol.JobExecution)
+	AttachProgress                     func(*protocol.JobExecution)
 	MarkAgentSeen                      func(agentID string, ts time.Time)
 	OnJobUpdated                       func(job protocol.JobExecution)
 	Now                                func() time.Time
@@ -118,6 +119,9 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 			}
 			if deps.AttachUnmetRequirementsToExecution != nil {
 				deps.AttachUnmetRequirementsToExecution(&job)
+			}
+			if deps.AttachProgress != nil {
+				deps.AttachProgress(&job)
 			}
 			httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
 		case http.MethodDelete:

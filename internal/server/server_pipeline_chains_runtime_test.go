@@ -135,6 +135,88 @@ pipeline_chains:
 	}
 }
 
+func TestBlockedJobReconciliationCascadesNeedsFailureIntoChainAfterRestart(t *testing.T) {
+	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
+	enqueueSingleChain(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: unit-tests
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: go test ./...
+      - id: build-cross-platform
+        needs:
+          - unit-tests
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: go build ./...
+  - id: release
+    depends_on:
+      - build
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: github-release
+        runs_on:
+          os: linux
+        timeout_seconds: 30
+        steps:
+          - run: echo release
+pipeline_chains:
+  - id: build-release
+    pipelines:
+      - build
+      - release
+`)
+
+	leased, err := s.db.LeaseJobExecution("agent-1", map[string]string{"os": "linux"})
+	if err != nil {
+		t.Fatalf("lease unit tests: %v", err)
+	}
+	if leased == nil || strings.TrimSpace(leased.Metadata["pipeline_job_id"]) != "unit-tests" {
+		t.Fatalf("expected unit-tests lease, got %+v", leased)
+	}
+	if _, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: "agent-1", Status: protocol.JobExecutionStatusFailed, Error: "tests failed",
+	}); err != nil {
+		t.Fatalf("mark unit tests failed: %v", err)
+	}
+
+	// Simulate a restart after the terminal status persisted but before its callback ran.
+	restarted := &stateStore{db: s.db}
+	if err := restarted.reconcileBlockedJobExecutions(); err != nil {
+		t.Fatalf("startup reconciliation: %v", err)
+	}
+
+	jobs, err := s.db.ListJobExecutions()
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	for _, job := range jobs {
+		jobID := strings.TrimSpace(job.Metadata["pipeline_job_id"])
+		if jobID != "build-cross-platform" && jobID != "github-release" {
+			continue
+		}
+		if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusFailed {
+			t.Fatalf("expected %s to fail during cascade, got status=%q metadata=%v", jobID, job.Status, job.Metadata)
+		}
+	}
+	release := findPipelineJobExecution(t, s, "release")
+	if !strings.Contains(release.Error, "upstream pipeline build failed") {
+		t.Fatalf("unexpected release failure: %q", release.Error)
+	}
+}
+
 func TestPipelineChainCancelsNextPipelineOnFailure(t *testing.T) {
 	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
 	enqueueSingleChain(t, s, `

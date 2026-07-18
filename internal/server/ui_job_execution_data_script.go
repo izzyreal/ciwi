@@ -265,6 +265,7 @@ const jobExecutionDataJS = `
         }
         const data = await res.json();
         const job = data.job_execution || {};
+        bindCiwiProgress(document.getElementById('jobHeaderCard'), job);
         let events = [];
         try {
           const evRes = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/events', { cache: 'no-store' });
@@ -351,6 +352,7 @@ const jobExecutionDataJS = `
         if (renderSignature !== lastRenderedOutput) {
           document.getElementById('logBox').innerHTML = hasStructured ? renderStructuredOutputLog(job, events) : renderOutputLog(output);
           bindLogStepToggles();
+          if (hasStructured) bindStructuredStepProgress(job, events);
           lastRenderedOutput = renderSignature;
           if (logSearchController && typeof logSearchController.refresh === 'function') {
             logSearchController.refresh();
@@ -361,6 +363,10 @@ const jobExecutionDataJS = `
         }
         const stepDescription = String(job.current_step || '').trim();
         let subtitle = 'Status: <span class="' + statusClassForJob(job) + '">' + escapeHtml(formatJobStatus(job)) + '</span>';
+        const waitingReason = jobWaitingReason(job);
+        if (waitingReason) {
+          subtitle += '<div class="job-subtitle-detail">' + escapeHtml(waitingReason) + '</div>';
+        }
         if (stepDescription) {
           subtitle += ' <span class="label"> - ' + escapeHtml(stepDescription) + '</span>';
         }

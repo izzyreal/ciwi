@@ -16,11 +16,19 @@ const uiIndexJobExecutionsJS = `
       const succeeded = Math.max(0, Number((summary && summary.succeeded) || 0));
       const failed = Math.max(0, Number((summary && summary.failed) || 0));
       const inProgress = Math.max(0, Number((summary && summary.in_progress) || 0));
+      const waiting = Math.max(0, Number((summary && summary.waiting) || 0));
+      const parts = [succeeded + '/' + total + ' successful'];
+      if (failed > 0) parts.push(failed + ' failed');
+      if (inProgress > 0) parts.push(inProgress + ' in progress');
+      if (waiting > 0) parts.push(waiting + ' waiting');
       if (failed > 0) {
-        return { emoji: '❌', cls: 'status-failed', text: succeeded + '/' + total + ' successful, ' + failed + ' failed' };
+        return { emoji: '❌', cls: 'status-failed', text: parts.join(', ') };
       }
       if (inProgress > 0) {
-        return { emoji: '⏳', cls: 'status-running', text: succeeded + '/' + total + ' successful, ' + inProgress + ' in progress' };
+        return { emoji: '⏳', cls: 'status-running', text: parts.join(', ') };
+      }
+      if (waiting > 0) {
+        return { emoji: '⏳', cls: 'status-waiting', text: parts.join(', ') };
       }
       if (total > 0 && succeeded === total) {
         return { emoji: '✅', cls: 'status-succeeded', text: succeeded + '/' + total + ' successful' };
@@ -156,6 +164,88 @@ const uiIndexJobExecutionsJS = `
         '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span>';
     }
 
+    function setHistoryCardHeadHTML(element, html) {
+      if (!element || element.__ciwiCardHeadHTML === html) return;
+      element.innerHTML = html;
+      element.__ciwiCardHeadHTML = html;
+    }
+
+    function mergeCardSummaryIntoDetail(summaryCard, detailCard) {
+      if (!detailCard) return summaryCard;
+      return {
+        ...detailCard,
+        title: (summaryCard && summaryCard.title) || detailCard.title,
+        summary: (summaryCard && summaryCard.summary) || detailCard.summary,
+        shape: (summaryCard && summaryCard.shape) || detailCard.shape,
+      };
+    }
+
+    function historyItemRenderState(item) {
+      const current = item || {};
+      const job = current.job || null;
+      return {
+        kind: current.kind || '',
+        key: current.key || '',
+        label: current.label || '',
+        matrix_label: current.matrix_label || '',
+        job: job ? {
+          id: job.id || '',
+          status: job.status || '',
+          metadata: job.metadata || {},
+          leased_by_agent_id: job.leased_by_agent_id || '',
+          created_utc: job.created_utc || '',
+          started_utc: job.started_utc || '',
+          finished_utc: job.finished_utc || '',
+          error: job.error || '',
+          test_summary: job.test_summary || null,
+          unmet_requirements: job.unmet_requirements || [],
+        } : null,
+        items: (Array.isArray(current.items) ? current.items : []).map(historyItemRenderState),
+      };
+    }
+
+    function historyCardSectionsSignature(card) {
+      return JSON.stringify({
+        kind: String((card && card.kind) || ''),
+        sections: (Array.isArray(card && card.sections) ? card.sections : []).map(section => ({
+          kind: section.kind || '',
+          key: section.key || '',
+          label: section.label || '',
+          progress_jobs: section.progress_jobs || [],
+          items: (Array.isArray(section.items) ? section.items : []).map(historyItemRenderState),
+        })),
+      });
+    }
+
+    function jobsFromHistoryItems(items) {
+      const jobs = [];
+      (Array.isArray(items) ? items : []).forEach(item => {
+        if (item && item.job) jobs.push(item.job);
+        if (item && Array.isArray(item.items)) jobs.push(...jobsFromHistoryItems(item.items));
+      });
+      return jobs;
+    }
+
+    function jobsFromHistoryCard(card) {
+      const progressJobs = Array.isArray(card && card.progress_jobs) ? card.progress_jobs : [];
+      if (progressJobs.length) return progressJobs;
+      const jobs = [];
+      (Array.isArray(card && card.sections) ? card.sections : []).forEach(section => {
+        jobs.push(...jobsFromHistoryItems(section && section.items));
+      });
+      return jobs;
+    }
+
+    function bindQueueCardHeadProgress(container, card) {
+      if (!container) return;
+      const jobs = jobsFromHistoryCard(card);
+      if (!jobs.length) return;
+      const head = container.matches && container.matches('.ciwi-job-group-details')
+        ? container.querySelector(':scope > summary')
+        : container.querySelector(':scope > .ciwi-job-group-head');
+      bindCiwiProgress(head, jobs);
+    }
+
     function buildHistorySectionsContent(card, opts) {
       const sections = Array.isArray(card && card.sections) ? card.sections : [];
       if (sections.length === 0) {
@@ -175,7 +265,15 @@ const uiIndexJobExecutionsJS = `
           const head = document.createElement('div');
           head.className = 'ciwi-job-history-section-head';
           const label = String((section && section.label) || '').trim() || ('pipeline ' + String(sectionIndex + 1));
-          head.textContent = 'pipeline: ' + label;
+          const headLabel = document.createElement('span');
+          headLabel.textContent = 'pipeline: ' + label;
+          head.appendChild(headLabel);
+          if (opts && opts.progressEnabled) {
+            const sectionJobs = Array.isArray(section && section.progress_jobs) && section.progress_jobs.length
+              ? section.progress_jobs
+              : jobsFromHistoryItems(section && section.items);
+            bindCiwiProgress(head, sectionJobs);
+          }
           block.appendChild(head);
         }
         const table = document.createElement('table');
@@ -190,7 +288,9 @@ const uiIndexJobExecutionsJS = `
             const headTd = document.createElement('td');
             headTd.colSpan = 7;
             headTd.className = 'ciwi-job-history-matrix-head';
-            headTd.textContent = 'matrix: ' + matrixLabel;
+            const matrixHeadLabel = document.createElement('span');
+            matrixHeadLabel.textContent = 'matrix: ' + matrixLabel;
+            headTd.appendChild(matrixHeadLabel);
             headRow.appendChild(headTd);
             body.appendChild(headRow);
             const matrixItems = Array.isArray(item.items) ? item.items : [];
@@ -210,12 +310,22 @@ const uiIndexJobExecutionsJS = `
       return root;
     }
 
+    function patchHistorySectionsContent(container, card, opts) {
+      if (!container || !card) return;
+      const signature = historyCardSectionsSignature(card);
+      const existing = container.querySelector(':scope > .ciwi-job-history-sections, :scope > .ciwi-job-history-empty-card, :scope > .ciwi-job-group-skel-body');
+      if (existing && container.__ciwiSectionsSignature === signature) return;
+      if (existing) existing.remove();
+      container.appendChild(buildHistorySectionsContent(card, opts));
+      container.__ciwiSectionsSignature = signature;
+    }
+
     function ensureHistoryCardOpenBody(details, card, opts) {
       if (!details || !card) return;
       const existing = details.querySelector('.ciwi-job-history-sections, .ciwi-job-history-empty-card, .ciwi-job-group-skel-body');
       if (existing) return;
       if (Array.isArray(card.sections) && card.sections.length > 0) {
-        details.appendChild(buildHistorySectionsContent(card, opts));
+        patchHistorySectionsContent(details, card, opts);
         return;
       }
       details.appendChild(buildHistorySkeletonBody(historyExpandedRowHint(card)));
@@ -257,7 +367,8 @@ const uiIndexJobExecutionsJS = `
           td.appendChild(details);
         }
         details.__ciwiHistoryCardKey = String((card && card.key) || '').trim();
-        details.__ciwiHistoryCard = historyCardDetailsByKey[details.__ciwiHistoryCardKey] || card;
+        const renderedCard = mergeCardSummaryIntoDetail(card, historyCardDetailsByKey[details.__ciwiHistoryCardKey]);
+        details.__ciwiHistoryCard = renderedCard;
         details.__ciwiHistoryOpts = opts || null;
         bindHistoryCardToggle(details, card);
         if (expandedJobGroups.has(groupKey)) {
@@ -268,9 +379,7 @@ const uiIndexJobExecutionsJS = `
           summary = document.createElement('summary');
           details.appendChild(summary);
         }
-        summary.innerHTML = buildHistoryCardHeadHTML(card, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>';
-        const body = details.querySelector('.ciwi-job-history-sections, .ciwi-job-history-empty-card');
-        if (body) body.remove();
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>');
         if (!details.open) {
           const skel = details.querySelector('.ciwi-job-group-skel-body');
           if (skel) skel.remove();
@@ -291,7 +400,8 @@ const uiIndexJobExecutionsJS = `
           head.className = 'ciwi-job-group-head';
           cardEl.insertBefore(head, cardEl.firstChild || null);
         }
-        head.innerHTML = buildHistoryCardHeadHTML(card, opts);
+        const renderedCard = mergeCardSummaryIntoDetail(card, historyCardDetailsByKey[String((card && card.key) || '').trim()]);
+        setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(renderedCard, opts));
       }
     }
 
@@ -317,17 +427,13 @@ const uiIndexJobExecutionsJS = `
         if (expandedJobGroups.has(groupKey)) {
           details.open = true;
         }
-        const oldBody = details.querySelector('.ciwi-job-history-sections, .ciwi-job-history-empty-card, .ciwi-job-group-skel-body');
-        if (oldBody) oldBody.remove();
         if (details.open) {
-          details.appendChild(buildHistorySectionsContent(card, opts));
+          patchHistorySectionsContent(details, card, opts);
         }
       } else {
         const cardEl = td.querySelector('.ciwi-job-group-card');
         if (!cardEl) return;
-        const oldBody = cardEl.querySelector('.ciwi-job-history-sections, .ciwi-job-history-empty-card, .ciwi-job-group-skel-body');
-        if (oldBody) oldBody.remove();
-        cardEl.appendChild(buildHistorySectionsContent(card, opts));
+        patchHistorySectionsContent(cardEl, card, opts);
       }
     }
 
@@ -354,7 +460,8 @@ const uiIndexJobExecutionsJS = `
         const details = document.createElement('details');
         details.className = 'ciwi-job-group-details';
         details.__ciwiQueueCardKey = String((card && card.key) || '').trim();
-        details.__ciwiQueueCard = queueCardDetailsByKey[details.__ciwiQueueCardKey] || card;
+        const renderedCard = mergeCardSummaryIntoDetail(card, queueCardDetailsByKey[details.__ciwiQueueCardKey]);
+        details.__ciwiQueueCard = renderedCard;
         details.__ciwiQueueOpts = null;
         if (expanded) details.open = true;
         const summary = document.createElement('summary');
@@ -442,7 +549,8 @@ const uiIndexJobExecutionsJS = `
           td.appendChild(details);
         }
         details.__ciwiQueueCardKey = String((card && card.key) || '').trim();
-        details.__ciwiQueueCard = queueCardDetailsByKey[details.__ciwiQueueCardKey] || card;
+        const renderedCard = mergeCardSummaryIntoDetail(card, queueCardDetailsByKey[details.__ciwiQueueCardKey]);
+        details.__ciwiQueueCard = renderedCard;
         details.__ciwiQueueOpts = opts || null;
         if (!details.__ciwiQueueToggleBound) {
           details.__ciwiQueueToggleBound = true;
@@ -468,9 +576,7 @@ const uiIndexJobExecutionsJS = `
           summary = document.createElement('summary');
           details.appendChild(summary);
         }
-        summary.innerHTML = buildHistoryCardHeadHTML(card, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>';
-        const body = details.querySelector('.ciwi-job-history-sections, .ciwi-job-history-empty-card');
-        if (body) body.remove();
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>');
         if (!details.open) {
           const skel = details.querySelector('.ciwi-job-group-skel-body');
           if (skel) skel.remove();
@@ -491,7 +597,8 @@ const uiIndexJobExecutionsJS = `
           head.className = 'ciwi-job-group-head';
           cardEl.insertBefore(head, cardEl.firstChild || null);
         }
-        head.innerHTML = buildHistoryCardHeadHTML(card, opts);
+        const renderedCard = mergeCardSummaryIntoDetail(card, queueCardDetailsByKey[String((card && card.key) || '').trim()]);
+        setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(renderedCard, opts));
       }
     }
 
@@ -517,17 +624,23 @@ const uiIndexJobExecutionsJS = `
         if (expandedJobGroups.has(groupKey)) {
           details.open = true;
         }
-        const oldBody = details.querySelector('.ciwi-job-history-sections, .ciwi-job-history-empty-card, .ciwi-job-group-skel-body');
-        if (oldBody) oldBody.remove();
-        if (details.open) {
-          details.appendChild(buildHistorySectionsContent(card, opts));
+        let summary = details.querySelector(':scope > summary');
+        if (!summary) {
+          summary = document.createElement('summary');
+          details.insertBefore(summary, details.firstChild || null);
         }
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(card, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>');
+        if (details.open) {
+          patchHistorySectionsContent(details, card, opts);
+        }
+        if (opts && opts.progressEnabled) bindQueueCardHeadProgress(details, card);
       } else {
         const cardEl = td.querySelector('.ciwi-job-group-card');
         if (!cardEl) return;
-        const oldBody = cardEl.querySelector('.ciwi-job-history-sections, .ciwi-job-history-empty-card, .ciwi-job-group-skel-body');
-        if (oldBody) oldBody.remove();
-        cardEl.appendChild(buildHistorySectionsContent(card, opts));
+        const head = cardEl.querySelector(':scope > .ciwi-job-group-head');
+        if (head) setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(card, opts));
+        patchHistorySectionsContent(cardEl, card, opts);
+        if (opts && opts.progressEnabled) bindQueueCardHeadProgress(cardEl, card);
       }
     }
 
@@ -587,6 +700,7 @@ const uiIndexJobExecutionsJS = `
       const historyBody = document.getElementById('historyJobsBody');
 
       const queuedOpts = {
+        progressEnabled: true,
         includeActions: true,
         includeReason: true,
         fixedLines: 2,

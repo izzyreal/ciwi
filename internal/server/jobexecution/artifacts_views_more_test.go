@@ -156,3 +156,14 @@ func TestViewFromProtocolTimestamps(t *testing.T) {
 		t.Fatalf("expected leased timestamp pointer, got %v", view.LeasedUTC)
 	}
 }
+
+func TestViewFromProtocolProgressEstimates(t *testing.T) {
+	job := protocol.JobExecution{
+		ID: "job-progress", Status: protocol.JobExecutionStatusRunning,
+		ExpectedDurationMS: 4200, StepExpectedDuration: map[int]int64{1: 1200},
+	}
+	view := ViewFromProtocol(job)
+	if view.ExpectedDurationMS != 4200 || view.StepExpectedDuration[1] != 1200 {
+		t.Fatalf("progress estimates were not copied: %+v", view)
+	}
+}

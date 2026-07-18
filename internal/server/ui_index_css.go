@@ -90,7 +90,7 @@ const uiIndexCSS = `
     .status-failed { color: var(--bad); font-weight: 600; }
     .status-blocked { color: #8a5a14; font-weight: 600; }
     .status-running { color: #a56a00; font-weight: 600; }
-    .status-queued, .status-leased { color: var(--muted); }
+    .status-queued, .status-leased, .status-waiting { color: var(--muted); }
     .ciwi-empty-row td { border-bottom: none; }
     .ciwi-job-group-row td { padding: 4px 0; border-bottom: none; }
     .ciwi-job-group-details {

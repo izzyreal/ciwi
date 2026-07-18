@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/server/jobprogress"
 	servervault "github.com/izzyreal/ciwi/internal/server/vault"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -43,6 +44,7 @@ type agentUpdateRolloutState struct {
 
 type stateStore struct {
 	mu                sync.Mutex
+	dependencyMu      sync.Mutex
 	agents            map[string]agentState
 	agentUpdates      map[string]string
 	agentToolRefresh  map[string]bool
@@ -55,6 +57,7 @@ type stateStore struct {
 	db                *store.Store
 	artifactsDir      string
 	vaultTokens       *servervault.TokenCache
+	jobProgress       *jobprogress.Estimator
 	update            updateState
 	restartServerFn   func()
 }
@@ -94,6 +97,7 @@ func Run(ctx context.Context) error {
 		db:           db,
 		artifactsDir: artifactsDir,
 		vaultTokens:  servervault.NewTokenCache(),
+		jobProgress:  jobprogress.New(db),
 		restartServerFn: func() {
 			os.Exit(0)
 		},
@@ -110,6 +114,9 @@ func Run(ctx context.Context) error {
 	s.maybeRunPostUpdateProjectReload(ctx)
 	if err := s.runJobExecutionMaintenancePass(time.Now().UTC()); err != nil {
 		slog.Error("initial job execution maintenance pass failed", "error", err)
+	}
+	if err := s.reconcileBlockedJobExecutions(); err != nil {
+		slog.Error("initial blocked job reconciliation failed", "error", err)
 	}
 	go s.runJobExecutionMaintenanceLoop(ctx)
 	srv := &http.Server{Addr: addr, Handler: buildRouter(s, artifactsDir), ReadHeaderTimeout: 10 * time.Second}

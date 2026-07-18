@@ -20,6 +20,7 @@ type HandlerDeps struct {
 	Store                   Store
 	AttachTestSummaries     func([]protocol.JobExecution)
 	AttachUnmetRequirements func([]protocol.JobExecution)
+	AttachProgress          func([]protocol.JobExecution)
 }
 
 type LayoutResponse struct {
@@ -45,12 +46,13 @@ type CardsResponse struct {
 }
 
 type CardView struct {
-	Key      string        `json:"key"`
-	Kind     string        `json:"kind"`
-	Title    string        `json:"title"`
-	Summary  SummaryView   `json:"summary"`
-	Shape    ShapeView     `json:"shape"`
-	Sections []SectionView `json:"sections,omitempty"`
+	Key          string            `json:"key"`
+	Kind         string            `json:"kind"`
+	Title        string            `json:"title"`
+	Summary      SummaryView       `json:"summary"`
+	Shape        ShapeView         `json:"shape"`
+	Sections     []SectionView     `json:"sections,omitempty"`
+	ProgressJobs []ProgressJobView `json:"progress_jobs,omitempty"`
 }
 
 type SummaryView struct {
@@ -58,6 +60,7 @@ type SummaryView struct {
 	Succeeded  int `json:"succeeded"`
 	Failed     int `json:"failed"`
 	InProgress int `json:"in_progress"`
+	Waiting    int `json:"waiting"`
 }
 
 type ShapeView struct {
@@ -67,10 +70,20 @@ type ShapeView struct {
 }
 
 type SectionView struct {
-	Kind  string     `json:"kind"`
-	Key   string     `json:"key"`
-	Label string     `json:"label"`
-	Items []ItemView `json:"items"`
+	Kind         string            `json:"kind"`
+	Key          string            `json:"key"`
+	Label        string            `json:"label"`
+	Items        []ItemView        `json:"items"`
+	ProgressJobs []ProgressJobView `json:"progress_jobs,omitempty"`
+}
+
+type ProgressJobView struct {
+	Status             string     `json:"status"`
+	Waiting            bool       `json:"waiting,omitempty"`
+	StartedUTC         *time.Time `json:"started_utc,omitempty"`
+	FinishedUTC        *time.Time `json:"finished_utc,omitempty"`
+	LeasedByAgentID    string     `json:"leased_by_agent_id,omitempty"`
+	ExpectedDurationMS int64      `json:"expected_duration_ms,omitempty"`
 }
 
 type ItemView struct {
@@ -108,6 +121,7 @@ type JobView struct {
 	TestSummary          *protocol.JobExecutionTestSummary `json:"test_summary,omitempty"`
 	UnmetRequirements    []string                          `json:"unmet_requirements,omitempty"`
 	SensitiveValues      []string                          `json:"sensitive_values,omitempty"`
+	ExpectedDurationMS   int64                             `json:"expected_duration_ms,omitempty"`
 }
 
 type executionCard struct {
@@ -168,7 +182,7 @@ func HandleCards(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 	}
 	out := make([]CardView, 0, len(page))
 	for _, card := range page {
-		out = append(out, cardView(jobs, card, detail == "full"))
+		out = append(out, cardView(jobs, card, detail == "full", false))
 	}
 	httpx.WriteJSON(w, http.StatusOK, CardsResponse{
 		Offset: offset, Limit: limit, TotalCards: len(cards), Detail: detail, Cards: out,
@@ -222,11 +236,14 @@ func HandleQueueCards(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 		return
 	}
 	if detail == "full" {
+		if deps.AttachProgress != nil {
+			deps.AttachProgress(jobs)
+		}
 		enrichPageJobs(jobs, page, deps)
 	}
 	out := make([]CardView, 0, len(page))
 	for _, card := range page {
-		out = append(out, cardView(jobs, card, detail == "full"))
+		out = append(out, cardView(jobs, card, detail == "full", detail == "full"))
 	}
 	httpx.WriteJSON(w, http.StatusOK, CardsResponse{
 		Offset: offset, Limit: limit, TotalCards: len(cards), Detail: detail, Cards: out,
@@ -412,7 +429,7 @@ func layoutCardView(jobs []protocol.JobExecution, card executionCard) LayoutCard
 	}
 }
 
-func cardView(jobs []protocol.JobExecution, card executionCard, includeSections bool) CardView {
+func cardView(jobs []protocol.JobExecution, card executionCard, includeSections, includeProgress bool) CardView {
 	shape := cardShape(jobs, card)
 	out := CardView{
 		Key:     card.Key,
@@ -424,18 +441,33 @@ func cardView(jobs []protocol.JobExecution, card executionCard, includeSections 
 	if includeSections {
 		out.Sections = buildSections(jobs, card)
 	}
+	if includeProgress {
+		out.ProgressJobs = progressJobViews(jobs, card.Indices)
+		for i := range out.Sections {
+			indices := make([]int, 0)
+			for _, idx := range card.Indices {
+				if sectionKeyForJob(jobs[idx]) == out.Sections[i].Key {
+					indices = append(indices, idx)
+				}
+			}
+			out.Sections[i].ProgressJobs = progressJobViews(jobs, indices)
+		}
+	}
 	return out
 }
 
 func summarizeCard(jobs []protocol.JobExecution, card executionCard) SummaryView {
 	out := SummaryView{TotalJobs: len(card.Indices)}
 	for _, idx := range card.Indices {
-		status := protocol.NormalizeJobExecutionStatus(jobs[idx].Status)
+		job := jobs[idx]
+		status := protocol.NormalizeJobExecutionStatus(job.Status)
 		switch {
 		case status == protocol.JobExecutionStatusSucceeded:
 			out.Succeeded++
 		case status == protocol.JobExecutionStatusFailed:
 			out.Failed++
+		case isWaitingJobExecution(job):
+			out.Waiting++
 		case protocol.IsActiveJobExecutionStatus(status):
 			out.InProgress++
 		}
@@ -640,6 +672,41 @@ func pipelineSectionKey(job protocol.JobExecution) string {
 	return "section:" + pipelineID
 }
 
+func sectionKeyForJob(job protocol.JobExecution) string {
+	if key := pipelineSectionKey(job); key != "" {
+		return key
+	}
+	return "section:" + strings.TrimSpace(job.ID)
+}
+
+func progressJobViews(jobs []protocol.JobExecution, indices []int) []ProgressJobView {
+	out := make([]ProgressJobView, 0, len(indices))
+	for _, idx := range indices {
+		job := jobs[idx]
+		view := ProgressJobView{
+			Status: protocol.NormalizeJobExecutionStatus(job.Status), LeasedByAgentID: job.LeasedByAgentID,
+			ExpectedDurationMS: job.ExpectedDurationMS, Waiting: isWaitingJobExecution(job),
+		}
+		if !job.StartedUTC.IsZero() {
+			ts := job.StartedUTC
+			view.StartedUTC = &ts
+		}
+		if !job.FinishedUTC.IsZero() {
+			ts := job.FinishedUTC
+			view.FinishedUTC = &ts
+		}
+		out = append(out, view)
+	}
+	return out
+}
+
+func isWaitingJobExecution(job protocol.JobExecution) bool {
+	if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusQueued {
+		return false
+	}
+	return strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" || strings.TrimSpace(job.Metadata["needs_blocked"]) == "1"
+}
+
 func chainCardKey(job protocol.JobExecution) string {
 	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
 	if chainRunID == "" {
@@ -698,6 +765,7 @@ func jobView(job protocol.JobExecution) *JobView {
 		TestSummary:          job.TestSummary,
 		UnmetRequirements:    job.UnmetRequirements,
 		SensitiveValues:      job.SensitiveValues,
+		ExpectedDurationMS:   job.ExpectedDurationMS,
 	}
 	if !job.StartedUTC.IsZero() {
 		ts := job.StartedUTC

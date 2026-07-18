@@ -118,6 +118,13 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	if gotEvents[2].ExitCode == nil || *gotEvents[2].ExitCode != 7 || gotEvents[2].Error != "exit=7" || gotEvents[2].DurationMS != 1234 {
 		t.Fatalf("expected finish payload roundtrip, got %+v", gotEvents[2])
 	}
+	batched, err := s.ListJobExecutionEventsForJobs([]string{job.ID}, protocol.JobExecutionEventTypeStepFinished)
+	if err != nil {
+		t.Fatalf("ListJobExecutionEventsForJobs: %v", err)
+	}
+	if len(batched[job.ID]) != 1 || batched[job.ID][0].DurationMS != 1234 {
+		t.Fatalf("expected one batched finish event, got %+v", batched)
+	}
 }
 
 func TestStoreMergeJobExecutionEnvAndMetadata(t *testing.T) {

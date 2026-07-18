@@ -36,6 +36,48 @@ const uiPageChromeCSS = `
       margin-bottom: 16px;
       box-shadow: 0 8px 24px rgba(21,127,102,.08);
     }
+    .ciwi-progress-surface {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      --ciwi-progress-width: 0%;
+      --ciwi-progress-color: rgba(45, 145, 99, .13);
+      --ciwi-progress-animation-delay: 0ms;
+    }
+    .ciwi-progress-surface::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0 auto 0 0;
+      width: var(--ciwi-progress-width);
+      background: var(--ciwi-progress-color);
+      pointer-events: none;
+      transition: width .25s linear, opacity .2s ease;
+    }
+    .ciwi-progress-surface > * { position: relative; z-index: 1; }
+    .ciwi-progress-indeterminate::before {
+      width: 22%;
+      animation: ciwi-progress-scan 2s ease-in-out infinite alternate;
+      animation-delay: var(--ciwi-progress-animation-delay);
+    }
+    .ciwi-progress-overrun::before {
+      width: 100%;
+      animation: ciwi-progress-pulse 2s ease-in-out infinite;
+      animation-delay: var(--ciwi-progress-animation-delay);
+    }
+    @keyframes ciwi-progress-scan {
+      from { left: 0; }
+      to { left: 78%; }
+    }
+    @keyframes ciwi-progress-pulse {
+      0%, 100% { opacity: .58; }
+      50% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ciwi-progress-surface::before { transition: none; animation: none; }
+      .ciwi-progress-indeterminate::before { left: 39%; opacity: .72; }
+      .ciwi-progress-overrun::before { opacity: .82; }
+    }
     .brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
     .brand > div { min-width: 0; flex: 1 1 auto; }
     .brand img {

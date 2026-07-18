@@ -155,7 +155,15 @@ func TestHandleQueueCardsSummarizeAllJobsButShowOnlyActiveRows(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/job-queue/cards?detail=full", nil)
-	HandleQueueCards(rec, req, HandlerDeps{Store: store})
+	attachCalls := 0
+	HandleQueueCards(rec, req, HandlerDeps{Store: store, AttachProgress: func(jobs []protocol.JobExecution) {
+		attachCalls++
+		for i := range jobs {
+			if protocol.IsActiveJobExecutionStatus(jobs[i].Status) {
+				jobs[i].ExpectedDurationMS = 1234
+			}
+		}
+	}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -170,6 +178,44 @@ func TestHandleQueueCardsSummarizeAllJobsButShowOnlyActiveRows(t *testing.T) {
 	}
 	if len(card.Sections) != 1 || len(card.Sections[0].Items) != 2 {
 		t.Fatalf("expected only the two active rows visible, got %+v", card.Sections)
+	}
+	if attachCalls != 1 || len(card.ProgressJobs) != 5 || len(card.Sections[0].ProgressJobs) != 5 {
+		t.Fatalf("expected one enrichment and all five progress children, got calls=%d card=%d section=%d", attachCalls, len(card.ProgressJobs), len(card.Sections[0].ProgressJobs))
+	}
+	if card.ProgressJobs[0].ExpectedDurationMS != 1234 {
+		t.Fatalf("expected active progress estimate in lightweight child view, got %+v", card.ProgressJobs[0])
+	}
+}
+
+func TestHandleQueueCardsClassifiesDependencyBlockedJobsAsWaiting(t *testing.T) {
+	store := &stubStore{listJobExecutionsFn: func() ([]protocol.JobExecution, error) {
+		return []protocol.JobExecution{
+			job("release", "queued", "2026-03-29T10:25:36Z", map[string]string{
+				"project": "ciwi", "pipeline_id": "release", "pipeline_run_id": "run-release",
+				"chain_run_id": "chain-1", "chain_blocked": "1", "chain_depends_on_pipelines": "build",
+			}),
+			job("build", "failed", "2026-03-29T10:25:35Z", map[string]string{
+				"project": "ciwi", "pipeline_id": "build", "pipeline_run_id": "run-build", "chain_run_id": "chain-1",
+			}),
+		}, nil
+	}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/job-queue/cards?detail=full", nil)
+	HandleQueueCards(rec, req, HandlerDeps{Store: store})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got CardsResponse
+	mustDecode(t, rec, &got)
+	if len(got.Cards) != 1 {
+		t.Fatalf("expected one waiting chain card, got %+v", got.Cards)
+	}
+	card := got.Cards[0]
+	if card.Summary.Waiting != 1 || card.Summary.InProgress != 0 {
+		t.Fatalf("expected waiting job to be excluded from in-progress count, got %+v", card.Summary)
+	}
+	if len(card.ProgressJobs) != 2 || !card.ProgressJobs[0].Waiting {
+		t.Fatalf("expected lightweight waiting marker, got %+v", card.ProgressJobs)
 	}
 }
 

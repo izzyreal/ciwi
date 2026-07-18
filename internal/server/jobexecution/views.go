@@ -32,6 +32,8 @@ type View struct {
 	TestSummary          *protocol.JobExecutionTestSummary `json:"test_summary,omitempty"`
 	UnmetRequirements    []string                          `json:"unmet_requirements,omitempty"`
 	SensitiveValues      []string                          `json:"sensitive_values,omitempty"`
+	ExpectedDurationMS   int64                             `json:"expected_duration_ms,omitempty"`
+	StepExpectedDuration map[int]int64                     `json:"step_expected_duration_ms,omitempty"`
 }
 
 type CreateViewResponse struct {
@@ -114,6 +116,8 @@ func ViewFromProtocol(job protocol.JobExecution) View {
 		TestSummary:          job.TestSummary,
 		UnmetRequirements:    job.UnmetRequirements,
 		SensitiveValues:      job.SensitiveValues,
+		ExpectedDurationMS:   job.ExpectedDurationMS,
+		StepExpectedDuration: job.StepExpectedDuration,
 	}
 	if !job.StartedUTC.IsZero() {
 		ts := job.StartedUTC

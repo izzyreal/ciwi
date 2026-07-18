@@ -395,11 +395,9 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 		defer wg.Done()
 		for attempt := 0; attempt < 8; attempt++ {
 			_, uerr := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:           "agent-1",
-				Status:            "succeeded",
-				ExitCode:          &exitCode,
-				OutputAppend:      "final",
-				OutputOffsetBytes: len("stream-1"),
+				AgentID:  "agent-1",
+				Status:   "succeeded",
+				ExitCode: &exitCode,
 			})
 			if uerr != nil && strings.Contains(strings.ToLower(uerr.Error()), "database is locked") {
 				time.Sleep(10 * time.Millisecond)
@@ -416,10 +414,8 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 		defer wg.Done()
 		for attempt := 0; attempt < 8; attempt++ {
 			_, uerr := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:           "agent-1",
-				Status:            "running",
-				OutputAppend:      "late-stream",
-				OutputOffsetBytes: len("stream-1"),
+				AgentID: "agent-1",
+				Status:  "running",
 			})
 			if uerr != nil && strings.Contains(strings.ToLower(uerr.Error()), "database is locked") {
 				time.Sleep(10 * time.Millisecond)

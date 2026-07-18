@@ -110,3 +110,62 @@ func TestServerMaintenanceRequeuesStaleLeasedJobOnStartup(t *testing.T) {
 		t.Fatalf("expected lease owner to be cleared, got %q", got.LeasedByAgentID)
 	}
 }
+
+func TestServerMaintenancePropagatesTimeoutToBlockedDependents(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	s := &stateStore{db: db}
+
+	common := map[string]string{
+		"project": "ciwi", "pipeline_id": "build", "pipeline_run_id": "run-timeout",
+	}
+	upstreamMeta := map[string]string{}
+	for key, value := range common {
+		upstreamMeta[key] = value
+	}
+	upstreamMeta["pipeline_job_id"] = "unit-tests"
+	upstream, err := db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script: "go test ./...", RequiredCapabilities: map[string]string{"os": "linux"}, TimeoutSeconds: 1, Metadata: upstreamMeta,
+	})
+	if err != nil {
+		t.Fatalf("create upstream: %v", err)
+	}
+	dependentMeta := map[string]string{}
+	for key, value := range common {
+		dependentMeta[key] = value
+	}
+	dependentMeta["pipeline_job_id"] = "package"
+	dependentMeta["needs_blocked"] = "1"
+	dependentMeta["needs_job_ids"] = "unit-tests"
+	dependent, err := db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script: "go build ./...", RequiredCapabilities: map[string]string{"os": "linux"}, TimeoutSeconds: 30, Metadata: dependentMeta,
+	})
+	if err != nil {
+		t.Fatalf("create dependent: %v", err)
+	}
+
+	leased, err := db.LeaseJobExecution("agent-1", map[string]string{"os": "linux"})
+	if err != nil || leased == nil || leased.ID != upstream.ID {
+		t.Fatalf("lease upstream: job=%+v err=%v", leased, err)
+	}
+	running, err := db.UpdateJobExecutionStatus(upstream.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: "agent-1", Status: protocol.JobExecutionStatusRunning,
+	})
+	if err != nil {
+		t.Fatalf("mark upstream running: %v", err)
+	}
+	if err := s.runJobExecutionMaintenancePass(running.StartedUTC.Add(30 * time.Second)); err != nil {
+		t.Fatalf("maintenance pass: %v", err)
+	}
+
+	got, err := db.GetJobExecution(dependent.ID)
+	if err != nil {
+		t.Fatalf("get dependent: %v", err)
+	}
+	if got.Status != protocol.JobExecutionStatusFailed || !strings.Contains(got.Error, "required job unit-tests failed") {
+		t.Fatalf("expected timeout failure to propagate, got status=%q error=%q", got.Status, got.Error)
+	}
+}

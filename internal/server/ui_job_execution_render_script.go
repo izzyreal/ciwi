@@ -839,6 +839,31 @@ const jobExecutionRenderJS = `
       }).join('');
     }
 
+    function bindStructuredStepProgress(job, events) {
+      const groups = structuredStepGroups(events);
+      const byKey = Object.create(null);
+      groups.forEach(group => { byKey[group.key] = group; });
+      const activeIdx = activeStepIndexFromCurrentStep(job && job.current_step);
+      const expectedByStep = (job && job.step_expected_duration_ms) || {};
+      document.querySelectorAll('#logBox details.log-step[data-step-key]').forEach(details => {
+        const key = String(details.getAttribute('data-step-key') || '');
+        const group = byKey[key];
+        const summary = details.querySelector(':scope > summary');
+        if (!group || !summary) return;
+        const index = Number(key || 0);
+        const finish = group.finish || null;
+        const running = activeIdx === index - 1 && isRunningJobStatus((job && job.status) || '');
+        if (!finish && !running) return;
+        bindCiwiProgress(summary, {
+          status: finish ? (String(finish.error || '').trim() || finish.exit_code !== null && finish.exit_code !== undefined ? 'failed' : 'succeeded') : 'running',
+          started_utc: group.started || '',
+          finished_utc: finish ? String(finish.timestamp_utc || '') : '',
+          leased_by_agent_id: String((job && job.leased_by_agent_id) || ''),
+          expected_duration_ms: Number(expectedByStep[key] || 0),
+        });
+      });
+    }
+
     function plainTextFromStructuredEvents(job, events) {
       const groups = structuredStepGroups(events);
       if (!groups.length) return String((job && job.output) || '');

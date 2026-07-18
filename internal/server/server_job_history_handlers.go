@@ -3,14 +3,20 @@ package server
 import (
 	"net/http"
 
+	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/jobhistory"
 )
 
 func (s *stateStore) jobHistoryHandlerDeps() jobhistory.HandlerDeps {
+	attachProgress := func([]protocol.JobExecution) {}
+	if s.jobProgress != nil {
+		attachProgress = s.jobProgress.AttachJobEstimates
+	}
 	return jobhistory.HandlerDeps{
 		Store:                   s.jobExecutionStore(),
 		AttachTestSummaries:     s.attachJobExecutionTestSummaries,
 		AttachUnmetRequirements: s.attachJobExecutionUnmetRequirements,
+		AttachProgress:          attachProgress,
 	}
 }
 

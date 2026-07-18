@@ -85,14 +85,18 @@ function buildJobExecutionRow(job, opts = {}) {
 
   if (includeReason) {
     const reasons = (job.unmet_requirements || []);
+    const waitingReason = jobWaitingReason(job);
     const reasonTd = document.createElement('td');
-    if (reasons.length === 0) {
+    if (reasons.length === 0 && !waitingReason) {
       reasonTd.innerHTML = cellText('');
+    } else if (reasons.length === 0) {
+      reasonTd.innerHTML = cellText(waitingReason);
     } else {
       const summaryHTML = formatUnmetRequirementsInlineHTML(reasons);
+      const combinedSummaryHTML = (waitingReason ? (escapeHtml(waitingReason) + '; ') : '') + summaryHTML;
       reasonTd.innerHTML = '' +
         '<span class="ciwi-job-reason">' +
-          '<span class="ciwi-job-reason-summary">' + (fixedLines > 0 ? ('<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '">' + summaryHTML + '</span>') : summaryHTML) + '</span>' +
+          '<span class="ciwi-job-reason-summary">' + (fixedLines > 0 ? ('<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '">' + combinedSummaryHTML + '</span>') : combinedSummaryHTML) + '</span>' +
           '<span class="ciwi-job-reason-info" tabindex="0" aria-label="Missing requirements info">ⓘ</span>' +
         '</span>';
       const info = reasonTd.querySelector('.ciwi-job-reason-info');

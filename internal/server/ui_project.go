@@ -20,7 +20,7 @@ const projectHTML = `<!doctype html>
     .status-failed { color: var(--bad); font-weight: 600; }
     .status-blocked { color: #8a5a14; font-weight: 600; }
     .status-running { color: #a56a00; font-weight: 600; }
-    .status-queued, .status-leased { color: var(--muted); }
+    .status-queued, .status-leased, .status-waiting { color: var(--muted); }
     .pipeline { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .pipeline-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
     .pipeline-meta { display:flex; flex-direction:column; gap:4px; min-width: 0; }

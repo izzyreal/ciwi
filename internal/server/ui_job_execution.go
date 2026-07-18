@@ -56,7 +56,7 @@ const jobExecutionHTML = `<!doctype html>
     .status-failed { color: var(--bad); font-weight: 700; }
     .status-blocked { color: #8a5a14; font-weight: 700; }
     .status-running { color: #a56a00; font-weight: 700; }
-    .status-queued, .status-leased { color: var(--muted); font-weight: 700; }
+    .status-queued, .status-leased, .status-waiting { color: var(--muted); font-weight: 700; }
     .job-subtitle-detail {
       margin-top: 4px;
       font-size: 12px;
@@ -143,7 +143,12 @@ const jobExecutionHTML = `<!doctype html>
       gap: 8px;
       min-width: 0;
       white-space: nowrap;
+      margin: -6px -10px;
+      padding: 6px 10px;
+      border-radius: 5px;
+      --ciwi-progress-color: rgba(111, 184, 148, .18);
     }
+    details.log-step[open] > summary { margin-bottom: 6px; }
     .log-step-summary-title { flex: 0 0 auto; }
     .log-step-summary-command {
       flex: 1 1 auto;
@@ -335,7 +340,7 @@ const jobExecutionHTML = `<!doctype html>
 </head>
 <body>
   <main>
-    <div class="card top">
+    <div class="card top" id="jobHeaderCard">
       <div class="brand">
         <img id="jobProjectIcon" class="job-header-icon" alt="" style="display:none;" />
         <div>
