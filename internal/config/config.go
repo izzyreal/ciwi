@@ -98,6 +98,7 @@ type PipelineJobMatrix struct {
 }
 
 type PipelineJobStep struct {
+	Name       string               `yaml:"name,omitempty" json:"name,omitempty"`
 	Run        string               `yaml:"run,omitempty" json:"run,omitempty"`
 	Test       *PipelineJobTestStep `yaml:"test,omitempty" json:"test,omitempty"`
 	SkipDryRun bool                 `yaml:"skip_dry_run,omitempty" json:"skip_dry_run,omitempty"`

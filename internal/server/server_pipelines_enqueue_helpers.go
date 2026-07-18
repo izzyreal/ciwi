@@ -190,6 +190,9 @@ func deriveAutoBumpBranch(sourceRef string) string {
 }
 
 func describePipelineStep(step config.PipelineJobStep, idx int, jobID string) string {
+	if name := strings.TrimSpace(step.Name); name != "" {
+		return name
+	}
 	if step.Test != nil {
 		name := strings.TrimSpace(step.Test.Name)
 		if name == "" {
@@ -215,6 +218,9 @@ func describeSkippedPipelineStepLiteral(step config.PipelineJobStep, idx int, jo
 
 func pipelineStepYAMLLiteral(step config.PipelineJobStep) string {
 	lines := []string{}
+	if strings.TrimSpace(step.Name) != "" {
+		lines = append(lines, "name: "+strings.TrimSpace(step.Name))
+	}
 	if strings.TrimSpace(step.Run) != "" {
 		lines = append(lines, "run: "+strings.TrimSpace(step.Run))
 	}

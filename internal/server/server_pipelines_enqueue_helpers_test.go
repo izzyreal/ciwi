@@ -141,6 +141,10 @@ func TestDescribePipelineSteps(t *testing.T) {
 	if got := describePipelineStep(runStep, 0, "job-a"); got != "step 1" {
 		t.Fatalf("unexpected run step description: %q", got)
 	}
+	namedRunStep := config.PipelineJobStep{Name: "prepare dist", Run: "mkdir -p dist"}
+	if got := describePipelineStep(namedRunStep, 0, "job-a"); got != "prepare dist" {
+		t.Fatalf("unexpected named run step description: %q", got)
+	}
 
 	testStepUnnamed := config.PipelineJobStep{Test: &config.PipelineJobTestStep{Command: "ctest"}}
 	if got := describePipelineStep(testStepUnnamed, 1, "job-a"); got != "test job-a-test-2" {

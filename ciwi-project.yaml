@@ -22,7 +22,8 @@ pipelines:
             go: ">=1.24"
         timeout_seconds: 600
         steps:
-          - test:
+          - name: Run Go Unit
+            test:
               name: go-unit
               command: mkdir -p dist && go test -json -coverprofile=dist/go-unit.cover ./... > dist/go-unit.json
               format: go-test-json
@@ -66,8 +67,10 @@ pipelines:
               goarch: arm64
               ext: ""
         steps:
-          - run: mkdir -p dist
-          - run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
+          - name: Prepare dist
+            run: mkdir -p dist
+          - name: Build ciwi binary
+            run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
   - id: release
     trigger: manual
     depends_on:
@@ -99,7 +102,8 @@ pipelines:
             gh: "*"
         timeout_seconds: 1200
         steps:
-          - run: test -n "$GITHUB_TOKEN"
+          - name: Check credentials
+            run: test -n "$GITHUB_TOKEN"
             skip_dry_run: true
             vault:
               connection: home-vault
@@ -111,7 +115,8 @@ pipelines:
                   kv_version: 2
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
-          - run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/izzyreal/ciwi.git"
+          - name: Configure release remote
+            run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/izzyreal/ciwi.git"
             skip_dry_run: true
             vault:
               connection: home-vault
@@ -123,14 +128,17 @@ pipelines:
                   kv_version: 2
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
-          - run: test -f VERSION
-          - run: |
+          - name: Check release version
+            run: test -f VERSION
+          - name: Check working tree
+            run: |
               DIRTY="$(git status --porcelain | grep -vE '^\?\? dist/' || true)"
               if [ -n "$DIRTY" ]; then
                 echo "working tree is not clean"
                 exit 1
               fi
-          - run: |
+          - name: Check release tag
+            run: |
               TAG="${CIWI_PIPELINE_TAG}"
               if git rev-parse "$TAG" >/dev/null 2>&1; then
                 echo "tag exists: $TAG"
@@ -140,7 +148,8 @@ pipelines:
                 echo "remote tag exists: $TAG"
                 exit 1
               fi
-          - run: |
+          - name: Create checksums
+            run: |
               test -f dist/ciwi-linux-amd64
               test -f dist/ciwi-darwin-amd64
               test -f dist/ciwi-darwin-arm64
@@ -159,12 +168,14 @@ pipelines:
                 shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
               done > dist/ciwi-checksums.txt
               test -f dist/ciwi-checksums.txt
-          - run: |
+          - name: Create release tag
+            run: |
               TAG="${CIWI_PIPELINE_TAG}"
               git tag -a "$TAG" -m "ciwi $TAG"
               git push origin "$TAG"
             skip_dry_run: true
-          - run: |
+          - name: Upload release assets
+            run: |
               TAG="${CIWI_PIPELINE_TAG}"
               gh release create "$TAG" \
                 --repo izzyreal/ciwi \
@@ -223,7 +234,8 @@ pipelines:
         artifacts:
           - dist/codesigned-macos/*.zip
         steps:
-          - run: test -n "$DEV_IDENTITY_APP" && test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
+          - name: Check credentials
+            run: test -n "$DEV_IDENTITY_APP" && test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
             vault:
               connection: home-vault
               secrets:
@@ -248,9 +260,12 @@ pipelines:
               NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
-          - run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
-          - run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
-          - run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-amd64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-amd64.app dist/codesigned-macos/ciwi-darwin-amd64.zip
+          - name: Check artifact
+            run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
+          - name: Prepare codesign output
+            run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
+          - name: Copy app bundle
+            run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-amd64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-amd64.app dist/codesigned-macos/ciwi-darwin-amd64.zip
             vault:
               connection: home-vault
               secrets:
@@ -275,7 +290,8 @@ pipelines:
               NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
-          - run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-arm64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-arm64.app dist/codesigned-macos/ciwi-darwin-arm64.zip
+          - name: Copy app bundle
+            run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-arm64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-arm64.app dist/codesigned-macos/ciwi-darwin-arm64.zip
             vault:
               connection: home-vault
               secrets:
