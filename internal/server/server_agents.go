@@ -401,6 +401,14 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if a.UpdateInProgress {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{
+			Assigned: false,
+			Message:  "agent update in progress",
+		})
+		return
+	}
 	agentCaps = mergeCapabilities(a, req.Capabilities)
 	s.mu.Unlock()
 	if agentCaps == nil {

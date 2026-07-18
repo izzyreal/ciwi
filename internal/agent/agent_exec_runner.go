@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,7 +25,7 @@ func runJobScript(
 	container *executionContainerContext,
 	env []string,
 	output *syncBuffer,
-	stepOutput *syncBuffer,
+	stepEvent *protocol.JobStepPlanItem,
 	progress *outputReportState,
 	defaultCurrentStep string,
 	sensitive []string,
@@ -72,14 +71,10 @@ func runJobScript(
 		cmd.Env = env
 	}
 	prepareCommandForCancellation(cmd)
-	var writer io.Writer = output
-	if stepOutput != nil {
-		writer = &syncBufferTee{primary: output, secondary: stepOutput}
-	}
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+	cmd.Stdout = output
+	cmd.Stderr = output
 
-	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, progress, sensitive, defaultCurrentStep)
+	stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, jobID, output, progress, sensitive, defaultCurrentStep, stepEvent)
 	defer stopStreaming()
 	return runCancelableCommand(runCtx, cmd)
 }
@@ -223,11 +218,6 @@ type syncBuffer struct {
 	b  bytes.Buffer
 }
 
-type syncBufferTee struct {
-	primary   *syncBuffer
-	secondary *syncBuffer
-}
-
 type outputReportState struct {
 	mu                 sync.Mutex
 	sentRawLen         int
@@ -244,20 +234,6 @@ func (s *syncBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.Write(p)
-}
-
-func (s *syncBufferTee) Write(p []byte) (int, error) {
-	if s.primary != nil {
-		if _, err := s.primary.Write(p); err != nil {
-			return 0, err
-		}
-	}
-	if s.secondary != nil {
-		if _, err := s.secondary.Write(p); err != nil {
-			return 0, err
-		}
-	}
-	return len(p), nil
 }
 
 func (s *syncBuffer) WriteString(str string) (int, error) {
@@ -303,7 +279,7 @@ func (s *outputReportState) markSent(totalRawLen, deltaPersistedBytes int, curre
 	s.lastStep = currentStep
 }
 
-func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, progress *outputReportState, sensitive []string, defaultCurrentStep string) func() {
+func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, progress *outputReportState, sensitive []string, defaultCurrentStep string, stepEvent *protocol.JobStepPlanItem) func() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	done := make(chan struct{})
 	stopCh := make(chan struct{})
@@ -327,12 +303,22 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 			if delta == "" && currentStep == lastStep {
 				return
 			}
+			events := []protocol.JobExecutionEvent(nil)
+			if delta != "" && stepEvent != nil {
+				events = append(events, protocol.JobExecutionEvent{
+					Type:         protocol.JobExecutionEventTypeStepOutput,
+					Step:         stepEvent,
+					Output:       delta,
+					TimestampUTC: time.Now().UTC(),
+				})
+			}
 			if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobExecutionStatusUpdateRequest{
 				AgentID:           agentID,
 				Status:            protocol.JobExecutionStatusRunning,
 				OutputAppend:      delta,
 				OutputOffsetBytes: outputOffsetBytes,
 				CurrentStep:       currentStep,
+				Events:            events,
 				TimestampUTC:      time.Now().UTC(),
 			}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				slog.Error("stream running update failed", "job_execution_id", jobID, "error", err)
@@ -345,6 +331,7 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 		for {
 			select {
 			case <-stopCh:
+				sendSnapshot()
 				return
 			case <-ctx.Done():
 				return

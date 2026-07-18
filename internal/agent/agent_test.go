@@ -992,10 +992,10 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 
 	job := protocol.JobExecution{
 		ID:             "job-step-output",
-		Script:         "true",
+		Script:         "echo structured-output",
 		TimeoutSeconds: 30,
 		StepPlan: []protocol.JobStepPlanItem{
-			{Index: 1, Total: 1, Name: "compile", Script: "true"},
+			{Index: 1, Total: 1, Name: "compile", Script: "echo structured-output"},
 		},
 		RequiredCapabilities: map[string]string{
 			"shell": shellPosix,
@@ -1012,6 +1012,7 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 	}
 	foundRunningStep := false
 	foundStepStartedEvent := false
+	foundStepOutputEvent := false
 	for _, st := range statuses {
 		if st.Status != "running" {
 			continue
@@ -1020,13 +1021,12 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 			continue
 		}
 		foundRunningStep = true
-		if strings.TrimSpace(st.OutputAppend) == "" {
-			t.Fatalf("expected running step status to include output snapshot")
-		}
 		for _, event := range st.Events {
 			if event.Type == protocol.JobExecutionEventTypeStepStarted {
 				foundStepStartedEvent = true
-				break
+			}
+			if event.Type == protocol.JobExecutionEventTypeStepOutput && strings.Contains(event.Output, "structured-output") {
+				foundStepOutputEvent = true
 			}
 		}
 	}
@@ -1035,6 +1035,9 @@ func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
 	}
 	if !foundStepStartedEvent {
 		t.Fatalf("expected at least one running status update with step.started event")
+	}
+	if !foundStepOutputEvent {
+		t.Fatalf("expected at least one running status update with step.output event")
 	}
 }
 

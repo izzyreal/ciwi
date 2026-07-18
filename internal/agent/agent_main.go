@@ -298,6 +298,7 @@ func (d *agentLoopDeps) handleHeartbeatResult(hbRes heartbeatResult) {
 func (d *agentLoopDeps) handleLeaseTick() {
 	if !d.control.jobInProgress && d.control.hasDeferred() {
 		d.flushDeferred()
+		return
 	}
 	if d.control.jobInProgress {
 		return

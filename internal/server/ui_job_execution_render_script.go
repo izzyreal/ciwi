@@ -792,6 +792,12 @@ const jobExecutionRenderJS = `
       return name.split('\n').map(s => s.trimEnd()).filter(Boolean).join('\n');
     }
 
+    function stepEventCommandSummary(step) {
+      const text = String((step && step.script) || legacyFallbackCommandFromStepName(step) || '').trim();
+      if (!text) return '';
+      return text.replace(/\s+/g, ' ');
+    }
+
     function renderStructuredOutputLog(job, events) {
       const groups = structuredStepGroups(events);
       if (!groups.length) return renderOutputLog((job && job.output) || '');
@@ -811,10 +817,11 @@ const jobExecutionRenderJS = `
         const script = String((group.step && group.step.script) || legacyCommand);
         const yamlLiteral = String((group.step && group.step.yaml_literal) || '');
         const output = String(group.output || '');
-        const historicalNote = (!group.finish && !output) ? '<div class="log-step-meta"><span>Historical preview: this run has step boundaries, but per-step output was not stored separately.</span></div>' : '';
+        const commandSummary = stepEventCommandSummary(group.step);
+        const historicalNote = (!running && !group.finish && !output) ? '<div class="log-step-meta"><span>Historical preview: this run has step boundaries, but per-step output was not stored separately.</span></div>' : '';
         return '' +
           '<details class="log-step" data-step-key="' + escapeHtml(group.key) + '"' + (open ? ' open' : '') + '>' +
-            '<summary>' + escapeHtml(stepEventTitle(group.step)) + '</summary>' +
+            '<summary><span class="log-step-summary-title">' + escapeHtml(stepEventTitle(group.step)) + '</span>' + (commandSummary ? '<span class="log-step-summary-command">' + escapeHtml(commandSummary) + '</span>' : '') + '</summary>' +
             (meta.length ? ('<div class="log-step-meta">' + meta.map(m => '<span>' + m + '</span>').join('') + '</div>') : '') +
             historicalNote +
             '<div class="log-step-label">YAML literal</div>' +

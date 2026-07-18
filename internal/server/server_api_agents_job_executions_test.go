@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAgentRunScriptQueuesTargetedJobExecution(t *testing.T) {
@@ -134,6 +135,42 @@ func TestAgentRunScriptRejectsUnsupportedShellForJobExecution(t *testing.T) {
 	}
 	if body := readBody(t, runResp); !strings.Contains(body, "does not support requested shell") {
 		t.Fatalf("unexpected unsupported shell response: %s", body)
+	}
+}
+
+func TestLeaseRejectsAgentUpdateInProgress(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	s.mu.Lock()
+	s.agents["agent-update-first"] = agentState{
+		Hostname:         "host-update-first",
+		OS:               "linux",
+		Arch:             "amd64",
+		Version:          "v1.0.0",
+		Authorized:       true,
+		Capabilities:     map[string]string{"executor": "script", "shells": "posix"},
+		LastSeenUTC:      time.Now().UTC(),
+		UpdateTarget:     "v1.2.0",
+		UpdateInProgress: true,
+	}
+	s.mu.Unlock()
+
+	leaseResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-update-first",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseResp.StatusCode != http.StatusOK {
+		t.Fatalf("lease status=%d body=%s", leaseResp.StatusCode, readBody(t, leaseResp))
+	}
+	var payload struct {
+		Assigned bool   `json:"assigned"`
+		Message  string `json:"message"`
+	}
+	decodeJSONBody(t, leaseResp, &payload)
+	if payload.Assigned || !strings.Contains(payload.Message, "update in progress") {
+		t.Fatalf("expected update-in-progress lease rejection, got %+v", payload)
 	}
 }
 

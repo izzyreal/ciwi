@@ -358,16 +358,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			if len(step.env) > 0 {
 				stepRunEnv = mergeEnv(runEnv, step.env)
 			}
-			var stepOutput syncBuffer
-			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, stepRunEnv, &output, &stepOutput, progress, currentStep, job.SensitiveValues, traceShell)
-			stepEvents := []protocol.JobExecutionEvent{
-				{
-					Type:         protocol.JobExecutionEventTypeStepOutput,
-					Step:         jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript),
-					Output:       redactSensitive(stepOutput.String(), job.SensitiveValues),
-					TimestampUTC: time.Now().UTC(),
-				},
-			}
+			stepEvent := jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript)
+			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, stepRunEnv, &output, stepEvent, progress, currentStep, job.SensitiveValues, traceShell)
+			stepEvents := []protocol.JobExecutionEvent(nil)
 			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
 				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)
 				if parseErr != nil {

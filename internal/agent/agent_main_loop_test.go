@@ -188,7 +188,7 @@ func TestAgentLoopDepsHandleLeaseTickBusySkipsLease(t *testing.T) {
 	}
 }
 
-func TestAgentLoopDepsHandleLeaseTickFlushesDeferredBeforeLease(t *testing.T) {
+func TestAgentLoopDepsHandleLeaseTickFlushesDeferredInsteadOfLeasing(t *testing.T) {
 	control := &deferredControl{
 		pendingUpdate: &pendingUpdateRequest{target: "v1.2.3", repository: "izzyreal/ciwi", apiBase: "https://api.github.com"},
 	}
@@ -223,7 +223,7 @@ func TestAgentLoopDepsHandleLeaseTickFlushesDeferredBeforeLease(t *testing.T) {
 	}
 
 	deps.handleLeaseTick()
-	if !reflect.DeepEqual(events, []string{"trigger", "update", "lease"}) {
+	if !reflect.DeepEqual(events, []string{"trigger", "update"}) {
 		t.Fatalf("unexpected deferred+lease ordering: got=%v", events)
 	}
 }

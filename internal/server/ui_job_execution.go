@@ -138,6 +138,21 @@ const jobExecutionHTML = `<!doctype html>
       cursor: pointer;
       color: #dff3ea;
       font-weight: 700;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+      white-space: nowrap;
+    }
+    .log-step-summary-title { flex: 0 0 auto; }
+    .log-step-summary-command {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #a7c7b9;
+      font-size: 11px;
+      font-weight: 600;
     }
     .log-step-meta {
       display: flex;
