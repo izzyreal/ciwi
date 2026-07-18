@@ -739,20 +739,25 @@ const jobExecutionRenderJS = `
       return '<details class="log-fold"><summary>git detached HEAD advice (collapsed)</summary><pre>' + escapeHtml(text) + '</pre></details>';
     }
 
-    function stepEventTitle(step) {
+    function stepEventDisplayName(step) {
       step = step || {};
-      const idx = Number(step.index || 0);
-      const total = Number(step.total || 0);
       let name = String(step.name || '').trim();
       if (name.indexOf('\n') >= 0) {
         name = name.split('\n').map(s => s.trim()).filter(Boolean)[0] || name;
       }
-      name = name.replace(/\s+/g, ' ');
-      if (!name) name = idx > 0 ? ('Step ' + idx) : 'Step';
-      name = name.replace(/_/g, ' ');
-      if (idx > 0 && total > 0) return 'Step ' + idx + '/' + total + ': ' + name;
-      if (idx > 0) return 'Step ' + idx + ': ' + name;
-      return name;
+      name = name.replace(/\s+/g, ' ').trim();
+      if (!name) return '';
+      return name.replace(/_/g, ' ');
+    }
+
+    function stepEventTitle(step) {
+      step = step || {};
+      const idx = Number(step.index || 0);
+      const total = Number(step.total || 0);
+      const title = idx > 0 && total > 0 ? ('Step ' + idx + '/' + total) : (idx > 0 ? ('Step ' + idx) : 'Step');
+      const name = stepEventDisplayName(step);
+      if (idx > 0 && name.toLowerCase() === ('step ' + idx)) return title;
+      return name ? (title + ': ' + name) : title;
     }
 
     function structuredStepGroups(events) {
