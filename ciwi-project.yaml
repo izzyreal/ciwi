@@ -267,7 +267,7 @@ pipelines:
           - name: Prepare codesign output
             run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
             skip_dry_run: true
-          - name: Copy app bundle
+          - name: Copy app bundle amd64
             run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-amd64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-amd64.app dist/codesigned-macos/ciwi-darwin-amd64.zip
             skip_dry_run: true
             vault:
@@ -294,7 +294,7 @@ pipelines:
               NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
-          - name: Copy app bundle
+          - name: Copy app bundle arm64
             run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-arm64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-arm64.app dist/codesigned-macos/ciwi-darwin-arm64.zip
             skip_dry_run: true
             vault:
