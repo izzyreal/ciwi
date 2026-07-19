@@ -94,44 +94,6 @@ func TestHandleByIDSubresourcesAdditionalBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("artifacts post validation and lease branches", func(t *testing.T) {
-		store := &stubStore{}
-
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts", strings.NewReader("{bad"))
-		HandleByID(rec, req, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 invalid json, got %d", rec.Code)
-		}
-
-		rec = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts", strings.NewReader(`{"artifacts":[]}`))
-		HandleByID(rec, req, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 missing agent_id, got %d", rec.Code)
-		}
-
-		store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
-			return protocol.JobExecution{}, errors.New("missing")
-		}
-		rec = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts", strings.NewReader(`{"agent_id":"a1","artifacts":[]}`))
-		HandleByID(rec, req, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404 job not found, got %d", rec.Code)
-		}
-
-		store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
-			return protocol.JobExecution{ID: id, LeasedByAgentID: "other"}, nil
-		}
-		rec = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts", strings.NewReader(`{"agent_id":"a1","artifacts":[]}`))
-		HandleByID(rec, req, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
-		if rec.Code != http.StatusConflict {
-			t.Fatalf("expected 409 lease conflict, got %d", rec.Code)
-		}
-	})
-
 	t.Run("tests endpoint additional branches", func(t *testing.T) {
 		store := &stubStore{}
 

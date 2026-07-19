@@ -135,55 +135,19 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 }
 
 func handleJobArtifacts(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {
-	switch r.Method {
-	case http.MethodGet:
-		artifacts, err := listArtifactsWithSynthetic(deps, jobID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		for i := range artifacts {
-			artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
-		}
-		httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
-	case http.MethodPost:
-		var req protocol.UploadArtifactsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
-			return
-		}
-		if req.AgentID == "" {
-			http.Error(w, "agent_id is required", http.StatusBadRequest)
-			return
-		}
-		job, err := deps.Store.GetJobExecution(jobID)
-		if err != nil {
-			http.Error(w, "job not found", http.StatusNotFound)
-			return
-		}
-		if job.LeasedByAgentID != "" && job.LeasedByAgentID != req.AgentID {
-			http.Error(w, "job is leased by another agent", http.StatusConflict)
-			return
-		}
-		artifacts, err := PersistArtifacts(deps.ArtifactsDir, jobID, req.Artifacts)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := deps.Store.SaveJobExecutionArtifacts(jobID, artifacts); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		for i := range artifacts {
-			artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
-		}
-		if deps.MarkAgentSeen != nil {
-			deps.MarkAgentSeen(req.AgentID, nowUTC(deps))
-		}
-		httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
-	default:
+	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
+	artifacts, err := listArtifactsWithSynthetic(deps, jobID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for i := range artifacts {
+		artifacts[i].URL = "/artifacts/" + strings.TrimPrefix(filepath.ToSlash(artifacts[i].URL), "/")
+	}
+	httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
 }
 
 func handleJobArtifactsUploadZIP(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {

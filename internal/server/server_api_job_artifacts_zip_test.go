@@ -3,7 +3,6 @@ package server
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/base64"
 	"io"
 	"net/http"
 	"sort"
@@ -46,19 +45,33 @@ func TestJobArtifactsDownloadAllZip(t *testing.T) {
 		t.Fatalf("missing job execution id in run-script response")
 	}
 
-	uploadResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/jobs/"+runPayload.JobExecutionID+"/artifacts", map[string]any{
-		"agent_id": "agent-zip",
-		"artifacts": []map[string]any{
-			{
-				"path":        "dist/a.txt",
-				"data_base64": base64.StdEncoding.EncodeToString([]byte("alpha")),
-			},
-			{
-				"path":        "dist/nested/b.txt",
-				"data_base64": base64.StdEncoding.EncodeToString([]byte("bravo")),
-			},
-		},
-	})
+	var uploadBody bytes.Buffer
+	uploadZIP := zip.NewWriter(&uploadBody)
+	for path, content := range map[string]string{
+		"dist/a.txt":        "alpha",
+		"dist/nested/b.txt": "bravo",
+	} {
+		entry, err := uploadZIP.Create(path)
+		if err != nil {
+			t.Fatalf("create upload zip entry: %v", err)
+		}
+		if _, err := io.WriteString(entry, content); err != nil {
+			t.Fatalf("write upload zip entry: %v", err)
+		}
+	}
+	if err := uploadZIP.Close(); err != nil {
+		t.Fatalf("close upload zip: %v", err)
+	}
+	uploadReq, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/jobs/"+runPayload.JobExecutionID+"/artifacts/upload-zip", bytes.NewReader(uploadBody.Bytes()))
+	if err != nil {
+		t.Fatalf("create upload request: %v", err)
+	}
+	uploadReq.Header.Set("Content-Type", "application/zip")
+	uploadReq.Header.Set("X-CIWI-Agent-ID", "agent-zip")
+	uploadResp, err := client.Do(uploadReq)
+	if err != nil {
+		t.Fatalf("upload artifacts: %v", err)
+	}
 	if uploadResp.StatusCode != http.StatusOK {
 		t.Fatalf("upload artifacts status=%d body=%s", uploadResp.StatusCode, readBody(t, uploadResp))
 	}

@@ -3,7 +3,6 @@ package jobexecution
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -323,22 +322,11 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 	}
 }
 
-func TestHandleByIDArtifactsGetAndPost(t *testing.T) {
+func TestHandleByIDArtifactsGetAndRejectPost(t *testing.T) {
 	artifactsDir := t.TempDir()
 	store := &stubStore{}
-	var saveCalled bool
 	store.listJobExecutionArtifactsFn = func(id string) ([]protocol.JobExecutionArtifact, error) {
 		return []protocol.JobExecutionArtifact{{JobExecutionID: id, Path: "dist/app.bin", URL: "job-1/dist/app.bin", SizeBytes: 5}}, nil
-	}
-	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
-		return protocol.JobExecution{ID: id, LeasedByAgentID: "agent-1"}, nil
-	}
-	store.saveJobExecutionArtifactsFn = func(id string, artifacts []protocol.JobExecutionArtifact) error {
-		saveCalled = true
-		if len(artifacts) != 1 || artifacts[0].Path != "dist/app.bin" {
-			t.Fatalf("unexpected persisted artifacts: %+v", artifacts)
-		}
-		return nil
 	}
 
 	recGet := httptest.NewRecorder()
@@ -348,15 +336,11 @@ func TestHandleByIDArtifactsGetAndPost(t *testing.T) {
 		t.Fatalf("expected GET 200, got %d: %s", recGet.Code, recGet.Body.String())
 	}
 
-	body := fmt.Sprintf(`{"agent_id":"agent-1","artifacts":[{"path":"dist/app.bin","data_base64":"%s"}]}`, base64.StdEncoding.EncodeToString([]byte("hello")))
 	recPost := httptest.NewRecorder()
-	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts", strings.NewReader(body))
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts", strings.NewReader(`{}`))
 	HandleByID(recPost, reqPost, HandlerDeps{Store: store, ArtifactsDir: artifactsDir})
-	if recPost.Code != http.StatusOK {
-		t.Fatalf("expected POST 200, got %d: %s", recPost.Code, recPost.Body.String())
-	}
-	if !saveCalled {
-		t.Fatalf("expected SaveJobExecutionArtifacts to be called")
+	if recPost.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected POST 405, got %d: %s", recPost.Code, recPost.Body.String())
 	}
 }
 

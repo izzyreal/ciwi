@@ -3,7 +3,6 @@ package jobexecution
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,46 +16,6 @@ import (
 
 const testReportArtifactPath = "test-report.json"
 const coverageReportArtifactPath = "coverage-report.json"
-
-func PersistArtifacts(artifactsDir, jobID string, incoming []protocol.UploadArtifact) ([]protocol.JobExecutionArtifact, error) {
-	if len(incoming) == 0 {
-		return nil, nil
-	}
-	base := filepath.Join(artifactsDir, jobID)
-	if err := os.MkdirAll(base, 0o755); err != nil {
-		return nil, fmt.Errorf("create artifact dir: %w", err)
-	}
-
-	artifacts := make([]protocol.JobExecutionArtifact, 0, len(incoming))
-	for _, in := range incoming {
-		rel := filepath.ToSlash(filepath.Clean(in.Path))
-		if !isSafeStoredArtifactPath(rel) {
-			return nil, fmt.Errorf("invalid artifact path: %q", in.Path)
-		}
-
-		decoded, err := base64.StdEncoding.DecodeString(in.DataBase64)
-		if err != nil {
-			return nil, fmt.Errorf("decode artifact %q: %w", in.Path, err)
-		}
-
-		dst := filepath.Join(base, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return nil, fmt.Errorf("mkdir artifact parent: %w", err)
-		}
-		if err := os.WriteFile(dst, decoded, 0o644); err != nil {
-			return nil, fmt.Errorf("write artifact %q: %w", in.Path, err)
-		}
-
-		storedRel := filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(rel)))
-		artifacts = append(artifacts, protocol.JobExecutionArtifact{
-			JobExecutionID: jobID,
-			Path:           rel,
-			URL:            storedRel,
-			SizeBytes:      int64(len(decoded)),
-		})
-	}
-	return artifacts, nil
-}
 
 func PersistArtifactsZIP(artifactsDir, jobID string, payload []byte) ([]protocol.JobExecutionArtifact, error) {
 	if len(payload) == 0 {

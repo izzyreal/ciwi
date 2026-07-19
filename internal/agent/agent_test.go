@@ -382,9 +382,6 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 					Header:     make(http.Header),
 				}, nil
 			}
-			if strings.HasPrefix(r.URL.Path, "/api/v1/jobs/job-123/artifacts") {
-				t.Fatalf("legacy endpoint should not be called when zip upload succeeds")
-			}
 			return &http.Response{
 				StatusCode: http.StatusNotFound,
 				Body:       io.NopCloser(strings.NewReader("not found")),
@@ -414,7 +411,7 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 	}
 }
 
-func TestCollectAndUploadArtifactsFallsBackToLegacy(t *testing.T) {
+func TestCollectAndUploadArtifactsReportsZIPFailure(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -422,41 +419,20 @@ func TestCollectAndUploadArtifactsFallsBackToLegacy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "dist", "ciwi.bin"), []byte("ciwi"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	var (
-		zipCalled    bool
-		legacyCalled bool
-		gotReq       protocol.UploadArtifactsRequest
-	)
+	var progress []string
 	client := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			switch r.URL.Path {
-			case "/api/v1/jobs/job-123/artifacts/upload-zip":
-				zipCalled = true
-				return &http.Response{
-					StatusCode: http.StatusNotFound,
-					Body:       io.NopCloser(strings.NewReader("missing")),
-					Header:     make(http.Header),
-				}, nil
-			case "/api/v1/jobs/job-123/artifacts":
-				legacyCalled = true
-				if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
-					t.Fatalf("decode upload request: %v", err)
-				}
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(strings.NewReader(`{"artifacts":[]}`)),
-					Header:     make(http.Header),
-				}, nil
-			default:
-				return &http.Response{
-					StatusCode: http.StatusNotFound,
-					Body:       io.NopCloser(strings.NewReader("not found")),
-					Header:     make(http.Header),
-				}, nil
+			if r.URL.Path != "/api/v1/jobs/job-123/artifacts/upload-zip" {
+				t.Fatalf("unexpected upload path: %s", r.URL.Path)
 			}
+			return &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       io.NopCloser(strings.NewReader("storage temporarily unavailable")),
+				Header:     make(http.Header),
+			}, nil
 		}),
 	}
-	summary, err := collectAndUploadArtifacts(
+	_, err := collectAndUploadArtifacts(
 		context.Background(),
 		client,
 		"http://example.local",
@@ -464,19 +440,16 @@ func TestCollectAndUploadArtifactsFallsBackToLegacy(t *testing.T) {
 		"job-123",
 		root,
 		[]string{"dist/*"},
-		nil,
+		func(message string) { progress = append(progress, message) },
 	)
-	if err != nil {
-		t.Fatalf("collectAndUploadArtifacts: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "status=503 body=storage temporarily unavailable") {
+		t.Fatalf("expected observable zip rejection, got %v", err)
 	}
-	if !zipCalled || !legacyCalled {
-		t.Fatalf("expected both zip and legacy upload paths, zip=%v legacy=%v", zipCalled, legacyCalled)
-	}
-	if gotReq.AgentID != "agent-1" || len(gotReq.Artifacts) != 1 || gotReq.Artifacts[0].Path != "dist/ciwi.bin" {
-		t.Fatalf("unexpected legacy payload: %+v", gotReq)
-	}
-	if !strings.Contains(summary, "[artifacts] uploaded") {
-		t.Fatalf("expected uploaded marker in summary, got: %s", summary)
+	joined := strings.Join(progress, "\n")
+	for _, marker := range []string{"[artifacts] archiving=1 mode=zip", "[artifacts] archive complete files=1 bytes=", "[artifacts] uploading bytes="} {
+		if !strings.Contains(joined, marker) {
+			t.Fatalf("expected progress marker %q, got:\n%s", marker, joined)
+		}
 	}
 }
 
@@ -554,7 +527,7 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 					Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
 					Header:     make(http.Header),
 				}, nil
-			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/artifacts":
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs/job-1/artifacts/upload-zip":
 				return &http.Response{
 					StatusCode: http.StatusInternalServerError,
 					Body:       io.NopCloser(strings.NewReader("upload failed")),
@@ -593,6 +566,9 @@ func TestExecuteLeasedJobFailsWhenArtifactUploadFails(t *testing.T) {
 	}
 	if !strings.Contains(last.Error, "artifact upload failed") {
 		t.Fatalf("expected artifact upload failure in error, got %q", last.Error)
+	}
+	if !strings.Contains(last.Error, "status=500 body=upload failed") {
+		t.Fatalf("expected artifact upload response details, got %q", last.Error)
 	}
 }
 

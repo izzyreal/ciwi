@@ -241,16 +241,6 @@ type JobExecutionArtifactsResponse struct {
 	Artifacts []JobExecutionArtifact `json:"artifacts"`
 }
 
-type UploadArtifact struct {
-	Path       string `json:"path"`
-	DataBase64 string `json:"data_base64"`
-}
-
-type UploadArtifactsRequest struct {
-	AgentID   string           `json:"agent_id"`
-	Artifacts []UploadArtifact `json:"artifacts"`
-}
-
 type JobExecutionStatusUpdateRequest struct {
 	AgentID             string              `json:"agent_id"`
 	Status              string              `json:"status"`
