@@ -809,10 +809,9 @@ const jobExecutionRenderJS = `
       const activeIdx = activeStepIndexFromCurrentStep(job && job.current_step);
       return groups.map((group, pos) => {
         const finish = group.finish || null;
-        const failed = !!(finish && (String(finish.error || '').trim() || finish.exit_code !== null && finish.exit_code !== undefined));
         const running = activeIdx === pos && isRunningJobStatus((job && job.status) || '');
         const remembered = (typeof logStepOpenState !== 'undefined') ? logStepOpenState[group.key] : undefined;
-        const open = (remembered === true || remembered === false) ? remembered : (failed || running || pos === 0);
+        const open = (remembered === true || remembered === false) ? remembered : false;
         const meta = [];
         if (group.started) meta.push('Started: ' + escapeHtml(formatTimestamp(group.started)));
         if (finish && Number(finish.duration_ms || 0) > 0) meta.push('Duration: ' + escapeHtml(formatDurationMs(Number(finish.duration_ms || 0))));
