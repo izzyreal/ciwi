@@ -174,6 +174,41 @@ func TestLeaseRejectsAgentUpdateInProgress(t *testing.T) {
 	}
 }
 
+func TestLeaseRejectsAgentPendingUpdateBeforeAgentConsumesHeartbeat(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	s.mu.Lock()
+	s.agents["agent-update-pending"] = agentState{
+		Hostname:     "host-update-pending",
+		OS:           "linux",
+		Arch:         "amd64",
+		Version:      "v1.0.0",
+		Authorized:   true,
+		Capabilities: map[string]string{"executor": "script", "shells": "posix"},
+		LastSeenUTC:  time.Now().UTC(),
+	}
+	s.agentUpdates["agent-update-pending"] = "v1.2.0"
+	s.mu.Unlock()
+
+	leaseResp := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id":     "agent-update-pending",
+		"capabilities": map[string]string{"executor": "script", "shells": "posix"},
+	})
+	if leaseResp.StatusCode != http.StatusOK {
+		t.Fatalf("lease status=%d body=%s", leaseResp.StatusCode, readBody(t, leaseResp))
+	}
+	var payload struct {
+		Assigned bool   `json:"assigned"`
+		Message  string `json:"message"`
+	}
+	decodeJSONBody(t, leaseResp, &payload)
+	if payload.Assigned || !strings.Contains(payload.Message, "update pending") {
+		t.Fatalf("expected pending-update lease rejection, got %+v", payload)
+	}
+}
+
 func TestAgentLeaseHandlerValidationAndBranches(t *testing.T) {
 	ts := newTestHTTPServer(t)
 	defer ts.Close()

@@ -409,6 +409,14 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if reason := s.agentLeasePendingUpdateReasonLocked(req.AgentID, a); reason != "" {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{
+			Assigned: false,
+			Message:  reason,
+		})
+		return
+	}
 	agentCaps = mergeCapabilities(a, req.Capabilities)
 	s.mu.Unlock()
 	if agentCaps == nil {
@@ -450,4 +458,18 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	jobResponse := jobexecution.ViewFromProtocol(*job)
 	writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{Assigned: true, JobExecution: &jobResponse})
+}
+
+func (s *stateStore) agentLeasePendingUpdateReasonLocked(agentID string, a agentState) string {
+	target := strings.TrimSpace(s.agentUpdates[agentID])
+	if target == "" {
+		target = resolveEffectiveAgentUpdateTarget(s.getAgentUpdateTarget(), currentVersion())
+	}
+	if target == "" || !isVersionDifferent(target, strings.TrimSpace(a.Version)) {
+		return ""
+	}
+	if strings.TrimSpace(a.UpdateLastError) != "" {
+		return ""
+	}
+	return "agent update pending; heartbeat before leasing"
 }

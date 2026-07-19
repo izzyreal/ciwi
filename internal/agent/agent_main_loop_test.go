@@ -228,6 +228,55 @@ func TestAgentLoopDepsHandleLeaseTickFlushesDeferredInsteadOfLeasing(t *testing.
 	}
 }
 
+func TestAgentLoopDepsHandleLeaseTickProcessesFreshHeartbeatBeforeLeasing(t *testing.T) {
+	control := &deferredControl{}
+	events := make([]string, 0, 4)
+	deps := &agentLoopDeps{
+		ctx:            context.Background(),
+		workDir:        t.TempDir(),
+		restartArgs:    []string{"agent"},
+		control:        control,
+		heartbeatState: &agentHeartbeatState{},
+		triggerHeartbeat: func() {
+			events = append(events, "trigger")
+		},
+		detectCapsFn: func() map[string]string { return nil },
+		getCapsFn:    func() map[string]string { return map[string]string{"executor": "script"} },
+		setCapsFn:    func(map[string]string) {},
+		selfUpdateFn: func(context.Context, string, string, string, []string) error {
+			events = append(events, "update")
+			return nil
+		},
+		requestRestartFn: func() string { return "" },
+		wipeCacheFn:      func(string) (string, error) { return "", nil },
+		wipeHistoryFn:    func(string) (string, error) { return "", nil },
+		heartbeatNowFn: func() heartbeatResult {
+			events = append(events, "heartbeat")
+			return heartbeatResult{
+				resp: protocol.HeartbeatResponse{
+					UpdateRequested:  true,
+					UpdateTarget:     "v1.2.3",
+					UpdateRepository: "izzyreal/ciwi",
+					UpdateAPIBase:    "https://api.github.com",
+				},
+			}
+		},
+		leaseJobFn: func(context.Context, *http.Client, string, string, map[string]string) (*protocol.JobExecution, error) {
+			events = append(events, "lease")
+			return nil, nil
+		},
+		executeJobFn: func(context.Context, *http.Client, string, string, string, map[string]string, protocol.JobExecution) error {
+			return nil
+		},
+		jobDoneCh: make(chan jobResult, 1),
+	}
+
+	deps.handleLeaseTick()
+	if !reflect.DeepEqual(events, []string{"heartbeat", "trigger", "update"}) {
+		t.Fatalf("unexpected pre-lease heartbeat ordering: got=%v", events)
+	}
+}
+
 func TestAgentLoopDepsHandleLeaseTickSchedulesJobExecution(t *testing.T) {
 	control := &deferredControl{}
 	jobDoneCh := make(chan jobResult, 1)

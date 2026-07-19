@@ -116,6 +116,7 @@ type agentLoopDeps struct {
 	wipeHistoryFn    func(string) (string, error)
 	leaseJobFn       func(context.Context, *http.Client, string, string, map[string]string) (*protocol.JobExecution, error)
 	executeJobFn     func(context.Context, *http.Client, string, string, string, map[string]string, protocol.JobExecution) error
+	heartbeatNowFn   func() heartbeatResult
 }
 
 func (d *deferredControl) setJobInProgress(v bool) {
@@ -303,6 +304,23 @@ func (d *agentLoopDeps) handleLeaseTick() {
 	if d.control.jobInProgress {
 		return
 	}
+	if d.heartbeatNowFn != nil {
+		hbRes := d.heartbeatNowFn()
+		d.handleHeartbeatResult(hbRes)
+		if hbRes.err != nil {
+			return
+		}
+		if hbRes.resp.UpdateRequested {
+			return
+		}
+		if !d.control.jobInProgress && d.control.hasDeferred() {
+			d.flushDeferred()
+			return
+		}
+		if d.control.jobInProgress {
+			return
+		}
+	}
 	job, err := d.leaseJobFn(d.ctx, d.leaseClient, d.serverURL, d.agentID, d.getCapsFn())
 	if err != nil {
 		slog.Error("lease failed", "error", err)
@@ -401,33 +419,46 @@ func runLoop(ctx context.Context) error {
 		ticker := time.NewTicker(protocol.AgentHeartbeatInterval)
 		defer ticker.Stop()
 
-		send := func() {
+		send := func() heartbeatResult {
 			updateFailure, updateInProgress, restartStatus := heartbeatState.snapshot()
 			hb, err := sendHeartbeat(ctx, heartbeatClient, serverURL, agentID, hostname, getCapabilities(), updateFailure, updateInProgress, restartStatus)
-			res := heartbeatResult{
+			return heartbeatResult{
 				resp:              hb,
 				err:               err,
 				sentUpdateFailure: updateFailure,
 				sentRestartStatus: restartStatus,
 			}
+		}
+		sendAsync := func() {
+			res := send()
 			select {
 			case heartbeatRespCh <- res:
 			case <-ctx.Done():
 			}
 		}
 
-		send()
+		sendAsync()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				send()
+				sendAsync()
 			case <-heartbeatKickCh:
-				send()
+				sendAsync()
 			}
 		}
 	}()
+	loopDeps.heartbeatNowFn = func() heartbeatResult {
+		updateFailure, updateInProgress, restartStatus := heartbeatState.snapshot()
+		hb, err := sendHeartbeat(ctx, heartbeatClient, serverURL, agentID, hostname, getCapabilities(), updateFailure, updateInProgress, restartStatus)
+		return heartbeatResult{
+			resp:              hb,
+			err:               err,
+			sentUpdateFailure: updateFailure,
+			sentRestartStatus: restartStatus,
+		}
+	}
 
 	for {
 		select {
