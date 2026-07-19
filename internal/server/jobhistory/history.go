@@ -254,7 +254,11 @@ func loadHistoryPage(r *http.Request, deps HandlerDeps) ([]protocol.JobExecution
 	if err != nil {
 		return nil, nil, nil, 0, 0, err
 	}
+	latest := latestAttemptIDs(jobs)
 	cards := buildExecutionCards(jobs, func(job protocol.JobExecution) bool {
+		if _, ok := latest[job.ID]; !ok {
+			return false
+		}
 		return !protocol.IsActiveJobExecutionStatus(job.Status)
 	})
 	offset := parseQueryInt(r, "offset", 0, 0, 1_000_000)
@@ -268,13 +272,26 @@ func loadQueuePage(r *http.Request, deps HandlerDeps) ([]protocol.JobExecution, 
 	if err != nil {
 		return nil, nil, nil, 0, 0, err
 	}
+	latest := latestAttemptIDs(jobs)
 	cards := buildExecutionCards(jobs, func(job protocol.JobExecution) bool {
+		if _, ok := latest[job.ID]; !ok {
+			return false
+		}
 		return protocol.IsActiveJobExecutionStatus(job.Status)
 	})
 	offset := parseQueryInt(r, "offset", 0, 0, 1_000_000)
 	limit := parseQueryInt(r, "limit", 20, 1, 200)
 	page := paginateCards(cards, offset, limit)
 	return jobs, cards, page, offset, limit, nil
+}
+
+func latestAttemptIDs(jobs []protocol.JobExecution) map[string]struct{} {
+	latest := protocol.LatestJobExecutionAttempts(jobs)
+	out := make(map[string]struct{}, len(latest))
+	for _, job := range latest {
+		out[job.ID] = struct{}{}
+	}
+	return out
 }
 
 func parseQueryInt(r *http.Request, key string, fallback, min, max int) int {
@@ -456,9 +473,13 @@ func cardView(jobs []protocol.JobExecution, card executionCard, includeSections,
 }
 
 func summarizeCard(jobs []protocol.JobExecution, card executionCard) SummaryView {
-	out := SummaryView{TotalJobs: len(card.Indices)}
+	cardJobs := make([]protocol.JobExecution, 0, len(card.Indices))
 	for _, idx := range card.Indices {
-		job := jobs[idx]
+		cardJobs = append(cardJobs, jobs[idx])
+	}
+	cardJobs = protocol.LatestJobExecutionAttempts(cardJobs)
+	out := SummaryView{TotalJobs: len(cardJobs)}
+	for _, job := range cardJobs {
 		status := protocol.NormalizeJobExecutionStatus(job.Status)
 		switch {
 		case status == protocol.JobExecutionStatusSucceeded:
@@ -679,9 +700,13 @@ func sectionKeyForJob(job protocol.JobExecution) string {
 }
 
 func progressJobViews(jobs []protocol.JobExecution, indices []int) []ProgressJobView {
-	out := make([]ProgressJobView, 0, len(indices))
+	selected := make([]protocol.JobExecution, 0, len(indices))
 	for _, idx := range indices {
-		job := jobs[idx]
+		selected = append(selected, jobs[idx])
+	}
+	selected = protocol.LatestJobExecutionAttempts(selected)
+	out := make([]ProgressJobView, 0, len(selected))
+	for _, job := range selected {
 		view := ProgressJobView{
 			Status: protocol.NormalizeJobExecutionStatus(job.Status), LeasedByAgentID: job.LeasedByAgentID,
 			ExpectedDurationMS: job.ExpectedDurationMS, Waiting: isWaitingJobExecution(job),

@@ -219,6 +219,17 @@ func TestHandleQueueCardsClassifiesDependencyBlockedJobsAsWaiting(t *testing.T) 
 	}
 }
 
+func TestSummarizeCardCountsOnlyLatestJobAttempt(t *testing.T) {
+	jobs := []protocol.JobExecution{
+		job("job-retry", "succeeded", "2026-03-29T10:25:36Z", map[string]string{protocol.JobMetadataAttemptRootJobID: "job-original"}),
+		job("job-original", "failed", "2026-03-29T10:25:35Z", nil),
+	}
+	got := summarizeCard(jobs, executionCard{Indices: []int{0, 1}})
+	if got.TotalJobs != 1 || got.Succeeded != 1 || got.Failed != 0 {
+		t.Fatalf("expected latest retry to replace failed attempt in summary, got %+v", got)
+	}
+}
+
 func TestHandleCardsShowsActiveChainInHistoryWithFinishedRowsOnly(t *testing.T) {
 	store := &stubStore{listJobExecutionsFn: func() ([]protocol.JobExecution, error) {
 		return []protocol.JobExecution{

@@ -134,6 +134,7 @@ func parseChainDependsOnPipelines(raw string) []string {
 }
 
 func pipelineChainStatus(all []protocol.JobExecution, chainRunID, pipelineID string) (terminated bool, succeeded bool, exists bool) {
+	all = protocol.LatestJobExecutionAttempts(all)
 	pipelineID = strings.TrimSpace(pipelineID)
 	if pipelineID == "" {
 		return false, false, false
@@ -165,6 +166,7 @@ func pipelineChainStatus(all []protocol.JobExecution, chainRunID, pipelineID str
 }
 
 func (s *stateStore) reconcileNeedsBlockedJob(candidate protocol.JobExecution, all []protocol.JobExecution) (bool, error) {
+	all = protocol.LatestJobExecutionAttempts(all)
 	needs := parseNeedsJobIDs(candidate.Metadata["needs_job_ids"])
 	if len(needs) == 0 {
 		_, err := s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{"needs_blocked": ""})
@@ -228,18 +230,37 @@ func (s *stateStore) failBlockedJob(job protocol.JobExecution, agentID, marker, 
 }
 
 func (s *stateStore) bindQueuedChainJobDependencyArtifacts(job protocol.JobExecution, all []protocol.JobExecution) error {
+	dependsOn, depCtx, err := s.resolveChainJobDependencyContext(job, all)
+	if err != nil {
+		return err
+	}
+	if len(dependsOn) == 0 {
+		return nil
+	}
+
+	envPatch := dependencyArtifactEnv(job, dependsOn, depCtx)
+	if len(envPatch) == 0 {
+		return nil
+	}
+	if _, err := s.pipelineStore().MergeJobExecutionEnv(job.ID, envPatch); err != nil {
+		return fmt.Errorf("persist dependency artifact env: %w", err)
+	}
+	return nil
+}
+
+func (s *stateStore) resolveChainJobDependencyContext(job protocol.JobExecution, all []protocol.JobExecution) ([]string, pipelineDependencyContext, error) {
 	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
 	projectName := strings.TrimSpace(job.Metadata["project"])
 	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
 	if chainRunID == "" || projectName == "" || pipelineID == "" {
-		return nil
+		return nil, pipelineDependencyContext{}, nil
 	}
 	p, err := s.pipelineStore().GetPipelineByProjectAndID(projectName, pipelineID)
 	if err != nil {
-		return fmt.Errorf("load pipeline %q: %w", pipelineID, err)
+		return nil, pipelineDependencyContext{}, fmt.Errorf("load pipeline %q: %w", pipelineID, err)
 	}
 	if len(p.DependsOn) == 0 {
-		return nil
+		return nil, pipelineDependencyContext{}, nil
 	}
 
 	depCtx := pipelineDependencyContext{}
@@ -250,77 +271,35 @@ func (s *stateStore) bindQueuedChainJobDependencyArtifacts(job protocol.JobExecu
 		}
 		ctx, foundInChain, err := verifyDependencyRunInChain(all, chainRunID, projectName, depID)
 		if err != nil {
-			return fmt.Errorf("dependency %q not satisfied in chain run: %w", depID, err)
+			return nil, pipelineDependencyContext{}, fmt.Errorf("dependency %q not satisfied in chain run: %w", depID, err)
 		}
 		if !foundInChain {
 			ctx, err = verifyDependencyRun(all, projectName, depID)
 			if err != nil {
-				return fmt.Errorf("dependency %q not satisfied: %w", depID, err)
+				return nil, pipelineDependencyContext{}, fmt.Errorf("dependency %q not satisfied: %w", depID, err)
 			}
 		}
-		if len(ctx.ArtifactJobIDs) > 0 {
-			if depCtx.ArtifactJobIDs == nil {
-				depCtx.ArtifactJobIDs = map[string]string{}
-			}
-			for k, v := range ctx.ArtifactJobIDs {
-				key := depID + ":" + strings.TrimSpace(k)
-				if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
-					continue
-				}
-				depCtx.ArtifactJobIDs[key] = strings.TrimSpace(v)
-			}
-		}
-		if len(ctx.ArtifactJobIDsAll) > 0 {
-			if depCtx.ArtifactJobIDsAll == nil {
-				depCtx.ArtifactJobIDsAll = map[string][]string{}
-			}
-			for ctxDepID, ids := range ctx.ArtifactJobIDsAll {
-				targetDepID := strings.TrimSpace(ctxDepID)
-				if targetDepID == "" {
-					targetDepID = depID
-				}
-				existing := depCtx.ArtifactJobIDsAll[targetDepID]
-				seen := map[string]struct{}{}
-				for _, v := range existing {
-					if strings.TrimSpace(v) == "" {
-						continue
-					}
-					seen[strings.TrimSpace(v)] = struct{}{}
-				}
-				for _, v := range ids {
-					v = strings.TrimSpace(v)
-					if v == "" {
-						continue
-					}
-					if _, ok := seen[v]; ok {
-						continue
-					}
-					existing = append(existing, v)
-					seen[v] = struct{}{}
-				}
-				depCtx.ArtifactJobIDsAll[targetDepID] = existing
-			}
+		if err := mergePipelineDependencyContext(&depCtx, depID, ctx); err != nil {
+			return nil, pipelineDependencyContext{}, err
 		}
 	}
+	return append([]string(nil), p.DependsOn...), depCtx, nil
+}
 
+func dependencyArtifactEnv(job protocol.JobExecution, dependsOn []string, depCtx pipelineDependencyContext) map[string]string {
 	vars := map[string]string{
 		"name":         strings.TrimSpace(job.Metadata["matrix_name"]),
 		"build_target": strings.TrimSpace(job.Metadata["build_target"]),
 	}
-	depJobID := resolveDependencyArtifactJobID(p.DependsOn, depCtx.ArtifactJobIDs, strings.TrimSpace(job.Metadata["pipeline_job_id"]), vars)
-	depJobIDs := resolveDependencyArtifactJobIDs(p.DependsOn, depCtx.ArtifactJobIDsAll, depJobID)
+	depJobID := resolveDependencyArtifactJobID(dependsOn, depCtx.ArtifactJobIDs, strings.TrimSpace(job.Metadata["pipeline_job_id"]), vars)
+	depJobIDs := resolveDependencyArtifactJobIDs(dependsOn, depCtx.ArtifactJobIDsAll, depJobID)
 	if depJobID == "" && len(depJobIDs) == 0 {
 		return nil
 	}
-
-	envPatch := map[string]string{
+	return map[string]string{
 		"CIWI_DEP_ARTIFACT_JOB_ID":  depJobID,
 		"CIWI_DEP_ARTIFACT_JOB_IDS": strings.Join(depJobIDs, ","),
 	}
-	if _, err := s.pipelineStore().MergeJobExecutionEnv(job.ID, envPatch); err != nil {
-		return fmt.Errorf("persist dependency artifact env: %w", err)
-	}
-	return nil
 }
 
 func parseNeedsJobIDs(raw string) []string {

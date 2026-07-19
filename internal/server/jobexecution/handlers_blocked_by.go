@@ -67,6 +67,7 @@ func blockedReasonFromError(errText string) (kind string, target string, ok bool
 }
 
 func findBlockedDependency(job protocol.JobExecution, all []protocol.JobExecution) *BlockedDependencyView {
+	all = protocol.LatestJobExecutionAttempts(all)
 	kind, target, ok := blockedReasonFromError(job.Error)
 	if !ok || target == "" {
 		return nil

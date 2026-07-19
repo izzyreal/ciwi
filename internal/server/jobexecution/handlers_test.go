@@ -203,6 +203,9 @@ func TestHandleByIDRerunClonesStartedJob(t *testing.T) {
 		if req.Script != "echo hi" || req.TimeoutSeconds != 30 {
 			t.Fatalf("unexpected clone request: %+v", req)
 		}
+		if req.Metadata[protocol.JobMetadataAttemptRootJobID] != "job-1" || req.Metadata[protocol.JobMetadataRerunOfJobID] != "job-1" {
+			t.Fatalf("expected rerun attempt metadata, got %+v", req.Metadata)
+		}
 		return protocol.JobExecution{ID: "job-clone", Status: protocol.JobExecutionStatusQueued}, nil
 	}
 
@@ -211,6 +214,33 @@ func TestHandleByIDRerunClonesStartedJob(t *testing.T) {
 	HandleByID(rec, req, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleByIDRerunAllowsDependencyBlockedJob(t *testing.T) {
+	store := &stubStore{}
+	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
+		return protocol.JobExecution{
+			ID: id, Script: "echo package", Status: protocol.JobExecutionStatusFailed,
+			Error:    "cancelled: upstream pipeline build failed",
+			Metadata: map[string]string{"pipeline_id": "package"},
+		}, nil
+	}
+	store.createJobExecutionFn = func(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error) {
+		return protocol.JobExecution{ID: "job-clone", Status: protocol.JobExecutionStatusQueued}, nil
+	}
+	prepared := false
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/rerun", nil)
+	HandleByID(rec, req, HandlerDeps{
+		Store: store,
+		PrepareRerun: func(original protocol.JobExecution, request *protocol.CreateJobExecutionRequest) error {
+			prepared = true
+			return nil
+		},
+	})
+	if rec.Code != http.StatusCreated || !prepared {
+		t.Fatalf("expected blocked job rerun to be prepared and created, status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

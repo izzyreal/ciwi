@@ -61,11 +61,21 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 		http.Error(w, "job not found", http.StatusNotFound)
 		return
 	}
-	if job.StartedUTC.IsZero() {
+	if job.StartedUTC.IsZero() && !isDependencyBlockedJob(job) {
 		http.Error(w, "job has not started yet", http.StatusConflict)
 		return
 	}
-	clone, err := deps.Store.CreateJobExecution(protocol.CreateJobExecutionRequest{
+	metadata := cloneStringMap(job.Metadata)
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	rootID := protocol.JobExecutionAttemptRootID(job)
+	if rootID == "" {
+		rootID = job.ID
+	}
+	metadata[protocol.JobMetadataAttemptRootJobID] = rootID
+	metadata[protocol.JobMetadataRerunOfJobID] = job.ID
+	request := protocol.CreateJobExecutionRequest{
 		Script:               job.Script,
 		Env:                  cloneStringMap(job.Env),
 		RequiredCapabilities: cloneStringMap(job.RequiredCapabilities),
@@ -73,9 +83,16 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 		ArtifactGlobs:        append([]string(nil), job.ArtifactGlobs...),
 		Caches:               cloneJobCaches(job.Caches),
 		Source:               cloneSource(job.Source),
-		Metadata:             cloneStringMap(job.Metadata),
+		Metadata:             metadata,
 		StepPlan:             cloneJobStepPlan(job.StepPlan),
-	})
+	}
+	if deps.PrepareRerun != nil {
+		if err := deps.PrepareRerun(job, &request); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+	}
+	clone, err := deps.Store.CreateJobExecution(request)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

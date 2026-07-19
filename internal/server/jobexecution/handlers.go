@@ -42,6 +42,7 @@ type HandlerDeps struct {
 	AttachProgress                     func(*protocol.JobExecution)
 	MarkAgentSeen                      func(agentID string, ts time.Time)
 	OnJobUpdated                       func(job protocol.JobExecution)
+	PrepareRerun                       func(original protocol.JobExecution, request *protocol.CreateJobExecutionRequest) error
 	Now                                func() time.Time
 }
 

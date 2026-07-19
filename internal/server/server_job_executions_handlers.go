@@ -21,6 +21,7 @@ func (s *stateStore) jobExecutionHandlerDeps() jobexecution.HandlerDeps {
 		AttachUnmetRequirementsToExecution: s.attachJobExecutionUnmetRequirementsToJobExecution,
 		MarkAgentSeen:                      s.markAgentSeen,
 		OnJobUpdated:                       s.onJobExecutionUpdated,
+		PrepareRerun:                       s.prepareJobExecutionRerun,
 		AttachProgress:                     attachProgress,
 	}
 }

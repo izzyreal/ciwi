@@ -192,6 +192,7 @@ func mergePipelineDependencyContext(out *pipelineDependencyContext, depID string
 }
 
 func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID string) (pipelineDependencyContext, error) {
+	jobs = protocol.LatestJobExecutionAttempts(jobs)
 	type runState struct {
 		lastCreated time.Time
 		statuses    []string

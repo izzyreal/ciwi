@@ -433,6 +433,8 @@ const jobExecutionDataJS = `
         rerunBlockedLink.textContent = 'Open failed dependency';
       }
       if (!hasStarted && isDependencyBlockedJob(job) && rerunBlockedLink) {
+		rerunBtn.disabled = false;
+		rerunBtn.title = '';
         try {
           const bres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/blocked-by', { cache: 'no-store' });
           if (bres.ok) {
@@ -452,7 +454,6 @@ const jobExecutionDataJS = `
               if (label) {
                 rerunBlockedLink.textContent = 'Open failed dependency: ' + label;
               }
-              rerunBtn.title = '';
             }
           }
         } catch (_) {}
@@ -461,7 +462,7 @@ const jobExecutionDataJS = `
       if (rerunInfo && !rerunInfo.__ciwiHoverTooltip) {
         const tooltipHTML = '' +
           '<strong>What Run Job Again does</strong><br />' +
-          'It enqueues a new job execution with the same script, environment, requirements, source repo/ref, and step plan as this run.<br /><br />' +
+          'It enqueues a new attempt with the same script, requirements, source repo/ref, and step plan as this run. Pipeline and chain jobs remain part of their original run and refresh their upstream artifact bindings, allowing failed runs to be repaired in place.<br /><br />' +
           '<strong>Source checkout behavior</strong><br />' +
           'Rerun keeps the same pinned source commit as the original queued job.<br /><br />' +
           '<strong>Artifacts and logs</strong><br />' +
