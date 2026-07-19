@@ -226,7 +226,13 @@ func executableStepFromPlan(step protocol.JobStepPlanItem) executableStep {
 }
 
 func stepFingerprint(step protocol.JobStepPlanItem) string {
-	encoded, _ := json.Marshal(executableStepFromPlan(step))
+	executable := executableStepFromPlan(step)
+	// Step events intentionally do not carry Env, because step environment can
+	// contain sensitive values. Job-level matching still includes Env; the
+	// per-step fingerprint must use the common subset present in both StepPlan
+	// and step.finished events.
+	executable.Env = nil
+	encoded, _ := json.Marshal(executable)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
 }

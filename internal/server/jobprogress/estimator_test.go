@@ -102,6 +102,34 @@ func TestAttachDetailEstimateRejectsChangedCommandsAndFailedSteps(t *testing.T) 
 	}
 }
 
+func TestAttachDetailEstimateMatchesStepEventsWithoutEnv(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{
+		Index:  1,
+		Total:  1,
+		Name:   "Configure CMake",
+		Script: "cmake -B build",
+		Kind:   "run",
+		Env:    map[string]string{"VMPC2000XL_DOCUMENTS_PATH": "/tmp/vmpc2000xl_documents"},
+	}
+	target := progressJob("target", base, "running", "agent-a", step)
+	matching := completedProgressJob("matching", base.Add(-time.Minute), "agent-a", step, 4*time.Second)
+	eventStep := step
+	eventStep.Env = nil
+	store := &stubStore{
+		jobs: []protocol.JobExecution{matching},
+		events: map[string][]protocol.JobExecutionEvent{
+			matching.ID: {{Type: protocol.JobExecutionEventTypeStepFinished, Step: &eventStep, DurationMS: 3200}},
+		},
+	}
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if got := target.StepExpectedDuration[1]; got != 3200 {
+		t.Fatalf("expected step event without env to match, got %d from %+v", got, target.StepExpectedDuration)
+	}
+}
+
 func TestAttachJobEstimatesUsesProvisionalEstimateForUnleasedJobs(t *testing.T) {
 	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
 	step := protocol.JobStepPlanItem{Index: 1, Script: "make"}
