@@ -408,12 +408,12 @@ func HandleFlushHistory(w http.ResponseWriter, r *http.Request, deps HandlerDeps
 		return
 	}
 	deletedIDs, err := deps.Store.FlushJobExecutionHistory()
+	for _, jobID := range deletedIDs {
+		_ = os.RemoveAll(filepath.Join(deps.ArtifactsDir, jobID))
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	for _, jobID := range deletedIDs {
-		_ = os.RemoveAll(filepath.Join(deps.ArtifactsDir, jobID))
 	}
 	httpx.WriteJSON(w, http.StatusOK, FlushHistoryViewResponse{Flushed: int64(len(deletedIDs))})
 }

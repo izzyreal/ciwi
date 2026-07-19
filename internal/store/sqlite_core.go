@@ -77,6 +77,7 @@ func (s *Store) migrate() error {
 	stmts := []string{
 		`PRAGMA journal_mode=WAL;`,
 		`PRAGMA busy_timeout=5000;`,
+		`PRAGMA foreign_keys=ON;`,
 		`CREATE TABLE IF NOT EXISTS projects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
@@ -264,8 +265,18 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("job_executions", "step_plan_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
-	if err := s.dropColumnIfPresent("job_executions", "output_text"); err != nil {
+	orphansDeleted, err := s.deleteOrphanedJobExecutionData()
+	if err != nil {
 		return err
+	}
+	outputColumnDropped, err := s.dropColumnIfPresent("job_executions", "output_text")
+	if err != nil {
+		return err
+	}
+	if orphansDeleted > 0 || outputColumnDropped {
+		if err := s.compact(); err != nil {
+			return fmt.Errorf("compact after legacy job data cleanup: %w", err)
+		}
 	}
 	return nil
 }
@@ -278,10 +289,10 @@ func (s *Store) addColumnIfMissing(table, col, typ string) error {
 	return nil
 }
 
-func (s *Store) dropColumnIfPresent(table, col string) error {
+func (s *Store) dropColumnIfPresent(table, col string) (bool, error) {
 	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
-		return fmt.Errorf("inspect column %s.%s: %w", table, col, err)
+		return false, fmt.Errorf("inspect column %s.%s: %w", table, col, err)
 	}
 	found := false
 	for rows.Next() {
@@ -290,20 +301,51 @@ func (s *Store) dropColumnIfPresent(table, col string) error {
 		var defaultValue any
 		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &primaryKey); err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("scan columns for %s: %w", table, err)
+			return false, fmt.Errorf("scan columns for %s: %w", table, err)
 		}
 		if name == col {
 			found = true
 		}
 	}
 	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close columns for %s: %w", table, err)
+		return false, fmt.Errorf("close columns for %s: %w", table, err)
 	}
 	if !found {
-		return nil
+		return false, nil
 	}
 	if _, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, col)); err != nil {
-		return fmt.Errorf("drop column %s.%s: %w", table, col, err)
+		return false, fmt.Errorf("drop column %s.%s: %w", table, col, err)
+	}
+	return true, nil
+}
+
+func (s *Store) deleteOrphanedJobExecutionData() (int64, error) {
+	var deleted int64
+	for _, table := range []string{"job_execution_events", "job_execution_artifacts", "job_execution_test_reports"} {
+		res, err := s.db.Exec(fmt.Sprintf(`
+			DELETE FROM %s
+			WHERE NOT EXISTS (
+				SELECT 1 FROM job_executions WHERE job_executions.id = %s.job_execution_id
+			)
+		`, table, table))
+		if err != nil {
+			return deleted, fmt.Errorf("delete orphaned rows from %s: %w", table, err)
+		}
+		affected, _ := res.RowsAffected()
+		deleted += affected
+	}
+	return deleted, nil
+}
+
+func (s *Store) compact() error {
+	if _, err := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return fmt.Errorf("checkpoint before vacuum: %w", err)
+	}
+	if _, err := s.db.Exec(`VACUUM`); err != nil {
+		return fmt.Errorf("vacuum: %w", err)
+	}
+	if _, err := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return fmt.Errorf("checkpoint after vacuum: %w", err)
 	}
 	return nil
 }

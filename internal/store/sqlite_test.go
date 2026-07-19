@@ -3,7 +3,9 @@ package store
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -103,6 +105,15 @@ func TestOpenDropsLegacyJobOutputColumn(t *testing.T) {
 	if _, err := s.db.Exec(`ALTER TABLE job_executions ADD COLUMN output_text TEXT`); err != nil {
 		t.Fatalf("add legacy output column: %v", err)
 	}
+	if _, err := s.db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+		t.Fatalf("disable foreign keys for legacy fixture: %v", err)
+	}
+	if _, err := s.db.Exec(`
+		INSERT INTO job_execution_events (job_execution_id, event_type, timestamp_utc, payload_json, created_utc)
+		VALUES ('missing-job', 'system.message', '2026-07-19T00:00:00Z', '{"message":"orphan"}', '2026-07-19T00:00:00Z')
+	`); err != nil {
+		t.Fatalf("insert orphaned legacy event: %v", err)
+	}
 	if err := s.Close(); err != nil {
 		t.Fatalf("close initial store: %v", err)
 	}
@@ -112,6 +123,20 @@ func TestOpenDropsLegacyJobOutputColumn(t *testing.T) {
 		t.Fatalf("reopen migrated store: %v", err)
 	}
 	defer s.Close()
+	var foreignKeys int
+	if err := s.db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
+		t.Fatalf("read foreign_keys setting: %v", err)
+	}
+	if foreignKeys != 1 {
+		t.Fatalf("expected foreign keys enabled, got %d", foreignKeys)
+	}
+	var orphanedEvents int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM job_execution_events WHERE job_execution_id = 'missing-job'`).Scan(&orphanedEvents); err != nil {
+		t.Fatalf("count orphaned events: %v", err)
+	}
+	if orphanedEvents != 0 {
+		t.Fatalf("expected orphaned events removed, got %d", orphanedEvents)
+	}
 	rows, err := s.db.Query(`PRAGMA table_info(job_executions)`)
 	if err != nil {
 		t.Fatalf("inspect job columns: %v", err)
@@ -127,6 +152,59 @@ func TestOpenDropsLegacyJobOutputColumn(t *testing.T) {
 		if name == "output_text" {
 			t.Fatal("legacy output_text column was not dropped")
 		}
+	}
+}
+
+func TestFlushJobExecutionHistoryCompactsDatabase(t *testing.T) {
+	s := openTestStore(t)
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo done"})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: "agent-1",
+		Status:  protocol.JobExecutionStatusSucceeded,
+	}); err != nil {
+		t.Fatalf("finish job: %v", err)
+	}
+	if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
+		Type:         protocol.JobExecutionEventTypeSystemMessage,
+		TimestampUTC: time.Now().UTC(),
+		Message:      strings.Repeat("x", 1024*1024),
+	}}); err != nil {
+		t.Fatalf("append large event: %v", err)
+	}
+	var pagesBefore int64
+	if err := s.db.QueryRow(`PRAGMA page_count`).Scan(&pagesBefore); err != nil {
+		t.Fatalf("page count before flush: %v", err)
+	}
+
+	deleted, err := s.FlushJobExecutionHistory()
+	if err != nil {
+		t.Fatalf("flush history: %v", err)
+	}
+	if len(deleted) != 1 || deleted[0] != job.ID {
+		t.Fatalf("unexpected deleted jobs: %v", deleted)
+	}
+	var pagesAfter, freePagesAfter int64
+	if err := s.db.QueryRow(`PRAGMA page_count`).Scan(&pagesAfter); err != nil {
+		t.Fatalf("page count after flush: %v", err)
+	}
+	if err := s.db.QueryRow(`PRAGMA freelist_count`).Scan(&freePagesAfter); err != nil {
+		t.Fatalf("freelist count after flush: %v", err)
+	}
+	if pagesAfter >= pagesBefore {
+		t.Fatalf("expected compaction to reduce page count, before=%d after=%d", pagesBefore, pagesAfter)
+	}
+	if freePagesAfter != 0 {
+		t.Fatalf("expected vacuumed freelist, got %d pages", freePagesAfter)
+	}
+	events, err := s.ListJobExecutionEvents(job.ID)
+	if err != nil {
+		t.Fatalf("list deleted job events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected cascading event deletion, got %d events", len(events))
 	}
 }
 
