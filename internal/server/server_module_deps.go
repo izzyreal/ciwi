@@ -24,6 +24,7 @@ type jobExecutionStore interface {
 	MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error)
 	AppendJobExecutionEvents(jobID string, events []protocol.JobExecutionEvent) error
 	ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEvent, error)
+	ListJobExecutionEventsAfter(jobID string, afterID int64) ([]protocol.JobExecutionEvent, error)
 	DeleteQueuedJobExecution(jobID string) error
 	ClearQueuedJobExecutions() (int64, error)
 	FlushJobExecutionHistory() ([]string, error)
@@ -43,6 +44,7 @@ type pipelineStore interface {
 	MergeJobExecutionEnv(jobID string, patch map[string]string) (map[string]string, error)
 	MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error)
 	UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
+	AppendJobExecutionEvents(jobID string, events []protocol.JobExecutionEvent) error
 }
 
 type projectStore interface {

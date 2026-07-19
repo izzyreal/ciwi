@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func TestAgentRunScriptQueuesTargetedJobExecution(t *testing.T) {
@@ -484,7 +486,6 @@ func TestAgentDeactivationCancelsActiveJob(t *testing.T) {
 		Job struct {
 			Status string `json:"status"`
 			Error  string `json:"error"`
-			Output string `json:"output"`
 		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, jobResp, &jobPayload)
@@ -494,7 +495,15 @@ func TestAgentDeactivationCancelsActiveJob(t *testing.T) {
 	if jobPayload.Job.Error != "cancelled by user" {
 		t.Fatalf("expected cancelled by user error, got %q", jobPayload.Job.Error)
 	}
-	if !strings.Contains(jobPayload.Job.Output, "[control] job cancelled by user") {
-		t.Fatalf("expected cancel marker in output, got %q", jobPayload.Job.Output)
+	eventsResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+runPayload.JobExecutionID+"/events", nil)
+	if eventsResp.StatusCode != http.StatusOK {
+		t.Fatalf("get job events status=%d body=%s", eventsResp.StatusCode, readBody(t, eventsResp))
+	}
+	var eventsPayload struct {
+		Events []protocol.JobExecutionEvent `json:"events"`
+	}
+	decodeJSONBody(t, eventsResp, &eventsPayload)
+	if len(eventsPayload.Events) != 1 || !strings.Contains(eventsPayload.Events[0].Message, "[control] job cancelled by user") {
+		t.Fatalf("expected cancel event, got %+v", eventsPayload.Events)
 	}
 }

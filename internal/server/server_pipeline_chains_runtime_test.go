@@ -114,8 +114,6 @@ pipeline_chains:
 	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusSucceeded,
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -260,8 +258,6 @@ pipeline_chains:
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusFailed,
 		Error:             "boom",
-		OutputAppend:      "boom",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -390,8 +386,6 @@ pipeline_chains:
 	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusSucceeded,
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -521,8 +515,6 @@ pipeline_chains:
 	buildUpdated, err := s.db.UpdateJobExecutionStatus(buildJob.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusSucceeded,
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -541,8 +533,6 @@ pipeline_chains:
 	signUpdated, err := s.db.UpdateJobExecutionStatus(signJob.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusSucceeded,
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -574,8 +564,6 @@ pipeline_chains:
 		updated, err := s.db.UpdateJobExecutionStatus(pjob.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:           "agent-1",
 			Status:            protocol.JobExecutionStatusSucceeded,
-			OutputAppend:      "ok",
-			OutputOffsetBytes: 0,
 			TimestampUTC:      time.Now().UTC(),
 		})
 		if err != nil {

@@ -38,11 +38,9 @@ func TestServerMaintenanceRecoversOrphanedCheckoutJobAfterRestart(t *testing.T) 
 
 	now := time.Now().UTC()
 	if _, err := db.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-bhakti",
-		Status:            protocol.JobExecutionStatusRunning,
-		CurrentStep:       "Checking out source",
-		OutputAppend:      "[checkout] repo=https://example ref=abc",
-		OutputOffsetBytes: 0,
+		AgentID:     "agent-bhakti",
+		Status:      protocol.JobExecutionStatusRunning,
+		CurrentStep: "Checking out source",
 	}); err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
@@ -64,8 +62,12 @@ func TestServerMaintenanceRecoversOrphanedCheckoutJobAfterRestart(t *testing.T) 
 	if !strings.Contains(got.Error, "timed out") {
 		t.Fatalf("expected timed out error, got %q", got.Error)
 	}
-	if !strings.Contains(got.Output, "[control] "+jobExecutionTimeoutReaperErrorMsg) {
-		t.Fatalf("expected timeout control marker in output, got %q", got.Output)
+	events, err := db.ListJobExecutionEvents(job.ID)
+	if err != nil {
+		t.Fatalf("list timeout events: %v", err)
+	}
+	if len(events) != 1 || !strings.Contains(events[0].Message, "[control] "+jobExecutionTimeoutReaperErrorMsg) {
+		t.Fatalf("expected timeout control event, got %+v", events)
 	}
 }
 

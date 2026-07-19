@@ -94,6 +94,42 @@ func TestListJobExecutionsDeterministicOrderWhenTimestampsTie(t *testing.T) {
 	}
 }
 
+func TestOpenDropsLegacyJobOutputColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ciwi.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open initial store: %v", err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE job_executions ADD COLUMN output_text TEXT`); err != nil {
+		t.Fatalf("add legacy output column: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close initial store: %v", err)
+	}
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatalf("reopen migrated store: %v", err)
+	}
+	defer s.Close()
+	rows, err := s.db.Query(`PRAGMA table_info(job_executions)`)
+	if err != nil {
+		t.Fatalf("inspect job columns: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatalf("scan job column: %v", err)
+		}
+		if name == "output_text" {
+			t.Fatal("legacy output_text column was not dropped")
+		}
+	}
+}
+
 func parseTestConfig(t *testing.T) config.File {
 	t.Helper()
 	cfg, err := config.Parse([]byte(testConfigYAML), "test")
@@ -447,10 +483,8 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 	}
 
 	_, err = s.UpdateJobExecutionStatus(jHistory.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            "succeeded",
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
+		AgentID: "agent-1",
+		Status:  "succeeded",
 	})
 	if err != nil {
 		t.Fatalf("mark history job succeeded: %v", err)

@@ -56,7 +56,7 @@ func TestHandleByIDRootBranchesAndRouting(t *testing.T) {
 			Store: store,
 			AttachTestSummary: func(job *protocol.JobExecution) {
 				attachTest = true
-				job.Output = "with-summary"
+				job.TestSummary = &protocol.JobExecutionTestSummary{Total: 1}
 			},
 			AttachUnmetRequirementsToExecution: func(job *protocol.JobExecution) {
 				attachReq = true
@@ -69,7 +69,7 @@ func TestHandleByIDRootBranchesAndRouting(t *testing.T) {
 		if !attachTest || !attachReq {
 			t.Fatalf("expected both attach hooks to run")
 		}
-		if !strings.Contains(rec.Body.String(), "with-summary") || !strings.Contains(rec.Body.String(), "\"unmet_requirements\"") {
+		if !strings.Contains(rec.Body.String(), "\"test_summary\"") || !strings.Contains(rec.Body.String(), "\"unmet_requirements\"") {
 			t.Fatalf("expected enriched payload, got %s", rec.Body.String())
 		}
 	})
@@ -128,6 +128,29 @@ func TestHandleByIDRootBranchesAndRouting(t *testing.T) {
 			t.Fatalf("expected 405, got %d", rec.Code)
 		}
 	})
+}
+
+func TestHandleByIDEventsAfterCursor(t *testing.T) {
+	store := &stubStore{}
+	store.listJobExecutionEventsAfterFn = func(id string, afterID int64) ([]protocol.JobExecutionEvent, error) {
+		if id != "job-1" || afterID != 41 {
+			t.Fatalf("unexpected cursor request id=%q after=%d", id, afterID)
+		}
+		return []protocol.JobExecutionEvent{{
+			ID:      42,
+			Type:    protocol.JobExecutionEventTypeSystemMessage,
+			Message: "next",
+		}}, nil
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-1/events?after_id=41", nil)
+	HandleByID(rec, req, HandlerDeps{Store: store})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"next_event_id":42`) || !strings.Contains(rec.Body.String(), `"id":42`) {
+		t.Fatalf("unexpected cursor response: %s", rec.Body.String())
+	}
 }
 
 func TestHandleByIDArtifactsDownloadAllErrorFromStore(t *testing.T) {

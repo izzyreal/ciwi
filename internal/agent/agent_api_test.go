@@ -232,7 +232,7 @@ func TestReportFailureAndReportJobStatus(t *testing.T) {
 	if got.ExitCode == nil || *got.ExitCode != 12 {
 		t.Fatalf("expected exit code 12 in payload: %+v", got)
 	}
-	if got.Error != "boom" || got.OutputAppend != "logs" || got.OutputOffsetBytes != 0 {
+	if got.Error != "boom" || len(got.Events) != 1 || got.Events[0].Type != protocol.JobExecutionEventTypeSystemMessage || got.Events[0].Message != "logs" {
 		t.Fatalf("unexpected failure payload: %+v", got)
 	}
 	if got.TimestampUTC.IsZero() {

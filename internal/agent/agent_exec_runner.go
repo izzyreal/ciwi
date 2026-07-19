@@ -219,10 +219,9 @@ type syncBuffer struct {
 }
 
 type outputReportState struct {
-	mu                 sync.Mutex
-	sentRawLen         int
-	sentPersistedBytes int
-	lastStep           string
+	mu         sync.Mutex
+	sentRawLen int
+	lastStep   string
 }
 
 type executionContainerContext struct {
@@ -261,22 +260,34 @@ func (s *syncBuffer) SliceFrom(offset int) (string, int) {
 	return all[offset:], len(all)
 }
 
-func (s *outputReportState) unsentFrom(output *syncBuffer) (string, int, int, string) {
+func (s *outputReportState) unsentFrom(output *syncBuffer) (string, int, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delta, totalLen := output.SliceFrom(s.sentRawLen)
-	return delta, totalLen, s.sentPersistedBytes, s.lastStep
+	return delta, totalLen, s.lastStep
 }
 
-func (s *outputReportState) markSent(totalRawLen, deltaPersistedBytes int, currentStep string) {
+func (s *outputReportState) markSent(totalRawLen int, currentStep string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sentRawLen = totalRawLen
-	s.sentPersistedBytes += deltaPersistedBytes
-	if s.sentPersistedBytes > protocol.JobExecutionOutputTailMaxBytes {
-		s.sentPersistedBytes = protocol.JobExecutionOutputTailMaxBytes
-	}
 	s.lastStep = currentStep
+}
+
+func outputDeltaEvent(delta string, step *protocol.JobStepPlanItem) []protocol.JobExecutionEvent {
+	if delta == "" {
+		return nil
+	}
+	event := protocol.JobExecutionEvent{TimestampUTC: time.Now().UTC()}
+	if step != nil {
+		event.Type = protocol.JobExecutionEventTypeStepOutput
+		event.Step = &protocol.JobStepPlanItem{Index: step.Index, Total: step.Total}
+		event.Output = delta
+	} else {
+		event.Type = protocol.JobExecutionEventTypeSystemMessage
+		event.Message = delta
+	}
+	return []protocol.JobExecutionEvent{event}
 }
 
 func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, agentID, jobID string, output *syncBuffer, progress *outputReportState, sensitive []string, defaultCurrentStep string, stepEvent *protocol.JobStepPlanItem) func() {
@@ -286,45 +297,34 @@ func streamRunningUpdates(ctx context.Context, client *http.Client, serverURL, a
 
 	go func() {
 		defer close(done)
-		reportedEmptySnapshot := false
+		reportedEmptyOutput := false
 		sendSnapshot := func() {
-			deltaRaw, totalLen, outputOffsetBytes, lastStep := progress.unsentFrom(output)
-			snapshot := redactSensitive(output.String(), sensitive)
+			deltaRaw, totalLen, lastStep := progress.unsentFrom(output)
 			delta := redactSensitive(deltaRaw, sensitive)
 			currentStep := defaultCurrentStep
-			if strings.TrimSpace(snapshot) == "" && strings.TrimSpace(currentStep) != "" {
-				if !reportedEmptySnapshot {
-					slog.Warn("running update has empty output snapshot", "job_execution_id", jobID, "agent_id", agentID, "current_step", currentStep)
-					reportedEmptySnapshot = true
+			if strings.TrimSpace(output.String()) == "" && strings.TrimSpace(currentStep) != "" {
+				if !reportedEmptyOutput {
+					slog.Warn("running update has no output yet", "job_execution_id", jobID, "agent_id", agentID, "current_step", currentStep)
+					reportedEmptyOutput = true
 				}
-			} else if strings.TrimSpace(snapshot) != "" {
-				reportedEmptySnapshot = false
+			} else if strings.TrimSpace(output.String()) != "" {
+				reportedEmptyOutput = false
 			}
 			if delta == "" && currentStep == lastStep {
 				return
 			}
-			events := []protocol.JobExecutionEvent(nil)
-			if delta != "" && stepEvent != nil {
-				events = append(events, protocol.JobExecutionEvent{
-					Type:         protocol.JobExecutionEventTypeStepOutput,
-					Step:         stepEvent,
-					Output:       delta,
-					TimestampUTC: time.Now().UTC(),
-				})
-			}
+			events := outputDeltaEvent(delta, stepEvent)
 			if err := reportJobStatus(ctx, client, serverURL, jobID, protocol.JobExecutionStatusUpdateRequest{
-				AgentID:           agentID,
-				Status:            protocol.JobExecutionStatusRunning,
-				OutputAppend:      delta,
-				OutputOffsetBytes: outputOffsetBytes,
-				CurrentStep:       currentStep,
-				Events:            events,
-				TimestampUTC:      time.Now().UTC(),
+				AgentID:      agentID,
+				Status:       protocol.JobExecutionStatusRunning,
+				CurrentStep:  currentStep,
+				Events:       events,
+				TimestampUTC: time.Now().UTC(),
 			}); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				slog.Error("stream running update failed", "job_execution_id", jobID, "error", err)
 				return
 			}
-			progress.markSent(totalLen, len(delta), currentStep)
+			progress.markSent(totalLen, currentStep)
 		}
 		// Don't wait for the first ticker interval; publish an initial snapshot immediately.
 		sendSnapshot()

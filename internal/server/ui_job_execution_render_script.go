@@ -783,31 +783,36 @@ const jobExecutionRenderJS = `
     }
 
     function hasStructuredLogEvents(events) {
-      return (Array.isArray(events) ? events : []).some(ev => ev && ev.step && (ev.type === 'step.started' || ev.type === 'step.output' || ev.type === 'step.finished'));
-    }
-
-    function hasCompleteStructuredLogEvents(events) {
-      return (Array.isArray(events) ? events : []).some(ev => ev && ev.step && (ev.type === 'step.output' || ev.type === 'step.finished'));
-    }
-
-    // CIWI_LEGACY_LOG_FALLBACK: remove with historical start-only step event support.
-    function legacyFallbackCommandFromStepName(step) {
-      const name = String((step && step.name) || '').trim();
-      if (name.indexOf('\n') < 0) return '';
-      return name.split('\n').map(s => s.trimEnd()).filter(Boolean).join('\n');
+      return (Array.isArray(events) ? events : []).some(ev => ev && (
+        ev.type === 'system.message' ||
+        (ev.step && (ev.type === 'step.started' || ev.type === 'step.output' || ev.type === 'step.finished'))
+      ));
     }
 
     function stepEventCommandSummary(step) {
-      const text = String((step && step.script) || legacyFallbackCommandFromStepName(step) || '').trim();
+      const text = String((step && step.script) || '').trim();
       if (!text) return '';
       return text.replace(/\s+/g, ' ');
     }
 
     function renderStructuredOutputLog(job, events) {
       const groups = structuredStepGroups(events);
-      if (!groups.length) return renderOutputLog((job && job.output) || '');
+      const byIndex = Object.create(null);
+      groups.forEach(group => { byIndex[group.key] = group; });
+      const renderedSteps = Object.create(null);
+      if (!hasStructuredLogEvents(events)) return '<span class="log-empty">&lt;no structured output&gt;</span>';
       const activeIdx = activeStepIndexFromCurrentStep(job && job.current_step);
-      return groups.map((group, pos) => {
+      return (Array.isArray(events) ? events : []).map(ev => {
+        if (ev && ev.type === 'system.message') {
+          const message = String(ev.message || '');
+          return message ? ('<div class="log-system-message">' + renderOutputLog(message) + '</div>') : '';
+        }
+        if (!ev || !ev.step) return '';
+        const key = String(Number((ev.step || {}).index || 0));
+        const group = byIndex[key];
+        if (!group || renderedSteps[key]) return '';
+        renderedSteps[key] = true;
+        const pos = Number(key || 1) - 1;
         const finish = group.finish || null;
         const running = activeIdx === pos && isRunningJobStatus((job && job.status) || '');
         const remembered = (typeof logStepOpenState !== 'undefined') ? logStepOpenState[group.key] : undefined;
@@ -817,19 +822,16 @@ const jobExecutionRenderJS = `
         if (finish && Number(finish.duration_ms || 0) > 0) meta.push('Duration: ' + escapeHtml(formatDurationMs(Number(finish.duration_ms || 0))));
         if (finish && finish.exit_code !== null && finish.exit_code !== undefined) meta.push('Exit code: ' + escapeHtml(String(finish.exit_code)));
         if (finish && String(finish.error || '').trim()) meta.push('Error: ' + escapeHtml(String(finish.error || '').trim()));
-        const legacyCommand = legacyFallbackCommandFromStepName(group.step);
-        const script = String((group.step && group.step.script) || legacyCommand);
+        const script = String((group.step && group.step.script) || '');
         const yamlLiteral = String((group.step && group.step.yaml_literal) || '');
         const output = String(group.output || '');
         const commandSummary = stepEventCommandSummary(group.step);
-        const historicalNote = (!running && !group.finish && !output) ? '<div class="log-step-meta"><span>Historical preview: this run has step boundaries, but per-step output was not stored separately.</span></div>' : '';
         return '' +
           '<details class="log-step" data-step-key="' + escapeHtml(group.key) + '"' + (open ? ' open' : '') + '>' +
             '<summary><span class="log-step-summary-title">' + escapeHtml(stepEventTitle(group.step)) + '</span>' + (commandSummary ? '<span class="log-step-summary-command">' + escapeHtml(commandSummary) + '</span>' : '') + '</summary>' +
             (meta.length ? ('<div class="log-step-meta">' + meta.map(m => '<span>' + m + '</span>').join('') + '</div>') : '') +
-            historicalNote +
             '<div class="log-step-label">YAML literal</div>' +
-            '<pre>' + escapeHtml(yamlLiteral || '(not available for this historical run)') + '</pre>' +
+            '<pre>' + escapeHtml(yamlLiteral || '(none)') + '</pre>' +
             '<div class="log-step-label">Expanded command</div>' +
             '<pre>' + escapeHtml(script || '(none)') + '</pre>' +
             '<div class="log-step-label">Output</div>' +
@@ -865,13 +867,28 @@ const jobExecutionRenderJS = `
 
     function plainTextFromStructuredEvents(job, events) {
       const groups = structuredStepGroups(events);
-      if (!groups.length) return String((job && job.output) || '');
+      const byIndex = Object.create(null);
+      groups.forEach(group => { byIndex[group.key] = group; });
+      const renderedSteps = Object.create(null);
       const lines = [];
       lines.push('ciwi job log');
       lines.push('Job execution ID: ' + String((job && job.id) || ''));
       lines.push('Status: ' + String((job && job.status) || ''));
       lines.push('');
-      groups.forEach(group => {
+      (Array.isArray(events) ? events : []).forEach(ev => {
+        if (ev && ev.type === 'system.message') {
+          const message = String(ev.message || '').trimEnd();
+          if (message) {
+            lines.push(message);
+            lines.push('');
+          }
+          return;
+        }
+        if (!ev || !ev.step) return;
+        const key = String(Number((ev.step || {}).index || 0));
+        const group = byIndex[key];
+        if (!group || renderedSteps[key]) return;
+        renderedSteps[key] = true;
         lines.push('--------------------------------------------------------------------------------');
         lines.push(stepEventTitle(group.step));
         lines.push('--------------------------------------------------------------------------------');

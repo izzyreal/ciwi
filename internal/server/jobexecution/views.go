@@ -28,7 +28,6 @@ type View struct {
 	LeasedUTC            *time.Time                        `json:"leased_utc,omitempty"`
 	ExitCode             *int                              `json:"exit_code,omitempty"`
 	Error                string                            `json:"error,omitempty"`
-	Output               string                            `json:"output,omitempty"`
 	TestSummary          *protocol.JobExecutionTestSummary `json:"test_summary,omitempty"`
 	UnmetRequirements    []string                          `json:"unmet_requirements,omitempty"`
 	SensitiveValues      []string                          `json:"sensitive_values,omitempty"`
@@ -76,7 +75,8 @@ type FlushHistoryViewResponse struct {
 }
 
 type EventsViewResponse struct {
-	Events []protocol.JobExecutionEvent `json:"events"`
+	Events      []protocol.JobExecutionEvent `json:"events"`
+	NextEventID int64                        `json:"next_event_id"`
 }
 
 type BlockedDependencyView struct {
@@ -112,7 +112,6 @@ func ViewFromProtocol(job protocol.JobExecution) View {
 		LeasedByAgentID:      job.LeasedByAgentID,
 		ExitCode:             job.ExitCode,
 		Error:                job.Error,
-		Output:               job.Output,
 		TestSummary:          job.TestSummary,
 		UnmetRequirements:    job.UnmetRequirements,
 		SensitiveValues:      job.SensitiveValues,

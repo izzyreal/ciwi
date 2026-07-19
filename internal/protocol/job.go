@@ -2,8 +2,6 @@ package protocol
 
 import "time"
 
-const JobExecutionOutputTailMaxBytes = 2 * 1024 * 1024
-
 type AgentInfo struct {
 	AgentID              string            `json:"agent_id"`
 	Hostname             string            `json:"hostname"`
@@ -67,7 +65,6 @@ type JobExecution struct {
 	LeasedUTC            time.Time                `json:"leased_utc,omitempty"`
 	ExitCode             *int                     `json:"exit_code,omitempty"`
 	Error                string                   `json:"error,omitempty"`
-	Output               string                   `json:"output,omitempty"`
 	TestSummary          *JobExecutionTestSummary `json:"test_summary,omitempty"`
 	UnmetRequirements    []string                 `json:"unmet_requirements,omitempty"`
 	SensitiveValues      []string                 `json:"sensitive_values,omitempty"`
@@ -259,8 +256,6 @@ type JobExecutionStatusUpdateRequest struct {
 	Status              string              `json:"status"`
 	ExitCode            *int                `json:"exit_code,omitempty"`
 	Error               string              `json:"error,omitempty"`
-	OutputAppend        string              `json:"output_append,omitempty"`
-	OutputOffsetBytes   int                 `json:"output_offset_bytes,omitempty"`
 	CurrentStep         string              `json:"current_step,omitempty"`
 	CacheStats          []JobCacheStats     `json:"cache_stats,omitempty"`
 	RuntimeCapabilities map[string]string   `json:"runtime_capabilities,omitempty"`
@@ -306,6 +301,7 @@ type JobStepPlanItem struct {
 }
 
 type JobExecutionEvent struct {
+	ID           int64            `json:"id,omitempty"`
 	Type         string           `json:"type"`
 	TimestampUTC time.Time        `json:"timestamp_utc,omitempty"`
 	Step         *JobStepPlanItem `json:"step,omitempty"`

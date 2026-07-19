@@ -164,7 +164,6 @@ func (s *Store) migrate() error {
 			leased_utc TEXT,
 			exit_code INTEGER,
 			error_text TEXT,
-			output_text TEXT,
 			cache_stats_json TEXT NOT NULL DEFAULT '[]',
 			runtime_capabilities_json TEXT NOT NULL DEFAULT '{}',
 			current_step_text TEXT NOT NULL DEFAULT ''
@@ -195,6 +194,7 @@ func (s *Store) migrate() error {
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_job_executions_status_created ON job_executions(status, created_utc);`,
 		`CREATE INDEX IF NOT EXISTS idx_job_execution_events_job_created ON job_execution_events(job_execution_id, created_utc);`,
+		`CREATE INDEX IF NOT EXISTS idx_job_execution_events_identity ON job_execution_events(job_execution_id, event_type, timestamp_utc);`,
 		`CREATE TABLE IF NOT EXISTS app_state (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -264,6 +264,9 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("job_executions", "step_plan_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
+	if err := s.dropColumnIfPresent("job_executions", "output_text"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -271,6 +274,36 @@ func (s *Store) addColumnIfMissing(table, col, typ string) error {
 	_, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, col, typ))
 	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 		return fmt.Errorf("add column %s.%s: %w", table, col, err)
+	}
+	return nil
+}
+
+func (s *Store) dropColumnIfPresent(table, col string) error {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return fmt.Errorf("inspect column %s.%s: %w", table, col, err)
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan columns for %s: %w", table, err)
+		}
+		if name == col {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close columns for %s: %w", table, err)
+	}
+	if !found {
+		return nil
+	}
+	if _, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, col)); err != nil {
+		return fmt.Errorf("drop column %s.%s: %w", table, col, err)
 	}
 	return nil
 }

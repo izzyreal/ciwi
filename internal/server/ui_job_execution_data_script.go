@@ -5,6 +5,11 @@ const jobExecutionDataJS = `
     let lastRenderedOutput = null;
     let lastOutputRaw = '';
     let lastStructuredEvents = [];
+    let lastEventID = 0;
+    let supplementalLoaded = false;
+    let continuePolling = true;
+    let pollTimer = null;
+    let terminalSyncPasses = 0;
     let logStepOpenState = Object.create(null);
     let tailingEnabled = true;
     let suppressLogScrollEvent = false;
@@ -226,8 +231,8 @@ const jobExecutionDataJS = `
         if (el.__ciwiHoverTooltip) return;
         const kind = String(el.getAttribute('data-log-info') || '').trim();
         const tooltipHTML = kind === 'raw'
-          ? '<strong>Raw log</strong><br />Downloads the redacted stored event stream with ANSI escape sequences preserved where structured step output is available. For older jobs without complete structured events, this uses the legacy fallback: the persisted output tail.'
-          : '<strong>Clean log</strong><br />Downloads an editor-friendly plain text log generated from structured events. ANSI escape sequences and terminal control characters are stripped. For older jobs without complete structured events, this uses the legacy fallback: the persisted output tail with cleanup.';
+          ? '<strong>Raw log</strong><br />Downloads the redacted structured event stream with ANSI escape sequences preserved.'
+          : '<strong>Clean log</strong><br />Downloads an editor-friendly plain text log generated from structured events. ANSI escape sequences and terminal control characters are stripped.';
         createHoverTooltip(el, { html: tooltipHTML, lingerMs: 2000, owner: 'log-info-' + kind });
       });
     }
@@ -247,6 +252,7 @@ const jobExecutionDataJS = `
 
     async function loadJobExecution(force) {
       if (refreshInFlight || (!force && refreshGuard.shouldPause())) {
+        scheduleJobExecutionRefresh(1000);
         return;
       }
       refreshInFlight = true;
@@ -266,15 +272,25 @@ const jobExecutionDataJS = `
         const data = await res.json();
         const job = data.job_execution || {};
         bindCiwiProgress(document.getElementById('jobHeaderCard'), job);
-        let events = [];
+        let newEvents = [];
+        let eventRefreshSucceeded = false;
         try {
-          const evRes = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/events', { cache: 'no-store' });
+          const eventsURL = '/api/v1/jobs/' + encodeURIComponent(jobId) + '/events?after_id=' + encodeURIComponent(String(lastEventID));
+          const evRes = await fetch(eventsURL, { cache: 'no-store' });
           if (evRes.ok) {
             const evData = await evRes.json();
-            events = Array.isArray(evData.events) ? evData.events : [];
+            newEvents = Array.isArray(evData.events) ? evData.events : [];
+            if (newEvents.length) {
+              lastStructuredEvents = lastStructuredEvents.concat(newEvents);
+            }
+            const nextEventID = Number(evData.next_event_id || 0);
+            if (Number.isFinite(nextEventID) && nextEventID >= lastEventID) {
+              lastEventID = nextEventID;
+            }
+            eventRefreshSucceeded = true;
           }
         } catch (_) {}
-        lastStructuredEvents = events;
+        const events = lastStructuredEvents;
         const cleanBtn = document.getElementById('downloadCleanLogBtn');
         const rawBtn = document.getElementById('downloadRawLogBtn');
         if (cleanBtn) cleanBtn.href = '/api/v1/jobs/' + encodeURIComponent(jobId) + '/log?format=clean';
@@ -341,16 +357,12 @@ const jobExecutionDataJS = `
           }
         }
 
-        const output = (job.error ? ('ERR: ' + job.error + '\n') : '') + (job.output || '');
-        const eventSignature = JSON.stringify(events.map(ev => [ev.type, ev.timestamp_utc, ev.step && ev.step.index, ev.output, ev.error, ev.duration_ms]));
+        const eventSignature = JSON.stringify(events.map(ev => [ev.id, ev.type, ev.timestamp_utc, ev.step && ev.step.index, ev.message, ev.output, ev.error, ev.duration_ms]));
         const hasStructured = hasStructuredLogEvents(events);
-        const hasCompleteStructured = hasCompleteStructuredLogEvents(events);
-        // CIWI_LEGACY_LOG_FALLBACK: start-only historical events still render preview sections,
-        // but copy falls back to output_text when no event projection can provide complete text.
-        const renderSignature = hasStructured ? ('structured:' + eventSignature + ':' + String(job.current_step || '') + ':' + String(job.status || '')) : ('raw:' + output);
-        lastOutputRaw = hasCompleteStructured ? plainTextFromStructuredEvents(job, events) : output;
+        const renderSignature = 'structured:' + eventSignature + ':' + String(job.current_step || '') + ':' + String(job.status || '');
+        lastOutputRaw = plainTextFromStructuredEvents(job, events);
         if (renderSignature !== lastRenderedOutput) {
-          document.getElementById('logBox').innerHTML = hasStructured ? renderStructuredOutputLog(job, events) : renderOutputLog(output);
+          document.getElementById('logBox').innerHTML = renderStructuredOutputLog(job, events);
           bindLogStepToggles();
           if (hasStructured) bindStructuredStepProgress(job, events);
           lastRenderedOutput = renderSignature;
@@ -378,6 +390,7 @@ const jobExecutionDataJS = `
 
       const forceBtn = document.getElementById('forceFailBtn');
       const active = isActiveJobStatus(job.status);
+      if (active) terminalSyncPasses = 0;
       if (active) {
         forceBtn.style.display = 'inline-block';
         forceBtn.disabled = false;
@@ -489,7 +502,9 @@ const jobExecutionDataJS = `
 
         renderReleaseSummary(job);
 
-      try {
+      const shouldLoadSupplemental = !supplementalLoaded || !active;
+      let supplementalSucceeded = true;
+      if (shouldLoadSupplemental) try {
         const ares = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/artifacts', { cache: 'no-store' });
         if (!ares.ok) {
           throw new Error('artifact request failed');
@@ -499,10 +514,11 @@ const jobExecutionDataJS = `
         const items = adata.artifacts || [];
         renderArtifacts(box, jobId, items);
       } catch (_) {
+        supplementalSucceeded = false;
         document.getElementById('artifactsBox').textContent = 'Could not load artifacts';
       }
 
-      try {
+      if (shouldLoadSupplemental) try {
         const tres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/tests', { cache: 'no-store' });
         if (!tres.ok) throw new Error('test report request failed');
         const tdata = await tres.json();
@@ -519,19 +535,37 @@ const jobExecutionDataJS = `
           lastTestReportSignature = testSignature;
         }
       } catch (_) {
+        supplementalSucceeded = false;
         document.getElementById('testReportBox').textContent = 'Could not load test report';
         document.getElementById('coverageReportBox').textContent = 'Could not load coverage report';
         lastCoverageSignature = null;
         lastTestReportSignature = '';
       }
+      if (shouldLoadSupplemental && supplementalSucceeded) supplementalLoaded = true;
+      if (active) {
+        continuePolling = true;
+      } else if (eventRefreshSucceeded && supplementalSucceeded) {
+        terminalSyncPasses += 1;
+        continuePolling = terminalSyncPasses < 2;
+      } else {
+        continuePolling = true;
+      }
       } finally {
         refreshInFlight = false;
+        if (continuePolling) scheduleJobExecutionRefresh(1000);
       }
+    }
+
+    function scheduleJobExecutionRefresh(delayMs) {
+      if (!continuePolling || pollTimer !== null) return;
+      pollTimer = setTimeout(() => {
+        pollTimer = null;
+        loadJobExecution(false);
+      }, delayMs);
     }
     setBackLink();
     wireLogControls();
     refreshGuard.bindSelectionListener();
     loadJobExecution(true);
-    setInterval(() => loadJobExecution(false), 500);
 
 `

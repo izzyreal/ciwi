@@ -12,6 +12,8 @@ const agentRuntimeJS = `
     let adhocShells = [];
     let adhocActiveJobID = '';
     let adhocPollTimer = null;
+    let adhocEvents = [];
+    let adhocLastEventID = 0;
 
     let lastSuggestedScript = '';
     async function refreshAgent(force) {

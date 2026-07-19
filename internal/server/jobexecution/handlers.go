@@ -23,6 +23,7 @@ type Store interface {
 	UpdateJobExecutionStatus(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	AppendJobExecutionEvents(id string, events []protocol.JobExecutionEvent) error
 	ListJobExecutionEvents(id string) ([]protocol.JobExecutionEvent, error)
+	ListJobExecutionEventsAfter(id string, afterID int64) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error)
 	SaveJobExecutionArtifacts(id string, artifacts []protocol.JobExecutionArtifact) error
 	GetJobExecutionTestReport(id string) (protocol.JobExecutionTestReport, bool, error)

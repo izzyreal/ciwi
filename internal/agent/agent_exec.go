@@ -61,13 +61,14 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	stopControlMonitor := monitorServerTerminalJobState(runCtx, client, serverURL, agentID, job.ID, &output, cancelRun)
 	defer stopControlMonitor()
 	reportRunningUpdate := func(currentStep string, events []protocol.JobExecutionEvent, runtimeCaps map[string]string) error {
-		deltaRaw, totalLen, outputOffsetBytes, _ := progress.unsentFrom(&output)
+		deltaRaw, totalLen, _ := progress.unsentFrom(&output)
 		delta := redactSensitive(deltaRaw, job.SensitiveValues)
+		if delta != "" {
+			events = append(outputDeltaEvent(delta, nil), events...)
+		}
 		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:             agentID,
 			Status:              protocol.JobExecutionStatusRunning,
-			OutputAppend:        delta,
-			OutputOffsetBytes:   outputOffsetBytes,
 			CurrentStep:         currentStep,
 			Events:              events,
 			RuntimeCapabilities: runtimeCaps,
@@ -75,19 +76,18 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}); err != nil {
 			return err
 		}
-		progress.markSent(totalLen, len(delta), currentStep)
+		progress.markSent(totalLen, currentStep)
 		return nil
 	}
 	reportTerminalUpdate := func(status string, exitCode *int, failMsg string, cacheStats []protocol.JobCacheStats, runtimeCaps map[string]string) error {
-		deltaRaw, totalLen, outputOffsetBytes, _ := progress.unsentFrom(&output)
+		deltaRaw, totalLen, _ := progress.unsentFrom(&output)
 		delta := redactSensitive(deltaRaw, job.SensitiveValues)
 		req := protocol.JobExecutionStatusUpdateRequest{
 			AgentID:             agentID,
 			Status:              status,
 			ExitCode:            exitCode,
 			Error:               failMsg,
-			OutputAppend:        delta,
-			OutputOffsetBytes:   outputOffsetBytes,
+			Events:              outputDeltaEvent(delta, nil),
 			CacheStats:          cacheStats,
 			RuntimeCapabilities: runtimeCaps,
 			CurrentStep:         "",
@@ -96,7 +96,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		if err := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, req); err != nil {
 			return err
 		}
-		progress.markSent(totalLen, len(delta), "")
+		progress.markSent(totalLen, "")
 		return nil
 	}
 

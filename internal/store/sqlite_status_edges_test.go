@@ -177,7 +177,11 @@ func TestFailTimedOutRunningJobExecutionsDefaults(t *testing.T) {
 	if !strings.Contains(got.Error, "job timed out while running") {
 		t.Fatalf("expected default timeout reason, got %q", got.Error)
 	}
-	if !strings.Contains(got.Output, "[control] job timed out while running") {
-		t.Fatalf("expected control marker in output, got %q", got.Output)
+	events, err := s.ListJobExecutionEvents(job.ID)
+	if err != nil {
+		t.Fatalf("ListJobExecutionEvents: %v", err)
+	}
+	if len(events) != 1 || !strings.Contains(events[0].Message, "[control] job timed out while running") {
+		t.Fatalf("expected timeout control event, got %+v", events)
 	}
 }

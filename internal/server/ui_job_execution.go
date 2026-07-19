@@ -134,6 +134,12 @@ const jobExecutionHTML = `<!doctype html>
       border-radius: 6px;
       padding: 6px 10px;
     }
+    .log-system-message {
+      margin: 8px 0;
+      padding: 8px 12px;
+      border-left: 3px solid #6f9982;
+      color: #c7ddd1;
+    }
     details.log-step > summary {
       cursor: pointer;
       color: #dff3ea;

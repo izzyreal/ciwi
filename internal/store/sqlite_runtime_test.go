@@ -185,10 +185,8 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 	}
 
 	done, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            "succeeded",
-		OutputAppend:      "final output",
-		OutputOffsetBytes: 0,
+		AgentID: "agent-1",
+		Status:  "succeeded",
 	})
 	if err != nil {
 		t.Fatalf("mark succeeded: %v", err)
@@ -198,129 +196,14 @@ func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {
 	}
 
 	got, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            "running",
-		OutputAppend:      "late running output",
-		OutputOffsetBytes: 0,
+		AgentID: "agent-1",
+		Status:  "running",
 	})
 	if err != nil {
 		t.Fatalf("late running update: %v", err)
 	}
 	if got.Status != "succeeded" {
 		t.Fatalf("expected status to remain succeeded, got %q", got.Status)
-	}
-	if got.Output != "final output" {
-		t.Fatalf("expected output to remain terminal output, got %q", got.Output)
-	}
-}
-
-func TestStoreAppendsRunningOutputDeltas(t *testing.T) {
-	s := openTestStore(t)
-
-	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
-		Script:         "echo done",
-		TimeoutSeconds: 30,
-	})
-	if err != nil {
-		t.Fatalf("create job: %v", err)
-	}
-
-	first, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusRunning,
-		OutputAppend:      "line-1\n",
-		OutputOffsetBytes: 0,
-	})
-	if err != nil {
-		t.Fatalf("first running update: %v", err)
-	}
-	if first.Output != "line-1\n" {
-		t.Fatalf("expected first delta to persist, got %q", first.Output)
-	}
-
-	second, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusRunning,
-		OutputAppend:      "line-2\n",
-		OutputOffsetBytes: len("line-1\n"),
-	})
-	if err != nil {
-		t.Fatalf("second running update: %v", err)
-	}
-	if second.Output != "line-1\nline-2\n" {
-		t.Fatalf("expected appended output, got %q", second.Output)
-	}
-}
-
-func TestStoreTrimsPersistedOutputTailToMax(t *testing.T) {
-	s := openTestStore(t)
-
-	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
-		Script:         "echo done",
-		TimeoutSeconds: 30,
-	})
-	if err != nil {
-		t.Fatalf("create job: %v", err)
-	}
-
-	firstChunk := strings.Repeat("a", maxPersistedJobOutputBytes)
-	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusRunning,
-		OutputAppend:      firstChunk,
-		OutputOffsetBytes: 0,
-	}); err != nil {
-		t.Fatalf("first running update: %v", err)
-	}
-	got, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusRunning,
-		OutputAppend:      "bc",
-		OutputOffsetBytes: maxPersistedJobOutputBytes,
-	})
-	if err != nil {
-		t.Fatalf("second running update: %v", err)
-	}
-	if len(got.Output) != maxPersistedJobOutputBytes {
-		t.Fatalf("expected trimmed len %d, got %d", maxPersistedJobOutputBytes, len(got.Output))
-	}
-	want := firstChunk[2:] + "bc"
-	if got.Output != want {
-		t.Fatalf("expected tail trim to keep most recent bytes")
-	}
-}
-
-func TestStoreAppendAtSameOffsetIsIdempotent(t *testing.T) {
-	s := openTestStore(t)
-
-	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
-		Script:         "echo done",
-		TimeoutSeconds: 30,
-	})
-	if err != nil {
-		t.Fatalf("create job: %v", err)
-	}
-
-	first, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusRunning,
-		OutputAppend:      "hello",
-		OutputOffsetBytes: 0,
-	})
-	if err != nil {
-		t.Fatalf("first append: %v", err)
-	}
-	second, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusRunning,
-		OutputAppend:      "hello",
-		OutputOffsetBytes: 0,
-	})
-	if err != nil {
-		t.Fatalf("retry append: %v", err)
-	}
-	if first.Output != "hello" || second.Output != "hello" {
-		t.Fatalf("expected idempotent retry, first=%q second=%q", first.Output, second.Output)
 	}
 }
 
@@ -378,10 +261,8 @@ func TestStoreConcurrentRunningDoesNotOverrideTerminal(t *testing.T) {
 		t.Fatalf("create job: %v", err)
 	}
 	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            "running",
-		OutputAppend:      "stream-1",
-		OutputOffsetBytes: 0,
+		AgentID: "agent-1",
+		Status:  "running",
 	}); err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
@@ -461,11 +342,9 @@ func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 	}
 
 	running, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            "running",
-		OutputAppend:      "stream-1",
-		OutputOffsetBytes: 0,
-		CurrentStep:       "Step 1/3: checkout source",
+		AgentID:     "agent-1",
+		Status:      "running",
+		CurrentStep: "Step 1/3: checkout source",
 	})
 	if err != nil {
 		t.Fatalf("mark running: %v", err)
@@ -475,57 +354,14 @@ func TestStoreTracksCurrentStepAndClearsOnTerminal(t *testing.T) {
 	}
 
 	done, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            "succeeded",
-		OutputAppend:      "done",
-		OutputOffsetBytes: len("stream-1"),
+		AgentID: "agent-1",
+		Status:  "succeeded",
 	})
 	if err != nil {
 		t.Fatalf("mark succeeded: %v", err)
 	}
 	if done.CurrentStep != "" {
 		t.Fatalf("expected current_step to clear on terminal status, got %q", done.CurrentStep)
-	}
-}
-
-func TestStorePreservesOutputWhenRunningUpdateOmitsOutput(t *testing.T) {
-	s := openTestStore(t)
-
-	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
-		Script:         "echo hi",
-		TimeoutSeconds: 30,
-	})
-	if err != nil {
-		t.Fatalf("create job: %v", err)
-	}
-
-	first, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            "running",
-		OutputAppend:      "line-1\nline-2",
-		OutputOffsetBytes: 0,
-		CurrentStep:       "Step 1/3: checkout",
-	})
-	if err != nil {
-		t.Fatalf("mark first running: %v", err)
-	}
-	if first.Output == "" {
-		t.Fatalf("expected initial running output to be set")
-	}
-
-	second, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:     "agent-1",
-		Status:      "running",
-		CurrentStep: "Step 2/3: build",
-	})
-	if err != nil {
-		t.Fatalf("mark second running: %v", err)
-	}
-	if second.Output != first.Output {
-		t.Fatalf("expected running output to be preserved, got=%q want=%q", second.Output, first.Output)
-	}
-	if second.CurrentStep != "Step 2/3: build" {
-		t.Fatalf("expected current_step to update, got %q", second.CurrentStep)
 	}
 }
 
@@ -609,11 +445,9 @@ func TestStoreFailTimedOutRunningJobExecutions(t *testing.T) {
 
 	startedAt := time.Now().UTC().Add(-20 * time.Second)
 	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-a",
-		Status:            protocol.JobExecutionStatusRunning,
-		CurrentStep:       "Checking out source",
-		OutputAppend:      "[checkout] repo=example ref=abc",
-		OutputOffsetBytes: 0,
+		AgentID:     "agent-a",
+		Status:      protocol.JobExecutionStatusRunning,
+		CurrentStep: "Checking out source",
 	}); err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
@@ -642,7 +476,11 @@ func TestStoreFailTimedOutRunningJobExecutions(t *testing.T) {
 	if !strings.Contains(got.Error, "timed out") {
 		t.Fatalf("expected timeout error, got %q", got.Error)
 	}
-	if !strings.Contains(got.Output, "[control] job timed out while running (server maintenance)") {
-		t.Fatalf("expected timeout control marker in output, got %q", got.Output)
+	events, err := s.ListJobExecutionEvents(job.ID)
+	if err != nil {
+		t.Fatalf("list timeout events: %v", err)
+	}
+	if len(events) != 1 || !strings.Contains(events[0].Message, "[control] job timed out while running (server maintenance)") {
+		t.Fatalf("expected timeout control event, got %+v", events)
 	}
 }

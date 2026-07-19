@@ -30,18 +30,13 @@ func reconstructedStatusOutput(t *testing.T, statuses []protocol.JobExecutionSta
 	t.Helper()
 	var out string
 	for _, st := range statuses {
-		delta := st.OutputAppend
-		if delta == "" {
-			continue
-		}
-		offset := st.OutputOffsetBytes
-		switch {
-		case offset == len(out):
-			out += delta
-		case offset >= 0 && len(out) == offset+len(delta) && out[offset:] == delta:
-			// Idempotent retry of the same append.
-		default:
-			t.Fatalf("unexpected output append offset=%d len=%d delta=%q", offset, len(out), delta)
+		for _, event := range st.Events {
+			switch event.Type {
+			case protocol.JobExecutionEventTypeStepOutput:
+				out += event.Output
+			case protocol.JobExecutionEventTypeSystemMessage:
+				out += event.Message
+			}
 		}
 	}
 	return out
@@ -84,35 +79,6 @@ func TestBoolEnv(t *testing.T) {
 	t.Setenv("CIWI_BOOL_TEST", "invalid")
 	if !boolEnv("CIWI_BOOL_TEST", true) {
 		t.Fatal("expected invalid to fall back to default=true")
-	}
-}
-
-func TestOutputReportStateClampsPersistedOffsetToTailWindow(t *testing.T) {
-	st := &outputReportState{}
-	st.markSent(protocol.JobExecutionOutputTailMaxBytes+123, protocol.JobExecutionOutputTailMaxBytes+123, "step")
-	if st.sentPersistedBytes != protocol.JobExecutionOutputTailMaxBytes {
-		t.Fatalf("expected persisted offset clamp=%d got=%d", protocol.JobExecutionOutputTailMaxBytes, st.sentPersistedBytes)
-	}
-}
-
-func TestOutputReportStateUsesClampedOffsetForSubsequentDeltas(t *testing.T) {
-	st := &outputReportState{}
-	var buf syncBuffer
-
-	initial := strings.Repeat("a", protocol.JobExecutionOutputTailMaxBytes) + "bc"
-	buf.WriteString(initial)
-	st.markSent(len(initial), len(initial), "build")
-
-	buf.WriteString("de")
-	delta, totalRawLen, outputOffsetBytes, _ := st.unsentFrom(&buf)
-	if delta != "de" {
-		t.Fatalf("expected unsent delta %q got %q", "de", delta)
-	}
-	if totalRawLen != len(initial)+2 {
-		t.Fatalf("unexpected total raw len %d", totalRawLen)
-	}
-	if outputOffsetBytes != protocol.JobExecutionOutputTailMaxBytes {
-		t.Fatalf("expected capped offset %d got %d", protocol.JobExecutionOutputTailMaxBytes, outputOffsetBytes)
 	}
 }
 
@@ -957,7 +923,7 @@ func TestExecuteLeasedJobFailsWhenStepTestReportContainsFailures(t *testing.T) {
 	}
 }
 
-func TestExecuteLeasedJobRunningStepStatusCarriesOutputSnapshot(t *testing.T) {
+func TestExecuteLeasedJobRunningStepStatusCarriesStructuredEvents(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix shell assertion test skipped on windows")
 	}

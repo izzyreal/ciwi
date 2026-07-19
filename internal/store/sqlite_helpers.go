@@ -13,8 +13,6 @@ import (
 	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
-const maxPersistedJobOutputBytes = protocol.JobExecutionOutputTailMaxBytes
-
 func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.JobExecution, error) {
 	var (
 		job                                                                                                               protocol.JobExecution
@@ -24,12 +22,12 @@ func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.Jo
 		startedUTC, finishedUTC                                                                                           sql.NullString
 		leasedByAgentID, leasedUTC                                                                                        sql.NullString
 		exitCode                                                                                                          sql.NullInt64
-		errorText, outputText, currentStepText                                                                            sql.NullString
+		errorText, currentStepText                                                                                        sql.NullString
 	)
 
 	if err := scanner.Scan(
 		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON, &stepPlanJSON,
-		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &outputText, &cacheStatsJSON, &runtimeCapsJSON, &currentStepText,
+		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &cacheStatsJSON, &runtimeCapsJSON, &currentStepText,
 	); err != nil {
 		return protocol.JobExecution{}, err
 	}
@@ -75,9 +73,6 @@ func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.Jo
 	}
 	if errorText.Valid {
 		job.Error = errorText.String
-	}
-	if outputText.Valid {
-		job.Output = outputText.String
 	}
 	if currentStepText.Valid {
 		job.CurrentStep = strings.TrimSpace(currentStepText.String)
@@ -153,40 +148,6 @@ func cloneMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
-}
-
-func trimPersistedJobOutput(output string) string {
-	if len(output) <= maxPersistedJobOutputBytes {
-		return output
-	}
-	return output[len(output)-maxPersistedJobOutputBytes:]
-}
-
-func appendPersistedJobOutput(current, delta string) string {
-	if delta == "" {
-		return trimPersistedJobOutput(current)
-	}
-	if current == "" {
-		return trimPersistedJobOutput(delta)
-	}
-	return trimPersistedJobOutput(current + delta)
-}
-
-func appendPersistedJobOutputAtOffset(current, delta string, offset int) (string, bool) {
-	if delta == "" {
-		return trimPersistedJobOutput(current), true
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	if offset == len(current) {
-		return appendPersistedJobOutput(current, delta), true
-	}
-	// Idempotent retry: the same delta already landed at the same offset.
-	if offset <= len(current) && len(current) == offset+len(delta) && current[offset:] == delta {
-		return current, true
-	}
-	return current, false
 }
 
 func cloneJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec {

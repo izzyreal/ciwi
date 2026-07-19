@@ -118,6 +118,26 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	if gotEvents[2].ExitCode == nil || *gotEvents[2].ExitCode != 7 || gotEvents[2].Error != "exit=7" || gotEvents[2].DurationMS != 1234 {
 		t.Fatalf("expected finish payload roundtrip, got %+v", gotEvents[2])
 	}
+	if gotEvents[0].ID <= 0 || gotEvents[1].ID <= gotEvents[0].ID || gotEvents[2].ID <= gotEvents[1].ID {
+		t.Fatalf("expected increasing event ids, got %+v", gotEvents)
+	}
+	delta, err := s.ListJobExecutionEventsAfter(job.ID, gotEvents[1].ID)
+	if err != nil {
+		t.Fatalf("ListJobExecutionEventsAfter: %v", err)
+	}
+	if len(delta) != 1 || delta[0].ID != gotEvents[2].ID {
+		t.Fatalf("expected only final event after cursor, got %+v", delta)
+	}
+	if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{gotEvents[2]}); err != nil {
+		t.Fatalf("retry final event: %v", err)
+	}
+	afterRetry, err := s.ListJobExecutionEvents(job.ID)
+	if err != nil {
+		t.Fatalf("list events after retry: %v", err)
+	}
+	if len(afterRetry) != len(gotEvents) {
+		t.Fatalf("expected exact event retry to be idempotent, got %d events", len(afterRetry))
+	}
 	batched, err := s.ListJobExecutionEventsForJobs([]string{job.ID}, protocol.JobExecutionEventTypeStepFinished)
 	if err != nil {
 		t.Fatalf("ListJobExecutionEventsForJobs: %v", err)

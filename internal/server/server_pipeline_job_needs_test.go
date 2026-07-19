@@ -67,8 +67,6 @@ pipelines:
 	updated, err := db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusSucceeded,
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -142,8 +140,6 @@ pipelines:
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusFailed,
 		Error:             "boom",
-		OutputAppend:      "boom",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {

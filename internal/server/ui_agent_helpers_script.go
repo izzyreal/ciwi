@@ -157,11 +157,13 @@ const agentHelpersJS = `
       closeModalOverlay(adhocModalOverlay);
       clearAdhocPoll();
       adhocActiveJobID = '';
+      adhocEvents = [];
+      adhocLastEventID = 0;
       adhocRunBtn.disabled = false;
       adhocRunBtn.textContent = 'Run';
     }
 
-    function renderJobOutput(job) {
+    function renderJobOutput(job, events) {
       const lines = [];
       lines.push('[job] ' + String(job.id || ''));
       lines.push('[status] ' + String(job.status || ''));
@@ -170,7 +172,12 @@ const agentHelpersJS = `
       if (job.finished_utc) lines.push('[finished] ' + formatTimestamp(job.finished_utc));
       if (job.exit_code !== undefined && job.exit_code !== null) lines.push('[exit_code] ' + String(job.exit_code));
       let body = lines.join('\n');
-      if (job.output) body += '\n\n' + String(job.output);
+      const output = (Array.isArray(events) ? events : []).map(event => {
+        if (event && event.type === 'step.output') return String(event.output || '');
+        if (event && event.type === 'system.message') return String(event.message || '');
+        return '';
+      }).join('');
+      if (output) body += '\n\n' + output;
       if (job.error) body += '\n\n[error]\n' + String(job.error);
       adhocOutput.textContent = body;
       adhocOutput.scrollTop = adhocOutput.scrollHeight;
@@ -183,7 +190,14 @@ const agentHelpersJS = `
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         const job = data.job_execution || {};
-        renderJobOutput(job);
+        const eventsRes = await fetch('/api/v1/jobs/' + encodeURIComponent(jobID) + '/events?after_id=' + encodeURIComponent(String(adhocLastEventID)));
+        if (!eventsRes.ok) throw new Error('events HTTP ' + eventsRes.status);
+        const eventsData = await eventsRes.json();
+        const newEvents = Array.isArray(eventsData.events) ? eventsData.events : [];
+        if (newEvents.length) adhocEvents = adhocEvents.concat(newEvents);
+        const nextEventID = Number(eventsData.next_event_id || 0);
+        if (Number.isFinite(nextEventID) && nextEventID >= adhocLastEventID) adhocLastEventID = nextEventID;
+        renderJobOutput(job, adhocEvents);
         const terminal = isTerminalJobStatus(job.status);
         if (terminal) {
           adhocRunBtn.disabled = false;
@@ -214,6 +228,8 @@ const agentHelpersJS = `
       adhocOutput.textContent = 'Queueing ad-hoc job...';
       clearAdhocPoll();
       adhocActiveJobID = '';
+      adhocEvents = [];
+      adhocLastEventID = 0;
       try {
         const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID) + '/actions', {
           method: 'POST',
@@ -225,6 +241,8 @@ const agentHelpersJS = `
         const jobID = String(data.job_execution_id || '').trim();
         if (!jobID) throw new Error('server response missing job_execution_id');
         adhocActiveJobID = jobID;
+        adhocEvents = [];
+        adhocLastEventID = 0;
         showJobStartedSnackbar('Adhoc script started', jobID);
         adhocOutput.textContent = '[queued] job_execution_id=' + jobID + '\n[poll] waiting for agent output...';
         pollAdhocJob(jobID);

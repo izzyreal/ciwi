@@ -17,19 +17,20 @@ import (
 )
 
 type stubStore struct {
-	listJobExecutionsFn          func() ([]protocol.JobExecution, error)
-	createJobExecutionFn         func(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
-	getJobExecutionFn            func(id string) (protocol.JobExecution, error)
-	deleteQueuedJobExecutionFn   func(id string) error
-	updateJobExecutionStatusFn   func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
-	appendJobExecutionEventsFn   func(id string, events []protocol.JobExecutionEvent) error
-	listJobExecutionEventsFn     func(id string) ([]protocol.JobExecutionEvent, error)
-	listJobExecutionArtifactsFn  func(id string) ([]protocol.JobExecutionArtifact, error)
-	saveJobExecutionArtifactsFn  func(id string, artifacts []protocol.JobExecutionArtifact) error
-	getJobExecutionTestReportFn  func(id string) (protocol.JobExecutionTestReport, bool, error)
-	saveJobExecutionTestReportFn func(id string, report protocol.JobExecutionTestReport) error
-	clearQueuedJobExecutionsFn   func() (int64, error)
-	flushJobExecutionHistoryFn   func() ([]string, error)
+	listJobExecutionsFn           func() ([]protocol.JobExecution, error)
+	createJobExecutionFn          func(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
+	getJobExecutionFn             func(id string) (protocol.JobExecution, error)
+	deleteQueuedJobExecutionFn    func(id string) error
+	updateJobExecutionStatusFn    func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
+	appendJobExecutionEventsFn    func(id string, events []protocol.JobExecutionEvent) error
+	listJobExecutionEventsFn      func(id string) ([]protocol.JobExecutionEvent, error)
+	listJobExecutionEventsAfterFn func(id string, afterID int64) ([]protocol.JobExecutionEvent, error)
+	listJobExecutionArtifactsFn   func(id string) ([]protocol.JobExecutionArtifact, error)
+	saveJobExecutionArtifactsFn   func(id string, artifacts []protocol.JobExecutionArtifact) error
+	getJobExecutionTestReportFn   func(id string) (protocol.JobExecutionTestReport, bool, error)
+	saveJobExecutionTestReportFn  func(id string, report protocol.JobExecutionTestReport) error
+	clearQueuedJobExecutionsFn    func() (int64, error)
+	flushJobExecutionHistoryFn    func() ([]string, error)
 }
 
 func (s *stubStore) ListJobExecutions() ([]protocol.JobExecution, error) {
@@ -81,6 +82,16 @@ func (s *stubStore) ListJobExecutionEvents(id string) ([]protocol.JobExecutionEv
 	return nil, fmt.Errorf("unexpected ListJobExecutionEvents call")
 }
 
+func (s *stubStore) ListJobExecutionEventsAfter(id string, afterID int64) ([]protocol.JobExecutionEvent, error) {
+	if s.listJobExecutionEventsAfterFn != nil {
+		return s.listJobExecutionEventsAfterFn(id, afterID)
+	}
+	if afterID == 0 {
+		return s.ListJobExecutionEvents(id)
+	}
+	return nil, fmt.Errorf("unexpected ListJobExecutionEventsAfter call")
+}
+
 func (s *stubStore) ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error) {
 	if s.listJobExecutionArtifactsFn != nil {
 		return s.listJobExecutionArtifactsFn(id)
@@ -130,22 +141,23 @@ func TestHandleByIDCancelActiveJob(t *testing.T) {
 			ID:              id,
 			Status:          protocol.JobExecutionStatusRunning,
 			LeasedByAgentID: "agent-1",
-			Output:          "line1",
 		}, nil
 	}
 	store.updateJobExecutionStatusFn = func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error) {
 		if req.AgentID != "agent-1" || req.Status != protocol.JobExecutionStatusFailed {
 			t.Fatalf("unexpected update request: %+v", req)
 		}
-		if !strings.Contains(req.OutputAppend, "[control] job cancelled by user") {
-			t.Fatalf("expected cancel marker in output append, got %q", req.OutputAppend)
-		}
 		return protocol.JobExecution{
 			ID:     id,
 			Status: protocol.JobExecutionStatusFailed,
 			Error:  req.Error,
-			Output: "line1\n[control] job cancelled by user",
 		}, nil
+	}
+	store.appendJobExecutionEventsFn = func(id string, events []protocol.JobExecutionEvent) error {
+		if len(events) != 1 || events[0].Type != protocol.JobExecutionEventTypeSystemMessage || !strings.Contains(events[0].Message, "job cancelled by user") {
+			t.Fatalf("unexpected cancellation events: %+v", events)
+		}
+		return nil
 	}
 
 	rec := httptest.NewRecorder()
@@ -213,7 +225,6 @@ func TestHandleByIDStatusUpdatesAndCallbacks(t *testing.T) {
 			ID:              id,
 			Status:          protocol.JobExecutionStatusRunning,
 			CurrentStep:     "step 1",
-			Output:          "ok",
 			LeasedByAgentID: req.AgentID,
 		}, nil
 	}
@@ -261,6 +272,11 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 	store.listJobExecutionEventsFn = func(id string) ([]protocol.JobExecutionEvent, error) {
 		return []protocol.JobExecutionEvent{
 			{
+				Type:         protocol.JobExecutionEventTypeSystemMessage,
+				TimestampUTC: started.Add(-time.Second),
+				Message:      "[meta] agent=agent-1\n",
+			},
+			{
 				Type:         protocol.JobExecutionEventTypeStepStarted,
 				TimestampUTC: started,
 				Step:         &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "build", YAMLLiteral: "run: go test {{pkg}}", Script: "go test ./..."},
@@ -289,7 +305,7 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 		t.Fatalf("expected clean 200, got %d: %s", recClean.Code, recClean.Body.String())
 	}
 	clean := recClean.Body.String()
-	if !strings.Contains(clean, "Step 1/1: build") || !strings.Contains(clean, "run: go test {{pkg}}") || !strings.Contains(clean, "go test ./...") || !strings.Contains(clean, "FAIL") || strings.Contains(clean, "\x1b[31m") {
+	if !strings.Contains(clean, "[meta] agent=agent-1") || !strings.Contains(clean, "Step 1/1: build") || !strings.Contains(clean, "run: go test {{pkg}}") || !strings.Contains(clean, "go test ./...") || !strings.Contains(clean, "FAIL") || strings.Contains(clean, "\x1b[31m") {
 		t.Fatalf("unexpected clean log:\n%s", clean)
 	}
 	if got := recClean.Header().Get("Content-Disposition"); !strings.Contains(got, "ciwi-job-1-clean.log") {
@@ -302,47 +318,8 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 	if recRaw.Code != http.StatusOK {
 		t.Fatalf("expected raw 200, got %d: %s", recRaw.Code, recRaw.Body.String())
 	}
-	if raw := recRaw.Body.String(); !strings.Contains(raw, "\x1b[31mFAIL\x1b[0m") {
+	if raw := recRaw.Body.String(); !strings.Contains(raw, "[meta] agent=agent-1") || !strings.Contains(raw, "\x1b[31mFAIL\x1b[0m") {
 		t.Fatalf("expected raw log to preserve ANSI output, got:\n%s", raw)
-	}
-}
-
-func TestHandleByIDLogDownloadFallsBackForStartOnlyEvents(t *testing.T) {
-	store := &stubStore{}
-	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
-		return protocol.JobExecution{
-			ID:     id,
-			Status: protocol.JobExecutionStatusSucceeded,
-			Output: "\x1b[32mlegacy output\x1b[0m\n",
-		}, nil
-	}
-	store.listJobExecutionEventsFn = func(id string) ([]protocol.JobExecutionEvent, error) {
-		return []protocol.JobExecutionEvent{{
-			Type:         protocol.JobExecutionEventTypeStepStarted,
-			TimestampUTC: time.Now().UTC(),
-			Step:         &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "TAG=\"${CIWI PIPELINE TAG}\"\ngit tag"},
-		}}, nil
-	}
-
-	recRaw := httptest.NewRecorder()
-	reqRaw := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-legacy/log?format=raw", nil)
-	HandleByID(recRaw, reqRaw, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
-	if recRaw.Code != http.StatusOK {
-		t.Fatalf("expected raw 200, got %d: %s", recRaw.Code, recRaw.Body.String())
-	}
-	if raw := recRaw.Body.String(); !strings.Contains(raw, "\x1b[32mlegacy output\x1b[0m") {
-		t.Fatalf("expected raw fallback to legacy output, got:\n%s", raw)
-	}
-
-	recClean := httptest.NewRecorder()
-	reqClean := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-legacy/log?format=clean", nil)
-	HandleByID(recClean, reqClean, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
-	if recClean.Code != http.StatusOK {
-		t.Fatalf("expected clean 200, got %d: %s", recClean.Code, recClean.Body.String())
-	}
-	clean := recClean.Body.String()
-	if !strings.Contains(clean, "legacy output") || strings.Contains(clean, "\x1b[32m") {
-		t.Fatalf("expected clean fallback to stripped legacy output, got:\n%s", clean)
 	}
 }
 

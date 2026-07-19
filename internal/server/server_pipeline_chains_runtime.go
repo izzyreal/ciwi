@@ -208,18 +208,19 @@ func (s *stateStore) reconcileNeedsBlockedJob(candidate protocol.JobExecution, a
 }
 
 func (s *stateStore) failBlockedJob(job protocol.JobExecution, agentID, marker, reason string, metadataPatch map[string]string) error {
-	outputAppend := "[" + marker + "] " + reason
-	if job.Output != "" && !strings.HasSuffix(job.Output, "\n") {
-		outputAppend = "\n" + outputAppend
-	}
 	if _, err := s.pipelineStore().UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           agentID,
-		Status:            protocol.JobExecutionStatusFailed,
-		Error:             reason,
-		OutputAppend:      outputAppend,
-		OutputOffsetBytes: len(job.Output),
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      agentID,
+		Status:       protocol.JobExecutionStatusFailed,
+		Error:        reason,
+		TimestampUTC: time.Now().UTC(),
 	}); err != nil {
+		return err
+	}
+	if err := s.pipelineStore().AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
+		Type:         protocol.JobExecutionEventTypeSystemMessage,
+		TimestampUTC: time.Now().UTC(),
+		Message:      "[" + marker + "] " + reason,
+	}}); err != nil {
 		return err
 	}
 	_, err := s.pipelineStore().MergeJobExecutionMetadata(job.ID, metadataPatch)

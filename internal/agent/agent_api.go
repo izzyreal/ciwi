@@ -124,26 +124,24 @@ func leaseJob(ctx context.Context, client *http.Client, serverURL, agentID strin
 func reportFailure(ctx context.Context, client *http.Client, serverURL, agentID string, job protocol.JobExecution, progress *outputReportState, output *syncBuffer, exitCode *int, failMsg string) error {
 	deltaRaw := ""
 	totalLen := 0
-	outputOffsetBytes := 0
 	if progress != nil && output != nil {
-		deltaRaw, totalLen, outputOffsetBytes, _ = progress.unsentFrom(output)
+		deltaRaw, totalLen, _ = progress.unsentFrom(output)
 	}
 	delta := redactSensitive(deltaRaw, job.SensitiveValues)
 	err := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           agentID,
-		Status:            protocol.JobExecutionStatusFailed,
-		ExitCode:          exitCode,
-		Error:             failMsg,
-		OutputAppend:      delta,
-		OutputOffsetBytes: outputOffsetBytes,
-		CurrentStep:       "",
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      agentID,
+		Status:       protocol.JobExecutionStatusFailed,
+		ExitCode:     exitCode,
+		Error:        failMsg,
+		Events:       outputDeltaEvent(delta, nil),
+		CurrentStep:  "",
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		return err
 	}
 	if progress != nil {
-		progress.markSent(totalLen, len(delta), "")
+		progress.markSent(totalLen, "")
 	}
 	return nil
 }

@@ -30,20 +30,22 @@ func handleJobCancel(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 	if agentID == "" {
 		agentID = "server-control"
 	}
-	outputAppend := "[control] job cancelled by user"
-	if strings.TrimSpace(job.Output) != "" {
-		outputAppend = "\n" + outputAppend
-	}
 	updated, err := deps.Store.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           agentID,
-		Status:            protocol.JobExecutionStatusFailed,
-		Error:             "cancelled by user",
-		OutputAppend:      outputAppend,
-		OutputOffsetBytes: len(job.Output),
-		TimestampUTC:      nowUTC(deps),
+		AgentID:      agentID,
+		Status:       protocol.JobExecutionStatusFailed,
+		Error:        "cancelled by user",
+		TimestampUTC: nowUTC(deps),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := deps.Store.AppendJobExecutionEvents(jobID, []protocol.JobExecutionEvent{{
+		Type:         protocol.JobExecutionEventTypeSystemMessage,
+		TimestampUTC: nowUTC(deps),
+		Message:      "[control] job cancelled by user",
+	}}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(updated)})
@@ -109,18 +111,13 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 		return
 	}
 	if len(req.Events) > 0 {
-		_ = deps.Store.AppendJobExecutionEvents(jobID, req.Events)
+		if err := deps.Store.AppendJobExecutionEvents(jobID, req.Events); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	if deps.MarkAgentSeen != nil {
 		deps.MarkAgentSeen(req.AgentID, nowUTC(deps))
-	}
-	if protocol.NormalizeJobExecutionStatus(job.Status) == protocol.JobExecutionStatusRunning &&
-		strings.TrimSpace(job.CurrentStep) != "" && strings.TrimSpace(job.Output) == "" {
-		slog.Warn("job running without output snapshot",
-			"job_execution_id", jobID,
-			"agent_id", req.AgentID,
-			"current_step", job.CurrentStep,
-		)
 	}
 	if protocol.IsTerminalJobExecutionStatus(job.Status) {
 		slog.Info("job terminal status recorded",

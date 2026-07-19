@@ -117,7 +117,6 @@ type JobView struct {
 	LeasedUTC            *time.Time                        `json:"leased_utc,omitempty"`
 	ExitCode             *int                              `json:"exit_code,omitempty"`
 	Error                string                            `json:"error,omitempty"`
-	Output               string                            `json:"output,omitempty"`
 	TestSummary          *protocol.JobExecutionTestSummary `json:"test_summary,omitempty"`
 	UnmetRequirements    []string                          `json:"unmet_requirements,omitempty"`
 	SensitiveValues      []string                          `json:"sensitive_values,omitempty"`
@@ -761,7 +760,6 @@ func jobView(job protocol.JobExecution) *JobView {
 		LeasedByAgentID:      job.LeasedByAgentID,
 		ExitCode:             job.ExitCode,
 		Error:                job.Error,
-		Output:               job.Output,
 		TestSummary:          job.TestSummary,
 		UnmetRequirements:    job.UnmetRequirements,
 		SensitiveValues:      job.SensitiveValues,

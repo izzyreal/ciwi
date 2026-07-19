@@ -42,21 +42,10 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	started := nullableTime(job.StartedUTC)
 	finished := nullableTime(job.FinishedUTC)
 	errorText := req.Error
-	outputAppend := req.OutputAppend
 	exitCode := nullableInt(req.ExitCode)
 	currentStep := strings.TrimSpace(req.CurrentStep)
 	if currentStep == "" {
 		currentStep = strings.TrimSpace(job.CurrentStep)
-	}
-	// Treat status updates as partial patches: when output is omitted by the caller,
-	// keep the latest persisted log snapshot instead of clearing it.
-	output := job.Output
-	if outputAppend != "" {
-		var ok bool
-		output, ok = appendPersistedJobOutputAtOffset(job.Output, outputAppend, req.OutputOffsetBytes)
-		if !ok {
-			return protocol.JobExecution{}, fmt.Errorf("output append offset mismatch")
-		}
 	}
 	cacheStatsJSON := "[]"
 	if len(job.CacheStats) > 0 {
@@ -100,7 +89,7 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	}
 
 	where := "id = ?"
-	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, output, cacheStatsJSON, runtimeCapsJSON, currentStep}
+	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, cacheStatsJSON, runtimeCapsJSON, currentStep}
 	if status == protocol.JobExecutionStatusRunning {
 		// Never allow a running heartbeat/log-stream update to overwrite a terminal state.
 		where = "id = ? AND status NOT IN (?, ?)"
@@ -118,7 +107,7 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 		var execErr error
 		res, execErr = s.db.Exec(`
 			UPDATE job_executions
-			SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, output_text = ?, cache_stats_json = ?, runtime_capabilities_json = ?, current_step_text = ?
+			SET status = ?, started_utc = ?, finished_utc = ?, exit_code = ?, error_text = ?, cache_stats_json = ?, runtime_capabilities_json = ?, current_step_text = ?
 			WHERE `+where+`
 		`, args...)
 		return execErr
@@ -436,19 +425,24 @@ func (s *Store) FailTimedOutRunningJobExecutions(now time.Time, grace time.Durat
 				SET status = ?,
 				    finished_utc = ?,
 				    error_text = ?,
-				    current_step_text = '',
-				    output_text = CASE
-				      WHEN TRIM(COALESCE(output_text, '')) = '' THEN ?
-				      ELSE output_text || CHAR(10) || ?
-				    END
+				    current_step_text = ''
 				WHERE id = ? AND status = ?
-			`, protocol.JobExecutionStatusFailed, now.Format(time.RFC3339Nano), reason, marker, marker, job.ID, protocol.JobExecutionStatusRunning)
+			`, protocol.JobExecutionStatusFailed, now.Format(time.RFC3339Nano), reason, job.ID, protocol.JobExecutionStatusRunning)
 			return execErr
 		}); err != nil {
 			return failed, fmt.Errorf("fail timed-out running job %s: %w", job.ID, err)
 		}
 		affected, _ := res.RowsAffected()
 		failed += affected
+		if affected > 0 {
+			if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
+				Type:         protocol.JobExecutionEventTypeSystemMessage,
+				TimestampUTC: now,
+				Message:      marker,
+			}}); err != nil {
+				return failed, fmt.Errorf("append timeout event for job %s: %w", job.ID, err)
+			}
+		}
 	}
 	return failed, nil
 }

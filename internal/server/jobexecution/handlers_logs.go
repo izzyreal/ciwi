@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,12 +20,25 @@ func handleJobEvents(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	events, err := deps.Store.ListJobExecutionEvents(jobID)
+	afterID := int64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("after_id")); raw != "" {
+		parsed, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || parsed < 0 {
+			http.Error(w, "after_id must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		afterID = parsed
+	}
+	events, err := deps.Store.ListJobExecutionEventsAfter(jobID, afterID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, EventsViewResponse{Events: events})
+	nextEventID := afterID
+	if len(events) > 0 {
+		nextEventID = events[len(events)-1].ID
+	}
+	httpx.WriteJSON(w, http.StatusOK, EventsViewResponse{Events: events, NextEventID: nextEventID})
 }
 
 func handleJobLog(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {
@@ -66,11 +79,7 @@ func handleJobLog(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobI
 	_, _ = w.Write([]byte(body))
 }
 
-func renderRawJobLog(job protocol.JobExecution, events []protocol.JobExecutionEvent) string {
-	if !hasStructuredLogEvents(events) {
-		// CIWI_LEGACY_LOG_FALLBACK: historical executions only have output_text tail.
-		return normalizeLogText(job.Output)
-	}
+func renderRawJobLog(_ protocol.JobExecution, events []protocol.JobExecutionEvent) string {
 	var b strings.Builder
 	for _, event := range events {
 		switch event.Type {
@@ -96,23 +105,10 @@ func renderRawJobLog(job protocol.JobExecution, events []protocol.JobExecutionEv
 			}
 		}
 	}
-	rendered := normalizeLogText(b.String())
-	if strings.TrimSpace(rendered) == "" {
-		// CIWI_LEGACY_LOG_FALLBACK: keep raw download useful if event projection is incomplete.
-		return normalizeLogText(job.Output)
-	}
-	return rendered
+	return normalizeLogText(b.String())
 }
 
 func renderCleanJobLog(job protocol.JobExecution, events []protocol.JobExecutionEvent) string {
-	if !hasStructuredLogEvents(events) {
-		// CIWI_LEGACY_LOG_FALLBACK: historical executions only have output_text tail.
-		var b strings.Builder
-		b.WriteString("ciwi legacy job log\n")
-		b.WriteString("This execution has no complete structured log events; output below is the persisted tail only.\n\n")
-		b.WriteString(stripANSIAndControls(job.Output))
-		return b.String()
-	}
 	var b strings.Builder
 	b.WriteString("ciwi job log\n")
 	b.WriteString("Job execution ID: " + job.ID + "\n")
@@ -131,21 +127,18 @@ func renderCleanJobLog(job protocol.JobExecution, events []protocol.JobExecution
 	}
 	b.WriteByte('\n')
 
-	steps := groupStepEvents(events)
-	for _, step := range steps {
-		writeCleanStepLog(&b, step)
-	}
-	return b.String()
-}
-
-func hasStructuredLogEvents(events []protocol.JobExecutionEvent) bool {
-	// CIWI_LEGACY_LOG_FALLBACK: start-only step events are not enough for downloads.
-	for _, event := range events {
-		if event.Step != nil && (event.Type == protocol.JobExecutionEventTypeStepOutput || event.Type == protocol.JobExecutionEventTypeStepFinished) {
-			return true
+	for _, unit := range groupCleanLogUnits(events) {
+		if unit.step != nil {
+			writeCleanStepLog(&b, unit.step)
+			continue
+		}
+		message := strings.TrimSpace(stripANSIAndControls(unit.message))
+		if message != "" {
+			b.WriteString(message)
+			b.WriteString("\n\n")
 		}
 	}
-	return false
+	return b.String()
 }
 
 type stepLogGroup struct {
@@ -155,22 +148,33 @@ type stepLogGroup struct {
 	finish  *protocol.JobExecutionEvent
 }
 
-func groupStepEvents(events []protocol.JobExecutionEvent) []*stepLogGroup {
+type cleanLogUnit struct {
+	step    *stepLogGroup
+	message string
+}
+
+func groupCleanLogUnits(events []protocol.JobExecutionEvent) []cleanLogUnit {
 	byIndex := map[int]*stepLogGroup{}
-	order := []int{}
+	units := []cleanLogUnit{}
 	for _, event := range events {
+		if event.Type == protocol.JobExecutionEventTypeSystemMessage {
+			if event.Message != "" {
+				units = append(units, cleanLogUnit{message: event.Message})
+			}
+			continue
+		}
 		if event.Step == nil {
 			continue
 		}
 		idx := event.Step.Index
 		if idx <= 0 {
-			idx = len(order) + 1
+			idx = len(byIndex) + 1
 		}
 		group := byIndex[idx]
 		if group == nil {
 			group = &stepLogGroup{step: *event.Step}
 			byIndex[idx] = group
-			order = append(order, idx)
+			units = append(units, cleanLogUnit{step: group})
 		}
 		if strings.TrimSpace(group.step.Name) == "" {
 			group.step = *event.Step
@@ -188,12 +192,7 @@ func groupStepEvents(events []protocol.JobExecutionEvent) []*stepLogGroup {
 			group.finish = &ev
 		}
 	}
-	sort.Ints(order)
-	out := make([]*stepLogGroup, 0, len(order))
-	for _, idx := range order {
-		out = append(out, byIndex[idx])
-	}
-	return out
+	return units
 }
 
 func writeCleanStepLog(b *strings.Builder, group *stepLogGroup) {

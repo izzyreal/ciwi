@@ -100,8 +100,6 @@ func TestNeedsMatrixUnblocksOnlyAfterAllUpstreamVariantsSucceed(t *testing.T) {
 	firstDone, err := s.db.UpdateJobExecutionStatus(first.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusSucceeded,
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -124,8 +122,6 @@ func TestNeedsMatrixUnblocksOnlyAfterAllUpstreamVariantsSucceed(t *testing.T) {
 	secondDone, err := s.db.UpdateJobExecutionStatus(second.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusSucceeded,
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -156,8 +152,6 @@ func TestNeedsMatrixCancelsOnlyAfterAllUpstreamVariantsTerminal(t *testing.T) {
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusFailed,
 		Error:             "boom",
-		OutputAppend:      "boom",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {
@@ -180,8 +174,6 @@ func TestNeedsMatrixCancelsOnlyAfterAllUpstreamVariantsTerminal(t *testing.T) {
 	secondDone, err := s.db.UpdateJobExecutionStatus(second.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:           "agent-1",
 		Status:            protocol.JobExecutionStatusSucceeded,
-		OutputAppend:      "ok",
-		OutputOffsetBytes: 0,
 		TimestampUTC:      time.Now().UTC(),
 	})
 	if err != nil {

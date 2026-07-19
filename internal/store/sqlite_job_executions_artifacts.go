@@ -149,10 +149,15 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 				payload["duration_ms"] = event.DurationMS
 			}
 			payloadJSON, _ := json.Marshal(payload)
+			tsRaw := ts.UTC().Format(time.RFC3339Nano)
 			if _, err := tx.Exec(`
 				INSERT INTO job_execution_events (job_execution_id, event_type, timestamp_utc, payload_json, created_utc)
-				VALUES (?, ?, ?, ?, ?)
-			`, jobID, eventType, ts.UTC().Format(time.RFC3339Nano), string(payloadJSON), now); err != nil {
+				SELECT ?, ?, ?, ?, ?
+				WHERE NOT EXISTS (
+					SELECT 1 FROM job_execution_events
+					WHERE job_execution_id = ? AND event_type = ? AND timestamp_utc = ? AND payload_json = ?
+				)
+			`, jobID, eventType, tsRaw, string(payloadJSON), now, jobID, eventType, tsRaw, string(payloadJSON)); err != nil {
 				return fmt.Errorf("insert event: %w", err)
 			}
 		}
@@ -164,15 +169,22 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 }
 
 func (s *Store) ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEvent, error) {
+	return s.ListJobExecutionEventsAfter(jobID, 0)
+}
+
+func (s *Store) ListJobExecutionEventsAfter(jobID string, afterID int64) ([]protocol.JobExecutionEvent, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return nil, fmt.Errorf("job id is required")
 	}
+	if afterID < 0 {
+		afterID = 0
+	}
 	rows, err := s.db.Query(`
-		SELECT event_type, timestamp_utc, payload_json
+		SELECT id, event_type, timestamp_utc, payload_json
 		FROM job_execution_events
-		WHERE job_execution_id = ?
+		WHERE job_execution_id = ? AND id > ?
 		ORDER BY id ASC
-	`, jobID)
+	`, jobID, afterID)
 	if err != nil {
 		return nil, fmt.Errorf("list events: %w", err)
 	}
@@ -180,11 +192,12 @@ func (s *Store) ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEve
 
 	out := []protocol.JobExecutionEvent{}
 	for rows.Next() {
+		var id int64
 		var eventType, tsRaw, payloadRaw string
-		if err := rows.Scan(&eventType, &tsRaw, &payloadRaw); err != nil {
+		if err := rows.Scan(&id, &eventType, &tsRaw, &payloadRaw); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
-		out = append(out, decodeJobExecutionEvent(eventType, tsRaw, payloadRaw))
+		out = append(out, decodeJobExecutionEvent(id, eventType, tsRaw, payloadRaw))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate events: %w", err)
@@ -211,7 +224,7 @@ func (s *Store) ListJobExecutionEventsForJobs(jobIDs []string, eventType string)
 		return out, nil
 	}
 	query := `
-		SELECT job_execution_id, event_type, timestamp_utc, payload_json
+		SELECT id, job_execution_id, event_type, timestamp_utc, payload_json
 		FROM job_execution_events
 		WHERE job_execution_id IN (` + strings.Join(placeholders, ",") + `)`
 	if strings.TrimSpace(eventType) != "" {
@@ -225,11 +238,12 @@ func (s *Store) ListJobExecutionEventsForJobs(jobIDs []string, eventType string)
 	}
 	defer rows.Close()
 	for rows.Next() {
+		var id int64
 		var jobID, rowType, tsRaw, payloadRaw string
-		if err := rows.Scan(&jobID, &rowType, &tsRaw, &payloadRaw); err != nil {
+		if err := rows.Scan(&id, &jobID, &rowType, &tsRaw, &payloadRaw); err != nil {
 			return nil, fmt.Errorf("scan event for jobs: %w", err)
 		}
-		out[jobID] = append(out[jobID], decodeJobExecutionEvent(rowType, tsRaw, payloadRaw))
+		out[jobID] = append(out[jobID], decodeJobExecutionEvent(id, rowType, tsRaw, payloadRaw))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate events for jobs: %w", err)
@@ -237,8 +251,8 @@ func (s *Store) ListJobExecutionEventsForJobs(jobIDs []string, eventType string)
 	return out, nil
 }
 
-func decodeJobExecutionEvent(eventType, tsRaw, payloadRaw string) protocol.JobExecutionEvent {
-	event := protocol.JobExecutionEvent{Type: strings.TrimSpace(eventType)}
+func decodeJobExecutionEvent(id int64, eventType, tsRaw, payloadRaw string) protocol.JobExecutionEvent {
+	event := protocol.JobExecutionEvent{ID: id, Type: strings.TrimSpace(eventType)}
 	if ts, err := time.Parse(time.RFC3339Nano, tsRaw); err == nil {
 		event.TimestampUTC = ts
 	}
