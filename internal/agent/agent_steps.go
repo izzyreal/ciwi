@@ -10,6 +10,8 @@ import (
 type stepMarkerMeta struct {
 	index          int
 	total          int
+	displayIndex   int
+	displayTotal   int
 	name           string
 	yamlLiteral    string
 	kind           string
@@ -21,16 +23,28 @@ type stepMarkerMeta struct {
 }
 
 func formatCurrentStep(meta stepMarkerMeta) string {
+	index := meta.displayIndex
+	if index <= 0 {
+		index = meta.index
+	}
+	total := meta.displayTotal
+	if total <= 0 {
+		total = meta.total
+	}
 	name := strings.TrimSpace(meta.name)
-	if name == "" {
-		name = fmt.Sprintf("Step %d", meta.index)
-	} else {
+	if name != "" {
 		name = strings.ReplaceAll(name, "_", " ")
 	}
-	if meta.total > 0 {
-		return fmt.Sprintf("Step %d/%d: %s", meta.index, meta.total, name)
+	if total > 0 {
+		if name == "" {
+			return fmt.Sprintf("Step %d/%d", index, total)
+		}
+		return fmt.Sprintf("Step %d/%d: %s", index, total, name)
 	}
-	return fmt.Sprintf("Step %d: %s", meta.index, name)
+	if name == "" {
+		return fmt.Sprintf("Step %d", index)
+	}
+	return fmt.Sprintf("Step %d: %s", index, name)
 }
 
 func jobExecutionEventStep(meta stepMarkerMeta, yamlLiteral, script string) *protocol.JobStepPlanItem {

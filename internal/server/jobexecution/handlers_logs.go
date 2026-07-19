@@ -90,7 +90,7 @@ func renderRawJobLog(_ protocol.JobExecution, events []protocol.JobExecutionEven
 					b.WriteByte('\n')
 				}
 			}
-		case protocol.JobExecutionEventTypeStepOutput:
+		case protocol.JobExecutionEventTypeStepOutput, protocol.JobExecutionEventTypePhaseOutput:
 			b.WriteString(event.Output)
 			if event.Output != "" && !strings.HasSuffix(event.Output, "\n") {
 				b.WriteByte('\n')
@@ -99,6 +99,14 @@ func renderRawJobLog(_ protocol.JobExecution, events []protocol.JobExecutionEven
 			if strings.TrimSpace(event.Error) != "" {
 				b.WriteString("[run] step failed: ")
 				b.WriteString(stepEventTitle(event.Step))
+				b.WriteString(" (")
+				b.WriteString(event.Error)
+				b.WriteString(")\n")
+			}
+		case protocol.JobExecutionEventTypePhaseFinished:
+			if strings.TrimSpace(event.Error) != "" {
+				b.WriteString("[phase] failed: ")
+				b.WriteString(phaseEventTitle(event.Phase))
 				b.WriteString(" (")
 				b.WriteString(event.Error)
 				b.WriteString(")\n")
@@ -127,9 +135,13 @@ func renderCleanJobLog(job protocol.JobExecution, events []protocol.JobExecution
 	}
 	b.WriteByte('\n')
 
-	for _, unit := range groupCleanLogUnits(events) {
+	for _, unit := range groupCleanLogUnits(job, events) {
 		if unit.step != nil {
 			writeCleanStepLog(&b, unit.step)
+			continue
+		}
+		if unit.phase != nil {
+			writeCleanPhaseLog(&b, unit.phase)
 			continue
 		}
 		message := strings.TrimSpace(stripANSIAndControls(unit.message))
@@ -148,18 +160,54 @@ type stepLogGroup struct {
 	finish  *protocol.JobExecutionEvent
 }
 
+type phaseLogGroup struct {
+	phase   protocol.JobExecutionPhase
+	started time.Time
+	output  strings.Builder
+	finish  *protocol.JobExecutionEvent
+}
+
 type cleanLogUnit struct {
 	step    *stepLogGroup
+	phase   *phaseLogGroup
 	message string
 }
 
-func groupCleanLogUnits(events []protocol.JobExecutionEvent) []cleanLogUnit {
+func groupCleanLogUnits(job protocol.JobExecution, events []protocol.JobExecutionEvent) []cleanLogUnit {
 	byIndex := map[int]*stepLogGroup{}
+	byPhaseID := map[string]*phaseLogGroup{}
+	timeline := protocol.BuildJobExecutionTimeline(job)
 	units := []cleanLogUnit{}
 	for _, event := range events {
 		if event.Type == protocol.JobExecutionEventTypeSystemMessage {
 			if event.Message != "" {
 				units = append(units, cleanLogUnit{message: event.Message})
+			}
+			continue
+		}
+		if event.Phase != nil {
+			id := strings.TrimSpace(event.Phase.ID)
+			group := byPhaseID[id]
+			if group == nil {
+				phase := *event.Phase
+				if timelinePhase, ok := protocol.TimelinePhase(timeline, id); ok {
+					phase = timelinePhase
+				}
+				group = &phaseLogGroup{phase: phase}
+				byPhaseID[id] = group
+				units = append(units, cleanLogUnit{phase: group})
+			}
+			switch event.Type {
+			case protocol.JobExecutionEventTypePhaseStarted:
+				group.started = event.TimestampUTC
+			case protocol.JobExecutionEventTypePhaseOutput:
+				group.output.WriteString(event.Output)
+				if event.Output != "" && !strings.HasSuffix(event.Output, "\n") {
+					group.output.WriteByte('\n')
+				}
+			case protocol.JobExecutionEventTypePhaseFinished:
+				ev := event
+				group.finish = &ev
 			}
 			continue
 		}
@@ -172,12 +220,22 @@ func groupCleanLogUnits(events []protocol.JobExecutionEvent) []cleanLogUnit {
 		}
 		group := byIndex[idx]
 		if group == nil {
-			group = &stepLogGroup{step: *event.Step}
+			step := *event.Step
+			if displayIndex, total := protocol.TimelineStepPosition(timeline, idx); displayIndex > 0 {
+				step.Index = displayIndex
+				step.Total = total
+			}
+			group = &stepLogGroup{step: step}
 			byIndex[idx] = group
 			units = append(units, cleanLogUnit{step: group})
 		}
 		if strings.TrimSpace(group.step.Name) == "" {
-			group.step = *event.Step
+			step := *event.Step
+			if displayIndex, total := protocol.TimelineStepPosition(timeline, idx); displayIndex > 0 {
+				step.Index = displayIndex
+				step.Total = total
+			}
+			group.step = step
 		}
 		switch event.Type {
 		case protocol.JobExecutionEventTypeStepStarted:
@@ -242,21 +300,69 @@ func writeCleanStepLog(b *strings.Builder, group *stepLogGroup) {
 	}
 }
 
+func writeCleanPhaseLog(b *strings.Builder, group *phaseLogGroup) {
+	sep := strings.Repeat("-", 80)
+	b.WriteString(sep + "\n")
+	b.WriteString(phaseEventTitle(&group.phase) + "\n")
+	b.WriteString(sep + "\n")
+	if !group.started.IsZero() {
+		b.WriteString("Start time: " + group.started.UTC().Format(time.RFC3339Nano) + "\n")
+	}
+	if group.finish != nil && group.finish.DurationMS > 0 {
+		b.WriteString("Step duration: " + formatDurationMS(group.finish.DurationMS) + "\n")
+	}
+	if group.finish != nil && strings.TrimSpace(group.finish.Error) != "" {
+		b.WriteString("Error: " + stripANSIAndControls(group.finish.Error) + "\n")
+	}
+	b.WriteString("\nDetails:\n")
+	b.WriteString(stripANSIAndControls(group.phase.Description))
+	if !strings.HasSuffix(group.phase.Description, "\n") {
+		b.WriteByte('\n')
+	}
+	b.WriteString("\nOutput:\n'''\n")
+	b.WriteString(stripANSIAndControls(group.output.String()))
+	if !strings.HasSuffix(group.output.String(), "\n") {
+		b.WriteByte('\n')
+	}
+	b.WriteString("'''\n\n")
+	if group.finish == nil {
+		b.WriteString("Step finished: not reported\n\n")
+	} else if strings.TrimSpace(group.finish.Error) != "" || group.finish.ExitCode != nil {
+		b.WriteString("Step finished: failed\n\n")
+	} else {
+		b.WriteString("Step finished: succeeded\n\n")
+	}
+}
+
+func phaseEventTitle(phase *protocol.JobExecutionPhase) string {
+	if phase == nil {
+		return "Step"
+	}
+	if phase.Index > 0 && phase.Total > 0 {
+		return fmt.Sprintf("Step %d/%d: %s", phase.Index, phase.Total, phase.Name)
+	}
+	return strings.TrimSpace(phase.Name)
+}
+
 func stepEventTitle(step *protocol.JobStepPlanItem) string {
 	if step == nil {
 		return "Step"
 	}
 	name := strings.TrimSpace(step.Name)
 	name = strings.Join(strings.Fields(name), " ")
-	if name == "" {
-		name = fmt.Sprintf("Step %d", step.Index)
-	} else {
+	if name != "" {
 		name = strings.ReplaceAll(name, "_", " ")
 	}
 	if step.Total > 0 && step.Index > 0 {
+		if name == "" {
+			return fmt.Sprintf("Step %d/%d", step.Index, step.Total)
+		}
 		return fmt.Sprintf("Step %d/%d: %s", step.Index, step.Total, name)
 	}
 	if step.Index > 0 {
+		if name == "" {
+			return fmt.Sprintf("Step %d", step.Index)
+		}
 		return fmt.Sprintf("Step %d: %s", step.Index, name)
 	}
 	return name

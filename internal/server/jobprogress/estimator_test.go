@@ -201,6 +201,39 @@ func TestAttachDetailEstimateUsesProvisionalHistoryBeforeLease(t *testing.T) {
 	}
 }
 
+func TestAttachDetailEstimateUsesSuccessfulPhaseHistory(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	historyA := completedProgressJob("history-a", base.Add(-time.Minute), "agent-a", step, 8*time.Second)
+	historyB := completedProgressJob("history-b", base.Add(-2*time.Minute), "agent-a", step, 12*time.Second)
+	failedCode := 1
+	phase := protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseEnvironment, Name: "Prepare execution environment"}
+	store := &stubStore{
+		jobs: []protocol.JobExecution{historyA, historyB},
+		events: map[string][]protocol.JobExecutionEvent{
+			historyA.ID: {
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &phase, DurationMS: 1000},
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseWorkspace}, DurationMS: 200},
+			},
+			historyB.ID: {
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &phase, DurationMS: 3000},
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseWorkspace}, DurationMS: 9000, ExitCode: &failedCode},
+			},
+		},
+	}
+
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if got := target.PhaseExpectedDuration[protocol.JobExecutionPhaseEnvironment]; got != 2000 {
+		t.Fatalf("expected environment phase median 2000ms, got %d", got)
+	}
+	if got := target.PhaseExpectedDuration[protocol.JobExecutionPhaseWorkspace]; got != 200 {
+		t.Fatalf("expected failed phase sample to be excluded, got %d", got)
+	}
+}
+
 func progressJob(id string, created time.Time, status, agent string, step protocol.JobStepPlanItem) protocol.JobExecution {
 	return protocol.JobExecution{
 		ID: id, Script: step.Script, StepPlan: []protocol.JobStepPlanItem{step}, Status: status,

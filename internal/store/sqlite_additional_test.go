@@ -94,6 +94,7 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	ts := time.Now().UTC().Add(-time.Minute)
 	exitCode := 7
 	events := []protocol.JobExecutionEvent{
+		{Type: protocol.JobExecutionEventTypePhaseStarted, TimestampUTC: ts, Phase: &protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseWorkspace, Name: "Prepare workspace", Index: 1, Total: 3}},
 		{Type: "step.started", TimestampUTC: ts, Step: &protocol.JobStepPlanItem{Index: 1, Name: "build"}},
 		{Type: "step.output", TimestampUTC: ts.Add(500 * time.Millisecond), Output: "\x1b[31mhello\x1b[0m\n"},
 		{Type: "step.finished", TimestampUTC: ts.Add(time.Second), Error: "exit=7", ExitCode: &exitCode, DurationMS: 1234},
@@ -106,29 +107,32 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListJobExecutionEvents: %v", err)
 	}
-	if len(gotEvents) != 3 {
-		t.Fatalf("expected 3 non-empty events, got %d (%+v)", len(gotEvents), gotEvents)
+	if len(gotEvents) != 4 {
+		t.Fatalf("expected 4 non-empty events, got %d (%+v)", len(gotEvents), gotEvents)
 	}
-	if gotEvents[0].Step == nil || gotEvents[0].Step.Name != "build" {
-		t.Fatalf("expected step payload roundtrip, got %+v", gotEvents[0])
+	if gotEvents[0].Phase == nil || gotEvents[0].Phase.ID != protocol.JobExecutionPhaseWorkspace || gotEvents[0].Phase.Total != 3 {
+		t.Fatalf("expected phase payload roundtrip, got %+v", gotEvents[0])
 	}
-	if gotEvents[1].Output != "\x1b[31mhello\x1b[0m\n" {
-		t.Fatalf("expected output payload roundtrip, got %+v", gotEvents[1])
+	if gotEvents[1].Step == nil || gotEvents[1].Step.Name != "build" {
+		t.Fatalf("expected step payload roundtrip, got %+v", gotEvents[1])
 	}
-	if gotEvents[2].ExitCode == nil || *gotEvents[2].ExitCode != 7 || gotEvents[2].Error != "exit=7" || gotEvents[2].DurationMS != 1234 {
-		t.Fatalf("expected finish payload roundtrip, got %+v", gotEvents[2])
+	if gotEvents[2].Output != "\x1b[31mhello\x1b[0m\n" {
+		t.Fatalf("expected output payload roundtrip, got %+v", gotEvents[2])
 	}
-	if gotEvents[0].ID <= 0 || gotEvents[1].ID <= gotEvents[0].ID || gotEvents[2].ID <= gotEvents[1].ID {
+	if gotEvents[3].ExitCode == nil || *gotEvents[3].ExitCode != 7 || gotEvents[3].Error != "exit=7" || gotEvents[3].DurationMS != 1234 {
+		t.Fatalf("expected finish payload roundtrip, got %+v", gotEvents[3])
+	}
+	if gotEvents[0].ID <= 0 || gotEvents[1].ID <= gotEvents[0].ID || gotEvents[2].ID <= gotEvents[1].ID || gotEvents[3].ID <= gotEvents[2].ID {
 		t.Fatalf("expected increasing event ids, got %+v", gotEvents)
 	}
-	delta, err := s.ListJobExecutionEventsAfter(job.ID, gotEvents[1].ID)
+	delta, err := s.ListJobExecutionEventsAfter(job.ID, gotEvents[2].ID)
 	if err != nil {
 		t.Fatalf("ListJobExecutionEventsAfter: %v", err)
 	}
-	if len(delta) != 1 || delta[0].ID != gotEvents[2].ID {
+	if len(delta) != 1 || delta[0].ID != gotEvents[3].ID {
 		t.Fatalf("expected only final event after cursor, got %+v", delta)
 	}
-	if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{gotEvents[2]}); err != nil {
+	if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{gotEvents[3]}); err != nil {
 		t.Fatalf("retry final event: %v", err)
 	}
 	afterRetry, err := s.ListJobExecutionEvents(job.ID)

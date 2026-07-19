@@ -292,6 +292,7 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 		return protocol.JobExecution{
 			ID:          id,
 			Status:      protocol.JobExecutionStatusFailed,
+			StepPlan:    []protocol.JobStepPlanItem{{Index: 1, Total: 1, Name: "build", YAMLLiteral: "run: go test {{pkg}}", Script: "go test ./..."}},
 			StartedUTC:  started,
 			FinishedUTC: finished,
 			ExitCode:    &exitCode,
@@ -299,12 +300,16 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 		}, nil
 	}
 	store.listJobExecutionEventsFn = func(id string) ([]protocol.JobExecutionEvent, error) {
+		workspace := protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseWorkspace, Name: "Prepare workspace", Index: 1, Total: 3}
 		return []protocol.JobExecutionEvent{
 			{
 				Type:         protocol.JobExecutionEventTypeSystemMessage,
 				TimestampUTC: started.Add(-time.Second),
 				Message:      "[meta] agent=agent-1\n",
 			},
+			{Type: protocol.JobExecutionEventTypePhaseStarted, TimestampUTC: started, Phase: &workspace},
+			{Type: protocol.JobExecutionEventTypePhaseOutput, TimestampUTC: started, Phase: &workspace, Output: "workspace ready\n"},
+			{Type: protocol.JobExecutionEventTypePhaseFinished, TimestampUTC: started, Phase: &workspace, DurationMS: 100},
 			{
 				Type:         protocol.JobExecutionEventTypeStepStarted,
 				TimestampUTC: started,
@@ -334,7 +339,7 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 		t.Fatalf("expected clean 200, got %d: %s", recClean.Code, recClean.Body.String())
 	}
 	clean := recClean.Body.String()
-	if !strings.Contains(clean, "[meta] agent=agent-1") || !strings.Contains(clean, "Step 1/1: build") || !strings.Contains(clean, "run: go test {{pkg}}") || !strings.Contains(clean, "go test ./...") || !strings.Contains(clean, "FAIL") || strings.Contains(clean, "\x1b[31m") {
+	if !strings.Contains(clean, "[meta] agent=agent-1") || !strings.Contains(clean, "Step 1/3: Prepare workspace") || !strings.Contains(clean, "workspace ready") || !strings.Contains(clean, "Step 3/3: build") || !strings.Contains(clean, "run: go test {{pkg}}") || !strings.Contains(clean, "go test ./...") || !strings.Contains(clean, "FAIL") || strings.Contains(clean, "\x1b[31m") {
 		t.Fatalf("unexpected clean log:\n%s", clean)
 	}
 	if got := recClean.Header().Get("Content-Disposition"); !strings.Contains(got, "ciwi-job-1-clean.log") {
@@ -347,7 +352,7 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 	if recRaw.Code != http.StatusOK {
 		t.Fatalf("expected raw 200, got %d: %s", recRaw.Code, recRaw.Body.String())
 	}
-	if raw := recRaw.Body.String(); !strings.Contains(raw, "[meta] agent=agent-1") || !strings.Contains(raw, "\x1b[31mFAIL\x1b[0m") {
+	if raw := recRaw.Body.String(); !strings.Contains(raw, "[meta] agent=agent-1") || !strings.Contains(raw, "workspace ready") || !strings.Contains(raw, "\x1b[31mFAIL\x1b[0m") {
 		t.Fatalf("expected raw log to preserve ANSI output, got:\n%s", raw)
 	}
 }

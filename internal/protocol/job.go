@@ -44,32 +44,33 @@ type CreateJobExecutionRequest struct {
 }
 
 type JobExecution struct {
-	ID                   string                   `json:"id"`
-	Script               string                   `json:"script"`
-	Env                  map[string]string        `json:"env,omitempty"`
-	RequiredCapabilities map[string]string        `json:"required_capabilities"`
-	TimeoutSeconds       int                      `json:"timeout_seconds"`
-	ArtifactGlobs        []string                 `json:"artifact_globs,omitempty"`
-	Caches               []JobCacheSpec           `json:"caches,omitempty"`
-	Source               *SourceSpec              `json:"source,omitempty"`
-	Metadata             map[string]string        `json:"metadata,omitempty"`
-	StepPlan             []JobStepPlanItem        `json:"step_plan,omitempty"`
-	CurrentStep          string                   `json:"current_step,omitempty"`
-	CacheStats           []JobCacheStats          `json:"cache_stats,omitempty"`
-	RuntimeCapabilities  map[string]string        `json:"runtime_capabilities,omitempty"`
-	Status               string                   `json:"status"`
-	CreatedUTC           time.Time                `json:"created_utc"`
-	StartedUTC           time.Time                `json:"started_utc,omitempty"`
-	FinishedUTC          time.Time                `json:"finished_utc,omitempty"`
-	LeasedByAgentID      string                   `json:"leased_by_agent_id,omitempty"`
-	LeasedUTC            time.Time                `json:"leased_utc,omitempty"`
-	ExitCode             *int                     `json:"exit_code,omitempty"`
-	Error                string                   `json:"error,omitempty"`
-	TestSummary          *JobExecutionTestSummary `json:"test_summary,omitempty"`
-	UnmetRequirements    []string                 `json:"unmet_requirements,omitempty"`
-	SensitiveValues      []string                 `json:"sensitive_values,omitempty"`
-	ExpectedDurationMS   int64                    `json:"expected_duration_ms,omitempty"`
-	StepExpectedDuration map[int]int64            `json:"step_expected_duration_ms,omitempty"`
+	ID                    string                   `json:"id"`
+	Script                string                   `json:"script"`
+	Env                   map[string]string        `json:"env,omitempty"`
+	RequiredCapabilities  map[string]string        `json:"required_capabilities"`
+	TimeoutSeconds        int                      `json:"timeout_seconds"`
+	ArtifactGlobs         []string                 `json:"artifact_globs,omitempty"`
+	Caches                []JobCacheSpec           `json:"caches,omitempty"`
+	Source                *SourceSpec              `json:"source,omitempty"`
+	Metadata              map[string]string        `json:"metadata,omitempty"`
+	StepPlan              []JobStepPlanItem        `json:"step_plan,omitempty"`
+	CurrentStep           string                   `json:"current_step,omitempty"`
+	CacheStats            []JobCacheStats          `json:"cache_stats,omitempty"`
+	RuntimeCapabilities   map[string]string        `json:"runtime_capabilities,omitempty"`
+	Status                string                   `json:"status"`
+	CreatedUTC            time.Time                `json:"created_utc"`
+	StartedUTC            time.Time                `json:"started_utc,omitempty"`
+	FinishedUTC           time.Time                `json:"finished_utc,omitempty"`
+	LeasedByAgentID       string                   `json:"leased_by_agent_id,omitempty"`
+	LeasedUTC             time.Time                `json:"leased_utc,omitempty"`
+	ExitCode              *int                     `json:"exit_code,omitempty"`
+	Error                 string                   `json:"error,omitempty"`
+	TestSummary           *JobExecutionTestSummary `json:"test_summary,omitempty"`
+	UnmetRequirements     []string                 `json:"unmet_requirements,omitempty"`
+	SensitiveValues       []string                 `json:"sensitive_values,omitempty"`
+	ExpectedDurationMS    int64                    `json:"expected_duration_ms,omitempty"`
+	StepExpectedDuration  map[int]int64            `json:"step_expected_duration_ms,omitempty"`
+	PhaseExpectedDuration map[string]int64         `json:"phase_expected_duration_ms,omitempty"`
 }
 
 type CreateJobExecutionResponse struct {
@@ -270,7 +271,19 @@ const (
 	JobExecutionEventTypeStepStarted   = "step.started"
 	JobExecutionEventTypeStepOutput    = "step.output"
 	JobExecutionEventTypeStepFinished  = "step.finished"
+	JobExecutionEventTypePhaseStarted  = "phase.started"
+	JobExecutionEventTypePhaseOutput   = "phase.output"
+	JobExecutionEventTypePhaseFinished = "phase.finished"
 	JobExecutionEventTypeSystemMessage = "system.message"
+)
+
+const (
+	JobExecutionPhaseWorkspace    = "system.workspace"
+	JobExecutionPhaseCheckout     = "system.checkout"
+	JobExecutionPhaseDependencies = "system.dependencies"
+	JobExecutionPhaseEnvironment  = "system.environment"
+	JobExecutionPhaseArtifacts    = "system.artifacts"
+	JobExecutionPhaseTests        = "system.tests"
 )
 
 type JobStepPlanItem struct {
@@ -291,15 +304,34 @@ type JobStepPlanItem struct {
 }
 
 type JobExecutionEvent struct {
-	ID           int64            `json:"id,omitempty"`
-	Type         string           `json:"type"`
-	TimestampUTC time.Time        `json:"timestamp_utc,omitempty"`
-	Step         *JobStepPlanItem `json:"step,omitempty"`
-	Message      string           `json:"message,omitempty"`
-	Output       string           `json:"output,omitempty"`
-	Error        string           `json:"error,omitempty"`
-	ExitCode     *int             `json:"exit_code,omitempty"`
-	DurationMS   int64            `json:"duration_ms,omitempty"`
+	ID           int64              `json:"id,omitempty"`
+	Type         string             `json:"type"`
+	TimestampUTC time.Time          `json:"timestamp_utc,omitempty"`
+	Step         *JobStepPlanItem   `json:"step,omitempty"`
+	Phase        *JobExecutionPhase `json:"phase,omitempty"`
+	Message      string             `json:"message,omitempty"`
+	Output       string             `json:"output,omitempty"`
+	Error        string             `json:"error,omitempty"`
+	ExitCode     *int               `json:"exit_code,omitempty"`
+	DurationMS   int64              `json:"duration_ms,omitempty"`
+}
+
+type JobExecutionPhase struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Index       int    `json:"index"`
+	Total       int    `json:"total"`
+}
+
+type JobExecutionTimelineItem struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	StepIndex   int    `json:"step_index,omitempty"`
+	Index       int    `json:"index"`
+	Total       int    `json:"total"`
 }
 
 type TestCase struct {

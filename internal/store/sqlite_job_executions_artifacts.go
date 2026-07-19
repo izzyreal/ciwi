@@ -133,6 +133,9 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 			if event.Step != nil {
 				payload["step"] = event.Step
 			}
+			if event.Phase != nil {
+				payload["phase"] = event.Phase
+			}
 			if strings.TrimSpace(event.Message) != "" {
 				payload["message"] = event.Message
 			}
@@ -264,6 +267,12 @@ func decodeJobExecutionEvent(id int64, eventType, tsRaw, payloadRaw string) prot
 		var step protocol.JobStepPlanItem
 		if err := json.Unmarshal(raw, &step); err == nil {
 			event.Step = &step
+		}
+	}
+	if raw := payload["phase"]; len(raw) > 0 {
+		var phase protocol.JobExecutionPhase
+		if err := json.Unmarshal(raw, &phase); err == nil {
+			event.Phase = &phase
 		}
 	}
 	if raw := payload["message"]; len(raw) > 0 {

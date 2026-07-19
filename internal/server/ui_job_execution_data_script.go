@@ -85,8 +85,12 @@ const jobExecutionDataJS = `
     function subtitleStepDetail(job) {
       const stepPlan = Array.isArray(job && job.step_plan) ? job.step_plan : [];
       const idx = activeStepIndexFromCurrentStep(job && job.current_step);
-      if (idx < 0 || idx >= stepPlan.length) return '';
-      const step = stepPlan[idx] || {};
+      if (idx < 0) return '';
+      const timeline = Array.isArray(job && job.execution_timeline) ? job.execution_timeline : [];
+      const activeItem = timeline.find(item => Number((item && item.index) || 0) === idx + 1);
+      if (activeItem && String(activeItem.kind || '') !== 'step') return '';
+      const stepIndex = activeItem ? Number(activeItem.step_index || 0) : idx + 1;
+      const step = stepPlan.find(item => Number((item && item.index) || 0) === stepIndex) || {};
       const script = String(step.script || '').trim();
       if (script) return script.replace(/\s+/g, ' ');
       const kind = String(step.kind || '').trim();

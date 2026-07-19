@@ -32,7 +32,7 @@ func reconstructedStatusOutput(t *testing.T, statuses []protocol.JobExecutionSta
 	for _, st := range statuses {
 		for _, event := range st.Events {
 			switch event.Type {
-			case protocol.JobExecutionEventTypeStepOutput:
+			case protocol.JobExecutionEventTypeStepOutput, protocol.JobExecutionEventTypePhaseOutput:
 				out += event.Output
 			case protocol.JobExecutionEventTypeSystemMessage:
 				out += event.Message
@@ -720,7 +720,7 @@ func TestExecuteLeasedJobReportsTimeoutClearly(t *testing.T) {
 	if !strings.Contains(output, "[control] job timed out after 1 seconds") {
 		t.Fatalf("expected timeout control marker in output, got:\n%s", output)
 	}
-	if !strings.Contains(output, "[run] step failed: Step 1/1: sleep (timed out after 1 seconds)") {
+	if !strings.Contains(output, "[run] step failed: Step 3/3: sleep (timed out after 1 seconds)") {
 		t.Fatalf("expected explicit timed out step marker in output, got:\n%s", output)
 	}
 }
@@ -955,16 +955,29 @@ func TestExecuteLeasedJobRunningStepStatusCarriesStructuredEvents(t *testing.T) 
 	foundRunningStep := false
 	foundStepStartedEvent := false
 	foundStepOutputEvent := false
+	foundWorkspacePhase := false
+	foundEnvironmentPhase := false
 	for _, st := range statuses {
+		for _, event := range st.Events {
+			if event.Phase != nil && event.Phase.ID == protocol.JobExecutionPhaseWorkspace {
+				foundWorkspacePhase = true
+			}
+			if event.Phase != nil && event.Phase.ID == protocol.JobExecutionPhaseEnvironment {
+				foundEnvironmentPhase = true
+			}
+		}
 		if st.Status != "running" {
 			continue
 		}
-		if !strings.HasPrefix(st.CurrentStep, "Step 1/1:") {
+		if !strings.HasPrefix(st.CurrentStep, "Step 3/3:") {
 			continue
 		}
 		foundRunningStep = true
 		for _, event := range st.Events {
 			if event.Type == protocol.JobExecutionEventTypeStepStarted {
+				if event.Step == nil || event.Step.Index != 1 {
+					t.Fatalf("expected structured event to retain YAML step index 1, got %+v", event.Step)
+				}
 				foundStepStartedEvent = true
 			}
 			if event.Type == protocol.JobExecutionEventTypeStepOutput && strings.Contains(event.Output, "structured-output") {
@@ -980,6 +993,9 @@ func TestExecuteLeasedJobRunningStepStatusCarriesStructuredEvents(t *testing.T) 
 	}
 	if !foundStepOutputEvent {
 		t.Fatalf("expected at least one running status update with step.output event")
+	}
+	if !foundWorkspacePhase || !foundEnvironmentPhase {
+		t.Fatalf("expected workspace and environment phase events, workspace=%v environment=%v", foundWorkspacePhase, foundEnvironmentPhase)
 	}
 }
 

@@ -7,32 +7,34 @@ import (
 )
 
 type View struct {
-	ID                   string                            `json:"id"`
-	Script               string                            `json:"script"`
-	Env                  map[string]string                 `json:"env,omitempty"`
-	RequiredCapabilities map[string]string                 `json:"required_capabilities"`
-	TimeoutSeconds       int                               `json:"timeout_seconds"`
-	ArtifactGlobs        []string                          `json:"artifact_globs,omitempty"`
-	Caches               []protocol.JobCacheSpec           `json:"caches,omitempty"`
-	Source               *protocol.SourceSpec              `json:"source,omitempty"`
-	Metadata             map[string]string                 `json:"metadata,omitempty"`
-	StepPlan             []protocol.JobStepPlanItem        `json:"step_plan,omitempty"`
-	CurrentStep          string                            `json:"current_step,omitempty"`
-	CacheStats           []protocol.JobCacheStats          `json:"cache_stats,omitempty"`
-	RuntimeCapabilities  map[string]string                 `json:"runtime_capabilities,omitempty"`
-	Status               string                            `json:"status"`
-	CreatedUTC           time.Time                         `json:"created_utc"`
-	StartedUTC           *time.Time                        `json:"started_utc,omitempty"`
-	FinishedUTC          *time.Time                        `json:"finished_utc,omitempty"`
-	LeasedByAgentID      string                            `json:"leased_by_agent_id,omitempty"`
-	LeasedUTC            *time.Time                        `json:"leased_utc,omitempty"`
-	ExitCode             *int                              `json:"exit_code,omitempty"`
-	Error                string                            `json:"error,omitempty"`
-	TestSummary          *protocol.JobExecutionTestSummary `json:"test_summary,omitempty"`
-	UnmetRequirements    []string                          `json:"unmet_requirements,omitempty"`
-	SensitiveValues      []string                          `json:"sensitive_values,omitempty"`
-	ExpectedDurationMS   int64                             `json:"expected_duration_ms,omitempty"`
-	StepExpectedDuration map[int]int64                     `json:"step_expected_duration_ms,omitempty"`
+	ID                    string                              `json:"id"`
+	Script                string                              `json:"script"`
+	Env                   map[string]string                   `json:"env,omitempty"`
+	RequiredCapabilities  map[string]string                   `json:"required_capabilities"`
+	TimeoutSeconds        int                                 `json:"timeout_seconds"`
+	ArtifactGlobs         []string                            `json:"artifact_globs,omitempty"`
+	Caches                []protocol.JobCacheSpec             `json:"caches,omitempty"`
+	Source                *protocol.SourceSpec                `json:"source,omitempty"`
+	Metadata              map[string]string                   `json:"metadata,omitempty"`
+	StepPlan              []protocol.JobStepPlanItem          `json:"step_plan,omitempty"`
+	CurrentStep           string                              `json:"current_step,omitempty"`
+	CacheStats            []protocol.JobCacheStats            `json:"cache_stats,omitempty"`
+	RuntimeCapabilities   map[string]string                   `json:"runtime_capabilities,omitempty"`
+	Status                string                              `json:"status"`
+	CreatedUTC            time.Time                           `json:"created_utc"`
+	StartedUTC            *time.Time                          `json:"started_utc,omitempty"`
+	FinishedUTC           *time.Time                          `json:"finished_utc,omitempty"`
+	LeasedByAgentID       string                              `json:"leased_by_agent_id,omitempty"`
+	LeasedUTC             *time.Time                          `json:"leased_utc,omitempty"`
+	ExitCode              *int                                `json:"exit_code,omitempty"`
+	Error                 string                              `json:"error,omitempty"`
+	TestSummary           *protocol.JobExecutionTestSummary   `json:"test_summary,omitempty"`
+	UnmetRequirements     []string                            `json:"unmet_requirements,omitempty"`
+	SensitiveValues       []string                            `json:"sensitive_values,omitempty"`
+	ExpectedDurationMS    int64                               `json:"expected_duration_ms,omitempty"`
+	StepExpectedDuration  map[int]int64                       `json:"step_expected_duration_ms,omitempty"`
+	PhaseExpectedDuration map[string]int64                    `json:"phase_expected_duration_ms,omitempty"`
+	ExecutionTimeline     []protocol.JobExecutionTimelineItem `json:"execution_timeline,omitempty"`
 }
 
 type CreateViewResponse struct {
@@ -94,29 +96,31 @@ type BlockedByViewResponse struct {
 
 func ViewFromProtocol(job protocol.JobExecution) View {
 	view := View{
-		ID:                   job.ID,
-		Script:               job.Script,
-		Env:                  job.Env,
-		RequiredCapabilities: job.RequiredCapabilities,
-		TimeoutSeconds:       job.TimeoutSeconds,
-		ArtifactGlobs:        job.ArtifactGlobs,
-		Caches:               job.Caches,
-		Source:               job.Source,
-		Metadata:             job.Metadata,
-		StepPlan:             job.StepPlan,
-		CurrentStep:          job.CurrentStep,
-		CacheStats:           job.CacheStats,
-		RuntimeCapabilities:  job.RuntimeCapabilities,
-		Status:               protocol.NormalizeJobExecutionStatus(job.Status),
-		CreatedUTC:           job.CreatedUTC,
-		LeasedByAgentID:      job.LeasedByAgentID,
-		ExitCode:             job.ExitCode,
-		Error:                job.Error,
-		TestSummary:          job.TestSummary,
-		UnmetRequirements:    job.UnmetRequirements,
-		SensitiveValues:      job.SensitiveValues,
-		ExpectedDurationMS:   job.ExpectedDurationMS,
-		StepExpectedDuration: job.StepExpectedDuration,
+		ID:                    job.ID,
+		Script:                job.Script,
+		Env:                   job.Env,
+		RequiredCapabilities:  job.RequiredCapabilities,
+		TimeoutSeconds:        job.TimeoutSeconds,
+		ArtifactGlobs:         job.ArtifactGlobs,
+		Caches:                job.Caches,
+		Source:                job.Source,
+		Metadata:              job.Metadata,
+		StepPlan:              job.StepPlan,
+		CurrentStep:           job.CurrentStep,
+		CacheStats:            job.CacheStats,
+		RuntimeCapabilities:   job.RuntimeCapabilities,
+		Status:                protocol.NormalizeJobExecutionStatus(job.Status),
+		CreatedUTC:            job.CreatedUTC,
+		LeasedByAgentID:       job.LeasedByAgentID,
+		ExitCode:              job.ExitCode,
+		Error:                 job.Error,
+		TestSummary:           job.TestSummary,
+		UnmetRequirements:     job.UnmetRequirements,
+		SensitiveValues:       job.SensitiveValues,
+		ExpectedDurationMS:    job.ExpectedDurationMS,
+		StepExpectedDuration:  job.StepExpectedDuration,
+		PhaseExpectedDuration: job.PhaseExpectedDuration,
+		ExecutionTimeline:     protocol.BuildJobExecutionTimeline(job),
 	}
 	if !job.StartedUTC.IsZero() {
 		ts := job.StartedUTC

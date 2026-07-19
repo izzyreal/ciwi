@@ -1,11 +1,11 @@
 # Progress Indicators
 
-Ciwi displays time-based progress on active job executions, pipeline sections, pipeline chains, and individual step headers. The indicators are estimates based on previous successful executions, not completion percentages reported by build tools.
+Ciwi displays time-based progress on active job executions, pipeline sections, pipeline chains, and individual execution-step headers. The indicators are estimates based on previous successful executions, not completion percentages reported by build tools.
 
 ## Where progress appears
 
 - The header on a job execution detail page.
-- The header strip of each structured job step.
+- The header strip of each structured execution step, including ciwi-managed phases and YAML steps.
 - Chain, pipeline, and job headers in **Queued and In Progress Job Executions**.
 
 Individual rows inside an expanded execution group do not have a separate progress background. Their status and prerequisite reason provide the detailed state instead.
@@ -33,6 +33,18 @@ The provisional estimate may be replaced after leasing when exact history exists
 ### Step matching
 
 Step estimates use successful `step.finished` events from matching job executions. The executable step definition must match; changing a command, environment, test configuration, or report configuration starts a new history set. A display-name-only change does not invalidate otherwise identical executable history.
+
+Ciwi-managed phases use successful `phase.finished` events from the same matching executions. Their stable phase IDs keep history attached to the operation rather than its current display position. Depending on the job definition, the unified timeline can include:
+
+- Prepare workspace
+- Check out source
+- Restore dependency artifacts
+- Prepare execution environment
+- the configured YAML steps
+- Publish artifacts
+- Publish test results
+
+The visible `Step N/M` numbering covers this complete timeline. A phase without successful matching history remains indeterminate independently of the YAML steps.
 
 ## Visual states
 
@@ -77,8 +89,8 @@ Completed jobs use their full weight. Running jobs use their elapsed fraction. E
 
 ## Component responsibilities
 
-- The agent records actual timestamps and emits structured step lifecycle events.
-- The server stores those measurements and calculates historical job and step estimates.
+- The agent records actual timestamps and emits structured lifecycle events for ciwi-managed phases and YAML steps.
+- The server stores those measurements and calculates historical job, phase, and YAML-step estimates.
 - The browser converts estimates and current execution state into determinate, indeterminate, waiting, complete, or overrun visuals.
 
 Progress calculation never parses human-readable log output.
@@ -91,6 +103,6 @@ An indicator remains indeterminate when ciwi has no successful matching history.
 - previous executions failed or were cancelled
 - the command or executable plan changed
 - required capabilities or matrix values changed
-- previous records do not contain valid duration timestamps or structured step events
+- previous records do not contain valid duration timestamps or the relevant structured lifecycle events
 
 As matching successful executions accumulate, later runs automatically gain estimates.

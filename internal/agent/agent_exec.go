@@ -28,21 +28,39 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		"timeout_seconds", job.TimeoutSeconds,
 		"has_source", job.Source != nil && strings.TrimSpace(job.Source.Repo) != "",
 	)
+	timeline := protocol.BuildJobExecutionTimeline(job)
+	workspacePhase := executionPhase(timeline, protocol.JobExecutionPhaseWorkspace)
+	workspaceStarted := time.Now().UTC()
+	var output syncBuffer
+	progress := &outputReportState{}
+	fmt.Fprintf(&output, "[meta] agent=%s os=%s arch=%s\n", agentID, runtime.GOOS, runtime.GOARCH)
+	fmt.Fprintf(&output, "[meta] job_execution_id=%s timeout_seconds=%d\n", job.ID, job.TimeoutSeconds)
 	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 		AgentID:      agentID,
 		Status:       protocol.JobExecutionStatusRunning,
-		CurrentStep:  "Preparing execution",
+		CurrentStep:  executionPhaseTitle(workspacePhase),
+		Events:       []protocol.JobExecutionEvent{phaseStartedEvent(workspacePhase, workspaceStarted)},
 		TimestampUTC: time.Now().UTC(),
 	}); err != nil {
 		return fmt.Errorf("report running status: %w", err)
 	}
 
 	workspaceDir := workspaceDirForJob(workDir, job)
-	if err := removeAllWithRetry(workspaceDir); err != nil {
-		return reportFailure(ctx, client, serverURL, agentID, job, nil, nil, nil, fmt.Sprintf("prepare workdir: %v", err))
+	fmt.Fprintf(&output, "[meta] workspace=%s\n", workspaceDir)
+	workspaceErr := removeAllWithRetry(workspaceDir)
+	if workspaceErr == nil {
+		workspaceErr = os.MkdirAll(workspaceDir, 0o755)
 	}
-	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
-		return reportFailure(ctx, client, serverURL, agentID, job, nil, nil, nil, fmt.Sprintf("create workdir: %v", err))
+	if workspaceErr != nil {
+		phaseErr := fmt.Errorf("prepare workdir: %w", workspaceErr)
+		events := phaseOutputEvent(workspacePhase, redactSensitive(output.String(), job.SensitiveValues))
+		events = append(events, phaseFinishedEvent(workspacePhase, workspaceStarted, phaseErr))
+		if err := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID: agentID, Status: protocol.JobExecutionStatusFailed, Error: phaseErr.Error(), Events: events, TimestampUTC: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	runCtx := ctx
@@ -54,10 +72,6 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	runCtx, cancelRun := context.WithCancel(runCtx)
 	defer cancelRun()
 
-	var output syncBuffer
-	progress := &outputReportState{}
-	fmt.Fprintf(&output, "[meta] agent=%s os=%s arch=%s\n", agentID, runtime.GOOS, runtime.GOARCH)
-	fmt.Fprintf(&output, "[meta] job_execution_id=%s timeout_seconds=%d\n", job.ID, job.TimeoutSeconds)
 	stopControlMonitor := monitorServerTerminalJobState(runCtx, client, serverURL, agentID, job.ID, &output, cancelRun)
 	defer stopControlMonitor()
 	reportRunningUpdate := func(currentStep string, events []protocol.JobExecutionEvent, runtimeCaps map[string]string) error {
@@ -73,6 +87,27 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			Events:              events,
 			RuntimeCapabilities: runtimeCaps,
 			TimestampUTC:        time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
+		progress.markSent(totalLen, currentStep)
+		return nil
+	}
+	reportPhaseUpdate := func(phase protocol.JobExecutionPhase, events []protocol.JobExecutionEvent, runtimeCaps map[string]string) error {
+		deltaRaw, totalLen, _ := progress.unsentFrom(&output)
+		delta := redactSensitive(deltaRaw, job.SensitiveValues)
+		if delta != "" {
+			outputEvents := phaseOutputEvent(phase, delta)
+			if len(events) > 0 && events[0].Type == protocol.JobExecutionEventTypePhaseStarted {
+				events = append(events, outputEvents...)
+			} else {
+				events = append(outputEvents, events...)
+			}
+		}
+		currentStep := executionPhaseTitle(phase)
+		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID: agentID, Status: protocol.JobExecutionStatusRunning, CurrentStep: currentStep,
+			Events: events, RuntimeCapabilities: runtimeCaps, TimestampUTC: time.Now().UTC(),
 		}); err != nil {
 			return err
 		}
@@ -100,19 +135,23 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		return nil
 	}
 
-	fmt.Fprintf(&output, "[meta] workspace=%s\n", workspaceDir)
+	if err := reportPhaseUpdate(workspacePhase, []protocol.JobExecutionEvent{phaseFinishedEvent(workspacePhase, workspaceStarted, nil)}, nil); err != nil {
+		return fmt.Errorf("report workspace phase: %w", err)
+	}
 	execDir := workspaceDir
 	if job.Source != nil && strings.TrimSpace(job.Source.Repo) != "" {
+		checkoutPhase := executionPhase(timeline, protocol.JobExecutionPhaseCheckout)
+		checkoutStarted := time.Now().UTC()
 		sourceDir := filepath.Join(workspaceDir, "src")
-		checkoutStart := time.Now()
-		fmt.Fprintf(&output, "[checkout] repo=%s ref=%s\n", job.Source.Repo, job.Source.Ref)
-		if err := reportRunningUpdate("Checking out source", nil, nil); err != nil {
+		if err := reportPhaseUpdate(checkoutPhase, []protocol.JobExecutionEvent{phaseStartedEvent(checkoutPhase, checkoutStarted)}, nil); err != nil {
 			return fmt.Errorf("report checkout status: %w", err)
 		}
+		fmt.Fprintf(&output, "[checkout] repo=%s ref=%s\n", job.Source.Repo, job.Source.Ref)
 		checkoutOutput, checkoutErr := checkoutSource(runCtx, sourceDir, *job.Source)
 		output.WriteString(checkoutOutput)
-		fmt.Fprintf(&output, "[checkout] duration=%s\n", time.Since(checkoutStart).Round(time.Millisecond))
+		fmt.Fprintf(&output, "[checkout] duration=%s\n", time.Since(checkoutStarted).Round(time.Millisecond))
 		if checkoutErr != nil {
+			_ = reportPhaseUpdate(checkoutPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(checkoutPhase, checkoutStarted, checkoutErr)}, nil)
 			exitCode := exitCodeFromErr(checkoutErr)
 			failMsg := "checkout failed: " + checkoutErr.Error()
 			if reportErr := reportFailure(ctx, client, serverURL, agentID, job, progress, &output, exitCode, failMsg); reportErr != nil {
@@ -127,9 +166,17 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		} else {
 			fmt.Fprintf(&output, "%s\n", repoGitIdentitySummary())
 		}
+		if err := reportPhaseUpdate(checkoutPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(checkoutPhase, checkoutStarted, nil)}, nil); err != nil {
+			return fmt.Errorf("report checkout completion: %w", err)
+		}
 	}
 	depJobIDs := dependencyArtifactJobIDs(job.Env)
 	if len(depJobIDs) > 0 {
+		dependencyPhase := executionPhase(timeline, protocol.JobExecutionPhaseDependencies)
+		dependencyStarted := time.Now().UTC()
+		if err := reportPhaseUpdate(dependencyPhase, []protocol.JobExecutionEvent{phaseStartedEvent(dependencyPhase, dependencyStarted)}, nil); err != nil {
+			return fmt.Errorf("report dependency restoration status: %w", err)
+		}
 		fmt.Fprintf(&output, "[dep-artifacts] source_jobs=%s\n", strings.Join(depJobIDs, ","))
 		for _, depJobID := range depJobIDs {
 			note, depErr := downloadDependencyArtifacts(runCtx, client, serverURL, depJobID, execDir)
@@ -140,6 +187,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				}
 			}
 			if depErr != nil {
+				_ = reportPhaseUpdate(dependencyPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(dependencyPhase, dependencyStarted, depErr)}, nil)
 				exitCode := exitCodeFromErr(depErr)
 				failMsg := "dependency artifact download failed: " + depErr.Error()
 				if reportErr := reportFailure(ctx, client, serverURL, agentID, job, progress, &output, exitCode, failMsg); reportErr != nil {
@@ -149,6 +197,14 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				return nil
 			}
 		}
+		if err := reportPhaseUpdate(dependencyPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(dependencyPhase, dependencyStarted, nil)}, nil); err != nil {
+			return fmt.Errorf("report dependency restoration completion: %w", err)
+		}
+	}
+	environmentPhase := executionPhase(timeline, protocol.JobExecutionPhaseEnvironment)
+	environmentStarted := time.Now().UTC()
+	if err := reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseStartedEvent(environmentPhase, environmentStarted)}, nil); err != nil {
+		return fmt.Errorf("report environment preparation status: %w", err)
 	}
 	cacheEnv, cacheLogs, resolvedCaches := resolveJobCacheEnvDetailed(workDir, execDir, job)
 	for _, line := range cacheLogs {
@@ -174,6 +230,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	if requireContainerTools && strings.TrimSpace(probeContainerImage) == "" {
 		err := fmt.Errorf("container tool requirements require runs_on.container_image")
 		fmt.Fprintf(&output, "[runtime] %v\n", err)
+		_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, err)}, nil)
 		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, err.Error(), cacheStats, nil); reportErr != nil {
 			return reportErr
 		}
@@ -212,6 +269,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		})
 		if startErr != nil {
 			fmt.Fprintf(&output, "[runtime] %v\n", startErr)
+			_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, startErr)}, nil)
 			if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, startErr.Error(), cacheStats, nil); reportErr != nil {
 				return reportErr
 			}
@@ -252,6 +310,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	if ensureErr := validateProbeContainerReady(runCtx, probeContainer, probeContainerImage); ensureErr != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", ensureErr)
+		_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, ensureErr)}, nil)
 		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, ensureErr.Error(), cacheStats, nil); reportErr != nil {
 			return reportErr
 		}
@@ -260,6 +319,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	shell, err := resolveJobShell(job.RequiredCapabilities)
 	if err != nil {
+		_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, err)}, nil)
 		return reportFailure(ctx, client, serverURL, agentID, job, nil, nil, nil, fmt.Sprintf("resolve job shell: %v", err))
 	}
 
@@ -270,6 +330,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	if err := validateHostToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", err)
+		_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, err)}, runtimeCaps)
 		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, err.Error(), cacheStats, runtimeCaps); reportErr != nil {
 			return reportErr
 		}
@@ -278,13 +339,14 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	if err := validateContainerToolRequirements(job.RequiredCapabilities, runtimeCaps); err != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", err)
+		_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, err)}, runtimeCaps)
 		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, err.Error(), cacheStats, runtimeCaps); reportErr != nil {
 			return reportErr
 		}
 		slog.Error("job failed", "job_execution_id", job.ID, "error", err.Error())
 		return nil
 	}
-	if err := reportRunningUpdate("Preparing execution", nil, runtimeCaps); err != nil {
+	if err := reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, nil)}, runtimeCaps); err != nil {
 		return fmt.Errorf("report runtime capabilities: %w", err)
 	}
 
@@ -307,6 +369,9 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		runEnv = withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
 	}
 	scriptSteps := stepPlanToScriptSteps(job.StepPlan)
+	for i := range scriptSteps {
+		scriptSteps[i].meta.displayIndex, scriptSteps[i].meta.displayTotal = protocol.TimelineStepPosition(timeline, scriptSteps[i].meta.index)
+	}
 	collectedSuites := make([]protocol.TestSuiteReport, 0, len(scriptSteps))
 	var collectedCoverage *protocol.CoverageReport
 	if len(scriptSteps) > 0 {
@@ -430,6 +495,11 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	fmt.Fprintf(&output, "\n[run] duration=%s\n", duration)
 
 	if len(job.ArtifactGlobs) > 0 {
+		artifactPhase := executionPhase(timeline, protocol.JobExecutionPhaseArtifacts)
+		artifactStarted := time.Now().UTC()
+		if phaseErr := reportPhaseUpdate(artifactPhase, []protocol.JobExecutionEvent{phaseStartedEvent(artifactPhase, artifactStarted)}, runtimeCaps); phaseErr != nil {
+			return fmt.Errorf("report artifact publication status: %w", phaseErr)
+		}
 		fmt.Fprintf(&output, "[artifacts] collecting...\n")
 		note, uploadErr := collectAndUploadArtifacts(ctx, client, serverURL, agentID, job.ID, execDir, job.ArtifactGlobs, func(msg string) {
 			fmt.Fprintf(&output, "%s\n", msg)
@@ -442,6 +512,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		if uploadErr != nil {
 			fmt.Fprintf(&output, "[artifacts] upload_failed=%v\n", uploadErr)
+			_ = reportPhaseUpdate(artifactPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(artifactPhase, artifactStarted, uploadErr)}, runtimeCaps)
 			failMsg := "artifact upload failed: " + uploadErr.Error()
 			cacheStats = refreshCacheStats()
 			if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, failMsg, cacheStats, runtimeCaps); reportErr != nil {
@@ -450,8 +521,19 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			slog.Error("job failed", "job_execution_id", job.ID, "error", failMsg)
 			return nil
 		}
+		if phaseErr := reportPhaseUpdate(artifactPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(artifactPhase, artifactStarted, nil)}, runtimeCaps); phaseErr != nil {
+			return fmt.Errorf("report artifact publication completion: %w", phaseErr)
+		}
 	}
 
+	testPhase, publishTests := protocol.TimelinePhase(timeline, protocol.JobExecutionPhaseTests)
+	var testPhaseStarted time.Time
+	if publishTests {
+		testPhaseStarted = time.Now().UTC()
+		if phaseErr := reportPhaseUpdate(testPhase, []protocol.JobExecutionEvent{phaseStartedEvent(testPhase, testPhaseStarted)}, runtimeCaps); phaseErr != nil {
+			return fmt.Errorf("report test publication status: %w", phaseErr)
+		}
+	}
 	testReport := protocol.JobExecutionTestReport{Suites: collectedSuites, Coverage: collectedCoverage}
 	for _, s := range collectedSuites {
 		testReport.Total += s.Total
@@ -467,6 +549,11 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		if err == nil && testReport.Failed > 0 {
 			err = fmt.Errorf("test report contains failures: failed=%d", testReport.Failed)
+		}
+	}
+	if publishTests {
+		if phaseErr := reportPhaseUpdate(testPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(testPhase, testPhaseStarted, nil)}, runtimeCaps); phaseErr != nil {
+			return fmt.Errorf("report test publication completion: %w", phaseErr)
 		}
 	}
 

@@ -161,9 +161,13 @@ func TestViewFromProtocolProgressEstimates(t *testing.T) {
 	job := protocol.JobExecution{
 		ID: "job-progress", Status: protocol.JobExecutionStatusRunning,
 		ExpectedDurationMS: 4200, StepExpectedDuration: map[int]int64{1: 1200},
+		PhaseExpectedDuration: map[string]int64{protocol.JobExecutionPhaseWorkspace: 300},
 	}
 	view := ViewFromProtocol(job)
 	if view.ExpectedDurationMS != 4200 || view.StepExpectedDuration[1] != 1200 {
 		t.Fatalf("progress estimates were not copied: %+v", view)
+	}
+	if view.PhaseExpectedDuration[protocol.JobExecutionPhaseWorkspace] != 300 || len(view.ExecutionTimeline) != 2 {
+		t.Fatalf("phase estimates or execution timeline were not copied: %+v", view)
 	}
 }

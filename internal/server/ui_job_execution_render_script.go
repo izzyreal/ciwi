@@ -760,32 +760,62 @@ const jobExecutionRenderJS = `
       return name ? (title + ': ' + name) : title;
     }
 
-    function structuredStepGroups(events) {
+    function executionTimelineMaps(job) {
+      const byKey = Object.create(null);
+      (Array.isArray(job && job.execution_timeline) ? job.execution_timeline : []).forEach(item => {
+        if (!item) return;
+        const key = item.kind === 'phase' ? ('phase:' + String(item.id || '')) : ('step:' + String(Number(item.step_index || 0)));
+        byKey[key] = item;
+      });
+      return byKey;
+    }
+
+    function executionEventKey(ev) {
+      if (ev && ev.phase) return 'phase:' + String((ev.phase || {}).id || '');
+      if (ev && ev.step) return 'step:' + String(Number((ev.step || {}).index || 0));
+      return '';
+    }
+
+    function structuredExecutionGroups(job, events) {
       const groups = [];
-      const byIndex = Object.create(null);
+      const byKey = Object.create(null);
+      const timeline = executionTimelineMaps(job);
       (Array.isArray(events) ? events : []).forEach(ev => {
-        if (!ev || !ev.step) return;
-        const step = ev.step || {};
-        const idx = Number(step.index || 0) || (groups.length + 1);
-        let group = byIndex[idx];
+        const key = executionEventKey(ev);
+        if (!key) return;
+        let group = byKey[key];
         if (!group) {
-          group = { key: String(idx), step: step, started: '', output: '', finish: null };
-          byIndex[idx] = group;
+          const fallback = ev.phase
+            ? { id: ev.phase.id, kind: 'phase', name: ev.phase.name, description: ev.phase.description, index: ev.phase.index, total: ev.phase.total }
+            : { id: key, kind: 'step', name: (ev.step || {}).name, step_index: (ev.step || {}).index, index: (ev.step || {}).index, total: (ev.step || {}).total };
+          group = { key: key, item: timeline[key] || fallback, step: ev.step || null, phase: ev.phase || null, started: '', output: '', finish: null };
+          byKey[key] = group;
           groups.push(group);
         }
-        if (!group.step || !String(group.step.name || '').trim()) group.step = step;
-        if (ev.type === 'step.started') group.started = String(ev.timestamp_utc || '');
-        if (ev.type === 'step.output') group.output += String(ev.output || '');
-        if (ev.type === 'step.finished') group.finish = ev;
+        if (ev.step && (!group.step || !String(group.step.name || '').trim())) group.step = ev.step;
+        if (ev.phase && !group.phase) group.phase = ev.phase;
+        if (ev.type === 'step.started' || ev.type === 'phase.started') group.started = String(ev.timestamp_utc || '');
+        if (ev.type === 'step.output' || ev.type === 'phase.output') group.output += String(ev.output || '');
+        if (ev.type === 'step.finished' || ev.type === 'phase.finished') group.finish = ev;
       });
-      groups.sort((a, b) => Number(a.key) - Number(b.key));
+      groups.sort((a, b) => Number((a.item || {}).index || 0) - Number((b.item || {}).index || 0));
       return groups;
+    }
+
+    function executionGroupTitle(group) {
+      const item = (group && group.item) || {};
+      const idx = Number(item.index || 0);
+      const total = Number(item.total || 0);
+      const prefix = idx > 0 && total > 0 ? ('Step ' + idx + '/' + total) : (idx > 0 ? ('Step ' + idx) : 'Step');
+      const name = stepEventDisplayName({ name: item.name || ((group.step || {}).name) || ((group.phase || {}).name) });
+      return name ? (prefix + ': ' + name) : prefix;
     }
 
     function hasStructuredLogEvents(events) {
       return (Array.isArray(events) ? events : []).some(ev => ev && (
         ev.type === 'system.message' ||
-        (ev.step && (ev.type === 'step.started' || ev.type === 'step.output' || ev.type === 'step.finished'))
+        (ev.step && (ev.type === 'step.started' || ev.type === 'step.output' || ev.type === 'step.finished')) ||
+        (ev.phase && (ev.type === 'phase.started' || ev.type === 'phase.output' || ev.type === 'phase.finished'))
       ));
     }
 
@@ -796,9 +826,9 @@ const jobExecutionRenderJS = `
     }
 
     function renderStructuredOutputLog(job, events) {
-      const groups = structuredStepGroups(events);
-      const byIndex = Object.create(null);
-      groups.forEach(group => { byIndex[group.key] = group; });
+      const groups = structuredExecutionGroups(job, events);
+      const byKey = Object.create(null);
+      groups.forEach(group => { byKey[group.key] = group; });
       const renderedSteps = Object.create(null);
       if (!hasStructuredLogEvents(events)) return '<span class="log-empty">&lt;no structured output&gt;</span>';
       const activeIdx = activeStepIndexFromCurrentStep(job && job.current_step);
@@ -807,12 +837,12 @@ const jobExecutionRenderJS = `
           const message = String(ev.message || '');
           return message ? ('<div class="log-system-message">' + renderOutputLog(message) + '</div>') : '';
         }
-        if (!ev || !ev.step) return '';
-        const key = String(Number((ev.step || {}).index || 0));
-        const group = byIndex[key];
+        const key = executionEventKey(ev);
+        if (!key) return '';
+        const group = byKey[key];
         if (!group || renderedSteps[key]) return '';
         renderedSteps[key] = true;
-        const pos = Number(key || 1) - 1;
+        const pos = Number((group.item || {}).index || 1) - 1;
         const finish = group.finish || null;
         const running = activeIdx === pos && isRunningJobStatus((job && job.status) || '');
         const remembered = (typeof logStepOpenState !== 'undefined') ? logStepOpenState[group.key] : undefined;
@@ -822,18 +852,20 @@ const jobExecutionRenderJS = `
         if (finish && Number(finish.duration_ms || 0) > 0) meta.push('Duration: ' + escapeHtml(formatDurationMs(Number(finish.duration_ms || 0))));
         if (finish && finish.exit_code !== null && finish.exit_code !== undefined) meta.push('Exit code: ' + escapeHtml(String(finish.exit_code)));
         if (finish && String(finish.error || '').trim()) meta.push('Error: ' + escapeHtml(String(finish.error || '').trim()));
+        const isPhase = String((group.item || {}).kind || '') === 'phase';
         const script = String((group.step && group.step.script) || '');
         const yamlLiteral = String((group.step && group.step.yaml_literal) || '');
         const output = String(group.output || '');
-        const commandSummary = stepEventCommandSummary(group.step);
+        const commandSummary = isPhase ? '' : stepEventCommandSummary(group.step);
+        const detailsBlock = isPhase
+          ? ('<div class="log-step-label">Details</div><pre>' + escapeHtml(String((group.item || {}).description || (group.phase || {}).description || '(none)')) + '</pre>')
+          : ('<div class="log-step-label">YAML literal</div><pre>' + escapeHtml(yamlLiteral || '(none)') + '</pre>' +
+             '<div class="log-step-label">Expanded command</div><pre>' + escapeHtml(script || '(none)') + '</pre>');
         return '' +
           '<details class="log-step" data-step-key="' + escapeHtml(group.key) + '"' + (open ? ' open' : '') + '>' +
-            '<summary><span class="log-step-summary-title">' + escapeHtml(stepEventTitle(group.step)) + '</span>' + (commandSummary ? '<span class="log-step-summary-command">' + escapeHtml(commandSummary) + '</span>' : '') + '</summary>' +
+            '<summary><span class="log-step-summary-title">' + escapeHtml(executionGroupTitle(group)) + '</span>' + (commandSummary ? '<span class="log-step-summary-command">' + escapeHtml(commandSummary) + '</span>' : '') + '</summary>' +
             (meta.length ? ('<div class="log-step-meta">' + meta.map(m => '<span>' + m + '</span>').join('') + '</div>') : '') +
-            '<div class="log-step-label">YAML literal</div>' +
-            '<pre>' + escapeHtml(yamlLiteral || '(none)') + '</pre>' +
-            '<div class="log-step-label">Expanded command</div>' +
-            '<pre>' + escapeHtml(script || '(none)') + '</pre>' +
+            detailsBlock +
             '<div class="log-step-label">Output</div>' +
             '<div>' + renderOutputLog(output || '(no output)') + '</div>' +
           '</details>';
@@ -841,34 +873,39 @@ const jobExecutionRenderJS = `
     }
 
     function bindStructuredStepProgress(job, events) {
-      const groups = structuredStepGroups(events);
+      const groups = structuredExecutionGroups(job, events);
       const byKey = Object.create(null);
       groups.forEach(group => { byKey[group.key] = group; });
       const activeIdx = activeStepIndexFromCurrentStep(job && job.current_step);
       const expectedByStep = (job && job.step_expected_duration_ms) || {};
+      const expectedByPhase = (job && job.phase_expected_duration_ms) || {};
       document.querySelectorAll('#logBox details.log-step[data-step-key]').forEach(details => {
         const key = String(details.getAttribute('data-step-key') || '');
         const group = byKey[key];
         const summary = details.querySelector(':scope > summary');
         if (!group || !summary) return;
-        const index = Number(key || 0);
+        const index = Number((group.item || {}).index || 0);
         const finish = group.finish || null;
         const running = activeIdx === index - 1 && isRunningJobStatus((job && job.status) || '');
         if (!finish && !running) return;
+        const isPhase = String((group.item || {}).kind || '') === 'phase';
+        const expectedDurationMS = isPhase
+          ? Number(expectedByPhase[String((group.item || {}).id || '')] || 0)
+          : Number(expectedByStep[String((group.item || {}).step_index || '')] || 0);
         bindCiwiProgress(summary, {
           status: finish ? (String(finish.error || '').trim() || finish.exit_code !== null && finish.exit_code !== undefined ? 'failed' : 'succeeded') : 'running',
           started_utc: group.started || '',
           finished_utc: finish ? String(finish.timestamp_utc || '') : '',
           leased_by_agent_id: String((job && job.leased_by_agent_id) || ''),
-          expected_duration_ms: Number(expectedByStep[key] || 0),
+          expected_duration_ms: expectedDurationMS,
         });
       });
     }
 
     function plainTextFromStructuredEvents(job, events) {
-      const groups = structuredStepGroups(events);
-      const byIndex = Object.create(null);
-      groups.forEach(group => { byIndex[group.key] = group; });
+      const groups = structuredExecutionGroups(job, events);
+      const byKey = Object.create(null);
+      groups.forEach(group => { byKey[group.key] = group; });
       const renderedSteps = Object.create(null);
       const lines = [];
       lines.push('ciwi job log');
@@ -884,28 +921,33 @@ const jobExecutionRenderJS = `
           }
           return;
         }
-        if (!ev || !ev.step) return;
-        const key = String(Number((ev.step || {}).index || 0));
-        const group = byIndex[key];
+        const key = executionEventKey(ev);
+        if (!key) return;
+        const group = byKey[key];
         if (!group || renderedSteps[key]) return;
         renderedSteps[key] = true;
         lines.push('--------------------------------------------------------------------------------');
-        lines.push(stepEventTitle(group.step));
+        lines.push(executionGroupTitle(group));
         lines.push('--------------------------------------------------------------------------------');
         if (group.started) lines.push('Start time: ' + formatTimestamp(group.started));
         if (group.finish && Number(group.finish.duration_ms || 0) > 0) lines.push('Step duration: ' + formatDurationMs(Number(group.finish.duration_ms || 0)));
         if (group.finish && group.finish.exit_code !== null && group.finish.exit_code !== undefined) lines.push('Exit code: ' + String(group.finish.exit_code));
         if (group.finish && String(group.finish.error || '').trim()) lines.push('Error: ' + String(group.finish.error || '').trim());
         lines.push('');
-        lines.push('YAML literal:');
-        lines.push("'''");
-        lines.push(String((group.step && (group.step.yaml_literal || group.step.script)) || ''));
-        lines.push("'''");
-        lines.push('');
-        lines.push('Expanded command:');
-        lines.push("'''");
-        lines.push(String((group.step && group.step.script) || ''));
-        lines.push("'''");
+        if (String((group.item || {}).kind || '') === 'phase') {
+          lines.push('Details:');
+          lines.push(String((group.item || {}).description || (group.phase || {}).description || ''));
+        } else {
+          lines.push('YAML literal:');
+          lines.push("'''");
+          lines.push(String((group.step && (group.step.yaml_literal || group.step.script)) || ''));
+          lines.push("'''");
+          lines.push('');
+          lines.push('Expanded command:');
+          lines.push("'''");
+          lines.push(String((group.step && group.step.script) || ''));
+          lines.push("'''");
+        }
         lines.push('');
         lines.push('Output:');
         lines.push("'''");

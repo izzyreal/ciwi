@@ -24,8 +24,9 @@ type Store interface {
 }
 
 type Estimate struct {
-	ExpectedDurationMS   int64
-	StepExpectedDuration map[int]int64
+	ExpectedDurationMS    int64
+	StepExpectedDuration  map[int]int64
+	PhaseExpectedDuration map[string]int64
 }
 
 type Estimator struct {
@@ -97,20 +98,55 @@ func (e *Estimator) AttachDetailEstimate(job *protocol.JobExecution) error {
 	}
 	matches := e.comparableSuccessfulJobs(*job, jobs)
 	estimate := Estimate{ExpectedDurationMS: median(jobDurations(matches))}
-	if len(matches) > 0 && len(job.StepPlan) > 0 {
+	if len(matches) > 0 {
 		ids := make([]string, len(matches))
 		for i := range matches {
 			ids[i] = matches[i].ID
 		}
-		eventsByJob, err := e.store.ListJobExecutionEventsForJobs(ids, protocol.JobExecutionEventTypeStepFinished)
+		eventsByJob, err := e.store.ListJobExecutionEventsForJobs(ids, "")
 		if err != nil {
 			return err
 		}
-		estimate.StepExpectedDuration = estimateSteps(job.StepPlan, matches, eventsByJob)
+		if len(job.StepPlan) > 0 {
+			estimate.StepExpectedDuration = estimateSteps(job.StepPlan, matches, eventsByJob)
+		}
+		estimate.PhaseExpectedDuration = estimatePhases(protocol.BuildJobExecutionTimeline(*job), matches, eventsByJob)
 	}
 	e.remember(cacheKey, estimate)
 	applyEstimate(job, estimate)
 	return nil
+}
+
+func estimatePhases(timeline []protocol.JobExecutionTimelineItem, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[string]int64 {
+	wanted := map[string]struct{}{}
+	for _, item := range timeline {
+		if item.Kind == "phase" && strings.TrimSpace(item.ID) != "" {
+			wanted[item.ID] = struct{}{}
+		}
+	}
+	samples := make(map[string][]int64, len(wanted))
+	for _, match := range matches {
+		for _, event := range eventsByJob[match.ID] {
+			if event.Type != protocol.JobExecutionEventTypePhaseFinished || event.Phase == nil || event.DurationMS <= 0 ||
+				(event.ExitCode != nil && *event.ExitCode != 0) || strings.TrimSpace(event.Error) != "" {
+				continue
+			}
+			id := strings.TrimSpace(event.Phase.ID)
+			if _, ok := wanted[id]; ok {
+				samples[id] = append(samples[id], event.DurationMS)
+			}
+		}
+	}
+	out := make(map[string]int64)
+	for id, durations := range samples {
+		if value := median(durations); value > 0 {
+			out[id] = value
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (e *Estimator) comparableSuccessfulJobs(target protocol.JobExecution, jobs []protocol.JobExecution) []protocol.JobExecution {
@@ -293,6 +329,14 @@ func median(values []int64) int64 {
 
 func applyEstimate(job *protocol.JobExecution, estimate Estimate) {
 	job.ExpectedDurationMS = estimate.ExpectedDurationMS
+	if len(estimate.PhaseExpectedDuration) == 0 {
+		job.PhaseExpectedDuration = nil
+	} else {
+		job.PhaseExpectedDuration = make(map[string]int64, len(estimate.PhaseExpectedDuration))
+		for id, duration := range estimate.PhaseExpectedDuration {
+			job.PhaseExpectedDuration[id] = duration
+		}
+	}
 	if len(estimate.StepExpectedDuration) == 0 {
 		job.StepExpectedDuration = nil
 		return
