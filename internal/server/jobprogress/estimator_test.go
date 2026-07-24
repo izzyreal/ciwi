@@ -234,6 +234,80 @@ func TestAttachDetailEstimateUsesSuccessfulPhaseHistory(t *testing.T) {
 	}
 }
 
+func TestAttachDetailEstimateSharesExecutedUnitsAcrossDryRunModes(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	target.ArtifactGlobs = []string{"dist/**"}
+	dryRun := completedProgressJob("dry-run", base.Add(-time.Minute), "agent-a", step, 9*time.Second)
+	dryRun.Metadata["dry_run"] = "1"
+	dryRun.ArtifactGlobs = []string{"preview/**"}
+	workspace := protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseWorkspace}
+	artifacts := protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseArtifacts}
+	store := &stubStore{
+		jobs: []protocol.JobExecution{dryRun},
+		events: map[string][]protocol.JobExecutionEvent{
+			dryRun.ID: {
+				{Type: protocol.JobExecutionEventTypeStepFinished, Step: &step, DurationMS: 1200},
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &workspace, DurationMS: 200},
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &artifacts, DurationMS: 800},
+			},
+		},
+	}
+
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if target.ExpectedDurationMS != 0 {
+		t.Fatalf("whole-job estimate must remain mode-specific, got %d", target.ExpectedDurationMS)
+	}
+	if got := target.StepExpectedDuration[1]; got != 1200 {
+		t.Fatalf("expected executed dry-run step sample to be shared, got %d", got)
+	}
+	if got := target.PhaseExpectedDuration[protocol.JobExecutionPhaseWorkspace]; got != 200 {
+		t.Fatalf("expected compatible dry-run phase sample to be shared, got %d", got)
+	}
+	if _, ok := target.PhaseExpectedDuration[protocol.JobExecutionPhaseArtifacts]; ok {
+		t.Fatalf("artifact phase with different globs must not be shared: %+v", target.PhaseExpectedDuration)
+	}
+}
+
+func TestAttachDetailEstimateDoesNotShareSkippedDryRunStep(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{Index: 1, Script: "publish-release", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	skipped := protocol.JobStepPlanItem{Index: 1, Kind: "dryrun_skip"}
+	dryRun := completedProgressJob("dry-run", base.Add(-time.Minute), "agent-a", skipped, time.Second)
+	dryRun.Metadata["dry_run"] = "1"
+	store := &stubStore{
+		jobs: []protocol.JobExecution{dryRun},
+		events: map[string][]protocol.JobExecutionEvent{
+			dryRun.ID: {{Type: protocol.JobExecutionEventTypeStepFinished, Step: &skipped, DurationMS: 10}},
+		},
+	}
+
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if len(target.StepExpectedDuration) != 0 {
+		t.Fatalf("dry-run-skipped step must not estimate an executed step, got %+v", target.StepExpectedDuration)
+	}
+}
+
+func TestAttachJobEstimatesKeepsDryRunModesSeparate(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	dryRun := completedProgressJob("dry-run", base.Add(-time.Minute), "agent-a", step, 9*time.Second)
+	dryRun.Metadata["dry_run"] = "1"
+	jobs := []protocol.JobExecution{target, dryRun}
+
+	New(nil).AttachJobEstimates(jobs)
+	if jobs[0].ExpectedDurationMS != 0 {
+		t.Fatalf("whole-job estimate must not cross dry-run modes, got %d", jobs[0].ExpectedDurationMS)
+	}
+}
+
 func progressJob(id string, created time.Time, status, agent string, step protocol.JobStepPlanItem) protocol.JobExecution {
 	return protocol.JobExecution{
 		ID: id, Script: step.Script, StepPlan: []protocol.JobStepPlanItem{step}, Status: status,

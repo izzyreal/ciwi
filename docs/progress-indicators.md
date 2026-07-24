@@ -30,11 +30,15 @@ Before a job is leased, ciwi uses a provisional cross-agent estimate. Provisiona
 
 The provisional estimate may be replaced after leasing when exact history exists for the selected agent. A progress bar can therefore adjust when an agent is assigned.
 
+Whole-job estimates remain separated by ordinary or dry-run mode because a dry run may skip work and therefore have a substantially different total duration.
+
 ### Step matching
 
 Step estimates use successful `step.finished` events from matching job executions. The executable step definition must match; changing a command, environment, test configuration, or report configuration starts a new history set. A display-name-only change does not invalidate otherwise identical executable history.
 
-Ciwi-managed phases use successful `phase.finished` events from the same matching executions. Their stable phase IDs keep history attached to the operation rather than its current display position. Depending on the job definition, the unified timeline can include:
+An executed step can share duration history between ordinary and dry runs when its executable definition matches. A step reported as `dryrun_skip` does not match the corresponding ordinary executed step and contributes no duration sample for it.
+
+Ciwi-managed phases use successful `phase.finished` events from matching executions and can also share compatible history between ordinary and dry runs. Their stable phase IDs and phase-specific definitions keep history attached to the operation rather than its current display position. Depending on the job definition, the unified timeline can include:
 
 - Prepare workspace
 - Check out source

@@ -96,30 +96,31 @@ func (e *Estimator) AttachDetailEstimate(job *protocol.JobExecution) error {
 	if err != nil {
 		return err
 	}
-	matches := e.comparableSuccessfulJobs(*job, jobs)
-	estimate := Estimate{ExpectedDurationMS: median(jobDurations(matches))}
-	if len(matches) > 0 {
-		ids := make([]string, len(matches))
-		for i := range matches {
-			ids[i] = matches[i].ID
+	jobMatches := e.comparableSuccessfulJobs(*job, jobs)
+	unitMatches := e.comparableSuccessfulExecutionUnits(*job, jobs)
+	estimate := Estimate{ExpectedDurationMS: median(jobDurations(jobMatches))}
+	if len(unitMatches) > 0 {
+		ids := make([]string, len(unitMatches))
+		for i := range unitMatches {
+			ids[i] = unitMatches[i].ID
 		}
 		eventsByJob, err := e.store.ListJobExecutionEventsForJobs(ids, "")
 		if err != nil {
 			return err
 		}
 		if len(job.StepPlan) > 0 {
-			estimate.StepExpectedDuration = estimateSteps(job.StepPlan, matches, eventsByJob)
+			estimate.StepExpectedDuration = estimateSteps(job.StepPlan, unitMatches, eventsByJob)
 		}
-		estimate.PhaseExpectedDuration = estimatePhases(protocol.BuildJobExecutionTimeline(*job), matches, eventsByJob)
+		estimate.PhaseExpectedDuration = estimatePhases(*job, unitMatches, eventsByJob)
 	}
 	e.remember(cacheKey, estimate)
 	applyEstimate(job, estimate)
 	return nil
 }
 
-func estimatePhases(timeline []protocol.JobExecutionTimelineItem, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[string]int64 {
+func estimatePhases(target protocol.JobExecution, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[string]int64 {
 	wanted := map[string]struct{}{}
-	for _, item := range timeline {
+	for _, item := range protocol.BuildJobExecutionTimeline(target) {
 		if item.Kind == "phase" && strings.TrimSpace(item.ID) != "" {
 			wanted[item.ID] = struct{}{}
 		}
@@ -132,7 +133,7 @@ func estimatePhases(timeline []protocol.JobExecutionTimelineItem, matches []prot
 				continue
 			}
 			id := strings.TrimSpace(event.Phase.ID)
-			if _, ok := wanted[id]; ok {
+			if _, ok := wanted[id]; ok && phaseDefinitionFingerprint(target, id) == phaseDefinitionFingerprint(match, id) {
 				samples[id] = append(samples[id], event.DurationMS)
 			}
 		}
@@ -149,6 +150,69 @@ func estimatePhases(timeline []protocol.JobExecutionTimelineItem, matches []prot
 	return out
 }
 
+func phaseDefinitionFingerprint(job protocol.JobExecution, phaseID string) string {
+	var definition any
+	switch phaseID {
+	case protocol.JobExecutionPhaseWorkspace:
+		definition = phaseID
+	case protocol.JobExecutionPhaseCheckout:
+		repo := ""
+		if job.Source != nil {
+			repo = strings.TrimSpace(job.Source.Repo)
+		}
+		definition = struct {
+			ID   string `json:"id"`
+			Repo string `json:"repo"`
+		}{phaseID, repo}
+	case protocol.JobExecutionPhaseDependencies:
+		definition = struct {
+			ID      string `json:"id"`
+			Enabled bool   `json:"enabled"`
+		}{phaseID, timelineHasPhase(job, phaseID)}
+	case protocol.JobExecutionPhaseEnvironment:
+		definition = struct {
+			ID     string                  `json:"id"`
+			Caches []protocol.JobCacheSpec `json:"caches,omitempty"`
+		}{phaseID, job.Caches}
+	case protocol.JobExecutionPhaseArtifacts:
+		definition = struct {
+			ID    string   `json:"id"`
+			Globs []string `json:"globs,omitempty"`
+		}{phaseID, job.ArtifactGlobs}
+	case protocol.JobExecutionPhaseTests:
+		type reportDefinition struct {
+			TestFormat     string `json:"test_format,omitempty"`
+			TestReport     string `json:"test_report,omitempty"`
+			CoverageFormat string `json:"coverage_format,omitempty"`
+			CoverageReport string `json:"coverage_report,omitempty"`
+		}
+		reports := make([]reportDefinition, 0, len(job.StepPlan))
+		for _, step := range job.StepPlan {
+			if strings.TrimSpace(step.TestReport) == "" && strings.TrimSpace(step.CoverageReport) == "" {
+				continue
+			}
+			reports = append(reports, reportDefinition{
+				TestFormat: step.TestFormat, TestReport: step.TestReport,
+				CoverageFormat: step.CoverageFormat, CoverageReport: step.CoverageReport,
+			})
+		}
+		definition = struct {
+			ID      string             `json:"id"`
+			Reports []reportDefinition `json:"reports,omitempty"`
+		}{phaseID, reports}
+	default:
+		definition = phaseID
+	}
+	encoded, _ := json.Marshal(definition)
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
+func timelineHasPhase(job protocol.JobExecution, phaseID string) bool {
+	_, ok := protocol.TimelinePhase(protocol.BuildJobExecutionTimeline(job), phaseID)
+	return ok
+}
+
 func (e *Estimator) comparableSuccessfulJobs(target protocol.JobExecution, jobs []protocol.JobExecution) []protocol.JobExecution {
 	if key := e.comparableJobKey(target); key != "" {
 		if exact := e.comparableSuccessfulJobsByKey(target, jobs, key, e.comparableJobKey); len(exact) > 0 {
@@ -157,6 +221,16 @@ func (e *Estimator) comparableSuccessfulJobs(target protocol.JobExecution, jobs 
 	}
 	key := e.provisionalJobKey(target)
 	return e.comparableSuccessfulJobsByKey(target, jobs, key, e.provisionalJobKey)
+}
+
+func (e *Estimator) comparableSuccessfulExecutionUnits(target protocol.JobExecution, jobs []protocol.JobExecution) []protocol.JobExecution {
+	if key := e.comparableExecutionUnitKey(target); key != "" {
+		if exact := e.comparableSuccessfulJobsByKey(target, jobs, key, e.comparableExecutionUnitKey); len(exact) > 0 {
+			return exact
+		}
+	}
+	key := e.provisionalExecutionUnitKey(target)
+	return e.comparableSuccessfulJobsByKey(target, jobs, key, e.provisionalExecutionUnitKey)
 }
 
 func (e *Estimator) comparableSuccessfulJobsByKey(target protocol.JobExecution, jobs []protocol.JobExecution, key string, keyFor func(protocol.JobExecution) string) []protocol.JobExecution {
@@ -192,7 +266,32 @@ func (e *Estimator) comparableJobKey(job protocol.JobExecution) string {
 	return agent + "\x1f" + provisional
 }
 
+func (e *Estimator) comparableExecutionUnitKey(job protocol.JobExecution) string {
+	agent := strings.TrimSpace(job.LeasedByAgentID)
+	provisional := e.provisionalExecutionUnitKey(job)
+	if agent == "" || provisional == "" {
+		return ""
+	}
+	return agent + "\x1f" + provisional
+}
+
 func (e *Estimator) provisionalJobKey(job protocol.JobExecution) string {
+	base := e.provisionalExecutionUnitKey(job)
+	if base == "" {
+		return ""
+	}
+	parts := []string{
+		base,
+		strings.TrimSpace(job.Metadata["dry_run"]),
+		e.jobPlanFingerprint(job),
+	}
+	return strings.Join(parts, "\x1f")
+}
+
+// Execution-unit history intentionally omits dry-run mode and the complete job
+// plan. Individual step and phase fingerprints decide whether a sample is safe
+// to share, while aggregate job duration matching remains strict.
+func (e *Estimator) provisionalExecutionUnitKey(job protocol.JobExecution) string {
 	m := job.Metadata
 	project := strings.TrimSpace(m["project"])
 	pipeline := strings.TrimSpace(m["pipeline_id"])
@@ -207,9 +306,7 @@ func (e *Estimator) provisionalJobKey(job protocol.JobExecution) string {
 		pipelineJob,
 		strings.TrimSpace(m["matrix_name"]),
 		strings.TrimSpace(m["matrix_index"]),
-		strings.TrimSpace(m["dry_run"]),
 		string(requiredCapabilities),
-		e.jobPlanFingerprint(job),
 	}
 	return strings.Join(parts, "\x1f")
 }
