@@ -254,6 +254,61 @@ func (s *Store) ListJobExecutionEventsForJobs(jobIDs []string, eventType string)
 	return out, nil
 }
 
+func (s *Store) ListJobExecutionDurationEventsForJobs(jobIDs []string) (map[string][]protocol.JobExecutionEvent, error) {
+	const batchSize = 400
+	out := make(map[string][]protocol.JobExecutionEvent, len(jobIDs))
+	uniqueIDs := make([]string, 0, len(jobIDs))
+	seen := make(map[string]struct{}, len(jobIDs))
+	for _, jobID := range jobIDs {
+		jobID = strings.TrimSpace(jobID)
+		if jobID == "" {
+			continue
+		}
+		if _, ok := seen[jobID]; ok {
+			continue
+		}
+		seen[jobID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, jobID)
+	}
+	for start := 0; start < len(uniqueIDs); start += batchSize {
+		end := min(start+batchSize, len(uniqueIDs))
+		placeholders := make([]string, end-start)
+		args := make([]any, 0, end-start+2)
+		for i, jobID := range uniqueIDs[start:end] {
+			placeholders[i] = "?"
+			args = append(args, jobID)
+		}
+		args = append(args, protocol.JobExecutionEventTypeStepFinished, protocol.JobExecutionEventTypePhaseFinished)
+		rows, err := s.db.Query(`
+			SELECT id, job_execution_id, event_type, timestamp_utc, payload_json
+			FROM job_execution_events
+			WHERE job_execution_id IN (`+strings.Join(placeholders, ",")+`)
+			  AND event_type IN (?, ?)
+			ORDER BY job_execution_id ASC, id ASC
+		`, args...)
+		if err != nil {
+			return nil, fmt.Errorf("list duration events for jobs: %w", err)
+		}
+		for rows.Next() {
+			var id int64
+			var jobID, eventType, tsRaw, payloadRaw string
+			if err := rows.Scan(&id, &jobID, &eventType, &tsRaw, &payloadRaw); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("scan duration event for jobs: %w", err)
+			}
+			out[jobID] = append(out[jobID], decodeJobExecutionEvent(id, eventType, tsRaw, payloadRaw))
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("iterate duration events for jobs: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, fmt.Errorf("close duration events for jobs: %w", err)
+		}
+	}
+	return out, nil
+}
+
 func decodeJobExecutionEvent(id int64, eventType, tsRaw, payloadRaw string) protocol.JobExecutionEvent {
 	event := protocol.JobExecutionEvent{ID: id, Type: strings.TrimSpace(eventType)}
 	if ts, err := time.Parse(time.RFC3339Nano, tsRaw); err == nil {

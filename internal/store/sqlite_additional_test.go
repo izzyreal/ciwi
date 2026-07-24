@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -148,6 +149,29 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	}
 	if len(batched[job.ID]) != 1 || batched[job.ID][0].DurationMS != 1234 {
 		t.Fatalf("expected one batched finish event, got %+v", batched)
+	}
+	workspace := &protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseWorkspace}
+	if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{
+		{Type: protocol.JobExecutionEventTypePhaseOutput, TimestampUTC: ts.Add(2 * time.Second), Phase: workspace, Output: "workspace output"},
+		{Type: protocol.JobExecutionEventTypePhaseFinished, TimestampUTC: ts.Add(3 * time.Second), Phase: workspace, DurationMS: 250},
+	}); err != nil {
+		t.Fatalf("append phase duration events: %v", err)
+	}
+	durationEvents, err := s.ListJobExecutionDurationEventsForJobs([]string{job.ID, job.ID})
+	if err != nil {
+		t.Fatalf("ListJobExecutionDurationEventsForJobs: %v", err)
+	}
+	if len(durationEvents[job.ID]) != 2 ||
+		durationEvents[job.ID][0].Type != protocol.JobExecutionEventTypeStepFinished ||
+		durationEvents[job.ID][1].Type != protocol.JobExecutionEventTypePhaseFinished {
+		t.Fatalf("expected only step and phase finish events, got %+v", durationEvents[job.ID])
+	}
+	manyIDs := make([]string, 401)
+	for i := range manyIDs {
+		manyIDs[i] = fmt.Sprintf("missing-job-%d", i)
+	}
+	if _, err := s.ListJobExecutionDurationEventsForJobs(manyIDs); err != nil {
+		t.Fatalf("batched ListJobExecutionDurationEventsForJobs: %v", err)
 	}
 }
 

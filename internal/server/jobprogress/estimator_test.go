@@ -20,12 +20,12 @@ func (s *stubStore) ListJobExecutions() ([]protocol.JobExecution, error) {
 	return append([]protocol.JobExecution(nil), s.jobs...), nil
 }
 
-func (s *stubStore) ListJobExecutionEventsForJobs(jobIDs []string, eventType string) (map[string][]protocol.JobExecutionEvent, error) {
+func (s *stubStore) ListJobExecutionDurationEventsForJobs(jobIDs []string) (map[string][]protocol.JobExecutionEvent, error) {
 	s.batchCalls++
 	out := make(map[string][]protocol.JobExecutionEvent, len(jobIDs))
 	for _, id := range jobIDs {
 		for _, event := range s.events[id] {
-			if eventType == "" || event.Type == eventType {
+			if event.Type == protocol.JobExecutionEventTypeStepFinished || event.Type == protocol.JobExecutionEventTypePhaseFinished {
 				out[id] = append(out[id], event)
 			}
 		}
@@ -294,7 +294,150 @@ func TestAttachDetailEstimateDoesNotShareSkippedDryRunStep(t *testing.T) {
 	}
 }
 
-func TestAttachJobEstimatesKeepsDryRunModesSeparate(t *testing.T) {
+func TestAttachDetailEstimateUsesSuccessfulUnitsFromFailedJob(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	failedJob := completedProgressJob("failed", base.Add(-time.Minute), "agent-a", step, 8*time.Second)
+	failedJob.Status = protocol.JobExecutionStatusFailed
+	workspace := protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseWorkspace}
+	store := &stubStore{
+		jobs: []protocol.JobExecution{failedJob},
+		events: map[string][]protocol.JobExecutionEvent{
+			failedJob.ID: {
+				{Type: protocol.JobExecutionEventTypeStepFinished, Step: &step, DurationMS: 1400},
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &workspace, DurationMS: 300},
+			},
+		},
+	}
+
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if target.ExpectedDurationMS != 0 {
+		t.Fatalf("failed job must not contribute aggregate duration, got %d", target.ExpectedDurationMS)
+	}
+	if target.StepExpectedDuration[1] != 1400 || target.PhaseExpectedDuration[protocol.JobExecutionPhaseWorkspace] != 300 {
+		t.Fatalf("successful units from failed job were not reused: steps=%v phases=%v", target.StepExpectedDuration, target.PhaseExpectedDuration)
+	}
+}
+
+func TestAttachDetailEstimateFallsBackPerUnitWhenSameAgentSampleIsUnusable(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	target.ArtifactGlobs = []string{"dist/**"}
+	skipped := protocol.JobStepPlanItem{Index: 1, Kind: "dryrun_skip"}
+	sameAgent := completedProgressJob("same-agent", base.Add(-time.Minute), "agent-a", skipped, time.Second)
+	sameAgent.ArtifactGlobs = []string{"preview/**"}
+	otherAgent := completedProgressJob("other-agent", base.Add(-2*time.Minute), "agent-b", step, 4*time.Second)
+	otherAgent.ArtifactGlobs = []string{"dist/**"}
+	artifactPhase := protocol.JobExecutionPhase{ID: protocol.JobExecutionPhaseArtifacts}
+	store := &stubStore{
+		jobs: []protocol.JobExecution{sameAgent, otherAgent},
+		events: map[string][]protocol.JobExecutionEvent{
+			sameAgent.ID: {
+				{Type: protocol.JobExecutionEventTypeStepFinished, Step: &skipped, DurationMS: 10},
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &artifactPhase, DurationMS: 100},
+			},
+			otherAgent.ID: {
+				{Type: protocol.JobExecutionEventTypeStepFinished, Step: &step, DurationMS: 2200},
+				{Type: protocol.JobExecutionEventTypePhaseFinished, Phase: &artifactPhase, DurationMS: 3000},
+			},
+		},
+	}
+
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if got := target.StepExpectedDuration[1]; got != 2200 {
+		t.Fatalf("expected per-step cross-agent fallback, got %d", got)
+	}
+	if got := target.PhaseExpectedDuration[protocol.JobExecutionPhaseArtifacts]; got != 3000 {
+		t.Fatalf("expected per-phase cross-agent fallback, got %d", got)
+	}
+}
+
+func TestAttachDetailEstimateDoesNotMixCrossAgentSamplesIntoSameAgentHistory(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	sameAgent := completedProgressJob("same-agent", base.Add(-time.Minute), "agent-a", step, time.Second)
+	otherAgent := completedProgressJob("other-agent", base.Add(-2*time.Minute), "agent-b", step, 9*time.Second)
+	store := &stubStore{
+		jobs: []protocol.JobExecution{sameAgent, otherAgent},
+		events: map[string][]protocol.JobExecutionEvent{
+			sameAgent.ID:  {{Type: protocol.JobExecutionEventTypeStepFinished, Step: &step, DurationMS: 1000}},
+			otherAgent.ID: {{Type: protocol.JobExecutionEventTypeStepFinished, Step: &step, DurationMS: 9000}},
+		},
+	}
+
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if got := target.StepExpectedDuration[1]; got != 1000 {
+		t.Fatalf("expected same-agent-only estimate, got %d", got)
+	}
+}
+
+func TestAttachDetailEstimateFindsOlderValidSampleAfterUnusableCandidates(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	skipped := protocol.JobStepPlanItem{Index: 1, Kind: "dryrun_skip"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	store := &stubStore{events: map[string][]protocol.JobExecutionEvent{}}
+	for i := 1; i <= 12; i++ {
+		candidate := completedProgressJob(fmt.Sprintf("skipped-%02d", i), base.Add(-time.Duration(i)*time.Minute), "agent-a", skipped, time.Second)
+		store.jobs = append(store.jobs, candidate)
+		store.events[candidate.ID] = []protocol.JobExecutionEvent{{Type: protocol.JobExecutionEventTypeStepFinished, Step: &skipped, DurationMS: 10}}
+	}
+	older := completedProgressJob("older-valid", base.Add(-13*time.Minute), "agent-a", step, 3*time.Second)
+	store.jobs = append(store.jobs, older)
+	store.events[older.ID] = []protocol.JobExecutionEvent{{Type: protocol.JobExecutionEventTypeStepFinished, Step: &step, DurationMS: 2800}}
+
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if got := target.StepExpectedDuration[1]; got != 2800 {
+		t.Fatalf("expected older valid sample after unusable candidates, got %d", got)
+	}
+}
+
+func TestAttachDetailEstimateRejectsChangedStepEnvironmentAndVault(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	step := protocol.JobStepPlanItem{
+		Index: 1, Script: "publish", Kind: "run",
+		Env: map[string]string{"CHANNEL": "stable"}, VaultConnection: "home-vault",
+		VaultSecrets: []protocol.ProjectSecretSpec{{Name: "token", Mount: "kv", Path: "github", Key: "token"}},
+	}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
+	changedEnvStep := step
+	changedEnvStep.Env = map[string]string{"CHANNEL": "preview"}
+	changedVaultStep := step
+	changedVaultStep.VaultSecrets = []protocol.ProjectSecretSpec{{Name: "token", Mount: "kv", Path: "github-preview", Key: "token"}}
+	changedEnv := completedProgressJob("changed-env", base.Add(-time.Minute), "agent-a", changedEnvStep, time.Second)
+	changedVault := completedProgressJob("changed-vault", base.Add(-2*time.Minute), "agent-a", changedVaultStep, time.Second)
+	eventStep := step
+	eventStep.Env = nil
+	eventStep.VaultConnection = ""
+	eventStep.VaultSecrets = nil
+	store := &stubStore{
+		jobs: []protocol.JobExecution{changedEnv, changedVault},
+		events: map[string][]protocol.JobExecutionEvent{
+			changedEnv.ID:   {{Type: protocol.JobExecutionEventTypeStepFinished, Step: &eventStep, DurationMS: 1000}},
+			changedVault.ID: {{Type: protocol.JobExecutionEventTypeStepFinished, Step: &eventStep, DurationMS: 2000}},
+		},
+	}
+
+	if err := New(store).AttachDetailEstimate(&target); err != nil {
+		t.Fatalf("AttachDetailEstimate: %v", err)
+	}
+	if len(target.StepExpectedDuration) != 0 {
+		t.Fatalf("changed environment or Vault configuration must not match: %+v", target.StepExpectedDuration)
+	}
+}
+
+func TestAttachJobEstimatesSharesIdenticalPlanAcrossDryRunModes(t *testing.T) {
 	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
 	step := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
 	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", step)
@@ -303,8 +446,23 @@ func TestAttachJobEstimatesKeepsDryRunModesSeparate(t *testing.T) {
 	jobs := []protocol.JobExecution{target, dryRun}
 
 	New(nil).AttachJobEstimates(jobs)
+	if jobs[0].ExpectedDurationMS != 9000 {
+		t.Fatalf("identical executable plans should share whole-job history, got %d", jobs[0].ExpectedDurationMS)
+	}
+}
+
+func TestAttachJobEstimatesKeepsDifferentDryRunPlanSeparate(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	ordinaryStep := protocol.JobStepPlanItem{Index: 1, Script: "publish-release", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", ordinaryStep)
+	skippedStep := protocol.JobStepPlanItem{Index: 1, Kind: "dryrun_skip"}
+	dryRun := completedProgressJob("dry-run", base.Add(-time.Minute), "agent-a", skippedStep, time.Second)
+	dryRun.Metadata["dry_run"] = "1"
+	jobs := []protocol.JobExecution{target, dryRun}
+
+	New(nil).AttachJobEstimates(jobs)
 	if jobs[0].ExpectedDurationMS != 0 {
-		t.Fatalf("whole-job estimate must not cross dry-run modes, got %d", jobs[0].ExpectedDurationMS)
+		t.Fatalf("different executable dry-run plan must remain separate, got %d", jobs[0].ExpectedDurationMS)
 	}
 }
 

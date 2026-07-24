@@ -12,9 +12,9 @@ Individual rows inside an expanded execution group do not have a separate progre
 
 ## Historical estimates
 
-Ciwi gathers up to ten recent matching successful executions and uses their median duration. A median prevents one unusually fast or slow run from dominating the estimate.
+Ciwi gathers up to ten recent valid samples for each estimated job, phase, or YAML step and uses their median duration. A median prevents one unusually fast or slow run from dominating the estimate.
 
-Only samples with valid start and finish timestamps are used. Failed and cancelled executions are excluded because they often stop early and would make later estimates misleading.
+Only executions with valid start and finish timestamps are inspected. Whole-job estimates use successful executions because failed jobs often stop early. A successfully finished phase or YAML step remains a valid sample when a later unit causes the overall job to fail.
 
 ### Job matching
 
@@ -25,16 +25,17 @@ Before a job is leased, ciwi uses a provisional cross-agent estimate. Provisiona
 - project, pipeline, and pipeline job
 - matrix name and index
 - required capabilities, including operating system and architecture
-- ordinary or dry-run mode
 - executable job and step plan
 
 The provisional estimate may be replaced after leasing when exact history exists for the selected agent. A progress bar can therefore adjust when an agent is assigned.
 
-Whole-job estimates remain separated by ordinary or dry-run mode because a dry run may skip work and therefore have a substantially different total duration.
+Whole-job estimates can share history between ordinary and dry runs when their complete executable plans are identical. When dry-run steps are skipped, the rendered plan differs and whole-job history remains separate.
 
 ### Step matching
 
-Step estimates use successful `step.finished` events from matching job executions. The executable step definition must match; changing a command, environment, test configuration, or report configuration starts a new history set. A display-name-only change does not invalidate otherwise identical executable history.
+Step estimates use successful `step.finished` events from matching completed job executions. The executable step definition must match; changing a command, environment, Vault configuration, test configuration, or report configuration starts a new history set. A display-name-only change does not invalidate otherwise identical executable history.
+
+Agent preference is applied independently to every phase and YAML step. If that unit has at least one valid same-agent sample, only same-agent samples are used. Otherwise, ciwi falls back to compatible cross-agent samples. Candidate jobs without a valid event do not block that fallback, and the ten-sample limit is applied after event validation.
 
 An executed step can share duration history between ordinary and dry runs when its executable definition matches. A step reported as `dryrun_skip` does not match the corresponding ordinary executed step and contributes no duration sample for it.
 
@@ -104,7 +105,8 @@ Progress calculation never parses human-readable log output.
 An indicator remains indeterminate when ciwi has no successful matching history. Common reasons include:
 
 - this is the first execution of the job or step
-- previous executions failed or were cancelled
+- no matching execution completed successfully for a whole-job estimate
+- no successful matching lifecycle event exists for the current phase or YAML step
 - the command or executable plan changed
 - required capabilities or matrix values changed
 - previous records do not contain valid duration timestamps or the relevant structured lifecycle events

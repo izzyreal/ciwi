@@ -20,7 +20,7 @@ const (
 
 type Store interface {
 	ListJobExecutions() ([]protocol.JobExecution, error)
-	ListJobExecutionEventsForJobs(jobIDs []string, eventType string) (map[string][]protocol.JobExecutionEvent, error)
+	ListJobExecutionDurationEventsForJobs(jobIDs []string) (map[string][]protocol.JobExecutionEvent, error)
 }
 
 type Estimate struct {
@@ -97,49 +97,45 @@ func (e *Estimator) AttachDetailEstimate(job *protocol.JobExecution) error {
 		return err
 	}
 	jobMatches := e.comparableSuccessfulJobs(*job, jobs)
-	unitMatches := e.comparableSuccessfulExecutionUnits(*job, jobs)
+	exactUnitMatches, fallbackUnitMatches := e.comparableCompletedExecutionUnits(*job, jobs)
 	estimate := Estimate{ExpectedDurationMS: median(jobDurations(jobMatches))}
-	if len(unitMatches) > 0 {
-		ids := make([]string, len(unitMatches))
-		for i := range unitMatches {
-			ids[i] = unitMatches[i].ID
+	if len(exactUnitMatches)+len(fallbackUnitMatches) > 0 {
+		ids := make([]string, 0, len(exactUnitMatches)+len(fallbackUnitMatches))
+		for _, match := range exactUnitMatches {
+			ids = append(ids, match.ID)
 		}
-		eventsByJob, err := e.store.ListJobExecutionEventsForJobs(ids, "")
+		for _, match := range fallbackUnitMatches {
+			ids = append(ids, match.ID)
+		}
+		eventsByJob, err := e.store.ListJobExecutionDurationEventsForJobs(ids)
 		if err != nil {
 			return err
 		}
 		if len(job.StepPlan) > 0 {
-			estimate.StepExpectedDuration = estimateSteps(job.StepPlan, unitMatches, eventsByJob)
+			estimate.StepExpectedDuration = estimateSteps(job.StepPlan, exactUnitMatches, fallbackUnitMatches, eventsByJob)
 		}
-		estimate.PhaseExpectedDuration = estimatePhases(*job, unitMatches, eventsByJob)
+		estimate.PhaseExpectedDuration = estimatePhases(*job, exactUnitMatches, fallbackUnitMatches, eventsByJob)
 	}
 	e.remember(cacheKey, estimate)
 	applyEstimate(job, estimate)
 	return nil
 }
 
-func estimatePhases(target protocol.JobExecution, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[string]int64 {
+func estimatePhases(target protocol.JobExecution, exactMatches, fallbackMatches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[string]int64 {
 	wanted := map[string]struct{}{}
 	for _, item := range protocol.BuildJobExecutionTimeline(target) {
 		if item.Kind == "phase" && strings.TrimSpace(item.ID) != "" {
 			wanted[item.ID] = struct{}{}
 		}
 	}
-	samples := make(map[string][]int64, len(wanted))
-	for _, match := range matches {
-		for _, event := range eventsByJob[match.ID] {
-			if event.Type != protocol.JobExecutionEventTypePhaseFinished || event.Phase == nil || event.DurationMS <= 0 ||
-				(event.ExitCode != nil && *event.ExitCode != 0) || strings.TrimSpace(event.Error) != "" {
-				continue
-			}
-			id := strings.TrimSpace(event.Phase.ID)
-			if _, ok := wanted[id]; ok && phaseDefinitionFingerprint(target, id) == phaseDefinitionFingerprint(match, id) {
-				samples[id] = append(samples[id], event.DurationMS)
-			}
-		}
-	}
+	exactSamples := collectPhaseSamples(target, wanted, exactMatches, eventsByJob)
+	fallbackSamples := collectPhaseSamples(target, wanted, fallbackMatches, eventsByJob)
 	out := make(map[string]int64)
-	for id, durations := range samples {
+	for id := range wanted {
+		durations := exactSamples[id]
+		if len(durations) == 0 {
+			durations = fallbackSamples[id]
+		}
 		if value := median(durations); value > 0 {
 			out[id] = value
 		}
@@ -148,6 +144,23 @@ func estimatePhases(target protocol.JobExecution, matches []protocol.JobExecutio
 		return nil
 	}
 	return out
+}
+
+func collectPhaseSamples(target protocol.JobExecution, wanted map[string]struct{}, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[string][]int64 {
+	samples := make(map[string][]int64, len(wanted))
+	for _, match := range matches {
+		for _, event := range eventsByJob[match.ID] {
+			if event.Type != protocol.JobExecutionEventTypePhaseFinished || event.Phase == nil || event.DurationMS <= 0 ||
+				(event.ExitCode != nil && *event.ExitCode != 0) || strings.TrimSpace(event.Error) != "" {
+				continue
+			}
+			id := strings.TrimSpace(event.Phase.ID)
+			if _, ok := wanted[id]; ok && len(samples[id]) < maxSamples && phaseDefinitionFingerprint(target, id) == phaseDefinitionFingerprint(match, id) {
+				samples[id] = append(samples[id], event.DurationMS)
+			}
+		}
+	}
+	return samples
 }
 
 func phaseDefinitionFingerprint(job protocol.JobExecution, phaseID string) string {
@@ -223,14 +236,32 @@ func (e *Estimator) comparableSuccessfulJobs(target protocol.JobExecution, jobs 
 	return e.comparableSuccessfulJobsByKey(target, jobs, key, e.provisionalJobKey)
 }
 
-func (e *Estimator) comparableSuccessfulExecutionUnits(target protocol.JobExecution, jobs []protocol.JobExecution) []protocol.JobExecution {
-	if key := e.comparableExecutionUnitKey(target); key != "" {
-		if exact := e.comparableSuccessfulJobsByKey(target, jobs, key, e.comparableExecutionUnitKey); len(exact) > 0 {
-			return exact
+func (e *Estimator) comparableCompletedExecutionUnits(target protocol.JobExecution, jobs []protocol.JobExecution) ([]protocol.JobExecution, []protocol.JobExecution) {
+	exactKey := e.comparableExecutionUnitKey(target)
+	fallbackKey := e.provisionalExecutionUnitKey(target)
+	targetAgent := strings.TrimSpace(target.LeasedByAgentID)
+	exact := make([]protocol.JobExecution, 0)
+	fallback := make([]protocol.JobExecution, 0)
+	for _, candidate := range jobs {
+		if candidate.ID == target.ID || !protocol.IsTerminalJobExecutionStatus(candidate.Status) || !candidate.CreatedUTC.Before(target.CreatedUTC) {
+			continue
+		}
+		if candidate.StartedUTC.IsZero() || candidate.FinishedUTC.IsZero() || !candidate.FinishedUTC.After(candidate.StartedUTC) {
+			continue
+		}
+		if exactKey != "" && e.comparableExecutionUnitKey(candidate) == exactKey {
+			exact = append(exact, candidate)
+			continue
+		}
+		if fallbackKey != "" && e.provisionalExecutionUnitKey(candidate) == fallbackKey {
+			if targetAgent == "" || strings.TrimSpace(candidate.LeasedByAgentID) != targetAgent {
+				fallback = append(fallback, candidate)
+			}
 		}
 	}
-	key := e.provisionalExecutionUnitKey(target)
-	return e.comparableSuccessfulJobsByKey(target, jobs, key, e.provisionalExecutionUnitKey)
+	sort.Slice(exact, func(i, j int) bool { return exact[i].CreatedUTC.After(exact[j].CreatedUTC) })
+	sort.Slice(fallback, func(i, j int) bool { return fallback[i].CreatedUTC.After(fallback[j].CreatedUTC) })
+	return exact, fallback
 }
 
 func (e *Estimator) comparableSuccessfulJobsByKey(target protocol.JobExecution, jobs []protocol.JobExecution, key string, keyFor func(protocol.JobExecution) string) []protocol.JobExecution {
@@ -282,7 +313,6 @@ func (e *Estimator) provisionalJobKey(job protocol.JobExecution) string {
 	}
 	parts := []string{
 		base,
-		strings.TrimSpace(job.Metadata["dry_run"]),
 		e.jobPlanFingerprint(job),
 	}
 	return strings.Join(parts, "\x1f")
@@ -312,15 +342,17 @@ func (e *Estimator) provisionalExecutionUnitKey(job protocol.JobExecution) strin
 }
 
 type executableStep struct {
-	Index          int               `json:"index"`
-	Script         string            `json:"script"`
-	Kind           string            `json:"kind"`
-	Env            map[string]string `json:"env,omitempty"`
-	TestName       string            `json:"test_name,omitempty"`
-	TestFormat     string            `json:"test_format,omitempty"`
-	TestReport     string            `json:"test_report,omitempty"`
-	CoverageFormat string            `json:"coverage_format,omitempty"`
-	CoverageReport string            `json:"coverage_report,omitempty"`
+	Index           int                          `json:"index"`
+	Script          string                       `json:"script"`
+	Kind            string                       `json:"kind"`
+	Env             map[string]string            `json:"env,omitempty"`
+	TestName        string                       `json:"test_name,omitempty"`
+	TestFormat      string                       `json:"test_format,omitempty"`
+	TestReport      string                       `json:"test_report,omitempty"`
+	CoverageFormat  string                       `json:"coverage_format,omitempty"`
+	CoverageReport  string                       `json:"coverage_report,omitempty"`
+	VaultConnection string                       `json:"vault_connection,omitempty"`
+	VaultSecrets    []protocol.ProjectSecretSpec `json:"vault_secrets,omitempty"`
 }
 
 func (e *Estimator) jobPlanFingerprint(job protocol.JobExecution) string {
@@ -337,10 +369,20 @@ func (e *Estimator) jobPlanFingerprint(job protocol.JobExecution) string {
 	for i := range job.StepPlan {
 		steps[i] = executableStepFromPlan(job.StepPlan[i])
 	}
+	sourceRepo := ""
+	if job.Source != nil {
+		sourceRepo = strings.TrimSpace(job.Source.Repo)
+	}
 	payload := struct {
-		Script string           `json:"script"`
-		Steps  []executableStep `json:"steps"`
-	}{Script: job.Script, Steps: steps}
+		Script        string                  `json:"script"`
+		Steps         []executableStep        `json:"steps"`
+		SourceRepo    string                  `json:"source_repo,omitempty"`
+		Caches        []protocol.JobCacheSpec `json:"caches,omitempty"`
+		ArtifactGlobs []string                `json:"artifact_globs,omitempty"`
+	}{
+		Script: job.Script, Steps: steps, SourceRepo: sourceRepo,
+		Caches: job.Caches, ArtifactGlobs: job.ArtifactGlobs,
+	}
 	encoded, _ := json.Marshal(payload)
 	sum := sha256.Sum256(encoded)
 	fingerprint := hex.EncodeToString(sum[:])
@@ -355,41 +397,41 @@ func executableStepFromPlan(step protocol.JobStepPlanItem) executableStep {
 		Index: step.Index, Script: step.Script, Kind: step.Kind, Env: step.Env,
 		TestName: step.TestName, TestFormat: step.TestFormat, TestReport: step.TestReport,
 		CoverageFormat: step.CoverageFormat, CoverageReport: step.CoverageReport,
+		VaultConnection: step.VaultConnection, VaultSecrets: step.VaultSecrets,
 	}
 }
 
-func stepFingerprint(step protocol.JobStepPlanItem) string {
+func stepPlanFingerprint(step protocol.JobStepPlanItem) string {
+	encoded, _ := json.Marshal(executableStepFromPlan(step))
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
+func stepEventFingerprint(step protocol.JobStepPlanItem) string {
 	executable := executableStepFromPlan(step)
-	// Step events intentionally do not carry Env, because step environment can
-	// contain sensitive values. Job-level matching still includes Env; the
-	// per-step fingerprint must use the common subset present in both StepPlan
-	// and step.finished events.
+	// Step events omit environment and Vault configuration to avoid carrying
+	// sensitive data. Candidate and target plans are compared separately.
 	executable.Env = nil
+	executable.VaultConnection = ""
+	executable.VaultSecrets = nil
 	encoded, _ := json.Marshal(executable)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
 }
 
-func estimateSteps(plan []protocol.JobStepPlanItem, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[int]int64 {
-	wanted := make(map[int]string, len(plan))
+func estimateSteps(plan []protocol.JobStepPlanItem, exactMatches, fallbackMatches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[int]int64 {
+	wanted := make(map[int]protocol.JobStepPlanItem, len(plan))
 	for _, step := range plan {
-		wanted[step.Index] = stepFingerprint(step)
+		wanted[step.Index] = step
 	}
-	samples := make(map[int][]int64, len(plan))
-	for _, match := range matches {
-		for _, event := range eventsByJob[match.ID] {
-			if event.Type != protocol.JobExecutionEventTypeStepFinished || event.Step == nil || event.DurationMS <= 0 || (event.ExitCode != nil && *event.ExitCode != 0) || strings.TrimSpace(event.Error) != "" {
-				continue
-			}
-			fingerprint, ok := wanted[event.Step.Index]
-			if !ok || stepFingerprint(*event.Step) != fingerprint {
-				continue
-			}
-			samples[event.Step.Index] = append(samples[event.Step.Index], event.DurationMS)
-		}
-	}
+	exactSamples := collectStepSamples(wanted, exactMatches, eventsByJob)
+	fallbackSamples := collectStepSamples(wanted, fallbackMatches, eventsByJob)
 	out := make(map[int]int64)
-	for index, durations := range samples {
+	for index := range wanted {
+		durations := exactSamples[index]
+		if len(durations) == 0 {
+			durations = fallbackSamples[index]
+		}
 		if value := median(durations); value > 0 {
 			out[index] = value
 		}
@@ -398,6 +440,30 @@ func estimateSteps(plan []protocol.JobStepPlanItem, matches []protocol.JobExecut
 		return nil
 	}
 	return out
+}
+
+func collectStepSamples(wanted map[int]protocol.JobStepPlanItem, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[int][]int64 {
+	samples := make(map[int][]int64, len(wanted))
+	for _, match := range matches {
+		candidateSteps := make(map[int]protocol.JobStepPlanItem, len(match.StepPlan))
+		for _, step := range match.StepPlan {
+			candidateSteps[step.Index] = step
+		}
+		for _, event := range eventsByJob[match.ID] {
+			if event.Type != protocol.JobExecutionEventTypeStepFinished || event.Step == nil || event.DurationMS <= 0 || (event.ExitCode != nil && *event.ExitCode != 0) || strings.TrimSpace(event.Error) != "" {
+				continue
+			}
+			targetStep, ok := wanted[event.Step.Index]
+			candidateStep, candidateOK := candidateSteps[event.Step.Index]
+			if !ok || !candidateOK || len(samples[event.Step.Index]) >= maxSamples ||
+				stepPlanFingerprint(candidateStep) != stepPlanFingerprint(targetStep) ||
+				stepEventFingerprint(*event.Step) != stepEventFingerprint(targetStep) {
+				continue
+			}
+			samples[event.Step.Index] = append(samples[event.Step.Index], event.DurationMS)
+		}
+	}
+	return samples
 }
 
 func jobDurations(jobs []protocol.JobExecution) []int64 {
