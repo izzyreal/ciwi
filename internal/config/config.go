@@ -63,16 +63,23 @@ type Source struct {
 }
 
 type PipelineJobSpec struct {
-	ID             string                  `yaml:"id" json:"id"`
-	Needs          []string                `yaml:"needs,omitempty" json:"needs,omitempty"`
-	RunsOn         map[string]string       `yaml:"runs_on" json:"runs_on"`
-	Requires       PipelineJobRequirements `yaml:"requires,omitempty" json:"requires,omitempty"`
-	TimeoutSeconds int                     `yaml:"timeout_seconds" json:"timeout_seconds"`
-	Artifacts      []string                `yaml:"artifacts" json:"artifacts"`
-	Caches         []PipelineJobCacheSpec  `yaml:"caches,omitempty" json:"caches,omitempty"`
-	GoCache        *PipelineJobGoCacheSpec `yaml:"go_cache,omitempty" json:"go_cache,omitempty"`
-	Matrix         PipelineJobMatrix       `yaml:"matrix" json:"matrix"`
-	Steps          []PipelineJobStep       `yaml:"steps" json:"steps"`
+	ID              string                      `yaml:"id" json:"id"`
+	Needs           []string                    `yaml:"needs,omitempty" json:"needs,omitempty"`
+	ArtifactSources []PipelineJobArtifactSource `yaml:"artifact_sources,omitempty" json:"artifact_sources,omitempty"`
+	RunsOn          map[string]string           `yaml:"runs_on" json:"runs_on"`
+	Requires        PipelineJobRequirements     `yaml:"requires,omitempty" json:"requires,omitempty"`
+	TimeoutSeconds  int                         `yaml:"timeout_seconds" json:"timeout_seconds"`
+	Artifacts       []string                    `yaml:"artifacts" json:"artifacts"`
+	Caches          []PipelineJobCacheSpec      `yaml:"caches,omitempty" json:"caches,omitempty"`
+	GoCache         *PipelineJobGoCacheSpec     `yaml:"go_cache,omitempty" json:"go_cache,omitempty"`
+	Matrix          PipelineJobMatrix           `yaml:"matrix" json:"matrix"`
+	Steps           []PipelineJobStep           `yaml:"steps" json:"steps"`
+}
+
+type PipelineJobArtifactSource struct {
+	Pipeline string            `yaml:"pipeline" json:"pipeline"`
+	Job      string            `yaml:"job" json:"job"`
+	Matrix   map[string]string `yaml:"matrix,omitempty" json:"matrix,omitempty"`
 }
 
 type PipelineJobCacheSpec struct {
@@ -398,6 +405,10 @@ func (cfg File) Validate() []string {
 		}
 	}
 
+	pipelinesByID := make(map[string]Pipeline, len(cfg.Pipelines))
+	for _, p := range cfg.Pipelines {
+		pipelinesByID[strings.TrimSpace(p.ID)] = p
+	}
 	for i, p := range cfg.Pipelines {
 		for j, dep := range p.DependsOn {
 			dep = strings.TrimSpace(dep)
@@ -406,6 +417,82 @@ func (cfg File) Validate() []string {
 			}
 			if _, ok := pipelineIDs[dep]; !ok {
 				errs = append(errs, fmt.Sprintf("pipelines[%d].depends_on[%d] references unknown pipeline %q", i, j, dep))
+			}
+		}
+		directDependencies := make(map[string]struct{}, len(p.DependsOn))
+		for _, dep := range p.DependsOn {
+			directDependencies[strings.TrimSpace(dep)] = struct{}{}
+		}
+		for j, job := range p.Jobs {
+			for k, source := range job.ArtifactSources {
+				prefix := fmt.Sprintf("pipelines[%d].jobs[%d].artifact_sources[%d]", i, j, k)
+				sourcePipelineID := strings.TrimSpace(source.Pipeline)
+				sourceJobID := strings.TrimSpace(source.Job)
+				if sourcePipelineID == "" {
+					errs = append(errs, prefix+".pipeline is required")
+					continue
+				}
+				if sourceJobID == "" {
+					errs = append(errs, prefix+".job is required")
+					continue
+				}
+				if _, ok := directDependencies[sourcePipelineID]; !ok {
+					errs = append(errs, fmt.Sprintf("%s.pipeline %q must be listed in pipelines[%d].depends_on", prefix, sourcePipelineID, i))
+					continue
+				}
+				sourcePipeline, ok := pipelinesByID[sourcePipelineID]
+				if !ok {
+					continue
+				}
+				var sourceJob *PipelineJobSpec
+				for sourceJobIndex := range sourcePipeline.Jobs {
+					if strings.TrimSpace(sourcePipeline.Jobs[sourceJobIndex].ID) == sourceJobID {
+						sourceJob = &sourcePipeline.Jobs[sourceJobIndex]
+						break
+					}
+				}
+				if sourceJob == nil {
+					errs = append(errs, fmt.Sprintf("%s.job references unknown job %q in pipeline %q", prefix, sourceJobID, sourcePipelineID))
+					continue
+				}
+				if len(sourceJob.Artifacts) == 0 {
+					errs = append(errs, fmt.Sprintf("%s references job %q in pipeline %q which declares no artifacts", prefix, sourceJobID, sourcePipelineID))
+				}
+				if len(source.Matrix) == 0 {
+					continue
+				}
+				validKeys := map[string]struct{}{}
+				for _, row := range sourceJob.Matrix.Include {
+					for key := range row {
+						validKeys[key] = struct{}{}
+					}
+				}
+				for key := range source.Matrix {
+					if strings.TrimSpace(key) == "" {
+						errs = append(errs, prefix+".matrix contains an empty key")
+						continue
+					}
+					if _, ok := validKeys[key]; !ok {
+						errs = append(errs, fmt.Sprintf("%s.matrix references unknown matrix key %q", prefix, key))
+					}
+				}
+				matched := false
+				for _, row := range sourceJob.Matrix.Include {
+					rowMatches := true
+					for key, value := range source.Matrix {
+						if row[key] != value {
+							rowMatches = false
+							break
+						}
+					}
+					if rowMatches {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					errs = append(errs, fmt.Sprintf("%s.matrix matches no matrix entry on job %q in pipeline %q", prefix, sourceJobID, sourcePipelineID))
+				}
 			}
 		}
 	}

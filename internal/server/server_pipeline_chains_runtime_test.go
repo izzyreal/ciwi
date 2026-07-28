@@ -65,6 +65,133 @@ func findPipelineJobExecution(t *testing.T, s *stateStore, pipelineID string) pr
 	return protocol.JobExecution{}
 }
 
+func TestPipelineChainUsesSelectedProjectIDWhenProjectNamesMatch(t *testing.T) {
+	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
+	load := func(configPath, repoRef, buildJobID, signJobID string, withArtifactSource bool) {
+		t.Helper()
+		artifactSources := ""
+		if withArtifactSource {
+			artifactSources = `
+        artifact_sources:
+          - pipeline: build
+            job: ` + buildJobID + `
+            matrix:
+              name: darwin-arm64`
+		}
+		cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: `+buildJobID+`
+        runs_on: {os: darwin}
+        artifacts: [dist/**]
+        matrix:
+          include:
+            - name: darwin-arm64
+        steps:
+          - run: echo build
+  - id: codesign-macos
+    depends_on: [build]
+    jobs:
+      - id: `+signJobID+artifactSources+`
+        runs_on: {os: darwin}
+        steps:
+          - run: echo sign
+pipeline_chains:
+  - id: build-release
+    pipelines: [build, codesign-macos]
+`), configPath)
+		if err != nil {
+			t.Fatalf("parse config: %v", err)
+		}
+		if err := s.db.LoadConfig(cfg, configPath, "https://github.com/izzyreal/ciwi.git", repoRef, "ciwi-project.yaml"); err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+	}
+
+	load("main/ciwi-project.yaml", "main", "build-main", "sign-main", false)
+	load("branch/ciwi-project.yaml", "fine-grained-artifact-propagation", "build-branch", "sign-branch", true)
+
+	branchProject, err := s.db.GetProjectByConfigPath("branch/ciwi-project.yaml")
+	if err != nil {
+		t.Fatalf("get branch project: %v", err)
+	}
+	detail, err := s.db.GetProjectDetail(branchProject.ID)
+	if err != nil {
+		t.Fatalf("get branch project detail: %v", err)
+	}
+	if len(detail.PipelineChains) != 1 {
+		t.Fatalf("expected one branch pipeline chain, got %+v", detail.PipelineChains)
+	}
+	chain, err := s.db.GetPipelineChainByDBID(detail.PipelineChains[0].ID)
+	if err != nil {
+		t.Fatalf("get branch pipeline chain: %v", err)
+	}
+	response, err := s.enqueuePersistedPipelineChain(chain, &protocol.RunPipelineSelectionRequest{DryRun: true})
+	if err != nil {
+		t.Fatalf("enqueue branch pipeline chain: %v", err)
+	}
+
+	jobs, err := s.db.ListJobExecutions()
+	if err != nil {
+		t.Fatalf("list branch chain executions: %v", err)
+	}
+	if len(jobs) != response.Enqueued {
+		t.Fatalf("expected %d branch jobs, got %d", response.Enqueued, len(jobs))
+	}
+	foundBuild := false
+	foundSign := false
+	signExecutionID := ""
+	for _, job := range jobs {
+		if got := strings.TrimSpace(job.Metadata["project_id"]); got != int64ToString(branchProject.ID) {
+			t.Fatalf("expected branch project id %d, got %q for job %s", branchProject.ID, got, job.ID)
+		}
+		switch strings.TrimSpace(job.Metadata["pipeline_job_id"]) {
+		case "build-branch":
+			foundBuild = true
+		case "sign-branch":
+			foundSign = true
+			signExecutionID = job.ID
+			if strings.TrimSpace(job.Metadata[artifactSourcesMetadataKey]) == "" {
+				t.Fatalf("expected branch codesign job to retain explicit artifact sources")
+			}
+		case "build-main", "sign-main":
+			t.Fatalf("selected branch chain enqueued main project job %q", job.Metadata["pipeline_job_id"])
+		}
+	}
+	if !foundBuild || !foundSign {
+		t.Fatalf("expected branch build and codesign jobs, found build=%v sign=%v", foundBuild, foundSign)
+	}
+
+	buildExecution, err := s.db.LeaseJobExecution("agent-branch", map[string]string{"os": "darwin"})
+	if err != nil {
+		t.Fatalf("lease branch build execution: %v", err)
+	}
+	if buildExecution == nil || strings.TrimSpace(buildExecution.Metadata["pipeline_job_id"]) != "build-branch" {
+		t.Fatalf("expected branch build execution lease, got %+v", buildExecution)
+	}
+	updatedBuildExecution, err := s.db.UpdateJobExecutionStatus(buildExecution.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:      "agent-branch",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("succeed branch build execution: %v", err)
+	}
+	s.onJobExecutionUpdated(updatedBuildExecution)
+
+	signExecution, err := s.db.GetJobExecution(signExecutionID)
+	if err != nil {
+		t.Fatalf("get unblocked branch codesign execution: %v", err)
+	}
+	if got := signExecution.DependencyArtifactJobIDs; len(got) != 1 || got[0] != updatedBuildExecution.ID {
+		t.Fatalf("expected branch codesign artifacts from %q, got %v", updatedBuildExecution.ID, got)
+	}
+}
+
 func TestPipelineChainUnblocksNextPipelineOnSuccess(t *testing.T) {
 	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
 	enqueueSingleChain(t, s, `
@@ -112,9 +239,9 @@ pipeline_chains:
 		t.Fatalf("expected build job lease, got %+v", leased)
 	}
 	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusSucceeded,
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark build job succeeded: %v", err)
@@ -255,10 +382,10 @@ pipeline_chains:
 		t.Fatalf("lease first job: %v", err)
 	}
 	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusFailed,
-		Error:             "boom",
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusFailed,
+		Error:        "boom",
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark build job failed: %v", err)
@@ -384,9 +511,9 @@ pipeline_chains:
 		t.Fatalf("lease first job: %v", err)
 	}
 	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusSucceeded,
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark build job succeeded: %v", err)
@@ -513,9 +640,9 @@ pipeline_chains:
 
 	buildJob := findPipelineJobExecution(t, s, "build")
 	buildUpdated, err := s.db.UpdateJobExecutionStatus(buildJob.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusSucceeded,
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark build succeeded: %v", err)
@@ -531,9 +658,9 @@ pipeline_chains:
 	}
 
 	signUpdated, err := s.db.UpdateJobExecutionStatus(signJob.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusSucceeded,
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark sign succeeded: %v", err)
@@ -562,9 +689,9 @@ pipeline_chains:
 
 	for _, pjob := range []protocol.JobExecution{pMac, pWin, pLin} {
 		updated, err := s.db.UpdateJobExecutionStatus(pjob.ID, protocol.JobExecutionStatusUpdateRequest{
-			AgentID:           "agent-1",
-			Status:            protocol.JobExecutionStatusSucceeded,
-			TimestampUTC:      time.Now().UTC(),
+			AgentID:      "agent-1",
+			Status:       protocol.JobExecutionStatusSucceeded,
+			TimestampUTC: time.Now().UTC(),
 		})
 		if err != nil {
 			t.Fatalf("mark package job succeeded (%s): %v", pjob.ID, err)

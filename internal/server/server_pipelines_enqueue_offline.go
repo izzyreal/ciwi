@@ -94,13 +94,9 @@ func (s *stateStore) preparePendingPipelineChainJobsOfflineCached(ch store.Persi
 	if len(ch.Pipelines) == 0 {
 		return nil, fmt.Errorf("pipeline chain has no pipelines")
 	}
-	pipelines := make([]store.PersistedPipeline, 0, len(ch.Pipelines))
-	for _, pid := range ch.Pipelines {
-		p, err := s.pipelineStore().GetPipelineByProjectAndID(ch.ProjectName, strings.TrimSpace(pid))
-		if err != nil {
-			return nil, fmt.Errorf("load pipeline %q in chain %q: %w", pid, ch.ChainID, err)
-		}
-		pipelines = append(pipelines, p)
+	pipelines, err := s.loadPipelineChainPipelines(ch)
+	if err != nil {
+		return nil, err
 	}
 	firstDep, err := s.checkPipelineDependenciesWithReporter(pipelines[0], nil)
 	if err != nil {

@@ -20,10 +20,12 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 
 	now := time.Now().UTC()
 	jobID := fmt.Sprintf("job-%d", now.UnixNano())
+	dependencyArtifactJobIDs := normalizeDependencyArtifactJobIDs(req.DependencyArtifactJobIDs)
 
 	requiredJSON, _ := json.Marshal(req.RequiredCapabilities)
 	envJSON, _ := json.Marshal(req.Env)
 	artifactGlobsJSON, _ := json.Marshal(req.ArtifactGlobs)
+	dependencyArtifactJobIDsJSON, _ := json.Marshal(dependencyArtifactJobIDs)
 	cachesJSON, _ := json.Marshal(req.Caches)
 	metadataJSON, _ := json.Marshal(req.Metadata)
 	stepPlanJSON, _ := json.Marshal(req.StepPlan)
@@ -35,31 +37,32 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 	}
 
 	if _, err := s.db.Exec(`
-		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json, status, created_utc)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), string(stepPlanJSON), protocol.JobExecutionStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
+		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json, status, created_utc)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(dependencyArtifactJobIDsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), string(stepPlanJSON), protocol.JobExecutionStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
 		return protocol.JobExecution{}, fmt.Errorf("insert job: %w", err)
 	}
 
 	return protocol.JobExecution{
-		ID:                   jobID,
-		Script:               req.Script,
-		Env:                  cloneMap(req.Env),
-		RequiredCapabilities: cloneMap(req.RequiredCapabilities),
-		TimeoutSeconds:       req.TimeoutSeconds,
-		ArtifactGlobs:        append([]string(nil), req.ArtifactGlobs...),
-		Caches:               cloneJobCaches(req.Caches),
-		Source:               cloneSource(req.Source),
-		Metadata:             cloneMap(req.Metadata),
-		StepPlan:             cloneJobStepPlan(req.StepPlan),
-		Status:               protocol.JobExecutionStatusQueued,
-		CreatedUTC:           now,
+		ID:                       jobID,
+		Script:                   req.Script,
+		Env:                      cloneMap(req.Env),
+		RequiredCapabilities:     cloneMap(req.RequiredCapabilities),
+		TimeoutSeconds:           req.TimeoutSeconds,
+		ArtifactGlobs:            append([]string(nil), req.ArtifactGlobs...),
+		DependencyArtifactJobIDs: append([]string(nil), dependencyArtifactJobIDs...),
+		Caches:                   cloneJobCaches(req.Caches),
+		Source:                   cloneSource(req.Source),
+		Metadata:                 cloneMap(req.Metadata),
+		StepPlan:                 cloneJobStepPlan(req.StepPlan),
+		Status:                   protocol.JobExecutionStatusQueued,
+		CreatedUTC:               now,
 	}, nil
 }
 
 func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, cache_stats_json, runtime_capabilities_json, current_step_text
 		FROM job_executions
 		ORDER BY created_utc DESC, id DESC
@@ -85,7 +88,7 @@ func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
 
 func (s *Store) GetJobExecution(id string) (protocol.JobExecution, error) {
 	row := s.db.QueryRow(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, cache_stats_json, runtime_capabilities_json, current_step_text
 		FROM job_executions WHERE id = ?
 	`, id)
@@ -158,7 +161,7 @@ func (s *Store) AgentHasActiveJobExecution(agentID string) (bool, error) {
 
 func (s *Store) ListQueuedJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
-		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
+		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, cache_stats_json, runtime_capabilities_json, current_step_text
 		FROM job_executions WHERE status = ?
 		ORDER BY created_utc ASC, id ASC

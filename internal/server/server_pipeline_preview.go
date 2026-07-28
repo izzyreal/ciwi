@@ -202,13 +202,9 @@ func (s *stateStore) previewPipelineChainDryRun(ch store.PersistedPipelineChain,
 		pending, err := s.preparePendingPipelineChainJobs(ch, sel)
 		return pending, false, "", nil, err
 	}
-	pipelines := make([]store.PersistedPipeline, 0, len(ch.Pipelines))
-	for _, pid := range ch.Pipelines {
-		p, err := s.pipelineStore().GetPipelineByProjectAndID(ch.ProjectName, strings.TrimSpace(pid))
-		if err != nil {
-			return nil, false, "", nil, fmt.Errorf("load pipeline %q in chain %q: %w", pid, ch.ChainID, err)
-		}
-		pipelines = append(pipelines, p)
+	pipelines, err := s.loadPipelineChainPipelines(ch)
+	if err != nil {
+		return nil, false, "", nil, err
 	}
 	firstDep, err := s.checkPipelineDependenciesWithReporter(pipelines[0], nil)
 	if err != nil {
@@ -293,7 +289,7 @@ func (s *stateStore) resolveCachedPreviewRunContext(p store.PersistedPipeline, d
 	if err != nil {
 		return pipelineRunContext{}, false, "", nil, fmt.Errorf("load job history for cached preview: %w", err)
 	}
-	cached, err := verifyDependencyRun(jobs, p.ProjectName, p.PipelineID)
+	cached, err := verifyDependencyRun(jobs, p.ProjectID, p.ProjectName, p.PipelineID)
 	if err != nil {
 		if hasPipelineVersioning(p) {
 			return pipelineRunContext{}, false, "", nil, fmt.Errorf("offline_cached_only requires a prior successful %q run: %w", p.PipelineID, err)

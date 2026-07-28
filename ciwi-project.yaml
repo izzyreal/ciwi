@@ -93,6 +93,11 @@ pipelines:
             kv_version: 2
     jobs:
       - id: github-release
+        artifact_sources:
+          - pipeline: build
+            job: build-cross-platform
+          - pipeline: codesign-macos
+            job: macos-codesign
         runs_on:
           executor: script
           shell: posix
@@ -223,6 +228,15 @@ pipelines:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: macos-codesign
+        artifact_sources:
+          - pipeline: build
+            job: build-cross-platform
+            matrix:
+              name: darwin-amd64
+          - pipeline: build
+            job: build-cross-platform
+            matrix:
+              name: darwin-arm64
         runs_on:
           executor: script
           shell: posix

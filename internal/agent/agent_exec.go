@@ -170,8 +170,10 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			return fmt.Errorf("report checkout completion: %w", err)
 		}
 	}
-	depJobIDs := dependencyArtifactJobIDs(job.Env)
+	depJobIDs := dependencyArtifactJobIDs(job.DependencyArtifactJobIDs)
 	if len(depJobIDs) > 0 {
+		restoredBy := map[string]string{}
+		allowEmptyDependencyArtifacts := strings.TrimSpace(job.Metadata["dry_run"]) == "1"
 		dependencyPhase := executionPhase(timeline, protocol.JobExecutionPhaseDependencies)
 		dependencyStarted := time.Now().UTC()
 		if err := reportPhaseUpdate(dependencyPhase, []protocol.JobExecutionEvent{phaseStartedEvent(dependencyPhase, dependencyStarted)}, nil); err != nil {
@@ -179,7 +181,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		}
 		fmt.Fprintf(&output, "[dep-artifacts] source_jobs=%s\n", strings.Join(depJobIDs, ","))
 		for _, depJobID := range depJobIDs {
-			note, depErr := downloadDependencyArtifacts(runCtx, client, serverURL, depJobID, execDir)
+			note, depErr := downloadDependencyArtifacts(runCtx, client, serverURL, depJobID, execDir, restoredBy, allowEmptyDependencyArtifacts)
 			if note != "" {
 				output.WriteString(note)
 				if !strings.HasSuffix(note, "\n") {

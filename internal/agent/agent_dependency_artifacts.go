@@ -25,7 +25,7 @@ const (
 	defaultDepArtifactLogMaxRestoredRows = 25
 )
 
-func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serverURL, jobID, execDir string) (string, error) {
+func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serverURL, jobID, execDir string, restoredBy map[string]string, allowEmpty bool) (string, error) {
 	var summary strings.Builder
 	logLevel, restoredLineLimit := dependencyArtifactLogConfigFromEnv()
 	if strings.TrimSpace(serverURL) == "" {
@@ -38,7 +38,7 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 		return "", fmt.Errorf("exec dir is required")
 	}
 
-	if zipSummary, err := downloadDependencyArtifactsZIP(ctx, client, serverURL, jobID, execDir, logLevel, restoredLineLimit); err == nil {
+	if zipSummary, err := downloadDependencyArtifactsZIP(ctx, client, serverURL, jobID, execDir, restoredBy, logLevel, restoredLineLimit); err == nil {
 		return zipSummary, nil
 	} else {
 		fmt.Fprintf(&summary, "[dep-artifacts] zip_fallback job=%s reason=%v\n", jobID, err)
@@ -63,8 +63,11 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 		return "", fmt.Errorf("decode artifact list: %w", err)
 	}
 	if len(payload.Artifacts) == 0 {
-		fmt.Fprintf(&summary, "[dep-artifacts] none from job=%s", jobID)
-		return summary.String(), nil
+		if allowEmpty {
+			fmt.Fprintf(&summary, "[dep-artifacts] dry_run_empty_source job=%s action=skip\n", jobID)
+			return strings.TrimSuffix(summary.String(), "\n"), nil
+		}
+		return summary.String(), fmt.Errorf("dependency job %s published no artifacts", jobID)
 	}
 	if logLevel != depArtifactLogLevelNone {
 		fmt.Fprintf(&summary, "[dep-artifacts] downloading=%d from job=%s\n", len(payload.Artifacts), jobID)
@@ -103,9 +106,11 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 		if readErr != nil {
 			return summary.String(), fmt.Errorf("read artifact %q: %w", a.Path, readErr)
 		}
+		logDependencyArtifactCollision(&summary, restoredBy, rel, jobID)
 		if err := writeDependencyArtifact(execDir, rel, content); err != nil {
 			return summary.String(), fmt.Errorf("write artifact %q: %w", a.Path, err)
 		}
+		recordDependencyArtifactOwner(restoredBy, rel, jobID)
 		restoredCount++
 		restoredBytes += int64(len(content))
 		if logLevel == depArtifactLogLevelVerbose {
@@ -118,8 +123,7 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 		}
 	}
 	if restoredCount == 0 {
-		fmt.Fprintf(&summary, "[dep-artifacts] none from job=%s", jobID)
-		return strings.TrimSuffix(summary.String(), "\n"), nil
+		return strings.TrimSuffix(summary.String(), "\n"), fmt.Errorf("dependency job %s published no restorable artifacts", jobID)
 	}
 	if logLevel == depArtifactLogLevelVerbose && restoredSuppressed > 0 {
 		fmt.Fprintf(&summary, "[dep-artifacts] restored_truncated=%d shown=%d total=%d\n", restoredSuppressed, restoredLinesShown, restoredCount)
@@ -130,7 +134,7 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 	return strings.TrimSuffix(summary.String(), "\n"), nil
 }
 
-func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, serverURL, jobID, execDir, logLevel string, restoredLineLimit int) (string, error) {
+func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, serverURL, jobID, execDir string, restoredBy map[string]string, logLevel string, restoredLineLimit int) (string, error) {
 	var summary strings.Builder
 	zipURL := strings.TrimRight(serverURL, "/") + "/api/v1/jobs/" + jobID + "/artifacts/download-all"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, zipURL, nil)
@@ -185,9 +189,11 @@ func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, se
 		if closeErr != nil {
 			return summary.String(), fmt.Errorf("close zip entry %q: %w", zf.Name, closeErr)
 		}
+		logDependencyArtifactCollision(&summary, restoredBy, rel, jobID)
 		if err := writeDependencyArtifact(execDir, rel, content); err != nil {
 			return summary.String(), fmt.Errorf("write artifact %q: %w", zf.Name, err)
 		}
+		recordDependencyArtifactOwner(restoredBy, rel, jobID)
 		restoredCount++
 		restoredBytes += int64(len(content))
 		if logLevel == depArtifactLogLevelVerbose {
@@ -200,8 +206,7 @@ func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, se
 		}
 	}
 	if restoredCount == 0 {
-		fmt.Fprintf(&summary, "[dep-artifacts] none from job=%s", jobID)
-		return summary.String(), nil
+		return summary.String(), fmt.Errorf("dependency job %s published no restorable artifacts", jobID)
 	}
 	if logLevel == depArtifactLogLevelVerbose && restoredSuppressed > 0 {
 		fmt.Fprintf(&summary, "[dep-artifacts] restored_truncated=%d shown=%d total=%d\n", restoredSuppressed, restoredLinesShown, restoredCount)
@@ -243,7 +248,7 @@ func resolveDependencyArtifactURL(serverURL, raw string) (string, error) {
 	return base.ResolveReference(ref).String(), nil
 }
 
-func dependencyArtifactJobIDs(env map[string]string) []string {
+func dependencyArtifactJobIDs(values []string) []string {
 	ids := make([]string, 0)
 	seen := map[string]struct{}{}
 	add := func(v string) {
@@ -257,10 +262,9 @@ func dependencyArtifactJobIDs(env map[string]string) []string {
 		seen[v] = struct{}{}
 		ids = append(ids, v)
 	}
-	for _, part := range strings.Split(strings.TrimSpace(env["CIWI_DEP_ARTIFACT_JOB_IDS"]), ",") {
-		add(part)
+	for _, value := range values {
+		add(value)
 	}
-	add(env["CIWI_DEP_ARTIFACT_JOB_ID"])
 	if len(ids) == 0 {
 		return nil
 	}
@@ -273,6 +277,21 @@ func writeDependencyArtifact(execDir, rel string, content []byte) error {
 		return err
 	}
 	return os.WriteFile(dst, content, 0o644)
+}
+
+func logDependencyArtifactCollision(summary *strings.Builder, restoredBy map[string]string, rel, jobID string) {
+	if summary == nil || restoredBy == nil {
+		return
+	}
+	if previous, ok := restoredBy[rel]; ok {
+		fmt.Fprintf(summary, "[dep-artifacts] collision path=%s previous_job=%s source_job=%s action=overwrite\n", rel, previous, jobID)
+	}
+}
+
+func recordDependencyArtifactOwner(restoredBy map[string]string, rel, jobID string) {
+	if restoredBy != nil {
+		restoredBy[rel] = jobID
+	}
 }
 
 func dependencyArtifactLogConfigFromEnv() (level string, restoredLineLimit int) {

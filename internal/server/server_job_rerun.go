@@ -25,7 +25,7 @@ func (s *stateStore) prepareJobExecutionRerun(original protocol.JobExecution, re
 	if err := validateRerunNeeds(original, effective); err != nil {
 		return err
 	}
-	pipeline, err := s.pipelineStore().GetPipelineByProjectAndID(projectName, pipelineID)
+	pipeline, err := s.getPipelineForJobExecution(original)
 	if err != nil {
 		// The stored execution remains rerunnable even if a later project
 		// definition removed or renamed its pipeline.
@@ -42,17 +42,15 @@ func (s *stateStore) prepareJobExecutionRerun(original protocol.JobExecution, re
 	if err != nil {
 		return fmt.Errorf("rerun dependencies are not satisfied: %w", err)
 	}
-	if req.Env == nil {
-		req.Env = map[string]string{}
-	}
-	delete(req.Env, "CIWI_DEP_ARTIFACT_JOB_ID")
-	delete(req.Env, "CIWI_DEP_ARTIFACT_JOB_IDS")
+	req.DependencyArtifactJobIDs = nil
 	for _, key := range []string{"chain_cancelled", "dependency_blocked", "needs_blocked"} {
 		delete(req.Metadata, key)
 	}
-	for key, value := range dependencyArtifactEnv(original, dependsOn, depCtx) {
-		req.Env[key] = value
+	dependencyArtifactJobIDs, err := dependencyArtifactJobIDsForJob(original, depCtx)
+	if err != nil {
+		return fmt.Errorf("resolve rerun artifact sources: %w", err)
 	}
+	req.DependencyArtifactJobIDs = dependencyArtifactJobIDs
 	return nil
 }
 

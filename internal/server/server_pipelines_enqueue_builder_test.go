@@ -446,6 +446,102 @@ pipelines:
 	}
 }
 
+func TestEnqueuePersistedPipelineRestoresOnlyExplicitArtifactSources(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	s := &stateStore{db: db}
+
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on: {os: linux}
+        artifacts: [dist/**]
+        matrix:
+          include:
+            - name: linux-amd64
+              os: linux
+            - name: darwin-arm64
+              os: darwin
+        steps:
+          - run: echo build
+  - id: release
+    depends_on: [build]
+    jobs:
+      - id: publish
+        artifact_sources:
+          - pipeline: build
+            job: compile
+            matrix:
+              os: darwin
+        runs_on: {os: linux}
+        steps:
+          - run: echo publish
+`), "explicit-artifact-enqueue")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if err := db.LoadConfig(cfg, "ciwi-project.yaml", "", "", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	createSucceeded := func(name, matrixOS string) protocol.JobExecution {
+		t.Helper()
+		job, err := db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+			Script:        "echo build",
+			ArtifactGlobs: []string{"dist/**"},
+			Metadata: map[string]string{
+				"project":         "ciwi",
+				"pipeline_id":     "build",
+				"pipeline_run_id": "build-run-1",
+				"pipeline_job_id": "compile",
+				"matrix_name":     name,
+				"matrix_var.name": name,
+				"matrix_var.os":   matrixOS,
+			},
+		})
+		if err != nil {
+			t.Fatalf("create upstream execution: %v", err)
+		}
+		job, err = db.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID: "agent-1",
+			Status:  protocol.JobExecutionStatusSucceeded,
+		})
+		if err != nil {
+			t.Fatalf("succeed upstream execution: %v", err)
+		}
+		return job
+	}
+	_ = createSucceeded("linux-amd64", "linux")
+	darwin := createSucceeded("darwin-arm64", "darwin")
+
+	pipeline, err := db.GetPipelineByProjectAndID("ciwi", "release")
+	if err != nil {
+		t.Fatalf("get release pipeline: %v", err)
+	}
+	response, err := s.enqueuePersistedPipeline(pipeline, nil)
+	if err != nil {
+		t.Fatalf("enqueue release: %v", err)
+	}
+	job, err := db.GetJobExecution(response.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatalf("get release execution: %v", err)
+	}
+	if got := job.DependencyArtifactJobIDs; len(got) != 1 || got[0] != darwin.ID {
+		t.Fatalf("expected only Darwin artifact execution %q, got %v", darwin.ID, got)
+	}
+	if strings.TrimSpace(job.Metadata[artifactSourcesMetadataKey]) == "" {
+		t.Fatalf("expected explicit artifact sources in execution metadata")
+	}
+}
+
 func TestEnqueuePersistedPipelineWithoutExplicitRefPinsDefaultBranchCommit(t *testing.T) {
 	repoURL, _, _ := createTestRemoteGitRepo(t)
 	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`

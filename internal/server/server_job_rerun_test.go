@@ -27,6 +27,9 @@ pipelines:
     jobs:
       - id: package-job
         runs_on: {os: darwin}
+        artifact_sources:
+          - pipeline: codesign
+            job: codesign-job
         steps:
           - run: echo package
 `), "rerun-healing")
@@ -68,22 +71,31 @@ pipelines:
 		t.Fatalf("succeed retried upstream: %v", err)
 	}
 
+	artifactSourcesJSON, err := encodeArtifactSources([]config.PipelineJobArtifactSource{{
+		Pipeline: "codesign",
+		Job:      "codesign-job",
+	}})
+	if err != nil {
+		t.Fatalf("encode artifact sources: %v", err)
+	}
 	originalPackage := protocol.JobExecution{
-		ID:  "package-original",
-		Env: map[string]string{"CIWI_DEP_ARTIFACT_JOB_ID": originalUpstream.ID, "CIWI_DEP_ARTIFACT_JOB_IDS": originalUpstream.ID},
+		ID:                       "package-original",
+		DependencyArtifactJobIDs: []string{originalUpstream.ID},
 		Metadata: map[string]string{
 			"project": "ciwi", "pipeline_id": "package", "pipeline_run_id": "run-package",
 			"pipeline_job_id": "package-job", "chain_run_id": "chain-1",
+			artifactSourcesMetadataKey: artifactSourcesJSON,
 		},
 	}
-	req := protocol.CreateJobExecutionRequest{Env: map[string]string{
-		"CIWI_DEP_ARTIFACT_JOB_ID": originalUpstream.ID, "CIWI_DEP_ARTIFACT_JOB_IDS": originalUpstream.ID,
-	}, Metadata: map[string]string{}}
+	req := protocol.CreateJobExecutionRequest{
+		DependencyArtifactJobIDs: []string{originalUpstream.ID},
+		Metadata:                 map[string]string{},
+	}
 	if err := s.prepareJobExecutionRerun(originalPackage, &req); err != nil {
 		t.Fatalf("prepare package rerun: %v", err)
 	}
-	if got := req.Env["CIWI_DEP_ARTIFACT_JOB_IDS"]; got != retriedUpstream.ID {
-		t.Fatalf("expected artifacts to rebind to %q, got %q", retriedUpstream.ID, got)
+	if got := req.DependencyArtifactJobIDs; len(got) != 1 || got[0] != retriedUpstream.ID {
+		t.Fatalf("expected artifacts to rebind to %q, got %v", retriedUpstream.ID, got)
 	}
 	if terminated, succeeded, exists := pipelineChainStatus([]protocol.JobExecution{originalUpstream, retriedUpstream}, "chain-1", "codesign"); !exists || !terminated || !succeeded {
 		t.Fatalf("expected retried pipeline to heal chain status, exists=%v terminated=%v succeeded=%v", exists, terminated, succeeded)

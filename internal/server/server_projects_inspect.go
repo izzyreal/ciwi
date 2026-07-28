@@ -331,13 +331,14 @@ func persistedPipelineToConfigPipeline(p store.PersistedPipeline) config.Pipelin
 
 func persistedPipelineJobToConfigJob(j store.PersistedPipelineJob) config.PipelineJobSpec {
 	spec := config.PipelineJobSpec{
-		ID:             strings.TrimSpace(j.ID),
-		Needs:          append([]string(nil), j.Needs...),
-		RunsOn:         cloneMap(j.RunsOn),
-		TimeoutSeconds: j.TimeoutSeconds,
-		Artifacts:      append([]string(nil), j.Artifacts...),
-		Caches:         append([]config.PipelineJobCacheSpec(nil), j.Caches...),
-		Steps:          clonePipelineJobSteps(j.Steps),
+		ID:              strings.TrimSpace(j.ID),
+		Needs:           append([]string(nil), j.Needs...),
+		ArtifactSources: clonePipelineJobArtifactSources(j.ArtifactSources),
+		RunsOn:          cloneMap(j.RunsOn),
+		TimeoutSeconds:  j.TimeoutSeconds,
+		Artifacts:       append([]string(nil), j.Artifacts...),
+		Caches:          append([]config.PipelineJobCacheSpec(nil), j.Caches...),
+		Steps:           clonePipelineJobSteps(j.Steps),
 	}
 	if len(j.MatrixInclude) > 0 {
 		spec.Matrix.Include = make([]map[string]string, 0, len(j.MatrixInclude))
@@ -354,6 +355,19 @@ func persistedPipelineJobToConfigJob(j store.PersistedPipelineJob) config.Pipeli
 		}
 	}
 	return spec
+}
+
+func clonePipelineJobArtifactSources(in []config.PipelineJobArtifactSource) []config.PipelineJobArtifactSource {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]config.PipelineJobArtifactSource, 0, len(in))
+	for _, source := range in {
+		item := source
+		item.Matrix = cloneMap(source.Matrix)
+		out = append(out, item)
+	}
+	return out
 }
 
 func clonePipelineJobSteps(in []config.PipelineJobStep) []config.PipelineJobStep {

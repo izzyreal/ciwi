@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -44,66 +45,70 @@ func cloneProtocolJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec 
 	return out
 }
 
-func resolveDependencyArtifactJobID(dependsOn []string, depArtifactJobIDs map[string]string, jobID string, vars map[string]string) string {
-	if len(dependsOn) == 0 || len(depArtifactJobIDs) == 0 {
-		return ""
+const artifactSourcesMetadataKey = "artifact_sources_json"
+
+func resolveDependencyArtifactJobIDs(sources []config.PipelineJobArtifactSource, depCtx pipelineDependencyContext) ([]string, error) {
+	if len(sources) == 0 {
+		return nil, nil
 	}
-	candidates := []string{
-		strings.TrimSpace(vars["name"]),
-		strings.TrimSpace(vars["build_target"]),
-		strings.TrimSpace(jobID),
-	}
-	if strings.HasPrefix(jobID, "release-") {
-		candidates = append(candidates, strings.TrimSpace(strings.TrimPrefix(jobID, "release-")))
-	}
-	for _, depID := range dependsOn {
-		depID = strings.TrimSpace(depID)
-		if depID == "" {
-			continue
-		}
-		for _, c := range candidates {
-			c = strings.TrimSpace(c)
-			if c == "" {
+	out := make([]string, 0, len(sources))
+	seen := map[string]struct{}{}
+	for _, source := range sources {
+		pipelineID := strings.TrimSpace(source.Pipeline)
+		jobID := strings.TrimSpace(source.Job)
+		matched := 0
+		for _, execution := range depCtx.ArtifactExecutions[pipelineID] {
+			if strings.TrimSpace(execution.Job) != jobID || !artifactSourceMatrixMatches(source.Matrix, execution.Matrix) {
 				continue
 			}
-			if v := strings.TrimSpace(depArtifactJobIDs[depID+":"+c]); v != "" {
-				return v
+			matched++
+			executionID := strings.TrimSpace(execution.ID)
+			if executionID == "" {
+				continue
 			}
+			if _, ok := seen[executionID]; ok {
+				continue
+			}
+			out = append(out, executionID)
+			seen[executionID] = struct{}{}
+		}
+		if matched == 0 {
+			return nil, fmt.Errorf("artifact source pipeline=%q job=%q matrix=%v matched no successful artifact-producing execution", pipelineID, jobID, source.Matrix)
 		}
 	}
-	return ""
+	return out, nil
 }
 
-func resolveDependencyArtifactJobIDs(dependsOn []string, depArtifactJobIDsAll map[string][]string, preferred string) []string {
-	if p := strings.TrimSpace(preferred); p != "" {
-		return []string{p}
-	}
-	if len(dependsOn) == 0 || len(depArtifactJobIDsAll) == 0 {
-		return nil
-	}
-	out := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, depID := range dependsOn {
-		depID = strings.TrimSpace(depID)
-		if depID == "" {
-			continue
-		}
-		for _, id := range depArtifactJobIDsAll[depID] {
-			id = strings.TrimSpace(id)
-			if id == "" {
-				continue
-			}
-			if _, ok := seen[id]; ok {
-				continue
-			}
-			out = append(out, id)
-			seen[id] = struct{}{}
+func artifactSourceMatrixMatches(selector, matrix map[string]string) bool {
+	for key, value := range selector {
+		if matrix[key] != value {
+			return false
 		}
 	}
-	if len(out) == 0 {
-		return nil
+	return true
+}
+
+func encodeArtifactSources(sources []config.PipelineJobArtifactSource) (string, error) {
+	if len(sources) == 0 {
+		return "", nil
 	}
-	return out
+	payload, err := json.Marshal(sources)
+	if err != nil {
+		return "", fmt.Errorf("encode artifact sources: %w", err)
+	}
+	return string(payload), nil
+}
+
+func decodeArtifactSources(metadata map[string]string) ([]config.PipelineJobArtifactSource, error) {
+	raw := strings.TrimSpace(metadata[artifactSourcesMetadataKey])
+	if raw == "" {
+		return nil, nil
+	}
+	var sources []config.PipelineJobArtifactSource
+	if err := json.Unmarshal([]byte(raw), &sources); err != nil {
+		return nil, fmt.Errorf("decode artifact sources: %w", err)
+	}
+	return sources, nil
 }
 
 func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem {
