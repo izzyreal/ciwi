@@ -22,18 +22,19 @@ type enqueuePipelineOptions struct {
 }
 
 type pendingJob struct {
-	pipelineJobID  string
-	needs          []string
-	script         string
-	env            map[string]string
-	requiredCaps   map[string]string
-	timeoutSeconds int
-	artifactGlobs  []string
-	caches         []protocol.JobCacheSpec
-	sourceRepo     string
-	sourceRef      string
-	metadata       map[string]string
-	stepPlan       []protocol.JobStepPlanItem
+	pipelineJobID            string
+	needs                    []string
+	script                   string
+	env                      map[string]string
+	requiredCaps             map[string]string
+	timeoutSeconds           int
+	artifactGlobs            []string
+	dependencyArtifactJobIDs []string
+	caches                   []protocol.JobCacheSpec
+	sourceRepo               string
+	sourceRef                string
+	metadata                 map[string]string
+	stepPlan                 []protocol.JobStepPlanItem
 }
 
 func (s *stateStore) enqueuePersistedPipeline(p store.PersistedPipeline, selection *protocol.RunPipelineSelectionRequest) (protocol.RunPipelineResponse, error) {
@@ -170,15 +171,16 @@ func (s *stateStore) persistPendingJobs(pending []pendingJob) ([]string, error) 
 			source = &protocol.SourceSpec{Repo: spec.sourceRepo, Ref: spec.sourceRef}
 		}
 		job, err := s.pipelineStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
-			Script:               spec.script,
-			Env:                  cloneMap(spec.env),
-			RequiredCapabilities: spec.requiredCaps,
-			TimeoutSeconds:       spec.timeoutSeconds,
-			ArtifactGlobs:        append([]string(nil), spec.artifactGlobs...),
-			Caches:               cloneProtocolJobCaches(spec.caches),
-			Source:               source,
-			Metadata:             spec.metadata,
-			StepPlan:             cloneJobStepPlan(spec.stepPlan),
+			Script:                   spec.script,
+			Env:                      cloneMap(spec.env),
+			RequiredCapabilities:     spec.requiredCaps,
+			TimeoutSeconds:           spec.timeoutSeconds,
+			ArtifactGlobs:            append([]string(nil), spec.artifactGlobs...),
+			DependencyArtifactJobIDs: append([]string(nil), spec.dependencyArtifactJobIDs...),
+			Caches:                   cloneProtocolJobCaches(spec.caches),
+			Source:                   source,
+			Metadata:                 spec.metadata,
+			StepPlan:                 cloneJobStepPlan(spec.stepPlan),
 		})
 		if err != nil {
 			return nil, err

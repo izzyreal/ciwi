@@ -76,15 +76,16 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 	metadata[protocol.JobMetadataAttemptRootJobID] = rootID
 	metadata[protocol.JobMetadataRerunOfJobID] = job.ID
 	request := protocol.CreateJobExecutionRequest{
-		Script:               job.Script,
-		Env:                  cloneStringMap(job.Env),
-		RequiredCapabilities: cloneStringMap(job.RequiredCapabilities),
-		TimeoutSeconds:       job.TimeoutSeconds,
-		ArtifactGlobs:        append([]string(nil), job.ArtifactGlobs...),
-		Caches:               cloneJobCaches(job.Caches),
-		Source:               cloneSource(job.Source),
-		Metadata:             metadata,
-		StepPlan:             cloneJobStepPlan(job.StepPlan),
+		Script:                   job.Script,
+		Env:                      cloneStringMap(job.Env),
+		RequiredCapabilities:     cloneStringMap(job.RequiredCapabilities),
+		TimeoutSeconds:           job.TimeoutSeconds,
+		ArtifactGlobs:            append([]string(nil), job.ArtifactGlobs...),
+		DependencyArtifactJobIDs: append([]string(nil), job.DependencyArtifactJobIDs...),
+		Caches:                   cloneJobCaches(job.Caches),
+		Source:                   cloneSource(job.Source),
+		Metadata:                 metadata,
+		StepPlan:                 cloneJobStepPlan(job.StepPlan),
 	}
 	if deps.PrepareRerun != nil {
 		if err := deps.PrepareRerun(job, &request); err != nil {

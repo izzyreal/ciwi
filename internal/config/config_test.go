@@ -291,6 +291,102 @@ pipelines:
 	}
 }
 
+func TestParseAcceptsExplicitArtifactSources(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: explicit-artifacts
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on: {os: linux}
+        artifacts: [dist/**]
+        matrix:
+          include:
+            - name: linux-amd64
+              os: linux
+              arch: amd64
+            - name: darwin-arm64
+              os: darwin
+              arch: arm64
+        steps:
+          - run: echo build
+  - id: release
+    depends_on: [build]
+    jobs:
+      - id: publish
+        artifact_sources:
+          - pipeline: build
+            job: compile
+            matrix:
+              os: darwin
+              arch: arm64
+        runs_on: {os: linux}
+        steps:
+          - run: echo publish
+`), "explicit-artifacts")
+	if err != nil {
+		t.Fatalf("parse explicit artifact sources: %v", err)
+	}
+	source := cfg.Pipelines[1].Jobs[0].ArtifactSources[0]
+	if source.Pipeline != "build" || source.Job != "compile" || source.Matrix["os"] != "darwin" {
+		t.Fatalf("unexpected artifact source: %+v", source)
+	}
+}
+
+func TestParseRejectsInvalidExplicitArtifactSources(t *testing.T) {
+	tests := []struct {
+		name      string
+		dependsOn string
+		artifacts string
+		sourceJob string
+		matrix    string
+		want      string
+	}{
+		{name: "not direct dependency", dependsOn: "[]", artifacts: "[dist/**]", sourceJob: "compile", want: "must be listed"},
+		{name: "unknown job", dependsOn: "[build]", artifacts: "[dist/**]", sourceJob: "missing", want: "unknown job"},
+		{name: "producer declares no artifacts", dependsOn: "[build]", artifacts: "[]", sourceJob: "compile", want: "declares no artifacts"},
+		{name: "unknown matrix key", dependsOn: "[build]", artifacts: "[dist/**]", sourceJob: "compile", matrix: "\n              missing: value", want: "unknown matrix key"},
+		{name: "matrix matches nothing", dependsOn: "[build]", artifacts: "[dist/**]", sourceJob: "compile", matrix: "\n              name: windows-amd64", want: "matches no matrix entry"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(`
+version: 1
+project:
+  name: explicit-artifacts
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on: {os: linux}
+        artifacts: `+tt.artifacts+`
+        matrix:
+          include:
+            - name: linux-amd64
+              os: linux
+        steps:
+          - run: echo build
+  - id: release
+    depends_on: `+tt.dependsOn+`
+    jobs:
+      - id: publish
+        artifact_sources:
+          - pipeline: build
+            job: `+tt.sourceJob+`
+            matrix:`+tt.matrix+`
+        runs_on: {os: linux}
+        steps:
+          - run: echo publish
+`), tt.name)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestParseAcceptsJobNeeds(t *testing.T) {
 	cfg, err := Parse([]byte(`
 version: 1

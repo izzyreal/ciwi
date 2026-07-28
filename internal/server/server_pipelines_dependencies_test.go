@@ -20,7 +20,9 @@ func TestVerifyDependencyRunUsesLatestSuccessfulOfLatestVersion(t *testing.T) {
 				"pipeline_run_id":      "run-old",
 				"pipeline_version_raw": "1.2.3",
 				"pipeline_version":     "v1.2.3",
+				"pipeline_job_id":      "compile",
 				"build_target":         "linux-amd64",
+				"matrix_name":          "linux-amd64",
 			},
 			ArtifactGlobs: []string{"dist/**"},
 		},
@@ -38,16 +40,29 @@ func TestVerifyDependencyRunUsesLatestSuccessfulOfLatestVersion(t *testing.T) {
 		},
 	}
 
-	ctx, err := verifyDependencyRun(jobs, "ciwi", "build")
+	ctx, err := verifyDependencyRun(jobs, 0, "ciwi", "build")
 	if err != nil {
 		t.Fatalf("verify dependency run: %v", err)
 	}
 	if ctx.VersionRaw != "1.2.3" || ctx.Version != "v1.2.3" {
 		t.Fatalf("unexpected dependency version: raw=%q tagged=%q", ctx.VersionRaw, ctx.Version)
 	}
-	if got := ctx.ArtifactJobIDs["linux-amd64"]; got != "build-ok-a" {
+	if got := testArtifactExecutionID(ctx, "build", "", "linux-amd64"); got != "build-ok-a" {
 		t.Fatalf("expected artifact job from successful run, got %q", got)
 	}
+}
+
+func testArtifactExecutionID(ctx pipelineDependencyContext, pipelineID, jobID, matrixName string) string {
+	for _, execution := range ctx.ArtifactExecutions[pipelineID] {
+		if jobID != "" && execution.Job != jobID {
+			continue
+		}
+		if matrixName != "" && execution.Matrix["name"] != matrixName {
+			continue
+		}
+		return execution.ID
+	}
+	return ""
 }
 
 func TestVerifyDependencyRunRejectsCrossVersionSuccessfulFallback(t *testing.T) {
@@ -79,7 +94,7 @@ func TestVerifyDependencyRunRejectsCrossVersionSuccessfulFallback(t *testing.T) 
 		},
 	}
 
-	if _, err := verifyDependencyRun(jobs, "ciwi", "build"); err == nil {
+	if _, err := verifyDependencyRun(jobs, 0, "ciwi", "build"); err == nil {
 		t.Fatalf("expected dependency verification to fail when latest version has no successful run")
 	}
 }
@@ -103,7 +118,7 @@ func TestVerifyDependencyRunReturnsSourceRepoAndResolvedRef(t *testing.T) {
 		},
 	}
 
-	ctx, err := verifyDependencyRun(jobs, "ciwi", "build")
+	ctx, err := verifyDependencyRun(jobs, 0, "ciwi", "build")
 	if err != nil {
 		t.Fatalf("verify dependency run: %v", err)
 	}
@@ -112,5 +127,47 @@ func TestVerifyDependencyRunReturnsSourceRepoAndResolvedRef(t *testing.T) {
 	}
 	if ctx.SourceRefResolved != "deadbeef" {
 		t.Fatalf("unexpected source ref resolved: %q", ctx.SourceRefResolved)
+	}
+}
+
+func TestVerifyDependencyRunScopesSameNamedProjectsByProjectID(t *testing.T) {
+	base := time.Now().UTC()
+	jobs := []protocol.JobExecution{
+		{
+			ID:            "branch-build-ok",
+			Status:        protocol.JobExecutionStatusSucceeded,
+			CreatedUTC:    base.Add(-time.Minute),
+			ArtifactGlobs: []string{"dist/**"},
+			Metadata: map[string]string{
+				"project":         "ciwi",
+				"project_id":      "2",
+				"pipeline_id":     "build",
+				"pipeline_run_id": "branch-run",
+				"pipeline_job_id": "compile",
+				"matrix_var.name": "darwin-arm64",
+			},
+		},
+		{
+			ID:         "main-build-failed",
+			Status:     protocol.JobExecutionStatusFailed,
+			CreatedUTC: base,
+			Metadata: map[string]string{
+				"project":         "ciwi",
+				"project_id":      "1",
+				"pipeline_id":     "build",
+				"pipeline_run_id": "main-run",
+			},
+		},
+	}
+
+	ctx, err := verifyDependencyRun(jobs, 2, "ciwi", "build")
+	if err != nil {
+		t.Fatalf("verify branch dependency run: %v", err)
+	}
+	if got := testArtifactExecutionID(ctx, "build", "compile", "darwin-arm64"); got != "branch-build-ok" {
+		t.Fatalf("expected branch artifact execution, got %q", got)
+	}
+	if _, err := verifyDependencyRun(jobs, 1, "ciwi", "build"); err == nil {
+		t.Fatalf("expected failed main project dependency to remain unsatisfied")
 	}
 }

@@ -32,45 +32,47 @@ type JobCacheSpec struct {
 }
 
 type CreateJobExecutionRequest struct {
-	Script               string            `json:"script"`
-	Env                  map[string]string `json:"env,omitempty"`
-	RequiredCapabilities map[string]string `json:"required_capabilities"`
-	TimeoutSeconds       int               `json:"timeout_seconds"`
-	ArtifactGlobs        []string          `json:"artifact_globs,omitempty"`
-	Caches               []JobCacheSpec    `json:"caches,omitempty"`
-	Source               *SourceSpec       `json:"source,omitempty"`
-	Metadata             map[string]string `json:"metadata,omitempty"`
-	StepPlan             []JobStepPlanItem `json:"step_plan,omitempty"`
+	Script                   string            `json:"script"`
+	Env                      map[string]string `json:"env,omitempty"`
+	RequiredCapabilities     map[string]string `json:"required_capabilities"`
+	TimeoutSeconds           int               `json:"timeout_seconds"`
+	ArtifactGlobs            []string          `json:"artifact_globs,omitempty"`
+	DependencyArtifactJobIDs []string          `json:"dependency_artifact_job_ids,omitempty"`
+	Caches                   []JobCacheSpec    `json:"caches,omitempty"`
+	Source                   *SourceSpec       `json:"source,omitempty"`
+	Metadata                 map[string]string `json:"metadata,omitempty"`
+	StepPlan                 []JobStepPlanItem `json:"step_plan,omitempty"`
 }
 
 type JobExecution struct {
-	ID                    string                   `json:"id"`
-	Script                string                   `json:"script"`
-	Env                   map[string]string        `json:"env,omitempty"`
-	RequiredCapabilities  map[string]string        `json:"required_capabilities"`
-	TimeoutSeconds        int                      `json:"timeout_seconds"`
-	ArtifactGlobs         []string                 `json:"artifact_globs,omitempty"`
-	Caches                []JobCacheSpec           `json:"caches,omitempty"`
-	Source                *SourceSpec              `json:"source,omitempty"`
-	Metadata              map[string]string        `json:"metadata,omitempty"`
-	StepPlan              []JobStepPlanItem        `json:"step_plan,omitempty"`
-	CurrentStep           string                   `json:"current_step,omitempty"`
-	CacheStats            []JobCacheStats          `json:"cache_stats,omitempty"`
-	RuntimeCapabilities   map[string]string        `json:"runtime_capabilities,omitempty"`
-	Status                string                   `json:"status"`
-	CreatedUTC            time.Time                `json:"created_utc"`
-	StartedUTC            time.Time                `json:"started_utc,omitempty"`
-	FinishedUTC           time.Time                `json:"finished_utc,omitempty"`
-	LeasedByAgentID       string                   `json:"leased_by_agent_id,omitempty"`
-	LeasedUTC             time.Time                `json:"leased_utc,omitempty"`
-	ExitCode              *int                     `json:"exit_code,omitempty"`
-	Error                 string                   `json:"error,omitempty"`
-	TestSummary           *JobExecutionTestSummary `json:"test_summary,omitempty"`
-	UnmetRequirements     []string                 `json:"unmet_requirements,omitempty"`
-	SensitiveValues       []string                 `json:"sensitive_values,omitempty"`
-	ExpectedDurationMS    int64                    `json:"expected_duration_ms,omitempty"`
-	StepExpectedDuration  map[int]int64            `json:"step_expected_duration_ms,omitempty"`
-	PhaseExpectedDuration map[string]int64         `json:"phase_expected_duration_ms,omitempty"`
+	ID                       string                   `json:"id"`
+	Script                   string                   `json:"script"`
+	Env                      map[string]string        `json:"env,omitempty"`
+	RequiredCapabilities     map[string]string        `json:"required_capabilities"`
+	TimeoutSeconds           int                      `json:"timeout_seconds"`
+	ArtifactGlobs            []string                 `json:"artifact_globs,omitempty"`
+	DependencyArtifactJobIDs []string                 `json:"dependency_artifact_job_ids,omitempty"`
+	Caches                   []JobCacheSpec           `json:"caches,omitempty"`
+	Source                   *SourceSpec              `json:"source,omitempty"`
+	Metadata                 map[string]string        `json:"metadata,omitempty"`
+	StepPlan                 []JobStepPlanItem        `json:"step_plan,omitempty"`
+	CurrentStep              string                   `json:"current_step,omitempty"`
+	CacheStats               []JobCacheStats          `json:"cache_stats,omitempty"`
+	RuntimeCapabilities      map[string]string        `json:"runtime_capabilities,omitempty"`
+	Status                   string                   `json:"status"`
+	CreatedUTC               time.Time                `json:"created_utc"`
+	StartedUTC               time.Time                `json:"started_utc,omitempty"`
+	FinishedUTC              time.Time                `json:"finished_utc,omitempty"`
+	LeasedByAgentID          string                   `json:"leased_by_agent_id,omitempty"`
+	LeasedUTC                time.Time                `json:"leased_utc,omitempty"`
+	ExitCode                 *int                     `json:"exit_code,omitempty"`
+	Error                    string                   `json:"error,omitempty"`
+	TestSummary              *JobExecutionTestSummary `json:"test_summary,omitempty"`
+	UnmetRequirements        []string                 `json:"unmet_requirements,omitempty"`
+	SensitiveValues          []string                 `json:"sensitive_values,omitempty"`
+	ExpectedDurationMS       int64                    `json:"expected_duration_ms,omitempty"`
+	StepExpectedDuration     map[int]int64            `json:"step_expected_duration_ms,omitempty"`
+	PhaseExpectedDuration    map[string]int64         `json:"phase_expected_duration_ms,omitempty"`
 }
 
 type CreateJobExecutionResponse struct {
@@ -148,15 +150,22 @@ type MatrixInclude struct {
 }
 
 type PipelineJobDetail struct {
-	ID             string            `json:"id"`
-	Needs          []string          `json:"needs,omitempty"`
-	TimeoutSeconds int               `json:"timeout_seconds"`
-	RunsOn         map[string]string `json:"runs_on,omitempty"`
-	RequiresTools  map[string]string `json:"requires_tools,omitempty"`
-	Artifacts      []string          `json:"artifacts,omitempty"`
-	Caches         []JobCacheSpec    `json:"caches,omitempty"`
-	Steps          []PipelineStep    `json:"steps,omitempty"`
-	MatrixIncludes []MatrixInclude   `json:"matrix_includes,omitempty"`
+	ID              string                      `json:"id"`
+	Needs           []string                    `json:"needs,omitempty"`
+	ArtifactSources []PipelineJobArtifactSource `json:"artifact_sources,omitempty"`
+	TimeoutSeconds  int                         `json:"timeout_seconds"`
+	RunsOn          map[string]string           `json:"runs_on,omitempty"`
+	RequiresTools   map[string]string           `json:"requires_tools,omitempty"`
+	Artifacts       []string                    `json:"artifacts,omitempty"`
+	Caches          []JobCacheSpec              `json:"caches,omitempty"`
+	Steps           []PipelineStep              `json:"steps,omitempty"`
+	MatrixIncludes  []MatrixInclude             `json:"matrix_includes,omitempty"`
+}
+
+type PipelineJobArtifactSource struct {
+	Pipeline string            `json:"pipeline"`
+	Job      string            `json:"job"`
+	Matrix   map[string]string `json:"matrix,omitempty"`
 }
 
 type PipelineStep struct {

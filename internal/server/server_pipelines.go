@@ -16,13 +16,20 @@ import (
 type resolveStepReporter func(step, status, message string)
 
 type pipelineDependencyContext struct {
-	VersionRaw        string
-	Version           string
-	SourceRepo        string
-	SourceRefRaw      string
-	SourceRefResolved string
-	ArtifactJobIDs    map[string]string
-	ArtifactJobIDsAll map[string][]string
+	VersionRaw         string
+	Version            string
+	SourceRepo         string
+	SourceRefRaw       string
+	SourceRefResolved  string
+	ArtifactExecutions map[string][]dependencyArtifactExecution
+}
+
+type dependencyArtifactExecution struct {
+	ID          string
+	Pipeline    string
+	Job         string
+	MatrixIndex int
+	Matrix      map[string]string
 }
 
 type pipelineRunContext struct {
@@ -165,13 +172,9 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 	if len(ch.Pipelines) == 0 {
 		return protocol.RunPipelineResponse{}, fmt.Errorf("pipeline chain has no pipelines")
 	}
-	pipelines := make([]store.PersistedPipeline, 0, len(ch.Pipelines))
-	for _, pid := range ch.Pipelines {
-		p, err := s.pipelineStore().GetPipelineByProjectAndID(ch.ProjectName, strings.TrimSpace(pid))
-		if err != nil {
-			return protocol.RunPipelineResponse{}, fmt.Errorf("load pipeline %q in chain %q: %w", pid, ch.ChainID, err)
-		}
-		pipelines = append(pipelines, p)
+	pipelines, err := s.loadPipelineChainPipelines(ch)
+	if err != nil {
+		return protocol.RunPipelineResponse{}, err
 	}
 	chainRunID := fmt.Sprintf("chain-%d", time.Now().UTC().UnixNano())
 	firstDep, err := s.checkPipelineDependenciesWithReporter(pipelines[0], nil)

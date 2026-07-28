@@ -149,6 +149,47 @@ func (s *Store) MergeJobExecutionEnv(jobID string, patch map[string]string) (map
 	})
 }
 
+func (s *Store) SetJobExecutionDependencyArtifactJobIDs(jobID string, ids []string) ([]string, error) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, fmt.Errorf("job id is required")
+	}
+	normalized := normalizeDependencyArtifactJobIDs(ids)
+	payload, _ := json.Marshal(normalized)
+	result, err := s.db.Exec(`
+		UPDATE job_executions
+		SET dependency_artifact_job_ids_json = ?
+		WHERE id = ?
+	`, string(payload), jobID)
+	if err != nil {
+		return nil, fmt.Errorf("update dependency artifact job ids: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("dependency artifact job ids rows affected: %w", err)
+	}
+	if affected == 0 {
+		return nil, fmt.Errorf("job not found")
+	}
+	return append([]string(nil), normalized...), nil
+}
+
+func normalizeDependencyArtifactJobIDs(ids []string) []string {
+	normalized := make([]string, 0, len(ids))
+	seen := map[string]struct{}{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	return normalized
+}
+
 func (s *Store) MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error) {
 	return s.mergeJobExecutionStringMap(jobID, patch, "metadata_json", "update metadata", func(job protocol.JobExecution) map[string]string {
 		return job.Metadata

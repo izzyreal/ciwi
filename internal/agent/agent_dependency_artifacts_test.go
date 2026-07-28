@@ -32,7 +32,7 @@ func TestDownloadDependencyArtifacts(t *testing.T) {
 	defer srv.Close()
 
 	execDir := t.TempDir()
-	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-build-1", execDir)
+	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-build-1", execDir, map[string]string{}, false)
 	if err != nil {
 		t.Fatalf("downloadDependencyArtifacts: %v", err)
 	}
@@ -59,14 +59,11 @@ func TestDownloadDependencyArtifacts(t *testing.T) {
 }
 
 func TestDependencyArtifactJobIDs(t *testing.T) {
-	got := dependencyArtifactJobIDs(map[string]string{
-		"CIWI_DEP_ARTIFACT_JOB_IDS": "job-a, job-b ,job-a",
-		"CIWI_DEP_ARTIFACT_JOB_ID":  "job-c",
-	})
-	if len(got) != 3 {
-		t.Fatalf("expected 3 unique ids, got %d (%v)", len(got), got)
+	got := dependencyArtifactJobIDs([]string{"job-a", "job-b", "job-a"})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 unique ids, got %d (%v)", len(got), got)
 	}
-	if got[0] != "job-a" || got[1] != "job-b" || got[2] != "job-c" {
+	if got[0] != "job-a" || got[1] != "job-b" {
 		t.Fatalf("unexpected order/content: %v", got)
 	}
 }
@@ -92,7 +89,7 @@ func TestDownloadDependencyArtifactsPrefersZIP(t *testing.T) {
 	defer srv.Close()
 
 	execDir := t.TempDir()
-	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-build-1", execDir)
+	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-build-1", execDir, map[string]string{}, false)
 	if err != nil {
 		t.Fatalf("downloadDependencyArtifacts: %v", err)
 	}
@@ -156,7 +153,7 @@ func TestDownloadDependencyArtifactsZIPVerboseWithTruncation(t *testing.T) {
 	defer srv.Close()
 
 	execDir := t.TempDir()
-	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-build-1", execDir)
+	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-build-1", execDir, map[string]string{}, false)
 	if err != nil {
 		t.Fatalf("downloadDependencyArtifacts: %v", err)
 	}
@@ -170,5 +167,89 @@ func TestDownloadDependencyArtifactsZIPVerboseWithTruncation(t *testing.T) {
 	}
 	if !strings.Contains(summary, "[dep-artifacts] restored_truncated=1 shown=1 total=2") {
 		t.Fatalf("expected truncation summary, got: %s", summary)
+	}
+}
+
+func TestDownloadDependencyArtifactsRejectsEmptySource(t *testing.T) {
+	emptyZIP := buildTestZIP(t, map[string]string{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/jobs/job-empty/artifacts/download-all":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(emptyZIP)
+		case "/api/v1/jobs/job-empty/artifacts":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"artifacts":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-empty", t.TempDir(), map[string]string{}, false)
+	if err == nil || !strings.Contains(err.Error(), "published no artifacts") {
+		t.Fatalf("expected empty explicit source failure, got %v", err)
+	}
+}
+
+func TestDownloadDependencyArtifactsAllowsEmptySourceDuringDryRun(t *testing.T) {
+	emptyZIP := buildTestZIP(t, map[string]string{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/jobs/job-empty/artifacts/download-all":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(emptyZIP)
+		case "/api/v1/jobs/job-empty/artifacts":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"artifacts":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-empty", t.TempDir(), map[string]string{}, true)
+	if err != nil {
+		t.Fatalf("expected dry run to allow empty artifact source: %v", err)
+	}
+	if !strings.Contains(summary, "dry_run_empty_source job=job-empty action=skip") {
+		t.Fatalf("expected dry-run empty-source log, got %q", summary)
+	}
+}
+
+func TestDownloadDependencyArtifactsLogsCollisionAndOverwrites(t *testing.T) {
+	firstZIP := buildTestZIP(t, map[string]string{"dist/shared.txt": "first"})
+	secondZIP := buildTestZIP(t, map[string]string{"dist/shared.txt": "second"})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		switch r.URL.Path {
+		case "/api/v1/jobs/job-first/artifacts/download-all":
+			_, _ = w.Write(firstZIP)
+		case "/api/v1/jobs/job-second/artifacts/download-all":
+			_, _ = w.Write(secondZIP)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	execDir := t.TempDir()
+	restoredBy := map[string]string{}
+	if _, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-first", execDir, restoredBy, false); err != nil {
+		t.Fatalf("restore first source: %v", err)
+	}
+	summary, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-second", execDir, restoredBy, false)
+	if err != nil {
+		t.Fatalf("restore second source: %v", err)
+	}
+	if !strings.Contains(summary, "collision path=dist/shared.txt previous_job=job-first source_job=job-second action=overwrite") {
+		t.Fatalf("expected collision log, got %q", summary)
+	}
+	content, err := os.ReadFile(filepath.Join(execDir, "dist", "shared.txt"))
+	if err != nil {
+		t.Fatalf("read overwritten artifact: %v", err)
+	}
+	if string(content) != "second" {
+		t.Fatalf("expected later source to win, got %q", string(content))
 	}
 }

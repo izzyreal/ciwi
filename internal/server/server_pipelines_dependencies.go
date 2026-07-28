@@ -2,6 +2,8 @@ package server
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +37,7 @@ func (s *stateStore) checkPipelineDependenciesWithReporter(p store.PersistedPipe
 		if report != nil {
 			report("dependencies", "running", fmt.Sprintf("checking latest run for dependency %q", depID))
 		}
-		ctx, err := verifyDependencyRun(jobs, p.ProjectName, depID)
+		ctx, err := verifyDependencyRun(jobs, p.ProjectID, p.ProjectName, depID)
 		if err != nil {
 			if report != nil {
 				report("dependencies", "error", fmt.Sprintf("dependency %q not satisfied: %v", depID, err))
@@ -88,7 +90,7 @@ func (s *stateStore) inspectPipelineDependenciesWithReporter(p store.PersistedPi
 		if report != nil {
 			report("dependencies", "running", fmt.Sprintf("checking latest run for dependency %q", depID))
 		}
-		ctx, err := verifyDependencyRun(jobs, p.ProjectName, depID)
+		ctx, err := verifyDependencyRun(jobs, p.ProjectID, p.ProjectName, depID)
 		if err != nil {
 			blocked = true
 			msg := fmt.Sprintf("dependency %q unresolved for preview: %v", depID, err)
@@ -145,53 +147,38 @@ func mergePipelineDependencyContext(out *pipelineDependencyContext, depID string
 			out.SourceRefResolved = ""
 		}
 	}
-	if len(ctx.ArtifactJobIDs) > 0 {
-		if out.ArtifactJobIDs == nil {
-			out.ArtifactJobIDs = map[string]string{}
+	if len(ctx.ArtifactExecutions) > 0 {
+		if out.ArtifactExecutions == nil {
+			out.ArtifactExecutions = map[string][]dependencyArtifactExecution{}
 		}
-		for k, v := range ctx.ArtifactJobIDs {
-			key := depID + ":" + strings.TrimSpace(k)
-			if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
-				continue
-			}
-			out.ArtifactJobIDs[key] = strings.TrimSpace(v)
-		}
-	}
-	if len(ctx.ArtifactJobIDsAll) > 0 {
-		if out.ArtifactJobIDsAll == nil {
-			out.ArtifactJobIDsAll = map[string][]string{}
-		}
-		for ctxDepID, ids := range ctx.ArtifactJobIDsAll {
+		for ctxDepID, executions := range ctx.ArtifactExecutions {
 			targetDepID := strings.TrimSpace(ctxDepID)
 			if targetDepID == "" {
 				targetDepID = depID
 			}
-			existing := out.ArtifactJobIDsAll[targetDepID]
-			seen := map[string]struct{}{}
-			for _, v := range existing {
-				if strings.TrimSpace(v) == "" {
-					continue
-				}
-				seen[strings.TrimSpace(v)] = struct{}{}
+			existing := out.ArtifactExecutions[targetDepID]
+			seen := make(map[string]struct{}, len(existing))
+			for _, execution := range existing {
+				seen[strings.TrimSpace(execution.ID)] = struct{}{}
 			}
-			for _, v := range ids {
-				v = strings.TrimSpace(v)
-				if v == "" {
+			for _, execution := range executions {
+				execution.ID = strings.TrimSpace(execution.ID)
+				if execution.ID == "" {
 					continue
 				}
-				if _, ok := seen[v]; ok {
+				if _, ok := seen[execution.ID]; ok {
 					continue
 				}
-				existing = append(existing, v)
-				seen[v] = struct{}{}
+				existing = append(existing, execution)
+				seen[execution.ID] = struct{}{}
 			}
-			out.ArtifactJobIDsAll[targetDepID] = existing
+			out.ArtifactExecutions[targetDepID] = existing
 		}
 	}
 	return nil
 }
 
-func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID string) (pipelineDependencyContext, error) {
+func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, projectName, pipelineID string) (pipelineDependencyContext, error) {
 	jobs = protocol.LatestJobExecutionAttempts(jobs)
 	type runState struct {
 		lastCreated time.Time
@@ -201,7 +188,7 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 	}
 	byRun := map[string]runState{}
 	for _, j := range jobs {
-		if strings.TrimSpace(j.Metadata["project"]) != projectName {
+		if !jobExecutionMatchesProject(j, projectID, projectName) {
 			continue
 		}
 		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
@@ -269,42 +256,58 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectName, pipelineID s
 	}
 
 	meta := byRun[selectedRunID].metadata
-	artifactJobIDs := map[string]string{}
-	artifactJobIDsAll := make([]string, 0)
-	artifactJobSeen := map[string]struct{}{}
+	artifactExecutions := make([]dependencyArtifactExecution, 0)
 	for _, j := range byRun[selectedRunID].jobs {
 		jobID := strings.TrimSpace(j.ID)
-		if jobID == "" {
+		pipelineJobID := strings.TrimSpace(j.Metadata["pipeline_job_id"])
+		if jobID == "" || pipelineJobID == "" || len(j.ArtifactGlobs) == 0 {
 			continue
 		}
-		if len(j.ArtifactGlobs) > 0 {
-			if _, exists := artifactJobSeen[jobID]; !exists {
-				artifactJobIDsAll = append(artifactJobIDsAll, jobID)
-				artifactJobSeen[jobID] = struct{}{}
-			}
+		matrix := map[string]string{}
+		if name := strings.TrimSpace(j.Metadata["matrix_name"]); name != "" {
+			matrix["name"] = name
 		}
-		for _, key := range []string{
-			strings.TrimSpace(j.Metadata["build_target"]),
-			strings.TrimSpace(j.Metadata["matrix_name"]),
-			strings.TrimSpace(j.Metadata["pipeline_job_id"]),
-		} {
-			if key == "" {
+		for key, value := range j.Metadata {
+			const prefix = "matrix_var."
+			if !strings.HasPrefix(key, prefix) {
 				continue
 			}
-			if _, exists := artifactJobIDs[key]; !exists {
-				artifactJobIDs[key] = jobID
+			matrixKey := strings.TrimSpace(strings.TrimPrefix(key, prefix))
+			if matrixKey != "" {
+				matrix[matrixKey] = value
 			}
 		}
+		artifactExecutions = append(artifactExecutions, dependencyArtifactExecution{
+			ID:          jobID,
+			Pipeline:    pipelineID,
+			Job:         pipelineJobID,
+			MatrixIndex: dependencyArtifactMatrixIndex(j.Metadata),
+			Matrix:      matrix,
+		})
 	}
+	sort.SliceStable(artifactExecutions, func(i, j int) bool {
+		if artifactExecutions[i].Job != artifactExecutions[j].Job {
+			return artifactExecutions[i].Job < artifactExecutions[j].Job
+		}
+		return artifactExecutions[i].MatrixIndex < artifactExecutions[j].MatrixIndex
+	})
 	return pipelineDependencyContext{
-		VersionRaw:        strings.TrimSpace(meta["pipeline_version_raw"]),
-		Version:           strings.TrimSpace(meta["pipeline_version"]),
-		SourceRepo:        strings.TrimSpace(meta["pipeline_source_repo"]),
-		SourceRefRaw:      strings.TrimSpace(meta["pipeline_source_ref_raw"]),
-		SourceRefResolved: strings.TrimSpace(meta["pipeline_source_ref_resolved"]),
-		ArtifactJobIDs:    artifactJobIDs,
-		ArtifactJobIDsAll: map[string][]string{pipelineID: artifactJobIDsAll},
+		VersionRaw:         strings.TrimSpace(meta["pipeline_version_raw"]),
+		Version:            strings.TrimSpace(meta["pipeline_version"]),
+		SourceRepo:         strings.TrimSpace(meta["pipeline_source_repo"]),
+		SourceRefRaw:       strings.TrimSpace(meta["pipeline_source_ref_raw"]),
+		SourceRefResolved:  strings.TrimSpace(meta["pipeline_source_ref_resolved"]),
+		ArtifactExecutions: map[string][]dependencyArtifactExecution{pipelineID: artifactExecutions},
 	}, nil
+}
+
+func dependencyArtifactMatrixIndex(metadata map[string]string) int {
+	for _, key := range []string{"matrix_index", "pipeline_job_index"} {
+		if value, err := strconv.Atoi(strings.TrimSpace(metadata[key])); err == nil {
+			return value
+		}
+	}
+	return 0
 }
 
 func sameSourceRepo(a, b string) bool {
@@ -340,14 +343,14 @@ func dependencyRunVersionMatches(meta map[string]string, targetVersionRaw, targe
 	return runRaw == "" && runTagged == ""
 }
 
-func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID, projectName, pipelineID string) (pipelineDependencyContext, bool, error) {
+func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID string, projectID int64, projectName, pipelineID string) (pipelineDependencyContext, bool, error) {
 	chainRunID = strings.TrimSpace(chainRunID)
 	if chainRunID == "" {
 		return pipelineDependencyContext{}, false, fmt.Errorf("chain run id is required")
 	}
 	filtered := make([]protocol.JobExecution, 0)
 	for _, j := range jobs {
-		if strings.TrimSpace(j.Metadata["project"]) != projectName {
+		if !jobExecutionMatchesProject(j, projectID, projectName) {
 			continue
 		}
 		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
@@ -361,6 +364,6 @@ func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID, projec
 	if len(filtered) == 0 {
 		return pipelineDependencyContext{}, false, nil
 	}
-	ctx, err := verifyDependencyRun(filtered, projectName, pipelineID)
+	ctx, err := verifyDependencyRun(filtered, projectID, projectName, pipelineID)
 	return ctx, true, err
 }

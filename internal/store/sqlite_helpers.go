@@ -15,18 +15,18 @@ import (
 
 func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.JobExecution, error) {
 	var (
-		job                                                                                                               protocol.JobExecution
-		envJSON, requiredJSON, artifactGlobsJSON, cachesJSON, metadataJSON, stepPlanJSON, cacheStatsJSON, runtimeCapsJSON string
-		sourceRepo, sourceRef                                                                                             sql.NullString
-		createdUTC                                                                                                        string
-		startedUTC, finishedUTC                                                                                           sql.NullString
-		leasedByAgentID, leasedUTC                                                                                        sql.NullString
-		exitCode                                                                                                          sql.NullInt64
-		errorText, currentStepText                                                                                        sql.NullString
+		job                                                                                                                                             protocol.JobExecution
+		envJSON, requiredJSON, artifactGlobsJSON, dependencyArtifactJobIDsJSON, cachesJSON, metadataJSON, stepPlanJSON, cacheStatsJSON, runtimeCapsJSON string
+		sourceRepo, sourceRef                                                                                                                           sql.NullString
+		createdUTC                                                                                                                                      string
+		startedUTC, finishedUTC                                                                                                                         sql.NullString
+		leasedByAgentID, leasedUTC                                                                                                                      sql.NullString
+		exitCode                                                                                                                                        sql.NullInt64
+		errorText, currentStepText                                                                                                                      sql.NullString
 	)
 
 	if err := scanner.Scan(
-		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON, &stepPlanJSON,
+		&job.ID, &job.Script, &envJSON, &requiredJSON, &job.TimeoutSeconds, &artifactGlobsJSON, &dependencyArtifactJobIDsJSON, &cachesJSON, &sourceRepo, &sourceRef, &metadataJSON, &stepPlanJSON,
 		&job.Status, &createdUTC, &startedUTC, &finishedUTC, &leasedByAgentID, &leasedUTC, &exitCode, &errorText, &cacheStatsJSON, &runtimeCapsJSON, &currentStepText,
 	); err != nil {
 		return protocol.JobExecution{}, err
@@ -35,6 +35,7 @@ func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.Jo
 	_ = json.Unmarshal([]byte(envJSON), &job.Env)
 	_ = json.Unmarshal([]byte(requiredJSON), &job.RequiredCapabilities)
 	_ = json.Unmarshal([]byte(artifactGlobsJSON), &job.ArtifactGlobs)
+	_ = json.Unmarshal([]byte(dependencyArtifactJobIDsJSON), &job.DependencyArtifactJobIDs)
 	_ = json.Unmarshal([]byte(cachesJSON), &job.Caches)
 	_ = json.Unmarshal([]byte(metadataJSON), &job.Metadata)
 	_ = json.Unmarshal([]byte(stepPlanJSON), &job.StepPlan)

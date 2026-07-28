@@ -40,6 +40,28 @@ Git identity behavior for source-backed jobs:
 
 - `pipelines[].depends_on`: upstream pipeline IDs
 - dependent runs inherit resolved version/source metadata for consistency
+- `depends_on` gates execution and version/source inheritance; it does not restore artifacts by itself
+
+Jobs restore dependency artifacts only from explicit `artifact_sources`:
+
+```yaml
+jobs:
+  - id: codesign
+    artifact_sources:
+      - pipeline: build
+        job: compile
+        matrix:
+          name: darwin-arm64
+```
+
+- `pipeline` must be a direct pipeline-level `depends_on`.
+- `job` must identify an artifact-producing job in that pipeline.
+- Optional `matrix` entries are literal partial matches against producer matrix variables.
+- Omitting `matrix` restores artifacts from every execution of that producer job.
+- Every declared source is required; a missing execution or an execution with no published artifacts fails the consumer job.
+- During a dry run, a successful source that published no artifacts because its producing steps were skipped is logged and ignored; consumer validation steps still fail normally if they require the absent files.
+- When selected sources publish the same path, later sources overwrite earlier ones and ciwi logs the collision.
+- The server resolves selectors to concrete producer execution IDs and sends them to the agent as typed job data; these internal IDs are not injected into the job's environment.
 
 `pipeline_chains` execution is DAG-based:
 - Jobs in a pipeline are enqueued together.

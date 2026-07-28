@@ -426,13 +426,14 @@ func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []pro
 	out := make([]protocol.PipelineJobDetail, 0, len(persistedJobs))
 	for _, j := range persistedJobs {
 		d := protocol.PipelineJobDetail{
-			ID:             j.ID,
-			Needs:          append([]string(nil), j.Needs...),
-			TimeoutSeconds: j.TimeoutSeconds,
-			RunsOn:         cloneMap(j.RunsOn),
-			RequiresTools:  cloneMap(j.RequiresTools),
-			Artifacts:      append([]string(nil), j.Artifacts...),
-			Caches:         cloneJobCachesFromConfig(j.Caches),
+			ID:              j.ID,
+			Needs:           append([]string(nil), j.Needs...),
+			ArtifactSources: cloneArtifactSourcesToProtocol(j.ArtifactSources),
+			TimeoutSeconds:  j.TimeoutSeconds,
+			RunsOn:          cloneMap(j.RunsOn),
+			RequiresTools:   cloneMap(j.RequiresTools),
+			Artifacts:       append([]string(nil), j.Artifacts...),
+			Caches:          cloneJobCachesFromConfig(j.Caches),
 		}
 		d.Steps = make([]protocol.PipelineStep, 0, len(j.Steps))
 		for _, step := range j.Steps {
@@ -468,6 +469,21 @@ func pipelineJobDetailsFromPersisted(persistedJobs []PersistedPipelineJob) []pro
 			})
 		}
 		out = append(out, d)
+	}
+	return out
+}
+
+func cloneArtifactSourcesToProtocol(in []config.PipelineJobArtifactSource) []protocol.PipelineJobArtifactSource {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]protocol.PipelineJobArtifactSource, 0, len(in))
+	for _, source := range in {
+		out = append(out, protocol.PipelineJobArtifactSource{
+			Pipeline: source.Pipeline,
+			Job:      source.Job,
+			Matrix:   cloneMap(source.Matrix),
+		})
 	}
 	return out
 }
@@ -515,6 +531,22 @@ func (s *Store) GetPipelineByProjectAndID(projectName, pipelineID string) (Persi
 	return s.GetPipelineByDBID(id)
 }
 
+func (s *Store) GetPipelineByProjectIDAndID(projectID int64, pipelineID string) (PersistedPipeline, error) {
+	var id int64
+	row := s.db.QueryRow(`
+		SELECT id
+		FROM pipelines
+		WHERE project_id = ? AND pipeline_id = ?
+	`, projectID, pipelineID)
+	if err := row.Scan(&id); err != nil {
+		if err == sql.ErrNoRows {
+			return PersistedPipeline{}, fmt.Errorf("pipeline not found")
+		}
+		return PersistedPipeline{}, fmt.Errorf("find pipeline: %w", err)
+	}
+	return s.GetPipelineByDBID(id)
+}
+
 func (s *Store) GetPipelineChainByDBID(id int64) (PersistedPipelineChain, error) {
 	var ch PersistedPipelineChain
 	row := s.db.QueryRow(`
@@ -536,7 +568,7 @@ func (s *Store) GetPipelineChainByDBID(id int64) (PersistedPipelineChain, error)
 
 func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, error) {
 	rows, err := s.db.Query(`
-		SELECT job_id, position, needs_json, runs_on_json, requires_tools_json, requires_container_tools_json, requires_capabilities_json, timeout_seconds, artifacts_json, caches_json, matrix_json, steps_json
+		SELECT job_id, position, needs_json, artifact_sources_json, runs_on_json, requires_tools_json, requires_container_tools_json, requires_capabilities_json, timeout_seconds, artifacts_json, caches_json, matrix_json, steps_json
 		FROM pipeline_jobs
 		WHERE pipeline_id = ?
 		ORDER BY position
@@ -549,11 +581,12 @@ func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, er
 	jobs := []PersistedPipelineJob{}
 	for rows.Next() {
 		var j PersistedPipelineJob
-		var needsJSON, runsOnJSON, requiresToolsJSON, requiresContainerToolsJSON, requiresCapsJSON, artifactsJSON, cachesJSON, matrixJSON, stepsJSON string
-		if err := rows.Scan(&j.ID, &j.Position, &needsJSON, &runsOnJSON, &requiresToolsJSON, &requiresContainerToolsJSON, &requiresCapsJSON, &j.TimeoutSeconds, &artifactsJSON, &cachesJSON, &matrixJSON, &stepsJSON); err != nil {
+		var needsJSON, artifactSourcesJSON, runsOnJSON, requiresToolsJSON, requiresContainerToolsJSON, requiresCapsJSON, artifactsJSON, cachesJSON, matrixJSON, stepsJSON string
+		if err := rows.Scan(&j.ID, &j.Position, &needsJSON, &artifactSourcesJSON, &runsOnJSON, &requiresToolsJSON, &requiresContainerToolsJSON, &requiresCapsJSON, &j.TimeoutSeconds, &artifactsJSON, &cachesJSON, &matrixJSON, &stepsJSON); err != nil {
 			return nil, fmt.Errorf("scan pipeline job: %w", err)
 		}
 		_ = json.Unmarshal([]byte(needsJSON), &j.Needs)
+		_ = json.Unmarshal([]byte(artifactSourcesJSON), &j.ArtifactSources)
 		_ = json.Unmarshal([]byte(runsOnJSON), &j.RunsOn)
 		_ = json.Unmarshal([]byte(requiresToolsJSON), &j.RequiresTools)
 		_ = json.Unmarshal([]byte(requiresContainerToolsJSON), &j.RequiresContainerTools)

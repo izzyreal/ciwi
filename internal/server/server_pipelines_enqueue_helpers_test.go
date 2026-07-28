@@ -28,40 +28,53 @@ func TestCloneProtocolJobCaches(t *testing.T) {
 	}
 }
 
-func TestResolveDependencyArtifactJobID(t *testing.T) {
-	dependsOn := []string{"build"}
-	depIDs := map[string]string{
-		"build:linux-amd64": "job-1",
-		"build:publish":     "job-2",
-	}
-	if got := resolveDependencyArtifactJobID(dependsOn, depIDs, "publish", map[string]string{"name": "linux-amd64"}); got != "job-1" {
-		t.Fatalf("expected name candidate match, got %q", got)
-	}
-	if got := resolveDependencyArtifactJobID(dependsOn, depIDs, "release-publish", nil); got != "job-2" {
-		t.Fatalf("expected release- prefix fallback match, got %q", got)
-	}
-	if got := resolveDependencyArtifactJobID([]string{"missing"}, depIDs, "publish", nil); got != "" {
-		t.Fatalf("expected empty for no matches, got %q", got)
-	}
-}
-
 func TestResolveDependencyArtifactJobIDs(t *testing.T) {
-	all := map[string][]string{
-		"build":   {"job-1", "job-2"},
-		"package": {"job-2", "job-3"},
+	ctx := pipelineDependencyContext{ArtifactExecutions: map[string][]dependencyArtifactExecution{
+		"build": {
+			{ID: "job-1", Pipeline: "build", Job: "compile", Matrix: map[string]string{"name": "linux-amd64", "os": "linux"}},
+			{ID: "job-2", Pipeline: "build", Job: "compile", Matrix: map[string]string{"name": "darwin-arm64", "os": "darwin"}},
+		},
+		"package": {
+			{ID: "job-2", Pipeline: "package", Job: "duplicate"},
+			{ID: "job-3", Pipeline: "package", Job: "bundle"},
+		},
+	}}
+	sources := []config.PipelineJobArtifactSource{
+		{Pipeline: "build", Job: "compile"},
+		{Pipeline: "package", Job: "duplicate"},
+		{Pipeline: "package", Job: "bundle"},
 	}
-	got := resolveDependencyArtifactJobIDs([]string{"build", "package"}, all, "job-0")
-	want := []string{"job-0"}
+	got, err := resolveDependencyArtifactJobIDs(sources, ctx)
+	if err != nil {
+		t.Fatalf("resolveDependencyArtifactJobIDs: %v", err)
+	}
+	want := []string{"job-1", "job-2", "job-3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("resolveDependencyArtifactJobIDs mismatch: got=%v want=%v", got, want)
 	}
-	got = resolveDependencyArtifactJobIDs([]string{"build", "package"}, all, "")
-	want = []string{"job-1", "job-2", "job-3"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("resolveDependencyArtifactJobIDs without preferred mismatch: got=%v want=%v", got, want)
+
+	got, err = resolveDependencyArtifactJobIDs([]config.PipelineJobArtifactSource{{
+		Pipeline: "build",
+		Job:      "compile",
+		Matrix:   map[string]string{"os": "darwin"},
+	}}, ctx)
+	if err != nil {
+		t.Fatalf("resolve matrix artifact source: %v", err)
 	}
-	if got := resolveDependencyArtifactJobIDs(nil, nil, ""); got != nil {
-		t.Fatalf("expected nil when no deps and no preferred, got %v", got)
+	want = []string{"job-2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("matrix source mismatch: got=%v want=%v", got, want)
+	}
+
+	if _, err := resolveDependencyArtifactJobIDs([]config.PipelineJobArtifactSource{{
+		Pipeline: "build",
+		Job:      "missing",
+	}}, ctx); err == nil {
+		t.Fatalf("expected unmatched explicit source to fail")
+	}
+	got, err = resolveDependencyArtifactJobIDs(nil, pipelineDependencyContext{})
+	if err != nil || got != nil {
+		t.Fatalf("expected no sources to resolve nothing, got=%v err=%v", got, err)
 	}
 }
 

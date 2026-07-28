@@ -40,6 +40,7 @@ type PersistedPipelineChain struct {
 type PersistedPipelineJob struct {
 	ID                     string
 	Needs                  []string
+	ArtifactSources        []config.PipelineJobArtifactSource
 	RunsOn                 map[string]string
 	RequiresTools          map[string]string
 	RequiresContainerTools map[string]string
@@ -134,6 +135,7 @@ func (s *Store) migrate() error {
 			job_id TEXT NOT NULL,
 			position INTEGER NOT NULL,
 			needs_json TEXT NOT NULL DEFAULT '[]',
+			artifact_sources_json TEXT NOT NULL DEFAULT '[]',
 			runs_on_json TEXT NOT NULL,
 			requires_tools_json TEXT NOT NULL DEFAULT '{}',
 			requires_container_tools_json TEXT NOT NULL DEFAULT '{}',
@@ -152,6 +154,7 @@ func (s *Store) migrate() error {
 			required_capabilities_json TEXT NOT NULL,
 			timeout_seconds INTEGER NOT NULL,
 			artifact_globs_json TEXT NOT NULL DEFAULT '[]',
+			dependency_artifact_job_ids_json TEXT NOT NULL DEFAULT '[]',
 			caches_json TEXT NOT NULL DEFAULT '[]',
 			source_repo TEXT,
 			source_ref TEXT,
@@ -223,6 +226,9 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("pipeline_jobs", "artifacts_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
+	if err := s.addColumnIfMissing("pipeline_jobs", "artifact_sources_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
 	if err := s.addColumnIfMissing("pipeline_jobs", "caches_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
@@ -245,6 +251,9 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("job_executions", "dependency_artifact_job_ids_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "caches_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
@@ -379,6 +388,7 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 
 		for i, j := range p.Jobs {
 			needsJSON, _ := json.Marshal(j.Needs)
+			artifactSourcesJSON, _ := json.Marshal(j.ArtifactSources)
 			runsOnJSON, _ := json.Marshal(j.RunsOn)
 			requiresToolsJSON, _ := json.Marshal(j.Requires.Tools)
 			requiresContainerToolsJSON, _ := json.Marshal(j.Requires.Container.Tools)
@@ -389,9 +399,9 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 			stepsJSON, _ := json.Marshal(j.Steps)
 
 			if _, err := tx.Exec(`
-				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, needs_json, runs_on_json, requires_tools_json, requires_container_tools_json, requires_capabilities_json, timeout_seconds, artifacts_json, caches_json, matrix_json, steps_json)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, pipelineDBID, j.ID, i, string(needsJSON), string(runsOnJSON), string(requiresToolsJSON), string(requiresContainerToolsJSON), string(requiresCapsJSON), j.TimeoutSeconds, string(artifactsJSON), string(cachesJSON), string(matrixJSON), string(stepsJSON)); err != nil {
+				INSERT INTO pipeline_jobs (pipeline_id, job_id, position, needs_json, artifact_sources_json, runs_on_json, requires_tools_json, requires_container_tools_json, requires_capabilities_json, timeout_seconds, artifacts_json, caches_json, matrix_json, steps_json)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, pipelineDBID, j.ID, i, string(needsJSON), string(artifactSourcesJSON), string(runsOnJSON), string(requiresToolsJSON), string(requiresContainerToolsJSON), string(requiresCapsJSON), j.TimeoutSeconds, string(artifactsJSON), string(cachesJSON), string(matrixJSON), string(stepsJSON)); err != nil {
 				return fmt.Errorf("insert pipeline job: %w", err)
 			}
 		}

@@ -4,13 +4,10 @@ import "testing"
 
 func TestBuildJobExecutionTimelineIncludesApplicablePhasesAndSteps(t *testing.T) {
 	job := JobExecution{
-		Source: &SourceSpec{Repo: "https://example.test/repo.git", Ref: "abc123"},
-		Env: map[string]string{
-			"CIWI_DEP_ARTIFACT_JOB_IDS": "job-a, job-b",
-			"CIWI_DEP_ARTIFACT_JOB_ID":  "job-b",
-		},
-		Caches:        []JobCacheSpec{{ID: "fetchcontent"}},
-		ArtifactGlobs: []string{"dist/**"},
+		Source:                   &SourceSpec{Repo: "https://example.test/repo.git", Ref: "abc123"},
+		DependencyArtifactJobIDs: []string{"job-a", "job-b"},
+		Caches:                   []JobCacheSpec{{ID: "fetchcontent"}},
+		ArtifactGlobs:            []string{"dist/**"},
 		StepPlan: []JobStepPlanItem{
 			{Index: 1, Name: "Build"},
 			{Index: 2, Name: "Test", TestReport: "dist/results.xml"},

@@ -210,6 +210,36 @@ func TestStoreMergeJobExecutionEnvAndMetadata(t *testing.T) {
 	}
 }
 
+func TestStoreSetJobExecutionDependencyArtifactJobIDs(t *testing.T) {
+	s := openTestStore(t)
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:                   "echo hi",
+		DependencyArtifactJobIDs: []string{"job-a", "job-b"},
+	})
+	if err != nil {
+		t.Fatalf("CreateJobExecution: %v", err)
+	}
+	if got := job.DependencyArtifactJobIDs; len(got) != 2 || got[0] != "job-a" || got[1] != "job-b" {
+		t.Fatalf("unexpected created dependency artifact job ids: %v", got)
+	}
+
+	updated, err := s.SetJobExecutionDependencyArtifactJobIDs(job.ID, []string{" job-c ", "job-c", "", "job-d"})
+	if err != nil {
+		t.Fatalf("SetJobExecutionDependencyArtifactJobIDs: %v", err)
+	}
+	if len(updated) != 2 || updated[0] != "job-c" || updated[1] != "job-d" {
+		t.Fatalf("unexpected normalized dependency artifact job ids: %v", updated)
+	}
+
+	stored, err := s.GetJobExecution(job.ID)
+	if err != nil {
+		t.Fatalf("GetJobExecution: %v", err)
+	}
+	if got := stored.DependencyArtifactJobIDs; len(got) != 2 || got[0] != "job-c" || got[1] != "job-d" {
+		t.Fatalf("unexpected stored dependency artifact job ids: %v", got)
+	}
+}
+
 func TestStorePipelineLookupAndLoadedCommit(t *testing.T) {
 	s := openTestStore(t)
 	cfg, err := config.Parse([]byte(`

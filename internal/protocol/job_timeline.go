@@ -18,7 +18,7 @@ func BuildJobExecutionTimeline(job JobExecution) []JobExecutionTimelineItem {
 		}
 		addPhase(JobExecutionPhaseCheckout, "Check out source", description)
 	}
-	if ids := dependencyArtifactIDsForTimeline(job.Env); len(ids) > 0 {
+	if ids := dependencyArtifactIDsForTimeline(job.DependencyArtifactJobIDs); len(ids) > 0 {
 		addPhase(JobExecutionPhaseDependencies, "Restore dependency artifacts", "Source jobs: "+strings.Join(ids, ", "))
 	}
 	envDescription := "Resolve caches, runtime capabilities, tools, shell, and execution environment."
@@ -71,21 +71,19 @@ func TimelineStepPosition(items []JobExecutionTimelineItem, stepIndex int) (int,
 	return stepIndex, len(items)
 }
 
-func dependencyArtifactIDsForTimeline(env map[string]string) []string {
+func dependencyArtifactIDsForTimeline(ids []string) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0)
-	for _, raw := range []string{env["CIWI_DEP_ARTIFACT_JOB_IDS"], env["CIWI_DEP_ARTIFACT_JOB_ID"]} {
-		for _, value := range strings.Split(raw, ",") {
-			value = strings.TrimSpace(value)
-			if value == "" {
-				continue
-			}
-			if _, ok := seen[value]; ok {
-				continue
-			}
-			seen[value] = struct{}{}
-			out = append(out, value)
+	for _, value := range ids {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
 		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
 	}
 	return out
 }

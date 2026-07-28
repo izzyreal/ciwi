@@ -238,12 +238,15 @@ func (s *stateStore) bindQueuedChainJobDependencyArtifacts(job protocol.JobExecu
 		return nil
 	}
 
-	envPatch := dependencyArtifactEnv(job, dependsOn, depCtx)
-	if len(envPatch) == 0 {
+	dependencyArtifactJobIDs, err := dependencyArtifactJobIDsForJob(job, depCtx)
+	if err != nil {
+		return err
+	}
+	if len(dependencyArtifactJobIDs) == 0 {
 		return nil
 	}
-	if _, err := s.pipelineStore().MergeJobExecutionEnv(job.ID, envPatch); err != nil {
-		return fmt.Errorf("persist dependency artifact env: %w", err)
+	if _, err := s.pipelineStore().SetJobExecutionDependencyArtifactJobIDs(job.ID, dependencyArtifactJobIDs); err != nil {
+		return fmt.Errorf("persist dependency artifact job ids: %w", err)
 	}
 	return nil
 }
@@ -255,7 +258,7 @@ func (s *stateStore) resolveChainJobDependencyContext(job protocol.JobExecution,
 	if chainRunID == "" || projectName == "" || pipelineID == "" {
 		return nil, pipelineDependencyContext{}, nil
 	}
-	p, err := s.pipelineStore().GetPipelineByProjectAndID(projectName, pipelineID)
+	p, err := s.getPipelineForJobExecution(job)
 	if err != nil {
 		return nil, pipelineDependencyContext{}, fmt.Errorf("load pipeline %q: %w", pipelineID, err)
 	}
@@ -269,12 +272,12 @@ func (s *stateStore) resolveChainJobDependencyContext(job protocol.JobExecution,
 		if depID == "" {
 			continue
 		}
-		ctx, foundInChain, err := verifyDependencyRunInChain(all, chainRunID, projectName, depID)
+		ctx, foundInChain, err := verifyDependencyRunInChain(all, chainRunID, p.ProjectID, projectName, depID)
 		if err != nil {
 			return nil, pipelineDependencyContext{}, fmt.Errorf("dependency %q not satisfied in chain run: %w", depID, err)
 		}
 		if !foundInChain {
-			ctx, err = verifyDependencyRun(all, projectName, depID)
+			ctx, err = verifyDependencyRun(all, p.ProjectID, projectName, depID)
 			if err != nil {
 				return nil, pipelineDependencyContext{}, fmt.Errorf("dependency %q not satisfied: %w", depID, err)
 			}
@@ -286,20 +289,19 @@ func (s *stateStore) resolveChainJobDependencyContext(job protocol.JobExecution,
 	return append([]string(nil), p.DependsOn...), depCtx, nil
 }
 
-func dependencyArtifactEnv(job protocol.JobExecution, dependsOn []string, depCtx pipelineDependencyContext) map[string]string {
-	vars := map[string]string{
-		"name":         strings.TrimSpace(job.Metadata["matrix_name"]),
-		"build_target": strings.TrimSpace(job.Metadata["build_target"]),
+func dependencyArtifactJobIDsForJob(job protocol.JobExecution, depCtx pipelineDependencyContext) ([]string, error) {
+	sources, err := decodeArtifactSources(job.Metadata)
+	if err != nil {
+		return nil, err
 	}
-	depJobID := resolveDependencyArtifactJobID(dependsOn, depCtx.ArtifactJobIDs, strings.TrimSpace(job.Metadata["pipeline_job_id"]), vars)
-	depJobIDs := resolveDependencyArtifactJobIDs(dependsOn, depCtx.ArtifactJobIDsAll, depJobID)
-	if depJobID == "" && len(depJobIDs) == 0 {
-		return nil
+	depJobIDs, err := resolveDependencyArtifactJobIDs(sources, depCtx)
+	if err != nil {
+		return nil, err
 	}
-	return map[string]string{
-		"CIWI_DEP_ARTIFACT_JOB_ID":  depJobID,
-		"CIWI_DEP_ARTIFACT_JOB_IDS": strings.Join(depJobIDs, ","),
+	if len(depJobIDs) == 0 {
+		return nil, nil
 	}
+	return depJobIDs, nil
 }
 
 func parseNeedsJobIDs(raw string) []string {

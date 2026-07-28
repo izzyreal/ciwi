@@ -71,8 +71,8 @@ func (s *stateStore) buildPendingPipelineJobs(
 				pj.RequiresContainerTools,
 				pj.TimeoutSeconds,
 				pj.Artifacts,
+				pj.ArtifactSources,
 				pj.Caches,
-				p.DependsOn,
 				index,
 				vars,
 				originalMatrixEntries,
@@ -105,8 +105,8 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	requiresContainerTools map[string]string,
 	timeoutSeconds int,
 	artifacts []string,
+	artifactSources []config.PipelineJobArtifactSource,
 	caches []config.PipelineJobCacheSpec,
-	pipelineDependsOn []string,
 	matrixIndex int,
 	matrixVars map[string]string,
 	originalMatrixEntries []map[string]string,
@@ -245,6 +245,18 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		metadata["matrix_name"] = name
 		metadata["build_target"] = name
 	}
+	for key, value := range matrixVars {
+		if key = strings.TrimSpace(key); key != "" {
+			metadata["matrix_var."+key] = value
+		}
+	}
+	artifactSourcesJSON, err := encodeArtifactSources(artifactSources)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline job %q: %w", pipelineJobID, err)
+	}
+	if artifactSourcesJSON != "" {
+		metadata[artifactSourcesMetadataKey] = artifactSourcesJSON
+	}
 	if runCtx.VersionRaw != "" {
 		metadata["pipeline_version_raw"] = runCtx.VersionRaw
 	}
@@ -301,12 +313,13 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		env["CIWI_PIPELINE_SOURCE_REF_RAW"] = strings.TrimSpace(runCtx.SourceRefRaw)
 	}
 	env["CIWI_PIPELINE_SOURCE_REPO"] = p.SourceRepo
-	depJobID := resolveDependencyArtifactJobID(pipelineDependsOn, depCtx.ArtifactJobIDs, pipelineJobID, matrixVars)
-	if depJobID != "" {
-		env["CIWI_DEP_ARTIFACT_JOB_ID"] = depJobID
-	}
-	if depJobIDs := resolveDependencyArtifactJobIDs(pipelineDependsOn, depCtx.ArtifactJobIDsAll, depJobID); len(depJobIDs) > 0 {
-		env["CIWI_DEP_ARTIFACT_JOB_IDS"] = strings.Join(depJobIDs, ",")
+	var dependencyArtifactJobIDs []string
+	if !opts.dependencyBlocked && !opts.blocked {
+		depJobIDs, resolveErr := resolveDependencyArtifactJobIDs(artifactSources, depCtx)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("pipeline job %q: %w", pipelineJobID, resolveErr)
+		}
+		dependencyArtifactJobIDs = depJobIDs
 	}
 	if containerImage := strings.TrimSpace(runsOn["container_image"]); containerImage != "" {
 		metadata["runtime_probe.container_image"] = containerImage
@@ -367,17 +380,18 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		sourceRef = runCtx.SourceRefResolved
 	}
 	return &pendingJob{
-		pipelineJobID:  pipelineJobID,
-		needs:          append([]string(nil), needs...),
-		script:         strings.Join(rendered, "\n"),
-		env:            cloneMap(env),
-		requiredCaps:   requiredCaps,
-		timeoutSeconds: timeoutSeconds,
-		artifactGlobs:  append([]string(nil), artifacts...),
-		caches:         cloneJobCachesFromPersisted(caches),
-		sourceRepo:     p.SourceRepo,
-		sourceRef:      sourceRef,
-		metadata:       metadata,
-		stepPlan:       stepPlan,
+		pipelineJobID:            pipelineJobID,
+		needs:                    append([]string(nil), needs...),
+		script:                   strings.Join(rendered, "\n"),
+		env:                      cloneMap(env),
+		requiredCaps:             requiredCaps,
+		timeoutSeconds:           timeoutSeconds,
+		artifactGlobs:            append([]string(nil), artifacts...),
+		dependencyArtifactJobIDs: append([]string(nil), dependencyArtifactJobIDs...),
+		caches:                   cloneJobCachesFromPersisted(caches),
+		sourceRepo:               p.SourceRepo,
+		sourceRef:                sourceRef,
+		metadata:                 metadata,
+		stepPlan:                 stepPlan,
 	}, nil
 }

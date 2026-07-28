@@ -53,22 +53,24 @@ func TestVerifyDependencyRunInChain(t *testing.T) {
 				"chain_run_id":         "chain-1",
 				"pipeline_version":     "v1.2.3",
 				"pipeline_version_raw": "1.2.3",
+				"pipeline_job_id":      "compile",
 				"build_target":         "linux-amd64",
+				"matrix_name":          "linux-amd64",
 			},
 			ArtifactGlobs: []string{"dist/**"},
 		},
 	}
-	if _, found, err := verifyDependencyRunInChain(jobs, "", "ciwi", "build"); err == nil || found {
+	if _, found, err := verifyDependencyRunInChain(jobs, "", 0, "ciwi", "build"); err == nil || found {
 		t.Fatalf("expected missing chain run id to error")
 	}
-	ctx, found, err := verifyDependencyRunInChain(jobs, "chain-1", "ciwi", "build")
+	ctx, found, err := verifyDependencyRunInChain(jobs, "chain-1", 0, "ciwi", "build")
 	if err != nil || !found {
 		t.Fatalf("expected chain dependency to be found/satisfied: found=%v err=%v", found, err)
 	}
-	if ctx.VersionRaw != "1.2.3" || ctx.ArtifactJobIDs["linux-amd64"] != "job-1" {
+	if ctx.VersionRaw != "1.2.3" || testArtifactExecutionID(ctx, "build", "", "linux-amd64") != "job-1" {
 		t.Fatalf("unexpected chain dependency context: %+v", ctx)
 	}
-	_, found, err = verifyDependencyRunInChain(jobs, "chain-missing", "ciwi", "build")
+	_, found, err = verifyDependencyRunInChain(jobs, "chain-missing", 0, "ciwi", "build")
 	if err != nil || found {
 		t.Fatalf("expected missing chain run to return found=false without error, found=%v err=%v", found, err)
 	}
@@ -102,7 +104,9 @@ func TestCheckPipelineDependenciesWithReporter(t *testing.T) {
 			"pipeline_run_id":      "run-1",
 			"pipeline_version":     "v1.2.3",
 			"pipeline_version_raw": "1.2.3",
+			"pipeline_job_id":      "compile",
 			"build_target":         "linux-amd64",
+			"matrix_name":          "linux-amd64",
 		},
 	})
 	if err != nil {
@@ -117,7 +121,7 @@ func TestCheckPipelineDependenciesWithReporter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected dependency to be satisfied: %v", err)
 	}
-	if ctx.VersionRaw != "1.2.3" || ctx.ArtifactJobIDs["build:linux-amd64"] != job.ID {
+	if ctx.VersionRaw != "1.2.3" || testArtifactExecutionID(ctx, "build", "", "linux-amd64") != job.ID {
 		t.Fatalf("unexpected dependency context: %+v", ctx)
 	}
 	if len(reporterMsgs) == 0 || !strings.Contains(strings.Join(reporterMsgs, "\n"), "dependencies:ok") {

@@ -37,11 +37,12 @@ type jobExecutionStore interface {
 type pipelineStore interface {
 	LoadConfig(cfg config.File, configPath, repoURL, repoRef, configFile string) error
 	GetPipelineByProjectAndID(projectName, pipelineID string) (store.PersistedPipeline, error)
+	GetPipelineByProjectIDAndID(projectID int64, pipelineID string) (store.PersistedPipeline, error)
 	GetPipelineByDBID(id int64) (store.PersistedPipeline, error)
 	GetPipelineChainByDBID(id int64) (store.PersistedPipelineChain, error)
 	ListJobExecutions() ([]protocol.JobExecution, error)
 	CreateJobExecution(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
-	MergeJobExecutionEnv(jobID string, patch map[string]string) (map[string]string, error)
+	SetJobExecutionDependencyArtifactJobIDs(jobID string, ids []string) ([]string, error)
 	MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error)
 	UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	AppendJobExecutionEvents(jobID string, events []protocol.JobExecutionEvent) error

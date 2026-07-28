@@ -59,7 +59,7 @@ func (s *stateStore) pipelineChainSourceRefsHandler(w http.ResponseWriter, ch st
 		http.Error(w, "pipeline chain has empty first pipeline id", http.StatusBadRequest)
 		return
 	}
-	first, err := s.pipelineStore().GetPipelineByProjectAndID(ch.ProjectName, firstID)
+	first, err := s.pipelineStore().GetPipelineByProjectIDAndID(ch.ProjectID, firstID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("load pipeline %q in chain %q: %v", firstID, ch.ChainID, err), http.StatusBadRequest)
 		return
