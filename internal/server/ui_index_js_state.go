@@ -37,7 +37,7 @@ const uiIndexStateJS = `
     const JOBS_WINDOW = 150;
     const JOBS_BATCH_SIZE = 5;
     const HISTORY_CARD_WINDOW = 40;
-    const HISTORY_CARD_BATCH = 5;
+    const HISTORY_CARD_BATCH = HISTORY_CARD_WINDOW;
     const projectIconURLByName = Object.create(null);
 
     function projectIconURLForJob(job) {
