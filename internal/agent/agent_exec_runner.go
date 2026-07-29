@@ -93,6 +93,7 @@ func runCancelableCommand(ctx context.Context, cmd *exec.Cmd) error {
 	case err := <-waitCh:
 		return err
 	case <-ctx.Done():
+		descendantPIDs, _ := commandDescendantPIDs(cmd)
 		_ = interruptCommandTree(cmd)
 		timer := time.NewTimer(2 * time.Second)
 		defer timer.Stop()
@@ -103,6 +104,19 @@ func runCancelableCommand(ctx context.Context, cmd *exec.Cmd) error {
 			}
 			return ctx.Err()
 		case <-timer.C:
+			descendantsKilled, _ := killCommandDescendants(cmd, descendantPIDs)
+			if descendantsKilled {
+				cleanupTimer := time.NewTimer(5 * time.Second)
+				select {
+				case err := <-waitCh:
+					cleanupTimer.Stop()
+					if err != nil {
+						return err
+					}
+					return ctx.Err()
+				case <-cleanupTimer.C:
+				}
+			}
 			_ = killCommandTree(cmd)
 			select {
 			case err := <-waitCh:

@@ -37,6 +37,16 @@ func interruptCommandTree(cmd *exec.Cmd) error {
 	return nil
 }
 
+func commandDescendantPIDs(_ *exec.Cmd) ([]int, error) {
+	return nil, nil
+}
+
+func killCommandDescendants(_ *exec.Cmd, _ []int) (bool, error) {
+	// taskkill /T does not provide a way to preserve only the process-group
+	// leader. Keep the existing Windows escalation behavior.
+	return false, nil
+}
+
 func killCommandTree(cmd *exec.Cmd) error {
 	pid := commandPID(cmd)
 	if pid <= 0 {

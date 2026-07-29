@@ -4,7 +4,9 @@ package agent
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -107,4 +109,48 @@ func TestCommandPIDAndTreeSignals(t *testing.T) {
 			t.Fatalf("timed out waiting for SIGKILL termination")
 		}
 	})
+}
+
+func TestKillCommandDescendantsPreservesProcessGroupLeader(t *testing.T) {
+	dir := t.TempDir()
+	cmd := exec.Command("sh", "-c", `sh -c 'trap "" INT TERM; while true; do sleep 1; done' & echo ready > ready; wait; while true; do sleep 1; done`)
+	cmd.Dir = dir
+	prepareCommandForCancellation(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start process group: %v", err)
+	}
+	defer func() {
+		_ = killCommandTree(cmd)
+		_, _ = cmd.Process.Wait()
+	}()
+
+	readyPath := filepath.Join(dir, "ready")
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := os.Stat(readyPath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for child process")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	pids, err := commandDescendantPIDs(cmd)
+	if err != nil {
+		t.Fatalf("snapshot descendants: %v", err)
+	}
+	if len(pids) == 0 {
+		t.Fatal("expected at least one process-group descendant in snapshot")
+	}
+	killed, err := killCommandDescendants(cmd, pids)
+	if err != nil {
+		t.Fatalf("kill descendants: %v", err)
+	}
+	if !killed {
+		t.Fatal("expected at least one process-group descendant to be killed")
+	}
+	if err := syscall.Kill(commandPID(cmd), 0); err != nil {
+		t.Fatalf("expected process-group leader to remain alive: %v", err)
+	}
 }

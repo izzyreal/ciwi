@@ -759,6 +759,43 @@ func TestRunCancelableCommandSendsInterruptBeforeKill(t *testing.T) {
 	}
 }
 
+func TestRunCancelableCommandLetsShellCleanUpAfterStubbornChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("signal semantics test is unix-specific")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skipf("sh not available: %v", err)
+	}
+	if _, err := exec.LookPath("ps"); err != nil {
+		t.Skipf("ps not available: %v", err)
+	}
+
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.Command("sh", "-c", `trap 'echo cleanup > cleanup.txt' EXIT INT TERM; sh -c 'trap "" INT TERM; while true; do sleep 1; done'`)
+	cmd.Dir = dir
+	prepareCommandForCancellation(cmd)
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	err := runCancelableCommand(ctx, cmd)
+	if err == nil {
+		t.Fatalf("expected cancellation error")
+	}
+	if elapsed := time.Since(start); elapsed > 6*time.Second {
+		t.Fatalf("expected cleanup before whole-group hard kill, took %s", elapsed)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "cleanup.txt")); statErr != nil {
+		t.Fatalf("expected shell cleanup trap marker file, stat err=%v", statErr)
+	}
+}
+
 func TestExecuteLeasedJobRunsPipelineStepsInSeparateShellProcesses(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix shell assertion test skipped on windows")
