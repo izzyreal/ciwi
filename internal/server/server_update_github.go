@@ -12,6 +12,35 @@ func (s *stateStore) fetchLatestUpdateInfo(ctx context.Context) (latestUpdateInf
 	return s.fetchUpdateInfoForTag(ctx, "")
 }
 
+func (s *stateStore) fetchAvailableUpdateInfos(ctx context.Context) ([]latestUpdateInfo, error) {
+	infos, err := serverupdate.FetchAvailableInfos(ctx, serverupdate.FetchInfoOptions{
+		APIBase:           envOrDefault("CIWI_UPDATE_API_BASE", "https://api.github.com"),
+		Repo:              envOrDefault("CIWI_UPDATE_REPO", "izzyreal/ciwi"),
+		ChecksumAssetName: envOrDefault("CIWI_UPDATE_CHECKSUM_ASSET", "ciwi-checksums.txt"),
+		RequireChecksum:   strings.TrimSpace(envOrDefault("CIWI_UPDATE_REQUIRE_CHECKSUM", "true")) != "false",
+		AuthToken:         envOrDefault("CIWI_GITHUB_TOKEN", ""),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]latestUpdateInfo, 0, len(infos))
+	for _, info := range infos {
+		out = append(out, latestUpdateInfo{
+			TagName: info.TagName,
+			HTMLURL: info.HTMLURL,
+			Asset: githubReleaseAsset{
+				Name: info.Asset.Name,
+				URL:  info.Asset.URL,
+			},
+			ChecksumAsset: githubReleaseAsset{
+				Name: info.ChecksumAsset.Name,
+				URL:  info.ChecksumAsset.URL,
+			},
+		})
+	}
+	return out, nil
+}
+
 func (s *stateStore) fetchUpdateInfoForTag(ctx context.Context, targetTag string) (latestUpdateInfo, error) {
 	info, err := serverupdate.FetchLatestInfo(ctx, serverupdate.FetchInfoOptions{
 		APIBase:           envOrDefault("CIWI_UPDATE_API_BASE", "https://api.github.com"),

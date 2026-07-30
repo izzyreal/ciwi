@@ -215,6 +215,9 @@ func TestFetchLatestInfoRequiresChecksumWhenEnabled(t *testing.T) {
 		t.Skip("no expected asset naming for this GOOS/GOARCH")
 	}
 	client := mockClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/repos/acme/ciwi/releases" {
+			return jsonResponse(http.StatusOK, []map[string]any{}), nil
+		}
 		return jsonResponse(http.StatusOK, map[string]any{
 			"tag_name": "v1.0.0",
 			"assets":   []map[string]any{{"name": assetName, "url": "https://example/download/ciwi"}},
@@ -229,6 +232,164 @@ func TestFetchLatestInfoRequiresChecksumWhenEnabled(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "no checksum asset") {
 		t.Fatalf("expected checksum error, got %v", err)
+	}
+}
+
+func TestFetchLatestInfoFallsBackToNewestCompleteStableRelease(t *testing.T) {
+	assetName := updateutil.ExpectedAssetName(runtime.GOOS, runtime.GOARCH)
+	if strings.TrimSpace(assetName) == "" {
+		t.Skip("no expected asset naming for this GOOS/GOARCH")
+	}
+
+	var paths []string
+	client := mockClient(func(r *http.Request) (*http.Response, error) {
+		paths = append(paths, r.URL.RequestURI())
+		if got := r.Header.Get("Authorization"); got != "Bearer fallback-token" {
+			t.Fatalf("missing fallback request auth header, got %q", got)
+		}
+		switch r.URL.Path {
+		case "/repos/acme/ciwi/releases/latest":
+			return jsonResponse(http.StatusOK, map[string]any{
+				"tag_name": "v4.0.0",
+				"assets":   []map[string]any{{"name": assetName, "url": "https://example/download/v4"}},
+			}), nil
+		case "/repos/acme/ciwi/releases":
+			return jsonResponse(http.StatusOK, []map[string]any{
+				{
+					"tag_name": "v5.0.0",
+					"draft":    true,
+					"assets": []map[string]any{
+						{"name": assetName, "url": "https://example/download/v5"},
+						{"name": "ciwi-checksums.txt", "url": "https://example/download/v5-sums"},
+					},
+				},
+				{
+					"tag_name":   "v4.1.0-rc.1",
+					"prerelease": true,
+					"assets": []map[string]any{
+						{"name": assetName, "url": "https://example/download/v4-rc"},
+						{"name": "ciwi-checksums.txt", "url": "https://example/download/v4-rc-sums"},
+					},
+				},
+				{
+					"tag_name": "v4.0.0",
+					"assets":   []map[string]any{{"name": assetName, "url": "https://example/download/v4"}},
+				},
+				{
+					"tag_name": "v3.2.1",
+					"html_url": "https://example/releases/v3.2.1",
+					"assets": []map[string]any{
+						{"name": assetName, "url": "https://example/download/v3"},
+						{"name": "ciwi-checksums.txt", "url": "https://example/download/v3-sums"},
+					},
+				},
+			}), nil
+		default:
+			return textResponse(http.StatusNotFound, "not found"), nil
+		}
+	})
+
+	info, err := FetchLatestInfo(context.Background(), FetchInfoOptions{
+		APIBase:         "https://api.example",
+		Repo:            "acme/ciwi",
+		AuthToken:       "fallback-token",
+		HTTPClient:      client,
+		RequireChecksum: true,
+	})
+	if err != nil {
+		t.Fatalf("fetch latest complete release: %v", err)
+	}
+	if info.TagName != "v3.2.1" || info.HTMLURL != "https://example/releases/v3.2.1" {
+		t.Fatalf("unexpected fallback release: %+v", info)
+	}
+	if info.Asset.Name != assetName || info.ChecksumAsset.Name != "ciwi-checksums.txt" {
+		t.Fatalf("fallback release is incomplete: %+v", info)
+	}
+	wantPaths := []string{
+		"/repos/acme/ciwi/releases/latest",
+		"/repos/acme/ciwi/releases?per_page=100",
+	}
+	if strings.Join(paths, "\n") != strings.Join(wantPaths, "\n") {
+		t.Fatalf("unexpected request paths: %#v", paths)
+	}
+}
+
+func TestFetchAvailableInfosReturnsOnlyCompleteStableReleases(t *testing.T) {
+	assetName := updateutil.ExpectedAssetName(runtime.GOOS, runtime.GOARCH)
+	if strings.TrimSpace(assetName) == "" {
+		t.Skip("no expected asset naming for this GOOS/GOARCH")
+	}
+
+	client := mockClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.RequestURI() != "/repos/acme/ciwi/releases?per_page=100" {
+			t.Fatalf("unexpected request: %s", r.URL.RequestURI())
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer releases-token" {
+			t.Fatalf("missing releases request auth header, got %q", got)
+		}
+		completeAssets := []map[string]any{
+			{"name": assetName, "url": "https://example/download/ciwi"},
+			{"name": "ciwi-checksums.txt", "url": "https://example/download/sums"},
+		}
+		return jsonResponse(http.StatusOK, []map[string]any{
+			{"tag_name": "v5.0.0", "draft": true, "assets": completeAssets},
+			{"tag_name": "v4.0.0-rc.1", "prerelease": true, "assets": completeAssets},
+			{"tag_name": "v3.0.0", "assets": []map[string]any{{"name": assetName, "url": "https://example/download/incomplete"}}},
+			{"tag_name": "v2.0.0", "html_url": "https://example/releases/v2.0.0", "assets": completeAssets},
+			{"tag_name": "v2.0.0", "assets": completeAssets},
+			{"tag_name": "v1.0.0", "html_url": "https://example/releases/v1.0.0", "assets": completeAssets},
+			{"tag_name": " ", "assets": completeAssets},
+		}), nil
+	})
+
+	infos, err := FetchAvailableInfos(context.Background(), FetchInfoOptions{
+		APIBase:         "https://api.example",
+		Repo:            "acme/ciwi",
+		AuthToken:       "releases-token",
+		HTTPClient:      client,
+		RequireChecksum: true,
+	})
+	if err != nil {
+		t.Fatalf("fetch available release infos: %v", err)
+	}
+	if len(infos) != 2 {
+		t.Fatalf("expected two complete stable releases, got %+v", infos)
+	}
+	if infos[0].TagName != "v2.0.0" || infos[1].TagName != "v1.0.0" {
+		t.Fatalf("unexpected available release order: %+v", infos)
+	}
+}
+
+func TestFetchLatestInfoTargetTagDoesNotFallback(t *testing.T) {
+	assetName := updateutil.ExpectedAssetName(runtime.GOOS, runtime.GOARCH)
+	if strings.TrimSpace(assetName) == "" {
+		t.Skip("no expected asset naming for this GOOS/GOARCH")
+	}
+
+	requests := 0
+	client := mockClient(func(r *http.Request) (*http.Response, error) {
+		requests++
+		if r.URL.Path != "/repos/acme/ciwi/releases/tags/v4.0.0" {
+			t.Fatalf("unexpected fallback request for targeted release: %s", r.URL.RequestURI())
+		}
+		return jsonResponse(http.StatusOK, map[string]any{
+			"tag_name": "v4.0.0",
+			"assets":   []map[string]any{{"name": assetName, "url": "https://example/download/v4"}},
+		}), nil
+	})
+
+	_, err := FetchLatestInfo(context.Background(), FetchInfoOptions{
+		APIBase:         "https://api.example",
+		Repo:            "acme/ciwi",
+		TargetTag:       "v4.0.0",
+		HTTPClient:      client,
+		RequireChecksum: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "release for tag v4.0.0 has no checksum asset") {
+		t.Fatalf("expected strict targeted-release checksum error, got %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("targeted release should make exactly one request, got %d", requests)
 	}
 }
 
@@ -379,6 +540,9 @@ func TestFetchLatestInfoTargetTagAndErrorLabel(t *testing.T) {
 
 func TestFetchLatestInfoMissingCompatibleAsset(t *testing.T) {
 	client := mockClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/repos/acme/ciwi/releases" {
+			return jsonResponse(http.StatusOK, []map[string]any{}), nil
+		}
 		return jsonResponse(http.StatusOK, map[string]any{
 			"tag_name": "v1.0.0",
 			"assets": []map[string]any{

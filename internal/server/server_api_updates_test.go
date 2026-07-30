@@ -55,6 +55,106 @@ func TestServerUpdateCheckEndpoint(t *testing.T) {
 	}
 }
 
+func TestServerUpdateCheckSkipsIncompleteLatestRelease(t *testing.T) {
+	asset := expectedAssetName(runtime.GOOS, runtime.GOARCH)
+	if asset == "" {
+		t.Skip("runtime has no configured release asset naming")
+	}
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/izzyreal/ciwi/releases/latest":
+			_, _ = w.Write([]byte(`{"tag_name":"v0.3.0","html_url":"https://github.com/izzyreal/ciwi/releases/tag/v0.3.0","assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.3.0"}]}`))
+		case "/repos/izzyreal/ciwi/releases":
+			if r.URL.Query().Get("per_page") != "100" {
+				http.Error(w, "unexpected releases page size: "+r.URL.RawQuery, http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"tag_name":"v0.3.0","assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.3.0"}]},{"tag_name":"v0.2.0","html_url":"https://github.com/izzyreal/ciwi/releases/tag/v0.2.0","assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.2.0"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/v0.2.0-checksums"}]}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer gh.Close()
+
+	t.Setenv("CIWI_UPDATE_API_BASE", gh.URL)
+	t.Setenv("CIWI_UPDATE_REPO", "izzyreal/ciwi")
+	t.Setenv("CIWI_UPDATE_REQUIRE_CHECKSUM", "true")
+	oldVersion := version.Version
+	version.Version = "v0.1.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/check", map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update check status=%d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		LatestVersion   string `json:"latest_version"`
+		UpdateAvailable bool   `json:"update_available"`
+		ReleaseURL      string `json:"release_url"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.LatestVersion != "v0.2.0" || !payload.UpdateAvailable {
+		t.Fatalf("expected complete v0.2.0 update, got %+v", payload)
+	}
+	if payload.ReleaseURL != "https://github.com/izzyreal/ciwi/releases/tag/v0.2.0" {
+		t.Fatalf("unexpected fallback release URL: %q", payload.ReleaseURL)
+	}
+}
+
+func TestServerUpdateCheckListsAllValidNewerReleases(t *testing.T) {
+	asset := expectedAssetName(runtime.GOOS, runtime.GOARCH)
+	if asset == "" {
+		t.Skip("runtime has no configured release asset naming")
+	}
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/izzyreal/ciwi/releases" || r.URL.Query().Get("per_page") != "100" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"v0.5.0","assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.5.0"}]},
+			{"tag_name":"v0.4.0","draft":true,"assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.4.0"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/v0.4.0-checksums"}]},
+			{"tag_name":"v0.3.0","assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.3.0"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/v0.3.0-checksums"}]},
+			{"tag_name":"v0.2.0","assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.2.0"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/v0.2.0-checksums"}]},
+			{"tag_name":"v0.1.0","assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.1.0"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/v0.1.0-checksums"}]},
+			{"tag_name":"v0.0.9","assets":[{"name":"` + asset + `","url":"https://example.invalid/v0.0.9"},{"name":"ciwi-checksums.txt","url":"https://example.invalid/v0.0.9-checksums"}]}
+		]`))
+	}))
+	defer gh.Close()
+
+	t.Setenv("CIWI_UPDATE_API_BASE", gh.URL)
+	t.Setenv("CIWI_UPDATE_REPO", "izzyreal/ciwi")
+	t.Setenv("CIWI_UPDATE_REQUIRE_CHECKSUM", "true")
+	oldVersion := version.Version
+	version.Version = "v0.1.0"
+	t.Cleanup(func() { version.Version = oldVersion })
+
+	ts := newTestHTTPServer(t)
+	defer ts.Close()
+
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/update/check", map[string]any{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update check status=%d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var payload struct {
+		LatestVersion     string   `json:"latest_version"`
+		AvailableVersions []string `json:"available_versions"`
+		UpdateAvailable   bool     `json:"update_available"`
+	}
+	decodeJSONBody(t, resp, &payload)
+	if payload.LatestVersion != "v0.3.0" || !payload.UpdateAvailable {
+		t.Fatalf("unexpected update selection: %+v", payload)
+	}
+	if len(payload.AvailableVersions) != 2 || payload.AvailableVersions[0] != "v0.3.0" || payload.AvailableVersions[1] != "v0.2.0" {
+		t.Fatalf("unexpected available versions: %+v", payload.AvailableVersions)
+	}
+}
+
 func TestServerInfoEndpoint(t *testing.T) {
 	oldVersion := version.Version
 	version.Version = "v0.9.1"

@@ -43,7 +43,7 @@ func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	info, err := s.fetchLatestUpdateInfo(r.Context())
+	infos, err := s.fetchAvailableUpdateInfos(r.Context())
 	if err != nil {
 		_ = s.persistUpdateStatus(map[string]string{
 			updateKeyLastCheckedUTC:  time.Now().UTC().Format(time.RFC3339Nano),
@@ -58,12 +58,29 @@ func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	current := currentVersion()
+	availableVersions := make([]string, 0, len(infos))
+	for _, candidate := range infos {
+		if isVersionNewer(candidate.TagName, current) {
+			availableVersions = append(availableVersions, candidate.TagName)
+		}
+	}
+	info := infos[0]
+	if len(availableVersions) > 0 {
+		for _, candidate := range infos {
+			if candidate.TagName == availableVersions[0] {
+				info = candidate
+				break
+			}
+		}
+	}
 	resp := updateCheckResponse{
-		CurrentVersion:  currentVersion(),
-		LatestVersion:   info.TagName,
-		UpdateAvailable: isVersionNewer(info.TagName, currentVersion()),
-		ReleaseURL:      info.HTMLURL,
-		AssetName:       info.Asset.Name,
+		CurrentVersion:    current,
+		LatestVersion:     info.TagName,
+		AvailableVersions: availableVersions,
+		UpdateAvailable:   len(availableVersions) > 0,
+		ReleaseURL:        info.HTMLURL,
+		AssetName:         info.Asset.Name,
 	}
 	if !resp.UpdateAvailable {
 		resp.Message = "already up to date"

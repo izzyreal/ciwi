@@ -50,6 +50,44 @@ const settingsUpdateJS = `
       return false;
     }
 
+    function setAvailableUpdateVersions(versions, preferredVersion) {
+      const select = document.getElementById('updateVersionSelect');
+      if (!select) return;
+      const previous = String(select.value || '').trim();
+      const unique = [];
+      const seen = new Set();
+      (Array.isArray(versions) ? versions : []).forEach(version => {
+        const value = String(version || '').trim();
+        if (!value || seen.has(value)) return;
+        seen.add(value);
+        unique.push(value);
+      });
+      select.innerHTML = '';
+      if (unique.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No newer versions available';
+        select.appendChild(opt);
+        select.disabled = true;
+        return;
+      }
+      unique.forEach(version => {
+        const opt = document.createElement('option');
+        opt.value = version;
+        opt.textContent = version;
+        select.appendChild(opt);
+      });
+      const preferred = String(preferredVersion || '').trim();
+      if (previous && seen.has(previous)) {
+        select.value = previous;
+      } else if (preferred && seen.has(preferred)) {
+        select.value = preferred;
+      } else {
+        select.selectedIndex = 0;
+      }
+      select.disabled = false;
+    }
+
     document.getElementById('checkUpdatesBtn').onclick = async () => {
       const result = document.getElementById('updateResult');
       result.textContent = 'Checking...';
@@ -57,12 +95,14 @@ const settingsUpdateJS = `
         const r = await apiJSON('/api/v1/update/check', { method: 'POST', body: '{}' });
         const latest = r.latest_version || '';
         const current = r.current_version || '';
+        setAvailableUpdateVersions(r.available_versions, latest);
         if (r.update_available) {
           result.textContent = 'Update available: ' + current + ' -> ' + latest + (r.asset_name ? (' (' + r.asset_name + ')') : '');
         } else {
           result.textContent = r.message || ('Up to date (' + current + ')');
         }
       } catch (e) {
+        setAvailableUpdateVersions([], '');
         result.textContent = 'Update check failed: ' + e.message;
       }
       await refreshUpdateStatus();
@@ -181,6 +221,12 @@ const settingsUpdateJS = `
     document.getElementById('applyUpdateBtn').onclick = async (ev) => {
       const clickId = (++applyUpdateClickSeq);
       const result = document.getElementById('updateResult');
+      const select = document.getElementById('updateVersionSelect');
+      const target = String((select && select.value) || '').trim();
+      if (!target) {
+        result.textContent = 'Check for updates and select a version first.';
+        return;
+      }
       // DEBUG(apply-update-confirm)
       logApplyUpdateDebug('click', {
         click_id: clickId,
@@ -189,15 +235,16 @@ const settingsUpdateJS = `
       });
       const confirmed = await showConfirmDialog({
         title: 'Apply Update',
-        message: 'Apply update now and restart ciwi?',
+        message: 'Update server and agents to ' + target + ' and restart ciwi?',
         okLabel: 'Apply update',
       });
       logApplyUpdateDebug('confirm_result', { click_id: clickId, confirmed: !!confirmed });
       if (!confirmed) return;
       result.textContent = 'Starting update...';
-      logApplyUpdateDebug('request_begin', { click_id: clickId, path: '/api/v1/update/apply' });
+      logApplyUpdateDebug('request_begin', { click_id: clickId, path: '/api/v1/update/apply', target_version: target });
       try {
-        const r = await postJSONWithTimeout('/api/v1/update/apply', '{}', 30000);
+        const body = JSON.stringify({ target_version: target });
+        const r = await postJSONWithTimeout('/api/v1/update/apply', body, 30000);
         logApplyUpdateDebug('request_ok', {
           click_id: clickId,
           updated: !!(r && r.updated),
@@ -341,6 +388,7 @@ const settingsUpdateJS = `
       const rollbackBtn = document.getElementById('rollbackUpdateBtn');
       const rollbackRefreshBtn = document.getElementById('refreshRollbackTagsBtn');
       const rollbackSelect = document.getElementById('rollbackTagSelect');
+      const updateSelect = document.getElementById('updateVersionSelect');
       const updateCapabilityNotice = document.getElementById('updateCapabilityNotice');
       const rollbackCapabilityNotice = document.getElementById('rollbackCapabilityNotice');
       try {
@@ -350,12 +398,8 @@ const settingsUpdateJS = `
         const serverMode = String(s.update_server_mode || '').trim();
         const current = (s.update_current_version || '').trim();
         const latest = (s.update_latest_version || '').trim();
-        let available = '';
-        if (current && latest) {
-          available = current === latest ? '0' : '1';
-        } else {
-          available = (s.update_available || '').trim();
-        }
+        let available = (s.update_available || '').trim();
+        if (current && latest && current === latest) available = '0';
         const parts = [];
         if (current) parts.push('Current: ' + current);
         if (latest) parts.push('Latest: ' + latest);
@@ -386,8 +430,9 @@ const settingsUpdateJS = `
         if (checkBtn) checkBtn.disabled = !serverUpdateSupported;
         if (applyBtn) {
           applyBtn.style.display = (!serverUpdateSupported || available === '1') ? 'inline-block' : 'none';
-          applyBtn.disabled = !serverUpdateSupported || (available !== '1');
+          applyBtn.disabled = !serverUpdateSupported || (available !== '1') || !updateSelect || !updateSelect.value;
         }
+        if (updateSelect) updateSelect.disabled = !serverUpdateSupported || !updateSelect.value;
         if (rollbackSelect) rollbackSelect.disabled = !serverUpdateSupported;
         if (rollbackBtn) rollbackBtn.disabled = !serverUpdateSupported;
         if (rollbackRefreshBtn) rollbackRefreshBtn.disabled = !serverUpdateSupported;
@@ -412,6 +457,7 @@ const settingsUpdateJS = `
           applyBtn.style.display = 'inline-block';
           applyBtn.disabled = true;
         }
+        if (updateSelect) updateSelect.disabled = true;
         if (rollbackSelect) rollbackSelect.disabled = true;
         if (rollbackBtn) rollbackBtn.disabled = true;
         if (rollbackRefreshBtn) rollbackRefreshBtn.disabled = true;

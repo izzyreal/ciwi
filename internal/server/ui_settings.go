@@ -19,6 +19,34 @@ const settingsHTML = `<!doctype html>
       font-size: 14px;
     }
     input { width: 280px; max-width: 100%; }
+    .version-select {
+      min-width: 220px;
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 38px 0 10px;
+      font: inherit;
+      font-size: 14px;
+      line-height: 1.1;
+      appearance: none;
+      -webkit-appearance: none;
+      background-color: #ffffff;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%235f6f67' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 11px center;
+      background-size: 12px 8px;
+      color: var(--ink);
+    }
+    .version-select:disabled {
+      opacity: 0.65;
+      cursor: default;
+      color: var(--muted);
+      background-color: #f7f9f8;
+    }
+    .version-action-row > button,
+    .version-action-row > .version-select {
+      height: 34px;
+    }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
     .top-nav { margin-left: auto; justify-content: flex-end; }
@@ -68,8 +96,11 @@ const settingsHTML = `<!doctype html>
     <div class="split-row">
       <div class="card">
         <h2>Server Updates</h2>
-        <div class="row">
+        <div class="row version-action-row">
           <button id="checkUpdatesBtn" class="secondary">Check for updates</button>
+          <select id="updateVersionSelect" class="version-select" disabled>
+            <option value="">Check for updates</option>
+          </select>
           <button id="applyUpdateBtn" class="secondary">Update now</button>
           <span id="updateResult" style="color:#5f6f67;"></span>
         </div>
@@ -81,8 +112,8 @@ const settingsHTML = `<!doctype html>
       </div>
       <div class="card">
         <h2>Rollback</h2>
-        <div class="row">
-          <select id="rollbackTagSelect" style="min-width:220px;"></select>
+        <div class="row version-action-row">
+          <select id="rollbackTagSelect" class="version-select"></select>
           <button id="refreshRollbackTagsBtn" class="secondary">Refresh tags</button>
           <button id="rollbackUpdateBtn" class="secondary">Rollback</button>
           <span id="rollbackResult" style="color:#5f6f67;"></span>

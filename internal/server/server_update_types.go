@@ -10,12 +10,13 @@ type updateState struct {
 }
 
 type updateCheckResponse struct {
-	CurrentVersion  string `json:"current_version"`
-	LatestVersion   string `json:"latest_version,omitempty"`
-	UpdateAvailable bool   `json:"update_available"`
-	ReleaseURL      string `json:"release_url,omitempty"`
-	AssetName       string `json:"asset_name,omitempty"`
-	Message         string `json:"message,omitempty"`
+	CurrentVersion    string   `json:"current_version"`
+	LatestVersion     string   `json:"latest_version,omitempty"`
+	AvailableVersions []string `json:"available_versions,omitempty"`
+	UpdateAvailable   bool     `json:"update_available"`
+	ReleaseURL        string   `json:"release_url,omitempty"`
+	AssetName         string   `json:"asset_name,omitempty"`
+	Message           string   `json:"message,omitempty"`
 }
 
 type updateTagsResponse struct {
