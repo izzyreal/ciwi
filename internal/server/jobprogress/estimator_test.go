@@ -130,6 +130,82 @@ func TestAttachDetailEstimateMatchesStepEventsWithoutEnv(t *testing.T) {
 	}
 }
 
+func TestEstimateStepsRetainsHistoryAcrossIndexShifts(t *testing.T) {
+	step := func(index int, script string) protocol.JobStepPlanItem {
+		return protocol.JobStepPlanItem{Index: index, Script: script, Kind: "run"}
+	}
+	tests := []struct {
+		name       string
+		historical []protocol.JobStepPlanItem
+		current    []protocol.JobStepPlanItem
+		want       map[int]int64
+	}{
+		{
+			name:       "earlier step removed",
+			historical: []protocol.JobStepPlanItem{step(1, "prepare"), step(2, "build"), step(3, "test")},
+			current:    []protocol.JobStepPlanItem{step(1, "build"), step(2, "test")},
+			want:       map[int]int64{1: 2000, 2: 3000},
+		},
+		{
+			name:       "earlier step inserted",
+			historical: []protocol.JobStepPlanItem{step(1, "build"), step(2, "test")},
+			current:    []protocol.JobStepPlanItem{step(1, "prepare"), step(2, "build"), step(3, "test")},
+			want:       map[int]int64{2: 1000, 3: 2000},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			history := protocol.JobExecution{ID: "history", StepPlan: tt.historical}
+			events := make([]protocol.JobExecutionEvent, 0, len(tt.historical))
+			for _, historicalStep := range tt.historical {
+				historicalStep := historicalStep
+				events = append(events, protocol.JobExecutionEvent{
+					Type: protocol.JobExecutionEventTypeStepFinished, Step: &historicalStep,
+					DurationMS: int64(historicalStep.Index) * 1000,
+				})
+			}
+
+			got := estimateSteps(tt.current, []protocol.JobExecution{history}, nil, map[string][]protocol.JobExecutionEvent{"history": events})
+			if len(got) != len(tt.want) {
+				t.Fatalf("expected estimates %v, got %v", tt.want, got)
+			}
+			for index, duration := range tt.want {
+				if got[index] != duration {
+					t.Fatalf("expected step %d duration %dms, got %dms from %v", index, duration, got[index], got)
+				}
+			}
+		})
+	}
+}
+
+func TestEstimateStepsAlignsRepeatedIdenticalStepsInOrder(t *testing.T) {
+	historical := []protocol.JobStepPlanItem{
+		{Index: 1, Script: "prepare", Kind: "run"},
+		{Index: 2, Script: "make", Kind: "run"},
+		{Index: 3, Script: "make", Kind: "run"},
+		{Index: 4, Script: "test", Kind: "run"},
+	}
+	current := []protocol.JobStepPlanItem{
+		{Index: 1, Script: "make", Kind: "run"},
+		{Index: 2, Script: "make", Kind: "run"},
+		{Index: 3, Script: "test", Kind: "run"},
+	}
+	history := protocol.JobExecution{ID: "history", StepPlan: historical}
+	events := []protocol.JobExecutionEvent{
+		{Type: protocol.JobExecutionEventTypeStepFinished, Step: &historical[1], DurationMS: 1200},
+		{Type: protocol.JobExecutionEventTypeStepFinished, Step: &historical[2], DurationMS: 3400},
+		{Type: protocol.JobExecutionEventTypeStepFinished, Step: &historical[3], DurationMS: 5600},
+	}
+
+	got := estimateSteps(current, []protocol.JobExecution{history}, nil, map[string][]protocol.JobExecutionEvent{"history": events})
+	want := map[int]int64{1: 1200, 2: 3400, 3: 5600}
+	for index, duration := range want {
+		if got[index] != duration {
+			t.Fatalf("expected step %d duration %dms, got %dms from %v", index, duration, got[index], got)
+		}
+	}
+}
+
 func TestAttachJobEstimatesUsesProvisionalEstimateForUnleasedJobs(t *testing.T) {
 	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
 	step := protocol.JobStepPlanItem{Index: 1, Script: "make"}

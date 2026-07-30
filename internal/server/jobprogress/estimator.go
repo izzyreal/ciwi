@@ -402,7 +402,12 @@ func executableStepFromPlan(step protocol.JobStepPlanItem) executableStep {
 }
 
 func stepPlanFingerprint(step protocol.JobStepPlanItem) string {
-	encoded, _ := json.Marshal(executableStepFromPlan(step))
+	executable := executableStepFromPlan(step)
+	// A step's position is not part of its executable identity. Keeping it out
+	// lets unchanged steps retain history when an earlier step is inserted or
+	// removed. The complete job fingerprint remains position-sensitive.
+	executable.Index = 0
+	encoded, _ := json.Marshal(executable)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
 }
@@ -424,8 +429,8 @@ func estimateSteps(plan []protocol.JobStepPlanItem, exactMatches, fallbackMatche
 	for _, step := range plan {
 		wanted[step.Index] = step
 	}
-	exactSamples := collectStepSamples(wanted, exactMatches, eventsByJob)
-	fallbackSamples := collectStepSamples(wanted, fallbackMatches, eventsByJob)
+	exactSamples := collectStepSamples(plan, exactMatches, eventsByJob)
+	fallbackSamples := collectStepSamples(plan, fallbackMatches, eventsByJob)
 	out := make(map[int]int64)
 	for index := range wanted {
 		durations := exactSamples[index]
@@ -442,28 +447,71 @@ func estimateSteps(plan []protocol.JobStepPlanItem, exactMatches, fallbackMatche
 	return out
 }
 
-func collectStepSamples(wanted map[int]protocol.JobStepPlanItem, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[int][]int64 {
+func collectStepSamples(wanted []protocol.JobStepPlanItem, matches []protocol.JobExecution, eventsByJob map[string][]protocol.JobExecutionEvent) map[int][]int64 {
 	samples := make(map[int][]int64, len(wanted))
 	for _, match := range matches {
 		candidateSteps := make(map[int]protocol.JobStepPlanItem, len(match.StepPlan))
 		for _, step := range match.StepPlan {
 			candidateSteps[step.Index] = step
 		}
+		targetIndices := alignStepPlans(match.StepPlan, wanted)
 		for _, event := range eventsByJob[match.ID] {
 			if event.Type != protocol.JobExecutionEventTypeStepFinished || event.Step == nil || event.DurationMS <= 0 || (event.ExitCode != nil && *event.ExitCode != 0) || strings.TrimSpace(event.Error) != "" {
 				continue
 			}
-			targetStep, ok := wanted[event.Step.Index]
 			candidateStep, candidateOK := candidateSteps[event.Step.Index]
-			if !ok || !candidateOK || len(samples[event.Step.Index]) >= maxSamples ||
-				stepPlanFingerprint(candidateStep) != stepPlanFingerprint(targetStep) ||
-				stepEventFingerprint(*event.Step) != stepEventFingerprint(targetStep) {
+			targetIndex, aligned := targetIndices[event.Step.Index]
+			if !aligned || !candidateOK || len(samples[targetIndex]) >= maxSamples ||
+				stepEventFingerprint(*event.Step) != stepEventFingerprint(candidateStep) {
 				continue
 			}
-			samples[event.Step.Index] = append(samples[event.Step.Index], event.DurationMS)
+			samples[targetIndex] = append(samples[targetIndex], event.DurationMS)
 		}
 	}
 	return samples
+}
+
+// alignStepPlans associates historical steps with the current plan by
+// executable identity and order. A longest-common-subsequence alignment keeps
+// unchanged steps attached across insertions and removals while refusing to
+// reuse history across command or configuration changes.
+func alignStepPlans(candidate, target []protocol.JobStepPlanItem) map[int]int {
+	candidateFingerprints := make([]string, len(candidate))
+	for i := range candidate {
+		candidateFingerprints[i] = stepPlanFingerprint(candidate[i])
+	}
+	targetFingerprints := make([]string, len(target))
+	for i := range target {
+		targetFingerprints[i] = stepPlanFingerprint(target[i])
+	}
+
+	lengths := make([][]int, len(candidate)+1)
+	for i := range lengths {
+		lengths[i] = make([]int, len(target)+1)
+	}
+	for i := len(candidate) - 1; i >= 0; i-- {
+		for j := len(target) - 1; j >= 0; j-- {
+			if candidateFingerprints[i] == targetFingerprints[j] {
+				lengths[i][j] = 1 + lengths[i+1][j+1]
+			} else {
+				lengths[i][j] = max(lengths[i+1][j], lengths[i][j+1])
+			}
+		}
+	}
+
+	aligned := make(map[int]int, lengths[0][0])
+	for i, j := 0, 0; i < len(candidate) && j < len(target); {
+		if candidateFingerprints[i] == targetFingerprints[j] {
+			aligned[candidate[i].Index] = target[j].Index
+			i++
+			j++
+		} else if lengths[i+1][j] > lengths[i][j+1] {
+			i++
+		} else {
+			j++
+		}
+	}
+	return aligned
 }
 
 func jobDurations(jobs []protocol.JobExecution) []int64 {

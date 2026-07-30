@@ -35,6 +35,8 @@ Whole-job estimates can share history between ordinary and dry runs when their c
 
 Job-step estimates use successful `step.finished` events from matching completed job executions. The executable step definition must match; changing a command, environment, Vault configuration, test configuration, or report configuration starts a new history set. A display-name-only change does not invalidate otherwise identical executable history.
 
+Steps are aligned by executable identity and order rather than absolute list position. Inserting or removing an earlier step therefore preserves estimates for unchanged later steps.
+
 Agent preference is applied independently to every Ciwi phase and job step. If that unit has at least one valid same-agent sample, only same-agent samples are used. Otherwise, ciwi falls back to compatible cross-agent samples. Candidate jobs without a valid event do not block that fallback, and the ten-sample limit is applied after event validation.
 
 An executed step can share duration history between ordinary and dry runs when its executable definition matches. A step reported as `dryrun_skip` does not match the corresponding ordinary executed step and contributes no duration sample for it.
