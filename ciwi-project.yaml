@@ -22,7 +22,7 @@ pipelines:
             go: ">=1.24"
         timeout_seconds: 600
         steps:
-          - name: Run Go Unit
+          - name: Run Go unit tests
             test:
               name: go-unit
               command: mkdir -p dist && go test -json -coverprofile=dist/go-unit.cover ./... > dist/go-unit.json
@@ -107,7 +107,7 @@ pipelines:
             gh: "*"
         timeout_seconds: 1200
         steps:
-          - name: Check credentials
+          - name: Check GitHub credentials
             run: test -n "$GITHUB_TOKEN"
             skip_dry_run: true
             vault:
@@ -133,7 +133,7 @@ pipelines:
                   kv_version: 2
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
-          - name: Check release version
+          - name: Verify VERSION file
             run: test -f VERSION
           - name: Check working tree
             run: |
@@ -153,7 +153,7 @@ pipelines:
                 echo "remote tag exists: $TAG"
                 exit 1
               fi
-          - name: Create checksums
+          - name: Verify release artifacts and create checksums
             run: |
               test -f dist/ciwi-linux-amd64
               test -f dist/ciwi-darwin-amd64
@@ -180,7 +180,7 @@ pipelines:
               git tag -a "$TAG" -m "ciwi $TAG"
               git push origin "$TAG"
             skip_dry_run: true
-          - name: Upload release assets
+          - name: Create release and upload assets
             run: |
               TAG="${CIWI_PIPELINE_TAG}"
               gh release create "$TAG" \
@@ -249,7 +249,7 @@ pipelines:
         artifacts:
           - dist/codesigned-macos/*.zip
         steps:
-          - name: Check credentials
+          - name: Check Apple signing credentials
             run: test -n "$DEV_IDENTITY_APP" && test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
             skip_dry_run: true
             vault:
@@ -276,12 +276,12 @@ pipelines:
               NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
-          - name: Check artifact
+          - name: Verify macOS binaries
             run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
-          - name: Prepare codesign output
+          - name: Prepare macOS bundle output
             run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
             skip_dry_run: true
-          - name: Copy app bundle amd64
+          - name: Build, sign, and notarize amd64 agent bundle
             run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-amd64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-amd64.app dist/codesigned-macos/ciwi-darwin-amd64.zip
             skip_dry_run: true
             vault:
@@ -308,7 +308,7 @@ pipelines:
               NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
-          - name: Copy app bundle arm64
+          - name: Build, sign, and notarize arm64 agent bundle
             run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-arm64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-arm64.app dist/codesigned-macos/ciwi-darwin-arm64.zip
             skip_dry_run: true
             vault:
