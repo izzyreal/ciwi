@@ -1,6 +1,9 @@
 package server
 
 const uiSharedTooltipJS = `
+let ciwiActiveHoverTooltip = null;
+let ciwiPendingHoverTooltip = null;
+
 function ensureHoverTooltipStyles() {
   if (document.getElementById('__ciwiHoverTooltipStyles')) return;
   const style = document.createElement('style');
@@ -26,6 +29,8 @@ function createHoverTooltip(anchor, opts) {
   const html = String(options.html || '').trim();
   if (!html) return null;
   const lingerMs = Math.max(0, Number(options.lingerMs || 2000));
+  const showDelayMs = Math.max(0, Number(options.showDelayMs || 0));
+  const hideOnAnchorLeave = !!options.hideOnAnchorLeave;
   const owner = String(options.owner || '').trim();
   const shouldShow = (typeof options.shouldShow === 'function') ? options.shouldShow : (() => true);
   const tip = document.createElement('div');
@@ -35,6 +40,7 @@ function createHoverTooltip(anchor, opts) {
   document.body.appendChild(tip);
 
   let hideTimer = null;
+  let showTimer = null;
   let visible = false;
   let draggingSelection = false;
 
@@ -71,23 +77,71 @@ function createHoverTooltip(anchor, opts) {
     }
   }
 
+  function clearShowTimer() {
+    if (showTimer != null) {
+      clearTimeout(showTimer);
+      showTimer = null;
+    }
+    if (ciwiPendingHoverTooltip === controller) {
+      ciwiPendingHoverTooltip = null;
+    }
+  }
+
   function showTip() {
+    clearShowTimer();
     clearHideTimer();
     if (!shouldShow()) {
       hideNow();
       return;
     }
+    if (ciwiPendingHoverTooltip && ciwiPendingHoverTooltip !== controller) {
+      ciwiPendingHoverTooltip.cancelPendingShow();
+    }
+    if (ciwiActiveHoverTooltip && ciwiActiveHoverTooltip !== controller) {
+      ciwiActiveHoverTooltip.hide();
+    }
     tip.style.display = 'block';
     tip.classList.add('is-visible');
     visible = true;
+    ciwiActiveHoverTooltip = controller;
     positionTip();
   }
 
   function hideNow() {
+    clearShowTimer();
     clearHideTimer();
     tip.style.display = 'none';
     tip.classList.remove('is-visible');
     visible = false;
+    if (ciwiActiveHoverTooltip === controller) {
+      ciwiActiveHoverTooltip = null;
+    }
+  }
+
+  function scheduleShow() {
+    clearHideTimer();
+    if (visible) return;
+    if (ciwiPendingHoverTooltip && ciwiPendingHoverTooltip !== controller) {
+      ciwiPendingHoverTooltip.cancelPendingShow();
+    }
+    if (ciwiActiveHoverTooltip && ciwiActiveHoverTooltip !== controller) {
+      ciwiActiveHoverTooltip.hide();
+    }
+    clearShowTimer();
+    if (showDelayMs === 0) {
+      showTip();
+      return;
+    }
+    ciwiPendingHoverTooltip = controller;
+    showTimer = setTimeout(() => {
+      showTimer = null;
+      if (ciwiPendingHoverTooltip === controller) {
+        ciwiPendingHoverTooltip = null;
+      }
+      const anchorHover = !!(anchor.matches && anchor.matches(':hover'));
+      const anchorFocus = document.activeElement === anchor;
+      if (anchorHover || anchorFocus) showTip();
+    }, showDelayMs);
   }
 
   function shouldKeepVisible() {
@@ -98,6 +152,7 @@ function createHoverTooltip(anchor, opts) {
   }
 
   function scheduleHide() {
+    clearShowTimer();
     clearHideTimer();
     hideTimer = setTimeout(function retryHide() {
       if (shouldKeepVisible()) {
@@ -108,8 +163,18 @@ function createHoverTooltip(anchor, opts) {
     }, lingerMs);
   }
 
-  const onEnter = () => showTip();
-  const onLeave = () => scheduleHide();
+  const onEnter = () => scheduleShow();
+  const onAnchorLeave = () => {
+    if (hideOnAnchorLeave) {
+      hideNow();
+      return;
+    }
+    scheduleHide();
+  };
+  const onTipEnter = () => {
+    if (!hideOnAnchorLeave) showTip();
+  };
+  const onTipLeave = () => scheduleHide();
   const onSelection = () => {
     if (!visible) return;
     if (hasSelectionInsideTooltip()) clearHideTimer();
@@ -137,11 +202,11 @@ function createHoverTooltip(anchor, opts) {
   };
 
   anchor.addEventListener('mouseenter', onEnter);
-  anchor.addEventListener('focus', onEnter);
-  anchor.addEventListener('mouseleave', onLeave);
-  anchor.addEventListener('blur', onLeave);
-  tip.addEventListener('mouseenter', onEnter);
-  tip.addEventListener('mouseleave', onLeave);
+  anchor.addEventListener('focus', showTip);
+  anchor.addEventListener('mouseleave', onAnchorLeave);
+  anchor.addEventListener('blur', onAnchorLeave);
+  tip.addEventListener('mouseenter', onTipEnter);
+  tip.addEventListener('mouseleave', onTipLeave);
   tip.addEventListener('mousedown', startSelectionDrag);
   document.addEventListener('mousedown', onDocumentMouseDown);
   document.addEventListener('mouseup', stopSelectionDrag);
@@ -151,16 +216,17 @@ function createHoverTooltip(anchor, opts) {
 
   const controller = {
     isVisible: () => visible,
-    show: showTip,
+    show: scheduleShow,
     hide: hideNow,
+    cancelPendingShow: clearShowTimer,
     destroy: () => {
       hideNow();
       anchor.removeEventListener('mouseenter', onEnter);
-      anchor.removeEventListener('focus', onEnter);
-      anchor.removeEventListener('mouseleave', onLeave);
-      anchor.removeEventListener('blur', onLeave);
-      tip.removeEventListener('mouseenter', onEnter);
-      tip.removeEventListener('mouseleave', onLeave);
+      anchor.removeEventListener('focus', showTip);
+      anchor.removeEventListener('mouseleave', onAnchorLeave);
+      anchor.removeEventListener('blur', onAnchorLeave);
+      tip.removeEventListener('mouseenter', onTipEnter);
+      tip.removeEventListener('mouseleave', onTipLeave);
       tip.removeEventListener('mousedown', startSelectionDrag);
       document.removeEventListener('mousedown', onDocumentMouseDown);
       document.removeEventListener('mouseup', stopSelectionDrag);
@@ -217,6 +283,8 @@ function createOverflowTooltip(anchor, opts) {
       hoverController = createHoverTooltip(anchor, {
         html: escapeHtml(text).replace(/\r?\n/g, '<br />'),
         lingerMs: options.lingerMs,
+        showDelayMs: options.showDelayMs === undefined ? 1000 : options.showDelayMs,
+        hideOnAnchorLeave: true,
         owner: owner,
         shouldShow: () => elementHasOverflow(anchor),
       });

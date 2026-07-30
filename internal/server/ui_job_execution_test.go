@@ -100,6 +100,10 @@ func TestOverflowTooltipsCoverTruncatedUI(t *testing.T) {
 		"function bindOverflowTooltips(root, opts)",
 		"function destroyOverflowTooltips(root)",
 		"shouldShow: () => elementHasOverflow(anchor)",
+		"showDelayMs: options.showDelayMs === undefined ? 1000 : options.showDelayMs",
+		"hideOnAnchorLeave: true",
+		"ciwiPendingHoverTooltip.cancelPendingShow()",
+		"ciwiActiveHoverTooltip.hide()",
 	} {
 		if !strings.Contains(uiSharedTooltipJS, want) {
 			t.Fatalf("shared overflow-tooltip helper no longer contains %q", want)
