@@ -221,21 +221,12 @@ func groupCleanLogUnits(job protocol.JobExecution, events []protocol.JobExecutio
 		group := byIndex[idx]
 		if group == nil {
 			step := *event.Step
-			if displayIndex, total := protocol.TimelineStepPosition(timeline, idx); displayIndex > 0 {
-				step.Index = displayIndex
-				step.Total = total
-			}
 			group = &stepLogGroup{step: step}
 			byIndex[idx] = group
 			units = append(units, cleanLogUnit{step: group})
 		}
 		if strings.TrimSpace(group.step.Name) == "" {
-			step := *event.Step
-			if displayIndex, total := protocol.TimelineStepPosition(timeline, idx); displayIndex > 0 {
-				step.Index = displayIndex
-				step.Total = total
-			}
-			group.step = step
+			group.step = *event.Step
 		}
 		switch event.Type {
 		case protocol.JobExecutionEventTypeStepStarted:
@@ -263,7 +254,7 @@ func writeCleanStepLog(b *strings.Builder, group *stepLogGroup) {
 		b.WriteString("Start time: " + group.started.UTC().Format(time.RFC3339Nano) + "\n")
 	}
 	if group.finish != nil && group.finish.DurationMS > 0 {
-		b.WriteString("Step duration: " + formatDurationMS(group.finish.DurationMS) + "\n")
+		b.WriteString("Job step duration: " + formatDurationMS(group.finish.DurationMS) + "\n")
 	}
 	if group.finish != nil && group.finish.ExitCode != nil {
 		b.WriteString(fmt.Sprintf("Exit code: %d\n", *group.finish.ExitCode))
@@ -292,11 +283,11 @@ func writeCleanStepLog(b *strings.Builder, group *stepLogGroup) {
 	}
 	b.WriteString("'''\n\n")
 	if group.finish == nil {
-		b.WriteString("Step finished: not reported\n\n")
+		b.WriteString("Job step finished: not reported\n\n")
 	} else if strings.TrimSpace(group.finish.Error) != "" || group.finish.ExitCode != nil {
-		b.WriteString("Step finished: failed\n\n")
+		b.WriteString("Job step finished: failed\n\n")
 	} else {
-		b.WriteString("Step finished: succeeded\n\n")
+		b.WriteString("Job step finished: succeeded\n\n")
 	}
 }
 
@@ -309,7 +300,7 @@ func writeCleanPhaseLog(b *strings.Builder, group *phaseLogGroup) {
 		b.WriteString("Start time: " + group.started.UTC().Format(time.RFC3339Nano) + "\n")
 	}
 	if group.finish != nil && group.finish.DurationMS > 0 {
-		b.WriteString("Step duration: " + formatDurationMS(group.finish.DurationMS) + "\n")
+		b.WriteString("Ciwi phase duration: " + formatDurationMS(group.finish.DurationMS) + "\n")
 	}
 	if group.finish != nil && strings.TrimSpace(group.finish.Error) != "" {
 		b.WriteString("Error: " + stripANSIAndControls(group.finish.Error) + "\n")
@@ -326,27 +317,27 @@ func writeCleanPhaseLog(b *strings.Builder, group *phaseLogGroup) {
 	}
 	b.WriteString("'''\n\n")
 	if group.finish == nil {
-		b.WriteString("Step finished: not reported\n\n")
+		b.WriteString("Ciwi phase finished: not reported\n\n")
 	} else if strings.TrimSpace(group.finish.Error) != "" || group.finish.ExitCode != nil {
-		b.WriteString("Step finished: failed\n\n")
+		b.WriteString("Ciwi phase finished: failed\n\n")
 	} else {
-		b.WriteString("Step finished: succeeded\n\n")
+		b.WriteString("Ciwi phase finished: succeeded\n\n")
 	}
 }
 
 func phaseEventTitle(phase *protocol.JobExecutionPhase) string {
 	if phase == nil {
-		return "Step"
+		return "Ciwi phase"
 	}
 	if phase.Index > 0 && phase.Total > 0 {
-		return fmt.Sprintf("Step %d/%d: %s", phase.Index, phase.Total, phase.Name)
+		return fmt.Sprintf("Ciwi phase %d/%d: %s", phase.Index, phase.Total, phase.Name)
 	}
 	return strings.TrimSpace(phase.Name)
 }
 
 func stepEventTitle(step *protocol.JobStepPlanItem) string {
 	if step == nil {
-		return "Step"
+		return "Job step"
 	}
 	name := strings.TrimSpace(step.Name)
 	name = strings.Join(strings.Fields(name), " ")
@@ -355,15 +346,15 @@ func stepEventTitle(step *protocol.JobStepPlanItem) string {
 	}
 	if step.Total > 0 && step.Index > 0 {
 		if name == "" {
-			return fmt.Sprintf("Step %d/%d", step.Index, step.Total)
+			return fmt.Sprintf("Job step %d/%d", step.Index, step.Total)
 		}
-		return fmt.Sprintf("Step %d/%d: %s", step.Index, step.Total, name)
+		return fmt.Sprintf("Job step %d/%d: %s", step.Index, step.Total, name)
 	}
 	if step.Index > 0 {
 		if name == "" {
-			return fmt.Sprintf("Step %d", step.Index)
+			return fmt.Sprintf("Job step %d", step.Index)
 		}
-		return fmt.Sprintf("Step %d: %s", step.Index, name)
+		return fmt.Sprintf("Job step %d: %s", step.Index, name)
 	}
 	return name
 }

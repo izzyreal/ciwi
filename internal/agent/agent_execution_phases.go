@@ -13,7 +13,7 @@ func executionPhase(timeline []protocol.JobExecutionTimelineItem, id string) pro
 }
 
 func executionPhaseTitle(phase protocol.JobExecutionPhase) string {
-	return fmt.Sprintf("Step %d/%d: %s", phase.Index, phase.Total, phase.Name)
+	return fmt.Sprintf("Ciwi phase %d/%d: %s", phase.Index, phase.Total, phase.Name)
 }
 
 func phaseStartedEvent(phase protocol.JobExecutionPhase, started time.Time) protocol.JobExecutionEvent {

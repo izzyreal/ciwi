@@ -371,9 +371,6 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		runEnv = withGoVerbose(mergeEnv(mergeEnv(os.Environ(), job.Env), cacheEnv), verboseGo)
 	}
 	scriptSteps := stepPlanToScriptSteps(job.StepPlan)
-	for i := range scriptSteps {
-		scriptSteps[i].meta.displayIndex, scriptSteps[i].meta.displayTotal = protocol.TimelineStepPosition(timeline, scriptSteps[i].meta.index)
-	}
 	collectedSuites := make([]protocol.TestSuiteReport, 0, len(scriptSteps))
 	var collectedCoverage *protocol.CoverageReport
 	if len(scriptSteps) > 0 {

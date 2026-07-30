@@ -36,8 +36,12 @@ func TestBuildJobExecutionTimelineIncludesApplicablePhasesAndSteps(t *testing.T)
 	if timeline[2].Description != "Source jobs: job-a, job-b" {
 		t.Fatalf("dependency IDs should be stable and deduplicated, got %q", timeline[2].Description)
 	}
-	if index, total := TimelineStepPosition(timeline, 2); index != 6 || total != 8 {
-		t.Fatalf("expected second YAML step at 6/8, got %d/%d", index, total)
+	environment, ok := TimelinePhase(timeline, JobExecutionPhaseEnvironment)
+	if !ok || environment.Index != 4 || environment.Total != 6 {
+		t.Fatalf("expected environment to be ciwi phase 4/6, got %+v", environment)
+	}
+	if timeline[5].StepIndex != 2 {
+		t.Fatalf("expected second YAML step to retain job-step index 2, got %+v", timeline[5])
 	}
 }
 

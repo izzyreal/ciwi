@@ -165,6 +165,20 @@ const jobExecutionHTML = `<!doctype html>
       font-size: 11px;
       font-weight: 600;
     }
+    details.log-step-unreached {
+      border-left-color: #5b6b64;
+      background: rgba(31, 42, 36, 0.38);
+    }
+    details.log-step-unreached > summary {
+      color: #a7b8b0;
+      --ciwi-progress-color: transparent;
+    }
+    .log-step-status {
+      flex: 0 0 auto;
+      color: #91a49b;
+      font-size: 11px;
+      font-weight: 700;
+    }
     .log-step-meta {
       display: flex;
       flex-wrap: wrap;

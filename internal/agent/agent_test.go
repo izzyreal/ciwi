@@ -720,7 +720,7 @@ func TestExecuteLeasedJobReportsTimeoutClearly(t *testing.T) {
 	if !strings.Contains(output, "[control] job timed out after 1 seconds") {
 		t.Fatalf("expected timeout control marker in output, got:\n%s", output)
 	}
-	if !strings.Contains(output, "[run] step failed: Step 3/3: sleep (timed out after 1 seconds)") {
+	if !strings.Contains(output, "[run] step failed: Job step 1/1: sleep (timed out after 1 seconds)") {
 		t.Fatalf("expected explicit timed out step marker in output, got:\n%s", output)
 	}
 }
@@ -1006,7 +1006,7 @@ func TestExecuteLeasedJobRunningStepStatusCarriesStructuredEvents(t *testing.T) 
 		if st.Status != "running" {
 			continue
 		}
-		if !strings.HasPrefix(st.CurrentStep, "Step 3/3:") {
+		if !strings.HasPrefix(st.CurrentStep, "Job step 1/1:") {
 			continue
 		}
 		foundRunningStep = true

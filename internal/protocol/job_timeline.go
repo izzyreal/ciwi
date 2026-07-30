@@ -54,21 +54,23 @@ func BuildJobExecutionTimeline(job JobExecution) []JobExecutionTimelineItem {
 }
 
 func TimelinePhase(items []JobExecutionTimelineItem, id string) (JobExecutionPhase, bool) {
+	total := 0
 	for _, item := range items {
-		if item.Kind == "phase" && item.ID == id {
-			return JobExecutionPhase{ID: item.ID, Name: item.Name, Description: item.Description, Index: item.Index, Total: item.Total}, true
+		if item.Kind == "phase" {
+			total++
+		}
+	}
+	index := 0
+	for _, item := range items {
+		if item.Kind != "phase" {
+			continue
+		}
+		index++
+		if item.ID == id {
+			return JobExecutionPhase{ID: item.ID, Name: item.Name, Description: item.Description, Index: index, Total: total}, true
 		}
 	}
 	return JobExecutionPhase{}, false
-}
-
-func TimelineStepPosition(items []JobExecutionTimelineItem, stepIndex int) (int, int) {
-	for _, item := range items {
-		if item.Kind == "step" && item.StepIndex == stepIndex {
-			return item.Index, item.Total
-		}
-	}
-	return stepIndex, len(items)
 }
 
 func dependencyArtifactIDsForTimeline(ids []string) []string {

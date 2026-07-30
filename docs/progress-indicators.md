@@ -5,7 +5,7 @@ Ciwi displays time-based progress on active job executions, pipeline sections, p
 ## Where progress appears
 
 - The header on a job execution detail page.
-- The header strip of each structured execution step, including ciwi-managed phases and YAML steps.
+- The header strip of each structured execution unit, including Ciwi phases and YAML-defined job steps.
 - Chain, pipeline, and job headers in **Queued and In Progress Job Executions**.
 
 Individual rows inside an expanded execution group do not have a separate progress background. Their status and prerequisite reason provide the detailed state instead.
@@ -31,15 +31,15 @@ The provisional estimate may be replaced after leasing when exact history exists
 
 Whole-job estimates can share history between ordinary and dry runs when their complete executable plans are identical. When dry-run steps are skipped, the rendered plan differs and whole-job history remains separate.
 
-### Step matching
+### Phase and job-step matching
 
-Step estimates use successful `step.finished` events from matching completed job executions. The executable step definition must match; changing a command, environment, Vault configuration, test configuration, or report configuration starts a new history set. A display-name-only change does not invalidate otherwise identical executable history.
+Job-step estimates use successful `step.finished` events from matching completed job executions. The executable step definition must match; changing a command, environment, Vault configuration, test configuration, or report configuration starts a new history set. A display-name-only change does not invalidate otherwise identical executable history.
 
-Agent preference is applied independently to every phase and YAML step. If that unit has at least one valid same-agent sample, only same-agent samples are used. Otherwise, ciwi falls back to compatible cross-agent samples. Candidate jobs without a valid event do not block that fallback, and the ten-sample limit is applied after event validation.
+Agent preference is applied independently to every Ciwi phase and job step. If that unit has at least one valid same-agent sample, only same-agent samples are used. Otherwise, ciwi falls back to compatible cross-agent samples. Candidate jobs without a valid event do not block that fallback, and the ten-sample limit is applied after event validation.
 
 An executed step can share duration history between ordinary and dry runs when its executable definition matches. A step reported as `dryrun_skip` does not match the corresponding ordinary executed step and contributes no duration sample for it.
 
-Ciwi-managed phases use successful `phase.finished` events from matching executions and can also share compatible history between ordinary and dry runs. Their stable phase IDs and phase-specific definitions keep history attached to the operation rather than its current display position. Depending on the job definition, the unified timeline can include:
+Ciwi phases use successful `phase.finished` events from matching executions and can also share compatible history between ordinary and dry runs. Their stable phase IDs and phase-specific definitions keep history attached to the operation rather than its current display position. Depending on the job definition, the chronological timeline can include:
 
 - Prepare workspace
 - Check out source
@@ -49,7 +49,12 @@ Ciwi-managed phases use successful `phase.finished` events from matching executi
 - Publish artifacts
 - Publish test results
 
-The visible `Step N/M` numbering covers this complete timeline. A phase without successful matching history remains indeterminate independently of the YAML steps.
+The timeline uses two separately counted categories:
+
+- `Ciwi phase N/M` for work managed automatically by Ciwi.
+- `Job step N/M` for steps defined in the job's YAML.
+
+The categories remain interleaved in execution order, but one category never contributes to the other's total. A phase without successful matching history remains indeterminate independently of the job steps.
 
 ## Visual states
 
@@ -94,7 +99,7 @@ Completed jobs use their full weight. Running jobs use their elapsed fraction. E
 
 ## Component responsibilities
 
-- The agent records actual timestamps and emits structured lifecycle events for ciwi-managed phases and YAML steps.
+- The agent records actual timestamps and emits structured lifecycle events for Ciwi phases and YAML-defined job steps.
 - The server stores those measurements and calculates historical job, phase, and YAML-step estimates.
 - The browser converts estimates and current execution state into determinate, indeterminate, waiting, complete, or overrun visuals.
 

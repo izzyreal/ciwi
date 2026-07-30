@@ -735,7 +735,7 @@ function renderExecutionPlanStep(step, stepIndex) {
   const name = String(data.name || '').trim() || ('step ' + String(index));
   const kind = String(data.kind || '').trim() || 'run';
   const skipDryRun = !!data.skip_dry_run || kind === 'dryrun_skip';
-  const summary = 'Step ' + String(index) + (total > 0 ? ('/' + String(total)) : '') + ': ' + escapeHtml(name) +
+  const summary = 'Job step ' + String(index) + (total > 0 ? ('/' + String(total)) : '') + ': ' + escapeHtml(name) +
     ' <span class="dryrun-preview-pill">' + escapeHtml(kind) + '</span>' +
     (skipDryRun ? ' <span class="dryrun-preview-pill warn">skip_dry_run</span>' : '');
   const rows = [

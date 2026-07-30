@@ -11,6 +11,7 @@ const jobExecutionDataJS = `
     let pollTimer = null;
     let terminalSyncPasses = 0;
     let logStepOpenState = Object.create(null);
+    const LOG_STEP_OPEN_STATE_STORAGE_PREFIX = 'ciwi.jobExecution.stepOpen.v1.';
     let tailingEnabled = true;
     let suppressLogScrollEvent = false;
     let projectIDByNameCache = null;
@@ -25,6 +26,35 @@ const jobExecutionDataJS = `
       const parts = window.location.pathname.split('/').filter(Boolean);
       return parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
     }
+
+    function logStepOpenStateStorageKey() {
+      const jobID = jobExecutionIdFromPath();
+      return jobID ? (LOG_STEP_OPEN_STATE_STORAGE_PREFIX + jobID) : '';
+    }
+
+    function loadLogStepOpenState() {
+      const state = Object.create(null);
+      const storageKey = logStepOpenStateStorageKey();
+      if (!storageKey) return state;
+      try {
+        const parsed = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return state;
+        Object.keys(parsed).forEach(key => {
+          if (parsed[key] === true || parsed[key] === false) state[key] = parsed[key];
+        });
+      } catch (_) {}
+      return state;
+    }
+
+    function saveLogStepOpenState() {
+      const storageKey = logStepOpenStateStorageKey();
+      if (!storageKey) return;
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(logStepOpenState));
+      } catch (_) {}
+    }
+
+    logStepOpenState = loadLogStepOpenState();
 
     function parseOptionalTimestamp(ts) {
       const raw = String(ts || '').trim();
@@ -72,10 +102,28 @@ const jobExecutionDataJS = `
       link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
     }
 
-    function activeStepIndexFromCurrentStep(currentStep) {
-      const text = String(currentStep || '').trim();
+    function activeTimelineIndex(job) {
+      const text = String((job && job.current_step) || '').trim();
       if (!text) return -1;
-      const m = text.match(/^Step\s+(\d+)(?:\/\d+)?\s*:/i);
+      const timeline = Array.isArray(job && job.execution_timeline) ? job.execution_timeline : [];
+      let m = text.match(/^Job step\s+(\d+)(?:\/\d+)?(?:\s*:|$)/i);
+      if (m) {
+        const stepIndex = Number.parseInt(String(m[1] || '').trim(), 10);
+        const item = timeline.find(entry =>
+          String((entry && entry.kind) || '') === 'step' &&
+          Number((entry && entry.step_index) || 0) === stepIndex
+        );
+        if (item) return Number(item.index || 0) - 1;
+      }
+      m = text.match(/^Ciwi phase\s+(\d+)(?:\/\d+)?(?:\s*:|$)/i);
+      if (m) {
+        const phaseIndex = Number.parseInt(String(m[1] || '').trim(), 10);
+        const phases = timeline.filter(entry => String((entry && entry.kind) || '') === 'phase');
+        const item = phaseIndex > 0 ? phases[phaseIndex - 1] : null;
+        if (item) return Number(item.index || 0) - 1;
+      }
+      // Backward compatibility for jobs currently running on an older agent.
+      m = text.match(/^Step\s+(\d+)(?:\/\d+)?(?:\s*:|$)/i);
       if (!m) return -1;
       const idx = Number.parseInt(String(m[1] || '').trim(), 10);
       if (!Number.isFinite(idx) || idx <= 0) return -1;
@@ -84,7 +132,7 @@ const jobExecutionDataJS = `
 
     function subtitleStepDetail(job) {
       const stepPlan = Array.isArray(job && job.step_plan) ? job.step_plan : [];
-      const idx = activeStepIndexFromCurrentStep(job && job.current_step);
+      const idx = activeTimelineIndex(job);
       if (idx < 0) return '';
       const timeline = Array.isArray(job && job.execution_timeline) ? job.execution_timeline : [];
       const activeItem = timeline.find(item => Number((item && item.index) || 0) === idx + 1);
@@ -143,7 +191,13 @@ const jobExecutionDataJS = `
       const el = document.getElementById('logBox');
       if (!el) return;
       suppressLogScrollEvent = true;
-      el.scrollTop = el.scrollHeight;
+      const firstUnreached = el.querySelector('details.log-step-unreached');
+      if (firstUnreached) {
+        const boundary = firstUnreached.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+        el.scrollTop = Math.max(0, boundary - el.clientHeight);
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
       setTimeout(() => { suppressLogScrollEvent = false; }, 0);
     }
 
@@ -250,6 +304,7 @@ const jobExecutionDataJS = `
         d.__ciwiStepToggleBound = true;
         d.addEventListener('toggle', () => {
           logStepOpenState[key] = !!d.open;
+          saveLogStepOpenState();
         });
       });
     }

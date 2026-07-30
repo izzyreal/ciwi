@@ -754,7 +754,7 @@ const jobExecutionRenderJS = `
       step = step || {};
       const idx = Number(step.index || 0);
       const total = Number(step.total || 0);
-      const title = idx > 0 && total > 0 ? ('Step ' + idx + '/' + total) : (idx > 0 ? ('Step ' + idx) : 'Step');
+      const title = idx > 0 && total > 0 ? ('Job step ' + idx + '/' + total) : (idx > 0 ? ('Job step ' + idx) : 'Job step');
       const name = stepEventDisplayName(step);
       if (idx > 0 && name.toLowerCase() === ('step ' + idx)) return title;
       return name ? (title + ': ' + name) : title;
@@ -780,6 +780,26 @@ const jobExecutionRenderJS = `
       const groups = [];
       const byKey = Object.create(null);
       const timeline = executionTimelineMaps(job);
+      const stepPlanByIndex = Object.create(null);
+      (Array.isArray(job && job.step_plan) ? job.step_plan : []).forEach(step => {
+        const index = Number((step && step.index) || 0);
+        if (index > 0) stepPlanByIndex[index] = step;
+      });
+      (Array.isArray(job && job.execution_timeline) ? job.execution_timeline : []).forEach(item => {
+        if (!item) return;
+        const isPhase = String(item.kind || '') === 'phase';
+        const key = isPhase
+          ? ('phase:' + String(item.id || ''))
+          : ('step:' + String(Number(item.step_index || 0)));
+        if (!key || byKey[key]) return;
+        const step = isPhase ? null : (stepPlanByIndex[Number(item.step_index || 0)] || null);
+        const phase = isPhase
+          ? { id: item.id, name: item.name, description: item.description, index: item.index, total: item.total }
+          : null;
+        const group = { key: key, item: item, step: step, phase: phase, reached: false, started: '', output: '', finish: null };
+        byKey[key] = group;
+        groups.push(group);
+      });
       (Array.isArray(events) ? events : []).forEach(ev => {
         const key = executionEventKey(ev);
         if (!key) return;
@@ -788,10 +808,11 @@ const jobExecutionRenderJS = `
           const fallback = ev.phase
             ? { id: ev.phase.id, kind: 'phase', name: ev.phase.name, description: ev.phase.description, index: ev.phase.index, total: ev.phase.total }
             : { id: key, kind: 'step', name: (ev.step || {}).name, step_index: (ev.step || {}).index, index: (ev.step || {}).index, total: (ev.step || {}).total };
-          group = { key: key, item: timeline[key] || fallback, step: ev.step || null, phase: ev.phase || null, started: '', output: '', finish: null };
+          group = { key: key, item: timeline[key] || fallback, step: ev.step || null, phase: ev.phase || null, reached: false, started: '', output: '', finish: null };
           byKey[key] = group;
           groups.push(group);
         }
+        group.reached = true;
         if (ev.step && (!group.step || !String(group.step.name || '').trim())) group.step = ev.step;
         if (ev.phase && !group.phase) group.phase = ev.phase;
         if (ev.type === 'step.started' || ev.type === 'phase.started') group.started = String(ev.timestamp_utc || '');
@@ -799,14 +820,26 @@ const jobExecutionRenderJS = `
         if (ev.type === 'step.finished' || ev.type === 'phase.finished') group.finish = ev;
       });
       groups.sort((a, b) => Number((a.item || {}).index || 0) - Number((b.item || {}).index || 0));
+      const phases = groups.filter(group => String((group.item || {}).kind || '') === 'phase');
+      const jobSteps = groups.filter(group => String((group.item || {}).kind || '') !== 'phase');
+      phases.forEach((group, index) => {
+        group.categoryIndex = index + 1;
+        group.categoryTotal = phases.length;
+      });
+      jobSteps.forEach((group, index) => {
+        group.categoryIndex = index + 1;
+        group.categoryTotal = jobSteps.length;
+      });
       return groups;
     }
 
     function executionGroupTitle(group) {
       const item = (group && group.item) || {};
-      const idx = Number(item.index || 0);
-      const total = Number(item.total || 0);
-      const prefix = idx > 0 && total > 0 ? ('Step ' + idx + '/' + total) : (idx > 0 ? ('Step ' + idx) : 'Step');
+      const isPhase = String(item.kind || '') === 'phase';
+      const idx = Number((group && group.categoryIndex) || 0);
+      const total = Number((group && group.categoryTotal) || 0);
+      const category = isPhase ? 'Ciwi phase' : 'Job step';
+      const prefix = idx > 0 && total > 0 ? (category + ' ' + idx + '/' + total) : (idx > 0 ? (category + ' ' + idx) : category);
       const name = stepEventDisplayName({ name: item.name || ((group.step || {}).name) || ((group.phase || {}).name) });
       return name ? (prefix + ': ' + name) : prefix;
     }
@@ -830,24 +863,18 @@ const jobExecutionRenderJS = `
       const byKey = Object.create(null);
       groups.forEach(group => { byKey[group.key] = group; });
       const renderedSteps = Object.create(null);
-      if (!hasStructuredLogEvents(events)) return '<span class="log-empty">&lt;no structured output&gt;</span>';
-      const activeIdx = activeStepIndexFromCurrentStep(job && job.current_step);
-      return (Array.isArray(events) ? events : []).map(ev => {
-        if (ev && ev.type === 'system.message') {
-          const message = String(ev.message || '');
-          return message ? ('<div class="log-system-message">' + renderOutputLog(message) + '</div>') : '';
-        }
-        const key = executionEventKey(ev);
-        if (!key) return '';
-        const group = byKey[key];
-        if (!group || renderedSteps[key]) return '';
+      if (!hasStructuredLogEvents(events) && !groups.length) return '<span class="log-empty">&lt;no structured output&gt;</span>';
+      function renderGroup(group) {
+        if (!group) return '';
+        const key = String(group.key || '');
+        if (!key || renderedSteps[key]) return '';
         renderedSteps[key] = true;
-        const pos = Number((group.item || {}).index || 1) - 1;
         const finish = group.finish || null;
-        const running = activeIdx === pos && isRunningJobStatus((job && job.status) || '');
+        const reached = !!group.reached;
         const remembered = (typeof logStepOpenState !== 'undefined') ? logStepOpenState[group.key] : undefined;
         const open = (remembered === true || remembered === false) ? remembered : false;
         const meta = [];
+        if (!reached) meta.push('Status: Not reached');
         if (group.started) meta.push('Started: ' + escapeHtml(formatTimestamp(group.started)));
         if (finish && Number(finish.duration_ms || 0) > 0) meta.push('Duration: ' + escapeHtml(formatDurationMs(Number(finish.duration_ms || 0))));
         if (finish && finish.exit_code !== null && finish.exit_code !== undefined) meta.push('Exit code: ' + escapeHtml(String(finish.exit_code)));
@@ -862,21 +889,32 @@ const jobExecutionRenderJS = `
           : ('<div class="log-step-label">YAML literal</div><pre>' + escapeHtml(yamlLiteral || '(none)') + '</pre>' +
              '<div class="log-step-label">Expanded command</div><pre>' + escapeHtml(script || '(none)') + '</pre>');
         return '' +
-          '<details class="log-step" data-step-key="' + escapeHtml(group.key) + '"' + (open ? ' open' : '') + '>' +
-            '<summary><span class="log-step-summary-title">' + escapeHtml(executionGroupTitle(group)) + '</span>' + (commandSummary ? '<span class="log-step-summary-command">' + escapeHtml(commandSummary) + '</span>' : '') + '</summary>' +
+          '<details class="log-step' + (reached ? '' : ' log-step-unreached') + '" data-step-key="' + escapeHtml(group.key) + '"' + (open ? ' open' : '') + '>' +
+            '<summary><span class="log-step-summary-title">' + escapeHtml(executionGroupTitle(group)) + '</span>' + (commandSummary ? '<span class="log-step-summary-command">' + escapeHtml(commandSummary) + '</span>' : '') + (!reached ? '<span class="log-step-status">Not reached</span>' : '') + '</summary>' +
             (meta.length ? ('<div class="log-step-meta">' + meta.map(m => '<span>' + m + '</span>').join('') + '</div>') : '') +
             detailsBlock +
             '<div class="log-step-label">Output</div>' +
-            '<div>' + renderOutputLog(output || '(no output)') + '</div>' +
+            '<div>' + renderOutputLog(output || (reached ? '(no output)' : '(step was not reached)')) + '</div>' +
           '</details>';
-      }).join('');
+      }
+      const html = (Array.isArray(events) ? events : []).map(ev => {
+        if (ev && ev.type === 'system.message') {
+          const message = String(ev.message || '');
+          return message ? ('<div class="log-system-message">' + renderOutputLog(message) + '</div>') : '';
+        }
+        return renderGroup(byKey[executionEventKey(ev)]);
+      });
+      groups.forEach(group => {
+        if (!renderedSteps[group.key]) html.push(renderGroup(group));
+      });
+      return html.join('');
     }
 
     function bindStructuredStepProgress(job, events) {
       const groups = structuredExecutionGroups(job, events);
       const byKey = Object.create(null);
       groups.forEach(group => { byKey[group.key] = group; });
-      const activeIdx = activeStepIndexFromCurrentStep(job && job.current_step);
+      const activeIdx = activeTimelineIndex(job);
       const expectedByStep = (job && job.step_expected_duration_ms) || {};
       const expectedByPhase = (job && job.phase_expected_duration_ms) || {};
       document.querySelectorAll('#logBox details.log-step[data-step-key]').forEach(details => {
@@ -930,7 +968,10 @@ const jobExecutionRenderJS = `
         lines.push(executionGroupTitle(group));
         lines.push('--------------------------------------------------------------------------------');
         if (group.started) lines.push('Start time: ' + formatTimestamp(group.started));
-        if (group.finish && Number(group.finish.duration_ms || 0) > 0) lines.push('Step duration: ' + formatDurationMs(Number(group.finish.duration_ms || 0)));
+        if (group.finish && Number(group.finish.duration_ms || 0) > 0) {
+          const durationLabel = String((group.item || {}).kind || '') === 'phase' ? 'Ciwi phase duration' : 'Job step duration';
+          lines.push(durationLabel + ': ' + formatDurationMs(Number(group.finish.duration_ms || 0)));
+        }
         if (group.finish && group.finish.exit_code !== null && group.finish.exit_code !== undefined) lines.push('Exit code: ' + String(group.finish.exit_code));
         if (group.finish && String(group.finish.error || '').trim()) lines.push('Error: ' + String(group.finish.error || '').trim());
         lines.push('');

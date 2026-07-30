@@ -339,7 +339,7 @@ func TestHandleByIDLogDownloadCleanAndRaw(t *testing.T) {
 		t.Fatalf("expected clean 200, got %d: %s", recClean.Code, recClean.Body.String())
 	}
 	clean := recClean.Body.String()
-	if !strings.Contains(clean, "[meta] agent=agent-1") || !strings.Contains(clean, "Step 1/3: Prepare workspace") || !strings.Contains(clean, "workspace ready") || !strings.Contains(clean, "Step 3/3: build") || !strings.Contains(clean, "run: go test {{pkg}}") || !strings.Contains(clean, "go test ./...") || !strings.Contains(clean, "FAIL") || strings.Contains(clean, "\x1b[31m") {
+	if !strings.Contains(clean, "[meta] agent=agent-1") || !strings.Contains(clean, "Ciwi phase 1/2: Prepare workspace") || !strings.Contains(clean, "workspace ready") || !strings.Contains(clean, "Job step 1/1: build") || !strings.Contains(clean, "run: go test {{pkg}}") || !strings.Contains(clean, "go test ./...") || !strings.Contains(clean, "FAIL") || strings.Contains(clean, "\x1b[31m") {
 		t.Fatalf("unexpected clean log:\n%s", clean)
 	}
 	if got := recClean.Header().Get("Content-Disposition"); !strings.Contains(got, "ciwi-job-1-clean.log") {
