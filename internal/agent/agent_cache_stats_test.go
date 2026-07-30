@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -50,7 +51,7 @@ func TestSummarizeDir(t *testing.T) {
 func TestReadCCacheMetrics(t *testing.T) {
 	t.Run("no ccache in PATH", func(t *testing.T) {
 		t.Setenv("PATH", "")
-		if got := readCCacheMetrics(t.TempDir()); got != nil {
+		if got := readCCacheMetrics(t.TempDir(), nil); got != nil {
 			t.Fatalf("expected nil when ccache missing, got %v", got)
 		}
 	})
@@ -68,12 +69,39 @@ func TestReadCCacheMetrics(t *testing.T) {
 		}
 		t.Setenv("PATH", binDir)
 
-		got := readCCacheMetrics(t.TempDir())
+		got := readCCacheMetrics(t.TempDir(), nil)
 		if got["Cache directory"] != "/tmp/cc" {
 			t.Fatalf("unexpected parsed cache directory: %v", got)
 		}
 		if got["Hits"] != "42" {
 			t.Fatalf("expected first duplicate key value to win, got %v", got)
+		}
+	})
+
+	t.Run("runs ccache inside managed container", func(t *testing.T) {
+		binDir, logPath := writeFakeDocker(t, `
+if [ "$1" = "exec" ] && [ "$2" = "ciwi-cache-test" ] && [ "$3" = "ccache" ]; then
+  echo 'Cache directory: /ciwi/cache'
+  echo 'Hits: 17'
+  exit 0
+fi
+exit 1
+`)
+		t.Setenv("PATH", binDir)
+		t.Setenv("CIWI_DOCKER_LOG", logPath)
+
+		cacheDir := t.TempDir()
+		got := readCCacheMetrics(cacheDir, &executionContainerContext{name: "ciwi-cache-test"})
+		if got["Cache directory"] != "/ciwi/cache" || got["Hits"] != "17" {
+			t.Fatalf("unexpected managed-container metrics: %v", got)
+		}
+		logRaw, err := os.ReadFile(logPath)
+		if err != nil {
+			t.Fatalf("read fake docker log: %v", err)
+		}
+		want := "exec ciwi-cache-test ccache --dir " + cacheDir + " --show-stats --verbose"
+		if !strings.Contains(string(logRaw), want) {
+			t.Fatalf("expected managed-container ccache command %q, got:\n%s", want, logRaw)
 		}
 	})
 }
@@ -93,7 +121,7 @@ func TestCollectJobCacheStats(t *testing.T) {
 		Env:    "CCACHE_DIR",
 		Path:   cacheDir,
 		Source: "hit",
-	}})
+	}}, nil)
 	if len(got) != 1 {
 		t.Fatalf("expected one cache stat entry, got %d", len(got))
 	}

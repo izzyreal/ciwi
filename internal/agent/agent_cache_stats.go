@@ -11,7 +11,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
-func collectJobCacheStats(caches []resolvedJobCache) []protocol.JobCacheStats {
+func collectJobCacheStats(caches []resolvedJobCache, container *executionContainerContext) []protocol.JobCacheStats {
 	if len(caches) == 0 {
 		return nil
 	}
@@ -33,7 +33,7 @@ func collectJobCacheStats(caches []resolvedJobCache) []protocol.JobCacheStats {
 			stat.SizeBytes = size
 		}
 		if stat.Type == "ccache" {
-			stat.ToolMetrics = readCCacheMetrics(cache.Path)
+			stat.ToolMetrics = readCCacheMetrics(cache.Path, container)
 		}
 		out = append(out, stat)
 	}
@@ -85,16 +85,34 @@ func summarizeDir(root string) (files int64, dirs int64, size int64, err error) 
 	return files, dirs, size, nil
 }
 
-func readCCacheMetrics(cacheDir string) map[string]string {
+func readCCacheMetrics(cacheDir string, container *executionContainerContext) map[string]string {
 	if strings.TrimSpace(cacheDir) == "" {
-		return nil
-	}
-	if _, err := exec.LookPath("ccache"); err != nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	out, err := runCommandCapture(ctx, "", "ccache", "--dir", cacheDir, "--show-stats", "--verbose")
+	var out string
+	var err error
+	if container != nil && strings.TrimSpace(container.name) != "" {
+		containerCacheDir := cacheEnvPath(cacheDir)
+		out, err = runCommandCapture(
+			ctx,
+			"",
+			"docker",
+			"exec",
+			strings.TrimSpace(container.name),
+			"ccache",
+			"--dir",
+			containerCacheDir,
+			"--show-stats",
+			"--verbose",
+		)
+	} else {
+		if _, lookErr := exec.LookPath("ccache"); lookErr != nil {
+			return nil
+		}
+		out, err = runCommandCapture(ctx, "", "ccache", "--dir", cacheDir, "--show-stats", "--verbose")
+	}
 	if err != nil {
 		return nil
 	}

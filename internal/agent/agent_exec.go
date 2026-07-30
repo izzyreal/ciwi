@@ -212,9 +212,10 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	for _, line := range cacheLogs {
 		fmt.Fprintf(&output, "[cache] %s\n", line)
 	}
-	cacheStats := collectJobCacheStats(resolvedCaches)
+	var execContainer *executionContainerContext
+	cacheStats := collectJobCacheStats(resolvedCaches, execContainer)
 	refreshCacheStats := func() []protocol.JobCacheStats {
-		return collectJobCacheStats(resolvedCaches)
+		return collectJobCacheStats(resolvedCaches, execContainer)
 	}
 	probeContainer := runtimeProbeContainerName(job.ID, job.Metadata)
 	probeContainerImage := runtimeProbeContainerImageFromMetadata(job.Metadata)
@@ -240,7 +241,6 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 		return nil
 	}
 	containerExec := strings.TrimSpace(probeContainerImage) != ""
-	execContainer := (*executionContainerContext)(nil)
 	if containerExec {
 		mounts := []runtimeContainerMount{
 			{hostPath: execDir, containerPath: probeContainerWorkdir},
