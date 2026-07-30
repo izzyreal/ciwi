@@ -65,9 +65,10 @@ function buildJobExecutionRow(job, opts = {}) {
   const description = jobDescription(job);
   const backTo = encodeURIComponent(backPath);
   const cellText = (value) => {
-    const text = escapeHtml(value || '');
+    const rawText = String(value || '');
+    const text = escapeHtml(rawText);
     if (fixedLines <= 0) return text;
-    return '<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '">' + text + '</span>';
+    return '<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '" data-ciwi-overflow-text="' + escapeHtml(rawText) + '">' + text + '</span>';
   };
   const linkClasses = fixedLines > 0 ? ((linkClass ? linkClass + ' ' : '') + 'ciwi-job-cell-link') : linkClass;
   const iconURL = projectIconURLFn ? String(projectIconURLFn(job) || '').trim() : '';
@@ -93,10 +94,12 @@ function buildJobExecutionRow(job, opts = {}) {
       reasonTd.innerHTML = cellText(waitingReason);
     } else {
       const summaryHTML = formatUnmetRequirementsInlineHTML(reasons);
+      const summaryText = reasons.map(reason => String(reason || '').trim()).filter(Boolean).join('; ');
+      const combinedSummaryText = (waitingReason ? (waitingReason + '; ') : '') + summaryText;
       const combinedSummaryHTML = (waitingReason ? (escapeHtml(waitingReason) + '; ') : '') + summaryHTML;
       reasonTd.innerHTML = '' +
         '<span class="ciwi-job-reason">' +
-          '<span class="ciwi-job-reason-summary">' + (fixedLines > 0 ? ('<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '">' + combinedSummaryHTML + '</span>') : combinedSummaryHTML) + '</span>' +
+          '<span class="ciwi-job-reason-summary">' + (fixedLines > 0 ? ('<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '" data-ciwi-overflow-text="' + escapeHtml(combinedSummaryText) + '">' + combinedSummaryHTML + '</span>') : combinedSummaryHTML) + '</span>' +
           '<span class="ciwi-job-reason-info" tabindex="0" aria-label="Missing requirements info">ⓘ</span>' +
         '</span>';
       const info = reasonTd.querySelector('.ciwi-job-reason-info');
@@ -152,6 +155,9 @@ function buildJobExecutionRow(job, opts = {}) {
     tr.appendChild(actionTd);
   }
 
+  if (typeof bindOverflowTooltips === 'function') {
+    bindOverflowTooltips(tr, { ownerPrefix: 'job-row-' + String(job.id || '') });
+  }
   tr.dataset.ciwiRenderKey = jobRowRenderKey(job);
   return tr;
 }

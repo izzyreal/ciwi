@@ -27,6 +27,7 @@ function createHoverTooltip(anchor, opts) {
   if (!html) return null;
   const lingerMs = Math.max(0, Number(options.lingerMs || 2000));
   const owner = String(options.owner || '').trim();
+  const shouldShow = (typeof options.shouldShow === 'function') ? options.shouldShow : (() => true);
   const tip = document.createElement('div');
   tip.className = 'ciwi-hover-tooltip';
   if (owner) tip.setAttribute('data-ciwi-tooltip-owner', owner);
@@ -72,6 +73,10 @@ function createHoverTooltip(anchor, opts) {
 
   function showTip() {
     clearHideTimer();
+    if (!shouldShow()) {
+      hideNow();
+      return;
+    }
     tip.style.display = 'block';
     tip.classList.add('is-visible');
     visible = true;
@@ -146,6 +151,8 @@ function createHoverTooltip(anchor, opts) {
 
   const controller = {
     isVisible: () => visible,
+    show: showTip,
+    hide: hideNow,
     destroy: () => {
       hideNow();
       anchor.removeEventListener('mouseenter', onEnter);
@@ -169,6 +176,99 @@ function createHoverTooltip(anchor, opts) {
   };
   anchor.__ciwiHoverTooltip = controller;
   return controller;
+}
+
+function elementHasOverflow(element) {
+  if (!element) return false;
+  return (element.scrollWidth > (element.clientWidth + 1)) ||
+    (element.scrollHeight > (element.clientHeight + 1));
+}
+
+function createOverflowTooltip(anchor, opts) {
+  if (!anchor) return null;
+  if (anchor.__ciwiOverflowTooltip && typeof anchor.__ciwiOverflowTooltip.destroy === 'function') {
+    anchor.__ciwiOverflowTooltip.destroy();
+  }
+
+  const options = opts || {};
+  const textOption = options.text;
+  const owner = String(options.owner || '').trim();
+  let hoverController = null;
+  let renderedText = '';
+  let destroyed = false;
+
+  function resolveText() {
+    const value = (typeof textOption === 'function')
+      ? textOption(anchor)
+      : (textOption !== undefined ? textOption : anchor.textContent);
+    return String(value || '').trim();
+  }
+
+  function ensureVisible() {
+    if (destroyed || !elementHasOverflow(anchor)) return;
+    const text = resolveText();
+    if (!text) return;
+    if (hoverController && renderedText !== text) {
+      hoverController.destroy();
+      hoverController = null;
+    }
+    if (!hoverController) {
+      renderedText = text;
+      hoverController = createHoverTooltip(anchor, {
+        html: escapeHtml(text).replace(/\r?\n/g, '<br />'),
+        lingerMs: options.lingerMs,
+        owner: owner,
+        shouldShow: () => elementHasOverflow(anchor),
+      });
+    }
+    if (hoverController && typeof hoverController.show === 'function') {
+      hoverController.show();
+    }
+  }
+
+  anchor.addEventListener('mouseenter', ensureVisible);
+  anchor.addEventListener('focus', ensureVisible);
+
+  const controller = {
+    destroy: () => {
+      destroyed = true;
+      anchor.removeEventListener('mouseenter', ensureVisible);
+      anchor.removeEventListener('focus', ensureVisible);
+      if (hoverController && typeof hoverController.destroy === 'function') {
+        hoverController.destroy();
+      }
+      hoverController = null;
+      if (anchor.__ciwiOverflowTooltip === controller) {
+        delete anchor.__ciwiOverflowTooltip;
+      }
+    },
+  };
+  anchor.__ciwiOverflowTooltip = controller;
+  return controller;
+}
+
+function bindOverflowTooltips(root, opts) {
+  if (!root || !root.querySelectorAll) return;
+  const options = opts || {};
+  const ownerPrefix = String(options.ownerPrefix || 'overflow').trim() || 'overflow';
+  root.querySelectorAll('[data-ciwi-overflow-text]').forEach((element, index) => {
+    const text = String(element.getAttribute('data-ciwi-overflow-text') || element.textContent || '').trim();
+    if (!text) return;
+    createOverflowTooltip(element, {
+      text: () => element.getAttribute('data-ciwi-overflow-text') || element.textContent || '',
+      lingerMs: options.lingerMs,
+      owner: ownerPrefix + '-' + String(index),
+    });
+  });
+}
+
+function destroyOverflowTooltips(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('[data-ciwi-overflow-text]').forEach(element => {
+    if (element.__ciwiOverflowTooltip && typeof element.__ciwiOverflowTooltip.destroy === 'function') {
+      element.__ciwiOverflowTooltip.destroy();
+    }
+  });
 }
 
 `

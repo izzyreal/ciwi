@@ -81,3 +81,28 @@ func TestJobExecutionUIDisablesTailingWhileBrowsingUnreachedSteps(t *testing.T) 
 		}
 	}
 }
+
+func TestOverflowTooltipsCoverTruncatedUI(t *testing.T) {
+	for label, source := range map[string]string{
+		"shared helper":          uiSharedTooltipJS,
+		"job table cells":        uiPagesJS,
+		"history card titles":    uiIndexJobExecutionsJS,
+		"step command summaries": jobExecutionRenderJS,
+		"job detail bindings":    jobExecutionDataJS,
+	} {
+		if !strings.Contains(source, "data-ciwi-overflow-text") && label != "shared helper" {
+			t.Fatalf("%s no longer marks truncated text for overflow tooltips", label)
+		}
+	}
+	for _, want := range []string{
+		"function elementHasOverflow(element)",
+		"function createOverflowTooltip(anchor, opts)",
+		"function bindOverflowTooltips(root, opts)",
+		"function destroyOverflowTooltips(root)",
+		"shouldShow: () => elementHasOverflow(anchor)",
+	} {
+		if !strings.Contains(uiSharedTooltipJS, want) {
+			t.Fatalf("shared overflow-tooltip helper no longer contains %q", want)
+		}
+	}
+}

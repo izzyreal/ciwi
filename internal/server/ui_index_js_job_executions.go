@@ -122,6 +122,9 @@ const uiIndexJobExecutionsJS = `
 
     function renderHistoryLayoutRows(tbody, cards, columnCount) {
       const rows = Array.isArray(cards) ? cards : [];
+      if (typeof destroyOverflowTooltips === 'function') {
+        destroyOverflowTooltips(tbody);
+      }
       tbody.innerHTML = '';
       if (rows.length === 0) {
         const tr = document.createElement('tr');
@@ -143,7 +146,8 @@ const uiIndexJobExecutionsJS = `
       const status = historyCardSummaryStatus(card && card.summary);
       const rawTitle = String((card && card.title) || '').trim() || 'job';
       const kind = String((card && card.kind) || '').trim() || 'job';
-      const title = escapeHtml(kind + ': ' + rawTitle);
+      const fullTitle = kind + ': ' + rawTitle;
+      const title = escapeHtml(fullTitle);
       let iconHTML = '';
       const sections = (card && card.sections) || [];
       if (Array.isArray(sections) && sections.length > 0) {
@@ -160,14 +164,20 @@ const uiIndexJobExecutionsJS = `
         }
       }
       return '<span class="ciwi-job-group-main">' + iconHTML + '<span class="ciwi-job-group-emoji" aria-hidden="true">' + status.emoji +
-        '</span><span class="ciwi-job-group-title">' + title +
+        '</span><span class="ciwi-job-group-title" data-ciwi-overflow-text="' + escapeHtml(fullTitle) + '">' + title +
         '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span>';
     }
 
     function setHistoryCardHeadHTML(element, html) {
       if (!element || element.__ciwiCardHeadHTML === html) return;
+      if (typeof destroyOverflowTooltips === 'function') {
+        destroyOverflowTooltips(element);
+      }
       element.innerHTML = html;
       element.__ciwiCardHeadHTML = html;
+      if (typeof bindOverflowTooltips === 'function') {
+        bindOverflowTooltips(element, { ownerPrefix: 'history-card-title' });
+      }
     }
 
     function mergeCardSummaryIntoDetail(summaryCard, detailCard) {
@@ -315,7 +325,12 @@ const uiIndexJobExecutionsJS = `
       const signature = historyCardSectionsSignature(card);
       const existing = container.querySelector(':scope > .ciwi-job-history-sections, :scope > .ciwi-job-history-empty-card, :scope > .ciwi-job-group-skel-body');
       if (existing && container.__ciwiSectionsSignature === signature) return;
-      if (existing) existing.remove();
+      if (existing) {
+        if (typeof destroyOverflowTooltips === 'function') {
+          destroyOverflowTooltips(existing);
+        }
+        existing.remove();
+      }
       container.appendChild(buildHistorySectionsContent(card, opts));
       container.__ciwiSectionsSignature = signature;
     }
@@ -361,6 +376,9 @@ const uiIndexJobExecutionsJS = `
       if (collapsible) {
         let details = td.querySelector('.ciwi-job-group-details');
         if (!details) {
+          if (typeof destroyOverflowTooltips === 'function') {
+            destroyOverflowTooltips(td);
+          }
           td.innerHTML = '';
           details = document.createElement('details');
           details.className = 'ciwi-job-group-details';
@@ -391,6 +409,9 @@ const uiIndexJobExecutionsJS = `
         if (!cardEl) {
           cardEl = document.createElement('div');
           cardEl.className = 'ciwi-job-group-card';
+          if (typeof destroyOverflowTooltips === 'function') {
+            destroyOverflowTooltips(td);
+          }
           td.innerHTML = '';
           td.appendChild(cardEl);
         }
@@ -514,6 +535,9 @@ const uiIndexJobExecutionsJS = `
 
     function renderQueueLayoutRows(tbody, cards, columnCount) {
       const rows = Array.isArray(cards) ? cards : [];
+      if (typeof destroyOverflowTooltips === 'function') {
+        destroyOverflowTooltips(tbody);
+      }
       tbody.innerHTML = '';
       if (rows.length === 0) {
         const tr = document.createElement('tr');
@@ -543,6 +567,9 @@ const uiIndexJobExecutionsJS = `
       if (collapsible) {
         let details = td.querySelector('.ciwi-job-group-details');
         if (!details) {
+          if (typeof destroyOverflowTooltips === 'function') {
+            destroyOverflowTooltips(td);
+          }
           td.innerHTML = '';
           details = document.createElement('details');
           details.className = 'ciwi-job-group-details';
@@ -588,6 +615,9 @@ const uiIndexJobExecutionsJS = `
         if (!cardEl) {
           cardEl = document.createElement('div');
           cardEl.className = 'ciwi-job-group-card';
+          if (typeof destroyOverflowTooltips === 'function') {
+            destroyOverflowTooltips(td);
+          }
           td.innerHTML = '';
           td.appendChild(cardEl);
         }

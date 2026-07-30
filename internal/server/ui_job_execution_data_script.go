@@ -472,9 +472,16 @@ const jobExecutionDataJS = `
         const renderSignature = 'structured:' + eventSignature + ':' + String(job.current_step || '') + ':' + String(job.status || '');
         lastOutputRaw = plainTextFromStructuredEvents(job, events);
         if (renderSignature !== lastRenderedOutput) {
-          document.getElementById('logBox').innerHTML = renderStructuredOutputLog(job, events);
+          const logBox = document.getElementById('logBox');
+          if (typeof destroyOverflowTooltips === 'function') {
+            destroyOverflowTooltips(logBox);
+          }
+          logBox.innerHTML = renderStructuredOutputLog(job, events);
           bindLogStepToggles();
           if (hasStructured) bindStructuredStepProgress(job, events);
+          if (typeof bindOverflowTooltips === 'function') {
+            bindOverflowTooltips(logBox, { ownerPrefix: 'log-step-command' });
+          }
           lastRenderedOutput = renderSignature;
           if (logSearchController && typeof logSearchController.refresh === 'function') {
             logSearchController.refresh();
@@ -494,9 +501,16 @@ const jobExecutionDataJS = `
         }
         const stepDetail = subtitleStepDetail(job);
         if (stepDetail) {
-          subtitle += '<div class="job-subtitle-detail">Command: <code>' + escapeHtml(stepDetail) + '</code></div>';
+          subtitle += '<div class="job-subtitle-detail">Command: <code data-ciwi-overflow-text="' + escapeHtml(stepDetail) + '">' + escapeHtml(stepDetail) + '</code></div>';
         }
-        document.getElementById('subtitle').innerHTML = subtitle;
+        const subtitleElement = document.getElementById('subtitle');
+        if (typeof destroyOverflowTooltips === 'function') {
+          destroyOverflowTooltips(subtitleElement);
+        }
+        subtitleElement.innerHTML = subtitle;
+        if (typeof bindOverflowTooltips === 'function') {
+          bindOverflowTooltips(subtitleElement, { ownerPrefix: 'job-subtitle-command' });
+        }
 
       const forceBtn = document.getElementById('forceFailBtn');
       const active = isActiveJobStatus(job.status);
