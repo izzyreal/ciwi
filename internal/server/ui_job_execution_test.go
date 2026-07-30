@@ -52,3 +52,32 @@ func TestJobExecutionUISavesStepOpenStateInLocalStorage(t *testing.T) {
 		}
 	}
 }
+
+func TestJobExecutionUIOffersFloatingCollapseForLargeSteps(t *testing.T) {
+	for _, want := range []string{
+		"log-step-collapse-btn",
+		"Collapse ↑",
+		"function updateLogStepCollapseButtons()",
+		"const largeStepThreshold = Math.max(480, logBox.clientHeight);",
+		"collapseBtn.hidden = !d.open || contentHeight <= largeStepThreshold;",
+		"d.open = false;",
+	} {
+		if !strings.Contains(jobExecutionHTML+jobExecutionRenderJS+jobExecutionDataJS, want) {
+			t.Fatalf("job execution floating collapse control no longer contains %q", want)
+		}
+	}
+}
+
+func TestJobExecutionUIDisablesTailingWhileBrowsingUnreachedSteps(t *testing.T) {
+	for _, want := range []string{
+		"function logUnreachedBoundary(el)",
+		"const viewportBottom = el.scrollTop + el.clientHeight;",
+		"if (viewportBottom > unreachedBoundary + 4) return false;",
+		"if (d.classList.contains('log-step-unreached'))",
+		"setTailingEnabled(false);",
+	} {
+		if !strings.Contains(jobExecutionDataJS, want) {
+			t.Fatalf("job execution unreached-step scrolling no longer contains %q", want)
+		}
+	}
+}

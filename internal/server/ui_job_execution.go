@@ -179,6 +179,25 @@ const jobExecutionHTML = `<!doctype html>
       font-size: 11px;
       font-weight: 700;
     }
+    .log-step-collapse-btn {
+      position: sticky;
+      top: 8px;
+      z-index: 3;
+      float: right;
+      display: inline-flex;
+      align-items: center;
+      margin: 2px 0 8px 10px;
+      border: 1px solid #547565;
+      background: #1b2c24;
+      color: #dff3ea;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+    }
+    .log-step-collapse-btn:hover {
+      background: #263d32;
+    }
+    .log-step-collapse-btn[hidden] {
+      display: none;
+    }
     .log-step-meta {
       display: flex;
       flex-wrap: wrap;

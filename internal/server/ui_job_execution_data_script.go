@@ -180,21 +180,35 @@ const jobExecutionDataJS = `
       icon.onload = () => { icon.style.display = 'inline-block'; };
       icon.onerror = () => { icon.style.display = 'none'; };
     }
+    function logUnreachedBoundary(el) {
+      if (!el) return null;
+      const firstUnreached = el.querySelector('details.log-step-unreached');
+      if (!firstUnreached) return null;
+      return firstUnreached.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+    }
+
     function isNearLogBottom() {
       const el = document.getElementById('logBox');
       if (!el) return true;
       const leewayPx = 48;
-      return (el.scrollTop + el.clientHeight) >= (el.scrollHeight - leewayPx);
+      const viewportBottom = el.scrollTop + el.clientHeight;
+      const unreachedBoundary = logUnreachedBoundary(el);
+      if (unreachedBoundary !== null) {
+        // Scrolling beyond live output means the user is browsing the planned,
+        // unreached portion of the timeline. Polling must not pull them back.
+        if (viewportBottom > unreachedBoundary + 4) return false;
+        return viewportBottom >= unreachedBoundary - leewayPx;
+      }
+      return viewportBottom >= (el.scrollHeight - leewayPx);
     }
 
     function scrollLogToBottom() {
       const el = document.getElementById('logBox');
       if (!el) return;
       suppressLogScrollEvent = true;
-      const firstUnreached = el.querySelector('details.log-step-unreached');
-      if (firstUnreached) {
-        const boundary = firstUnreached.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
-        el.scrollTop = Math.max(0, boundary - el.clientHeight);
+      const unreachedBoundary = logUnreachedBoundary(el);
+      if (unreachedBoundary !== null) {
+        el.scrollTop = Math.max(0, unreachedBoundary - el.clientHeight);
       } else {
         el.scrollTop = el.scrollHeight;
       }
@@ -300,12 +314,49 @@ const jobExecutionDataJS = `
       if (!logBox) return;
       logBox.querySelectorAll('details.log-step[data-step-key]').forEach(d => {
         const key = String(d.getAttribute('data-step-key') || '').trim();
-        if (!key || d.__ciwiStepToggleBound) return;
-        d.__ciwiStepToggleBound = true;
-        d.addEventListener('toggle', () => {
-          logStepOpenState[key] = !!d.open;
-          saveLogStepOpenState();
-        });
+        if (!key) return;
+        if (!d.__ciwiStepToggleBound) {
+          d.__ciwiStepToggleBound = true;
+          d.addEventListener('toggle', () => {
+            logStepOpenState[key] = !!d.open;
+            saveLogStepOpenState();
+            if (d.classList.contains('log-step-unreached')) {
+              setTailingEnabled(false);
+            }
+            requestAnimationFrame(updateLogStepCollapseButtons);
+          });
+        }
+        const collapseBtn = d.querySelector(':scope > .log-step-collapse-btn');
+        if (collapseBtn && !collapseBtn.__ciwiBound) {
+          collapseBtn.__ciwiBound = true;
+          collapseBtn.addEventListener('click', () => {
+            const headerTop = d.getBoundingClientRect().top - logBox.getBoundingClientRect().top + logBox.scrollTop;
+            d.open = false;
+            requestAnimationFrame(() => {
+              suppressLogScrollEvent = true;
+              logBox.scrollTop = Math.max(0, headerTop - 8);
+              setTimeout(() => { suppressLogScrollEvent = false; }, 0);
+            });
+          });
+        }
+      });
+      if (!logBox.__ciwiCollapseResizeBound) {
+        logBox.__ciwiCollapseResizeBound = true;
+        window.addEventListener('resize', updateLogStepCollapseButtons);
+      }
+      requestAnimationFrame(updateLogStepCollapseButtons);
+    }
+
+    function updateLogStepCollapseButtons() {
+      const logBox = document.getElementById('logBox');
+      if (!logBox) return;
+      const largeStepThreshold = Math.max(480, logBox.clientHeight);
+      logBox.querySelectorAll('details.log-step[data-step-key]').forEach(d => {
+        const collapseBtn = d.querySelector(':scope > .log-step-collapse-btn');
+        if (!collapseBtn) return;
+        const summary = d.querySelector(':scope > summary');
+        const contentHeight = d.open ? Math.max(0, d.scrollHeight - Number((summary && summary.offsetHeight) || 0)) : 0;
+        collapseBtn.hidden = !d.open || contentHeight <= largeStepThreshold;
       });
     }
 

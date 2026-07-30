@@ -891,6 +891,7 @@ const jobExecutionRenderJS = `
         return '' +
           '<details class="log-step' + (reached ? '' : ' log-step-unreached') + '" data-step-key="' + escapeHtml(group.key) + '"' + (open ? ' open' : '') + '>' +
             '<summary><span class="log-step-summary-title">' + escapeHtml(executionGroupTitle(group)) + '</span>' + (commandSummary ? '<span class="log-step-summary-command">' + escapeHtml(commandSummary) + '</span>' : '') + (!reached ? '<span class="log-step-status">Not reached</span>' : '') + '</summary>' +
+            '<button class="copy-btn log-step-collapse-btn" type="button" title="Collapse this step" hidden>Collapse ↑</button>' +
             (meta.length ? ('<div class="log-step-meta">' + meta.map(m => '<span>' + m + '</span>').join('') + '</div>') : '') +
             detailsBlock +
             '<div class="log-step-label">Output</div>' +
