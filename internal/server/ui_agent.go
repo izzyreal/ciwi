@@ -7,11 +7,12 @@ const agentHTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi agent</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
   <style>
 ` + uiPageChromeCSS + `
     .row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
     .ok { color:var(--ok); font-weight:600; }
-    .stale { color:#a56a00; font-weight:600; }
+    .stale { color:var(--warn); font-weight:600; }
     .offline { color:var(--bad); font-weight:600; }
     .badge {
       display: inline-block;
@@ -19,11 +20,11 @@ const agentHTML = `<!doctype html>
       padding: 2px 7px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: #edf8f2;
-      color: #26644b;
+      background: var(--pill-bg);
+      color: var(--pill-ink);
     }
-    .badge-warn { background:#fff6e6; color:#8a5a00; }
-    .badge-error { background:#ffeded; color:#8f1f1f; }
+    .badge-warn { background:var(--warn-bg); color:var(--warn); }
+    .badge-error { background:var(--bad-bg); color:var(--bad); }
     .grid { display:grid; grid-template-columns:180px minmax(0,1fr); gap:6px 10px; font-size:13px; }
     .label { color:var(--muted); font-weight:600; }
     .value { overflow-wrap:anywhere; word-break:break-word; }
@@ -33,7 +34,7 @@ const agentHTML = `<!doctype html>
       padding: 1px 6px;
       border: 1px solid var(--line);
       border-radius: 6px;
-      background: #f7fcf9;
+      background: var(--surface-subtle);
       font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
       font-size: 12px;
       line-height: 1.4;
@@ -49,7 +50,7 @@ const agentHTML = `<!doctype html>
       overflow:auto;
       user-select:text;
       cursor:text;
-      background:#f7fcf9;
+      background:var(--surface-subtle);
       border:1px solid var(--line);
       border-radius:8px;
       padding:10px;
@@ -84,7 +85,7 @@ const agentHTML = `<!doctype html>
       min-height: 0;
       display: grid;
       grid-template-rows: auto 1fr;
-      background: #fff;
+      background: var(--input-bg);
     }
     .adhoc-modal-pane-head {
       border-bottom: 1px solid var(--line);
@@ -113,7 +114,7 @@ const agentHTML = `<!doctype html>
       font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
       font-size: 12px;
       line-height: 1.45;
-      background: #f7fcf9;
+      background: var(--surface-subtle);
     }
     @media (max-width: 900px) {
       .adhoc-modal-body { grid-template-columns: 1fr; }
@@ -131,7 +132,7 @@ const agentHTML = `<!doctype html>
         </div>
       </div>
       <div class="row" style="gap:8px;">
-        <a class="nav-btn" href="/agents">Back to Agents <span class="nav-emoji" aria-hidden="true">↩</span></a>
+        <a class="nav-btn" href="/agents"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Agents</a>
         <button id="refreshBtn">Refresh</button>
       </div>
     </div>

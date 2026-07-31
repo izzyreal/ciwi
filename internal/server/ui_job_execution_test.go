@@ -56,7 +56,7 @@ func TestJobExecutionUISavesStepOpenStateInLocalStorage(t *testing.T) {
 func TestJobExecutionUIOffersFloatingCollapseForLargeSteps(t *testing.T) {
 	for _, want := range []string{
 		"log-step-collapse-btn",
-		"Collapse ↑",
+		"Collapse ' + ciwiIconHTML('arrow-up')",
 		"function updateLogStepCollapseButtons()",
 		"const largeStepThreshold = Math.max(480, logBox.clientHeight);",
 		"collapseBtn.hidden = !d.open || contentHeight <= largeStepThreshold;",

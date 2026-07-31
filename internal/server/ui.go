@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/ciwi-logo.png assets/ciwi-favicon.png
+//go:embed assets/ciwi-logo.png assets/ciwi-favicon.png assets/tabler-icons.svg
 var uiAssets embed.FS
 
 func (s *stateStore) uiHandler(w http.ResponseWriter, r *http.Request) {
@@ -16,6 +16,14 @@ func (s *stateStore) uiHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.URL.Path == "/ciwi-logo.png":
 		serveEmbeddedPNG(w, "assets/ciwi-logo.png")
+		return
+	case r.URL.Path == "/ui/icons.svg":
+		serveEmbeddedAsset(w, "assets/tabler-icons.svg", "image/svg+xml")
+		return
+	case r.URL.Path == "/ui/theme.js":
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		_, _ = w.Write([]byte(uiThemeJS))
 		return
 	case r.URL.Path == "/":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -59,12 +67,16 @@ func (s *stateStore) uiHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveEmbeddedPNG(w http.ResponseWriter, path string) {
+	serveEmbeddedAsset(w, path, "image/png")
+}
+
+func serveEmbeddedAsset(w http.ResponseWriter, path, contentType string) {
 	data, err := uiAssets.ReadFile(path)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)

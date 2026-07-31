@@ -7,6 +7,7 @@ const indexHTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
   <style>
 ` + uiPageChromeCSS + uiIndexCSS + `
   </style>
@@ -23,8 +24,8 @@ const indexHTML = `<!doctype html>
           </div>
         </div>
         <div class="header-actions">
-          <a class="nav-btn" href="/agents">Agents <span class="nav-emoji" aria-hidden="true">🖥️</span></a>
-          <a class="nav-btn" href="/settings" aria-label="Global Settings" title="Global Settings">Global Settings <span class="nav-emoji" aria-hidden="true">⚙️</span></a>
+          <a class="nav-btn" href="/agents">Agents <span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-device-desktop"></use></svg></span></a>
+          <a class="nav-btn" href="/settings" aria-label="Global Settings" title="Global Settings">Global Settings <span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-settings"></use></svg></span></a>
         </div>
       </div>
       <div id="runtimeStateBanner" class="runtime-banner"></div>

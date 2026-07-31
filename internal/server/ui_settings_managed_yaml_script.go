@@ -63,7 +63,7 @@ const settingsManagedYAMLJS = `
       const status = document.getElementById('managedYAMLStatus');
       if (!status) return;
       status.textContent = String(message || '');
-      status.style.color = isError ? '#b23a48' : '#3a6f59';
+      status.style.color = isError ? 'var(--bad)' : 'var(--ok)';
     }
 
     function setManagedYAMLBusy(busy) {

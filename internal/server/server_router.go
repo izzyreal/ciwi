@@ -16,6 +16,8 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.HandleFunc("/favicon.ico", s.uiHandler)
 	r.HandleFunc("/ciwi-favicon.png", s.uiHandler)
 	r.HandleFunc("/ciwi-logo.png", s.uiHandler)
+	r.HandleFunc("/ui/icons.svg", s.uiHandler)
+	r.HandleFunc("/ui/theme.js", s.uiHandler)
 	r.HandleFunc("/ui/shared.js", s.uiHandler)
 	r.HandleFunc("/ui/pages.js", s.uiHandler)
 	r.HandleFunc("/settings", s.uiHandler)

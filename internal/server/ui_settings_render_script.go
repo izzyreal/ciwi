@@ -1,6 +1,30 @@
 package server
 
 const settingsRenderJS = `
+    function initializeThemeSettings() {
+      const select = document.getElementById('themeSelect');
+      const description = document.getElementById('themeDescription');
+      if (!select) return;
+      const descriptions = {
+        default: 'Bright mint with stronger color and contrast.',
+        jungle: 'Deep forest greens with vivid tropical accents.',
+        space: 'Midnight blue with cyan and violet highlights.',
+      };
+      const update = theme => {
+        const selected = ciwiApplyTheme(theme);
+        select.value = selected;
+        if (description) description.textContent = descriptions[selected] || '';
+      };
+      select.value = ciwiStoredTheme();
+      if (description) description.textContent = descriptions[select.value] || '';
+      select.onchange = () => update(select.value);
+      window.addEventListener('ciwi-theme-change', event => {
+        const selected = ciwiNormalizeTheme(event && event.detail && event.detail.theme);
+        select.value = selected;
+        if (description) description.textContent = descriptions[selected] || '';
+      });
+    }
+
     function setProjectReloadState(projectId, text, color) {
       projectReloadState.set(String(projectId), { text, color });
     }
@@ -53,14 +77,14 @@ const settingsRenderJS = `
           ? (commitURL
               ? ('<a class="job-link" href="' + commitURL + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(shortCommit) + '</a>')
               : ('<code>' + escapeHtml(shortCommit) + '</code>'))
-          : '<span style="color:#5f6f67;">n/a</span>';
+          : '<span class="muted">n/a</span>';
         const updatedPart = lastUpdated
           ? escapeHtml(formatTimestamp(lastUpdated))
-          : '<span style="color:#5f6f67;">n/a</span>';
+          : '<span class="muted">n/a</span>';
         const sourceMetadata = projectSourceMetadataHTML(project);
         const updateMetadata = isManagedYAML
-          ? '<div style="margin-top:6px;font-size:12px;color:#3a4f44;">Stored in ciwi database | Last update time: ' + updatedPart + '</div>'
-          : '<div style="margin-top:6px;font-size:12px;color:#3a4f44;">Loaded commit: ' + commitPart + ' | Last update time: ' + updatedPart + '</div>';
+          ? '<div class="muted" style="margin-top:6px;">Stored in ciwi database | Last update time: ' + updatedPart + '</div>'
+          : '<div class="muted" style="margin-top:6px;">Loaded commit: ' + commitPart + ' | Last update time: ' + updatedPart + '</div>';
         topInfo.innerHTML =
           '<strong>Project: <a class="job-link" href="/projects/' + project.id + '?back=' + encodeURIComponent('/settings') + '">' + escapeHtml(project.name) + '</a></strong> ' +
           sourceMetadata + updateMetadata;
@@ -75,7 +99,7 @@ const settingsRenderJS = `
           reloadStatus.textContent = state.text;
           reloadStatus.style.color = state.color;
         } else {
-          reloadStatus.style.color = '#5f6f67';
+          reloadStatus.style.color = 'var(--muted)';
         }
         const definitionBtn = document.createElement('button');
         definitionBtn.className = 'secondary';
@@ -85,21 +109,21 @@ const settingsRenderJS = `
         } else {
           definitionBtn.textContent = 'Reload project definition from VCS';
           definitionBtn.onclick = async () => {
-            setProjectReloadState(project.id, 'Reloading...', '#5f6f67');
+            setProjectReloadState(project.id, 'Reloading...', 'var(--muted)');
             reloadStatus.textContent = 'Reloading...';
-            reloadStatus.style.color = '#5f6f67';
+            reloadStatus.style.color = 'var(--muted)';
             definitionBtn.disabled = true;
             try {
               await apiJSON('/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
               await refreshSettingsProjects();
-              setProjectReloadState(project.id, 'Reloaded successfully', '#1f8a4c');
+              setProjectReloadState(project.id, 'Reloaded successfully', 'var(--ok)');
               reloadStatus.textContent = 'Reloaded successfully';
-              reloadStatus.style.color = '#1f8a4c';
+              reloadStatus.style.color = 'var(--ok)';
             } catch (e) {
               const msg = 'Reload failed: ' + e.message;
-              setProjectReloadState(project.id, msg, '#b23a48');
+              setProjectReloadState(project.id, msg, 'var(--bad)');
               reloadStatus.textContent = msg;
-              reloadStatus.style.color = '#b23a48';
+              reloadStatus.style.color = 'var(--bad)';
             } finally {
               definitionBtn.disabled = false;
             }
@@ -121,18 +145,18 @@ const settingsRenderJS = `
           });
           if (!confirmed) return;
           reloadStatus.textContent = 'Deleting...';
-          reloadStatus.style.color = '#5f6f67';
+          reloadStatus.style.color = 'var(--muted)';
           definitionBtn.disabled = true;
           deleteBtn.disabled = true;
           try {
             await apiJSON('/api/v1/projects/' + project.id, { method: 'DELETE' });
-            setProjectReloadState(project.id, 'Deleted', '#1f8a4c');
+            setProjectReloadState(project.id, 'Deleted', 'var(--ok)');
             await refreshSettingsProjects();
           } catch (e) {
             const msg = 'Delete failed: ' + String(e && e.message || e);
-            setProjectReloadState(project.id, msg, '#b23a48');
+            setProjectReloadState(project.id, msg, 'var(--bad)');
             reloadStatus.textContent = msg;
-            reloadStatus.style.color = '#b23a48';
+            reloadStatus.style.color = 'var(--bad)';
             definitionBtn.disabled = false;
             deleteBtn.disabled = false;
           }
@@ -171,5 +195,7 @@ const settingsRenderJS = `
     document.getElementById('openVaultConnectionsBtn').onclick = () => {
       window.location.href = '/vault';
     };
+
+    initializeThemeSettings();
 
 `

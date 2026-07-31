@@ -19,7 +19,7 @@ const jobExecutionRenderJS = `
         '<span class="mode-value">' +
           '<span>' + label + '</span>' +
           '<span class="mode-info" tabindex="0" aria-label="Run mode info" data-mode="' + (dryRun ? 'dry' : 'ordinary') + '">' +
-            '<span aria-hidden="true">ⓘ</span>' +
+            '<span aria-hidden="true">' + ciwiIconHTML('info-circle') + '</span>' +
           '</span>' +
         '</span>';
     }
@@ -58,7 +58,7 @@ const jobExecutionRenderJS = `
             '</div>' +
             (path ? ('<div class="cache-stat-row">Path: <code>' + escapeHtml(path) + '</code></div>') : '') +
             '<div class="cache-stat-row">Size: ' + escapeHtml(formatBytes(size)) + ' | Files: ' + escapeHtml(String(files)) + ' | Dirs: ' + escapeHtml(String(dirs)) + '</div>' +
-            (err ? ('<div class="cache-stat-row" style="color:#b23a48;">Error: ' + escapeHtml(err) + '</div>') : '') +
+            (err ? ('<div class="cache-stat-row" style="color:var(--bad);">Error: ' + escapeHtml(err) + '</div>') : '') +
             (metricRows ? ('<div class="cache-stat-metrics">' + metricRows + '</div>') : '') +
           '</div>';
       }).join('');
@@ -324,10 +324,10 @@ const jobExecutionRenderJS = `
         .sort((a, b) => pct(a[1].covered, a[1].total) - pct(b[1].covered, b[1].total))
         .map(([name, m]) =>
           '<tr>' +
-          '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;"><code>' + escapeHtml(name) + '</code></td>' +
-          '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;">' + m.files + '</td>' +
-          '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;">' + m.covered + '/' + m.total + '</td>' +
-          '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;"><strong>' + pct(m.covered, m.total).toFixed(2) + '%</strong></td>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid var(--code-line);"><code>' + escapeHtml(name) + '</code></td>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid var(--code-line);text-align:right;">' + m.files + '</td>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid var(--code-line);text-align:right;">' + m.covered + '/' + m.total + '</td>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid var(--code-line);text-align:right;"><strong>' + pct(m.covered, m.total).toFixed(2) + '%</strong></td>' +
           '</tr>'
         ).join('');
 
@@ -337,9 +337,9 @@ const jobExecutionRenderJS = `
         .map(f => {
           const t = coverageFileTotals(f);
           return '<tr>' +
-            '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;"><code>' + escapeHtml(String(f.path || '')) + '</code></td>' +
-            '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;">' + t.covered + '/' + t.total + '</td>' +
-            '<td style="padding:4px 6px;border-bottom:1px solid #d7e6dd;text-align:right;"><strong>' + pct(t.covered, t.total).toFixed(2) + '%</strong></td>' +
+            '<td style="padding:4px 6px;border-bottom:1px solid var(--code-line);"><code>' + escapeHtml(String(f.path || '')) + '</code></td>' +
+            '<td style="padding:4px 6px;border-bottom:1px solid var(--code-line);text-align:right;">' + t.covered + '/' + t.total + '</td>' +
+            '<td style="padding:4px 6px;border-bottom:1px solid var(--code-line);text-align:right;"><strong>' + pct(t.covered, t.total).toFixed(2) + '%</strong></td>' +
             '</tr>';
         }).join('');
 
@@ -385,19 +385,19 @@ const jobExecutionRenderJS = `
       const openTree = Object.prototype.hasOwnProperty.call(openState, 'tree') ? !!openState.tree : false;
 
       box.innerHTML =
-        '<div style="margin:0 0 10px;padding:8px;border:1px solid #c4ddd0;border-radius:6px;background:#f6fbf8;">' +
+        '<div style="margin:0 0 10px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface-soft);">' +
           '<div><strong>Format:</strong> ' + escapeHtml(String(coverage.format || '')) + '</div>' +
           '<div><strong>Overall:</strong> ' + overallPct.toFixed(2) + '% (' + overall.covered + '/' + overall.total + ')</div>' +
           '<div><strong>Files:</strong> ' + files.length + '</div>' +
         '</div>' +
         '<details data-cov-key="modules"' + (openModules ? ' open' : '') + '><summary><strong>By Module</strong></summary>' +
           '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
-          '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Module</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Files</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Covered/Total</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Coverage</th></tr></thead>' +
+          '<thead><tr><th style="text-align:left;border-bottom:1px solid var(--line);">Module</th><th style="text-align:right;border-bottom:1px solid var(--line);">Files</th><th style="text-align:right;border-bottom:1px solid var(--line);">Covered/Total</th><th style="text-align:right;border-bottom:1px solid var(--line);">Coverage</th></tr></thead>' +
           '<tbody>' + moduleRows + '</tbody></table>' +
         '</details>' +
         '<details data-cov-key="files"' + (openFiles ? ' open' : '') + '><summary><strong>By File</strong></summary>' +
           '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
-          '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">File</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Covered/Total</th><th style="text-align:right;border-bottom:1px solid #c4ddd0;">Coverage</th></tr></thead>' +
+          '<thead><tr><th style="text-align:left;border-bottom:1px solid var(--line);">File</th><th style="text-align:right;border-bottom:1px solid var(--line);">Covered/Total</th><th style="text-align:right;border-bottom:1px solid var(--line);">Coverage</th></tr></thead>' +
           '<tbody>' + fileRows + '</tbody></table>' +
         '</details>' +
         '<details data-cov-key="tree"' + (openTree ? ' open' : '') + '><summary><strong>Tree View</strong></summary>' + tree + '</details>';
@@ -674,18 +674,18 @@ const jobExecutionRenderJS = `
             return '<details data-test-key="suite:' + suiteIdx + ':mod:' + modIdx + '">' +
               '<summary><code>' + escapeHtml(mod) + '</code> - total=' + visibleCases.length + ', passed=' + mPass + ', failed=' + mFail + ', skipped=' + mSkip + '</summary>' +
               '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">' +
-              '<thead><tr><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Test</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Status</th><th style="text-align:left;border-bottom:1px solid #c4ddd0;">Duration</th></tr></thead>' +
+              '<thead><tr><th style="text-align:left;border-bottom:1px solid var(--line);">Test</th><th style="text-align:left;border-bottom:1px solid var(--line);">Status</th><th style="text-align:left;border-bottom:1px solid var(--line);">Duration</th></tr></thead>' +
               '<tbody>' + rows + '</tbody></table>' +
               '</details>';
           }).filter(Boolean).join('');
         if (!moduleHtml) return '';
         return '<div style="margin-top:10px;">' +
           '<div><strong>' + escapeHtml(s.name || 'suite') + '</strong> (' + escapeHtml(s.format || '') + ')</div>' +
-          '<div style="font-size:13px;color:#5f6f67;">total=' + (s.total || 0) + ', passed=' + (s.passed || 0) + ', failed=' + (s.failed || 0) + ', skipped=' + (s.skipped || 0) + '</div>' +
+          '<div class="muted">total=' + (s.total || 0) + ', passed=' + (s.passed || 0) + ', failed=' + (s.failed || 0) + ', skipped=' + (s.skipped || 0) + '</div>' +
           '<div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">' + moduleHtml + '</div>' +
           '</div>';
       }).filter(Boolean).join('');
-      const emptyMsg = suiteHtml ? '' : '<div style="color:#5f6f67;">No tests for selected filter.</div>';
+      const emptyMsg = suiteHtml ? '' : '<div class="muted">No tests for selected filter.</div>';
       box.innerHTML = header + emptyMsg + suiteHtml;
       box.querySelectorAll('[data-test-filter]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -891,7 +891,7 @@ const jobExecutionRenderJS = `
         return '' +
           '<details class="log-step' + (reached ? '' : ' log-step-unreached') + '" data-step-key="' + escapeHtml(group.key) + '"' + (open ? ' open' : '') + '>' +
             '<summary><span class="log-step-summary-title">' + escapeHtml(executionGroupTitle(group)) + '</span>' + (commandSummary ? '<span class="log-step-summary-command" data-ciwi-overflow-text="' + escapeHtml(commandSummary) + '">' + escapeHtml(commandSummary) + '</span>' : '') + (!reached ? '<span class="log-step-status">Not reached</span>' : '') + '</summary>' +
-            '<button class="copy-btn log-step-collapse-btn" type="button" title="Collapse this step" hidden>Collapse ↑</button>' +
+            '<button class="copy-btn log-step-collapse-btn" type="button" title="Collapse this step" hidden>Collapse ' + ciwiIconHTML('arrow-up') + '</button>' +
             (meta.length ? ('<div class="log-step-meta">' + meta.map(m => '<span>' + m + '</span>').join('') + '</div>') : '') +
             detailsBlock +
             '<div class="log-step-label">Output</div>' +

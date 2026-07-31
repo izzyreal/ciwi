@@ -9,9 +9,9 @@ function ensureHoverTooltipStyles() {
   const style = document.createElement('style');
   style.id = '__ciwiHoverTooltipStyles';
   style.textContent = [
-    '.ciwi-hover-tooltip{position:fixed;z-index:2600;display:none;max-width:min(560px,88vw);padding:8px 10px;border:1px solid #c4ddd0;border-radius:8px;background:#f8fcfa;color:#1f2a24;font-size:14px;font-weight:400;line-height:1.35;box-shadow:0 6px 18px rgba(26,40,34,.15);}',
-    '.ciwi-hover-tooltip code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;background:#eef6f1;border:1px solid #d7e6dd;border-radius:4px;padding:0 4px;font-size:.95em;}',
-    '.ciwi-hover-tooltip a{color:#1f5f44;text-decoration:underline;}',
+    '.ciwi-hover-tooltip{position:fixed;z-index:2600;display:none;max-width:min(560px,88vw);padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:14px;font-weight:400;line-height:1.35;box-shadow:0 6px 18px var(--shadow);}',
+    '.ciwi-hover-tooltip code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;background:var(--code-bg);border:1px solid var(--code-line);border-radius:4px;padding:0 4px;font-size:.95em;}',
+    '.ciwi-hover-tooltip a{color:var(--accent);text-decoration:underline;}',
     'body.ciwi-tooltip-selecting *{user-select:none !important;}',
     'body.ciwi-tooltip-selecting .ciwi-hover-tooltip,body.ciwi-tooltip-selecting .ciwi-hover-tooltip *{user-select:text !important;}',
   ].join('');

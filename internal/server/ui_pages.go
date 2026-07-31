@@ -141,7 +141,7 @@ function buildJobExecutionRow(job, opts = {}) {
       reasonTd.innerHTML = '' +
         '<span class="ciwi-job-reason">' +
           '<span class="ciwi-job-reason-summary">' + (fixedLines > 0 ? ('<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '" data-ciwi-overflow-text="' + escapeHtml(combinedSummaryText) + '">' + combinedSummaryHTML + '</span>') : combinedSummaryHTML) + '</span>' +
-          '<span class="ciwi-job-reason-info" tabindex="0" aria-label="Missing requirements info">ⓘ</span>' +
+          '<span class="ciwi-job-reason-info" tabindex="0" aria-label="Missing requirements info">' + ciwiIconHTML('info-circle') + '</span>' +
         '</span>';
       const info = reasonTd.querySelector('.ciwi-job-reason-info');
       if (info && typeof createHoverTooltip === 'function') {
@@ -235,12 +235,12 @@ function ensureJobSkeletonStyles() {
     '.ciwi-job-two-line-row .ciwi-project-mini-icon{width:var(--ciwi-row-text-block);height:var(--ciwi-row-text-block);}',
     '.ciwi-job-two-line-row .ciwi-job-cell-lines-2{-webkit-line-clamp:2;}',
     '.ciwi-job-reason{display:flex;align-items:flex-start;gap:8px;}',
-    '.ciwi-job-reason-summary code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;background:#eef6f1;border:1px solid #d7e6dd;border-radius:4px;padding:0 4px;font-size:.95em;}',
+    '.ciwi-job-reason-summary code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;background:var(--code-bg);border:1px solid var(--code-line);border-radius:4px;padding:0 4px;font-size:.95em;}',
     '.ciwi-job-reason-info{display:inline-block;line-height:1;cursor:help;user-select:none;}',
     '.ciwi-job-two-line-row .ciwi-job-actions-cell{vertical-align:middle;}',
     '.ciwi-job-skeleton-row td{padding-top:6px;padding-bottom:6px;}',
     '.ciwi-job-skeleton-lines{display:flex;flex-direction:column;gap:8px;}',
-    '.ciwi-job-skeleton-bar{height:12px;border-radius:999px;background:#dcebe2;animation:ciwiSkeletonFade 2.2s ease-in-out infinite;}',
+    '.ciwi-job-skeleton-bar{height:12px;border-radius:999px;background:var(--line);animation:ciwiSkeletonFade 2.2s ease-in-out infinite;}',
     '.ciwi-job-skeleton-bar-short{width:72%;}',
     '.ciwi-job-row-enter{opacity:0;transform:translateY(3px);}',
     '.ciwi-job-row-enter-active{transition:opacity .45s ease,transform .45s ease;opacity:1;transform:translateY(0);}',
@@ -274,8 +274,8 @@ function ensureVersionResolveStyles() {
   style.textContent = [
     '.version-resolve-modal{min-width:760px;min-height:420px;}',
     '.version-resolve-body{display:flex;flex-direction:column;min-height:0;height:100%;}',
-    '.version-resolve-status{margin-bottom:8px;color:#5f6f67;font-size:13px;}',
-    '.version-resolve-log{margin:0;flex:1 1 auto;min-height:0;background:#0f1b16;color:#d7efe5;border-radius:8px;padding:12px;white-space:pre-wrap;overflow:auto;font-size:12px;line-height:1.45;}',
+    '.version-resolve-status{margin-bottom:8px;color:var(--muted);font-size:13px;}',
+    '.version-resolve-log{margin:0;flex:1 1 auto;min-height:0;background:var(--console-bg);color:var(--console-ink);border:1px solid var(--console-line);border-radius:8px;padding:12px;white-space:pre-wrap;overflow:auto;font-size:12px;line-height:1.45;}',
   ].join('');
   document.head.appendChild(style);
 }
@@ -372,12 +372,12 @@ function ensureSourceRefRunStyles() {
   style.textContent = [
     '.source-ref-run-modal{height:auto;max-width:min(560px,92vw);grid-template-rows:auto auto auto;}',
     '.source-ref-run-body{padding:14px 16px 8px;display:flex;flex-direction:column;gap:10px;}',
-    '.source-ref-run-note{font-size:13px;color:#5f6f67;}',
-    '.source-ref-run-label{font-size:13px;color:#1f2a24;font-weight:600;}',
-    '.source-ref-run-select{width:100%;font-size:13px;border:1px solid #c4ddd0;border-radius:8px;padding:8px;background:#fff;color:#1f2a24;}',
+    '.source-ref-run-note{font-size:13px;color:var(--muted);}',
+    '.source-ref-run-label{font-size:13px;color:var(--ink);font-weight:600;}',
+    '.source-ref-run-select{width:100%;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--input-bg);color:var(--ink);}',
     '.source-ref-run-grid{display:grid;grid-template-columns:1fr;gap:10px;}',
-    '.source-ref-run-agent-status{min-height:18px;font-size:12px;color:#5f6f67;display:flex;align-items:center;gap:8px;}',
-    '.source-ref-run-agent-status.loading::before{content:"";width:12px;height:12px;border-radius:50%;border:2px solid #b8d6c6;border-top-color:#2d7255;animation:ciwi-spin .8s linear infinite;}',
+    '.source-ref-run-agent-status{min-height:18px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;}',
+    '.source-ref-run-agent-status.loading::before{content:"";width:12px;height:12px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:ciwi-spin .8s linear infinite;}',
     '@keyframes ciwi-spin{to{transform:rotate(360deg);}}',
     '.source-ref-run-actions{padding:8px 16px 14px;display:flex;justify-content:flex-end;gap:8px;}',
   ].join('');
@@ -655,30 +655,30 @@ function ensureDryRunPreviewStyles() {
     '.dryrun-preview-modal{--ciwi-modal-width:min(940px,95vw);--ciwi-modal-height:min(84vh,760px);}',
     '.dryrun-preview-body{display:grid;grid-template-rows:auto 1fr;gap:10px;height:100%;min-height:0;}',
     '.dryrun-preview-controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;}',
-    '.dryrun-preview-label{font-size:13px;color:#1f2a24;font-weight:600;}',
-    '.dryrun-preview-select{width:100%;font-size:13px;border:1px solid #c4ddd0;border-radius:8px;padding:8px;background:#fff;color:#1f2a24;}',
-    '.dryrun-preview-check{display:flex;align-items:center;gap:8px;font-size:13px;color:#1f2a24;user-select:none;}',
-    '.dryrun-preview-note{font-size:12px;line-height:1.35;color:#6a5726;background:#fff8e8;border:1px solid #ead7a8;border-radius:8px;padding:8px 10px;}',
-    '.dryrun-preview-output{margin:0;background:#0f1412;color:#cde7dc;border-radius:8px;border:1px solid #22352d;padding:12px;width:100%;height:100%;overflow:auto;font-size:12px;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;}',
+    '.dryrun-preview-label{font-size:13px;color:var(--ink);font-weight:600;}',
+    '.dryrun-preview-select{width:100%;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--input-bg);color:var(--ink);}',
+    '.dryrun-preview-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);user-select:none;}',
+    '.dryrun-preview-note{font-size:12px;line-height:1.35;color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px;padding:8px 10px;}',
+    '.dryrun-preview-output{margin:0;background:var(--console-bg);color:var(--console-ink);border-radius:8px;border:1px solid var(--console-line);padding:12px;width:100%;height:100%;overflow:auto;font-size:12px;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;}',
     '.dryrun-preview-report{display:flex;flex-direction:column;gap:10px;}',
-    '.dryrun-preview-section-title{font-size:12px;font-weight:700;color:#9bc4b1;}',
+    '.dryrun-preview-section-title{font-size:12px;font-weight:700;color:var(--console-accent);}',
     '.dryrun-preview-kv-table{display:grid;grid-template-columns:180px 1fr;gap:4px 10px;}',
-    '.dryrun-preview-kv-table .key{color:#8ea89d;}',
+    '.dryrun-preview-kv-table .key{color:var(--console-muted);}',
     '.dryrun-preview-list{margin:0;padding-left:18px;}',
     '.dryrun-preview-list li{margin:2px 0;}',
-    '.dryrun-preview-empty{color:#8ea89d;}',
-    '.dryrun-preview-output details.log-fold{margin:4px 0;border-left:3px solid #365547;background:rgba(54,85,71,0.2);border-radius:4px;padding:4px 8px;}',
-    '.dryrun-preview-output details.log-fold > summary{cursor:pointer;color:#9bc4b1;}',
-    '.dryrun-preview-output details.log-fold > pre{margin:8px 0 2px;white-space:pre-wrap;color:#b7d3c7;font:inherit;}',
+    '.dryrun-preview-empty{color:var(--console-muted);}',
+    '.dryrun-preview-output details.log-fold{margin:4px 0;border-left:3px solid var(--console-line);background:var(--console-surface);border-radius:4px;padding:4px 8px;}',
+    '.dryrun-preview-output details.log-fold > summary{cursor:pointer;color:var(--console-accent);}',
+    '.dryrun-preview-output details.log-fold > pre{margin:8px 0 2px;white-space:pre-wrap;color:var(--console-muted);font:inherit;}',
     '.dryrun-preview-job-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}',
-    '.dryrun-preview-pill{display:inline-flex;align-items:center;border:1px solid #355949;border-radius:999px;padding:1px 8px;font-size:11px;color:#b7d3c7;background:rgba(53,89,73,0.2);}',
-    '.dryrun-preview-pill.warn{border-color:#b48a47;color:#ffd68c;background:rgba(180,138,71,0.15);}',
+    '.dryrun-preview-pill{display:inline-flex;align-items:center;border:1px solid var(--console-line);border-radius:999px;padding:1px 8px;font-size:11px;color:var(--console-muted);background:var(--console-surface);}',
+    '.dryrun-preview-pill.warn{border-color:var(--console-yellow);color:var(--console-yellow);background:color-mix(in srgb,var(--console-yellow) 15%,transparent);}',
     '.dryrun-preview-steps{margin-top:8px;}',
     '.dryrun-preview-step{margin-left:10px;}',
     '.dryrun-preview-step-meta{margin:6px 0 0;}',
-    '.dryrun-preview-step-script{margin:6px 0 0;background:rgba(8,12,10,0.75);border:1px solid #22352d;border-radius:6px;padding:8px;white-space:pre-wrap;color:#cde7dc;font:inherit;}',
-    '.dryrun-preview-exec-log{margin-top:10px;border-top:1px solid #22352d;padding-top:8px;}',
-    '.dryrun-preview-exec-line{margin:2px 0;color:#9bc4b1;white-space:pre-wrap;}',
+    '.dryrun-preview-step-script{margin:6px 0 0;background:var(--console-bg);border:1px solid var(--console-line);border-radius:6px;padding:8px;white-space:pre-wrap;color:var(--console-ink);font:inherit;}',
+    '.dryrun-preview-exec-log{margin-top:10px;border-top:1px solid var(--console-line);padding-top:8px;}',
+    '.dryrun-preview-exec-line{margin:2px 0;color:var(--console-accent);white-space:pre-wrap;}',
     '.dryrun-preview-actions{display:flex;justify-content:flex-end;gap:8px;padding:8px 12px 12px;}',
   ].join('');
   document.head.appendChild(style);

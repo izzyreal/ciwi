@@ -7,6 +7,7 @@ const jobExecutionHTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi job execution</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
   <style>
 ` + uiPageChromeCSS + `
     .top { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:nowrap; }
@@ -17,7 +18,7 @@ const jobExecutionHTML = `<!doctype html>
     .mode-value { display:inline-flex; align-items:center; gap:8px; }
     .mode-info {
       display: inline-block;
-      color: #28503f;
+      color: var(--accent-strong);
       font-size: 14px;
       font-weight: 700;
       line-height: 1;
@@ -54,13 +55,13 @@ const jobExecutionHTML = `<!doctype html>
     }
     .status-succeeded { color: var(--ok); font-weight: 700; }
     .status-failed { color: var(--bad); font-weight: 700; }
-    .status-blocked { color: #8a5a14; font-weight: 700; }
-    .status-running { color: #a56a00; font-weight: 700; }
+    .status-blocked { color: var(--warn); font-weight: 700; }
+    .status-running { color: var(--warn); font-weight: 700; }
     .status-queued, .status-leased, .status-waiting { color: var(--muted); font-weight: 700; }
     .job-subtitle-detail {
       margin-top: 4px;
       font-size: 12px;
-      color: #42574b;
+      color: var(--muted);
       display: flex;
       align-items: center;
       gap: 6px;
@@ -76,18 +77,18 @@ const jobExecutionHTML = `<!doctype html>
       text-overflow: ellipsis;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 11px;
-      background: #eef6f1;
-      border: 1px solid #d7e6dd;
+      background: var(--code-bg);
+      border: 1px solid var(--code-line);
       border-radius: 4px;
       padding: 1px 5px;
-      color: #1f2a24;
+      color: var(--ink);
     }
     .log {
       margin: 0;
-      background: #0f1412;
-      color: #cde7dc;
+      background: var(--console-bg);
+      color: var(--console-ink);
       border-radius: 8px;
-      border: 1px solid #22352d;
+      border: 1px solid var(--console-line);
       padding: 12px;
       width: 100%;
       max-height: 65vh;
@@ -99,50 +100,50 @@ const jobExecutionHTML = `<!doctype html>
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
     .log-line { display:block; }
-    .log-line.phase-meta { color: #8fd8ff; }
-    .log-line.phase-checkout { color: #a6e3a1; }
-    .log-line.phase-run { color: #f9d88d; }
-    .log-line.shell-trace { color: #c2d7cc; }
-    .log-line.risky-cmd { color: #ffd7a8; }
+    .log-line.phase-meta { color: var(--console-blue); }
+    .log-line.phase-checkout { color: var(--console-green); }
+    .log-line.phase-run { color: var(--console-yellow); }
+    .log-line.shell-trace { color: var(--console-muted); }
+    .log-line.risky-cmd { color: var(--console-warn); }
     .log-dryskip {
-      border-left: 3px solid #b48a47;
-      background: rgba(180, 138, 71, 0.1);
+      border-left: 3px solid var(--console-yellow);
+      background: color-mix(in srgb, var(--console-yellow) 10%, transparent);
       padding: 6px 8px;
       margin: 4px 0;
       border-radius: 4px;
     }
-    .log-dryskip-head { color: #ffd68c; font-weight: 700; }
-    .log-dryskip-body { margin-top: 3px; color: #f3dfba; white-space: pre-wrap; }
+    .log-dryskip-head { color: var(--console-yellow); font-weight: 700; }
+    .log-dryskip-body { margin-top: 3px; color: var(--console-ink); white-space: pre-wrap; }
     details.log-fold {
       margin: 6px 0;
-      border-left: 3px solid #365547;
-      background: rgba(54, 85, 71, 0.2);
+      border-left: 3px solid var(--console-line);
+      background: color-mix(in srgb, var(--console-surface) 70%, transparent);
       border-radius: 4px;
       padding: 4px 8px;
     }
-    details.log-fold > summary { cursor: pointer; color: #9bc4b1; }
+    details.log-fold > summary { cursor: pointer; color: var(--console-accent); }
     details.log-fold pre {
       margin: 8px 0 2px;
       white-space: pre-wrap;
-      color: #b7d3c7;
+      color: var(--console-muted);
       font: inherit;
     }
     details.log-step {
       margin: 8px 0;
-      border-left: 3px solid #5a806c;
-      background: rgba(35, 58, 48, 0.55);
+      border-left: 3px solid var(--console-accent);
+      background: var(--console-surface);
       border-radius: 6px;
       padding: 6px 10px;
     }
     .log-system-message {
       margin: 8px 0;
       padding: 8px 12px;
-      border-left: 3px solid #6f9982;
-      color: #c7ddd1;
+      border-left: 3px solid var(--console-accent);
+      color: var(--console-muted);
     }
     details.log-step > summary {
       cursor: pointer;
-      color: #dff3ea;
+      color: var(--console-ink);
       font-weight: 700;
       display: flex;
       align-items: baseline;
@@ -152,7 +153,7 @@ const jobExecutionHTML = `<!doctype html>
       margin: -6px -10px;
       padding: 6px 10px;
       border-radius: 5px;
-      --ciwi-progress-color: rgba(111, 184, 148, .18);
+      --ciwi-progress-color: color-mix(in srgb, var(--console-green) 18%, transparent);
     }
     details.log-step[open] > summary { margin-bottom: 6px; }
     .log-step-summary-title { flex: 0 0 auto; }
@@ -161,21 +162,21 @@ const jobExecutionHTML = `<!doctype html>
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
-      color: #a7c7b9;
+      color: var(--console-muted);
       font-size: 11px;
       font-weight: 600;
     }
     details.log-step-unreached {
-      border-left-color: #5b6b64;
-      background: rgba(31, 42, 36, 0.38);
+      border-left-color: var(--console-muted);
+      background: color-mix(in srgb, var(--console-surface) 55%, transparent);
     }
     details.log-step-unreached > summary {
-      color: #a7b8b0;
+      color: var(--console-muted);
       --ciwi-progress-color: transparent;
     }
     .log-step-status {
       flex: 0 0 auto;
-      color: #91a49b;
+      color: var(--console-muted);
       font-size: 11px;
       font-weight: 700;
     }
@@ -187,13 +188,13 @@ const jobExecutionHTML = `<!doctype html>
       display: inline-flex;
       align-items: center;
       margin: 2px 0 8px 10px;
-      border: 1px solid #547565;
-      background: #1b2c24;
-      color: #dff3ea;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+      border: 1px solid var(--console-line);
+      background: var(--console-surface);
+      color: var(--console-ink);
+      box-shadow: 0 2px 8px var(--shadow);
     }
     .log-step-collapse-btn:hover {
-      background: #263d32;
+      background: color-mix(in srgb, var(--console-surface) 80%, var(--console-accent));
     }
     .log-step-collapse-btn[hidden] {
       display: none;
@@ -203,25 +204,25 @@ const jobExecutionHTML = `<!doctype html>
       flex-wrap: wrap;
       gap: 8px;
       margin: 8px 0;
-      color: #a7c7b9;
+      color: var(--console-muted);
       font-size: 11px;
     }
     .log-step-label {
-      color: #9bc4b1;
+      color: var(--console-accent);
       font-weight: 700;
       margin: 8px 0 3px;
     }
     .log-step pre {
       margin: 0 0 8px;
       white-space: pre-wrap;
-      color: #cde7dc;
+      color: var(--console-ink);
       font: inherit;
     }
-    .tok-version { color: #ffd68c; font-weight: 700; }
-    .tok-sha { color: #8fd8ff; }
-    .tok-duration { color: #a6e3a1; font-weight: 700; }
-    .tok-url { color: #87c7ff; }
-    .log-empty { color: #8ea89d; }
+    .tok-version { color: var(--console-yellow); font-weight: 700; }
+    .tok-sha { color: var(--console-blue); }
+    .tok-duration { color: var(--console-green); font-weight: 700; }
+    .tok-url { color: var(--console-blue); }
+    .log-empty { color: var(--console-muted); }
     .artifact-row {
       display: flex;
       align-items: center;
@@ -233,7 +234,7 @@ const jobExecutionHTML = `<!doctype html>
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       user-select: text;
       cursor: text;
-      color: #1f2a24;
+      color: var(--ink);
     }
     .copy-btn {
       font-weight: 600;
@@ -256,7 +257,7 @@ const jobExecutionHTML = `<!doctype html>
     .artifact-tree summary {
       cursor: pointer;
       user-select: none;
-      color: #1f2a24;
+      color: var(--ink);
       font-weight: 600;
     }
     .artifact-dir-download {
@@ -279,13 +280,13 @@ const jobExecutionHTML = `<!doctype html>
       padding: 4px 10px;
       font-size: 12px;
       font-weight: 700;
-      border: 1px solid #c4ddd0;
-      background: #f6fbf8;
-      color: #234338;
+      border: 1px solid var(--line);
+      background: var(--surface-soft);
+      color: var(--ink);
     }
-    .test-pill-pass { background: #e9f8ef; border-color: #9fd3b2; color: #1f6b3f; }
-    .test-pill-fail { background: #fde9e8; border-color: #f0b3af; color: #9b2c2c; }
-    .test-pill-skip { background: #fff5e6; border-color: #e8c98f; color: #8a5a14; }
+    .test-pill-pass { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok); }
+    .test-pill-fail { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad); }
+    .test-pill-skip { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn); }
     .test-filter-row {
       display: flex;
       gap: 6px;
@@ -293,18 +294,18 @@ const jobExecutionHTML = `<!doctype html>
       margin: 6px 0 10px;
     }
     .test-filter-btn {
-      border: 1px solid #c4ddd0;
-      background: #ffffff;
-      color: #2e4b3d;
+      border: 1px solid var(--line);
+      background: var(--input-bg);
+      color: var(--ink);
       border-radius: 6px;
       padding: 4px 8px;
       font-size: 12px;
       cursor: pointer;
     }
     .test-filter-btn.active {
-      background: #e6f2eb;
-      border-color: #8db8a2;
-      color: #1f3d31;
+      background: var(--surface-hover);
+      border-color: var(--accent);
+      color: var(--accent-strong);
       font-weight: 700;
     }
     .log-toolbar {
@@ -323,27 +324,29 @@ const jobExecutionHTML = `<!doctype html>
       min-width: 180px;
       height: 32px;
       padding: 4px 8px;
-      border: 1px solid #c4ddd0;
+      border: 1px solid var(--line);
+      background: var(--input-bg);
+      color: var(--ink);
       border-radius: 6px;
       font-size: 13px;
     }
     .log-search-count {
       min-width: 44px;
       text-align: center;
-      color: #42574b;
+      color: var(--muted);
       font-size: 12px;
       font-weight: 600;
       align-self: center;
     }
     .tail-on {
-      border-color: #3f7a5a;
-      background: #e9f6ef;
-      color: #1f4e37;
+      border-color: var(--ok-line);
+      background: var(--ok-bg);
+      color: var(--ok);
     }
     .tail-off {
-      border-color: #8a7448;
-      background: #f7f2e8;
-      color: #614f2c;
+      border-color: var(--warn-line);
+      background: var(--warn-bg);
+      color: var(--warn);
     }
     .job-header-icon {
       width: 100px;
@@ -354,18 +357,18 @@ const jobExecutionHTML = `<!doctype html>
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }
-    .cache-stats-empty { color:#5f6f67; font-size:14px; }
+    .cache-stats-empty { color:var(--muted); font-size:14px; }
     .cache-stats-list { display:flex; flex-direction:column; gap:8px; }
-    .cache-stat-item { border:1px solid #d9e7df; border-radius:8px; padding:8px 10px; background:#f8fcfa; }
+    .cache-stat-item { border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:var(--surface-subtle); }
     .cache-stat-head { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
     .cache-stat-title { font-weight:700; }
-    .cache-stat-pill { font-size:11px; border:1px solid #c4ddd0; border-radius:999px; padding:1px 6px; color:#2a5a45; background:#edf8f2; }
-    .cache-stat-row { font-size:12px; color:#1f2a24; margin-top:2px; }
-    .cache-stat-metrics { margin-top:6px; font-size:12px; color:#30463b; }
+    .cache-stat-pill { font-size:11px; border:1px solid var(--line); border-radius:999px; padding:1px 6px; color:var(--pill-ink); background:var(--pill-bg); }
+    .cache-stat-row { font-size:12px; color:var(--ink); margin-top:2px; }
+    .cache-stat-metrics { margin-top:6px; font-size:12px; color:var(--muted); }
     .cache-stat-metrics code { font-size:11px; }
-    .req-empty { color:#5f6f67; font-size:13px; }
-    .req-ok { padding:8px 10px; border:1px solid #cfe8d8; background:#f3fbf6; border-radius:8px; color:#21553a; font-size:13px; }
-    .req-issues { padding:8px 10px; border:1px solid #e8cfcf; background:#fff5f5; border-radius:8px; color:#7a2f2f; font-size:13px; }
+    .req-empty { color:var(--muted); font-size:13px; }
+    .req-ok { padding:8px 10px; border:1px solid var(--ok-line); background:var(--ok-bg); border-radius:8px; color:var(--ok); font-size:13px; }
+    .req-issues { padding:8px 10px; border:1px solid var(--bad-line); background:var(--bad-bg); border-radius:8px; color:var(--bad); font-size:13px; }
     .req-issues ul { margin:6px 0 0 18px; padding:0; }
     @media (max-width: 980px) {
       .detail-split { grid-template-columns: 1fr; }
@@ -375,6 +378,8 @@ const jobExecutionHTML = `<!doctype html>
         justify-content: flex-start;
       }
     }
+` + uiGraphCSS + `
+` + jobExecutionGraphCSS + `
   </style>
 </head>
 <body>
@@ -384,19 +389,19 @@ const jobExecutionHTML = `<!doctype html>
         <img id="jobProjectIcon" class="job-header-icon" alt="" style="display:none;" />
         <div>
           <div style="font-size:20px;font-weight:700;" id="jobTitle">Job Execution</div>
-          <div style="color:#5f6f67;" id="subtitle">Loading...</div>
+          <div class="muted" id="subtitle">Loading...</div>
         </div>
       </div>
       <div class="job-actions">
         <button id="forceFailBtn" class="copy-btn" style="display:none;">Cancel</button>
         <span class="rerun-action-wrap">
           <span id="rerunInfo" class="mode-info" tabindex="0" aria-label="Run Job Again info">
-            <span aria-hidden="true">ⓘ</span>
+            <span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span>
           </span>
           <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
           <a id="rerunBlockedLink" class="rerun-blocked-link" href="#" style="display:none;">Open failed dependency</a>
         </span>
-        <a id="backLink" class="nav-btn" href="/">Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span></a>
+        <a id="backLink" class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Job Executions</a>
       </div>
     </div>
 
@@ -420,7 +425,15 @@ const jobExecutionHTML = `<!doctype html>
     </div>
     <div class="card" id="releaseSummaryCard" style="display:none;">
       <h3 style="margin:0 0 10px;">Release Summary</h3>
-      <div id="releaseSummaryBox" style="font-size:14px;color:#1f2a24;"></div>
+      <div id="releaseSummaryBox" style="font-size:14px;color:var(--ink);"></div>
+    </div>
+
+    <div class="card" id="runContextCard" style="display:none;">
+      <div class="run-context-card-head">
+        <h3 style="margin:0;">Run Context</h3>
+        <button id="runContextToggleBtn" class="copy-btn" type="button">Collapse</button>
+      </div>
+      <div id="runContextBody" class="run-context-body"></div>
     </div>
 
     <div class="card">
@@ -430,17 +443,18 @@ const jobExecutionHTML = `<!doctype html>
         <button id="copyOutputBtn" class="copy-btn" type="button">Copy Output</button>
         <span class="log-download-wrap">
           <a id="downloadCleanLogBtn" class="copy-btn nav-btn" href="#">Download Clean Log</a>
-          <span class="mode-info log-info" tabindex="0" aria-label="Clean log info" data-log-info="clean"><span aria-hidden="true">ⓘ</span></span>
+          <span class="mode-info log-info" tabindex="0" aria-label="Clean log info" data-log-info="clean"><span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span></span>
         </span>
         <span class="log-download-wrap">
           <a id="downloadRawLogBtn" class="copy-btn nav-btn" href="#">Download Raw Log</a>
-          <span class="mode-info log-info" tabindex="0" aria-label="Raw log info" data-log-info="raw"><span aria-hidden="true">ⓘ</span></span>
+          <span class="mode-info log-info" tabindex="0" aria-label="Raw log info" data-log-info="raw"><span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span></span>
         </span>
         <input id="logSearchInput" class="log-search-input" type="search" placeholder="Search output" aria-label="Search output" />
-        <button id="logSearchPrevBtn" class="copy-btn" type="button" aria-label="Previous match">▲</button>
-        <button id="logSearchNextBtn" class="copy-btn" type="button" aria-label="Next match">▼</button>
+        <button id="logSearchPrevBtn" class="copy-btn ciwi-icon-only" type="button" aria-label="Previous match" title="Previous match"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevron-up"></use></svg></button>
+        <button id="logSearchNextBtn" class="copy-btn ciwi-icon-only" type="button" aria-label="Next match" title="Next match"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevron-down"></use></svg></button>
         <span id="logSearchCount" class="log-search-count">0/0</span>
       </div>
+      <div id="executionStepNavigator" class="execution-step-navigator" style="display:none;"></div>
       <div id="logBox" class="log"></div>
     </div>
 
@@ -449,21 +463,24 @@ const jobExecutionHTML = `<!doctype html>
         <h3 style="margin:0;">Artifacts</h3>
         <a id="artifactsDownloadAllBtn" class="copy-btn nav-btn" href="#" style="display:none;">Download All (.zip)</a>
       </div>
-      <div id="artifactsBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
+      <div id="artifactsBox" class="muted" style="font-size:14px;">Loading...</div>
     </div>
     <div class="card">
       <h3 style="margin:0 0 10px;">Test Report</h3>
-      <div id="testReportBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
+      <div id="testReportBox" class="muted" style="font-size:14px;">Loading...</div>
     </div>
     <div class="card">
       <h3 style="margin:0 0 10px;">Coverage Report</h3>
-      <div id="coverageReportBox" style="font-size:14px;color:#5f6f67;">Loading...</div>
+      <div id="coverageReportBox" class="muted" style="font-size:14px;">Loading...</div>
     </div>
   </main>
 
   <script src="/ui/shared.js"></script>
+  <script src="/ui/pages.js"></script>
   <script>
+` + uiGraphJS + `
 ` + jobExecutionRenderJS + `
+` + jobExecutionGraphJS + `
 ` + jobExecutionDataJS + `
   </script>
 </body>

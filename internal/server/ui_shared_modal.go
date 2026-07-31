@@ -6,11 +6,11 @@ function ensureModalBaseStyles() {
   const style = document.createElement('style');
   style.id = '__ciwiModalBaseStyles';
   style.textContent = [
-    '.ciwi-modal-overlay{position:fixed;inset:0;background:rgba(10,27,20,.45);display:none;align-items:center;justify-content:center;z-index:2000;padding:12px;}',
-    '.ciwi-modal{--ciwi-modal-width:70vw;--ciwi-modal-height:70vh;width:var(--ciwi-modal-width);height:var(--ciwi-modal-height);background:#fff;border:1px solid #c4ddd0;border-radius:12px;box-shadow:0 24px 56px rgba(15,31,24,.24);display:grid;grid-template-rows:auto 1fr;overflow:hidden;max-width:96vw;max-height:96vh;}',
-    '.ciwi-modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #c4ddd0;padding:12px;background:#f7fcf9;}',
+    '.ciwi-modal-overlay{position:fixed;inset:0;background:var(--overlay);display:none;align-items:center;justify-content:center;z-index:2000;padding:12px;}',
+    '.ciwi-modal{--ciwi-modal-width:70vw;--ciwi-modal-height:70vh;width:var(--ciwi-modal-width);height:var(--ciwi-modal-height);background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 24px 56px var(--shadow);display:grid;grid-template-rows:auto 1fr;overflow:hidden;max-width:96vw;max-height:96vh;}',
+    '.ciwi-modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);padding:12px;background:var(--surface-subtle);}',
     '.ciwi-modal-title{font-size:18px;font-weight:700;}',
-    '.ciwi-modal-subtitle{font-size:12px;color:#5f6f67;}',
+    '.ciwi-modal-subtitle{font-size:12px;color:var(--muted);}',
     '.ciwi-modal-body{padding:12px;overflow:hidden;min-height:0;}',
   ].join('');
   document.head.appendChild(style);
@@ -82,9 +82,9 @@ function ensureConfirmDialogStyles() {
   style.id = '__ciwiConfirmDialogStyles';
   style.textContent = [
     '.ciwi-confirm-modal{height:auto;grid-template-rows:auto auto auto;max-width:min(520px,92vw);}',
-    '.ciwi-confirm-body{padding:14px 16px 6px;color:#1f2a24;font-size:14px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word;}',
+    '.ciwi-confirm-body{padding:14px 16px 6px;color:var(--ink);font-size:14px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word;}',
     '.ciwi-confirm-actions{padding:8px 16px 14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}',
-    '.ciwi-confirm-actions .secondary{background:#fff;color:#27473b;border:1px solid #c4ddd0;}',
+    '.ciwi-confirm-actions .secondary{background:var(--input-bg);color:var(--ink);border:1px solid var(--line);}',
   ].join('');
   document.head.appendChild(style);
 }

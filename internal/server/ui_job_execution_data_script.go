@@ -95,11 +95,11 @@ const jobExecutionDataJS = `
       const back = params.get('back') || '';
       if (back && back.startsWith('/')) {
         link.href = back;
-        link.innerHTML = (back.startsWith('/projects/') ? 'Back to Project' : 'Back to Job Executions') + ' <span class="nav-emoji" aria-hidden="true">↩</span>';
+        link.innerHTML = '<span class="nav-emoji" aria-hidden="true">' + ciwiIconHTML('arrow-left') + '</span> ' + (back.startsWith('/projects/') ? 'Back to Project' : 'Back to Job Executions');
         return;
       }
       link.href = '/';
-      link.innerHTML = 'Back to Job Executions <span class="nav-emoji" aria-hidden="true">↩</span>';
+      link.innerHTML = '<span class="nav-emoji" aria-hidden="true">' + ciwiIconHTML('arrow-left') + '</span> Back to Job Executions';
     }
 
     function activeTimelineIndex(job) {
@@ -216,7 +216,12 @@ const jobExecutionDataJS = `
     }
 
     function setTailingEnabled(enabled) {
+      const wasTailing = tailingEnabled;
       tailingEnabled = !!enabled;
+      if (!wasTailing && tailingEnabled) {
+        const navigator = document.getElementById('executionStepNavigator');
+        if (navigator) navigator.__ciwiExecutionStepActiveKey = '';
+      }
       const btn = document.getElementById('tailToggleBtn');
       if (!btn) return;
       btn.textContent = tailingEnabled ? 'Tailing: On' : 'Tailing: Off';
@@ -515,6 +520,7 @@ const jobExecutionDataJS = `
       const forceBtn = document.getElementById('forceFailBtn');
       const active = isActiveJobStatus(job.status);
       if (active) terminalSyncPasses = 0;
+      await renderJobExecutionGraphs(job, events, active);
       if (active) {
         forceBtn.style.display = 'inline-block';
         forceBtn.disabled = false;
@@ -689,6 +695,7 @@ const jobExecutionDataJS = `
       }, delayMs);
     }
     setBackLink();
+    initializeJobRunContextCard();
     wireLogControls();
     refreshGuard.bindSelectionListener();
     loadJobExecution(true);

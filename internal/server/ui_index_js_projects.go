@@ -62,6 +62,7 @@ const uiIndexProjectsJS = `
         const toggle = document.createElement('span');
         toggle.className = 'project-group-toggle';
         toggle.setAttribute('aria-hidden', 'true');
+        toggle.appendChild(ciwiIconElement('chevron-right'));
         summary.appendChild(toggle);
         details.appendChild(summary);
 
@@ -84,7 +85,7 @@ const uiIndexProjectsJS = `
           row.className = 'pipeline';
           const deps = (p.depends_on || []).join(', ');
           const info = document.createElement('div');
-          info.innerHTML = '<div><span class="muted">Pipeline:</span> <code>' + p.pipeline_id + '</code></div><div style="color:#5f6f67;font-size:12px;">' +
+          info.innerHTML = '<div><span class="muted">Pipeline:</span> <code>' + p.pipeline_id + '</code></div><div class="muted">' +
             (p.source_repo || '') + (deps ? (' | depends_on: ' + deps) : '') + '</div>';
 
           const btn = document.createElement('button');
@@ -178,7 +179,7 @@ const uiIndexProjectsJS = `
           const chainPipes = pipelineChainSequence(c);
           const chainName = pipelineChainDisplayName(c);
           info.innerHTML = '<div><span class="muted">Chain:</span> ' + pipelineChainDisplayHTML(c) + '</div>' +
-            (chainName !== chainPipes ? ('<div style="color:#5f6f67;font-size:12px;">' + pipelineChainSequenceHTML(c) + '</div>') : '');
+            (chainName !== chainPipes ? ('<div class="muted">' + pipelineChainSequenceHTML(c) + '</div>') : '');
 
           const runBtn = document.createElement('button');
           runBtn.className = 'secondary';

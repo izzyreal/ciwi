@@ -7,13 +7,14 @@ const agentsHTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi agents</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
   <style>
 ` + uiPageChromeCSS + `
     .row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
     th, td { border-bottom:1px solid var(--line); text-align:left; padding:8px 6px; vertical-align:top; overflow-wrap:anywhere; word-break:break-word; }
     .ok { color:var(--ok); font-weight:600; }
-    .stale { color:#a56a00; font-weight:600; }
+    .stale { color:var(--warn); font-weight:600; }
     .offline { color:var(--bad); font-weight:600; }
     .badge {
       display: inline-block;
@@ -21,12 +22,12 @@ const agentsHTML = `<!doctype html>
       padding: 2px 7px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: #edf8f2;
-      color: #26644b;
+      background: var(--pill-bg);
+      color: var(--pill-ink);
       margin-top: 4px;
     }
-    .badge-warn { background:#fff6e6; color:#8a5a00; }
-    .badge-error { background:#ffeded; color:#8f1f1f; }
+    .badge-warn { background:var(--warn-bg); color:var(--warn); }
+    .badge-error { background:var(--bad-bg); color:var(--bad); }
     .heartbeat-cell { text-align:left; min-width:108px; }
     .heartbeat-wrap {
       display: flex;
@@ -39,7 +40,7 @@ const agentsHTML = `<!doctype html>
       display:block;
       font-size:21px;
       line-height:1;
-      color:#b84b53;
+      color:var(--bad);
       opacity:.18;
       will-change: opacity;
     }
@@ -64,7 +65,7 @@ const agentsHTML = `<!doctype html>
           <div class="muted">Available execution agents and heartbeat status</div>
         </div>
       </div>
-      <a class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a>
+      <a class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Projects</a>
     </div>
     <div class="card">
       <div class="row" style="margin-bottom:10px;">

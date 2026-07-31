@@ -5,6 +5,13 @@ function escapeHtml(s) {
   return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function ciwiElementContainsTextSelection(element) {
+  if (!element || typeof window.getSelection !== 'function') return false;
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !String(selection.toString() || '').trim()) return false;
+  return element.contains(selection.anchorNode) && element.contains(selection.focusNode);
+}
+
 function normalizedJobStatus(status) {
   return String(status || '').trim().toLowerCase();
 }

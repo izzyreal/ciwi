@@ -7,19 +7,20 @@ const projectHTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi project</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
   <style>
 ` + uiPageChromeCSS + `
     main { max-width: 1150px; }
     .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
     .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
+    .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--pill-bg); color: var(--pill-ink); }
     table { width:100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
     th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px 6px; vertical-align: top; }
     td code { white-space: pre-wrap; max-height: 80px; overflow: auto; display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .status-succeeded { color: var(--ok); font-weight: 600; }
     .status-failed { color: var(--bad); font-weight: 600; }
-    .status-blocked { color: #8a5a14; font-weight: 600; }
-    .status-running { color: #a56a00; font-weight: 600; }
+    .status-blocked { color: var(--warn); font-weight: 600; }
+    .status-running { color: var(--warn); font-weight: 600; }
     .status-queued, .status-leased, .status-waiting { color: var(--muted); }
     .pipeline { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .pipeline-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
@@ -32,13 +33,13 @@ const projectHTML = `<!doctype html>
     .job-desc { display:flex; flex-direction:column; gap:4px; min-width:0; }
     .job-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
     .matrix-list { display:flex; flex-direction:column; gap:6px; margin-top: 6px; }
-    .matrix-item { border:1px solid var(--line); border-radius:8px; padding:6px; background:#fbfefd; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
+    .matrix-item { border:1px solid var(--line); border-radius:8px; padding:6px; background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
     .matrix-info { min-width: 0; }
     .matrix-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
     .inspect-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
-    .inspect-select { font-size:13px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:#1f2a24; }
-    .inspect-checkbox { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:#1f2a24; user-select:none; }
-    .inspect-content { margin:0; background:#0f1412; color:#cde7dc; border-radius:8px; border:1px solid #22352d; padding:12px; width:100%; height:100%; overflow:auto; font-size:12px; line-height:1.35; white-space:pre; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .inspect-select { font-size:13px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:var(--input-bg); color:var(--ink); }
+    .inspect-checkbox { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--ink); user-select:none; }
+    .inspect-content { margin:0; background:var(--console-bg); color:var(--console-ink); border-radius:8px; border:1px solid var(--console-line); padding:12px; width:100%; height:100%; overflow:auto; font-size:12px; line-height:1.35; white-space:pre; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .project-header-icon {
       width: 100px;
       height: 100px;
@@ -48,6 +49,7 @@ const projectHTML = `<!doctype html>
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }
+` + uiProjectGraphCSS + `
   </style>
 </head>
 <body>
@@ -60,12 +62,19 @@ const projectHTML = `<!doctype html>
           <div id="subtitle" class="muted">Loading...</div>
         </div>
       </div>
-      <div><a id="backLink" class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a></div>
+      <div><a id="backLink" class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Projects</a></div>
       <div id="runtimeStateBanner" class="runtime-banner"></div>
     </div>
 
     <div class="card">
-      <h2 style="margin:0 0 10px;">Structure</h2>
+      <div class="structure-heading">
+        <h2 style="margin:0;">Structure</h2>
+        <div id="structureViewToggle" class="structure-view-toggle" hidden>
+          <button id="structureGraphBtn" class="secondary" type="button">Graph</button>
+          <button id="structureListBtn" class="secondary" type="button">List</button>
+        </div>
+      </div>
+      <div id="structureGraph" hidden></div>
       <div id="structure">Loading...</div>
     </div>
     <div class="card">
@@ -82,6 +91,7 @@ const projectHTML = `<!doctype html>
   <script src="/ui/shared.js"></script>
   <script src="/ui/pages.js"></script>
   <script>
+` + uiProjectGraphJS + `
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
     let inspectModalState = null;
@@ -97,11 +107,11 @@ const projectHTML = `<!doctype html>
       const back = String(params.get('back') || '').trim();
       if (back && back.startsWith('/')) {
         link.href = back;
-        link.innerHTML = (back === '/settings' ? 'Back to Global Settings' : 'Back to Projects') + ' <span class="nav-emoji" aria-hidden="true">↩</span>';
+        link.innerHTML = '<span class="nav-emoji" aria-hidden="true">' + ciwiIconHTML('arrow-left') + '</span> ' + (back === '/settings' ? 'Back to Global Settings' : 'Back to Projects');
         return;
       }
       link.href = '/';
-      link.innerHTML = 'Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span>';
+      link.innerHTML = '<span class="nav-emoji" aria-hidden="true">' + ciwiIconHTML('arrow-left') + '</span> Back to Projects';
     }
     let currentProjectName = '';
     let currentProjectID = 0;
@@ -250,6 +260,264 @@ const projectHTML = `<!doctype html>
       }
     }
 
+    function pipelineSupportsDryRun(pipeline) {
+      return (pipeline.jobs || []).some(job =>
+        (job.steps || []).some(step => !!step.skip_dry_run)
+      );
+    }
+
+    async function runProjectPipeline(event, pipeline, button) {
+      if (button) button.disabled = true;
+      try {
+        const runResult = await runWithOptionalSourceRef(event, {
+          runPath: '/api/v1/pipelines/' + pipeline.id + '/run-selection',
+          sourceRefsPath: '/api/v1/pipelines/' + pipeline.id + '/source-refs',
+          eligibleAgentsPath: '/api/v1/pipelines/' + pipeline.id + '/eligible-agents',
+          payload: {},
+          title: 'Run Pipeline With Source Ref',
+          subtitle: String(pipeline.pipeline_id || ''),
+          runLabel: 'Run',
+        });
+        if (runResult.cancelled) return false;
+        showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pipeline.pipeline_id || 'pipeline') + ' started');
+        await loadHistory();
+      } catch (e) {
+        await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    function appendPipelineActionControls(container, pipeline) {
+      const runBtn = document.createElement('button');
+      runBtn.textContent = 'Run Pipeline';
+      runBtn.className = 'secondary';
+      runBtn.onclick = ev => runProjectPipeline(ev, pipeline, runBtn);
+      container.appendChild(runBtn);
+
+      if (pipelineSupportsDryRun(pipeline)) {
+        const dryBtn = document.createElement('button');
+        dryBtn.textContent = 'Dry Run Pipeline';
+        dryBtn.className = 'secondary';
+        dryBtn.onclick = async (ev) => {
+          dryBtn.disabled = true;
+          try {
+            const runResult = await runWithOptionalSourceRef(ev, {
+              runPath: '/api/v1/pipelines/' + pipeline.id + '/run-selection',
+              sourceRefsPath: '/api/v1/pipelines/' + pipeline.id + '/source-refs',
+              eligibleAgentsPath: '/api/v1/pipelines/' + pipeline.id + '/eligible-agents',
+              payload: { dry_run: true },
+              title: 'Dry Run Pipeline With Source Ref',
+              subtitle: String(pipeline.pipeline_id || ''),
+              runLabel: 'Dry Run',
+            });
+            if (runResult.cancelled) return;
+            showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pipeline.pipeline_id || 'pipeline') + ' started');
+            await loadHistory();
+          } catch (e) {
+            await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
+          } finally {
+            dryBtn.disabled = false;
+          }
+        };
+        container.appendChild(dryBtn);
+      }
+
+      const previewBtn = document.createElement('button');
+      previewBtn.textContent = 'Execution Plan';
+      previewBtn.className = 'secondary';
+      previewBtn.onclick = () => {
+        openDryRunPreviewModal({
+          title: 'Execution Plan',
+          subtitle: String(pipeline.pipeline_id || ''),
+          previewPath: '/api/v1/pipelines/' + pipeline.id + '/dry-run-preview',
+          runPath: '/api/v1/pipelines/' + pipeline.id + '/run-selection',
+          sourceRefsPath: '/api/v1/pipelines/' + pipeline.id + '/source-refs',
+          eligibleAgentsPath: '/api/v1/pipelines/' + pipeline.id + '/eligible-agents',
+          payload: { dry_run: true },
+        });
+      };
+      container.appendChild(previewBtn);
+
+      const resolveBtn = document.createElement('button');
+      resolveBtn.textContent = 'Resolve Upcoming Build Version';
+      resolveBtn.className = 'secondary';
+      resolveBtn.onclick = () => openVersionResolveModal(pipeline.id, pipeline.pipeline_id);
+      container.appendChild(resolveBtn);
+
+      const inspectBtn = document.createElement('button');
+      inspectBtn.textContent = 'Inspect Pipeline';
+      inspectBtn.className = 'secondary';
+      inspectBtn.onclick = () => openProjectInspectModal(
+        { pipeline_db_id: pipeline.id },
+        'Pipeline ' + (pipeline.pipeline_id || ''),
+        'Preview raw YAML or rendered executor scripts'
+      );
+      container.appendChild(inspectBtn);
+    }
+
+    async function runProjectJobSelection(event, pipeline, payload, successName, errorPrefix, modalTitle, label, button) {
+      if (button) button.disabled = true;
+      try {
+        const runResult = await runWithOptionalSourceRef(event, {
+          runPath: '/api/v1/pipelines/' + pipeline.id + '/run-selection',
+          sourceRefsPath: '/api/v1/pipelines/' + pipeline.id + '/source-refs',
+          eligibleAgentsPath: '/api/v1/pipelines/' + pipeline.id + '/eligible-agents',
+          payload: payload,
+          title: modalTitle,
+          subtitle: String(pipeline.pipeline_id || ''),
+          runLabel: label,
+        });
+        if (runResult.cancelled) return false;
+        const response = runResult.response || {};
+        const ids = Array.isArray(response.job_execution_ids) ? response.job_execution_ids : [];
+        if (ids.length === 1) {
+          showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started', ids[0]);
+        } else {
+          showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started');
+        }
+        await loadHistory();
+        return true;
+      } catch (e) {
+        await showAlertDialog({ title: errorPrefix, message: errorPrefix + ': ' + e.message });
+        return false;
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    function createJobRunActionButton(pipeline, job, label, payload, successName, errorPrefix, modalTitle) {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.className = 'secondary';
+      btn.onclick = ev => runProjectJobSelection(ev, pipeline, payload, successName, errorPrefix, modalTitle, label, btn);
+      return btn;
+    }
+
+    function openProjectMatrixRunChooser(pipeline, job) {
+      ensureModalBaseStyles();
+      let overlay = document.getElementById('projectMatrixRunOverlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'projectMatrixRunOverlay';
+        overlay.className = 'ciwi-modal-overlay';
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.innerHTML = '' +
+          '<div class="ciwi-modal" role="dialog" aria-modal="true" aria-label="Choose matrix entry">' +
+            '<div class="ciwi-modal-head"><div><div class="ciwi-modal-title" id="projectMatrixRunTitle">Run matrix job</div><div class="ciwi-modal-subtitle">Choose one matrix entry</div></div><button type="button" class="secondary" id="projectMatrixRunClose">Close</button></div>' +
+            '<div class="ciwi-modal-body"><div id="projectMatrixRunChoices" class="project-matrix-chooser"></div></div>' +
+          '</div>';
+        document.body.appendChild(overlay);
+        wireModalCloseBehavior(overlay, () => closeModalOverlay(overlay));
+        document.getElementById('projectMatrixRunClose').onclick = () => closeModalOverlay(overlay);
+      }
+      document.getElementById('projectMatrixRunTitle').textContent = 'Run ' + String(job.id || 'matrix job');
+      const choices = document.getElementById('projectMatrixRunChoices');
+      choices.innerHTML = '';
+      (job.matrix_includes || []).forEach(include => {
+        const item = document.createElement('div');
+        item.className = 'matrix-item';
+        const name = String(include.name || '').trim() || ('index-' + include.index);
+        const vars = Object.entries(include.vars || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
+        const info = document.createElement('div');
+        info.className = 'matrix-info';
+        info.innerHTML = '<div><code>' + escapeHtml(name) + '</code></div><div class="muted">' + escapeHtml(vars) + '</div>';
+        const run = document.createElement('button');
+        run.type = 'button';
+        run.className = 'secondary';
+        run.innerHTML = ciwiIconHTML('player-play') + '<span>Run</span>';
+        run.onclick = async event => {
+          const queued = await runProjectJobSelection(event, pipeline, { pipeline_job_id: job.id, matrix_index: include.index }, name, 'Run selection failed', 'Run Matrix Entry With Source Ref', 'Run', run);
+          if (queued) closeModalOverlay(overlay);
+        };
+        item.appendChild(info);
+        item.appendChild(run);
+        choices.appendChild(item);
+      });
+      openModalOverlay(overlay, 'min(620px,94vw)', 'auto');
+    }
+
+    function appendJobActionControls(container, pipeline, job, actionsOnly) {
+      const supportsDryRun = (job.steps || []).some(step => !!step.skip_dry_run);
+      const includes = Array.isArray(job.matrix_includes) ? job.matrix_includes : [];
+      if (includes.length > 0) {
+        const matrixList = document.createElement('div');
+        matrixList.className = 'matrix-list';
+        includes.forEach(include => {
+          const item = document.createElement('div');
+          item.className = 'matrix-item';
+          const name = (include.name || '').trim() || ('index-' + include.index);
+          const vars = Object.entries(include.vars || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
+          const info = document.createElement('div');
+          info.className = 'matrix-info';
+          info.innerHTML = '<div><code>' + escapeHtml(name) + '</code></div><div class="muted">' + escapeHtml(vars) + '</div>';
+          const actions = document.createElement('div');
+          actions.className = 'matrix-actions';
+          actions.appendChild(createJobRunActionButton(pipeline, job, 'Run', { pipeline_job_id: job.id, matrix_index: include.index }, name, 'Run selection failed', 'Run Matrix Entry With Source Ref'));
+          if (supportsDryRun) {
+            actions.appendChild(createJobRunActionButton(pipeline, job, 'Dry Run', { pipeline_job_id: job.id, matrix_index: include.index, dry_run: true }, name, 'Dry run selection failed', 'Dry Run Matrix Entry With Source Ref'));
+          }
+          const previewBtn = document.createElement('button');
+          previewBtn.textContent = 'Execution Plan';
+          previewBtn.className = 'secondary';
+          previewBtn.onclick = () => openDryRunPreviewModal({
+            title: 'Execution Plan',
+            subtitle: String(pipeline.pipeline_id || '') + ' / ' + String(job.id || '') + ' / ' + name,
+            previewPath: '/api/v1/pipelines/' + pipeline.id + '/dry-run-preview',
+            runPath: '/api/v1/pipelines/' + pipeline.id + '/run-selection',
+            sourceRefsPath: '/api/v1/pipelines/' + pipeline.id + '/source-refs',
+            eligibleAgentsPath: '/api/v1/pipelines/' + pipeline.id + '/eligible-agents',
+            payload: { dry_run: true, pipeline_job_id: job.id, matrix_index: include.index },
+          });
+          actions.appendChild(previewBtn);
+          const inspectBtn = document.createElement('button');
+          inspectBtn.textContent = 'Inspect';
+          inspectBtn.className = 'secondary';
+          inspectBtn.onclick = () => openProjectInspectModal(
+            { pipeline_db_id: pipeline.id, pipeline_job_id: job.id, matrix_index: include.index },
+            'Job ' + (job.id || ''),
+            'Matrix ' + name
+          );
+          actions.appendChild(inspectBtn);
+          item.appendChild(info);
+          item.appendChild(actions);
+          matrixList.appendChild(item);
+        });
+        container.appendChild(matrixList);
+        return;
+      }
+
+      const actions = actionsOnly ? container : document.createElement('div');
+      if (!actionsOnly) actions.className = 'project-job-detail-actions';
+      actions.appendChild(createJobRunActionButton(pipeline, job, 'Run Job', { pipeline_job_id: job.id }, (job.id || 'job'), 'Run selection failed', 'Run Job With Source Ref'));
+      if (supportsDryRun) {
+        actions.appendChild(createJobRunActionButton(pipeline, job, 'Dry Run Job', { pipeline_job_id: job.id, dry_run: true }, (job.id || 'job'), 'Dry run selection failed', 'Dry Run Job With Source Ref'));
+      }
+      const previewBtn = document.createElement('button');
+      previewBtn.textContent = 'Execution Plan';
+      previewBtn.className = 'secondary';
+      previewBtn.onclick = () => openDryRunPreviewModal({
+        title: 'Execution Plan',
+        subtitle: String(pipeline.pipeline_id || '') + ' / ' + String(job.id || ''),
+        previewPath: '/api/v1/pipelines/' + pipeline.id + '/dry-run-preview',
+        runPath: '/api/v1/pipelines/' + pipeline.id + '/run-selection',
+        sourceRefsPath: '/api/v1/pipelines/' + pipeline.id + '/source-refs',
+        eligibleAgentsPath: '/api/v1/pipelines/' + pipeline.id + '/eligible-agents',
+        payload: { dry_run: true, pipeline_job_id: job.id },
+      });
+      actions.appendChild(previewBtn);
+      const inspectBtn = document.createElement('button');
+      inspectBtn.textContent = 'Inspect Job';
+      inspectBtn.className = 'secondary';
+      inspectBtn.onclick = () => openProjectInspectModal(
+        { pipeline_db_id: pipeline.id, pipeline_job_id: job.id },
+        'Job ' + (job.id || ''),
+        'Preview raw YAML or rendered executor script'
+      );
+      actions.appendChild(inspectBtn);
+      if (!actionsOnly) container.appendChild(actions);
+    }
+
     async function loadProject() {
       const id = projectIdFromPath();
       if (!id) return;
@@ -268,6 +536,11 @@ const projectHTML = `<!doctype html>
       const pipelines = Array.isArray(p.pipelines) ? p.pipelines : [];
       const chains = Array.isArray(p.pipeline_chains) ? p.pipeline_chains : [];
       if (pipelines.length === 0 && chains.length === 0) {
+        const toggle = document.getElementById('structureViewToggle');
+        const graph = document.getElementById('structureGraph');
+        if (toggle) toggle.hidden = true;
+        if (graph) graph.hidden = true;
+        structure.hidden = false;
         structure.innerHTML = '<div class="muted">No pipelines</div>';
         return;
       }
@@ -375,9 +648,6 @@ const projectHTML = `<!doctype html>
       }
 
       pipelines.forEach(pl => {
-        const pipelineSupportsDryRun = (pl.jobs || []).some(job =>
-          (job.steps || []).some(step => !!step.skip_dry_run)
-        );
         const container = document.createElement('div');
         container.className = 'pipeline';
         const head = document.createElement('div');
@@ -396,80 +666,7 @@ const projectHTML = `<!doctype html>
         head.appendChild(headMeta);
         const headControls = document.createElement('div');
         headControls.className = 'pipeline-controls';
-        const runAll = document.createElement('button');
-        runAll.textContent = 'Run Pipeline';
-        runAll.className = 'secondary';
-        runAll.onclick = async (ev) => {
-          runAll.disabled = true;
-          try {
-            const runResult = await runWithOptionalSourceRef(ev, {
-              runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
-              sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
-              eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
-              payload: {},
-              title: 'Run Pipeline With Source Ref',
-              subtitle: String(pl.pipeline_id || ''),
-              runLabel: 'Run',
-            });
-            if (runResult.cancelled) return;
-            showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
-            await loadHistory();
-          } catch (e) {
-            await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
-          } finally {
-            runAll.disabled = false;
-          }
-        };
-        const dryAll = document.createElement('button');
-        dryAll.textContent = 'Dry Run Pipeline';
-        dryAll.className = 'secondary';
-        dryAll.onclick = async (ev) => {
-          dryAll.disabled = true;
-          try {
-            const runResult = await runWithOptionalSourceRef(ev, {
-              runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
-              sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
-              eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
-              payload: { dry_run: true },
-              title: 'Dry Run Pipeline With Source Ref',
-              subtitle: String(pl.pipeline_id || ''),
-              runLabel: 'Dry Run',
-            });
-            if (runResult.cancelled) return;
-            showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (pl.pipeline_id || 'pipeline') + ' started');
-            await loadHistory();
-          } catch (e) {
-            await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
-          } finally {
-            dryAll.disabled = false;
-          }
-        };
-        const resolveBtn = document.createElement('button');
-        resolveBtn.textContent = 'Resolve Upcoming Build Version';
-        resolveBtn.className = 'secondary';
-        resolveBtn.onclick = () => openVersionResolveModal(pl.id, pl.pipeline_id);
-        const previewBtn = document.createElement('button');
-        previewBtn.textContent = 'Execution Plan';
-        previewBtn.className = 'secondary';
-        previewBtn.onclick = () => {
-          openDryRunPreviewModal({
-            title: 'Execution Plan',
-            subtitle: String(pl.pipeline_id || ''),
-            previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
-            runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
-            sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
-            eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
-            payload: { dry_run: true },
-          });
-        };
-        const inspectPipelineBtn = document.createElement('button');
-        inspectPipelineBtn.textContent = 'Inspect Pipeline';
-        inspectPipelineBtn.className = 'secondary';
-        inspectPipelineBtn.onclick = () => openProjectInspectModal(
-          { pipeline_db_id: pl.id },
-          'Pipeline ' + (pl.pipeline_id || ''),
-          'Preview raw YAML or rendered executor scripts'
-        );
+        appendPipelineActionControls(headControls, pl);
         const toggleBtn = document.createElement('button');
         toggleBtn.textContent = 'Collapse';
         toggleBtn.className = 'secondary';
@@ -477,13 +674,6 @@ const projectHTML = `<!doctype html>
           const collapsed = container.classList.toggle('collapsed');
           toggleBtn.textContent = collapsed ? 'Expand' : 'Collapse';
         };
-        headControls.appendChild(runAll);
-        if (pipelineSupportsDryRun) {
-          headControls.appendChild(dryAll);
-        }
-        headControls.appendChild(previewBtn);
-        headControls.appendChild(resolveBtn);
-        headControls.appendChild(inspectPipelineBtn);
         headControls.appendChild(toggleBtn);
         head.appendChild(headControls);
         container.appendChild(head);
@@ -491,7 +681,6 @@ const projectHTML = `<!doctype html>
         pipelineBody.className = 'pipeline-body';
 
         (pl.jobs || []).forEach(j => {
-          const jobSupportsDryRun = (j.steps || []).some(step => !!step.skip_dry_run);
           const jb = document.createElement('div');
           jb.className = 'jobbox';
           const jobHead = document.createElement('div');
@@ -509,128 +698,17 @@ const projectHTML = `<!doctype html>
           jobHead.appendChild(jobDesc);
           jobHead.appendChild(jobActions);
           jb.appendChild(jobHead);
-
-          const hasMatrixIncludes = Array.isArray(j.matrix_includes) && j.matrix_includes.length > 0;
-          const createActionButton = (label, payload, successName, errorPrefix, modalTitle) => {
-            const btn = document.createElement('button');
-            btn.textContent = label;
-            btn.className = 'secondary';
-            btn.onclick = async (ev) => {
-              btn.disabled = true;
-              try {
-                const runResult = await runWithOptionalSourceRef(ev, {
-                  runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
-                  sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
-                  eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
-                  payload: payload,
-                  title: modalTitle,
-                  subtitle: String(pl.pipeline_id || ''),
-                  runLabel: label,
-                });
-                if (runResult.cancelled) return;
-                const response = runResult.response || {};
-                const ids = Array.isArray(response.job_execution_ids) ? response.job_execution_ids : [];
-                if (ids.length === 1) {
-                  showJobStartedSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started', ids[0]);
-                } else {
-                  showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + successName + ' started');
-                }
-                await loadHistory();
-              } catch (e) {
-                await showAlertDialog({ title: errorPrefix, message: errorPrefix + ': ' + e.message });
-              } finally {
-                btn.disabled = false;
-              }
-            };
-            return btn;
-          };
-
-          if (hasMatrixIncludes) {
-            const matrixList = document.createElement('div');
-            matrixList.className = 'matrix-list';
-            const includes = j.matrix_includes;
-            includes.forEach(mi => {
-              const item = document.createElement('div');
-              item.className = 'matrix-item';
-              const name = (mi.name || '').trim() || ('index-' + mi.index);
-              const vars = Object.entries(mi.vars || {}).map(kv => kv[0] + '=' + kv[1]).join(', ');
-              const info = document.createElement('div');
-              info.className = 'matrix-info';
-              info.innerHTML = '<div><code>' + escapeHtml(name) + '</code></div><div class="muted">' + escapeHtml(vars) + '</div>';
-              const actions = document.createElement('div');
-              actions.className = 'matrix-actions';
-              const btn = createActionButton('Run', { pipeline_job_id: j.id, matrix_index: mi.index }, name, 'Run selection failed', 'Run Matrix Entry With Source Ref');
-              actions.appendChild(btn);
-              if (jobSupportsDryRun) {
-                const dryBtn = createActionButton('Dry Run', { pipeline_job_id: j.id, matrix_index: mi.index, dry_run: true }, name, 'Dry run selection failed', 'Dry Run Matrix Entry With Source Ref');
-                actions.appendChild(dryBtn);
-              }
-              const previewBtn = document.createElement('button');
-              previewBtn.textContent = 'Execution Plan';
-              previewBtn.className = 'secondary';
-              previewBtn.onclick = () => {
-                openDryRunPreviewModal({
-                  title: 'Execution Plan',
-                  subtitle: String(pl.pipeline_id || '') + ' / ' + String(j.id || '') + ' / ' + name,
-                  previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
-                  runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
-                  sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
-                  eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
-                  payload: { dry_run: true, pipeline_job_id: j.id, matrix_index: mi.index },
-                });
-              };
-              actions.appendChild(previewBtn);
-              const inspectBtn = document.createElement('button');
-              inspectBtn.textContent = 'Inspect';
-              inspectBtn.className = 'secondary';
-              inspectBtn.onclick = () => openProjectInspectModal(
-                { pipeline_db_id: pl.id, pipeline_job_id: j.id, matrix_index: mi.index },
-                'Job ' + (j.id || ''),
-                'Matrix ' + name
-              );
-              actions.appendChild(inspectBtn);
-              item.appendChild(info);
-              item.appendChild(actions);
-              matrixList.appendChild(item);
-            });
-            jb.appendChild(matrixList);
+          if (Array.isArray(j.matrix_includes) && j.matrix_includes.length > 0) {
+            appendJobActionControls(jb, pl, j);
           } else {
-            const runBtn = createActionButton('Run Job', { pipeline_job_id: j.id }, (j.id || 'job'), 'Run selection failed', 'Run Job With Source Ref');
-            jobActions.appendChild(runBtn);
-            if (jobSupportsDryRun) {
-              const dryBtn = createActionButton('Dry Run Job', { pipeline_job_id: j.id, dry_run: true }, (j.id || 'job'), 'Dry run selection failed', 'Dry Run Job With Source Ref');
-              jobActions.appendChild(dryBtn);
-            }
-            const previewBtn = document.createElement('button');
-            previewBtn.textContent = 'Execution Plan';
-            previewBtn.className = 'secondary';
-            previewBtn.onclick = () => {
-              openDryRunPreviewModal({
-                title: 'Execution Plan',
-                subtitle: String(pl.pipeline_id || '') + ' / ' + String(j.id || ''),
-                previewPath: '/api/v1/pipelines/' + pl.id + '/dry-run-preview',
-                runPath: '/api/v1/pipelines/' + pl.id + '/run-selection',
-                sourceRefsPath: '/api/v1/pipelines/' + pl.id + '/source-refs',
-                eligibleAgentsPath: '/api/v1/pipelines/' + pl.id + '/eligible-agents',
-                payload: { dry_run: true, pipeline_job_id: j.id },
-              });
-            };
-            jobActions.appendChild(previewBtn);
-            const inspectBtn = document.createElement('button');
-            inspectBtn.textContent = 'Inspect Job';
-            inspectBtn.className = 'secondary';
-            inspectBtn.onclick = () => openProjectInspectModal(
-              { pipeline_db_id: pl.id, pipeline_job_id: j.id },
-              'Job ' + (j.id || ''),
-              'Preview raw YAML or rendered executor script'
-            );
-            jobActions.appendChild(inspectBtn);
+            appendJobActionControls(jobActions, pl, j, true);
           }
           pipelineBody.appendChild(jb);
         });
         container.appendChild(pipelineBody);
         structure.appendChild(container);
       });
+      initializeProjectGraph(p);
     }
 
     async function loadHistory(force) {

@@ -7,6 +7,7 @@ const settingsHTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi global settings</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
   <style>
 ` + uiPageChromeCSS + `
     h1 { margin: 0 0 4px; font-size: 28px; }
@@ -30,18 +31,24 @@ const settingsHTML = `<!doctype html>
       line-height: 1.1;
       appearance: none;
       -webkit-appearance: none;
-      background-color: #ffffff;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%235f6f67' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-color: var(--input-bg);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23536b60' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
       background-position: right 11px center;
       background-size: 12px 8px;
       color: var(--ink);
     }
+    :root[data-ciwi-theme="jungle"] .version-select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23abc4a5' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    }
+    :root[data-ciwi-theme="space"] .version-select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23aab4d5' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    }
     .version-select:disabled {
       opacity: 0.65;
       cursor: default;
       color: var(--muted);
-      background-color: #f7f9f8;
+      background-color: var(--surface-soft);
     }
     .version-action-row > button,
     .version-action-row > .version-select {
@@ -52,7 +59,7 @@ const settingsHTML = `<!doctype html>
     .top-nav { margin-left: auto; justify-content: flex-end; }
     .project { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
-    .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
+    .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--pill-bg); color: var(--pill-ink); }
     a.job-link { color: var(--accent); }
     .managed-yaml-modal { grid-template-rows:auto 1fr auto; }
     .managed-yaml-body { display:grid; grid-template-rows:auto 1fr auto; gap:10px; min-height:0; }
@@ -60,11 +67,6 @@ const settingsHTML = `<!doctype html>
     .managed-yaml-status { white-space:pre-wrap; overflow:auto; min-height:20px; max-height:110px; color:var(--muted); font-size:12px; }
     .managed-yaml-actions { border-top:1px solid var(--line); padding:10px 12px; display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; }
     .split-row { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    #restartServerBtn .nav-emoji {
-      display: inline-block;
-      transform: scale(1.5);
-      transform-origin: center;
-    }
     @media (max-width: 980px) {
       .split-row { grid-template-columns: 1fr; }
     }
@@ -80,9 +82,23 @@ const settingsHTML = `<!doctype html>
         </div>
       </div>
       <div class="row top-nav">
-        <a class="nav-btn" href="/">Back to Main <span class="nav-emoji" aria-hidden="true">↩</span></a>
-        <a class="nav-btn" href="/agents">Agents <span class="nav-emoji" aria-hidden="true">🖥️</span></a>
-        <a id="restartServerBtn" class="nav-btn" href="#" role="button">Restart Server <span class="nav-emoji" aria-hidden="true">⟳</span></a>
+        <a class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Main</a>
+        <a class="nav-btn" href="/agents">Agents <span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-device-desktop"></use></svg></span></a>
+        <a id="restartServerBtn" class="nav-btn" href="#" role="button">Restart Server <span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-refresh"></use></svg></span></a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Appearance</h2>
+      <p>Choose the color theme for ciwi in this browser.</p>
+      <div class="row">
+        <label for="themeSelect"><strong>Theme</strong></label>
+        <select id="themeSelect" class="version-select">
+          <option value="default">Default</option>
+          <option value="jungle">Jungle</option>
+          <option value="space">Space</option>
+        </select>
+        <span id="themeDescription" class="muted"></span>
       </div>
     </div>
 
@@ -109,13 +125,13 @@ const settingsHTML = `<!doctype html>
             <option value="">Check for updates</option>
           </select>
           <button id="applyUpdateBtn" class="secondary">Update now</button>
-          <span id="updateResult" style="color:#5f6f67;"></span>
+          <span id="updateResult" class="muted"></span>
         </div>
-        <div id="updateCapabilityNotice" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
+        <div id="updateCapabilityNotice" class="muted" style="margin-top:8px;"></div>
         <p style="margin-top:8px;">
           Agents automatically update following a server update. Each agent first finishes already queued/running jobs before applying the new agent version.
         </p>
-        <div id="updateStatus" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
+        <div id="updateStatus" class="muted" style="margin-top:8px;"></div>
       </div>
       <div class="card">
         <h2>Rollback</h2>
@@ -123,10 +139,10 @@ const settingsHTML = `<!doctype html>
           <select id="rollbackTagSelect" class="version-select"></select>
           <button id="refreshRollbackTagsBtn" class="secondary">Refresh tags</button>
           <button id="rollbackUpdateBtn" class="secondary">Rollback</button>
-          <span id="rollbackResult" style="color:#5f6f67;"></span>
+          <span id="rollbackResult" class="muted"></span>
         </div>
-        <div id="rollbackCapabilityNotice" style="margin-top:8px;color:#5f6f67;font-size:12px;"></div>
-        <div id="rollbackHint" style="margin-top:8px;color:#5f6f67;font-size:12px;">
+        <div id="rollbackCapabilityNotice" class="muted" style="margin-top:8px;"></div>
+        <div id="rollbackHint" class="muted" style="margin-top:8px;">
           Shows only versions lower than the current server version.
         </div>
       </div>

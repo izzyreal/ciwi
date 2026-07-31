@@ -6,8 +6,8 @@ function ensureTextSearchStyles() {
   const style = document.createElement('style');
   style.id = '__ciwiTextSearchStyles';
   style.textContent = [
-    '.ciwi-search-hit{background:#ffe79a;color:#2e2200;padding:0 1px;border-radius:2px;}',
-    '.ciwi-search-hit.active{background:#ffc24d;outline:1px solid #946200;}',
+    '.ciwi-search-hit{background:var(--warn-bg);color:var(--warn);padding:0 1px;border-radius:2px;}',
+    '.ciwi-search-hit.active{background:var(--console-yellow);color:#211800;outline:1px solid var(--warn);}',
   ].join('');
   document.head.appendChild(style);
 }

@@ -22,18 +22,18 @@ const uiIndexJobExecutionsJS = `
       if (inProgress > 0) parts.push(inProgress + ' in progress');
       if (waiting > 0) parts.push(waiting + ' waiting');
       if (failed > 0) {
-        return { emoji: '❌', cls: 'status-failed', text: parts.join(', ') };
+        return { icon: 'circle-x', cls: 'status-failed', text: parts.join(', ') };
       }
       if (inProgress > 0) {
-        return { emoji: '⏳', cls: 'status-running', text: parts.join(', ') };
+        return { icon: 'loader-2', iconClass: 'ciwi-icon-spin', cls: 'status-running', text: parts.join(', ') };
       }
       if (waiting > 0) {
-        return { emoji: '⏳', cls: 'status-waiting', text: parts.join(', ') };
+        return { icon: 'clock', cls: 'status-waiting', text: parts.join(', ') };
       }
       if (total > 0 && succeeded === total) {
-        return { emoji: '✅', cls: 'status-succeeded', text: succeeded + '/' + total + ' successful' };
+        return { icon: 'circle-check', cls: 'status-succeeded', text: succeeded + '/' + total + ' successful' };
       }
-      return { emoji: '🟡', cls: 'status-queued', text: succeeded + '/' + total + ' successful' };
+      return { icon: 'clock', cls: 'status-queued', text: succeeded + '/' + total + ' successful' };
     }
 
     function historyLayoutSignature(cards) {
@@ -91,11 +91,11 @@ const uiIndexJobExecutionsJS = `
         summary.className = 'ciwi-job-group-skel-head';
         summary.innerHTML =
           '<span class="ciwi-job-group-main">' +
-            '<span class="ciwi-job-group-emoji" aria-hidden="true">⏳</span>' +
+            '<span class="ciwi-job-group-status-icon" aria-hidden="true">' + ciwiIconHTML('loader-2', { className: 'ciwi-icon-spin' }) + '</span>' +
             '<span class="ciwi-job-group-title"><span class="ciwi-job-skeleton-bar" style="width:180px;display:inline-block;"></span></span>' +
           '</span>' +
           '<span class="ciwi-job-group-status status-queued"><span class="ciwi-job-skeleton-bar ciwi-job-skeleton-bar-short" style="width:110px;display:inline-block;"></span></span>' +
-          '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>';
+          '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>';
         details.appendChild(summary);
         if (expanded) {
           details.appendChild(buildHistorySkeletonBody(historyExpandedRowHint(card)));
@@ -109,7 +109,7 @@ const uiIndexJobExecutionsJS = `
         head.className = 'ciwi-job-group-head';
         head.innerHTML =
           '<span class="ciwi-job-group-main">' +
-            '<span class="ciwi-job-group-emoji" aria-hidden="true">⏳</span>' +
+            '<span class="ciwi-job-group-status-icon" aria-hidden="true">' + ciwiIconHTML('loader-2', { className: 'ciwi-icon-spin' }) + '</span>' +
             '<span class="ciwi-job-group-title"><span class="ciwi-job-skeleton-bar" style="width:180px;display:inline-block;"></span></span>' +
           '</span>' +
           '<span class="ciwi-job-group-status status-queued"><span class="ciwi-job-skeleton-bar ciwi-job-skeleton-bar-short" style="width:110px;display:inline-block;"></span></span>';
@@ -163,7 +163,7 @@ const uiIndexJobExecutionsJS = `
           iconHTML = '<img class="ciwi-job-group-side-icon" src="' + escapeHtml(iconURL) + '" alt="" onerror="this.style.display=&quot;none&quot;" />';
         }
       }
-      return '<span class="ciwi-job-group-main">' + iconHTML + '<span class="ciwi-job-group-emoji" aria-hidden="true">' + status.emoji +
+      return '<span class="ciwi-job-group-main">' + iconHTML + '<span class="ciwi-job-group-status-icon ' + status.cls + '" aria-hidden="true">' + ciwiIconHTML(status.icon, { className: status.iconClass || '' }) +
         '</span><span class="ciwi-job-group-title" data-ciwi-overflow-text="' + escapeHtml(fullTitle) + '">' + title +
         '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span>';
     }
@@ -397,7 +397,7 @@ const uiIndexJobExecutionsJS = `
           summary = document.createElement('summary');
           details.appendChild(summary);
         }
-        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>');
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>');
         if (!details.open) {
           const skel = details.querySelector('.ciwi-job-group-skel-body');
           if (skel) skel.remove();
@@ -489,11 +489,11 @@ const uiIndexJobExecutionsJS = `
         summary.className = 'ciwi-job-group-skel-head';
         summary.innerHTML =
           '<span class="ciwi-job-group-main">' +
-            '<span class="ciwi-job-group-emoji" aria-hidden="true">⏳</span>' +
+            '<span class="ciwi-job-group-status-icon" aria-hidden="true">' + ciwiIconHTML('loader-2', { className: 'ciwi-icon-spin' }) + '</span>' +
             '<span class="ciwi-job-group-title"><span class="ciwi-job-skeleton-bar" style="width:180px;display:inline-block;"></span></span>' +
           '</span>' +
           '<span class="ciwi-job-group-status status-queued"><span class="ciwi-job-skeleton-bar ciwi-job-skeleton-bar-short" style="width:110px;display:inline-block;"></span></span>' +
-          '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>';
+          '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>';
         details.appendChild(summary);
         if (expanded) {
           details.appendChild(buildHistorySkeletonBody(historyExpandedRowHint(card)));
@@ -522,7 +522,7 @@ const uiIndexJobExecutionsJS = `
         head.className = 'ciwi-job-group-head';
         head.innerHTML =
           '<span class="ciwi-job-group-main">' +
-            '<span class="ciwi-job-group-emoji" aria-hidden="true">⏳</span>' +
+            '<span class="ciwi-job-group-status-icon" aria-hidden="true">' + ciwiIconHTML('loader-2', { className: 'ciwi-icon-spin' }) + '</span>' +
             '<span class="ciwi-job-group-title"><span class="ciwi-job-skeleton-bar" style="width:180px;display:inline-block;"></span></span>' +
           '</span>' +
           '<span class="ciwi-job-group-status status-queued"><span class="ciwi-job-skeleton-bar ciwi-job-skeleton-bar-short" style="width:110px;display:inline-block;"></span></span>';
@@ -603,7 +603,7 @@ const uiIndexJobExecutionsJS = `
           summary = document.createElement('summary');
           details.appendChild(summary);
         }
-        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>');
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>');
         if (!details.open) {
           const skel = details.querySelector('.ciwi-job-group-skel-body');
           if (skel) skel.remove();
@@ -659,7 +659,7 @@ const uiIndexJobExecutionsJS = `
           summary = document.createElement('summary');
           details.insertBefore(summary, details.firstChild || null);
         }
-        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(card, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true"></span>');
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(card, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>');
         if (details.open) {
           patchHistorySectionsContent(details, card, opts);
         }

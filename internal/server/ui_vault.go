@@ -7,6 +7,7 @@ const vaultHTML = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ciwi vault</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
   <style>
 ` + uiPageChromeCSS + `
     .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
@@ -27,7 +28,7 @@ const vaultHTML = `<!doctype html>
           <div class="muted">Configure AppRole and test access</div>
         </div>
       </div>
-      <a class="nav-btn" href="/">Back to Projects <span class="nav-emoji" aria-hidden="true">↩</span></a>
+      <a class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Projects</a>
     </div>
     <div class="card">
       <h3 style="margin:0 0 10px;">Add / Update Connection</h3>
