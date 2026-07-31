@@ -78,7 +78,7 @@ const settingsHTML = `<!doctype html>
       <div class="brand">
         <img src="/ciwi-logo.png" alt="ciwi logo" />
         <div>
-          <h1>ciwi global settings</h1>
+          <h1>ciwi <span class="ciwi-header-version" data-ciwi-server-version></span> global settings</h1>
         </div>
       </div>
       <div class="row top-nav">
@@ -94,9 +94,19 @@ const settingsHTML = `<!doctype html>
       <div class="row">
         <label for="themeSelect"><strong>Theme</strong></label>
         <select id="themeSelect" class="version-select">
-          <option value="default">Default</option>
-          <option value="jungle">Jungle</option>
-          <option value="space">Space</option>
+          <optgroup label="Core themes">
+            <option value="default">Default</option>
+            <option value="jungle">Jungle</option>
+            <option value="space">Space</option>
+          </optgroup>
+          <optgroup label="Fruit themes">
+            <option value="pina-colada">Piña Colada</option>
+            <option value="mango-kent">Mango Kent</option>
+            <option value="mango-chaunsa">Mango Chaunsa</option>
+            <option value="mango-alphonso">Mango Alphonso</option>
+            <option value="yellow-dragon-fruit">Yellow Dragon Fruit</option>
+            <option value="dragon-fruit">Dragon Fruit</option>
+          </optgroup>
         </select>
         <span id="themeDescription" class="muted"></span>
       </div>

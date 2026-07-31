@@ -85,7 +85,7 @@ const jobExecutionHTML = `<!doctype html>
     }
     .log {
       margin: 0;
-      background: var(--console-bg);
+      background: var(--console-background);
       color: var(--console-ink);
       border-radius: 8px;
       border: 1px solid var(--console-line);

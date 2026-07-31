@@ -7,7 +7,7 @@ const uiGraphCSS = `
     .project-graph-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
     .project-graph-toolbar-group { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
     .project-graph-select { min-height:34px; padding:5px 30px 5px 9px; border:1px solid var(--line); border-radius:7px; background:var(--input-bg); color:var(--ink); font:inherit; }
-    .project-graph-viewport { position:relative; min-height:260px; height:420px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:linear-gradient(180deg,var(--graph-bg-start) 0%,var(--graph-bg-end) 100%); }
+    .project-graph-viewport { position:relative; min-height:260px; height:420px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:var(--graph-background); }
     .project-graph-stage { position:relative; min-width:100%; min-height:100%; }
     .project-graph-content { position:absolute; left:0; top:0; transform-origin:top left; }
     .project-graph-edges { position:absolute; inset:0; overflow:visible; pointer-events:none; }

@@ -5,6 +5,8 @@
   <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6l6 -6"/></symbol>
   <symbol id="icon-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6l-6 6"/></symbol>
   <symbol id="icon-chevron-up" viewBox="0 0 24 24"><path d="M6 15l6 -6l6 6"/></symbol>
+  <symbol id="icon-chevrons-down" viewBox="0 0 24 24"><path d="M7 7l5 5l5 -5"/><path d="M7 13l5 5l5 -5"/></symbol>
+  <symbol id="icon-chevrons-up" viewBox="0 0 24 24"><path d="M7 11l5 -5l5 5"/><path d="M7 17l5 -5l5 5"/></symbol>
   <symbol id="icon-circle-check" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 12l2 2l4 -4"/></symbol>
   <symbol id="icon-circle-x" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M10 10l4 4m0 -4l-4 4"/></symbol>
   <symbol id="icon-clock" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 7v5l3 3"/></symbol>

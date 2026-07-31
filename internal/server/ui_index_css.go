@@ -14,6 +14,7 @@ const uiIndexCSS = `
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .header-actions { display: flex; align-items: center; gap: 12px; }
+    .job-groups-bulk-btn { width:34px; height:34px; padding:0; }
     .project-group {
       border: 1px solid var(--line);
       border-radius: 12px;

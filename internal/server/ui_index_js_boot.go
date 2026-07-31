@@ -53,6 +53,7 @@ const uiIndexBootJS = `
 
     refreshGuard.bindSelectionListener();
     loadQueuedJobsFocusWindow();
+    refreshServerVersionLabels();
     tick();
     focusQueuedJobsIfRequested();
     setInterval(tick, 3000);

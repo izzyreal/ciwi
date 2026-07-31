@@ -29,6 +29,8 @@ func TestUIIconSpriteIsServedFromEmbeddedAssets(t *testing.T) {
 		"chevron-down",
 		"chevron-right",
 		"chevron-up",
+		"chevrons-down",
+		"chevrons-up",
 		"circle-check",
 		"circle-x",
 		"clock",

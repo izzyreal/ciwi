@@ -39,7 +39,7 @@ const projectHTML = `<!doctype html>
     .inspect-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
     .inspect-select { font-size:13px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:var(--input-bg); color:var(--ink); }
     .inspect-checkbox { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--ink); user-select:none; }
-    .inspect-content { margin:0; background:var(--console-bg); color:var(--console-ink); border-radius:8px; border:1px solid var(--console-line); padding:12px; width:100%; height:100%; overflow:auto; font-size:12px; line-height:1.35; white-space:pre; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .inspect-content { margin:0; background:var(--console-background); color:var(--console-ink); border-radius:8px; border:1px solid var(--console-line); padding:12px; width:100%; height:100%; overflow:auto; font-size:12px; line-height:1.35; white-space:pre; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .project-header-icon {
       width: 100px;
       height: 100px;

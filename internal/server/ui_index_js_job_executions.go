@@ -54,7 +54,7 @@ const uiIndexJobExecutionsJS = `
     function historyCardIsCollapsible(card) {
       const summary = (card && card.summary) || {};
       const total = Math.max(0, Number(summary.total_jobs || 0));
-      return total > 1;
+      return total > 0;
     }
 
     function buildHistorySkeletonBody(rowCount) {
@@ -467,6 +467,30 @@ const uiIndexJobExecutionsJS = `
       return 'queued:' + String(cardKey || '').trim();
     }
 
+    function setAllJobExecutionGroupsExpanded(kind, expanded) {
+      const queued = kind === 'queued';
+      const tbody = document.getElementById(queued ? 'queuedJobsBody' : 'historyJobsBody');
+      if (!tbody) return;
+      tbody.querySelectorAll('.ciwi-job-group-details').forEach(details => {
+        const cardKey = String((queued ? details.__ciwiQueueCardKey : details.__ciwiHistoryCardKey) || '').trim();
+        if (!cardKey) return;
+        const card = queued
+          ? (details.__ciwiQueueCard || queueCardDetailsByKey[cardKey])
+          : (details.__ciwiHistoryCard || historyCardDetailsByKey[cardKey]);
+        const opts = queued ? details.__ciwiQueueOpts : details.__ciwiHistoryOpts;
+        const groupKey = queued ? queueCardGroupKey(cardKey) : historyCardGroupKey(cardKey);
+        if (expanded) {
+          expandedJobGroups.add(groupKey);
+          details.open = true;
+          ensureHistoryCardOpenBody(details, card, opts || null);
+        } else {
+          expandedJobGroups.delete(groupKey);
+          details.open = false;
+        }
+      });
+      saveStringSet(JOB_GROUPS_STORAGE_KEY, expandedJobGroups);
+    }
+
     function buildQueueCardSkeletonRow(card, columnCount) {
       ensureJobSkeletonStyles();
       const tr = document.createElement('tr');
@@ -816,4 +840,9 @@ const uiIndexJobExecutionsJS = `
         await showAlertDialog({ title: 'Flush history failed', message: 'Flush history failed: ' + e.message });
       }
     };
+
+    document.getElementById('queuedCollapseAllBtn').onclick = () => setAllJobExecutionGroupsExpanded('queued', false);
+    document.getElementById('queuedExpandAllBtn').onclick = () => setAllJobExecutionGroupsExpanded('queued', true);
+    document.getElementById('historyCollapseAllBtn').onclick = () => setAllJobExecutionGroupsExpanded('history', false);
+    document.getElementById('historyExpandAllBtn').onclick = () => setAllJobExecutionGroupsExpanded('history', true);
 `

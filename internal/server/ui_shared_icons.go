@@ -7,6 +7,8 @@ const ciwiIconNames = new Set([
   'chevron-down',
   'chevron-right',
   'chevron-up',
+  'chevrons-down',
+  'chevrons-up',
   'circle-check',
   'circle-x',
   'clock',

@@ -478,6 +478,7 @@ const settingsUpdateJS = `
       }
     }
     refreshGuard.bindSelectionListener();
+    refreshServerVersionLabels();
     tick();
     setInterval(tick, 3000);
 

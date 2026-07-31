@@ -1,10 +1,14 @@
 package server
 
-const uiPageChromeCSS = `
+const uiPageChromeCSS = uiFruitThemeCSS + `
     :root {
       --bg: #edf7f1;
       --bg2: #bce8d0;
+      --bg3: #dff2e8;
+      --bg-glow-a: #79d5aa;
+      --bg-glow-b: #b8dcf0;
       --card: #ffffff;
+      --card-glow: #e0f7eb;
       --ink: #17271f;
       --muted: #536b60;
       --ok: #13834a;
@@ -35,6 +39,7 @@ const uiPageChromeCSS = `
       --info-line: #96bedc;
       --graph-bg-start: #fbfffd;
       --graph-bg-end: #edf8f2;
+      --graph-glow: #d9f4e6;
       --graph-node-bg: #ffffff;
       --graph-node-border: #9fcab5;
       --graph-selected-border: #087d61;
@@ -52,6 +57,7 @@ const uiPageChromeCSS = `
       --graph-edge: #609b80;
       --console-bg: #0e1713;
       --console-surface: #17261f;
+      --console-glow: #234b38;
       --console-line: #294238;
       --console-ink: #d5eee2;
       --console-muted: #98b4a7;
@@ -63,11 +69,19 @@ const uiPageChromeCSS = `
       --snackbar-bg: #113a2b;
       --snackbar-ink: #effbf4;
       --snackbar-line: #3d775e;
+      --page-background: radial-gradient(circle at 12% -10%, color-mix(in srgb, var(--bg-glow-a) 86%, transparent) 0%, transparent 38%), radial-gradient(circle at 90% 8%, color-mix(in srgb, var(--bg-glow-b) 82%, transparent) 0%, transparent 34%), linear-gradient(145deg, var(--bg2) 0%, var(--bg) 48%, var(--bg3) 100%);
+      --card-background: radial-gradient(circle at 100% 0%, var(--card-glow) 0%, transparent 38%), linear-gradient(145deg, var(--card) 0%, var(--surface-subtle) 100%);
+      --graph-background: radial-gradient(circle at 18% 0%, var(--graph-glow) 0%, transparent 42%), linear-gradient(155deg, var(--graph-bg-start) 0%, var(--graph-bg-end) 100%);
+      --console-background: radial-gradient(circle at 92% 0%, var(--console-glow) 0%, transparent 44%), linear-gradient(150deg, var(--console-bg) 0%, var(--console-surface) 130%);
     }
     :root[data-ciwi-theme="jungle"] {
       --bg: #061a12;
       --bg2: #22552f;
+      --bg3: #0d3020;
+      --bg-glow-a: #4c954f;
+      --bg-glow-b: #b38a25;
       --card: #0d2a1d;
+      --card-glow: #1e4b2b;
       --ink: #f0f8dc;
       --muted: #abc4a5;
       --ok: #75e08e;
@@ -98,6 +112,7 @@ const uiPageChromeCSS = `
       --info-line: #3f7770;
       --graph-bg-start: #0b271a;
       --graph-bg-end: #102f20;
+      --graph-glow: #244e2c;
       --graph-node-bg: #123824;
       --graph-node-border: #447156;
       --graph-selected-border: #b5ed55;
@@ -115,6 +130,7 @@ const uiPageChromeCSS = `
       --graph-edge: #78a987;
       --console-bg: #04110b;
       --console-surface: #0c2618;
+      --console-glow: #173d23;
       --console-line: #285139;
       --console-ink: #e1f2d0;
       --console-muted: #9fbc9c;
@@ -130,7 +146,11 @@ const uiPageChromeCSS = `
     :root[data-ciwi-theme="space"] {
       --bg: #080d21;
       --bg2: #2b1855;
+      --bg3: #101c3d;
+      --bg-glow-a: #6137a3;
+      --bg-glow-b: #167eaa;
       --card: #121a35;
+      --card-glow: #242052;
       --ink: #f0f3ff;
       --muted: #aab4d5;
       --ok: #52e2a2;
@@ -161,6 +181,7 @@ const uiPageChromeCSS = `
       --info-line: #426b9b;
       --graph-bg-start: #10182f;
       --graph-bg-end: #171e3b;
+      --graph-glow: #292557;
       --graph-node-bg: #1a2445;
       --graph-node-border: #4d5f91;
       --graph-selected-border: #65d5ff;
@@ -178,6 +199,7 @@ const uiPageChromeCSS = `
       --graph-edge: #7187be;
       --console-bg: #070b1a;
       --console-surface: #111936;
+      --console-glow: #202652;
       --console-line: #303d68;
       --console-ink: #dce7ff;
       --console-muted: #98a7cb;
@@ -204,12 +226,13 @@ const uiPageChromeCSS = `
       margin: 0;
       font-family: "Avenir Next", "Segoe UI", sans-serif;
       color: var(--ink);
-      background: radial-gradient(circle at 20% 0%, var(--bg2), var(--bg));
+      background: var(--page-background);
+      background-attachment: fixed;
     }
     input, textarea, select { background-color: var(--input-bg); color: var(--ink); }
     main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
     .card {
-      background: var(--card);
+      background: var(--card-background);
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 16px;
@@ -270,6 +293,22 @@ const uiPageChromeCSS = `
       image-rendering: pixelated;
     }
     .muted { color: var(--muted); font-size: 13px; }
+    .ciwi-header-version {
+      display: inline-flex;
+      align-items: center;
+      margin-left: .22em;
+      padding: 2px 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--pill-bg);
+      color: var(--pill-ink);
+      font-size: .42em;
+      font-weight: 700;
+      line-height: 1.2;
+      vertical-align: .24em;
+      white-space: nowrap;
+    }
+    .ciwi-header-version:empty { display:none; }
     .runtime-banner {
       margin-top: 10px;
       border: 1px solid var(--line);

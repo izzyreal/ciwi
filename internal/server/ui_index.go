@@ -19,7 +19,7 @@ const indexHTML = `<!doctype html>
         <div class="brand">
           <img src="/ciwi-logo.png" alt="ciwi logo" />
           <div>
-            <h1>ciwi</h1>
+            <h1>ciwi <span class="ciwi-header-version" data-ciwi-server-version></span></h1>
             <p>Projects, pipelines and job executions</p>
           </div>
         </div>
@@ -38,6 +38,8 @@ const indexHTML = `<!doctype html>
       <h2 id="queued-jobs">Queued and In Progress Job Executions</h2>
       <div class="row" style="margin-bottom:10px;">
         <button id="clearQueueBtn" class="secondary">Clear Queue</button>
+        <button id="queuedCollapseAllBtn" class="secondary ciwi-icon-only job-groups-bulk-btn" type="button" aria-label="Collapse all queued and in-progress executions" title="Collapse all"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevrons-up"></use></svg></button>
+        <button id="queuedExpandAllBtn" class="secondary ciwi-icon-only job-groups-bulk-btn" type="button" aria-label="Expand all queued and in-progress executions" title="Expand all"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevrons-down"></use></svg></button>
       </div>
       <table>
         <thead>
@@ -50,6 +52,8 @@ const indexHTML = `<!doctype html>
       <h2>Job Execution History</h2>
       <div class="row" style="margin-bottom:10px;">
         <button id="flushHistoryBtn" class="secondary">Flush History</button>
+        <button id="historyCollapseAllBtn" class="secondary ciwi-icon-only job-groups-bulk-btn" type="button" aria-label="Collapse all job execution history" title="Collapse all"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevrons-up"></use></svg></button>
+        <button id="historyExpandAllBtn" class="secondary ciwi-icon-only job-groups-bulk-btn" type="button" aria-label="Expand all job execution history" title="Expand all"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevrons-down"></use></svg></button>
       </div>
       <table>
         <thead>

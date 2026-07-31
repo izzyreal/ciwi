@@ -176,7 +176,7 @@ func TestRunContextGraphSelectionUpdatesInPlace(t *testing.T) {
 
 func TestProjectGraphFitAlsoFitsViewportHeight(t *testing.T) {
 	for _, want := range []string{
-		`const widthScale = Math.min(1, (viewport.clientWidth - 18) / width);`,
+		`const widthScale = Math.max(projectGraphMinScale, Math.min(projectGraphMaxScale, (viewport.clientWidth - 18) / width));`,
 		`const fittedHeight = Math.min(520, Math.max(148, Math.ceil(height * widthScale) + 18));`,
 		`viewport.style.height = fittedHeight + 'px';`,
 	} {

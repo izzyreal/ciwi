@@ -275,7 +275,7 @@ function ensureVersionResolveStyles() {
     '.version-resolve-modal{min-width:760px;min-height:420px;}',
     '.version-resolve-body{display:flex;flex-direction:column;min-height:0;height:100%;}',
     '.version-resolve-status{margin-bottom:8px;color:var(--muted);font-size:13px;}',
-    '.version-resolve-log{margin:0;flex:1 1 auto;min-height:0;background:var(--console-bg);color:var(--console-ink);border:1px solid var(--console-line);border-radius:8px;padding:12px;white-space:pre-wrap;overflow:auto;font-size:12px;line-height:1.45;}',
+    '.version-resolve-log{margin:0;flex:1 1 auto;min-height:0;background:var(--console-background);color:var(--console-ink);border:1px solid var(--console-line);border-radius:8px;padding:12px;white-space:pre-wrap;overflow:auto;font-size:12px;line-height:1.45;}',
   ].join('');
   document.head.appendChild(style);
 }
@@ -647,6 +647,20 @@ async function refreshRuntimeStateBanner(bannerID) {
   }
 }
 
+function renderServerVersionLabels(version) {
+  const value = String(version || '').trim();
+  document.querySelectorAll('[data-ciwi-server-version]').forEach(node => {
+    node.textContent = value;
+  });
+}
+
+async function refreshServerVersionLabels() {
+  try {
+    const info = await apiJSON('/api/v1/server-info');
+    renderServerVersionLabels(info && info.version);
+  } catch (_) {}
+}
+
 function ensureDryRunPreviewStyles() {
   if (document.getElementById('__ciwiDryRunPreviewStyles')) return;
   const style = document.createElement('style');
@@ -659,7 +673,7 @@ function ensureDryRunPreviewStyles() {
     '.dryrun-preview-select{width:100%;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--input-bg);color:var(--ink);}',
     '.dryrun-preview-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);user-select:none;}',
     '.dryrun-preview-note{font-size:12px;line-height:1.35;color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px;padding:8px 10px;}',
-    '.dryrun-preview-output{margin:0;background:var(--console-bg);color:var(--console-ink);border-radius:8px;border:1px solid var(--console-line);padding:12px;width:100%;height:100%;overflow:auto;font-size:12px;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;}',
+    '.dryrun-preview-output{margin:0;background:var(--console-background);color:var(--console-ink);border-radius:8px;border:1px solid var(--console-line);padding:12px;width:100%;height:100%;overflow:auto;font-size:12px;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,\"Liberation Mono\",\"Courier New\",monospace;}',
     '.dryrun-preview-report{display:flex;flex-direction:column;gap:10px;}',
     '.dryrun-preview-section-title{font-size:12px;font-weight:700;color:var(--console-accent);}',
     '.dryrun-preview-kv-table{display:grid;grid-template-columns:180px 1fr;gap:4px 10px;}',
@@ -676,7 +690,7 @@ function ensureDryRunPreviewStyles() {
     '.dryrun-preview-steps{margin-top:8px;}',
     '.dryrun-preview-step{margin-left:10px;}',
     '.dryrun-preview-step-meta{margin:6px 0 0;}',
-    '.dryrun-preview-step-script{margin:6px 0 0;background:var(--console-bg);border:1px solid var(--console-line);border-radius:6px;padding:8px;white-space:pre-wrap;color:var(--console-ink);font:inherit;}',
+    '.dryrun-preview-step-script{margin:6px 0 0;background:var(--console-background);border:1px solid var(--console-line);border-radius:6px;padding:8px;white-space:pre-wrap;color:var(--console-ink);font:inherit;}',
     '.dryrun-preview-exec-log{margin-top:10px;border-top:1px solid var(--console-line);padding-top:8px;}',
     '.dryrun-preview-exec-line{margin:2px 0;color:var(--console-accent);white-space:pre-wrap;}',
     '.dryrun-preview-actions{display:flex;justify-content:flex-end;gap:8px;padding:8px 12px 12px;}',
