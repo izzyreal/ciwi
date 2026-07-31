@@ -18,6 +18,19 @@ const uiPagesJS = `function apiJSON(path, opts = {}) {
     });
 }
 
+function isManagedYAMLProject(project) {
+  return String((project && project.source_kind) || 'vcs') === 'managed_yaml';
+}
+
+function projectSourceMetadataHTML(project) {
+  if (isManagedYAMLProject(project)) return '<span class="pill">Managed YAML</span>';
+  const repoRef = String((project && project.repo_ref) || '').trim() || 'default';
+  const configFile = String((project && (project.config_file || project.config_path)) || '');
+  return '<span class="pill">' + escapeHtml(String((project && project.repo_url) || '')) + '</span> ' +
+    '<span class="pill">' + escapeHtml('branch:' + repoRef) + '</span> ' +
+    '<span class="pill">' + escapeHtml(configFile) + '</span>';
+}
+
 function pipelineChainSequence(chain) {
   return (Array.isArray(chain && chain.pipelines) ? chain.pipelines : [])
     .map(value => String(value || '').trim())

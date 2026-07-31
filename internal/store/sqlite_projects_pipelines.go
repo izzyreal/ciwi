@@ -77,7 +77,7 @@ func upsertPipeline(tx *sql.Tx, projectID int64, p config.Pipeline, now string) 
 
 func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 	rows, err := s.db.Query(`
-		SELECT p.id, p.name, p.config_path, p.repo_url, p.repo_ref, p.config_file, p.loaded_commit, p.updated_utc, pl.id, pl.pipeline_id, pl.trigger_mode, pl.depends_on_json, pl.source_repo, pl.source_ref, pl.versioning_json
+		SELECT p.id, p.name, p.source_kind, p.config_path, p.repo_url, p.repo_ref, p.config_file, p.loaded_commit, p.updated_utc, pl.id, pl.pipeline_id, pl.trigger_mode, pl.depends_on_json, pl.source_repo, pl.source_ref, pl.versioning_json
 		FROM projects p
 		LEFT JOIN pipelines pl ON pl.project_id = p.id
 		ORDER BY p.name, pl.pipeline_id
@@ -92,22 +92,27 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 
 	for rows.Next() {
 		var projectID int64
-		var projectName, configPath string
+		var projectName, sourceKind, configPath string
 		var repoURL, repoRef, configFile, loadedCommit sql.NullString
 		var updatedUTC string
 		var pipelineID sql.NullInt64
 		var pipelineName, trigger, dependsOnJSON, sourceRepo, sourceRef, versioningJSON sql.NullString
 
-		if err := rows.Scan(&projectID, &projectName, &configPath, &repoURL, &repoRef, &configFile, &loadedCommit, &updatedUTC, &pipelineID, &pipelineName, &trigger, &dependsOnJSON, &sourceRepo, &sourceRef, &versioningJSON); err != nil {
+		if err := rows.Scan(&projectID, &projectName, &sourceKind, &configPath, &repoURL, &repoRef, &configFile, &loadedCommit, &updatedUTC, &pipelineID, &pipelineName, &trigger, &dependsOnJSON, &sourceRepo, &sourceRef, &versioningJSON); err != nil {
 			return nil, fmt.Errorf("scan project row: %w", err)
 		}
 
 		project, ok := projectsByID[projectID]
 		if !ok {
+			publicConfigPath := configPath
+			if sourceKind == protocol.ProjectSourceManagedYAML {
+				publicConfigPath = ""
+			}
 			project = &protocol.ProjectSummary{
 				ID:           projectID,
 				Name:         projectName,
-				ConfigPath:   configPath,
+				SourceKind:   sourceKind,
+				ConfigPath:   publicConfigPath,
 				RepoURL:      repoURL.String,
 				RepoRef:      repoRef.String,
 				ConfigFile:   configFile.String,
@@ -181,18 +186,24 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 func (s *Store) GetProjectByID(id int64) (protocol.ProjectSummary, error) {
 	var p protocol.ProjectSummary
 	row := s.db.QueryRow(`
-		SELECT id, name, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
+		SELECT id, name, source_kind, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
 		FROM projects
 		WHERE id = ?
 	`, id)
 	var updatedUTC string
-	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile, &p.LoadedCommit, &updatedUTC); err != nil {
+	var repoURL, repoRef, configFile, loadedCommit sql.NullString
+	if err := row.Scan(&p.ID, &p.Name, &p.SourceKind, &p.ConfigPath, &repoURL, &repoRef, &configFile, &loadedCommit, &updatedUTC); err != nil {
 		if err == sql.ErrNoRows {
 			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
 		}
 		return protocol.ProjectSummary{}, fmt.Errorf("get project: %w", err)
 	}
+	p.RepoURL = repoURL.String
+	p.RepoRef = repoRef.String
+	p.ConfigFile = configFile.String
+	p.LoadedCommit = loadedCommit.String
 	p.UpdatedUTC = parseRFC3339OrZero(updatedUTC)
+	hideManagedYAMLInternalPath(&p)
 	return p, nil
 }
 
@@ -238,37 +249,55 @@ func (s *Store) DeleteProjectByID(id int64) error {
 func (s *Store) GetProjectByName(name string) (protocol.ProjectSummary, error) {
 	var p protocol.ProjectSummary
 	row := s.db.QueryRow(`
-		SELECT id, name, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
+		SELECT id, name, source_kind, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
 		FROM projects
 		WHERE name = ?
 	`, name)
 	var updatedUTC string
-	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile, &p.LoadedCommit, &updatedUTC); err != nil {
+	var repoURL, repoRef, configFile, loadedCommit sql.NullString
+	if err := row.Scan(&p.ID, &p.Name, &p.SourceKind, &p.ConfigPath, &repoURL, &repoRef, &configFile, &loadedCommit, &updatedUTC); err != nil {
 		if err == sql.ErrNoRows {
 			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
 		}
 		return protocol.ProjectSummary{}, fmt.Errorf("get project: %w", err)
 	}
+	p.RepoURL = repoURL.String
+	p.RepoRef = repoRef.String
+	p.ConfigFile = configFile.String
+	p.LoadedCommit = loadedCommit.String
 	p.UpdatedUTC = parseRFC3339OrZero(updatedUTC)
+	hideManagedYAMLInternalPath(&p)
 	return p, nil
 }
 
 func (s *Store) GetProjectByConfigPath(configPath string) (protocol.ProjectSummary, error) {
 	var p protocol.ProjectSummary
 	row := s.db.QueryRow(`
-		SELECT id, name, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
+		SELECT id, name, source_kind, config_path, repo_url, repo_ref, config_file, loaded_commit, updated_utc
 		FROM projects
 		WHERE config_path = ?
 	`, configPath)
 	var updatedUTC string
-	if err := row.Scan(&p.ID, &p.Name, &p.ConfigPath, &p.RepoURL, &p.RepoRef, &p.ConfigFile, &p.LoadedCommit, &updatedUTC); err != nil {
+	var repoURL, repoRef, configFile, loadedCommit sql.NullString
+	if err := row.Scan(&p.ID, &p.Name, &p.SourceKind, &p.ConfigPath, &repoURL, &repoRef, &configFile, &loadedCommit, &updatedUTC); err != nil {
 		if err == sql.ErrNoRows {
 			return protocol.ProjectSummary{}, fmt.Errorf("project not found")
 		}
 		return protocol.ProjectSummary{}, fmt.Errorf("get project by config path: %w", err)
 	}
+	p.RepoURL = repoURL.String
+	p.RepoRef = repoRef.String
+	p.ConfigFile = configFile.String
+	p.LoadedCommit = loadedCommit.String
 	p.UpdatedUTC = parseRFC3339OrZero(updatedUTC)
+	hideManagedYAMLInternalPath(&p)
 	return p, nil
+}
+
+func hideManagedYAMLInternalPath(project *protocol.ProjectSummary) {
+	if project != nil && project.SourceKind == protocol.ProjectSourceManagedYAML {
+		project.ConfigPath = ""
+	}
 }
 
 func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
@@ -290,6 +319,7 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 	detail := protocol.ProjectDetail{
 		ID:           project.ID,
 		Name:         project.Name,
+		SourceKind:   project.SourceKind,
 		RepoURL:      project.RepoURL,
 		RepoRef:      project.RepoRef,
 		ConfigFile:   project.ConfigFile,

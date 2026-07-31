@@ -50,6 +50,10 @@ type pipelineStore interface {
 
 type projectStore interface {
 	LoadConfig(cfg config.File, configPath, repoURL, repoRef, configFile string) error
+	CreateManagedYAMLProject(cfg config.File, raw string) (protocol.ManagedYAMLDefinition, error)
+	GetManagedYAMLProject(projectID int64) (protocol.ManagedYAMLDefinition, error)
+	UpdateManagedYAMLProject(projectID int64, expectedRevision string, cfg config.File, raw string) (protocol.ManagedYAMLDefinition, error)
+	ValidateManagedYAMLName(name string, exceptProjectID int64) error
 	SetProjectLoadedCommit(projectID int64, loadedCommit string) error
 	DeleteProjectByID(id int64) error
 	GetProjectByConfigPath(configPath string) (protocol.ProjectSummary, error)

@@ -117,6 +117,7 @@ type LoadConfigResponse struct {
 type ProjectSummary struct {
 	ID             int64                  `json:"id"`
 	Name           string                 `json:"name"`
+	SourceKind     string                 `json:"source_kind"`
 	ConfigPath     string                 `json:"config_path,omitempty"`
 	RepoURL        string                 `json:"repo_url,omitempty"`
 	RepoRef        string                 `json:"repo_ref,omitempty"`
@@ -204,6 +205,7 @@ type PipelineVersioning struct {
 type ProjectDetail struct {
 	ID             int64                  `json:"id"`
 	Name           string                 `json:"name"`
+	SourceKind     string                 `json:"source_kind"`
 	RepoURL        string                 `json:"repo_url,omitempty"`
 	RepoRef        string                 `json:"repo_ref,omitempty"`
 	ConfigFile     string                 `json:"config_file,omitempty"`
@@ -229,6 +231,34 @@ type ImportProjectResponse struct {
 	RepoRef     string `json:"repo_ref,omitempty"`
 	ConfigFile  string `json:"config_file"`
 	Pipelines   int    `json:"pipelines"`
+}
+
+const (
+	ProjectSourceVCS         = "vcs"
+	ProjectSourceManagedYAML = "managed_yaml"
+)
+
+type ManagedYAMLRequest struct {
+	YAML string `json:"yaml"`
+}
+
+type ValidateManagedYAMLRequest struct {
+	YAML      string `json:"yaml"`
+	ProjectID int64  `json:"project_id,omitempty"`
+}
+
+type UpdateManagedYAMLRequest struct {
+	YAML     string `json:"yaml"`
+	Revision string `json:"revision"`
+}
+
+type ManagedYAMLDefinition struct {
+	ProjectID      int64  `json:"project_id"`
+	ProjectName    string `json:"project_name"`
+	YAML           string `json:"yaml,omitempty"`
+	Revision       string `json:"revision,omitempty"`
+	Pipelines      int    `json:"pipelines"`
+	PipelineChains int    `json:"pipeline_chains"`
 }
 
 type RunPipelineSelectionRequest struct {

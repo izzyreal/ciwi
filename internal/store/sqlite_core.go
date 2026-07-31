@@ -85,7 +85,10 @@ func (s *Store) migrate() error {
 		`CREATE TABLE IF NOT EXISTS projects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
+			source_kind TEXT NOT NULL DEFAULT 'vcs',
 			config_path TEXT NOT NULL,
+			config_yaml TEXT NOT NULL DEFAULT '',
+			config_revision TEXT NOT NULL DEFAULT '',
 			repo_url TEXT,
 			repo_ref TEXT,
 			config_file TEXT,
@@ -227,6 +230,21 @@ func (s *Store) migrate() error {
 	}
 	if err := s.addColumnIfMissing("projects", "loaded_commit", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
+	}
+	if err := s.addColumnIfMissing("projects", "source_kind", "TEXT NOT NULL DEFAULT 'vcs'"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("projects", "config_yaml", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("projects", "config_revision", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_managed_yaml_name ON projects(lower(name)) WHERE source_kind = 'managed_yaml'`); err != nil {
+		return fmt.Errorf("create managed YAML project name index: %w", err)
+	}
+	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_managed_yaml_path ON projects(config_path) WHERE source_kind = 'managed_yaml'`); err != nil {
+		return fmt.Errorf("create managed YAML project path index: %w", err)
 	}
 	if err := s.addColumnIfMissing("pipeline_jobs", "artifacts_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
@@ -386,6 +404,17 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 	if err != nil {
 		return err
 	}
+	if err := replaceProjectDefinition(tx, projectID, cfg, now); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+func replaceProjectDefinition(tx *sql.Tx, projectID int64, cfg config.File, now string) error {
 	if err := pruneStaleProjectPipelines(tx, projectID, cfg.Pipelines); err != nil {
 		return err
 	}
@@ -434,9 +463,6 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
 	return nil
 }
 

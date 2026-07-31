@@ -54,6 +54,11 @@ const settingsHTML = `<!doctype html>
     .project-head { display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap:wrap; }
     .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #edf8f2; color: #26644b; }
     a.job-link { color: var(--accent); }
+    .managed-yaml-modal { grid-template-rows:auto 1fr auto; }
+    .managed-yaml-body { display:grid; grid-template-rows:auto 1fr auto; gap:10px; min-height:0; }
+    .managed-yaml-editor { width:100%; height:100%; min-height:300px; resize:none; box-sizing:border-box; border:1px solid var(--line); border-radius:8px; padding:12px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; line-height:1.45; tab-size:2; }
+    .managed-yaml-status { white-space:pre-wrap; overflow:auto; min-height:20px; max-height:110px; color:var(--muted); font-size:12px; }
+    .managed-yaml-actions { border-top:1px solid var(--line); padding:10px 12px; display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; }
     .split-row { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     #restartServerBtn .nav-emoji {
       display: inline-block;
@@ -82,12 +87,14 @@ const settingsHTML = `<!doctype html>
     </div>
 
     <div class="card">
-      <h2>Root Projects</h2>
+      <h2>Projects</h2>
+      <p>Import a definition from a repository or store and edit a self-contained YAML definition directly in ciwi.</p>
       <div class="row">
         <input id="repoUrl" placeholder="https://github.com/you/project.git" style="width:380px" />
         <input id="repoRef" placeholder="ref (optional: main, tag, sha)" />
         <input id="configFile" value="ciwi-project.yaml" />
-        <button id="importProjectBtn">Add Project</button>
+        <button id="importProjectBtn">Add Repository Project</button>
+        <button id="addManagedYAMLBtn" class="secondary" type="button">Add Managed YAML</button>
         <span id="importResult"></span>
       </div>
       <div id="settingsProjects" style="margin-top:12px;"></div>
@@ -135,6 +142,7 @@ const settingsHTML = `<!doctype html>
   <script src="/ui/pages.js"></script>
   <script>
 ` + settingsRenderJS + `
+` + settingsManagedYAMLJS + `
 ` + settingsUpdateJS + `
   </script>
 </body>

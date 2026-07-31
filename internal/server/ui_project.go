@@ -258,11 +258,7 @@ const projectHTML = `<!doctype html>
       currentProjectID = p.id;
       currentProjectName = p.name || '';
       document.getElementById('title').textContent = p.name || 'Project';
-      const projectRepoRef = String(p.repo_ref || '').trim() || 'default';
-      document.getElementById('subtitle').innerHTML =
-        '<span class="pill">' + escapeHtml(p.repo_url || '') + '</span> ' +
-        '<span class="pill">' + escapeHtml('branch:' + projectRepoRef) + '</span> ' +
-        '<span class="pill">' + escapeHtml(p.config_file || '') + '</span>';
+      document.getElementById('subtitle').innerHTML = projectSourceMetadataHTML(p);
       const icon = document.getElementById('projectIcon');
       icon.src = '/api/v1/projects/' + encodeURIComponent(String(p.id || '')) + '/icon';
       icon.onload = () => { icon.style.display = 'inline-block'; };

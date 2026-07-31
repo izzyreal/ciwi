@@ -26,8 +26,12 @@
 - Projects/pipelines:
   - `GET /api/v1/projects`
   - `POST /api/v1/projects/import`
+  - `POST /api/v1/projects/managed-yaml/validate`
+  - `POST /api/v1/projects/managed-yaml`
   - `GET /api/v1/projects/{projectId}`
   - `DELETE /api/v1/projects/{projectId}`
+  - `GET /api/v1/projects/{projectId}/managed-yaml`
+  - `PUT /api/v1/projects/{projectId}/managed-yaml`
   - `GET /api/v1/projects/{projectId}/icon`
   - `POST /api/v1/projects/{projectId}/reload`
   - `POST /api/v1/pipelines/{pipelineDbId}/run-selection`
@@ -68,6 +72,9 @@
 ## API behavior notes
 
 - Config parsing uses strict YAML field validation.
+- Managed YAML definitions are stored verbatim in SQLite together with their parsed execution snapshot.
+- Managed YAML updates require the current SHA-256 `revision`; stale updates return `409 Conflict` without changing the project.
+- Managed YAML project names are case-insensitively unique among managed projects, and request bodies are limited to 2 MiB.
 - Machine behavior should rely on structured API payloads, not output log scraping.
 - `POST /api/v1/agents/{agentId}/actions` supports:
   - `{"action":"authorize"}`: allows the agent to lease jobs.

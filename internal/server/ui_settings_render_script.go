@@ -44,8 +44,8 @@ const settingsRenderJS = `
         top.className = 'project-head';
 
         const topInfo = document.createElement('div');
+        const isManagedYAML = isManagedYAMLProject(project);
         const loadedCommit = String(project.loaded_commit || '').trim();
-        const projectRepoRef = String(project.repo_ref || '').trim() || 'default';
         const shortCommit = shortCommitHash(loadedCommit);
         const commitURL = deriveCommitURL(project.repo_url, loadedCommit);
         const lastUpdated = String(project.updated_utc || '').trim();
@@ -57,12 +57,13 @@ const settingsRenderJS = `
         const updatedPart = lastUpdated
           ? escapeHtml(formatTimestamp(lastUpdated))
           : '<span style="color:#5f6f67;">n/a</span>';
+        const sourceMetadata = projectSourceMetadataHTML(project);
+        const updateMetadata = isManagedYAML
+          ? '<div style="margin-top:6px;font-size:12px;color:#3a4f44;">Stored in ciwi database | Last update time: ' + updatedPart + '</div>'
+          : '<div style="margin-top:6px;font-size:12px;color:#3a4f44;">Loaded commit: ' + commitPart + ' | Last update time: ' + updatedPart + '</div>';
         topInfo.innerHTML =
           '<strong>Project: <a class="job-link" href="/projects/' + project.id + '?back=' + encodeURIComponent('/settings') + '">' + escapeHtml(project.name) + '</a></strong> ' +
-          '<span class="pill">' + escapeHtml(project.repo_url || '') + '</span> ' +
-          '<span class="pill">' + escapeHtml('branch:' + projectRepoRef) + '</span> ' +
-          '<span class="pill">' + escapeHtml(project.config_file || project.config_path || '') + '</span>' +
-          '<div style="margin-top:6px;font-size:12px;color:#3a4f44;">Loaded commit: ' + commitPart + ' | Last update time: ' + updatedPart + '</div>';
+          sourceMetadata + updateMetadata;
         top.appendChild(topInfo);
 
         const controls = document.createElement('div');
@@ -76,29 +77,34 @@ const settingsRenderJS = `
         } else {
           reloadStatus.style.color = '#5f6f67';
         }
-        const reloadBtn = document.createElement('button');
-        reloadBtn.className = 'secondary';
-        reloadBtn.textContent = 'Reload project definition from VCS';
-        reloadBtn.onclick = async () => {
-          setProjectReloadState(project.id, 'Reloading...', '#5f6f67');
-          reloadStatus.textContent = 'Reloading...';
-          reloadStatus.style.color = '#5f6f67';
-          reloadBtn.disabled = true;
-          try {
-            await apiJSON('/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
-            await refreshSettingsProjects();
-            setProjectReloadState(project.id, 'Reloaded successfully', '#1f8a4c');
-            reloadStatus.textContent = 'Reloaded successfully';
-            reloadStatus.style.color = '#1f8a4c';
-          } catch (e) {
-            const msg = 'Reload failed: ' + e.message;
-            setProjectReloadState(project.id, msg, '#b23a48');
-            reloadStatus.textContent = msg;
-            reloadStatus.style.color = '#b23a48';
-          } finally {
-            reloadBtn.disabled = false;
-          }
-        };
+        const definitionBtn = document.createElement('button');
+        definitionBtn.className = 'secondary';
+        if (isManagedYAML) {
+          definitionBtn.textContent = 'Edit YAML';
+          definitionBtn.onclick = () => { void openEditManagedYAML(project); };
+        } else {
+          definitionBtn.textContent = 'Reload project definition from VCS';
+          definitionBtn.onclick = async () => {
+            setProjectReloadState(project.id, 'Reloading...', '#5f6f67');
+            reloadStatus.textContent = 'Reloading...';
+            reloadStatus.style.color = '#5f6f67';
+            definitionBtn.disabled = true;
+            try {
+              await apiJSON('/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
+              await refreshSettingsProjects();
+              setProjectReloadState(project.id, 'Reloaded successfully', '#1f8a4c');
+              reloadStatus.textContent = 'Reloaded successfully';
+              reloadStatus.style.color = '#1f8a4c';
+            } catch (e) {
+              const msg = 'Reload failed: ' + e.message;
+              setProjectReloadState(project.id, msg, '#b23a48');
+              reloadStatus.textContent = msg;
+              reloadStatus.style.color = '#b23a48';
+            } finally {
+              definitionBtn.disabled = false;
+            }
+          };
+        }
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'secondary';
         deleteBtn.textContent = 'Delete Project';
@@ -116,7 +122,7 @@ const settingsRenderJS = `
           if (!confirmed) return;
           reloadStatus.textContent = 'Deleting...';
           reloadStatus.style.color = '#5f6f67';
-          reloadBtn.disabled = true;
+          definitionBtn.disabled = true;
           deleteBtn.disabled = true;
           try {
             await apiJSON('/api/v1/projects/' + project.id, { method: 'DELETE' });
@@ -127,11 +133,11 @@ const settingsRenderJS = `
             setProjectReloadState(project.id, msg, '#b23a48');
             reloadStatus.textContent = msg;
             reloadStatus.style.color = '#b23a48';
-            reloadBtn.disabled = false;
+            definitionBtn.disabled = false;
             deleteBtn.disabled = false;
           }
         };
-        controls.appendChild(reloadBtn);
+        controls.appendChild(definitionBtn);
         controls.appendChild(deleteBtn);
         controls.appendChild(reloadStatus);
         top.appendChild(controls);

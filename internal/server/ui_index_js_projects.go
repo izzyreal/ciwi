@@ -6,6 +6,7 @@ const uiIndexProjectsJS = `
       return JSON.stringify(list.map(project => ({
         id: project.id,
         name: project.name,
+        source_kind: project.source_kind || 'vcs',
         repo_url: project.repo_url,
         repo_ref: project.repo_ref || '',
         config_file: project.config_file || project.config_path || '',
@@ -52,10 +53,7 @@ const uiIndexProjectsJS = `
         const top = document.createElement('div');
         top.className = 'project-head';
         const topInfo = document.createElement('div');
-        const projectRepoRef = String(project.repo_ref || '').trim() || 'default';
-        topInfo.innerHTML = '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + project.name + '</a></strong> <span class="pill">' + (project.repo_url || '') + '</span> ' +
-          '<span class="pill">' + escapeHtml('branch:' + projectRepoRef) + '</span> ' +
-          '<span class="pill">' + (project.config_file || project.config_path || '') + '</span>';
+        topInfo.innerHTML = '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + escapeHtml(project.name) + '</a></strong> ' + projectSourceMetadataHTML(project);
         const topRight = document.createElement('div');
         topRight.innerHTML = '<span class="pill">' + String((project.pipelines || []).length) + ' pipeline(s)</span>';
         top.appendChild(topInfo);

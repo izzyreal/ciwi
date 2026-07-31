@@ -84,6 +84,8 @@ func newTestHTTPServerWithState(t *testing.T) (*httptest.Server, *stateStore) {
 	mux.HandleFunc("/api/v1/runtime-state", s.runtimeStateHandler)
 	mux.HandleFunc("/api/v1/projects", s.listProjectsHandler)
 	mux.HandleFunc("/api/v1/projects/import", s.importProjectHandler)
+	mux.HandleFunc("/api/v1/projects/managed-yaml/validate", s.validateManagedYAMLHandler)
+	mux.HandleFunc("/api/v1/projects/managed-yaml", s.createManagedYAMLHandler)
 	mux.HandleFunc("/api/v1/projects/", s.projectByIDHandler)
 	mux.HandleFunc("/api/v1/heartbeat", s.heartbeatHandler)
 	mux.HandleFunc("/api/v1/agents", s.listAgentsHandler)

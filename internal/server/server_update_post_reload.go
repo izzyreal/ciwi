@@ -66,6 +66,9 @@ func (s *stateStore) runPostUpdateProjectReload(ctx context.Context) {
 }
 
 func isRootRepoProject(p protocol.ProjectSummary) bool {
+	if p.SourceKind != "" && p.SourceKind != protocol.ProjectSourceVCS {
+		return false
+	}
 	if strings.TrimSpace(p.RepoURL) == "" {
 		return false
 	}

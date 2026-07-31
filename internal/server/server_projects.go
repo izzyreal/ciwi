@@ -158,6 +158,10 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+		if project.SourceKind == protocol.ProjectSourceManagedYAML {
+			http.Error(w, "managed YAML projects cannot be reloaded from VCS", http.StatusConflict)
+			return
+		}
 		if strings.TrimSpace(project.RepoURL) == "" {
 			http.Error(w, "project has no repo_url configured", http.StatusBadRequest)
 			return
@@ -196,6 +200,9 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, resp)
 	case "inspect":
 		s.projectInspectHandler(w, r, projectID)
+		return
+	case "managed-yaml":
+		s.managedYAMLProjectHandler(w, r, projectID)
 		return
 	default:
 		http.NotFound(w, r)

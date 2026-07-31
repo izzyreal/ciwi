@@ -70,3 +70,12 @@ UI flow:
 - Identity key is `(repo_url, repo_ref, config_file)`.
 - Reload updates the same identity in place.
 - Importing same repo with a different branch creates/keeps a distinct project identity; it does not overwrite another branch project.
+
+## Managed YAML projects
+
+- Global Settings can create a persistent project by pasting YAML or loading a local `.yaml`/`.yml` file in the browser.
+- The original YAML and its parsed pipelines are stored atomically in SQLite; invalid updates leave the previous definition unchanged.
+- Editing uses a content revision to prevent one browser from silently overwriting a newer save from another browser.
+- Managed YAML is self-contained. Pipelines that need checkout declare `vcs_source.repo` and `vcs_source.ref`; pipelines without `vcs_source` run without checkout.
+- Managed projects are not included in repository reloads, icon fetching, or post-update VCS refreshes.
+- Deleting a managed project removes its current definition while retaining existing job execution history.

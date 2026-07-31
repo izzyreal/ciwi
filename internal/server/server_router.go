@@ -38,6 +38,8 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 
 	// Project/pipeline APIs
 	r.Post("/api/v1/projects/import", s.importProjectHandler)
+	r.Post("/api/v1/projects/managed-yaml/validate", s.validateManagedYAMLHandler)
+	r.Post("/api/v1/projects/managed-yaml", s.createManagedYAMLHandler)
 	r.HandleFunc("/api/v1/projects", s.listProjectsHandler)
 	r.HandleFunc("/api/v1/projects/*", s.projectByIDHandler)
 	r.HandleFunc("/api/v1/pipelines/*", s.pipelineByIDHandler)

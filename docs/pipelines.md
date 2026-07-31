@@ -151,6 +151,8 @@ Behavior:
 - Import with different identity does not replace an existing project, even if `project.name` inside YAML matches.
 - Project name is kept as declared in YAML; branch/ref disambiguation is shown in UI via the `branch:<ref>` badge.
 
+Definitions entered through Global Settings use the separate **Managed YAML** source type. Ciwi assigns these projects an internal identity, stores the YAML in SQLite, and uses `project.name` as the editable display name. Managed-project names must be unique among managed projects, ignoring case.
+
 ## Cache notes
 
 - Caches are directory caches keyed by `caches[].id`.

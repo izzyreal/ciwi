@@ -8,6 +8,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/pipelinechain"
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func TestPipelineChainIdentityMigrationDerivesKeysNamesAndOrder(t *testing.T) {
@@ -57,6 +58,13 @@ func TestPipelineChainIdentityMigrationDerivesKeysNamesAndOrder(t *testing.T) {
 		t.Fatalf("migrate legacy database: %v", err)
 	}
 	defer s.Close()
+	project, err := s.GetProjectByID(1)
+	if err != nil {
+		t.Fatalf("get migrated project: %v", err)
+	}
+	if project.SourceKind != protocol.ProjectSourceVCS {
+		t.Fatalf("expected existing project to migrate as VCS, got %+v", project)
+	}
 
 	chains, err := s.listPipelineChainsByProjectID(1)
 	if err != nil {
