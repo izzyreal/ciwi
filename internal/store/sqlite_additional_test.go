@@ -258,7 +258,7 @@ pipelines:
         steps:
           - run: go build ./...
 pipeline_chains:
-  - id: build-and-release
+  - name: Test chain
     pipelines:
       - build
 `), "pipeline-lookup")
@@ -303,11 +303,11 @@ pipeline_chains:
 	if len(detail.PipelineChains) != 1 {
 		t.Fatalf("expected one pipeline chain, got %+v", detail.PipelineChains)
 	}
-	chain, err := s.GetPipelineChainByDBID(detail.PipelineChains[0].ID)
+	chain, err := s.GetPipelineChain(project.ID, detail.PipelineChains[0].ID)
 	if err != nil {
-		t.Fatalf("GetPipelineChainByDBID: %v", err)
+		t.Fatalf("GetPipelineChain: %v", err)
 	}
-	if chain.ChainID != "build-and-release" || len(chain.Pipelines) != 1 || chain.Pipelines[0] != "build" {
+	if chain.ChainID != detail.PipelineChains[0].ID || chain.ChainName != "Test chain" || len(chain.Pipelines) != 1 || chain.Pipelines[0] != "build" {
 		t.Fatalf("unexpected pipeline chain: %+v", chain)
 	}
 
@@ -325,7 +325,7 @@ pipeline_chains:
 	if _, err := s.GetPipelineByProjectAndID("ciwi", "missing"); err == nil {
 		t.Fatalf("expected missing pipeline lookup to fail")
 	}
-	if _, err := s.GetPipelineChainByDBID(-1); err == nil {
+	if _, err := s.GetPipelineChain(project.ID, "missing"); err == nil {
 		t.Fatalf("expected missing pipeline chain lookup to fail")
 	}
 }

@@ -1030,12 +1030,88 @@ pipelines:
         steps:
           - run: go build ./...
 pipeline_chains:
-  - id: build-release
+  - name: Test chain
     pipelines:
       - build
       - release
 `), "test-pipeline-chains")
 	if err == nil || !strings.Contains(err.Error(), `references unknown pipeline "release"`) {
 		t.Fatalf("expected pipeline chain validation error, got: %v", err)
+	}
+}
+
+func TestParsePipelineChainWithoutConfiguredID(t *testing.T) {
+	cfg, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+pipeline_chains:
+  - pipelines: [build]
+`), "test-derived-pipeline-chain")
+	if err != nil {
+		t.Fatalf("expected chain without id to parse: %v", err)
+	}
+	if len(cfg.PipelineChains) != 1 || cfg.PipelineChains[0].Name != "" {
+		t.Fatalf("unexpected parsed pipeline chain: %+v", cfg.PipelineChains)
+	}
+}
+
+func TestParsePipelineChainRejectsLegacyID(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+pipeline_chains:
+  - id: build-release
+    pipelines: [build]
+`), "test-legacy-pipeline-chain-id")
+	if err == nil || !strings.Contains(err.Error(), "field id not found") {
+		t.Fatalf("expected strict legacy id rejection, got: %v", err)
+	}
+}
+
+func TestParsePipelineChainRejectsDuplicateSequence(t *testing.T) {
+	_, err := Parse([]byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: script
+          shell: posix
+        timeout_seconds: 60
+        steps:
+          - run: go build ./...
+pipeline_chains:
+  - name: First
+    pipelines: [build]
+  - name: Second
+    pipelines: [build]
+`), "test-duplicate-pipeline-chain")
+	if err == nil || !strings.Contains(err.Error(), "pipelines duplicates pipeline_chains[0].pipelines") {
+		t.Fatalf("expected duplicate chain sequence rejection, got: %v", err)
 	}
 }

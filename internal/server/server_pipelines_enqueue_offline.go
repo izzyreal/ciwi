@@ -83,10 +83,11 @@ func (s *stateStore) enqueuePersistedPipelineChainOfflineCached(ch store.Persist
 		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
 	return protocol.RunPipelineResponse{
-		ProjectName:     ch.ProjectName,
-		PipelineID:      ch.ChainID,
-		Enqueued:        len(jobIDs),
-		JobExecutionIDs: jobIDs,
+		ProjectName:       ch.ProjectName,
+		PipelineChainID:   ch.ChainID,
+		PipelineChainName: ch.ChainName,
+		Enqueued:          len(jobIDs),
+		JobExecutionIDs:   jobIDs,
 	}, nil
 }
 
@@ -131,6 +132,7 @@ func (s *stateStore) preparePendingPipelineChainJobsOfflineCached(ch store.Persi
 		meta := map[string]string{
 			"chain_run_id":            fmt.Sprintf("offline-chain-%d", time.Now().UTC().UnixNano()),
 			"pipeline_chain_id":       ch.ChainID,
+			"pipeline_chain_name":     ch.ChainName,
 			"pipeline_chain_index":    fmt.Sprintf("%d", i),
 			"pipeline_chain_position": fmt.Sprintf("%d", i+1),
 			"pipeline_chain_total":    fmt.Sprintf("%d", total),

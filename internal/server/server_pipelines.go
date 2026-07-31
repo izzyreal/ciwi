@@ -107,23 +107,13 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Request) {
-	rel := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/pipeline-chains/"), "/")
-	if rel == "" {
+func (s *stateStore) pipelineChainActionHandler(w http.ResponseWriter, r *http.Request, projectID int64, chainID, action string) {
+	chainID = strings.TrimSpace(chainID)
+	if chainID == "" || (action != "run" && action != "source-refs" && action != "eligible-agents" && action != "dry-run-preview") {
 		http.NotFound(w, r)
 		return
 	}
-	parts := strings.Split(rel, "/")
-	if len(parts) != 2 || (parts[1] != "run" && parts[1] != "source-refs" && parts[1] != "eligible-agents" && parts[1] != "dry-run-preview") {
-		http.NotFound(w, r)
-		return
-	}
-	chainDBID, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || chainDBID <= 0 {
-		http.Error(w, "invalid pipeline chain id", http.StatusBadRequest)
-		return
-	}
-	ch, err := s.pipelineStore().GetPipelineChainByDBID(chainDBID)
+	ch, err := s.pipelineStore().GetPipelineChain(projectID, chainID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -132,7 +122,7 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 		http.Error(w, "pipeline chain has no pipelines", http.StatusBadRequest)
 		return
 	}
-	if parts[1] == "source-refs" {
+	if action == "source-refs" {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -140,11 +130,11 @@ func (s *stateStore) pipelineChainByIDHandler(w http.ResponseWriter, r *http.Req
 		s.pipelineChainSourceRefsHandler(w, ch)
 		return
 	}
-	if parts[1] == "eligible-agents" {
+	if action == "eligible-agents" {
 		s.pipelineChainEligibleAgentsHandler(w, ch, r)
 		return
 	}
-	if parts[1] == "dry-run-preview" {
+	if action == "dry-run-preview" {
 		s.pipelineChainDryRunPreviewHandler(w, ch, r)
 		return
 	}
@@ -222,6 +212,7 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 		meta := map[string]string{
 			"chain_run_id":            chainRunID,
 			"pipeline_chain_id":       ch.ChainID,
+			"pipeline_chain_name":     ch.ChainName,
 			"pipeline_chain_index":    strconv.Itoa(i),
 			"pipeline_chain_position": strconv.Itoa(i + 1),
 			"pipeline_chain_total":    strconv.Itoa(total),
@@ -265,10 +256,11 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")
 	}
 	return protocol.RunPipelineResponse{
-		ProjectName:     ch.ProjectName,
-		PipelineID:      ch.ChainID,
-		Enqueued:        len(allJobIDs),
-		JobExecutionIDs: allJobIDs,
+		ProjectName:       ch.ProjectName,
+		PipelineChainID:   ch.ChainID,
+		PipelineChainName: ch.ChainName,
+		Enqueued:          len(allJobIDs),
+		JobExecutionIDs:   allJobIDs,
 	}, nil
 }
 

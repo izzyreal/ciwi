@@ -114,6 +114,10 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	if len(parts) == 4 && parts[1] == "pipeline-chains" {
+		s.pipelineChainActionHandler(w, r, projectID, parts[2], parts[3])
+		return
+	}
 
 	if len(parts) != 2 {
 		http.NotFound(w, r)

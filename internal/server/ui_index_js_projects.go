@@ -19,7 +19,7 @@ const uiIndexProjectsJS = `
         })),
         pipeline_chains: (project.pipeline_chains || []).map(c => ({
           id: c.id,
-          chain_id: c.chain_id,
+          name: c.name,
           pipelines: c.pipelines || [],
           supports_dry_run: !!c.supports_dry_run,
           version_pipeline_id: c.version_pipeline_id || 0,
@@ -177,8 +177,10 @@ const uiIndexProjectsJS = `
           const row = document.createElement('div');
           row.className = 'pipeline';
           const info = document.createElement('div');
-          const chainPipes = (c.pipelines || []).join(' -> ');
-          info.innerHTML = '<div><span class="muted">Chain:</span> <code>' + c.chain_id + '</code></div><div style="color:#5f6f67;font-size:12px;">' + chainPipes + '</div>';
+          const chainPipes = pipelineChainSequence(c);
+          const chainName = pipelineChainDisplayName(c);
+          info.innerHTML = '<div><span class="muted">Chain:</span> ' + pipelineChainDisplayHTML(c) + '</div>' +
+            (chainName !== chainPipes ? ('<div style="color:#5f6f67;font-size:12px;">' + pipelineChainSequenceHTML(c) + '</div>') : '');
 
           const runBtn = document.createElement('button');
           runBtn.className = 'secondary';
@@ -187,16 +189,16 @@ const uiIndexProjectsJS = `
             runBtn.disabled = true;
             try {
               const runResult = await runWithOptionalSourceRef(ev, {
-                runPath: '/api/v1/pipeline-chains/' + c.id + '/run',
-                sourceRefsPath: '/api/v1/pipeline-chains/' + c.id + '/source-refs',
-                eligibleAgentsPath: '/api/v1/pipeline-chains/' + c.id + '/eligible-agents',
+                runPath: pipelineChainAPIPath(project.id, c.id, 'run'),
+                sourceRefsPath: pipelineChainAPIPath(project.id, c.id, 'source-refs'),
+                eligibleAgentsPath: pipelineChainAPIPath(project.id, c.id, 'eligible-agents'),
                 payload: {},
                 title: 'Run Chain With Source Ref',
-                subtitle: String(c.chain_id || ''),
+                subtitle: chainName,
                 runLabel: 'Run',
               });
               if (runResult.cancelled) return;
-              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started');
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + chainName + ' started');
               await refreshJobs();
             } catch (e) {
               await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
@@ -212,16 +214,16 @@ const uiIndexProjectsJS = `
             dryBtn.disabled = true;
             try {
               const runResult = await runWithOptionalSourceRef(ev, {
-                runPath: '/api/v1/pipeline-chains/' + c.id + '/run',
-                sourceRefsPath: '/api/v1/pipeline-chains/' + c.id + '/source-refs',
-                eligibleAgentsPath: '/api/v1/pipeline-chains/' + c.id + '/eligible-agents',
+                runPath: pipelineChainAPIPath(project.id, c.id, 'run'),
+                sourceRefsPath: pipelineChainAPIPath(project.id, c.id, 'source-refs'),
+                eligibleAgentsPath: pipelineChainAPIPath(project.id, c.id, 'eligible-agents'),
                 payload: { dry_run: true },
                 title: 'Dry Run Chain With Source Ref',
-                subtitle: String(c.chain_id || ''),
+                subtitle: chainName,
                 runLabel: 'Dry Run',
               });
               if (runResult.cancelled) return;
-              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (c.chain_id || 'chain') + ' started');
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + chainName + ' started');
               await refreshJobs();
             } catch (e) {
               await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
@@ -235,7 +237,7 @@ const uiIndexProjectsJS = `
           resolveBtn.textContent = 'Resolve Upcoming Build Version';
           const versionPipelineID = Number(c.version_pipeline_id || 0);
           if (versionPipelineID > 0) {
-            resolveBtn.onclick = () => openVersionResolveModal(versionPipelineID, c.chain_id);
+            resolveBtn.onclick = () => openVersionResolveModal(versionPipelineID, chainName);
           } else {
             resolveBtn.disabled = true;
           }
@@ -245,11 +247,11 @@ const uiIndexProjectsJS = `
           previewBtn.onclick = () => {
             openDryRunPreviewModal({
               title: 'Execution Plan',
-              subtitle: String(c.chain_id || ''),
-              previewPath: '/api/v1/pipeline-chains/' + c.id + '/dry-run-preview',
-              runPath: '/api/v1/pipeline-chains/' + c.id + '/run',
-              sourceRefsPath: '/api/v1/pipeline-chains/' + c.id + '/source-refs',
-              eligibleAgentsPath: '/api/v1/pipeline-chains/' + c.id + '/eligible-agents',
+              subtitle: chainName,
+              previewPath: pipelineChainAPIPath(project.id, c.id, 'dry-run-preview'),
+              runPath: pipelineChainAPIPath(project.id, c.id, 'run'),
+              sourceRefsPath: pipelineChainAPIPath(project.id, c.id, 'source-refs'),
+              eligibleAgentsPath: pipelineChainAPIPath(project.id, c.id, 'eligible-agents'),
               payload: { dry_run: true },
             });
           };

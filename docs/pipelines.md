@@ -64,6 +64,8 @@ jobs:
 - The server resolves selectors to concrete producer execution IDs and sends them to the agent as typed job data; these internal IDs are not injected into the job's environment.
 
 `pipeline_chains` execution is DAG-based:
+- A chain is defined by its ordered `pipelines` list; ciwi derives its stable runtime ID from that sequence.
+- Optional `name` provides a concise UI label. Without it, ciwi displays the pipeline IDs joined with arrows.
 - Jobs in a pipeline are enqueued together.
 - A chain pipeline stays blocked until all listed in-chain `depends_on` pipelines finish successfully.
 - On upstream failure, only blocked downstream pipelines that depend on that failed pipeline are cancelled.

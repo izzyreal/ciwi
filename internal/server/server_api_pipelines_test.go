@@ -20,7 +20,7 @@ func loadPipelineTestConfig(t *testing.T, s *stateStore, yaml string) {
 	}
 }
 
-func firstPipelineAndChainIDs(t *testing.T, s *stateStore, projectName string) (int64, int64) {
+func firstPipelineAndChainIDs(t *testing.T, s *stateStore, projectName string) (int64, string) {
 	t.Helper()
 	project, err := s.db.GetProjectByName(projectName)
 	if err != nil {
@@ -33,11 +33,20 @@ func firstPipelineAndChainIDs(t *testing.T, s *stateStore, projectName string) (
 	if len(detail.Pipelines) == 0 {
 		t.Fatalf("expected at least one pipeline")
 	}
-	var chainID int64
+	var chainID string
 	if len(detail.PipelineChains) > 0 {
 		chainID = detail.PipelineChains[0].ID
 	}
 	return detail.Pipelines[0].ID, chainID
+}
+
+func pipelineChainActionURL(t *testing.T, s *stateStore, baseURL, projectName, chainID, action string) string {
+	t.Helper()
+	project, err := s.db.GetProjectByName(projectName)
+	if err != nil {
+		t.Fatalf("GetProjectByName: %v", err)
+	}
+	return baseURL + "/api/v1/projects/" + int64ToString(project.ID) + "/pipeline-chains/" + chainID + "/" + action
 }
 
 func TestPipelineByIDHandler(t *testing.T) {
@@ -156,49 +165,73 @@ pipelines:
         steps:
           - run: echo package
 pipeline_chains:
-  - id: build-package
+  - name: Test chain
     pipelines:
       - build
       - package
 `)
 
 	_, chainID := firstPipelineAndChainIDs(t, s, "ciwi")
-	if chainID <= 0 {
+	if chainID == "" {
 		t.Fatalf("expected persisted pipeline chain id")
 	}
+	legacyRoute := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/1/run", map[string]any{})
+	if legacyRoute.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected legacy chain route to be removed, got %d", legacyRoute.StatusCode)
+	}
+	project, err := s.db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("GetProjectByName: %v", err)
+	}
 
-	badID := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/not-a-number/run", map[string]any{})
+	badID := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/not-a-number/pipeline-chains/"+chainID+"/run", map[string]any{})
 	if badID.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid chain id, got %d", badID.StatusCode)
 	}
 
-	notFound := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/nope", map[string]any{})
+	notFound := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/projects/"+int64ToString(project.ID)+"/pipeline-chains/"+chainID+"/nope", map[string]any{})
 	if notFound.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for unknown chain subpath, got %d", notFound.StatusCode)
 	}
 
-	methodGuard := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/run", nil)
+	chainRunURL := pipelineChainActionURL(t, s, ts.URL, "ciwi", chainID, "run")
+	methodGuard := mustJSONRequest(t, ts.Client(), http.MethodGet, chainRunURL, nil)
 	if methodGuard.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405 for GET chain run, got %d", methodGuard.StatusCode)
 	}
 
-	invalidJSON := mustRawJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/run", `{"dry_run":`)
+	invalidJSON := mustRawJSONRequest(t, ts.Client(), http.MethodPost, chainRunURL, `{"dry_run":`)
 	if invalidJSON.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid chain run JSON, got %d", invalidJSON.StatusCode)
 	}
 
-	runResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/run", map[string]any{
+	runResp := mustJSONRequest(t, ts.Client(), http.MethodPost, chainRunURL, map[string]any{
 		"dry_run": true,
 	})
 	if runResp.StatusCode != http.StatusCreated {
 		t.Fatalf("expected 201 for chain run, got %d body=%s", runResp.StatusCode, readBody(t, runResp))
 	}
 	var runPayload struct {
-		Enqueued int `json:"enqueued"`
+		Enqueued          int    `json:"enqueued"`
+		PipelineID        string `json:"pipeline_id"`
+		PipelineChainID   string `json:"pipeline_chain_id"`
+		PipelineChainName string `json:"pipeline_chain_name"`
 	}
 	decodeJSONBody(t, runResp, &runPayload)
 	if runPayload.Enqueued <= 0 {
 		t.Fatalf("expected chain run to enqueue jobs, got %+v", runPayload)
+	}
+	if runPayload.PipelineID != "" || runPayload.PipelineChainID != chainID || runPayload.PipelineChainName != "Test chain" {
+		t.Fatalf("unexpected chain identity response: %+v", runPayload)
+	}
+	jobs, err := s.db.ListJobExecutions()
+	if err != nil {
+		t.Fatalf("ListJobExecutions: %v", err)
+	}
+	for _, job := range jobs {
+		if job.Metadata["pipeline_chain_id"] != chainID || job.Metadata["pipeline_chain_name"] != "Test chain" {
+			t.Fatalf("unexpected chain metadata: %+v", job.Metadata)
+		}
 	}
 }
 
@@ -247,7 +280,7 @@ pipelines:
         steps:
           - run: echo second
 pipeline_chains:
-  - id: first-second
+  - name: Test chain
     pipelines:
       - first
       - second
@@ -266,7 +299,7 @@ pipeline_chains:
 	}
 	chainID := detail.PipelineChains[0].ID
 
-	runResp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/run", map[string]any{
+	runResp := mustJSONRequest(t, ts.Client(), http.MethodPost, pipelineChainActionURL(t, s, ts.URL, "ciwi-atomic", chainID, "run"), map[string]any{
 		"pipeline_job_id": "publish",
 	})
 	if runResp.StatusCode != http.StatusBadRequest {
@@ -375,19 +408,20 @@ pipelines:
         steps:
           - run: echo package
 pipeline_chains:
-  - id: build-package
+  - name: Test chain
     pipelines:
       - build
       - package
 `)
 
 	_, chainID := firstPipelineAndChainIDs(t, s, "ciwi")
-	methodGuard := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/source-refs", map[string]any{})
+	chainSourceRefsURL := pipelineChainActionURL(t, s, ts.URL, "ciwi", chainID, "source-refs")
+	methodGuard := mustJSONRequest(t, ts.Client(), http.MethodPost, chainSourceRefsURL, map[string]any{})
 	if methodGuard.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405 for POST chain source-refs, got %d", methodGuard.StatusCode)
 	}
 
-	resp := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/source-refs", nil)
+	resp := mustJSONRequest(t, ts.Client(), http.MethodGet, chainSourceRefsURL, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 for chain source-refs, got %d body=%s", resp.StatusCode, readBody(t, resp))
 	}
@@ -511,7 +545,7 @@ pipelines:
         steps:
           - run: echo package
 pipeline_chains:
-  - id: build-package
+  - name: Test chain
     pipelines:
       - build
       - package
@@ -522,7 +556,7 @@ pipeline_chains:
 	s.agents["agent-darwin"] = agentState{OS: "darwin", Arch: "arm64", Capabilities: map[string]string{"shells": "posix"}}
 	s.mu.Unlock()
 
-	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/eligible-agents", map[string]any{})
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, pipelineChainActionURL(t, s, ts.URL, "ciwi", chainID, "eligible-agents"), map[string]any{})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 for chain eligible-agents, got %d body=%s", resp.StatusCode, readBody(t, resp))
 	}
@@ -1036,13 +1070,13 @@ pipelines:
         steps:
           - run: echo package
 pipeline_chains:
-  - id: build-package
+  - name: Test chain
     pipelines:
       - build
       - package
 `)
 	_, chainID := firstPipelineAndChainIDs(t, s, "ciwi")
-	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/"+int64ToString(chainID)+"/dry-run-preview", map[string]any{})
+	resp := mustJSONRequest(t, ts.Client(), http.MethodPost, pipelineChainActionURL(t, s, ts.URL, "ciwi", chainID, "dry-run-preview"), map[string]any{})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 for chain dry-run-preview, got %d body=%s", resp.StatusCode, readBody(t, resp))
 	}

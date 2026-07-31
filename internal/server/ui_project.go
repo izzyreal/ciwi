@@ -294,10 +294,11 @@ const projectHTML = `<!doctype html>
           chainDesc.className = 'job-desc';
           const chainActions = document.createElement('div');
           chainActions.className = 'job-actions';
-          const chainPipes = (ch.pipelines || []).join(' -> ');
+          const chainPipes = pipelineChainSequence(ch);
+          const chainName = pipelineChainDisplayName(ch);
           chainDesc.innerHTML =
-            '<div><strong>Chain: <code>' + escapeHtml(ch.chain_id || '') + '</code></strong></div>' +
-            '<div class="muted">' + escapeHtml(chainPipes) + '</div>';
+            '<div><strong>Chain: ' + pipelineChainDisplayHTML(ch) + '</strong></div>' +
+            (chainName !== chainPipes ? ('<div class="muted">' + pipelineChainSequenceHTML(ch) + '</div>') : '');
           chainHead.appendChild(chainDesc);
           chainHead.appendChild(chainActions);
           chainRow.appendChild(chainHead);
@@ -309,16 +310,16 @@ const projectHTML = `<!doctype html>
             runBtn.disabled = true;
             try {
               const runResult = await runWithOptionalSourceRef(ev, {
-                runPath: '/api/v1/pipeline-chains/' + ch.id + '/run',
-                sourceRefsPath: '/api/v1/pipeline-chains/' + ch.id + '/source-refs',
-                eligibleAgentsPath: '/api/v1/pipeline-chains/' + ch.id + '/eligible-agents',
+                runPath: pipelineChainAPIPath(p.id, ch.id, 'run'),
+                sourceRefsPath: pipelineChainAPIPath(p.id, ch.id, 'source-refs'),
+                eligibleAgentsPath: pipelineChainAPIPath(p.id, ch.id, 'eligible-agents'),
                 payload: {},
                 title: 'Run Chain With Source Ref',
-                subtitle: String(ch.chain_id || ''),
+                subtitle: chainName,
                 runLabel: 'Run Chain',
               });
               if (runResult.cancelled) return;
-              showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (ch.chain_id || 'chain') + ' started');
+              showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + chainName + ' started');
               await loadHistory();
             } catch (e) {
               await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
@@ -336,16 +337,16 @@ const projectHTML = `<!doctype html>
               dryBtn.disabled = true;
               try {
                 const runResult = await runWithOptionalSourceRef(ev, {
-                  runPath: '/api/v1/pipeline-chains/' + ch.id + '/run',
-                  sourceRefsPath: '/api/v1/pipeline-chains/' + ch.id + '/source-refs',
-                  eligibleAgentsPath: '/api/v1/pipeline-chains/' + ch.id + '/eligible-agents',
+                  runPath: pipelineChainAPIPath(p.id, ch.id, 'run'),
+                  sourceRefsPath: pipelineChainAPIPath(p.id, ch.id, 'source-refs'),
+                  eligibleAgentsPath: pipelineChainAPIPath(p.id, ch.id, 'eligible-agents'),
                   payload: { dry_run: true },
                   title: 'Dry Run Chain With Source Ref',
-                  subtitle: String(ch.chain_id || ''),
+                  subtitle: chainName,
                   runLabel: 'Dry Run Chain',
                 });
                 if (runResult.cancelled) return;
-                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + (ch.chain_id || 'chain') + ' started');
+                showQueuedJobsSnackbar((currentProjectName || 'Project') + ' ' + chainName + ' started');
                 await loadHistory();
               } catch (e) {
                 await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
@@ -362,11 +363,11 @@ const projectHTML = `<!doctype html>
           previewBtn.onclick = () => {
             openDryRunPreviewModal({
               title: 'Execution Plan',
-              subtitle: String(ch.chain_id || ''),
-              previewPath: '/api/v1/pipeline-chains/' + ch.id + '/dry-run-preview',
-              runPath: '/api/v1/pipeline-chains/' + ch.id + '/run',
-              sourceRefsPath: '/api/v1/pipeline-chains/' + ch.id + '/source-refs',
-              eligibleAgentsPath: '/api/v1/pipeline-chains/' + ch.id + '/eligible-agents',
+              subtitle: chainName,
+              previewPath: pipelineChainAPIPath(p.id, ch.id, 'dry-run-preview'),
+              runPath: pipelineChainAPIPath(p.id, ch.id, 'run'),
+              sourceRefsPath: pipelineChainAPIPath(p.id, ch.id, 'source-refs'),
+              eligibleAgentsPath: pipelineChainAPIPath(p.id, ch.id, 'eligible-agents'),
               payload: { dry_run: true },
             });
           };

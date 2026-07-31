@@ -39,7 +39,7 @@ type pipelineStore interface {
 	GetPipelineByProjectAndID(projectName, pipelineID string) (store.PersistedPipeline, error)
 	GetPipelineByProjectIDAndID(projectID int64, pipelineID string) (store.PersistedPipeline, error)
 	GetPipelineByDBID(id int64) (store.PersistedPipeline, error)
-	GetPipelineChainByDBID(id int64) (store.PersistedPipelineChain, error)
+	GetPipelineChain(projectID int64, chainID string) (store.PersistedPipelineChain, error)
 	ListJobExecutions() ([]protocol.JobExecution, error)
 	CreateJobExecution(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
 	SetJobExecutionDependencyArtifactJobIDs(jobID string, ids []string) ([]string, error)

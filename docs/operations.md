@@ -28,7 +28,7 @@
 
 - `execution_mode=offline_cached` can be used on pipeline/chain run APIs for cached-source execution.
 - Guardrails: source must resolve to a pinned cached commit; non-dry offline runs are blocked for jobs containing `skip_dry_run` steps.
-- Use preview endpoints first: `POST /api/v1/pipelines/{id}/dry-run-preview` and `POST /api/v1/pipeline-chains/{id}/dry-run-preview`.
+- Use preview endpoints first: `POST /api/v1/pipelines/{id}/dry-run-preview` and `POST /api/v1/projects/{projectId}/pipeline-chains/{chainId}/dry-run-preview`.
 
 UI flow:
 - use `Preview Dry Run`

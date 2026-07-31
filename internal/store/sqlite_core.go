@@ -10,6 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/pipelinechain"
 )
 
 type Store struct {
@@ -34,7 +35,9 @@ type PersistedPipelineChain struct {
 	ProjectID   int64
 	ProjectName string
 	ChainID     string
+	ChainName   string
 	Pipelines   []string
+	Position    int
 }
 
 type PersistedPipelineJob struct {
@@ -123,6 +126,8 @@ func (s *Store) migrate() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_id INTEGER NOT NULL,
 			chain_id TEXT NOT NULL,
+			chain_name TEXT NOT NULL DEFAULT '',
+			position INTEGER NOT NULL DEFAULT 0,
 			pipelines_json TEXT NOT NULL DEFAULT '[]',
 			created_utc TEXT NOT NULL,
 			updated_utc TEXT NOT NULL,
@@ -248,6 +253,15 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.addColumnIfMissing("pipelines", "versioning_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("pipeline_chains", "chain_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.addColumnIfMissing("pipeline_chains", "position", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.migratePipelineChainIdentity(); err != nil {
 		return err
 	}
 	if err := s.addColumnIfMissing("job_executions", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
@@ -409,12 +423,13 @@ func (s *Store) LoadConfig(cfg config.File, configPath, repoURL, repoRef, config
 	if _, err := tx.Exec(`DELETE FROM pipeline_chains WHERE project_id = ?`, projectID); err != nil {
 		return fmt.Errorf("clear pipeline chains: %w", err)
 	}
-	for _, ch := range cfg.PipelineChains {
-		pipelinesJSON, _ := json.Marshal(ch.Pipelines)
+	for position, ch := range cfg.PipelineChains {
+		pipelines := pipelinechain.NormalizePipelines(ch.Pipelines)
+		pipelinesJSON, _ := json.Marshal(pipelines)
 		if _, err := tx.Exec(`
-			INSERT INTO pipeline_chains (project_id, chain_id, pipelines_json, created_utc, updated_utc)
-			VALUES (?, ?, ?, ?, ?)
-		`, projectID, ch.ID, string(pipelinesJSON), now, now); err != nil {
+			INSERT INTO pipeline_chains (project_id, chain_id, chain_name, position, pipelines_json, created_utc, updated_utc)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, projectID, pipelinechain.ID(pipelines), pipelinechain.DisplayName(ch.Name, pipelines), position, string(pipelinesJSON), now, now); err != nil {
 			return fmt.Errorf("insert pipeline chain: %w", err)
 		}
 	}

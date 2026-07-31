@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/pipelinechain"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,7 +46,7 @@ type Pipeline struct {
 }
 
 type PipelineChain struct {
-	ID        string   `yaml:"id" json:"id"`
+	Name      string   `yaml:"name,omitempty" json:"name,omitempty"`
 	Pipelines []string `yaml:"pipelines" json:"pipelines"`
 }
 
@@ -497,17 +498,8 @@ func (cfg File) Validate() []string {
 		}
 	}
 
-	chainIDs := map[string]struct{}{}
+	chainSequences := map[string]int{}
 	for i, ch := range cfg.PipelineChains {
-		chainID := strings.TrimSpace(ch.ID)
-		if chainID == "" {
-			errs = append(errs, fmt.Sprintf("pipeline_chains[%d].id is required", i))
-		} else {
-			if _, exists := chainIDs[chainID]; exists {
-				errs = append(errs, fmt.Sprintf("pipeline_chains[%d].id duplicate %q", i, chainID))
-			}
-			chainIDs[chainID] = struct{}{}
-		}
 		if len(ch.Pipelines) == 0 {
 			errs = append(errs, fmt.Sprintf("pipeline_chains[%d].pipelines must contain at least one pipeline id", i))
 			continue
@@ -526,6 +518,12 @@ func (cfg File) Validate() []string {
 				errs = append(errs, fmt.Sprintf("pipeline_chains[%d].pipelines[%d] duplicate pipeline %q", i, j, pid))
 			}
 			seen[pid] = struct{}{}
+		}
+		chainID := pipelinechain.ID(ch.Pipelines)
+		if previous, exists := chainSequences[chainID]; exists {
+			errs = append(errs, fmt.Sprintf("pipeline_chains[%d].pipelines duplicates pipeline_chains[%d].pipelines", i, previous))
+		} else {
+			chainSequences[chainID] = i
 		}
 	}
 

@@ -166,8 +166,8 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 				}
 			}
 			project.PipelineChains = append(project.PipelineChains, protocol.PipelineChainSummary{
-				ID:                ch.DBID,
-				ChainID:           ch.ChainID,
+				ID:                ch.ChainID,
+				Name:              ch.ChainName,
 				Pipelines:         append([]string(nil), ch.Pipelines...),
 				SupportsDryRun:    supports,
 				VersionPipelineID: versionPipelineID,
@@ -356,8 +356,8 @@ func (s *Store) GetProjectDetail(id int64) (protocol.ProjectDetail, error) {
 			}
 		}
 		detail.PipelineChains = append(detail.PipelineChains, protocol.PipelineChainSummary{
-			ID:                ch.DBID,
-			ChainID:           ch.ChainID,
+			ID:                ch.ChainID,
+			Name:              ch.ChainName,
 			Pipelines:         append([]string(nil), ch.Pipelines...),
 			SupportsDryRun:    supports,
 			VersionPipelineID: versionPipelineID,
@@ -396,11 +396,11 @@ func (s *Store) pipelineSupportsDryRun(pipelineDBID int64) (bool, error) {
 
 func (s *Store) listPipelineChainsByProjectID(projectID int64) ([]PersistedPipelineChain, error) {
 	rows, err := s.db.Query(`
-		SELECT pc.id, pc.project_id, p.name, pc.chain_id, pc.pipelines_json
+		SELECT pc.id, pc.project_id, p.name, pc.chain_id, pc.chain_name, pc.position, pc.pipelines_json
 		FROM pipeline_chains pc
 		JOIN projects p ON p.id = pc.project_id
 		WHERE pc.project_id = ?
-		ORDER BY pc.chain_id
+		ORDER BY pc.position, pc.id
 	`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list pipeline chains: %w", err)
@@ -410,7 +410,7 @@ func (s *Store) listPipelineChainsByProjectID(projectID int64) ([]PersistedPipel
 	for rows.Next() {
 		var ch PersistedPipelineChain
 		var pipelinesJSON string
-		if err := rows.Scan(&ch.DBID, &ch.ProjectID, &ch.ProjectName, &ch.ChainID, &pipelinesJSON); err != nil {
+		if err := rows.Scan(&ch.DBID, &ch.ProjectID, &ch.ProjectName, &ch.ChainID, &ch.ChainName, &ch.Position, &pipelinesJSON); err != nil {
 			return nil, fmt.Errorf("scan pipeline chain: %w", err)
 		}
 		_ = json.Unmarshal([]byte(pipelinesJSON), &ch.Pipelines)
@@ -547,16 +547,16 @@ func (s *Store) GetPipelineByProjectIDAndID(projectID int64, pipelineID string) 
 	return s.GetPipelineByDBID(id)
 }
 
-func (s *Store) GetPipelineChainByDBID(id int64) (PersistedPipelineChain, error) {
+func (s *Store) GetPipelineChain(projectID int64, chainID string) (PersistedPipelineChain, error) {
 	var ch PersistedPipelineChain
 	row := s.db.QueryRow(`
-		SELECT pc.id, pc.project_id, p.name, pc.chain_id, pc.pipelines_json
+		SELECT pc.id, pc.project_id, p.name, pc.chain_id, pc.chain_name, pc.position, pc.pipelines_json
 		FROM pipeline_chains pc
 		JOIN projects p ON p.id = pc.project_id
-		WHERE pc.id = ?
-	`, id)
+		WHERE pc.project_id = ? AND pc.chain_id = ?
+	`, projectID, chainID)
 	var pipelinesJSON string
-	if err := row.Scan(&ch.DBID, &ch.ProjectID, &ch.ProjectName, &ch.ChainID, &pipelinesJSON); err != nil {
+	if err := row.Scan(&ch.DBID, &ch.ProjectID, &ch.ProjectName, &ch.ChainID, &ch.ChainName, &ch.Position, &pipelinesJSON); err != nil {
 		if err == sql.ErrNoRows {
 			return ch, fmt.Errorf("pipeline chain not found")
 		}

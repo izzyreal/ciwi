@@ -96,10 +96,12 @@ type RunPipelineRequest struct {
 }
 
 type RunPipelineResponse struct {
-	ProjectName     string   `json:"project_name"`
-	PipelineID      string   `json:"pipeline_id"`
-	Enqueued        int      `json:"enqueued"`
-	JobExecutionIDs []string `json:"job_execution_ids"`
+	ProjectName       string   `json:"project_name"`
+	PipelineID        string   `json:"pipeline_id,omitempty"`
+	PipelineChainID   string   `json:"pipeline_chain_id,omitempty"`
+	PipelineChainName string   `json:"pipeline_chain_name,omitempty"`
+	Enqueued          int      `json:"enqueued"`
+	JobExecutionIDs   []string `json:"job_execution_ids"`
 }
 
 type LoadConfigRequest struct {
@@ -136,8 +138,8 @@ type PipelineSummary struct {
 }
 
 type PipelineChainSummary struct {
-	ID                int64    `json:"id"`
-	ChainID           string   `json:"chain_id"`
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
 	Pipelines         []string `json:"pipelines"`
 	SupportsDryRun    bool     `json:"supports_dry_run,omitempty"`
 	VersionPipelineID int64    `json:"version_pipeline_id,omitempty"`

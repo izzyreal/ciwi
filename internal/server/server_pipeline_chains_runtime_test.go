@@ -41,7 +41,7 @@ func enqueueSingleChain(t *testing.T, s *stateStore, yaml string) {
 	if len(detail.PipelineChains) != 1 {
 		t.Fatalf("expected exactly one chain, got %+v", detail.PipelineChains)
 	}
-	ch, err := s.db.GetPipelineChainByDBID(detail.PipelineChains[0].ID)
+	ch, err := s.db.GetPipelineChain(project.ID, detail.PipelineChains[0].ID)
 	if err != nil {
 		t.Fatalf("get pipeline chain by id: %v", err)
 	}
@@ -101,7 +101,7 @@ pipelines:
         steps:
           - run: echo sign
 pipeline_chains:
-  - id: build-release
+  - name: Test chain
     pipelines: [build, codesign-macos]
 `), configPath)
 		if err != nil {
@@ -126,7 +126,7 @@ pipeline_chains:
 	if len(detail.PipelineChains) != 1 {
 		t.Fatalf("expected one branch pipeline chain, got %+v", detail.PipelineChains)
 	}
-	chain, err := s.db.GetPipelineChainByDBID(detail.PipelineChains[0].ID)
+	chain, err := s.db.GetPipelineChain(branchProject.ID, detail.PipelineChains[0].ID)
 	if err != nil {
 		t.Fatalf("get branch pipeline chain: %v", err)
 	}
@@ -220,7 +220,7 @@ pipelines:
         steps:
           - run: echo package
 pipeline_chains:
-  - id: build-package
+  - name: Test chain
     pipelines:
       - build
       - package
@@ -298,7 +298,7 @@ pipelines:
         steps:
           - run: echo release
 pipeline_chains:
-  - id: build-release
+  - name: Test chain
     pipelines:
       - build
       - release
@@ -370,7 +370,7 @@ pipelines:
         steps:
           - run: echo package
 pipeline_chains:
-  - id: build-package
+  - name: Test chain
     pipelines:
       - build
       - package
@@ -438,7 +438,7 @@ pipelines:
         steps:
           - run: echo package
 pipeline_chains:
-  - id: build-package
+  - name: Test chain
     pipelines:
       - build
       - package
@@ -499,7 +499,7 @@ pipelines:
         steps:
           - run: echo publish
 pipeline_chains:
-  - id: build-package
+  - name: Test chain
     pipelines:
       - build
       - package
@@ -615,7 +615,7 @@ pipelines:
         steps:
           - run: echo release
 pipeline_chains:
-  - id: build-sign-package-release
+  - name: Test chain
     pipelines:
       - build
       - sign

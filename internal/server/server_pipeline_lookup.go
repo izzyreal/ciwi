@@ -15,7 +15,7 @@ func (s *stateStore) loadPipelineChainPipelines(ch store.PersistedPipelineChain)
 		pipelineID = strings.TrimSpace(pipelineID)
 		pipeline, err := s.pipelineStore().GetPipelineByProjectIDAndID(ch.ProjectID, pipelineID)
 		if err != nil {
-			return nil, fmt.Errorf("load pipeline %q in chain %q: %w", pipelineID, ch.ChainID, err)
+			return nil, fmt.Errorf("load pipeline %q in chain %q: %w", pipelineID, ch.ChainName, err)
 		}
 		pipelines = append(pipelines, pipeline)
 	}

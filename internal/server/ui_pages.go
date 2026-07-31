@@ -18,6 +18,34 @@ const uiPagesJS = `function apiJSON(path, opts = {}) {
     });
 }
 
+function pipelineChainSequence(chain) {
+  return (Array.isArray(chain && chain.pipelines) ? chain.pipelines : [])
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join(' → ');
+}
+
+function pipelineChainDisplayName(chain) {
+  return String((chain && chain.name) || '').trim() || pipelineChainSequence(chain) || 'Pipeline chain';
+}
+
+function pipelineChainDisplayHTML(chain) {
+  const name = pipelineChainDisplayName(chain);
+  const sequence = pipelineChainSequence(chain);
+  if (name === sequence) return '<code>' + escapeHtml(name) + '</code>';
+  return escapeHtml(name);
+}
+
+function pipelineChainSequenceHTML(chain) {
+  const sequence = pipelineChainSequence(chain);
+  return sequence ? '<code>' + escapeHtml(sequence) + '</code>' : '';
+}
+
+function pipelineChainAPIPath(projectID, chainID, action) {
+  return '/api/v1/projects/' + encodeURIComponent(String(projectID || '')) +
+    '/pipeline-chains/' + encodeURIComponent(String(chainID || '')) + '/' + String(action || '');
+}
+
 function formatUnmetRequirementHTML(reason) {
   const text = String(reason || '').trim();
   if (!text) return '';
@@ -816,7 +844,7 @@ function formatDryRunPreviewOutput(resp) {
     ['offline_cached_only', String(!!data.offline_cached_only)],
     ['cache_used', String(!!data.cache_used)],
     ['cache_source', String(data.cache_source || '')],
-    ['pipeline', String(data.pipeline_id || '')],
+    [data.pipeline_chain_id ? 'pipeline_chain' : 'pipeline', String(data.pipeline_chain_name || data.pipeline_id || data.pipeline_chain_id || '')],
     ['eligible_agents', eligible.length ? eligible.join(', ') : '(none)'],
     ['pending_jobs', String(jobs.length)],
   ];

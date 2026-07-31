@@ -61,7 +61,7 @@ func (s *stateStore) pipelineChainSourceRefsHandler(w http.ResponseWriter, ch st
 	}
 	first, err := s.pipelineStore().GetPipelineByProjectIDAndID(ch.ProjectID, firstID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("load pipeline %q in chain %q: %v", firstID, ch.ChainID, err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("load pipeline %q in chain %q: %v", firstID, ch.ChainName, err), http.StatusBadRequest)
 		return
 	}
 	view, err := buildSourceRefsView(strings.TrimSpace(first.SourceRepo), strings.TrimSpace(first.SourceRef))

@@ -639,7 +639,10 @@ func cardTitle(jobs []protocol.JobExecution, card executionCard) string {
 	label := ""
 	switch card.Kind {
 	case "chain":
-		label = strings.TrimSpace(first.Metadata["pipeline_chain_id"])
+		label = strings.TrimSpace(first.Metadata["pipeline_chain_name"])
+		if label == "" {
+			label = strings.TrimSpace(first.Metadata["pipeline_chain_id"])
+		}
 	case "pipeline":
 		label = strings.TrimSpace(first.Metadata["pipeline_id"])
 	default:

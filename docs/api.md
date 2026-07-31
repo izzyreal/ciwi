@@ -34,10 +34,10 @@
   - `POST /api/v1/pipelines/{pipelineDbId}/dry-run-preview`
   - `GET /api/v1/pipelines/{pipelineDbId}/source-refs`
   - `POST /api/v1/pipelines/{pipelineDbId}/eligible-agents`
-  - `POST /api/v1/pipeline-chains/{chainDbId}/run`
-  - `POST /api/v1/pipeline-chains/{chainDbId}/dry-run-preview`
-  - `GET /api/v1/pipeline-chains/{chainDbId}/source-refs`
-  - `POST /api/v1/pipeline-chains/{chainDbId}/eligible-agents`
+  - `POST /api/v1/projects/{projectId}/pipeline-chains/{chainId}/run`
+  - `POST /api/v1/projects/{projectId}/pipeline-chains/{chainId}/dry-run-preview`
+  - `GET /api/v1/projects/{projectId}/pipeline-chains/{chainId}/source-refs`
+  - `POST /api/v1/projects/{projectId}/pipeline-chains/{chainId}/eligible-agents`
   - `GET /api/v1/pipelines/{pipelineDbId}/version-resolve` (SSE)
 - Jobs:
   - `GET /api/v1/jobs`
@@ -84,7 +84,7 @@
   - `status=failed`
   - `error="cancelled by user"`
   - append `[control] job cancelled by user` to output
-- `POST /api/v1/pipelines/{id}/run-selection` and `POST /api/v1/pipeline-chains/{id}/run` accept optional `execution_mode`:
+- `POST /api/v1/pipelines/{id}/run-selection` and `POST /api/v1/projects/{projectId}/pipeline-chains/{chainId}/run` accept optional `execution_mode`:
   - `offline_cached` executes from cached pinned source context with safety guardrails.
 - Run payload fields (pipeline/chain run and preview family) may include:
   - `source_ref`: one-off source branch/tag/SHA override

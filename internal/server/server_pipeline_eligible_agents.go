@@ -112,6 +112,7 @@ func (s *stateStore) preparePendingPipelineChainJobs(ch store.PersistedPipelineC
 		meta := map[string]string{
 			"chain_run_id":            "eligible-preview",
 			"pipeline_chain_id":       ch.ChainID,
+			"pipeline_chain_name":     ch.ChainName,
 			"pipeline_chain_index":    strconv.Itoa(i),
 			"pipeline_chain_position": strconv.Itoa(i + 1),
 			"pipeline_chain_total":    strconv.Itoa(total),

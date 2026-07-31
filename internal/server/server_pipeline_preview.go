@@ -54,7 +54,9 @@ type runPreviewResponse struct {
 	OfflineCachedOnly bool                `json:"offline_cached_only"`
 	CacheUsed         bool                `json:"cache_used"`
 	CacheSource       string              `json:"cache_source,omitempty"`
-	PipelineID        string              `json:"pipeline_id"`
+	PipelineID        string              `json:"pipeline_id,omitempty"`
+	PipelineChainID   string              `json:"pipeline_chain_id,omitempty"`
+	PipelineChainName string              `json:"pipeline_chain_name,omitempty"`
 	PendingJobs       []runPreviewJobView `json:"pending_jobs"`
 	EligibleAgentIDs  []string            `json:"eligible_agent_ids"`
 	Warnings          []string            `json:"warnings,omitempty"`
@@ -107,7 +109,8 @@ func (s *stateStore) pipelineChainDryRunPreviewHandler(w http.ResponseWriter, ch
 		OfflineCachedOnly: req.OfflineCachedOnly,
 		CacheUsed:         cacheUsed,
 		CacheSource:       cacheSource,
-		PipelineID:        ch.ChainID,
+		PipelineChainID:   ch.ChainID,
+		PipelineChainName: ch.ChainName,
 		PendingJobs:       toRunPreviewJobs(pending),
 		EligibleAgentIDs:  s.eligibleAgentsForPendingJobs(pending),
 		Warnings:          warns,
@@ -229,6 +232,7 @@ func (s *stateStore) previewPipelineChainDryRun(ch store.PersistedPipelineChain,
 		meta := map[string]string{
 			"chain_run_id":            "preview",
 			"pipeline_chain_id":       ch.ChainID,
+			"pipeline_chain_name":     ch.ChainName,
 			"pipeline_chain_index":    fmt.Sprintf("%d", i),
 			"pipeline_chain_position": fmt.Sprintf("%d", i+1),
 			"pipeline_chain_total":    fmt.Sprintf("%d", total),
