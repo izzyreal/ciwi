@@ -228,3 +228,15 @@ The UI boundary and real-asset conversion described in Phase 1 are complete. The
 best next slice is Phase 2: centralize execution metadata keys and typed accessors
 while retaining the existing map representation for database and protocol
 compatibility.
+
+## Compatibility cleanup gate
+
+The release following this review is the final compatibility bridge. It persists
+the structured representation of any pipeline steps still stored as strings;
+all other current database and agent-layout behavior was already present in
+v0.1.278. After that bridge has run on the server and all agents have updated,
+remove the migration branches, historical format fallbacks, obsolete installer
+cleanup, and tests or comments that exist only to describe removed behavior.
+
+Agent updates and local job-history cleanup must continue to preserve
+`<workdir>/cache`; the bridge does not alter cache IDs or work-directory paths.

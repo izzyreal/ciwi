@@ -77,6 +77,13 @@ func TestWipeAgentJobHistory(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(workDir, "keep-me"), 0o755); err != nil {
 		t.Fatalf("create non-job dir: %v", err)
 	}
+	cacheFile := filepath.Join(workDir, "cache", "ccache", "cached.o")
+	if err := os.MkdirAll(filepath.Dir(cacheFile), 0o755); err != nil {
+		t.Fatalf("create cache dir: %v", err)
+	}
+	if err := os.WriteFile(cacheFile, []byte("warm-cache"), 0o644); err != nil {
+		t.Fatalf("write cache file: %v", err)
+	}
 
 	msg, err := wipeAgentJobHistory(workDir)
 	if err != nil {
@@ -97,6 +104,9 @@ func TestWipeAgentJobHistory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(workDir, "keep-me")); err != nil {
 		t.Fatalf("expected non-job dir to remain, stat err=%v", err)
+	}
+	if got, err := os.ReadFile(cacheFile); err != nil || string(got) != "warm-cache" {
+		t.Fatalf("expected shared cache to remain untouched, got=%q err=%v", got, err)
 	}
 }
 

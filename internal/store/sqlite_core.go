@@ -279,6 +279,9 @@ func (s *Store) migrate() error {
 	if err := s.addColumnIfMissing("pipeline_chains", "position", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := s.migratePipelineJobSteps(); err != nil {
+		return err
+	}
 	if err := s.migratePipelineChainIdentity(); err != nil {
 		return err
 	}
