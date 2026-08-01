@@ -1,12 +1,13 @@
 package server
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -91,6 +92,14 @@ func TestBuildRouterSmoke(t *testing.T) {
 		t.Fatalf("expected server-info 200, got %d body=%s", infoResp.StatusCode, readBody(t, infoResp))
 	}
 	_ = readBody(t, infoResp)
+
+	uiResp := mustJSONRequest(t, srv.Client(), http.MethodGet, srv.URL+"/", nil)
+	if uiResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected embedded UI 200, got %d body=%s", uiResp.StatusCode, readBody(t, uiResp))
+	}
+	if body := readBody(t, uiResp); !strings.Contains(body, "<title>ciwi</title>") {
+		t.Fatalf("expected root router to mount ciwi web UI, got %q", body)
+	}
 }
 
 func TestStartUpdateHelperWrapperError(t *testing.T) {

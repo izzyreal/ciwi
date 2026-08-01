@@ -42,10 +42,10 @@ func TestDesignGuardGoCodeAvoidsRawJobStatusLiterals(t *testing.T) {
 func TestDesignGuardUIJobsUseSharedStatusHelpers(t *testing.T) {
 	root := repoRootFromServerTests(t)
 	files := []string{
-		"internal/server/ui_job_execution.go",
-		"internal/server/ui_pages.go",
-		"internal/server/ui_agent.go",
-		"internal/server/ui_index_js_job_executions.go",
+		"internal/server/webui/ui_job_execution.go",
+		"internal/server/webui/ui_pages.go",
+		"internal/server/webui/ui_agent.go",
+		"internal/server/webui/ui_index_js_job_executions.go",
 	}
 	directJobStatusComparison := regexp.MustCompile(`(?:\bstatus\b|\.status\b|normalizedJobStatus\s*\([^)]*\))\s*(?:===|==)\s*['"](queued|leased|running|succeeded|failed)['"]`)
 

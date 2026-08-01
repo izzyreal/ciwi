@@ -5,6 +5,12 @@ graphs, richer job-history cards, server update selection, and browser themes.
 It focuses on keeping ciwi easy to evolve without trading away its useful
 single-binary deployment model.
 
+Implementation status: the first boundary extraction is complete. Browser UI
+ownership, embedded assets, its HTTP handler, and UI-specific tests now live in
+`internal/server/webui`; the root server package only mounts the handler. The
+follow-up conversion from Go string constants to real JavaScript, CSS, and HTML
+asset files remains intentionally separate.
+
 ## Executive assessment
 
 ciwi's foundations are healthy. The package graph is acyclic and understandable,

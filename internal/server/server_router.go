@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/izzyreal/ciwi/internal/server/webui"
 )
 
 func buildRouter(s *stateStore, artifactsDir string) http.Handler {
@@ -12,20 +13,20 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.Use(middleware.Recoverer)
 
 	// UI/static
-	r.HandleFunc("/", s.uiHandler)
-	r.HandleFunc("/favicon.ico", s.uiHandler)
-	r.HandleFunc("/ciwi-favicon.png", s.uiHandler)
-	r.HandleFunc("/ciwi-logo.png", s.uiHandler)
-	r.HandleFunc("/ui/icons.svg", s.uiHandler)
-	r.HandleFunc("/ui/theme.js", s.uiHandler)
-	r.HandleFunc("/ui/shared.js", s.uiHandler)
-	r.HandleFunc("/ui/pages.js", s.uiHandler)
-	r.HandleFunc("/settings", s.uiHandler)
-	r.HandleFunc("/vault", s.uiHandler)
-	r.HandleFunc("/agents", s.uiHandler)
-	r.HandleFunc("/agents/*", s.uiHandler)
-	r.HandleFunc("/projects/*", s.uiHandler)
-	r.HandleFunc("/jobs/*", s.uiHandler)
+	r.HandleFunc("/", webui.Handler)
+	r.HandleFunc("/favicon.ico", webui.Handler)
+	r.HandleFunc("/ciwi-favicon.png", webui.Handler)
+	r.HandleFunc("/ciwi-logo.png", webui.Handler)
+	r.HandleFunc("/ui/icons.svg", webui.Handler)
+	r.HandleFunc("/ui/theme.js", webui.Handler)
+	r.HandleFunc("/ui/shared.js", webui.Handler)
+	r.HandleFunc("/ui/pages.js", webui.Handler)
+	r.HandleFunc("/settings", webui.Handler)
+	r.HandleFunc("/vault", webui.Handler)
+	r.HandleFunc("/agents", webui.Handler)
+	r.HandleFunc("/agents/*", webui.Handler)
+	r.HandleFunc("/projects/*", webui.Handler)
+	r.HandleFunc("/jobs/*", webui.Handler)
 
 	// Health/info
 	r.Get("/healthz", healthzHandler)
