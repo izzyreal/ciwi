@@ -45,7 +45,7 @@ func TestUIIconSpriteIsServedFromEmbeddedAssets(t *testing.T) {
 		if !strings.Contains(recorder.Body.String(), `id="`+id+`"`) {
 			t.Errorf("icon sprite does not contain %q", id)
 		}
-		if !strings.Contains(uiSharedIconsJS, `'`+name+`'`) {
+		if !strings.Contains(sharedJS, `'`+name+`'`) {
 			t.Errorf("shared icon allowlist does not contain %q", name)
 		}
 	}
@@ -60,7 +60,7 @@ func TestUIProvidesSharedAllowlistedIconRenderers(t *testing.T) {
 		`aria-hidden="true" focusable="false"`,
 		"/ui/icons.svg#icon-",
 	} {
-		if !strings.Contains(uiSharedJS, want) {
+		if !strings.Contains(sharedJS, want) {
 			t.Errorf("shared icon renderer no longer contains %q", want)
 		}
 	}
@@ -81,7 +81,7 @@ func TestUIStaticIconOnlyButtonsHaveAccessibleNames(t *testing.T) {
 }
 
 func TestUIDynamicIconOnlyButtonsSetAccessibleNames(t *testing.T) {
-	combined := uiProjectGraphJS + jobExecutionGraphJS
+	combined := projectJS + jobExecutionJS
 	for _, want := range []string{
 		"play.setAttribute('aria-label'",
 		"rerun.setAttribute('aria-label'",
@@ -102,12 +102,12 @@ func TestQueueCardsUseIconsForAggregateStatus(t *testing.T) {
 		`icon: 'circle-check'`,
 		`ciwiIconHTML(status.icon`,
 	} {
-		if !strings.Contains(uiIndexJobExecutionsJS, want) {
+		if !strings.Contains(indexJS, want) {
 			t.Errorf("queue aggregate status no longer contains %q", want)
 		}
 	}
 	for _, unwanted := range []string{"⏳", "❌", "✅", "🟡"} {
-		if strings.Contains(uiIndexJobExecutionsJS, unwanted) {
+		if strings.Contains(indexJS, unwanted) {
 			t.Errorf("queue aggregate status still contains emoji %q", unwanted)
 		}
 	}
@@ -120,7 +120,7 @@ func TestCollapsibleCardFocusUsesKeyboardFocusIndicatorOnly(t *testing.T) {
 		`.project-group > summary:focus-visible`,
 		`.ciwi-job-group-details > summary:focus-visible`,
 	} {
-		if !strings.Contains(uiIndexCSS, want) {
+		if !strings.Contains(indexCSS, want) {
 			t.Errorf("collapsible card focus styling no longer contains %q", want)
 		}
 	}

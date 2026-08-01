@@ -6,7 +6,7 @@ import (
 )
 
 func TestProjectUIIncludesDefinitionGraphAndRememberedListToggle(t *testing.T) {
-	combined := projectHTML + uiProjectGraphCSS + uiProjectGraphJS
+	combined := projectHTML + projectCSS + projectJS
 	for _, want := range []string{
 		`id="structureGraphBtn"`,
 		`id="structureListBtn"`,
@@ -33,17 +33,17 @@ func TestProjectGraphUsesConfiguredPipelineAndJobDependencies(t *testing.T) {
 		`The dependency data contains a cycle`,
 		`is not present.`,
 	} {
-		if !strings.Contains(uiProjectGraphJS, want) {
+		if !strings.Contains(projectJS, want) {
 			t.Fatalf("project graph implementation no longer contains %q", want)
 		}
 	}
-	if strings.Contains(uiProjectGraphJS, "chain.pipelines.map") {
+	if strings.Contains(projectJS, "chain.pipelines.map") {
 		t.Fatal("project graph appears to derive dependency edges from chain ordering")
 	}
 }
 
 func TestProjectGraphProvidesAccessibleNavigationAndSharedActions(t *testing.T) {
-	combined := projectHTML + uiProjectGraphJS
+	combined := projectHTML + projectJS
 	for _, want := range []string{
 		`button.setAttribute('aria-pressed'`,
 		`button.setAttribute('aria-label'`,
@@ -69,17 +69,17 @@ func TestProjectGraphFitCanEnlargeAndCenterNarrowGraphs(t *testing.T) {
 		`Math.min(projectGraphMaxScale, (viewport.clientWidth - 18) / width)`,
 		`content.style.left = Math.max(0, Math.floor((viewport.clientWidth - width * next) / 2)) + 'px';`,
 	} {
-		if !strings.Contains(uiProjectGraphJS, want) {
+		if !strings.Contains(projectJS, want) {
 			t.Fatalf("project graph fit behavior no longer contains %q", want)
 		}
 	}
-	if strings.Contains(uiProjectGraphJS, `const widthScale = Math.min(1,`) {
+	if strings.Contains(projectJS, `const widthScale = Math.min(1,`) {
 		t.Fatal("project graph fit must not cap narrow graphs at 100% zoom")
 	}
 }
 
 func TestProjectGraphProvidesPlayActionsMatrixChooserAndConfiguredSteps(t *testing.T) {
-	combined := projectHTML + uiProjectGraphCSS + uiProjectGraphJS
+	combined := projectHTML + projectCSS + projectJS
 	for _, want := range []string{
 		`play.appendChild(ciwiIconElement('player-play'))`,
 		`await options.onRun(node.id, event, play)`,
@@ -97,7 +97,7 @@ func TestProjectGraphProvidesPlayActionsMatrixChooserAndConfiguredSteps(t *testi
 }
 
 func TestJobExecutionUIIncludesRunContextAndStepNavigator(t *testing.T) {
-	combined := jobExecutionHTML + jobExecutionGraphCSS + jobExecutionGraphJS + jobExecutionDataJS + uiProjectGraphJS
+	combined := jobExecutionHTML + jobExecutionCSS + jobExecutionJS + jobExecutionJS + projectJS
 	for _, want := range []string{
 		`id="runContextCard"`,
 		`id="executionStepNavigator"`,
@@ -126,7 +126,7 @@ func TestJobExecutionStepNavigatorDoesNotRebuildOrRescrollOnEveryPoll(t *testing
 		`Math.abs(track.scrollLeft - target) > 1`,
 		`if (!wasTailing && tailingEnabled)`,
 	} {
-		if !strings.Contains(jobExecutionGraphJS+jobExecutionDataJS, want) {
+		if !strings.Contains(jobExecutionJS+jobExecutionJS, want) {
 			t.Fatalf("job execution step navigator stability no longer contains %q", want)
 		}
 	}
@@ -138,11 +138,11 @@ func TestJobExecutionStepNavigationUsesLogRelativePositionWithoutFocusOutline(t 
 		`details.getBoundingClientRect().top - logBox.getBoundingClientRect().top + logBox.scrollTop`,
 		`requestAnimationFrame(() => {`,
 	} {
-		if !strings.Contains(jobExecutionGraphCSS+jobExecutionGraphJS, want) {
+		if !strings.Contains(jobExecutionCSS+jobExecutionJS, want) {
 			t.Fatalf("job execution step navigation no longer contains %q", want)
 		}
 	}
-	if strings.Contains(jobExecutionGraphJS, `details.offsetTop - 8`) {
+	if strings.Contains(jobExecutionJS, `details.offsetTop - 8`) {
 		t.Fatal("job execution step navigation must not use an offsetParent-relative position")
 	}
 }
@@ -153,7 +153,7 @@ func TestRunContextGraphsSizeToTheirContent(t *testing.T) {
 		`const viewportHeight = Math.min(360, Math.max(148, layout.contentHeight + 16));`,
 		`viewport.style.height = viewportHeight + 'px';`,
 	} {
-		if !strings.Contains(jobExecutionGraphCSS+jobExecutionGraphJS, want) {
+		if !strings.Contains(jobExecutionCSS+jobExecutionJS, want) {
 			t.Fatalf("run-context graph content sizing no longer contains %q", want)
 		}
 	}
@@ -168,7 +168,7 @@ func TestRunContextGraphSelectionUpdatesInPlace(t *testing.T) {
 		`previousDetail.replaceWith(buildRunContextJobDetail(job, context))`,
 		`if (nextSignature === jobExecutionGraphState.contextSignature) return;`,
 	} {
-		if !strings.Contains(uiProjectGraphJS+jobExecutionGraphJS, want) {
+		if !strings.Contains(projectJS+jobExecutionJS, want) {
 			t.Fatalf("run-context graph stable selection no longer contains %q", want)
 		}
 	}
@@ -180,7 +180,7 @@ func TestProjectGraphFitAlsoFitsViewportHeight(t *testing.T) {
 		`const fittedHeight = Math.min(520, Math.max(148, Math.ceil(height * widthScale) + 18));`,
 		`viewport.style.height = fittedHeight + 'px';`,
 	} {
-		if !strings.Contains(uiProjectGraphJS, want) {
+		if !strings.Contains(projectJS, want) {
 			t.Fatalf("project graph fitted viewport sizing no longer contains %q", want)
 		}
 	}

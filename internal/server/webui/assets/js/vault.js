@@ -1,70 +1,3 @@
-package webui
-
-const vaultHTML = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ciwi vault</title>
-  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
-  <script src="/ui/theme.js"></script>
-  <style>
-` + uiPageChromeCSS + `
-    .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-    .field { display:flex; flex-direction:column; gap:4px; min-width:180px; }
-    .field label { font-size:12px; color:var(--muted); }
-    input, select { border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
-    table { width:100%; border-collapse:collapse; font-size:13px; }
-    th, td { border-bottom:1px solid var(--line); text-align:left; padding:8px 6px; vertical-align:top; }
-  </style>
-</head>
-<body>
-  <main>
-    <div class="card row" style="justify-content:space-between;">
-      <div class="brand">
-        <img src="/ciwi-logo.png" alt="ciwi logo" />
-        <div>
-          <div style="font-size:24px;font-weight:700;">Vault Connections</div>
-          <div class="muted">Configure AppRole and test access</div>
-        </div>
-      </div>
-      <a class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Projects</a>
-    </div>
-    <div class="card">
-      <h3 style="margin:0 0 10px;">Add / Update Connection</h3>
-      <div class="row">
-        <div class="field">
-          <label for="name">Name</label>
-          <input id="name" value="home-vault" />
-        </div>
-        <div class="field">
-          <label for="url">Vault URL</label>
-          <input id="url" value="http://bhakti.local:8200" style="width:260px;" />
-        </div>
-        <div class="field">
-          <label for="roleId">AppRole Role ID</label>
-          <input id="roleId" value="" style="width:260px;" />
-        </div>
-        <div class="field">
-          <label for="mount">AppRole Mount</label>
-          <input id="mount" value="approle" />
-        </div>
-        <div class="field">
-          <label for="secretEnv">Secret ID Env</label>
-          <input id="secretEnv" value="CIWI_VAULT_SECRET_ID" />
-        </div>
-        <button id="saveBtn">Save</button>
-        <span id="saveMsg" class="muted"></span>
-      </div>
-    </div>
-    <div class="card">
-      <h3 style="margin:0 0 10px;">Connections</h3>
-      <div id="vaultActionMsg" class="muted" style="margin-bottom:8px;"></div>
-      <table><thead><tr><th>Name</th><th>URL</th><th>Mount</th><th>Auth</th><th>Role ID</th><th>Secret Source</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table>
-    </div>
-  </main>
-  <script src="/ui/shared.js"></script>
-  <script>
     async function api(path, opts={}) {
       const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
       if (!res.ok) throw new Error(await res.text() || ('HTTP ' + res.status));
@@ -145,6 +78,3 @@ const vaultHTML = `<!doctype html>
       }
     };
     refresh();
-  </script>
-</body>
-</html>`

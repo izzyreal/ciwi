@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ciwi project</title>
+  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
+  <link rel="stylesheet" href="/ui/css/chrome.css" />
+  <link rel="stylesheet" href="/ui/css/project.css" />
+</head>
+<body>
+  <main>
+    <div class="card top">
+      <div class="brand">
+        <img id="projectIcon" class="project-header-icon" alt="" style="display:none;" />
+        <div>
+          <div id="title" style="font-size:22px;font-weight:700;">Project</div>
+          <div id="subtitle" class="muted">Loading...</div>
+        </div>
+      </div>
+      <div><a id="backLink" class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Projects</a></div>
+      <div id="runtimeStateBanner" class="runtime-banner"></div>
+    </div>
+
+    <div class="card">
+      <div class="structure-heading">
+        <h2 style="margin:0;">Structure</h2>
+        <div id="structureViewToggle" class="structure-view-toggle" hidden>
+          <button id="structureGraphBtn" class="secondary" type="button">Graph</button>
+          <button id="structureListBtn" class="secondary" type="button">List</button>
+        </div>
+      </div>
+      <div id="structureGraph" hidden></div>
+      <div id="structure">Loading...</div>
+    </div>
+    <div class="card">
+      <h2 style="margin:0 0 10px;">Execution History</h2>
+      <table>
+        <thead>
+          <tr><th>Job Execution</th><th>Status</th><th>Pipeline</th><th>Build</th><th>Agent</th><th>Created</th><th>Duration</th></tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="/ui/shared.js"></script>
+  <script src="/ui/pages.js"></script>
+  <script src="/ui/project.js"></script>
+</body>
+</html>

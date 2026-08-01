@@ -100,6 +100,15 @@ func TestBuildRouterSmoke(t *testing.T) {
 	if body := readBody(t, uiResp); !strings.Contains(body, "<title>ciwi</title>") {
 		t.Fatalf("expected root router to mount ciwi web UI, got %q", body)
 	}
+
+	uiAssetResp := mustJSONRequest(t, srv.Client(), http.MethodGet, srv.URL+"/ui/index.js", nil)
+	if uiAssetResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected embedded UI asset 200, got %d body=%s", uiAssetResp.StatusCode, readBody(t, uiAssetResp))
+	}
+	if got := uiAssetResp.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/javascript") {
+		t.Fatalf("expected JavaScript content type, got %q", got)
+	}
+	_ = readBody(t, uiAssetResp)
 }
 
 func TestStartUpdateHelperWrapperError(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 )
 
 func TestIndexJobCardHydrationBatchesMatchVisibleWindow(t *testing.T) {
-	if !strings.Contains(uiIndexStateJS, "const HISTORY_CARD_BATCH = HISTORY_CARD_WINDOW;") {
+	if !strings.Contains(indexJS, "const HISTORY_CARD_BATCH = HISTORY_CARD_WINDOW;") {
 		t.Fatal("job card hydration should fetch each visible window in one batch")
 	}
 
@@ -16,29 +16,29 @@ func TestIndexJobCardHydrationBatchesMatchVisibleWindow(t *testing.T) {
 		"/api/v1/job-history/cards?detail=summary",
 		"/api/v1/job-history/cards?detail=full",
 	} {
-		if !strings.Contains(uiIndexJobExecutionsJS, endpoint) {
+		if !strings.Contains(indexJS, endpoint) {
 			t.Fatalf("job card hydration no longer requests %q", endpoint)
 		}
 	}
-	if got := strings.Count(uiIndexJobExecutionsJS, "offset += HISTORY_CARD_BATCH"); got != 4 {
+	if got := strings.Count(indexJS, "offset += HISTORY_CARD_BATCH"); got != 4 {
 		t.Fatalf("expected all four job card hydration loops to use the window-sized batch, got %d", got)
 	}
-	if got := strings.Count(uiIndexJobExecutionsJS, "limit=' + String(HISTORY_CARD_BATCH)"); got != 4 {
+	if got := strings.Count(indexJS, "limit=' + String(HISTORY_CARD_BATCH)"); got != 4 {
 		t.Fatalf("expected all four job card requests to use the window-sized batch limit, got %d", got)
 	}
 }
 
 func TestSingleJobExecutionCardsAreCollapsibleInQueueAndHistory(t *testing.T) {
-	if !strings.Contains(uiIndexJobExecutionsJS, `return total > 0;`) {
+	if !strings.Contains(indexJS, `return total > 0;`) {
 		t.Fatal("single-job execution cards should be collapsible")
 	}
-	if got := strings.Count(uiIndexJobExecutionsJS, `historyCardIsCollapsible(card)`); got < 7 {
+	if got := strings.Count(indexJS, `historyCardIsCollapsible(card)`); got < 7 {
 		t.Fatalf("queue and history render paths must share collapsibility logic, got %d uses", got)
 	}
 }
 
 func TestIndexJobSectionsProvidePersistentExpandAndCollapseAll(t *testing.T) {
-	combined := indexHTML + uiIndexJobExecutionsJS
+	combined := indexHTML + indexJS
 	for _, want := range []string{
 		`id="queuedCollapseAllBtn"`,
 		`id="queuedExpandAllBtn"`,
@@ -71,7 +71,7 @@ func TestIndexAndSettingsHeadersShowServerVersionAfterCiwi(t *testing.T) {
 		`apiJSON('/api/v1/server-info')`,
 		`refreshServerVersionLabels();`,
 	} {
-		if !strings.Contains(uiPagesJS+uiIndexBootJS+settingsUpdateJS, want) {
+		if !strings.Contains(pagesJS+indexJS+settingsJS, want) {
 			t.Errorf("server version header wiring no longer contains %q", want)
 		}
 	}

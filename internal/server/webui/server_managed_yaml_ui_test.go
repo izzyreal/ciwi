@@ -6,7 +6,7 @@ import (
 )
 
 func TestManagedYAMLUIIncludesEditorAndSourceAwareRendering(t *testing.T) {
-	combined := settingsHTML + settingsManagedYAMLJS + settingsRenderJS + uiPagesJS + uiIndexProjectsJS + projectHTML
+	combined := settingsHTML + settingsJS + settingsJS + pagesJS + indexJS + projectHTML + projectJS
 	for _, want := range []string{
 		"Add Managed YAML",
 		"function openCreateManagedYAML()",
@@ -24,7 +24,7 @@ func TestManagedYAMLUIIncludesEditorAndSourceAwareRendering(t *testing.T) {
 			t.Fatalf("managed YAML UI no longer contains %q", want)
 		}
 	}
-	if !strings.Contains(settingsRenderJS, "definitionBtn.textContent = 'Edit YAML'") || !strings.Contains(settingsRenderJS, "definitionBtn.textContent = 'Reload project definition from VCS'") {
+	if !strings.Contains(settingsJS, "definitionBtn.textContent = 'Edit YAML'") || !strings.Contains(settingsJS, "definitionBtn.textContent = 'Reload project definition from VCS'") {
 		t.Fatalf("settings project controls are not source-aware")
 	}
 }

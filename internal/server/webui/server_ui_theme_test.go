@@ -50,7 +50,7 @@ func TestEveryUIPageLoadsThemeBeforeStyles(t *testing.T) {
 	}
 	for name, page := range pages {
 		themeIndex := strings.Index(page, `<script src="/ui/theme.js"></script>`)
-		styleIndex := strings.Index(page, `<style>`)
+		styleIndex := strings.Index(page, `<link rel="stylesheet"`)
 		if themeIndex < 0 || styleIndex < 0 || themeIndex > styleIndex {
 			t.Errorf("%s page does not load theme script before styles", name)
 		}
@@ -74,7 +74,7 @@ func TestGlobalSettingsOffersAllThemes(t *testing.T) {
 		`initializeThemeSettings()`,
 		`select.onchange = () => update(select.value)`,
 	} {
-		if !strings.Contains(settingsHTML, want) {
+		if !strings.Contains(settingsHTML+settingsJS, want) {
 			t.Errorf("settings theme selector no longer contains %q", want)
 		}
 	}
@@ -97,7 +97,7 @@ func TestThemesDefineSharedComponentAndGraphTokens(t *testing.T) {
 		`--console-bg:`,
 		`--snackbar-bg:`,
 	} {
-		if !strings.Contains(uiPageChromeCSS, want) {
+		if !strings.Contains(chromeCSS, want) {
 			t.Errorf("theme tokens no longer contain %q", want)
 		}
 	}
@@ -106,7 +106,7 @@ func TestThemesDefineSharedComponentAndGraphTokens(t *testing.T) {
 		`border-color:var(--graph-failed-border)`,
 		`background:var(--graph-running-bg)`,
 	} {
-		if !strings.Contains(uiProjectGraphCSS+jobExecutionGraphCSS, want) {
+		if !strings.Contains(projectCSS+jobExecutionCSS, want) {
 			t.Errorf("graph components no longer consume shared token %q", want)
 		}
 	}
@@ -123,27 +123,27 @@ func TestThemesUseSharedLayeredGradientSurfaces(t *testing.T) {
 		`background: var(--page-background);`,
 		`background: var(--card-background);`,
 	} {
-		if !strings.Contains(uiPageChromeCSS, want) {
+		if !strings.Contains(chromeCSS, want) {
 			t.Errorf("layered theme surfaces no longer contain %q", want)
 		}
 	}
-	if !strings.Contains(uiProjectGraphCSS, `background:var(--graph-background)`) {
+	if !strings.Contains(projectCSS, `background:var(--graph-background)`) {
 		t.Error("project graph no longer consumes the shared gradient background")
 	}
-	if !strings.Contains(jobExecutionHTML, `background: var(--console-background)`) {
+	if !strings.Contains(jobExecutionCSS, `background: var(--console-background)`) {
 		t.Error("job log no longer consumes the shared gradient background")
 	}
 }
 
 func TestGraphNodeTextSelectionDoesNotTriggerNavigation(t *testing.T) {
-	combined := uiSharedCoreJS + uiProjectGraphJS + jobExecutionGraphJS
+	combined := sharedJS + projectJS + jobExecutionJS
 	for _, want := range []string{
 		`function ciwiElementContainsTextSelection(element)`,
 		`if (ciwiElementContainsTextSelection(button)) return;`,
 		`if (ciwiElementContainsTextSelection(node)) return;`,
 		`user-select:text`,
 	} {
-		if !strings.Contains(combined+uiProjectGraphCSS+jobExecutionGraphCSS, want) {
+		if !strings.Contains(combined+projectCSS+jobExecutionCSS, want) {
 			t.Errorf("graph text-selection behavior no longer contains %q", want)
 		}
 	}

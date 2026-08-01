@@ -3,6 +3,7 @@ package webui
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -19,13 +20,12 @@ func TestUIHandlerServesEveryPublicPageAndAsset(t *testing.T) {
 		{"/agents", "text/html"},
 		{"/agents/agent-1", "text/html"},
 		{"/jobs/job-1", "text/html"},
-		{"/ui/shared.js", "application/javascript"},
-		{"/ui/pages.js", "application/javascript"},
-		{"/ui/theme.js", "application/javascript"},
-		{"/ui/icons.svg", "image/svg+xml"},
-		{"/ciwi-logo.png", "image/png"},
-		{"/ciwi-favicon.png", "image/png"},
-		{"/favicon.ico", "image/png"},
+	}
+	for path, asset := range staticRoutes {
+		tests = append(tests, struct {
+			path        string
+			contentType string
+		}{path: path, contentType: asset.contentType})
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -48,5 +48,56 @@ func TestUIHandlerServesEveryPublicPageAndAsset(t *testing.T) {
 	Handler(rec, httptest.NewRequest(http.MethodGet, "/missing", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected unknown UI route to return 404, got %d", rec.Code)
+	}
+}
+
+func TestEveryPageReferencesServedUIAssets(t *testing.T) {
+	assetReference := regexp.MustCompile(`(?:src|href)="(/ui/[^"]+)"`)
+	for pagePath, page := range map[string]string{
+		"/": indexHTML, "/settings": settingsHTML, "/projects/1": projectHTML,
+		"/vault": vaultHTML, "/agents": agentsHTML, "/agents/a": agentHTML, "/jobs/j": jobExecutionHTML,
+	} {
+		for _, match := range assetReference.FindAllStringSubmatch(page, -1) {
+			assetPath := strings.SplitN(match[1], "#", 2)[0]
+			rec := httptest.NewRecorder()
+			Handler(rec, httptest.NewRequest(http.MethodGet, assetPath, nil))
+			if rec.Code != http.StatusOK {
+				t.Errorf("page %s references unserved asset %s (status %d)", pagePath, assetPath, rec.Code)
+			}
+		}
+	}
+}
+
+func TestPagesKeepBehaviorInRealCSSAndJavaScriptAssets(t *testing.T) {
+	scriptTag := regexp.MustCompile(`<script([^>]*)>`)
+	for name, page := range map[string]string{
+		"index": indexHTML, "settings": settingsHTML, "project": projectHTML,
+		"vault": vaultHTML, "agents": agentsHTML, "agent": agentHTML, "job-execution": jobExecutionHTML,
+	} {
+		if strings.Contains(page, "<style>") {
+			t.Errorf("%s page reintroduced an inline style block", name)
+		}
+		for _, match := range scriptTag.FindAllStringSubmatch(page, -1) {
+			if !strings.Contains(match[1], "src=") {
+				t.Errorf("%s page reintroduced an inline script block: %s", name, match[0])
+			}
+		}
+		for _, ref := range []string{
+			`href="/ui/css/chrome.css"`,
+			`href="/ui/css/` + name + `.css"`,
+			`src="/ui/` + name + `.js"`,
+		} {
+			if !strings.Contains(page, ref) {
+				t.Errorf("%s page does not reference %s", name, ref)
+			}
+		}
+	}
+}
+
+func TestMissingEmbeddedAssetReturnsNotFound(t *testing.T) {
+	rec := httptest.NewRecorder()
+	serveEmbeddedAsset(rec, embeddedAsset{path: "assets/missing.js", contentType: "application/javascript"})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected missing embedded asset to return 404, got %d", rec.Code)
 	}
 }

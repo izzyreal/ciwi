@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ciwi job execution</title>
+  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
+  <link rel="stylesheet" href="/ui/css/chrome.css" />
+  <link rel="stylesheet" href="/ui/css/job-execution.css" />
+</head>
+<body>
+  <main>
+    <div class="card top" id="jobHeaderCard">
+      <div class="brand">
+        <img id="jobProjectIcon" class="job-header-icon" alt="" style="display:none;" />
+        <div>
+          <div style="font-size:20px;font-weight:700;" id="jobTitle">Job Execution</div>
+          <div class="muted" id="subtitle">Loading...</div>
+        </div>
+      </div>
+      <div class="job-actions">
+        <button id="forceFailBtn" class="copy-btn" style="display:none;">Cancel</button>
+        <span class="rerun-action-wrap">
+          <span id="rerunInfo" class="mode-info" tabindex="0" aria-label="Run Job Again info">
+            <span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span>
+          </span>
+          <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
+          <a id="rerunBlockedLink" class="rerun-blocked-link" href="#" style="display:none;">Open failed dependency</a>
+        </span>
+        <a id="backLink" class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Job Executions</a>
+      </div>
+    </div>
+
+    <div class="detail-split">
+      <div class="card">
+        <h3 style="margin:0 0 10px;">Job Properties</h3>
+        <div class="meta-grid" id="metaGrid"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 10px;">Cache Statistics</h3>
+        <div id="cacheStatsBox" class="cache-stats-empty">No cache statistics reported for this job.</div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 10px;">Host Tool Requirements</h3>
+        <div id="hostToolReqBox" class="req-empty">No tool requirements declared for this job.</div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 10px;">Container Tool Requirements</h3>
+        <div id="containerToolReqBox" class="req-empty">No container tool requirements declared for this job.</div>
+      </div>
+    </div>
+    <div class="card" id="releaseSummaryCard" style="display:none;">
+      <h3 style="margin:0 0 10px;">Release Summary</h3>
+      <div id="releaseSummaryBox" style="font-size:14px;color:var(--ink);"></div>
+    </div>
+
+    <div class="card" id="runContextCard" style="display:none;">
+      <div class="run-context-card-head">
+        <h3 style="margin:0;">Run Context</h3>
+        <button id="runContextToggleBtn" class="copy-btn" type="button">Collapse</button>
+      </div>
+      <div id="runContextBody" class="run-context-body"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 10px;">Output / Error</h3>
+      <div class="log-toolbar">
+        <button id="tailToggleBtn" class="copy-btn tail-on" type="button">Tailing: On</button>
+        <button id="copyOutputBtn" class="copy-btn" type="button">Copy Output</button>
+        <span class="log-download-wrap">
+          <a id="downloadCleanLogBtn" class="copy-btn nav-btn" href="#">Download Clean Log</a>
+          <span class="mode-info log-info" tabindex="0" aria-label="Clean log info" data-log-info="clean"><span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span></span>
+        </span>
+        <span class="log-download-wrap">
+          <a id="downloadRawLogBtn" class="copy-btn nav-btn" href="#">Download Raw Log</a>
+          <span class="mode-info log-info" tabindex="0" aria-label="Raw log info" data-log-info="raw"><span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span></span>
+        </span>
+        <input id="logSearchInput" class="log-search-input" type="search" placeholder="Search output" aria-label="Search output" />
+        <button id="logSearchPrevBtn" class="copy-btn ciwi-icon-only" type="button" aria-label="Previous match" title="Previous match"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevron-up"></use></svg></button>
+        <button id="logSearchNextBtn" class="copy-btn ciwi-icon-only" type="button" aria-label="Next match" title="Next match"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevron-down"></use></svg></button>
+        <span id="logSearchCount" class="log-search-count">0/0</span>
+      </div>
+      <div id="executionStepNavigator" class="execution-step-navigator" style="display:none;"></div>
+      <div id="logBox" class="log"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head-row">
+        <h3 style="margin:0;">Artifacts</h3>
+        <a id="artifactsDownloadAllBtn" class="copy-btn nav-btn" href="#" style="display:none;">Download All (.zip)</a>
+      </div>
+      <div id="artifactsBox" class="muted" style="font-size:14px;">Loading...</div>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 10px;">Test Report</h3>
+      <div id="testReportBox" class="muted" style="font-size:14px;">Loading...</div>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 10px;">Coverage Report</h3>
+      <div id="coverageReportBox" class="muted" style="font-size:14px;">Loading...</div>
+    </div>
+  </main>
+
+  <script src="/ui/shared.js"></script>
+  <script src="/ui/pages.js"></script>
+  <script src="/ui/job-execution.js"></script>
+</body>
+</html>

@@ -1,6 +1,338 @@
-package webui
 
-const uiIndexJobExecutionsJS = `
+    let refreshInFlight = false;
+    const refreshGuard = createRefreshGuard(5000);
+    let jobsRenderEpoch = 0;
+    let lastProjectsSignature = '';
+    let lastQueuedJobsSignature = '';
+    let lastHistoryJobsSignature = '';
+    let lastQueuedLayoutSignature = '';
+    let lastHistoryLayoutSignature = '';
+    const queueCardDetailsByKey = Object.create(null);
+    const historyCardDetailsByKey = Object.create(null);
+    const PROJECT_GROUPS_STORAGE_KEY = 'ciwi.index.projectGroupsCollapsed.v1';
+    const JOB_GROUPS_STORAGE_KEY = 'ciwi.index.jobGroupsExpanded.v1';
+
+    function loadStringSet(key) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return new Set();
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return new Set();
+        return new Set(parsed.map(v => String(v || '')));
+      } catch (_) {
+        return new Set();
+      }
+    }
+
+    function saveStringSet(key, values) {
+      try {
+        localStorage.setItem(key, JSON.stringify(Array.from(values || [])));
+      } catch (_) {}
+    }
+
+    const projectGroupCollapsed = loadStringSet(PROJECT_GROUPS_STORAGE_KEY);
+    const expandedJobGroups = loadStringSet(JOB_GROUPS_STORAGE_KEY);
+    const JOBS_WINDOW = 150;
+    const JOBS_BATCH_SIZE = 5;
+    const HISTORY_CARD_WINDOW = 40;
+    const HISTORY_CARD_BATCH = HISTORY_CARD_WINDOW;
+    const projectIconURLByName = Object.create(null);
+
+    function projectIconURLForJob(job) {
+      const m = (job && job.metadata) || {};
+      const projectID = String(m.project_id || '').trim();
+      if (projectID) {
+        return '/api/v1/projects/' + encodeURIComponent(projectID) + '/icon';
+      }
+      const projectName = String(m.project || '').trim();
+      if (!projectName) return '';
+      return String(projectIconURLByName[projectName] || '');
+    }
+
+    function projectListSignature(projects) {
+      const list = Array.isArray(projects) ? projects : [];
+      return JSON.stringify(list.map(project => ({
+        id: project.id,
+        name: project.name,
+        source_kind: project.source_kind || 'vcs',
+        repo_url: project.repo_url,
+        repo_ref: project.repo_ref || '',
+        config_file: project.config_file || project.config_path || '',
+        pipelines: (project.pipelines || []).map(p => ({
+          id: p.id,
+          pipeline_id: p.pipeline_id,
+          trigger: p.trigger || '',
+          depends_on: p.depends_on || [],
+          source_repo: p.source_repo || '',
+          supports_dry_run: !!p.supports_dry_run,
+        })),
+        pipeline_chains: (project.pipeline_chains || []).map(c => ({
+          id: c.id,
+          name: c.name,
+          pipelines: c.pipelines || [],
+          supports_dry_run: !!c.supports_dry_run,
+          version_pipeline_id: c.version_pipeline_id || 0,
+        })),
+      })));
+    }
+
+    async function refreshProjects() {
+      const data = await apiJSON('/api/v1/projects');
+      const root = document.getElementById('projects');
+      if (!data.projects || data.projects.length === 0) {
+        lastProjectsSignature = '';
+        root.innerHTML = '<p>No projects loaded yet.</p>';
+        return;
+      }
+      const signature = projectListSignature(data.projects);
+      if (signature === lastProjectsSignature) {
+        return;
+      }
+      lastProjectsSignature = signature;
+      root.innerHTML = '';
+      data.projects.forEach(project => {
+        const projectIconURL = '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon';
+        projectIconURLByName[String(project.name || '').trim()] = projectIconURL;
+        const projectKey = String(project.id || project.name || '');
+        const details = document.createElement('details');
+        details.className = 'project-group';
+        details.open = !projectGroupCollapsed.has(projectKey);
+        const summary = document.createElement('summary');
+        const top = document.createElement('div');
+        top.className = 'project-head';
+        const topInfo = document.createElement('div');
+        topInfo.innerHTML = '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + escapeHtml(project.name) + '</a></strong> ' + projectSourceMetadataHTML(project);
+        const topRight = document.createElement('div');
+        topRight.innerHTML = '<span class="pill">' + String((project.pipelines || []).length) + ' pipeline(s)</span>';
+        top.appendChild(topInfo);
+        top.appendChild(topRight);
+        summary.appendChild(top);
+        const toggle = document.createElement('span');
+        toggle.className = 'project-group-toggle';
+        toggle.setAttribute('aria-hidden', 'true');
+        toggle.appendChild(ciwiIconElement('chevron-right'));
+        summary.appendChild(toggle);
+        details.appendChild(summary);
+
+        const body = document.createElement('div');
+        body.className = 'project-body';
+        const layout = document.createElement('div');
+        layout.className = 'project-body-layout';
+        const iconCol = document.createElement('div');
+        iconCol.className = 'project-icon-col';
+        const icon = document.createElement('img');
+        icon.className = 'project-icon';
+        icon.alt = '';
+        icon.src = projectIconURL;
+        icon.onerror = () => { icon.style.display = 'none'; };
+        iconCol.appendChild(icon);
+        const listCol = document.createElement('div');
+        listCol.className = 'project-pipelines-col';
+        (project.pipelines || []).forEach(p => {
+          const row = document.createElement('div');
+          row.className = 'pipeline';
+          const deps = (p.depends_on || []).join(', ');
+          const info = document.createElement('div');
+          info.innerHTML = '<div><span class="muted">Pipeline:</span> <code>' + p.pipeline_id + '</code></div><div class="muted">' +
+            (p.source_repo || '') + (deps ? (' | depends_on: ' + deps) : '') + '</div>';
+
+          const btn = document.createElement('button');
+          btn.className = 'secondary';
+          btn.textContent = 'Run';
+          btn.onclick = async (ev) => {
+            btn.disabled = true;
+            try {
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
+                sourceRefsPath: '/api/v1/pipelines/' + p.id + '/source-refs',
+                eligibleAgentsPath: '/api/v1/pipelines/' + p.id + '/eligible-agents',
+                payload: {},
+                title: 'Run Pipeline With Source Ref',
+                subtitle: String(p.pipeline_id || ''),
+                runLabel: 'Run',
+              });
+              if (runResult.cancelled) return;
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
+              await refreshJobs();
+            } catch (e) {
+              await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
+            } finally {
+              btn.disabled = false;
+            }
+          };
+
+          const supportsDryRun = !!p.supports_dry_run;
+          const dryBtn = document.createElement('button');
+          dryBtn.className = 'secondary';
+          dryBtn.textContent = 'Dry Run';
+          dryBtn.onclick = async (ev) => {
+            dryBtn.disabled = true;
+            try {
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
+                sourceRefsPath: '/api/v1/pipelines/' + p.id + '/source-refs',
+                eligibleAgentsPath: '/api/v1/pipelines/' + p.id + '/eligible-agents',
+                payload: { dry_run: true },
+                title: 'Dry Run Pipeline With Source Ref',
+                subtitle: String(p.pipeline_id || ''),
+                runLabel: 'Dry Run',
+              });
+              if (runResult.cancelled) return;
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + (p.pipeline_id || 'pipeline') + ' started');
+              await refreshJobs();
+            } catch (e) {
+              await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
+            } finally {
+              dryBtn.disabled = false;
+            }
+          };
+
+          const resolveBtn = document.createElement('button');
+          resolveBtn.className = 'secondary';
+          resolveBtn.textContent = 'Resolve Upcoming Build Version';
+          resolveBtn.onclick = () => openVersionResolveModal(p.id, p.pipeline_id);
+          const previewBtn = document.createElement('button');
+          previewBtn.className = 'secondary';
+          previewBtn.textContent = 'Execution Plan';
+          previewBtn.onclick = () => {
+            openDryRunPreviewModal({
+              title: 'Execution Plan',
+              subtitle: String(p.pipeline_id || ''),
+              previewPath: '/api/v1/pipelines/' + p.id + '/dry-run-preview',
+              runPath: '/api/v1/pipelines/' + p.id + '/run-selection',
+              sourceRefsPath: '/api/v1/pipelines/' + p.id + '/source-refs',
+              eligibleAgentsPath: '/api/v1/pipelines/' + p.id + '/eligible-agents',
+              payload: { dry_run: true },
+            });
+          };
+
+          row.appendChild(info);
+          const actions = document.createElement('div');
+          actions.className = 'pipeline-actions';
+          const btnRow = document.createElement('div');
+          btnRow.className = 'row';
+          btnRow.appendChild(btn);
+          if (supportsDryRun) btnRow.appendChild(dryBtn);
+          btnRow.appendChild(previewBtn);
+          btnRow.appendChild(resolveBtn);
+          actions.appendChild(btnRow);
+          row.appendChild(actions);
+          listCol.appendChild(row);
+        });
+
+        (project.pipeline_chains || []).forEach(c => {
+          const row = document.createElement('div');
+          row.className = 'pipeline';
+          const info = document.createElement('div');
+          const chainPipes = pipelineChainSequence(c);
+          const chainName = pipelineChainDisplayName(c);
+          info.innerHTML = '<div><span class="muted">Chain:</span> ' + pipelineChainDisplayHTML(c) + '</div>' +
+            (chainName !== chainPipes ? ('<div class="muted">' + pipelineChainSequenceHTML(c) + '</div>') : '');
+
+          const runBtn = document.createElement('button');
+          runBtn.className = 'secondary';
+          runBtn.textContent = 'Run';
+          runBtn.onclick = async (ev) => {
+            runBtn.disabled = true;
+            try {
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: pipelineChainAPIPath(project.id, c.id, 'run'),
+                sourceRefsPath: pipelineChainAPIPath(project.id, c.id, 'source-refs'),
+                eligibleAgentsPath: pipelineChainAPIPath(project.id, c.id, 'eligible-agents'),
+                payload: {},
+                title: 'Run Chain With Source Ref',
+                subtitle: chainName,
+                runLabel: 'Run',
+              });
+              if (runResult.cancelled) return;
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + chainName + ' started');
+              await refreshJobs();
+            } catch (e) {
+              await showAlertDialog({ title: 'Run failed', message: 'Run failed: ' + e.message });
+            } finally {
+              runBtn.disabled = false;
+            }
+          };
+
+          const dryBtn = document.createElement('button');
+          dryBtn.className = 'secondary';
+          dryBtn.textContent = 'Dry Run';
+          dryBtn.onclick = async (ev) => {
+            dryBtn.disabled = true;
+            try {
+              const runResult = await runWithOptionalSourceRef(ev, {
+                runPath: pipelineChainAPIPath(project.id, c.id, 'run'),
+                sourceRefsPath: pipelineChainAPIPath(project.id, c.id, 'source-refs'),
+                eligibleAgentsPath: pipelineChainAPIPath(project.id, c.id, 'eligible-agents'),
+                payload: { dry_run: true },
+                title: 'Dry Run Chain With Source Ref',
+                subtitle: chainName,
+                runLabel: 'Dry Run',
+              });
+              if (runResult.cancelled) return;
+              showQueuedJobsSnackbar((project.name || 'Project') + ' ' + chainName + ' started');
+              await refreshJobs();
+            } catch (e) {
+              await showAlertDialog({ title: 'Dry run failed', message: 'Dry run failed: ' + e.message });
+            } finally {
+              dryBtn.disabled = false;
+            }
+          };
+
+          const resolveBtn = document.createElement('button');
+          resolveBtn.className = 'secondary';
+          resolveBtn.textContent = 'Resolve Upcoming Build Version';
+          const versionPipelineID = Number(c.version_pipeline_id || 0);
+          if (versionPipelineID > 0) {
+            resolveBtn.onclick = () => openVersionResolveModal(versionPipelineID, chainName);
+          } else {
+            resolveBtn.disabled = true;
+          }
+          const previewBtn = document.createElement('button');
+          previewBtn.className = 'secondary';
+          previewBtn.textContent = 'Execution Plan';
+          previewBtn.onclick = () => {
+            openDryRunPreviewModal({
+              title: 'Execution Plan',
+              subtitle: chainName,
+              previewPath: pipelineChainAPIPath(project.id, c.id, 'dry-run-preview'),
+              runPath: pipelineChainAPIPath(project.id, c.id, 'run'),
+              sourceRefsPath: pipelineChainAPIPath(project.id, c.id, 'source-refs'),
+              eligibleAgentsPath: pipelineChainAPIPath(project.id, c.id, 'eligible-agents'),
+              payload: { dry_run: true },
+            });
+          };
+
+          const actions = document.createElement('div');
+          actions.className = 'pipeline-actions';
+          const btnRow = document.createElement('div');
+          btnRow.className = 'row';
+          btnRow.appendChild(runBtn);
+          if (c.supports_dry_run) btnRow.appendChild(dryBtn);
+          btnRow.appendChild(previewBtn);
+          btnRow.appendChild(resolveBtn);
+          actions.appendChild(btnRow);
+          row.appendChild(info);
+          row.appendChild(actions);
+          listCol.appendChild(row);
+        });
+
+        layout.appendChild(iconCol);
+        layout.appendChild(listCol);
+        body.appendChild(layout);
+        details.appendChild(body);
+        details.addEventListener('toggle', () => {
+          if (details.open) {
+            projectGroupCollapsed.delete(projectKey);
+          } else {
+            projectGroupCollapsed.add(projectKey);
+          }
+          saveStringSet(PROJECT_GROUPS_STORAGE_KEY, projectGroupCollapsed);
+        });
+        root.appendChild(details);
+      });
+    }
+
     function tbodyHasConcreteRows(tbody) {
       if (!tbody) return false;
       const rows = Array.from(tbody.children || []);
@@ -845,4 +1177,60 @@ const uiIndexJobExecutionsJS = `
     document.getElementById('queuedExpandAllBtn').onclick = () => setAllJobExecutionGroupsExpanded('queued', true);
     document.getElementById('historyCollapseAllBtn').onclick = () => setAllJobExecutionGroupsExpanded('history', false);
     document.getElementById('historyExpandAllBtn').onclick = () => setAllJobExecutionGroupsExpanded('history', true);
-`
+
+    let queuedFocusUntilMs = 0;
+
+    function requestQueuedJobsFocusWindow(ms) {
+      const now = Date.now();
+      const duration = Math.max(1000, Number(ms || 8000));
+      queuedFocusUntilMs = Math.max(queuedFocusUntilMs, now + duration);
+    }
+
+    function loadQueuedJobsFocusWindow() {
+      if (window.location.hash === '#queued-jobs') {
+        requestQueuedJobsFocusWindow(8000);
+      }
+    }
+
+    function clearQueuedJobsFocusWindow() {
+      queuedFocusUntilMs = 0;
+    }
+
+    function focusQueuedJobsIfRequested() {
+      if (window.location.hash !== '#queued-jobs') {
+        clearQueuedJobsFocusWindow();
+        return;
+      }
+      const now = Date.now();
+      if (queuedFocusUntilMs <= now) {
+        clearQueuedJobsFocusWindow();
+        return;
+      }
+      const node = document.getElementById('queued-jobs');
+      if (!node || typeof node.scrollIntoView !== 'function') return;
+      requestAnimationFrame(() => {
+        node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    }
+
+    async function tick() {
+      if (refreshInFlight || refreshGuard.shouldPause()) {
+        return;
+      }
+      refreshInFlight = true;
+      try {
+        await Promise.all([refreshProjects(), refreshJobs(), refreshRuntimeStateBanner('runtimeStateBanner')]);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        focusQueuedJobsIfRequested();
+        refreshInFlight = false;
+      }
+    }
+
+    refreshGuard.bindSelectionListener();
+    loadQueuedJobsFocusWindow();
+    refreshServerVersionLabels();
+    tick();
+    focusQueuedJobsIfRequested();
+    setInterval(tick, 3000);

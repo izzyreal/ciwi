@@ -5,11 +5,11 @@ graphs, richer job-history cards, server update selection, and browser themes.
 It focuses on keeping ciwi easy to evolve without trading away its useful
 single-binary deployment model.
 
-Implementation status: the first boundary extraction is complete. Browser UI
-ownership, embedded assets, its HTTP handler, and UI-specific tests now live in
-`internal/server/webui`; the root server package only mounts the handler. The
-follow-up conversion from Go string constants to real JavaScript, CSS, and HTML
-asset files remains intentionally separate.
+Implementation status: the first two UI slices are complete. Browser UI ownership,
+embedded assets, its HTTP handler, and UI-specific tests now live in
+`internal/server/webui`; the root server package only mounts the handler. The Go
+string constants have also been replaced by real HTML, shared/page CSS, and
+shared/page JavaScript files embedded directly into the single server binary.
 
 ## Executive assessment
 
@@ -224,8 +224,7 @@ real integration tests.
 
 ## Next architectural slice
 
-The best next slice is Phase 1: move the current UI verbatim into embedded asset
-files behind `internal/server/webui`, prove byte-equivalent routing where practical,
-then start deduplicating shared browser modules. It is independently valuable,
-low-risk, and removes more than half of the root server package without changing
-ciwi's deployment model.
+The UI boundary and real-asset conversion described in Phase 1 are complete. The
+best next slice is Phase 2: centralize execution metadata keys and typed accessors
+while retaining the existing map representation for database and protocol
+compatibility.

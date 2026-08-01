@@ -1,6 +1,4 @@
-package webui
-
-const uiPagesJS = `function apiJSON(path, opts = {}) {
+function apiJSON(path, opts = {}) {
   const baseHeaders = { 'Content-Type': 'application/json' };
   const extraHeaders = (opts && opts.headers) || {};
   const request = {
@@ -1057,4 +1055,3 @@ function openDryRunPreviewModal(opts) {
       agentSel.disabled = true;
     });
 }
-`

@@ -1,6 +1,4 @@
-package webui
-
-const indexHTML = `<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -8,9 +6,8 @@ const indexHTML = `<!doctype html>
   <title>ciwi</title>
   <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
   <script src="/ui/theme.js"></script>
-  <style>
-` + uiPageChromeCSS + uiIndexCSS + `
-  </style>
+  <link rel="stylesheet" href="/ui/css/chrome.css" />
+  <link rel="stylesheet" href="/ui/css/index.css" />
 </head>
 <body>
   <main>
@@ -65,8 +62,6 @@ const indexHTML = `<!doctype html>
   </main>
   <script src="/ui/shared.js"></script>
   <script src="/ui/pages.js"></script>
-  <script>
-` + uiIndexStateJS + uiIndexProjectsJS + uiIndexJobExecutionsJS + uiIndexBootJS + `
-  </script>
+  <script src="/ui/index.js"></script>
 </body>
-</html>`
+</html>

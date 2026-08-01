@@ -1,15 +1,4 @@
-package webui
 
-const jobExecutionHTML = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ciwi job execution</title>
-  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
-  <script src="/ui/theme.js"></script>
-  <style>
-` + uiPageChromeCSS + `
     .top { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:nowrap; }
     .detail-split { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom: 16px; }
     .detail-split > .card { margin-bottom: 0; }
@@ -378,110 +367,96 @@ const jobExecutionHTML = `<!doctype html>
         justify-content: flex-start;
       }
     }
-` + uiGraphCSS + `
-` + jobExecutionGraphCSS + `
-  </style>
-</head>
-<body>
-  <main>
-    <div class="card top" id="jobHeaderCard">
-      <div class="brand">
-        <img id="jobProjectIcon" class="job-header-icon" alt="" style="display:none;" />
-        <div>
-          <div style="font-size:20px;font-weight:700;" id="jobTitle">Job Execution</div>
-          <div class="muted" id="subtitle">Loading...</div>
-        </div>
-      </div>
-      <div class="job-actions">
-        <button id="forceFailBtn" class="copy-btn" style="display:none;">Cancel</button>
-        <span class="rerun-action-wrap">
-          <span id="rerunInfo" class="mode-info" tabindex="0" aria-label="Run Job Again info">
-            <span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span>
-          </span>
-          <button id="rerunBtn" class="copy-btn" type="button" disabled>Run Job Again</button>
-          <a id="rerunBlockedLink" class="rerun-blocked-link" href="#" style="display:none;">Open failed dependency</a>
-        </span>
-        <a id="backLink" class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Job Executions</a>
-      </div>
-    </div>
+    .structure-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
+    .structure-view-toggle { display:flex; gap:6px; }
+    .structure-view-toggle button.active { background:var(--accent-soft, var(--surface-hover)); border-color:var(--accent); color:var(--accent-strong); }
+    .project-graph-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .project-graph-toolbar-group { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .project-graph-select { min-height:34px; padding:5px 30px 5px 9px; border:1px solid var(--line); border-radius:7px; background:var(--input-bg); color:var(--ink); font:inherit; }
+    .project-graph-viewport { position:relative; min-height:260px; height:420px; overflow:auto; border:1px solid var(--line); border-radius:10px; background:var(--graph-background); }
+    .project-graph-stage { position:relative; min-width:100%; min-height:100%; }
+    .project-graph-content { position:absolute; left:0; top:0; transform-origin:top left; }
+    .project-graph-edges { position:absolute; inset:0; overflow:visible; pointer-events:none; }
+    .project-graph-edge { fill:none; stroke:var(--graph-edge); stroke-width:2; }
+    .project-graph-node { position:absolute; box-sizing:border-box; width:210px; height:76px; border:1px solid var(--graph-node-border); border-radius:9px; background:var(--graph-node-bg); color:var(--ink); box-shadow:0 1px 2px var(--shadow); overflow:hidden; }
+    .project-graph-node:hover { border-color:var(--accent); filter:brightness(1.035); }
+    .project-graph-node.graph-status-running,.project-graph-node.graph-status-leased { border-color:var(--graph-running-border); background:var(--graph-running-bg); }
+    .project-graph-node.graph-status-succeeded { border-color:var(--graph-succeeded-border); background:var(--graph-succeeded-bg); }
+    .project-graph-node.graph-status-failed { border-color:var(--graph-failed-border); background:var(--graph-failed-bg); }
+    .project-graph-node.graph-status-waiting,.project-graph-node.graph-status-queued { border-color:var(--graph-waiting-border); background:var(--graph-waiting-bg); }
+    .project-graph-node.graph-status-not-reached,.project-graph-node.graph-status-unknown { opacity:.68; }
+    .project-graph-node.selected { border-color:var(--graph-selected-border); box-shadow:0 1px 2px var(--shadow), inset 0 0 0 1px var(--graph-selected-inset); }
+    .project-graph-node-select { position:absolute; inset:0; width:100%; height:100%; padding:10px 12px; border:0; border-radius:0; background:transparent; color:inherit; text-align:left; cursor:pointer; -webkit-user-select:text; user-select:text; }
+    .project-graph-node.has-play .project-graph-node-select { padding-right:46px; }
+    .project-graph-node-select:focus-visible,.project-graph-node-play:focus-visible { outline:3px solid var(--focus-ring); outline-offset:-3px; }
+    .project-graph-node-play { position:absolute; z-index:2; right:8px; top:50%; transform:translateY(-50%); width:31px; height:31px; padding:0; display:flex; align-items:center; justify-content:center; border:1px solid var(--graph-node-border); border-radius:999px; background:var(--surface-soft); color:var(--accent-strong); font-size:15px; line-height:1; cursor:pointer; }
+    .project-graph-node-play:hover { background:var(--surface-hover); border-color:var(--accent); }
+    .project-graph-node-play:disabled { opacity:.55; cursor:wait; }
+    .project-graph-node-title { display:block; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:14px; font-weight:700; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .project-graph-node-meta { display:block; margin-top:7px; color:var(--muted); font-size:12px; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .project-graph-warning { margin:0 0 8px; padding:7px 9px; border:1px solid var(--warn-line); border-radius:7px; background:var(--warn-bg); color:var(--warn); font-size:12px; }
+    .project-graph-empty { display:flex; align-items:center; justify-content:center; min-height:220px; color:var(--muted); }
+    .project-graph-details { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+    .project-graph-detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .project-graph-detail-title { min-width:0; }
+    .project-graph-detail-title h3 { margin:0 0 4px; }
+    .project-graph-detail-actions { display:flex; align-items:center; justify-content:flex-end; gap:7px; flex-wrap:wrap; }
+    .project-job-graph-layout { display:grid; grid-template-columns:minmax(0,3fr) minmax(280px,2fr); gap:12px; align-items:start; }
+    .project-job-graph .project-graph-viewport { height:300px; min-height:220px; }
+    .project-job-detail { min-height:220px; padding:10px; border:1px solid var(--line); border-radius:9px; background:var(--surface-subtle); }
+    .project-job-detail h4 { margin:0 0 8px; }
+    .project-job-detail-meta { display:flex; flex-direction:column; gap:5px; margin-bottom:10px; font-size:12px; overflow-wrap:anywhere; }
+    .project-job-detail-actions { display:flex; gap:7px; flex-wrap:wrap; }
+    .project-job-detail .matrix-list { width:100%; }
+    .project-step-sequence { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+    .project-step-sequence h4 { margin:0 0 8px; }
+    .project-step-track { display:flex; align-items:stretch; gap:0; overflow:auto; padding:5px 2px 10px; }
+    .project-step-node { position:relative; flex:0 0 180px; min-height:72px; padding:9px 10px; border:1px solid var(--graph-node-border); border-radius:8px; background:var(--graph-node-bg); color:var(--ink); text-align:left; cursor:pointer; -webkit-user-select:text; user-select:text; }
+    .project-step-node.selected { border-color:var(--graph-selected-border); background:var(--surface-hover); box-shadow:inset 0 0 0 1px var(--graph-selected-inset); }
+    .project-step-node-title { display:block; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .project-step-node-meta { display:block; margin-top:6px; color:var(--muted); font-size:11px; }
+    .project-step-arrow { flex:0 0 30px; display:flex; align-items:center; justify-content:center; color:var(--graph-edge); font-size:20px; }
+    .project-step-detail { margin-top:8px; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface-subtle); }
+    .project-step-detail pre { margin:7px 0 0; max-height:180px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .project-matrix-chooser { display:flex; flex-direction:column; gap:8px; max-height:55vh; overflow:auto; }
+    .project-graph-zoom-label { min-width:42px; text-align:center; color:var(--muted); font-size:12px; }
+    @media (max-width:760px) {
+      .project-graph-viewport { height:360px; }
+      .project-job-graph-layout { grid-template-columns:1fr; }
+      .project-job-graph .project-graph-viewport { height:270px; }
+    }
 
-    <div class="detail-split">
-      <div class="card">
-        <h3 style="margin:0 0 10px;">Job Properties</h3>
-        <div class="meta-grid" id="metaGrid"></div>
-      </div>
-      <div class="card">
-        <h3 style="margin:0 0 10px;">Cache Statistics</h3>
-        <div id="cacheStatsBox" class="cache-stats-empty">No cache statistics reported for this job.</div>
-      </div>
-      <div class="card">
-        <h3 style="margin:0 0 10px;">Host Tool Requirements</h3>
-        <div id="hostToolReqBox" class="req-empty">No tool requirements declared for this job.</div>
-      </div>
-      <div class="card">
-        <h3 style="margin:0 0 10px;">Container Tool Requirements</h3>
-        <div id="containerToolReqBox" class="req-empty">No container tool requirements declared for this job.</div>
-      </div>
-    </div>
-    <div class="card" id="releaseSummaryCard" style="display:none;">
-      <h3 style="margin:0 0 10px;">Release Summary</h3>
-      <div id="releaseSummaryBox" style="font-size:14px;color:var(--ink);"></div>
-    </div>
 
-    <div class="card" id="runContextCard" style="display:none;">
-      <div class="run-context-card-head">
-        <h3 style="margin:0;">Run Context</h3>
-        <button id="runContextToggleBtn" class="copy-btn" type="button">Collapse</button>
-      </div>
-      <div id="runContextBody" class="run-context-body"></div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin:0 0 10px;">Output / Error</h3>
-      <div class="log-toolbar">
-        <button id="tailToggleBtn" class="copy-btn tail-on" type="button">Tailing: On</button>
-        <button id="copyOutputBtn" class="copy-btn" type="button">Copy Output</button>
-        <span class="log-download-wrap">
-          <a id="downloadCleanLogBtn" class="copy-btn nav-btn" href="#">Download Clean Log</a>
-          <span class="mode-info log-info" tabindex="0" aria-label="Clean log info" data-log-info="clean"><span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span></span>
-        </span>
-        <span class="log-download-wrap">
-          <a id="downloadRawLogBtn" class="copy-btn nav-btn" href="#">Download Raw Log</a>
-          <span class="mode-info log-info" tabindex="0" aria-label="Raw log info" data-log-info="raw"><span aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-info-circle"></use></svg></span></span>
-        </span>
-        <input id="logSearchInput" class="log-search-input" type="search" placeholder="Search output" aria-label="Search output" />
-        <button id="logSearchPrevBtn" class="copy-btn ciwi-icon-only" type="button" aria-label="Previous match" title="Previous match"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevron-up"></use></svg></button>
-        <button id="logSearchNextBtn" class="copy-btn ciwi-icon-only" type="button" aria-label="Next match" title="Next match"><svg class="ciwi-icon" aria-hidden="true" focusable="false"><use href="/ui/icons.svg#icon-chevron-down"></use></svg></button>
-        <span id="logSearchCount" class="log-search-count">0/0</span>
-      </div>
-      <div id="executionStepNavigator" class="execution-step-navigator" style="display:none;"></div>
-      <div id="logBox" class="log"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head-row">
-        <h3 style="margin:0;">Artifacts</h3>
-        <a id="artifactsDownloadAllBtn" class="copy-btn nav-btn" href="#" style="display:none;">Download All (.zip)</a>
-      </div>
-      <div id="artifactsBox" class="muted" style="font-size:14px;">Loading...</div>
-    </div>
-    <div class="card">
-      <h3 style="margin:0 0 10px;">Test Report</h3>
-      <div id="testReportBox" class="muted" style="font-size:14px;">Loading...</div>
-    </div>
-    <div class="card">
-      <h3 style="margin:0 0 10px;">Coverage Report</h3>
-      <div id="coverageReportBox" class="muted" style="font-size:14px;">Loading...</div>
-    </div>
-  </main>
-
-  <script src="/ui/shared.js"></script>
-  <script src="/ui/pages.js"></script>
-  <script>
-` + uiGraphJS + `
-` + jobExecutionRenderJS + `
-` + jobExecutionGraphJS + `
-` + jobExecutionDataJS + `
-  </script>
-</body>
-</html>`
+    .run-context-card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+    .run-context-body { margin-top:10px; }
+    .run-context-card.collapsed .run-context-body { display:none; }
+    .run-context-pipeline-details { margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
+    .run-context-pipeline-details h4 { margin:0 0 8px; }
+    .run-context-graph .project-graph-viewport { height:148px; min-height:0; }
+    .run-context-job-layout { display:grid; grid-template-columns:minmax(0,3fr) minmax(280px,2fr); gap:12px; align-items:start; }
+    .run-context-job-detail { min-height:190px; padding:10px; border:1px solid var(--line); border-radius:9px; background:var(--surface-subtle); }
+    .run-context-job-detail h4 { margin:0 0 7px; }
+    .run-context-execution-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 0; border-top:1px solid var(--line); }
+    .run-context-execution-row:first-of-type { border-top:0; }
+    .run-context-execution-meta { min-width:0; font-size:12px; overflow-wrap:anywhere; }
+    .run-context-execution-actions { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+    .run-context-status { display:inline-block; margin-left:5px; font-size:11px; font-weight:700; }
+    .run-context-status.status-succeeded { color:var(--ok); }
+    .run-context-status.status-failed { color:var(--bad); }
+    .run-context-status.status-running { color:var(--warn); }
+    .execution-step-navigator { margin:8px 0 12px; padding:9px; border:1px solid var(--line); border-radius:9px; background:var(--surface-subtle); }
+    .execution-step-navigator-title { margin-bottom:7px; font-size:12px; font-weight:700; color:var(--muted); }
+    .execution-step-track { display:flex; align-items:stretch; overflow:auto; padding:2px 1px 7px; }
+    .execution-step-node { flex:0 0 150px; min-height:62px; padding:7px 8px; border:1px solid var(--graph-node-border); border-radius:7px; background:var(--graph-node-bg); color:var(--ink); text-align:left; cursor:pointer; -webkit-user-select:text; user-select:text; }
+    .execution-step-node.status-running { border-color:var(--graph-running-border); background:var(--graph-running-bg); }
+    .execution-step-node.status-succeeded { border-color:var(--graph-succeeded-border); background:var(--graph-succeeded-bg); }
+    .execution-step-node.status-failed { border-color:var(--graph-failed-border); background:var(--graph-failed-bg); }
+    .execution-step-node.status-skipped { border-color:var(--graph-skipped-border); background:var(--graph-skipped-bg); }
+    .execution-step-node.status-not-reached { opacity:.62; }
+    .execution-step-node:focus { outline:none; }
+    .execution-step-node-title { display:block; font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .execution-step-node-meta { display:block; margin-top:5px; font-size:10px; color:var(--muted); }
+    .execution-step-arrow { flex:0 0 24px; display:flex; align-items:center; justify-content:center; color:var(--graph-edge); }
+    @media (max-width:760px) {
+      .run-context-job-layout { grid-template-columns:1fr; }
+    }

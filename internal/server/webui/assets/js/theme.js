@@ -1,6 +1,4 @@
-package webui
 
-const uiThemeJS = `
 const ciwiThemeStorageKey = 'ciwi.ui.theme.v1';
 const ciwiThemeNames = new Set([
   'default',
@@ -39,4 +37,3 @@ ciwiApplyTheme(ciwiStoredTheme(), false);
 window.addEventListener('storage', event => {
   if (event.key === ciwiThemeStorageKey) ciwiApplyTheme(event.newValue, false);
 });
-`

@@ -18,7 +18,7 @@ func TestJobExecutionUIRendersUnreachedTimelineSteps(t *testing.T) {
 		"group.categoryTotal = phases.length;",
 		"group.categoryTotal = jobSteps.length;",
 	} {
-		if !strings.Contains(jobExecutionRenderJS, want) {
+		if !strings.Contains(jobExecutionJS, want) {
 			t.Fatalf("job execution renderer no longer contains %q", want)
 		}
 	}
@@ -33,7 +33,7 @@ func TestJobExecutionUIMapsCurrentCategoryPositionToTimeline(t *testing.T) {
 		"phases[phaseIndex - 1]",
 		"Backward compatibility for jobs currently running on an older agent.",
 	} {
-		if !strings.Contains(jobExecutionDataJS, want) {
+		if !strings.Contains(jobExecutionJS, want) {
 			t.Fatalf("job execution current-position mapping no longer contains %q", want)
 		}
 	}
@@ -47,7 +47,7 @@ func TestJobExecutionUISavesStepOpenStateInLocalStorage(t *testing.T) {
 		"logStepOpenState[key] = !!d.open;",
 		"saveLogStepOpenState();",
 	} {
-		if !strings.Contains(jobExecutionDataJS, want) {
+		if !strings.Contains(jobExecutionJS, want) {
 			t.Fatalf("job execution step state persistence no longer contains %q", want)
 		}
 	}
@@ -62,7 +62,7 @@ func TestJobExecutionUIOffersFloatingCollapseForLargeSteps(t *testing.T) {
 		"collapseBtn.hidden = !d.open || contentHeight <= largeStepThreshold;",
 		"d.open = false;",
 	} {
-		if !strings.Contains(jobExecutionHTML+jobExecutionRenderJS+jobExecutionDataJS, want) {
+		if !strings.Contains(jobExecutionHTML+jobExecutionJS+jobExecutionJS, want) {
 			t.Fatalf("job execution floating collapse control no longer contains %q", want)
 		}
 	}
@@ -76,7 +76,7 @@ func TestJobExecutionUIDisablesTailingWhileBrowsingUnreachedSteps(t *testing.T) 
 		"if (d.classList.contains('log-step-unreached'))",
 		"setTailingEnabled(false);",
 	} {
-		if !strings.Contains(jobExecutionDataJS, want) {
+		if !strings.Contains(jobExecutionJS, want) {
 			t.Fatalf("job execution unreached-step scrolling no longer contains %q", want)
 		}
 	}
@@ -84,11 +84,11 @@ func TestJobExecutionUIDisablesTailingWhileBrowsingUnreachedSteps(t *testing.T) 
 
 func TestOverflowTooltipsCoverTruncatedUI(t *testing.T) {
 	for label, source := range map[string]string{
-		"shared helper":          uiSharedTooltipJS,
-		"job table cells":        uiPagesJS,
-		"history card titles":    uiIndexJobExecutionsJS,
-		"step command summaries": jobExecutionRenderJS,
-		"job detail bindings":    jobExecutionDataJS,
+		"shared helper":          sharedJS,
+		"job table cells":        pagesJS,
+		"history card titles":    indexJS,
+		"step command summaries": jobExecutionJS,
+		"job detail bindings":    jobExecutionJS,
 	} {
 		if !strings.Contains(source, "data-ciwi-overflow-text") && label != "shared helper" {
 			t.Fatalf("%s no longer marks truncated text for overflow tooltips", label)
@@ -105,7 +105,7 @@ func TestOverflowTooltipsCoverTruncatedUI(t *testing.T) {
 		"ciwiPendingHoverTooltip.cancelPendingShow()",
 		"ciwiActiveHoverTooltip.hide()",
 	} {
-		if !strings.Contains(uiSharedTooltipJS, want) {
+		if !strings.Contains(sharedJS, want) {
 			t.Fatalf("shared overflow-tooltip helper no longer contains %q", want)
 		}
 	}

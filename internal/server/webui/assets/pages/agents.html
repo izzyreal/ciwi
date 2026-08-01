@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ciwi agents</title>
+  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
+  <script src="/ui/theme.js"></script>
+  <link rel="stylesheet" href="/ui/css/chrome.css" />
+  <link rel="stylesheet" href="/ui/css/agents.css" />
+</head>
+<body>
+  <main>
+    <div class="card row">
+      <div class="brand">
+        <img src="/ciwi-logo.png" alt="ciwi logo" />
+        <div>
+          <div style="font-size:24px;font-weight:700;">Agents</div>
+          <div class="muted">Available execution agents and heartbeat status</div>
+        </div>
+      </div>
+      <a class="nav-btn" href="/"><span class="nav-emoji" aria-hidden="true"><svg class="ciwi-icon" focusable="false"><use href="/ui/icons.svg#icon-arrow-left"></use></svg></span> Back to Projects</a>
+    </div>
+    <div class="card">
+      <div class="row" style="margin-bottom:10px;">
+        <div class="muted" id="summary">Loading...</div>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Agent ID</th><th>Host</th><th>Platform</th><th>Version</th><th>Heartbeat</th><th>Health</th><th>Run mode</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+  <script src="/ui/shared.js"></script>
+  <script src="/ui/agents.js"></script>
+</body>
+</html>
