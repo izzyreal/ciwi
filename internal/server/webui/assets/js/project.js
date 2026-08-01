@@ -306,10 +306,8 @@
       writeProjectGraphStorage(structureViewStorageKey, next);
       if (next === 'graph' && projectGraphState.project) {
         renderProjectGraph();
-        if (projectGraphState.fitOnRender) {
-          projectGraphState.fitOnRender = false;
-          requestAnimationFrame(fitProjectGraph);
-        }
+        projectGraphState.fitOnRender = false;
+        requestAnimationFrame(() => requestAnimationFrame(fitProjectGraph));
       }
     }
 
@@ -350,6 +348,7 @@
       const previousViewport = document.getElementById('projectPipelineGraphViewport');
       const previousScrollLeft = previousViewport ? previousViewport.scrollLeft : 0;
       const previousScrollTop = previousViewport ? previousViewport.scrollTop : 0;
+      const previousHeight = previousViewport ? previousViewport.style.height : '';
       destroyOverflowTooltips(host);
       host.innerHTML = '';
       const pipelines = filteredProjectGraphPipelines(project);
@@ -371,7 +370,7 @@
       filterLabel.textContent = 'Show:';
       const select = document.createElement('select');
       select.id = 'projectGraphChainSelect';
-      select.className = 'project-graph-select';
+      select.className = 'ciwi-select project-graph-select';
       const allOption = document.createElement('option');
       allOption.value = 'all';
       allOption.textContent = 'All Pipelines';
@@ -449,6 +448,7 @@
       const viewport = document.createElement('div');
       viewport.id = 'projectPipelineGraphViewport';
       viewport.className = 'project-graph-viewport';
+      if (previousHeight) viewport.style.height = previousHeight;
       host.appendChild(viewport);
       const nodes = pipelines.map(pipeline => ({
         id: pipeline.pipeline_id,
@@ -457,7 +457,7 @@
         meta: projectGraphNodeMeta((pipeline.jobs || []).length, (pipeline.depends_on || []).filter(dep => pipelineIDs.has(dep)).length, 'job'),
         runnable: true,
         runLabel: 'Run pipeline ' + pipeline.pipeline_id,
-        runTitle: 'Run this pipeline. Shift-click to choose source ref and agent.',
+        runTitle: ciwiIndependentExecutionTooltip('Run this pipeline.', { shiftSelect: true }),
       }));
       const layout = renderProjectDAG(viewport, nodes, {
         scale: projectGraphState.scale,
@@ -535,10 +535,12 @@
         meta: projectGraphNodeMeta((job.steps || []).length, (job.needs || []).filter(dep => jobIDs.has(dep)).length, 'step'),
         runnable: true,
         runLabel: (job.matrix_includes || []).length ? ('Choose matrix entry for ' + job.id) : ('Run job ' + job.id),
-        runTitle: (job.matrix_includes || []).length ? 'Choose a matrix entry to run.' : 'Run this job. Shift-click to choose source ref and agent.',
+        runTitle: (job.matrix_includes || []).length
+          ? ciwiIndependentExecutionTooltip('Choose a matrix entry and run this job.')
+          : ciwiIndependentExecutionTooltip('Run this job.', { shiftSelect: true }),
       }));
-      const jobLayout = renderProjectDAG(viewport, jobNodes, {
-        scale: 1,
+      renderProjectDAG(viewport, jobNodes, {
+        scale: projectGraphState.scale,
         selectedID: projectGraphState.jobID,
         emptyText: 'No jobs',
         onSelect: id => {
@@ -556,17 +558,6 @@
           await runProjectJobSelection(event, pipeline, { pipeline_job_id: job.id }, (job.id || 'job'), 'Run selection failed', 'Run Job With Source Ref', 'Run Job', button);
         },
       });
-      if (jobLayout) {
-        requestAnimationFrame(() => {
-          const stage = viewport.querySelector('.project-graph-stage');
-          const content = viewport.querySelector('.project-graph-content');
-          if (!stage || !content) return;
-          const scale = Math.min(1, (viewport.clientWidth - 16) / jobLayout.contentWidth, (viewport.clientHeight - 16) / jobLayout.contentHeight);
-          stage.style.width = Math.ceil(jobLayout.contentWidth * scale) + 'px';
-          stage.style.height = Math.ceil(jobLayout.contentHeight * scale) + 'px';
-          content.style.transform = 'scale(' + scale + ')';
-        });
-      }
       layout.appendChild(graph);
       const selectedJob = jobs.find(job => job.id === projectGraphState.jobID);
       layout.appendChild(buildProjectGraphJobDetail(pipeline, selectedJob));

@@ -2,6 +2,7 @@ package jobexecution
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,7 @@ type Store interface {
 	SaveJobExecutionTestReport(id string, report protocol.JobExecutionTestReport) error
 	ClearQueuedJobExecutions() (int64, error)
 	FlushJobExecutionHistory() ([]string, error)
+	FlushJobExecutionHistoryByIDs(jobIDs []string) ([]string, error)
 }
 
 type HandlerDeps struct {
@@ -408,13 +410,26 @@ func HandleFlushHistory(w http.ResponseWriter, r *http.Request, deps HandlerDeps
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	deletedIDs, err := deps.Store.FlushJobExecutionHistory()
-	for _, jobID := range deletedIDs {
-		_ = os.RemoveAll(filepath.Join(deps.ArtifactsDir, jobID))
+	var req FlushHistoryViewRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+	}
+	var deletedIDs []string
+	var err error
+	if req.JobExecutionIDs != nil {
+		deletedIDs, err = deps.Store.FlushJobExecutionHistoryByIDs(req.JobExecutionIDs)
+	} else {
+		deletedIDs, err = deps.Store.FlushJobExecutionHistory()
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	for _, jobID := range deletedIDs {
+		_ = os.RemoveAll(filepath.Join(deps.ArtifactsDir, jobID))
 	}
 	httpx.WriteJSON(w, http.StatusOK, FlushHistoryViewResponse{Flushed: int64(len(deletedIDs))})
 }

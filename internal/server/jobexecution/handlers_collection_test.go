@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,6 +211,68 @@ func TestHandleFlushHistory(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(artifactsDir, "job-keep")); err != nil {
 			t.Fatalf("expected job-keep artifacts preserved: %v", err)
+		}
+	})
+
+	t.Run("selected execution IDs", func(t *testing.T) {
+		artifactsDir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(artifactsDir, "job-2"), 0o755); err != nil {
+			t.Fatalf("mkdir selected artifact dir: %v", err)
+		}
+		store := &stubStore{}
+		store.flushJobExecutionHistoryByIDsFn = func(jobIDs []string) ([]string, error) {
+			if len(jobIDs) != 2 || jobIDs[0] != "job-2" || jobIDs[1] != "job-3" {
+				t.Fatalf("unexpected selected IDs: %v", jobIDs)
+			}
+			return []string{"job-2"}, nil
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/flush-history", strings.NewReader(`{"job_execution_ids":["job-2","job-3"]}`))
+		HandleFlushHistory(rec, req, HandlerDeps{Store: store, ArtifactsDir: artifactsDir})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var got FlushHistoryViewResponse
+		mustDecodeCollectionJSON(t, rec, &got)
+		if got.Flushed != 1 {
+			t.Fatalf("unexpected selected flush count: %+v", got)
+		}
+		if _, err := os.Stat(filepath.Join(artifactsDir, "job-2")); !os.IsNotExist(err) {
+			t.Fatalf("expected selected artifacts removed, stat err=%v", err)
+		}
+	})
+
+	t.Run("explicit empty selection deletes nothing", func(t *testing.T) {
+		store := &stubStore{}
+		store.flushJobExecutionHistoryByIDsFn = func(jobIDs []string) ([]string, error) {
+			if len(jobIDs) != 0 {
+				t.Fatalf("expected empty selected IDs, got %v", jobIDs)
+			}
+			return nil, nil
+		}
+		store.flushJobExecutionHistoryFn = func() ([]string, error) {
+			t.Fatal("explicit empty selection must not flush all history")
+			return nil, nil
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/flush-history", strings.NewReader(`{"job_execution_ids":[]}`))
+		HandleFlushHistory(rec, req, HandlerDeps{Store: store})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var got FlushHistoryViewResponse
+		mustDecodeCollectionJSON(t, rec, &got)
+		if got.Flushed != 0 {
+			t.Fatalf("unexpected empty-selection flush count: %+v", got)
+		}
+	})
+
+	t.Run("invalid body", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/flush-history", strings.NewReader(`{`))
+		HandleFlushHistory(rec, req, HandlerDeps{Store: &stubStore{}})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
 		}
 	})
 }

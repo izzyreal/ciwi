@@ -28,6 +28,7 @@ type jobExecutionStore interface {
 	DeleteQueuedJobExecution(jobID string) error
 	ClearQueuedJobExecutions() (int64, error)
 	FlushJobExecutionHistory() ([]string, error)
+	FlushJobExecutionHistoryByIDs(jobIDs []string) ([]string, error)
 	SaveJobExecutionArtifacts(jobID string, artifacts []protocol.JobExecutionArtifact) error
 	ListJobExecutionArtifacts(jobID string) ([]protocol.JobExecutionArtifact, error)
 	SaveJobExecutionTestReport(jobID string, report protocol.JobExecutionTestReport) error

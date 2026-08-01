@@ -18,6 +18,7 @@ var (
 	settingsJS     = mustTestAsset("assets/js/settings.js")
 	projectJS      = mustTestAsset("assets/js/project.js")
 	jobExecutionJS = mustTestAsset("assets/js/job-execution.js")
+	tablerIconsSVG = mustTestAsset("assets/tabler-icons.svg")
 
 	chromeCSS       = mustTestAsset("assets/css/chrome.css")
 	indexCSS        = mustTestAsset("assets/css/index.css")

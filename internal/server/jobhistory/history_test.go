@@ -83,6 +83,15 @@ func TestHandleCardsFullBuildsSectionsAndMatrixGroups(t *testing.T) {
 	if card.Kind != "chain" || card.Summary.TotalJobs != 4 || card.Summary.Failed != 1 {
 		t.Fatalf("unexpected card summary: %+v", card)
 	}
+	wantJobIDs := []string{"release-1", "build-2", "build-1", "build-0"}
+	if len(card.JobExecutionIDs) != len(wantJobIDs) {
+		t.Fatalf("unexpected card job IDs: got %v want %v", card.JobExecutionIDs, wantJobIDs)
+	}
+	for i := range wantJobIDs {
+		if card.JobExecutionIDs[i] != wantJobIDs[i] {
+			t.Fatalf("unexpected card job IDs: got %v want %v", card.JobExecutionIDs, wantJobIDs)
+		}
+	}
 	if len(card.Sections) != 2 {
 		t.Fatalf("expected 2 pipeline sections, got %+v", card.Sections)
 	}

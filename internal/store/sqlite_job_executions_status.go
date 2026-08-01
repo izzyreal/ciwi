@@ -288,6 +288,27 @@ func (s *Store) FlushJobExecutionHistory() ([]string, error) {
 		}
 		candidates = append(candidates, job.ID)
 	}
+	return s.flushJobExecutionHistoryIDs(candidates)
+}
+
+func (s *Store) FlushJobExecutionHistoryByIDs(jobIDs []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(jobIDs))
+	candidates := make([]string, 0, len(jobIDs))
+	for _, jobID := range jobIDs {
+		jobID = strings.TrimSpace(jobID)
+		if jobID == "" {
+			continue
+		}
+		if _, exists := seen[jobID]; exists {
+			continue
+		}
+		seen[jobID] = struct{}{}
+		candidates = append(candidates, jobID)
+	}
+	return s.flushJobExecutionHistoryIDs(candidates)
+}
+
+func (s *Store) flushJobExecutionHistoryIDs(candidates []string) ([]string, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}

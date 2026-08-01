@@ -488,21 +488,51 @@
           iconHTML = '<img class="ciwi-job-group-side-icon" src="' + escapeHtml(iconURL) + '" alt="" onerror="this.style.display=&quot;none&quot;" />';
         }
       }
+      const canFlush = !!(opts && typeof opts.onFlushCard === 'function' && Array.isArray(card && card.job_execution_ids) && card.job_execution_ids.length > 0);
+      const flushButton = canFlush
+        ? '<button type="button" class="secondary ciwi-icon-only ciwi-history-card-flush" data-ciwi-history-card-flush aria-label="Delete this execution from history">' + ciwiIconHTML('trash') + '</button>'
+        : '';
       return '<span class="ciwi-job-group-main">' + iconHTML + '<span class="ciwi-job-group-status-icon ' + status.cls + '" aria-hidden="true">' + ciwiIconHTML(status.icon, { className: status.iconClass || '' }) +
         '</span><span class="ciwi-job-group-title" data-ciwi-overflow-text="' + escapeHtml(fullTitle) + '">' + title +
-        '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span>';
+        '</span></span><span class="ciwi-job-group-status ' + status.cls + '">' + escapeHtml(status.text) + '</span>' + flushButton;
     }
 
-    function setHistoryCardHeadHTML(element, html) {
-      if (!element || element.__ciwiCardHeadHTML === html) return;
-      if (typeof destroyOverflowTooltips === 'function') {
-        destroyOverflowTooltips(element);
+    function bindHistoryCardFlushButton(element, card, opts) {
+      const button = element && element.querySelector('[data-ciwi-history-card-flush]');
+      if (!button || button.__ciwiFlushBound || !opts || typeof opts.onFlushCard !== 'function') return;
+      button.__ciwiFlushBound = true;
+      button.addEventListener('mousedown', event => event.stopPropagation());
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        opts.onFlushCard(card, event, button);
+      });
+      createHoverTooltip(button, {
+        html: '<strong>Delete this execution</strong><br />Removes every finished job attempt in this displayed execution, including its server-side logs, events, test results, and stored artifacts. It does not affect queued or running jobs, and does not clear agent caches or agent workspaces.<br /><br />Shift-click to delete without confirmation.',
+        showDelayMs: 600,
+        hideOnAnchorLeave: true,
+        owner: 'history-card-flush',
+      });
+    }
+
+    function setHistoryCardHeadHTML(element, html, card, opts) {
+      if (!element) return;
+      if (element.__ciwiCardHeadHTML !== html) {
+        element.querySelectorAll('[data-ciwi-history-card-flush]').forEach(button => {
+          if (button.__ciwiHoverTooltip && typeof button.__ciwiHoverTooltip.destroy === 'function') {
+            button.__ciwiHoverTooltip.destroy();
+          }
+        });
+        if (typeof destroyOverflowTooltips === 'function') {
+          destroyOverflowTooltips(element);
+        }
+        element.innerHTML = html;
+        element.__ciwiCardHeadHTML = html;
+        if (typeof bindOverflowTooltips === 'function') {
+          bindOverflowTooltips(element, { ownerPrefix: 'history-card-title' });
+        }
       }
-      element.innerHTML = html;
-      element.__ciwiCardHeadHTML = html;
-      if (typeof bindOverflowTooltips === 'function') {
-        bindOverflowTooltips(element, { ownerPrefix: 'history-card-title' });
-      }
+      bindHistoryCardFlushButton(element, card, opts);
     }
 
     function mergeCardSummaryIntoDetail(summaryCard, detailCard) {
@@ -510,6 +540,7 @@
       return {
         ...detailCard,
         title: (summaryCard && summaryCard.title) || detailCard.title,
+        job_execution_ids: (summaryCard && summaryCard.job_execution_ids) || detailCard.job_execution_ids,
         summary: (summaryCard && summaryCard.summary) || detailCard.summary,
         shape: (summaryCard && summaryCard.shape) || detailCard.shape,
       };
@@ -722,7 +753,7 @@
           summary = document.createElement('summary');
           details.appendChild(summary);
         }
-        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>');
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>', renderedCard, opts);
         if (!details.open) {
           const skel = details.querySelector('.ciwi-job-group-skel-body');
           if (skel) skel.remove();
@@ -747,7 +778,7 @@
           cardEl.insertBefore(head, cardEl.firstChild || null);
         }
         const renderedCard = mergeCardSummaryIntoDetail(card, historyCardDetailsByKey[String((card && card.key) || '').trim()]);
-        setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(renderedCard, opts));
+        setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(renderedCard, opts), renderedCard, opts);
       }
     }
 
@@ -952,7 +983,7 @@
           summary = document.createElement('summary');
           details.appendChild(summary);
         }
-        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>');
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(renderedCard, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>', renderedCard, opts);
         if (!details.open) {
           const skel = details.querySelector('.ciwi-job-group-skel-body');
           if (skel) skel.remove();
@@ -977,7 +1008,7 @@
           cardEl.insertBefore(head, cardEl.firstChild || null);
         }
         const renderedCard = mergeCardSummaryIntoDetail(card, queueCardDetailsByKey[String((card && card.key) || '').trim()]);
-        setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(renderedCard, opts));
+        setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(renderedCard, opts), renderedCard, opts);
       }
     }
 
@@ -1008,7 +1039,7 @@
           summary = document.createElement('summary');
           details.insertBefore(summary, details.firstChild || null);
         }
-        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(card, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>');
+        setHistoryCardHeadHTML(summary, buildHistoryCardHeadHTML(card, opts) + '<span class="ciwi-job-group-toggle" aria-hidden="true">' + ciwiIconHTML('chevron-right') + '</span>', card, opts);
         if (details.open) {
           patchHistorySectionsContent(details, card, opts);
         }
@@ -1017,7 +1048,7 @@
         const cardEl = td.querySelector('.ciwi-job-group-card');
         if (!cardEl) return;
         const head = cardEl.querySelector(':scope > .ciwi-job-group-head');
-        if (head) setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(card, opts));
+        if (head) setHistoryCardHeadHTML(head, buildHistoryCardHeadHTML(card, opts), card, opts);
         patchHistorySectionsContent(cardEl, card, opts);
         if (opts && opts.progressEnabled) bindQueueCardHeadProgress(cardEl, card);
       }
@@ -1048,11 +1079,27 @@
       return layoutSig;
     }
 
-    async function refreshHistoryCards(epoch, tbody, opts, columnCount) {
+    async function refreshHistoryCards(epoch, tbody, opts, columnCount, atomic) {
       const layout = await apiJSON('/api/v1/job-history/layout?offset=0&limit=' + String(HISTORY_CARD_WINDOW));
       if (epoch !== jobsRenderEpoch) return null;
       const cards = Array.isArray(layout.cards) ? layout.cards : [];
       const layoutSig = historyLayoutSignature(cards);
+      if (atomic && cards.length > 0) {
+        const pageCount = Math.ceil(cards.length / HISTORY_CARD_BATCH);
+        const offsets = Array.from({ length: pageCount }, (_, index) => index * HISTORY_CARD_BATCH);
+        const [summaryPages, fullPages] = await Promise.all([
+          Promise.all(offsets.map(offset => apiJSON('/api/v1/job-history/cards?detail=summary&offset=' + String(offset) + '&limit=' + String(HISTORY_CARD_BATCH)))),
+          Promise.all(offsets.map(offset => apiJSON('/api/v1/job-history/cards?detail=full&offset=' + String(offset) + '&limit=' + String(HISTORY_CARD_BATCH)))),
+        ]);
+        if (epoch !== jobsRenderEpoch) return null;
+        if (!tbodyHasConcreteRows(tbody) || layoutSig !== lastHistoryLayoutSignature) {
+          renderHistoryLayoutRows(tbody, cards, columnCount);
+          lastHistoryLayoutSignature = layoutSig;
+        }
+        summaryPages.forEach(page => (page.cards || []).forEach(card => patchHistorySummaryCard(tbody, card, opts, columnCount)));
+        fullPages.forEach(page => (page.cards || []).forEach(card => patchHistoryFullCard(tbody, card, opts, columnCount)));
+        return layoutSig;
+      }
       if (!tbodyHasConcreteRows(tbody) || layoutSig !== lastHistoryLayoutSignature) {
         renderHistoryLayoutRows(tbody, cards, columnCount);
         lastHistoryLayoutSignature = layoutSig;
@@ -1073,7 +1120,69 @@
       return layoutSig;
     }
 
-    async function refreshJobs() {
+    function captureHistoryDeletionAnchor(button) {
+      const row = button && button.closest('tr[data-ciwi-history-card-key]');
+      if (!row) return null;
+      const rows = Array.from(document.querySelectorAll('#historyJobsBody > tr[data-ciwi-history-card-key]'));
+      const index = rows.indexOf(row);
+      const anchorRow = index > 0 ? rows[index - 1] : (index + 1 < rows.length ? rows[index + 1] : null);
+      if (!anchorRow) return null;
+      const anchorButton = anchorRow.querySelector('[data-ciwi-history-card-flush]');
+      const anchorRect = anchorButton ? anchorButton.getBoundingClientRect() : anchorRow.getBoundingClientRect();
+      const clickedRect = button.getBoundingClientRect();
+      const anchorVisible = anchorRect.bottom > 0 && anchorRect.top < window.innerHeight;
+      return {
+        cardKey: String(anchorRow.dataset.ciwiHistoryCardKey || '').trim(),
+        viewportTop: anchorVisible ? anchorRect.top : clickedRect.top,
+      };
+    }
+
+    function restoreHistoryDeletionAnchor(anchor) {
+      if (!anchor || !anchor.cardKey) return;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const row = findHistoryCardRow(document.getElementById('historyJobsBody'), anchor.cardKey);
+        if (!row) return;
+        const button = row.querySelector('[data-ciwi-history-card-flush]');
+        const rect = button ? button.getBoundingClientRect() : row.getBoundingClientRect();
+        const delta = rect.top - anchor.viewportTop;
+        if (Math.abs(delta) > 0.5) window.scrollBy({ left: 0, top: delta, behavior: 'auto' });
+      }));
+    }
+
+    async function flushHistoryCard(card, event, button) {
+      const jobExecutionIDs = Array.from(new Set((Array.isArray(card && card.job_execution_ids) ? card.job_execution_ids : [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean)));
+      if (!jobExecutionIDs.length) return;
+      if (!(event && event.shiftKey)) {
+        const confirmed = await showConfirmDialog({
+          title: 'Delete Execution',
+          message: 'Delete this execution and all of its finished job attempts from server history? This removes server-side logs, events, test results, and stored artifacts. Agent caches and workspaces are not cleared.',
+          okLabel: 'Delete execution',
+        });
+        if (!confirmed) return;
+      }
+      const deletionAnchor = captureHistoryDeletionAnchor(button);
+      if (button) button.disabled = true;
+      try {
+        await apiJSON('/api/v1/jobs/flush-history', {
+          method: 'POST',
+          body: JSON.stringify({ job_execution_ids: jobExecutionIDs }),
+        });
+        const cardKey = String((card && card.key) || '').trim();
+        delete historyCardDetailsByKey[cardKey];
+        expandedJobGroups.delete(historyCardGroupKey(cardKey));
+        saveStringSet(JOB_GROUPS_STORAGE_KEY, expandedJobGroups);
+        await refreshJobs({ atomicHistory: true });
+        restoreHistoryDeletionAnchor(deletionAnchor);
+      } catch (e) {
+        if (button) button.disabled = false;
+        await showAlertDialog({ title: 'Delete execution failed', message: 'Delete execution failed: ' + e.message });
+      }
+    }
+
+    async function refreshJobs(options) {
+      const refreshOptions = options || {};
       const epoch = ++jobsRenderEpoch;
       const queuedBody = document.getElementById('queuedJobsBody');
       const historyBody = document.getElementById('historyJobsBody');
@@ -1116,12 +1225,13 @@
         fixedLines: 2,
         backPath: window.location.pathname || '/',
         linkClass: 'job-link',
-        projectIconURL: projectIconURLForJob
+        projectIconURL: projectIconURLForJob,
+        onFlushCard: flushHistoryCard,
       };
 
       const [queuedSig, historySig] = await Promise.all([
         refreshQueueCards(epoch, queuedBody, queuedOpts, 8),
-        refreshHistoryCards(epoch, historyBody, historyOpts, 7),
+        refreshHistoryCards(epoch, historyBody, historyOpts, 7, !!refreshOptions.atomicHistory),
       ]);
       if (epoch !== jobsRenderEpoch || queuedSig === null || historySig === null) return;
       if (queuedSig !== lastQueuedJobsSignature) {
@@ -1132,10 +1242,25 @@
       }
     }
 
-    document.getElementById('clearQueueBtn').onclick = async () => {
+    const clearQueueBtn = document.getElementById('clearQueueBtn');
+    const flushHistoryBtn = document.getElementById('flushHistoryBtn');
+    createHoverTooltip(clearQueueBtn, {
+      html: '<strong>Clear Queue</strong><br />Removes all queued and leased job records from the server. It does not cancel jobs that are already running, and does not clear agent caches or agent workspaces.',
+      showDelayMs: 600,
+      hideOnAnchorLeave: true,
+      owner: 'clear-queue',
+    });
+    createHoverTooltip(flushHistoryBtn, {
+      html: '<strong>Flush History</strong><br />Removes all finished jobs from server history, including their server-side logs, events, test results, and stored artifacts. Queued and running jobs are left alone. It does not clear caches or workspaces on any agent.',
+      showDelayMs: 600,
+      hideOnAnchorLeave: true,
+      owner: 'flush-history',
+    });
+
+    clearQueueBtn.onclick = async () => {
       const confirmed = await showConfirmDialog({
         title: 'Clear Queue',
-        message: 'Clear all queued/leased jobs?',
+        message: 'Remove all queued and leased jobs from the server? Running jobs are not cancelled. Agent caches and workspaces are not cleared.',
         okLabel: 'Clear queue',
       });
       if (!confirmed) {
@@ -1149,10 +1274,10 @@
       }
     };
 
-    document.getElementById('flushHistoryBtn').onclick = async () => {
+    flushHistoryBtn.onclick = async () => {
       const confirmed = await showConfirmDialog({
         title: 'Flush History',
-        message: 'Flush all finished jobs from history?',
+        message: 'Remove all finished jobs from server history, including server-side logs, events, test results, and stored artifacts? Queued and running jobs are left alone. Agent caches and workspaces are not cleared.',
         okLabel: 'Flush history',
       });
       if (!confirmed) {

@@ -135,6 +135,42 @@ func TestThemesUseSharedLayeredGradientSurfaces(t *testing.T) {
 	}
 }
 
+func TestSharedSelectLayoutCoversSettingsAndProjectGraph(t *testing.T) {
+	combined := chromeCSS + settingsHTML + projectJS
+	for _, want := range []string{
+		`select.ciwi-select`,
+		`background-position: right 11px center`,
+		`class="ciwi-select version-select"`,
+		`select.className = 'ciwi-select project-graph-select';`,
+	} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("shared select styling no longer contains %q", want)
+		}
+	}
+}
+
+func TestUpdateRestartWatcherRecognizesRequestedVersion(t *testing.T) {
+	for _, want := range []string{
+		`waitForServerRestartAndReload(target)`,
+		`async function waitForServerRestartAndReload(expectedVersion)`,
+		`const targetReached = expected !== '' && currentNormalized === expected;`,
+		`finished = expected ? targetReached : (upToDate || success);`,
+	} {
+		if !strings.Contains(settingsJS, want) {
+			t.Fatalf("update restart watcher no longer contains %q", want)
+		}
+	}
+}
+
+func TestAllPagesUseProjectPageWidthFromSharedChrome(t *testing.T) {
+	if !strings.Contains(chromeCSS, `main { max-width: 1150px;`) {
+		t.Fatal("shared page width no longer matches the project details page")
+	}
+	if strings.Contains(projectCSS, `main { max-width:`) {
+		t.Fatal("project page must not override the shared page width")
+	}
+}
+
 func TestGraphNodeTextSelectionDoesNotTriggerNavigation(t *testing.T) {
 	combined := sharedJS + projectJS + jobExecutionJS
 	for _, want := range []string{

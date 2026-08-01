@@ -142,6 +142,15 @@
     .ciwi-job-group-status-icon { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; font-size:15px; line-height:1; flex:0 0 auto; }
     .ciwi-job-group-status-icon .ciwi-icon { width:17px; height:17px; }
     .ciwi-job-group-status { font-size: 12px; white-space: nowrap; flex: 0 0 auto; }
+    .ciwi-history-card-flush {
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+      padding: 0;
+      flex: 0 0 auto;
+      color: var(--bad);
+    }
+    .ciwi-history-card-flush:hover { border-color: var(--bad); }
     .ciwi-job-group-side-icon {
       width: 28px;
       height: 28px;

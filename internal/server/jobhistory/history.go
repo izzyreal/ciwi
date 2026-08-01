@@ -46,13 +46,14 @@ type CardsResponse struct {
 }
 
 type CardView struct {
-	Key          string            `json:"key"`
-	Kind         string            `json:"kind"`
-	Title        string            `json:"title"`
-	Summary      SummaryView       `json:"summary"`
-	Shape        ShapeView         `json:"shape"`
-	Sections     []SectionView     `json:"sections,omitempty"`
-	ProgressJobs []ProgressJobView `json:"progress_jobs,omitempty"`
+	Key             string            `json:"key"`
+	Kind            string            `json:"kind"`
+	Title           string            `json:"title"`
+	JobExecutionIDs []string          `json:"job_execution_ids"`
+	Summary         SummaryView       `json:"summary"`
+	Shape           ShapeView         `json:"shape"`
+	Sections        []SectionView     `json:"sections,omitempty"`
+	ProgressJobs    []ProgressJobView `json:"progress_jobs,omitempty"`
 }
 
 type SummaryView struct {
@@ -448,11 +449,12 @@ func layoutCardView(jobs []protocol.JobExecution, card executionCard) LayoutCard
 func cardView(jobs []protocol.JobExecution, card executionCard, includeSections, includeProgress bool) CardView {
 	shape := cardShape(jobs, card)
 	out := CardView{
-		Key:     card.Key,
-		Kind:    card.Kind,
-		Title:   cardTitle(jobs, card),
-		Summary: summarizeCard(jobs, card),
-		Shape:   shape,
+		Key:             card.Key,
+		Kind:            card.Kind,
+		Title:           cardTitle(jobs, card),
+		JobExecutionIDs: cardJobExecutionIDs(jobs, card),
+		Summary:         summarizeCard(jobs, card),
+		Shape:           shape,
 	}
 	if includeSections {
 		out.Sections = buildSections(jobs, card)
@@ -468,6 +470,26 @@ func cardView(jobs []protocol.JobExecution, card executionCard, includeSections,
 			}
 			out.Sections[i].ProgressJobs = progressJobViews(jobs, indices)
 		}
+	}
+	return out
+}
+
+func cardJobExecutionIDs(jobs []protocol.JobExecution, card executionCard) []string {
+	out := make([]string, 0, len(card.Indices))
+	seen := make(map[string]struct{}, len(card.Indices))
+	for _, idx := range card.Indices {
+		if idx < 0 || idx >= len(jobs) {
+			continue
+		}
+		jobID := strings.TrimSpace(jobs[idx].ID)
+		if jobID == "" {
+			continue
+		}
+		if _, exists := seen[jobID]; exists {
+			continue
+		}
+		seen[jobID] = struct{}{}
+		out = append(out, jobID)
 	}
 	return out
 }

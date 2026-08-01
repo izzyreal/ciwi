@@ -77,6 +77,10 @@ type FlushHistoryViewResponse struct {
 	Flushed int64 `json:"flushed"`
 }
 
+type FlushHistoryViewRequest struct {
+	JobExecutionIDs []string `json:"job_execution_ids,omitempty"`
+}
+
 type EventsViewResponse struct {
 	Events      []protocol.JobExecutionEvent `json:"events"`
 	NextEventID int64                        `json:"next_event_id"`

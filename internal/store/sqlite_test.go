@@ -553,3 +553,41 @@ func TestStoreJobQueueAndHistoryOperations(t *testing.T) {
 		t.Fatalf("expected no remaining jobs after second clear, got %d", len(jobs))
 	}
 }
+
+func TestFlushJobExecutionHistoryByIDsDeletesOnlySelectedTerminalJobs(t *testing.T) {
+	s := openTestStore(t)
+	create := func(status string) protocol.JobExecution {
+		t.Helper()
+		job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo test", TimeoutSeconds: 30})
+		if err != nil {
+			t.Fatalf("create job: %v", err)
+		}
+		if status != protocol.JobExecutionStatusQueued {
+			job, err = s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{AgentID: "agent-1", Status: status})
+			if err != nil {
+				t.Fatalf("set job status %s: %v", status, err)
+			}
+		}
+		return job
+	}
+	selected := create(protocol.JobExecutionStatusSucceeded)
+	kept := create(protocol.JobExecutionStatusFailed)
+	active := create(protocol.JobExecutionStatusQueued)
+
+	deleted, err := s.FlushJobExecutionHistoryByIDs([]string{selected.ID, selected.ID, active.ID, "", "missing"})
+	if err != nil {
+		t.Fatalf("flush selected history: %v", err)
+	}
+	if len(deleted) != 1 || deleted[0] != selected.ID {
+		t.Fatalf("unexpected deleted IDs: %v", deleted)
+	}
+	if _, err := s.GetJobExecution(selected.ID); err == nil {
+		t.Fatalf("expected selected terminal job to be deleted")
+	}
+	if _, err := s.GetJobExecution(kept.ID); err != nil {
+		t.Fatalf("expected unselected terminal job to remain: %v", err)
+	}
+	if _, err := s.GetJobExecution(active.ID); err != nil {
+		t.Fatalf("expected active selected job to remain: %v", err)
+	}
+}

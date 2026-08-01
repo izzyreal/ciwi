@@ -38,6 +38,7 @@ func TestUIIconSpriteIsServedFromEmbeddedAssets(t *testing.T) {
 		"player-play",
 		"refresh",
 		"settings",
+		"trash",
 		"zoom-in",
 		"zoom-out",
 	} {

@@ -362,6 +362,7 @@ const ciwiIconNames = new Set([
   'player-play',
   'refresh',
   'settings',
+  'trash',
   'zoom-in',
   'zoom-out',
 ]);
@@ -956,6 +957,16 @@ function createHoverTooltip(anchor, opts) {
   };
   anchor.__ciwiHoverTooltip = controller;
   return controller;
+}
+
+function ciwiIndependentExecutionTooltip(action, options) {
+  const opts = options || {};
+  let text = String(action || 'Start this execution').trim() +
+    ' This queues a new, independent execution. It does not cancel, pause, replace, or otherwise change any queued or running execution, so both may run concurrently.';
+  if (opts.shiftSelect) {
+    text += ' Shift-click to choose the source ref and agent.';
+  }
+  return text;
 }
 
 function elementHasOverflow(element) {

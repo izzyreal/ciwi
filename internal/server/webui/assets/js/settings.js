@@ -463,28 +463,6 @@
     let updateRestartWatchActive = false;
     let rollbackTagsLoadedAt = 0;
     const shownAgentUpdateWarningKeys = new Set();
-    // DEBUG(apply-update-confirm): temporary client-side diagnostics for flaky confirm/update flow.
-    // Remove this block after investigation is complete.
-    let applyUpdateClickSeq = 0;
-    function logApplyUpdateDebug(phase, payload) {
-      const entry = {
-        ts: new Date().toISOString(),
-        phase: String(phase || ''),
-        payload: payload || {},
-      };
-      if (!window.__ciwiApplyUpdateDebugLog) {
-        window.__ciwiApplyUpdateDebugLog = [];
-      }
-      window.__ciwiApplyUpdateDebugLog.push(entry);
-      if (window.__ciwiApplyUpdateDebugLog.length > 200) {
-        window.__ciwiApplyUpdateDebugLog.shift();
-      }
-      try {
-        console.info('[ciwi][apply-update]', entry);
-      } catch (_) {
-      }
-    }
-    // END DEBUG(apply-update-confirm)
 
     function parseSemverParts(value) {
       const raw = String(value || '').trim();
@@ -642,7 +620,7 @@
       }
     }
 
-    async function monitorApplyProgressAfterTimeout() {
+    async function monitorApplyProgressAfterTimeout(expectedVersion) {
       const result = document.getElementById('updateResult');
       const started = Date.now();
       while (Date.now() - started < 120000) {
@@ -659,7 +637,7 @@
           } else if (apply === 'staged' || apply === 'success' || apply === 'noop') {
             result.textContent = msg || ('Update state: ' + apply);
             if (apply === 'staged' || apply === 'success') {
-              waitForServerRestartAndReload();
+              waitForServerRestartAndReload(expectedVersion);
             }
             return;
           } else {
@@ -674,8 +652,7 @@
       result.textContent = 'Update request timed out; check update status and try again if needed.';
     }
 
-    document.getElementById('applyUpdateBtn').onclick = async (ev) => {
-      const clickId = (++applyUpdateClickSeq);
+    document.getElementById('applyUpdateBtn').onclick = async () => {
       const result = document.getElementById('updateResult');
       const select = document.getElementById('updateVersionSelect');
       const target = String((select && select.value) || '').trim();
@@ -683,50 +660,29 @@
         result.textContent = 'Check for updates and select a version first.';
         return;
       }
-      // DEBUG(apply-update-confirm)
-      logApplyUpdateDebug('click', {
-        click_id: clickId,
-        is_trusted: !!(ev && ev.isTrusted),
-        detail: Number((ev && ev.detail) || 0),
-      });
       const confirmed = await showConfirmDialog({
         title: 'Apply Update',
         message: 'Update server and agents to ' + target + ' and restart ciwi?',
         okLabel: 'Apply update',
       });
-      logApplyUpdateDebug('confirm_result', { click_id: clickId, confirmed: !!confirmed });
       if (!confirmed) return;
       result.textContent = 'Starting update...';
-      logApplyUpdateDebug('request_begin', { click_id: clickId, path: '/api/v1/update/apply', target_version: target });
       try {
         const body = JSON.stringify({ target_version: target });
         const r = await postJSONWithTimeout('/api/v1/update/apply', body, 30000);
-        logApplyUpdateDebug('request_ok', {
-          click_id: clickId,
-          updated: !!(r && r.updated),
-          message: String((r && r.message) || ''),
-        });
         result.textContent = (r.message || 'Update started. Refresh in a moment.');
         if (r.updated) {
-          logApplyUpdateDebug('restart_watch_begin', { click_id: clickId });
-          waitForServerRestartAndReload();
+          waitForServerRestartAndReload(target);
         }
       } catch (e) {
-        logApplyUpdateDebug('request_error', {
-          click_id: clickId,
-          name: String((e && e.name) || ''),
-          message: String((e && e.message) || ''),
-        });
         if (e && e.name === 'AbortError') {
           result.textContent = 'Update request timed out; checking status...';
-          await monitorApplyProgressAfterTimeout();
+          await monitorApplyProgressAfterTimeout(target);
         } else {
           result.textContent = 'Update failed: ' + e.message;
         }
       }
       await refreshUpdateStatus();
-      logApplyUpdateDebug('refresh_done', { click_id: clickId });
-      // END DEBUG(apply-update-confirm)
     };
 
     document.getElementById('restartServerBtn').onclick = async (ev) => {
@@ -777,12 +733,12 @@
         const r = await postJSONWithTimeout('/api/v1/update/rollback', body, 30000);
         result.textContent = (r.message || ('Rollback to ' + target + ' started.'));
         if (r.updated) {
-          waitForServerRestartAndReload();
+          waitForServerRestartAndReload(target);
         }
       } catch (e) {
         if (e && e.name === 'AbortError') {
           result.textContent = 'Rollback request timed out; checking status...';
-          await monitorApplyProgressAfterTimeout();
+          await monitorApplyProgressAfterTimeout(target);
         } else {
           result.textContent = 'Rollback failed: ' + e.message;
         }
@@ -791,11 +747,12 @@
       await refreshRollbackTags(false);
     };
 
-    async function waitForServerRestartAndReload() {
+    async function waitForServerRestartAndReload(expectedVersion) {
       if (updateRestartWatchActive) return;
       updateRestartWatchActive = true;
       const result = document.getElementById('updateResult');
       const started = Date.now();
+      const expected = String(expectedVersion || '').trim().replace(/^v/, '');
       let seenDown = false;
       while (Date.now() - started < 120000) {
         try {
@@ -808,9 +765,11 @@
               const current = (s.update_current_version || '').trim();
               const latest = (s.update_latest_version || '').trim();
               const apply = (s.update_last_apply_status || '').trim();
+              const currentNormalized = current.replace(/^v/, '');
+              const targetReached = expected !== '' && currentNormalized === expected;
               const upToDate = current !== '' && latest !== '' && current === latest;
               const success = apply === 'success' || apply === 'noop';
-              finished = upToDate || success;
+              finished = expected ? targetReached : (upToDate || success);
             } catch (_) {}
             if (finished && !seenDown) {
               result.textContent = 'Update successful.';

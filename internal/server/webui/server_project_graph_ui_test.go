@@ -185,3 +185,47 @@ func TestProjectGraphFitAlsoFitsViewportHeight(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectGraphRestoresFitAndKeepsLargeJobGraphsScrollable(t *testing.T) {
+	for _, want := range []string{
+		`requestAnimationFrame(() => requestAnimationFrame(fitProjectGraph));`,
+		`const previousHeight = previousViewport ? previousViewport.style.height : '';`,
+		`if (previousHeight) viewport.style.height = previousHeight;`,
+		`scale: projectGraphState.scale`,
+		`select.className = 'ciwi-select project-graph-select';`,
+	} {
+		if !strings.Contains(projectJS, want) {
+			t.Fatalf("project graph sizing/select behavior no longer contains %q", want)
+		}
+	}
+	if strings.Contains(projectJS, `(viewport.clientWidth - 16) / jobLayout.contentWidth`) {
+		t.Fatal("selected pipeline job graph must scroll instead of shrinking all jobs to a tiny scale")
+	}
+}
+
+func TestGraphPlayTooltipsExplainIndependentConcurrentExecutions(t *testing.T) {
+	combined := sharedJS + projectJS + jobExecutionJS
+	for _, want := range []string{
+		`function ciwiIndependentExecutionTooltip(action, options)`,
+		`It does not cancel, pause, replace, or otherwise change any queued or running execution`,
+		`ciwiIndependentExecutionTooltip('Run this pipeline.'`,
+		`ciwiIndependentExecutionTooltip('Rerun the latest stored job execution.'`,
+	} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("graph play tooltip behavior no longer contains %q", want)
+		}
+	}
+}
+
+func TestJobHeaderTooltipsKeepStableAnchorsAcrossUnchangedPolls(t *testing.T) {
+	for _, want := range []string{
+		`if (meta.__ciwiHTML !== metaHTML)`,
+		`meta.__ciwiHTML = metaHTML`,
+		`if (subtitleElement.__ciwiHTML !== subtitle)`,
+		`subtitleElement.__ciwiHTML = subtitle`,
+	} {
+		if !strings.Contains(jobExecutionJS, want) {
+			t.Fatalf("job header stable tooltip rendering no longer contains %q", want)
+		}
+	}
+}

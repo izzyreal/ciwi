@@ -306,10 +306,8 @@
       writeProjectGraphStorage(structureViewStorageKey, next);
       if (next === 'graph' && projectGraphState.project) {
         renderProjectGraph();
-        if (projectGraphState.fitOnRender) {
-          projectGraphState.fitOnRender = false;
-          requestAnimationFrame(fitProjectGraph);
-        }
+        projectGraphState.fitOnRender = false;
+        requestAnimationFrame(() => requestAnimationFrame(fitProjectGraph));
       }
     }
 
@@ -350,6 +348,7 @@
       const previousViewport = document.getElementById('projectPipelineGraphViewport');
       const previousScrollLeft = previousViewport ? previousViewport.scrollLeft : 0;
       const previousScrollTop = previousViewport ? previousViewport.scrollTop : 0;
+      const previousHeight = previousViewport ? previousViewport.style.height : '';
       destroyOverflowTooltips(host);
       host.innerHTML = '';
       const pipelines = filteredProjectGraphPipelines(project);
@@ -371,7 +370,7 @@
       filterLabel.textContent = 'Show:';
       const select = document.createElement('select');
       select.id = 'projectGraphChainSelect';
-      select.className = 'project-graph-select';
+      select.className = 'ciwi-select project-graph-select';
       const allOption = document.createElement('option');
       allOption.value = 'all';
       allOption.textContent = 'All Pipelines';
@@ -449,6 +448,7 @@
       const viewport = document.createElement('div');
       viewport.id = 'projectPipelineGraphViewport';
       viewport.className = 'project-graph-viewport';
+      if (previousHeight) viewport.style.height = previousHeight;
       host.appendChild(viewport);
       const nodes = pipelines.map(pipeline => ({
         id: pipeline.pipeline_id,
@@ -457,7 +457,7 @@
         meta: projectGraphNodeMeta((pipeline.jobs || []).length, (pipeline.depends_on || []).filter(dep => pipelineIDs.has(dep)).length, 'job'),
         runnable: true,
         runLabel: 'Run pipeline ' + pipeline.pipeline_id,
-        runTitle: 'Run this pipeline. Shift-click to choose source ref and agent.',
+        runTitle: ciwiIndependentExecutionTooltip('Run this pipeline.', { shiftSelect: true }),
       }));
       const layout = renderProjectDAG(viewport, nodes, {
         scale: projectGraphState.scale,
@@ -535,10 +535,12 @@
         meta: projectGraphNodeMeta((job.steps || []).length, (job.needs || []).filter(dep => jobIDs.has(dep)).length, 'step'),
         runnable: true,
         runLabel: (job.matrix_includes || []).length ? ('Choose matrix entry for ' + job.id) : ('Run job ' + job.id),
-        runTitle: (job.matrix_includes || []).length ? 'Choose a matrix entry to run.' : 'Run this job. Shift-click to choose source ref and agent.',
+        runTitle: (job.matrix_includes || []).length
+          ? ciwiIndependentExecutionTooltip('Choose a matrix entry and run this job.')
+          : ciwiIndependentExecutionTooltip('Run this job.', { shiftSelect: true }),
       }));
-      const jobLayout = renderProjectDAG(viewport, jobNodes, {
-        scale: 1,
+      renderProjectDAG(viewport, jobNodes, {
+        scale: projectGraphState.scale,
         selectedID: projectGraphState.jobID,
         emptyText: 'No jobs',
         onSelect: id => {
@@ -556,17 +558,6 @@
           await runProjectJobSelection(event, pipeline, { pipeline_job_id: job.id }, (job.id || 'job'), 'Run selection failed', 'Run Job With Source Ref', 'Run Job', button);
         },
       });
-      if (jobLayout) {
-        requestAnimationFrame(() => {
-          const stage = viewport.querySelector('.project-graph-stage');
-          const content = viewport.querySelector('.project-graph-content');
-          if (!stage || !content) return;
-          const scale = Math.min(1, (viewport.clientWidth - 16) / jobLayout.contentWidth, (viewport.clientHeight - 16) / jobLayout.contentHeight);
-          stage.style.width = Math.ceil(jobLayout.contentWidth * scale) + 'px';
-          stage.style.height = Math.ceil(jobLayout.contentHeight * scale) + 'px';
-          content.style.transform = 'scale(' + scale + ')';
-        });
-      }
       layout.appendChild(graph);
       const selectedJob = jobs.find(job => job.id === projectGraphState.jobID);
       layout.appendChild(buildProjectGraphJobDetail(pipeline, selectedJob));
@@ -1886,7 +1877,7 @@
         status: pipeline.status,
         runnable: Number(pipeline.pipeline_db_id || 0) > 0,
         runLabel: 'Run current definition of pipeline ' + pipeline.pipeline_id,
-        runTitle: 'Starts a fresh run from the current project definition. Shift-click to choose source ref and agent.',
+        runTitle: ciwiIndependentExecutionTooltip('Start a fresh run from the current project definition.', { shiftSelect: true }),
       }));
       const pipelineLayout = renderProjectDAG(viewport, nodes, {
         scale: 1,
@@ -1950,7 +1941,9 @@
         status: job.status,
         runnable: latestGraphExecutions(job).length > 0,
         runLabel: 'Run job ' + job.pipeline_job_id + ' again',
-        runTitle: latestGraphExecutions(job).length > 1 ? 'Choose a matrix execution to rerun.' : 'Rerun the latest stored job execution.',
+        runTitle: latestGraphExecutions(job).length > 1
+          ? ciwiIndependentExecutionTooltip('Choose a matrix execution to rerun.')
+          : ciwiIndependentExecutionTooltip('Rerun the latest stored job execution.'),
       }));
       const selectJob = id => {
         jobExecutionGraphState.selectedJobID = id;
@@ -2606,21 +2599,17 @@
         renderToolRequirements(job.required_capabilities, job.runtime_capabilities, job.status, job.unmet_requirements);
 
         const meta = document.getElementById('metaGrid');
-        const previousModeInfo = meta.querySelector('.mode-info');
-        const previousModeTooltip = previousModeInfo && previousModeInfo.__ciwiHoverTooltip;
-        const modeIconHovered = !!(previousModeInfo && previousModeInfo.matches(':hover'));
-        const modeTooltipVisible = !!(previousModeTooltip && typeof previousModeTooltip.isVisible === 'function' && previousModeTooltip.isVisible());
-        const modeTooltipHovered = !!document.querySelector('.ciwi-hover-tooltip[data-ciwi-tooltip-owner="mode-info"]:hover');
-        const holdMetaRefresh = modeIconHovered || modeTooltipVisible || modeTooltipHovered;
-        if (!holdMetaRefresh) {
+        const metaHTML = rows.map(r =>
+          '<div class="label">' + r.label + '</div><div' + (r.valueId ? ' id="' + r.valueId + '"' : '') + '>' + (r.valueHTML || r.value || '') + '</div>'
+        ).join('');
+        if (meta.__ciwiHTML !== metaHTML) {
           meta.querySelectorAll('.mode-info').forEach(el => {
             if (el.__ciwiHoverTooltip && typeof el.__ciwiHoverTooltip.destroy === 'function') {
               el.__ciwiHoverTooltip.destroy();
             }
           });
-          meta.innerHTML = rows.map(r =>
-            '<div class="label">' + r.label + '</div><div' + (r.valueId ? ' id="' + r.valueId + '"' : '') + '>' + (r.valueHTML || r.value || '') + '</div>'
-          ).join('');
+          meta.innerHTML = metaHTML;
+          meta.__ciwiHTML = metaHTML;
           const modeInfo = meta.querySelector('.mode-info');
           if (modeInfo) {
             const mode = String(modeInfo.getAttribute('data-mode') || '').trim();
@@ -2668,12 +2657,15 @@
           subtitle += '<div class="job-subtitle-detail">Command: <code data-ciwi-overflow-text="' + escapeHtml(stepDetail) + '">' + escapeHtml(stepDetail) + '</code></div>';
         }
         const subtitleElement = document.getElementById('subtitle');
-        if (typeof destroyOverflowTooltips === 'function') {
-          destroyOverflowTooltips(subtitleElement);
-        }
-        subtitleElement.innerHTML = subtitle;
-        if (typeof bindOverflowTooltips === 'function') {
-          bindOverflowTooltips(subtitleElement, { ownerPrefix: 'job-subtitle-command' });
+        if (subtitleElement.__ciwiHTML !== subtitle) {
+          if (typeof destroyOverflowTooltips === 'function') {
+            destroyOverflowTooltips(subtitleElement);
+          }
+          subtitleElement.innerHTML = subtitle;
+          subtitleElement.__ciwiHTML = subtitle;
+          if (typeof bindOverflowTooltips === 'function') {
+            bindOverflowTooltips(subtitleElement, { ownerPrefix: 'job-subtitle-command' });
+          }
         }
 
       const forceBtn = document.getElementById('forceFailBtn');
@@ -2752,6 +2744,8 @@
         const tooltipHTML = '' +
           '<strong>What Run Job Again does</strong><br />' +
           'It enqueues a new attempt with the same script, requirements, source repo/ref, and step plan as this run. Pipeline and chain jobs remain part of their original run and refresh their upstream artifact bindings, allowing failed runs to be repaired in place.<br /><br />' +
+          '<strong>Ongoing executions</strong><br />' +
+          'The new attempt does not cancel, pause, replace, or otherwise change queued or running executions. It may run concurrently with them.<br /><br />' +
           '<strong>Source checkout behavior</strong><br />' +
           'Rerun keeps the same pinned source commit as the original queued job.<br /><br />' +
           '<strong>Artifacts and logs</strong><br />' +

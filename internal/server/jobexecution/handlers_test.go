@@ -16,20 +16,21 @@ import (
 )
 
 type stubStore struct {
-	listJobExecutionsFn           func() ([]protocol.JobExecution, error)
-	createJobExecutionFn          func(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
-	getJobExecutionFn             func(id string) (protocol.JobExecution, error)
-	deleteQueuedJobExecutionFn    func(id string) error
-	updateJobExecutionStatusFn    func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
-	appendJobExecutionEventsFn    func(id string, events []protocol.JobExecutionEvent) error
-	listJobExecutionEventsFn      func(id string) ([]protocol.JobExecutionEvent, error)
-	listJobExecutionEventsAfterFn func(id string, afterID int64) ([]protocol.JobExecutionEvent, error)
-	listJobExecutionArtifactsFn   func(id string) ([]protocol.JobExecutionArtifact, error)
-	saveJobExecutionArtifactsFn   func(id string, artifacts []protocol.JobExecutionArtifact) error
-	getJobExecutionTestReportFn   func(id string) (protocol.JobExecutionTestReport, bool, error)
-	saveJobExecutionTestReportFn  func(id string, report protocol.JobExecutionTestReport) error
-	clearQueuedJobExecutionsFn    func() (int64, error)
-	flushJobExecutionHistoryFn    func() ([]string, error)
+	listJobExecutionsFn             func() ([]protocol.JobExecution, error)
+	createJobExecutionFn            func(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
+	getJobExecutionFn               func(id string) (protocol.JobExecution, error)
+	deleteQueuedJobExecutionFn      func(id string) error
+	updateJobExecutionStatusFn      func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
+	appendJobExecutionEventsFn      func(id string, events []protocol.JobExecutionEvent) error
+	listJobExecutionEventsFn        func(id string) ([]protocol.JobExecutionEvent, error)
+	listJobExecutionEventsAfterFn   func(id string, afterID int64) ([]protocol.JobExecutionEvent, error)
+	listJobExecutionArtifactsFn     func(id string) ([]protocol.JobExecutionArtifact, error)
+	saveJobExecutionArtifactsFn     func(id string, artifacts []protocol.JobExecutionArtifact) error
+	getJobExecutionTestReportFn     func(id string) (protocol.JobExecutionTestReport, bool, error)
+	saveJobExecutionTestReportFn    func(id string, report protocol.JobExecutionTestReport) error
+	clearQueuedJobExecutionsFn      func() (int64, error)
+	flushJobExecutionHistoryFn      func() ([]string, error)
+	flushJobExecutionHistoryByIDsFn func(jobIDs []string) ([]string, error)
 }
 
 func (s *stubStore) ListJobExecutions() ([]protocol.JobExecution, error) {
@@ -131,6 +132,13 @@ func (s *stubStore) FlushJobExecutionHistory() ([]string, error) {
 		return s.flushJobExecutionHistoryFn()
 	}
 	return nil, fmt.Errorf("unexpected FlushJobExecutionHistory call")
+}
+
+func (s *stubStore) FlushJobExecutionHistoryByIDs(jobIDs []string) ([]string, error) {
+	if s.flushJobExecutionHistoryByIDsFn != nil {
+		return s.flushJobExecutionHistoryByIDsFn(jobIDs)
+	}
+	return nil, fmt.Errorf("unexpected FlushJobExecutionHistoryByIDs call")
 }
 
 func TestHandleByIDCancelActiveJob(t *testing.T) {
