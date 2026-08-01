@@ -31,7 +31,6 @@ func TestJobExecutionUIMapsCurrentCategoryPositionToTimeline(t *testing.T) {
 		"text.match(/^Ciwi phase",
 		"Number((entry && entry.step_index) || 0) === stepIndex",
 		"phases[phaseIndex - 1]",
-		"Backward compatibility for jobs currently running on an older agent.",
 	} {
 		if !strings.Contains(jobExecutionJS, want) {
 			t.Fatalf("job execution current-position mapping no longer contains %q", want)

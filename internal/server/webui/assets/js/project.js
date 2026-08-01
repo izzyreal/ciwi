@@ -1301,10 +1301,7 @@
         const projectID = String(currentProjectID || '').trim();
         const rows = (data.job_executions || []).filter(j => {
           const metadata = (j && j.metadata) || {};
-          const jobProjectID = String(metadata.project_id || '').trim();
-          if (jobProjectID) return jobProjectID === projectID;
-          // Backward compatibility for older executions missing project_id metadata.
-          return String(metadata.project || '').trim() === currentProjectName;
+          return String(metadata.project_id || '').trim() === projectID;
         }).slice(0, 120);
         rows.forEach(job => {
           const tr = buildJobExecutionRow(job, {

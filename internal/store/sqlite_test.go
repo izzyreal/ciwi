@@ -60,6 +60,27 @@ func openTestStore(t *testing.T) *Store {
 	return s
 }
 
+func TestStoreRejectsMalformedStructuredPipelineSteps(t *testing.T) {
+	s := openTestStore(t)
+	cfg, err := config.Parse([]byte(testConfigYAML), "structured-steps")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if err := s.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	pipeline, err := s.GetPipelineByProjectAndID("ciwi", "build")
+	if err != nil {
+		t.Fatalf("get pipeline: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE pipeline_jobs SET steps_json = ? WHERE pipeline_id = ?`, `["echo unstructured"]`, pipeline.DBID); err != nil {
+		t.Fatalf("corrupt structured steps: %v", err)
+	}
+	if _, err := s.listPipelineJobs(pipeline.DBID); err == nil || !strings.Contains(err.Error(), `decode pipeline job "compile" steps`) {
+		t.Fatalf("expected structured step decode error, got %v", err)
+	}
+}
+
 func TestListJobExecutionsDeterministicOrderWhenTimestampsTie(t *testing.T) {
 	s := openTestStore(t)
 
@@ -92,65 +113,6 @@ func TestListJobExecutionsDeterministicOrderWhenTimestampsTie(t *testing.T) {
 	for i := range jobs {
 		if jobs[i].ID != expected[i] {
 			t.Fatalf("unexpected order at index %d: got %q want %q", i, jobs[i].ID, expected[i])
-		}
-	}
-}
-
-func TestOpenDropsLegacyJobOutputColumn(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "ciwi.db")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("open initial store: %v", err)
-	}
-	if _, err := s.db.Exec(`ALTER TABLE job_executions ADD COLUMN output_text TEXT`); err != nil {
-		t.Fatalf("add legacy output column: %v", err)
-	}
-	if _, err := s.db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
-		t.Fatalf("disable foreign keys for legacy fixture: %v", err)
-	}
-	if _, err := s.db.Exec(`
-		INSERT INTO job_execution_events (job_execution_id, event_type, timestamp_utc, payload_json, created_utc)
-		VALUES ('missing-job', 'system.message', '2026-07-19T00:00:00Z', '{"message":"orphan"}', '2026-07-19T00:00:00Z')
-	`); err != nil {
-		t.Fatalf("insert orphaned legacy event: %v", err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatalf("close initial store: %v", err)
-	}
-
-	s, err = Open(path)
-	if err != nil {
-		t.Fatalf("reopen migrated store: %v", err)
-	}
-	defer s.Close()
-	var foreignKeys int
-	if err := s.db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
-		t.Fatalf("read foreign_keys setting: %v", err)
-	}
-	if foreignKeys != 1 {
-		t.Fatalf("expected foreign keys enabled, got %d", foreignKeys)
-	}
-	var orphanedEvents int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM job_execution_events WHERE job_execution_id = 'missing-job'`).Scan(&orphanedEvents); err != nil {
-		t.Fatalf("count orphaned events: %v", err)
-	}
-	if orphanedEvents != 0 {
-		t.Fatalf("expected orphaned events removed, got %d", orphanedEvents)
-	}
-	rows, err := s.db.Query(`PRAGMA table_info(job_executions)`)
-	if err != nil {
-		t.Fatalf("inspect job columns: %v", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid, notNull, primaryKey int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &primaryKey); err != nil {
-			t.Fatalf("scan job column: %v", err)
-		}
-		if name == "output_text" {
-			t.Fatal("legacy output_text column was not dropped")
 		}
 	}
 }
@@ -495,31 +457,6 @@ pipelines:
 	}
 	if got := detail.Pipelines[0].Jobs[1].Needs; len(got) != 1 || got[0] != "smoke" {
 		t.Fatalf("unexpected needs for package job: %+v", got)
-	}
-}
-
-func TestStoreLoadConfigRejectsDeprecatedProjectVaultConfig(t *testing.T) {
-	_, err := config.Parse([]byte(`
-version: 1
-project:
-  name: ciwi
-  vault:
-    connection: home-vault
-    secrets:
-      - name: github-secret
-        mount: kv
-        path: gh
-        key: token
-pipelines:
-  - id: build
-    jobs:
-      - id: unit
-        timeout_seconds: 60
-        steps:
-          - run: go test ./...
-`), "vault-config")
-	if err == nil {
-		t.Fatalf("expected parse error for legacy project.vault settings")
 	}
 }
 

@@ -39,11 +39,16 @@ pipelines:
 	if err := db.LoadConfig(cfg, "ciwi-project.yaml", "", "", "ciwi-project.yaml"); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
+	project, err := db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	projectID := int64ToString(project.ID)
 
 	originalUpstream, err := db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script: "echo codesign", ArtifactGlobs: []string{"dist/codesigned/**"},
 		Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "codesign", "pipeline_run_id": "run-codesign",
+			"project": "ciwi", "project_id": projectID, "pipeline_id": "codesign", "pipeline_run_id": "run-codesign",
 			"pipeline_job_id": "codesign-job", "chain_run_id": "chain-1",
 		},
 	})
@@ -57,7 +62,7 @@ pipelines:
 	retriedUpstream, err := db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script: "echo codesign", ArtifactGlobs: []string{"dist/codesigned/**"},
 		Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "codesign", "pipeline_run_id": "run-codesign",
+			"project": "ciwi", "project_id": projectID, "pipeline_id": "codesign", "pipeline_run_id": "run-codesign",
 			"pipeline_job_id": "codesign-job", "chain_run_id": "chain-1",
 			protocol.JobMetadataAttemptRootJobID: originalUpstream.ID,
 			protocol.JobMetadataRerunOfJobID:     originalUpstream.ID,
@@ -82,7 +87,7 @@ pipelines:
 		ID:                       "package-original",
 		DependencyArtifactJobIDs: []string{originalUpstream.ID},
 		Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "package", "pipeline_run_id": "run-package",
+			"project": "ciwi", "project_id": projectID, "pipeline_id": "package", "pipeline_run_id": "run-package",
 			"pipeline_job_id": "package-job", "chain_run_id": "chain-1",
 			artifactSourcesMetadataKey: artifactSourcesJSON,
 		},

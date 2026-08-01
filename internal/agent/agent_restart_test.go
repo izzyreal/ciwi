@@ -231,7 +231,7 @@ func TestRestartAgentViaLaunchdBranches(t *testing.T) {
 	})
 
 	t.Run("attempted with launchctl path", func(t *testing.T) {
-		t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "io.github.ciwi.agent")
+		t.Setenv("CIWI_AGENT_LAUNCHD_LABEL", "nl.izmar.ciwi.agent")
 		t.Setenv("CIWI_LAUNCHCTL_PATH", "/usr/bin/true")
 		msg, err, attempted := restartAgentViaLaunchd()
 		if !attempted {
@@ -240,7 +240,7 @@ func TestRestartAgentViaLaunchdBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
-		if !strings.Contains(msg, "io.github.ciwi.agent") {
+		if !strings.Contains(msg, "nl.izmar.ciwi.agent") {
 			t.Fatalf("unexpected msg: %q", msg)
 		}
 	})

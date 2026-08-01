@@ -1,8 +1,5 @@
 # Architecture
 
-For the current evolvability assessment and staged refactoring direction, see
-[Architecture review — August 2026](architecture-review-2026-08.md).
-
 ciwi is a single codebase that runs in three modes:
 - server
 - agent
@@ -146,6 +143,20 @@ Primary persisted entities:
 - Deterministic server-side state transitions for jobs.
 - Agent capability and runtime requirement matching before execution.
 - Explicit update orchestration with persisted status.
+
+## Evolution priorities
+
+- Centralize execution metadata keys and typed accessors while retaining the
+  map representation used by the protocol and SQLite store.
+- Move pipeline version resolution, pending-job construction, preview, and
+  dependency reconciliation into a focused `internal/server/pipelinerun`
+  package so inspection and execution share one planning path.
+- Keep the browser UI as real embedded assets owned by
+  `internal/server/webui`; preserve the single-binary deployment model.
+- Extract agent-registry and update-controller state from the server
+  composition root when those areas next require substantial changes.
+- Prefer focused packages and consumer-owned interfaces over generic model,
+  service, or utility layers.
 
 ## Trust boundaries and assumptions
 

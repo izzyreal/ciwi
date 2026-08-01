@@ -48,6 +48,7 @@ func TestVerifyDependencyRunInChain(t *testing.T) {
 			CreatedUTC: now,
 			Metadata: map[string]string{
 				"project":              "ciwi",
+				"project_id":           "1",
 				"pipeline_id":          "build",
 				"pipeline_run_id":      "run-1",
 				"chain_run_id":         "chain-1",
@@ -60,17 +61,17 @@ func TestVerifyDependencyRunInChain(t *testing.T) {
 			ArtifactGlobs: []string{"dist/**"},
 		},
 	}
-	if _, found, err := verifyDependencyRunInChain(jobs, "", 0, "ciwi", "build"); err == nil || found {
+	if _, found, err := verifyDependencyRunInChain(jobs, "", 1, "build"); err == nil || found {
 		t.Fatalf("expected missing chain run id to error")
 	}
-	ctx, found, err := verifyDependencyRunInChain(jobs, "chain-1", 0, "ciwi", "build")
+	ctx, found, err := verifyDependencyRunInChain(jobs, "chain-1", 1, "build")
 	if err != nil || !found {
 		t.Fatalf("expected chain dependency to be found/satisfied: found=%v err=%v", found, err)
 	}
 	if ctx.VersionRaw != "1.2.3" || testArtifactExecutionID(ctx, "build", "", "linux-amd64") != "job-1" {
 		t.Fatalf("unexpected chain dependency context: %+v", ctx)
 	}
-	_, found, err = verifyDependencyRunInChain(jobs, "chain-missing", 0, "ciwi", "build")
+	_, found, err = verifyDependencyRunInChain(jobs, "chain-missing", 1, "build")
 	if err != nil || found {
 		t.Fatalf("expected missing chain run to return found=false without error, found=%v err=%v", found, err)
 	}
@@ -85,7 +86,7 @@ func TestCheckPipelineDependenciesWithReporter(t *testing.T) {
 		reporterMsgs = append(reporterMsgs, step+":"+status+":"+detail)
 	}
 
-	p := store.PersistedPipeline{ProjectName: "ciwi", PipelineID: "release", DependsOn: []string{"build"}}
+	p := store.PersistedPipeline{ProjectID: 1, ProjectName: "ciwi", PipelineID: "release", DependsOn: []string{"build"}}
 	_, err := s.checkPipelineDependenciesWithReporter(p, reporter)
 	if err == nil {
 		t.Fatalf("expected unsatisfied dependency when no prior runs")
@@ -100,6 +101,7 @@ func TestCheckPipelineDependenciesWithReporter(t *testing.T) {
 		ArtifactGlobs:  []string{"dist/**"},
 		Metadata: map[string]string{
 			"project":              "ciwi",
+			"project_id":           "1",
 			"pipeline_id":          "build",
 			"pipeline_run_id":      "run-1",
 			"pipeline_version":     "v1.2.3",
@@ -141,6 +143,7 @@ func TestCheckPipelineDependenciesWithReporterIgnoresCrossRepoResolvedRefInherit
 			TimeoutSeconds: 30,
 			Metadata: map[string]string{
 				"project":                      "ciwi",
+				"project_id":                   "1",
 				"pipeline_id":                  pipelineID,
 				"pipeline_run_id":              runID,
 				"pipeline_version":             "v1.2.3",
@@ -165,6 +168,7 @@ func TestCheckPipelineDependenciesWithReporterIgnoresCrossRepoResolvedRefInherit
 	createSucceeded("build-2", "run-build-2", "build-b", "https://github.com/acme/repo-b.git", "bbbbbbbb")
 
 	p := store.PersistedPipeline{
+		ProjectID:   1,
 		ProjectName: "ciwi",
 		PipelineID:  "release",
 		DependsOn:   []string{"build-a", "build-b"},

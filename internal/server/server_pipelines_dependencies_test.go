@@ -16,6 +16,7 @@ func TestVerifyDependencyRunUsesLatestSuccessfulOfLatestVersion(t *testing.T) {
 			CreatedUTC: base.Add(-3 * time.Minute),
 			Metadata: map[string]string{
 				"project":              "ciwi",
+				"project_id":           "1",
 				"pipeline_id":          "build",
 				"pipeline_run_id":      "run-old",
 				"pipeline_version_raw": "1.2.3",
@@ -32,6 +33,7 @@ func TestVerifyDependencyRunUsesLatestSuccessfulOfLatestVersion(t *testing.T) {
 			CreatedUTC: base.Add(-1 * time.Minute),
 			Metadata: map[string]string{
 				"project":              "ciwi",
+				"project_id":           "1",
 				"pipeline_id":          "build",
 				"pipeline_run_id":      "run-rerun",
 				"pipeline_version_raw": "1.2.3",
@@ -40,7 +42,7 @@ func TestVerifyDependencyRunUsesLatestSuccessfulOfLatestVersion(t *testing.T) {
 		},
 	}
 
-	ctx, err := verifyDependencyRun(jobs, 0, "ciwi", "build")
+	ctx, err := verifyDependencyRun(jobs, 1, "build")
 	if err != nil {
 		t.Fatalf("verify dependency run: %v", err)
 	}
@@ -74,6 +76,7 @@ func TestVerifyDependencyRunRejectsCrossVersionSuccessfulFallback(t *testing.T) 
 			CreatedUTC: base.Add(-5 * time.Minute),
 			Metadata: map[string]string{
 				"project":              "ciwi",
+				"project_id":           "1",
 				"pipeline_id":          "build",
 				"pipeline_run_id":      "run-v1",
 				"pipeline_version_raw": "1.2.3",
@@ -86,6 +89,7 @@ func TestVerifyDependencyRunRejectsCrossVersionSuccessfulFallback(t *testing.T) 
 			CreatedUTC: base.Add(-1 * time.Minute),
 			Metadata: map[string]string{
 				"project":              "ciwi",
+				"project_id":           "1",
 				"pipeline_id":          "build",
 				"pipeline_run_id":      "run-v2",
 				"pipeline_version_raw": "1.2.4",
@@ -94,7 +98,7 @@ func TestVerifyDependencyRunRejectsCrossVersionSuccessfulFallback(t *testing.T) 
 		},
 	}
 
-	if _, err := verifyDependencyRun(jobs, 0, "ciwi", "build"); err == nil {
+	if _, err := verifyDependencyRun(jobs, 1, "build"); err == nil {
 		t.Fatalf("expected dependency verification to fail when latest version has no successful run")
 	}
 }
@@ -108,6 +112,7 @@ func TestVerifyDependencyRunReturnsSourceRepoAndResolvedRef(t *testing.T) {
 			CreatedUTC: base,
 			Metadata: map[string]string{
 				"project":                      "ciwi",
+				"project_id":                   "1",
 				"pipeline_id":                  "build",
 				"pipeline_run_id":              "run-1",
 				"pipeline_version_raw":         "1.2.3",
@@ -118,7 +123,7 @@ func TestVerifyDependencyRunReturnsSourceRepoAndResolvedRef(t *testing.T) {
 		},
 	}
 
-	ctx, err := verifyDependencyRun(jobs, 0, "ciwi", "build")
+	ctx, err := verifyDependencyRun(jobs, 1, "build")
 	if err != nil {
 		t.Fatalf("verify dependency run: %v", err)
 	}
@@ -160,14 +165,14 @@ func TestVerifyDependencyRunScopesSameNamedProjectsByProjectID(t *testing.T) {
 		},
 	}
 
-	ctx, err := verifyDependencyRun(jobs, 2, "ciwi", "build")
+	ctx, err := verifyDependencyRun(jobs, 2, "build")
 	if err != nil {
 		t.Fatalf("verify branch dependency run: %v", err)
 	}
 	if got := testArtifactExecutionID(ctx, "build", "compile", "darwin-arm64"); got != "branch-build-ok" {
 		t.Fatalf("expected branch artifact execution, got %q", got)
 	}
-	if _, err := verifyDependencyRun(jobs, 1, "ciwi", "build"); err == nil {
+	if _, err := verifyDependencyRun(jobs, 1, "build"); err == nil {
 		t.Fatalf("expected failed main project dependency to remain unsatisfied")
 	}
 }

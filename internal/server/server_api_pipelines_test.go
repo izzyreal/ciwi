@@ -175,10 +175,6 @@ pipeline_chains:
 	if chainID == "" {
 		t.Fatalf("expected persisted pipeline chain id")
 	}
-	legacyRoute := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipeline-chains/1/run", map[string]any{})
-	if legacyRoute.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected legacy chain route to be removed, got %d", legacyRoute.StatusCode)
-	}
 	project, err := s.db.GetProjectByName("ciwi")
 	if err != nil {
 		t.Fatalf("GetProjectByName: %v", err)
@@ -600,11 +596,16 @@ pipelines:
           - run: echo publish
 `)
 	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+	project, err := s.db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
 	buildExec, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:         "echo cached",
 		TimeoutSeconds: 30,
 		Metadata: map[string]string{
 			"project":                      "ciwi",
+			"project_id":                   int64ToString(project.ID),
 			"pipeline_id":                  "release",
 			"pipeline_run_id":              "run-release-1",
 			"pipeline_version_raw":         "1.2.3",
@@ -1116,11 +1117,16 @@ pipelines:
           - run: echo publish
 `)
 	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+	project, err := s.db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
 	prev, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:         "echo previous",
 		TimeoutSeconds: 30,
 		Metadata: map[string]string{
 			"project":                      "ciwi",
+			"project_id":                   int64ToString(project.ID),
 			"pipeline_id":                  "release",
 			"pipeline_run_id":              "run-release-prev",
 			"pipeline_version_raw":         "1.2.3",

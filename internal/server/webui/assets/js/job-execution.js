@@ -2199,7 +2199,6 @@
     const LOG_STEP_OPEN_STATE_STORAGE_PREFIX = 'ciwi.jobExecution.stepOpen.v1.';
     let tailingEnabled = true;
     let suppressLogScrollEvent = false;
-    let projectIDByNameCache = null;
     let lastCoverageSignature = null;
     let lastTestReportSignature = '';
     let lastArtifactsSignature = '';
@@ -2307,12 +2306,7 @@
         const item = phaseIndex > 0 ? phases[phaseIndex - 1] : null;
         if (item) return Number(item.index || 0) - 1;
       }
-      // Backward compatibility for jobs currently running on an older agent.
-      m = text.match(/^Step\s+(\d+)(?:\/\d+)?(?:\s*:|$)/i);
-      if (!m) return -1;
-      const idx = Number.parseInt(String(m[1] || '').trim(), 10);
-      if (!Number.isFinite(idx) || idx <= 0) return -1;
-      return idx - 1;
+      return -1;
     }
 
     function subtitleStepDetail(job) {
@@ -2333,30 +2327,10 @@
       return '';
     }
 
-    async function resolveProjectIDByName(projectName) {
-      const name = String(projectName || '').trim();
-      if (!name) return '';
-      if (!projectIDByNameCache) {
-        projectIDByNameCache = Object.create(null);
-        try {
-          const data = await apiJSON('/api/v1/projects');
-          (data.projects || []).forEach(p => {
-            const n = String((p && p.name) || '').trim();
-            const id = String((p && p.id) || '').trim();
-            if (n && id) projectIDByNameCache[n] = id;
-          });
-        } catch (_) {}
-      }
-      return String(projectIDByNameCache[name] || '');
-    }
-
-    async function renderProjectIcon(projectID, projectName) {
+    function renderProjectIcon(projectID) {
       const icon = document.getElementById('jobProjectIcon');
       if (!icon) return;
-      let id = String(projectID || '').trim();
-      if (!id) {
-        id = await resolveProjectIDByName(projectName);
-      }
+      const id = String(projectID || '').trim();
       if (!id) {
         icon.style.display = 'none';
         return;
@@ -2610,7 +2584,7 @@
           title = projectName + ' / ' + title;
         }
         document.getElementById('jobTitle').textContent = title;
-        await renderProjectIcon(projectID, projectName);
+        renderProjectIcon(projectID);
 
         const pipeline = String(metaSource.pipeline_id || '').trim();
         const dryRun = String(metaSource.dry_run || '').trim() === '1';

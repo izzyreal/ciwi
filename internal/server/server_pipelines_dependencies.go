@@ -37,7 +37,7 @@ func (s *stateStore) checkPipelineDependenciesWithReporter(p store.PersistedPipe
 		if report != nil {
 			report("dependencies", "running", fmt.Sprintf("checking latest run for dependency %q", depID))
 		}
-		ctx, err := verifyDependencyRun(jobs, p.ProjectID, p.ProjectName, depID)
+		ctx, err := verifyDependencyRun(jobs, p.ProjectID, depID)
 		if err != nil {
 			if report != nil {
 				report("dependencies", "error", fmt.Sprintf("dependency %q not satisfied: %v", depID, err))
@@ -90,7 +90,7 @@ func (s *stateStore) inspectPipelineDependenciesWithReporter(p store.PersistedPi
 		if report != nil {
 			report("dependencies", "running", fmt.Sprintf("checking latest run for dependency %q", depID))
 		}
-		ctx, err := verifyDependencyRun(jobs, p.ProjectID, p.ProjectName, depID)
+		ctx, err := verifyDependencyRun(jobs, p.ProjectID, depID)
 		if err != nil {
 			blocked = true
 			msg := fmt.Sprintf("dependency %q unresolved for preview: %v", depID, err)
@@ -178,7 +178,7 @@ func mergePipelineDependencyContext(out *pipelineDependencyContext, depID string
 	return nil
 }
 
-func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, projectName, pipelineID string) (pipelineDependencyContext, error) {
+func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, pipelineID string) (pipelineDependencyContext, error) {
 	jobs = protocol.LatestJobExecutionAttempts(jobs)
 	type runState struct {
 		lastCreated time.Time
@@ -188,7 +188,7 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, projectN
 	}
 	byRun := map[string]runState{}
 	for _, j := range jobs {
-		if !jobExecutionMatchesProject(j, projectID, projectName) {
+		if !jobExecutionMatchesProject(j, projectID) {
 			continue
 		}
 		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
@@ -343,14 +343,14 @@ func dependencyRunVersionMatches(meta map[string]string, targetVersionRaw, targe
 	return runRaw == "" && runTagged == ""
 }
 
-func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID string, projectID int64, projectName, pipelineID string) (pipelineDependencyContext, bool, error) {
+func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID string, projectID int64, pipelineID string) (pipelineDependencyContext, bool, error) {
 	chainRunID = strings.TrimSpace(chainRunID)
 	if chainRunID == "" {
 		return pipelineDependencyContext{}, false, fmt.Errorf("chain run id is required")
 	}
 	filtered := make([]protocol.JobExecution, 0)
 	for _, j := range jobs {
-		if !jobExecutionMatchesProject(j, projectID, projectName) {
+		if !jobExecutionMatchesProject(j, projectID) {
 			continue
 		}
 		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
@@ -364,6 +364,6 @@ func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID string,
 	if len(filtered) == 0 {
 		return pipelineDependencyContext{}, false, nil
 	}
-	ctx, err := verifyDependencyRun(filtered, projectID, projectName, pipelineID)
+	ctx, err := verifyDependencyRun(filtered, projectID, pipelineID)
 	return ctx, true, err
 }

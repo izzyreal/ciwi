@@ -173,7 +173,7 @@ func (s *stateStore) reconcileNeedsBlockedJob(candidate protocol.JobExecution, a
 		return err == nil, err
 	}
 	runID := strings.TrimSpace(candidate.Metadata["pipeline_run_id"])
-	projectName := strings.TrimSpace(candidate.Metadata["project"])
+	projectID := strings.TrimSpace(candidate.Metadata["project_id"])
 	pipelineID := strings.TrimSpace(candidate.Metadata["pipeline_id"])
 	for _, need := range needs {
 		found := false
@@ -181,7 +181,7 @@ func (s *stateStore) reconcileNeedsBlockedJob(candidate protocol.JobExecution, a
 		allSucceeded := true
 		for _, possible := range all {
 			if strings.TrimSpace(possible.Metadata["pipeline_run_id"]) != runID ||
-				strings.TrimSpace(possible.Metadata["project"]) != projectName ||
+				strings.TrimSpace(possible.Metadata["project_id"]) != projectID ||
 				strings.TrimSpace(possible.Metadata["pipeline_id"]) != pipelineID ||
 				strings.TrimSpace(possible.Metadata["pipeline_job_id"]) != need {
 				continue
@@ -253,9 +253,8 @@ func (s *stateStore) bindQueuedChainJobDependencyArtifacts(job protocol.JobExecu
 
 func (s *stateStore) resolveChainJobDependencyContext(job protocol.JobExecution, all []protocol.JobExecution) ([]string, pipelineDependencyContext, error) {
 	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
-	projectName := strings.TrimSpace(job.Metadata["project"])
 	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
-	if chainRunID == "" || projectName == "" || pipelineID == "" {
+	if chainRunID == "" || strings.TrimSpace(job.Metadata["project_id"]) == "" || pipelineID == "" {
 		return nil, pipelineDependencyContext{}, nil
 	}
 	p, err := s.getPipelineForJobExecution(job)
@@ -272,12 +271,12 @@ func (s *stateStore) resolveChainJobDependencyContext(job protocol.JobExecution,
 		if depID == "" {
 			continue
 		}
-		ctx, foundInChain, err := verifyDependencyRunInChain(all, chainRunID, p.ProjectID, projectName, depID)
+		ctx, foundInChain, err := verifyDependencyRunInChain(all, chainRunID, p.ProjectID, depID)
 		if err != nil {
 			return nil, pipelineDependencyContext{}, fmt.Errorf("dependency %q not satisfied in chain run: %w", depID, err)
 		}
 		if !foundInChain {
-			ctx, err = verifyDependencyRun(all, p.ProjectID, projectName, depID)
+			ctx, err = verifyDependencyRun(all, p.ProjectID, depID)
 			if err != nil {
 				return nil, pipelineDependencyContext{}, fmt.Errorf("dependency %q not satisfied: %w", depID, err)
 			}

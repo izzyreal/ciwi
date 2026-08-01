@@ -23,10 +23,4 @@ func TestPipelineChainUIUsesNamesAndProjectScopedDerivedIDs(t *testing.T) {
 			t.Fatalf("pipeline-chain UI no longer contains %q", want)
 		}
 	}
-	if strings.Contains(indexJS+projectHTML+projectJS, "/api/v1/pipeline-chains/") {
-		t.Fatalf("pipeline-chain UI still contains the legacy unscoped route")
-	}
-	if strings.Contains(indexJS+projectHTML+projectJS, ".chain_id") {
-		t.Fatalf("pipeline-chain UI still uses the removed chain_id response field")
-	}
 }

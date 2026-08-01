@@ -8,7 +8,7 @@ func TestSelfUpdateServiceModeReasonForDarwinLaunchdEnv(t *testing.T) {
 		case "CIWI_AGENT_LAUNCHD_LABEL":
 			return "nl.izmar.ciwi.agent"
 		case "CIWI_AGENT_LAUNCHD_PLIST":
-			return "/Users/test/Library/LaunchAgents/nl.izmar.ciwi.agent.plist"
+			return "/Users/test/Library/Application Support/ciwi/CiwiAgent.app/Contents/Library/LaunchAgents/nl.izmar.ciwi.agent.plist"
 		default:
 			return ""
 		}

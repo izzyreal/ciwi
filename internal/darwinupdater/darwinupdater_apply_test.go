@@ -21,13 +21,13 @@ func writeDarwinManifest(t *testing.T, path string, m stagedManifest) {
 
 func TestRunApplyStagedAgentSuccessWithLaunchctlScript(t *testing.T) {
 	tmp := t.TempDir()
-	target := filepath.Join(tmp, "ciwi-agent")
-	staged := filepath.Join(tmp, "ciwi-agent.new")
+	target := filepath.Join(tmp, "ciwi")
+	staged := filepath.Join(tmp, "ciwi.new")
 	manifestPath := filepath.Join(tmp, "pending.json")
 	logPath := filepath.Join(tmp, "launchctl.log")
 	launchctlPath := filepath.Join(tmp, "launchctl.sh")
 	agentPlist := filepath.Join(tmp, "agent.plist")
-	agentLabel := "io.github.ciwi.agent"
+	agentLabel := "nl.izmar.ciwi.agent"
 
 	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {
 		t.Fatalf("write target: %v", err)
@@ -86,13 +86,13 @@ func TestRunApplyStagedAgentSuccessWithLaunchctlScript(t *testing.T) {
 
 func TestRunApplyStagedAgentAllowsBootstrapAlreadyLoaded(t *testing.T) {
 	tmp := t.TempDir()
-	target := filepath.Join(tmp, "ciwi-agent")
-	staged := filepath.Join(tmp, "ciwi-agent.new")
+	target := filepath.Join(tmp, "ciwi")
+	staged := filepath.Join(tmp, "ciwi.new")
 	manifestPath := filepath.Join(tmp, "pending.json")
 	logPath := filepath.Join(tmp, "launchctl.log")
 	launchctlPath := filepath.Join(tmp, "launchctl.sh")
 	agentPlist := filepath.Join(tmp, "agent.plist")
-	agentLabel := "io.github.ciwi.agent"
+	agentLabel := "nl.izmar.ciwi.agent"
 
 	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {
 		t.Fatalf("write target: %v", err)

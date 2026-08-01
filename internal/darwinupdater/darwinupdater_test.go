@@ -15,11 +15,11 @@ func TestBuildManifestAndReadManifest(t *testing.T) {
 	raw, err := BuildManifest(
 		"v2.0.0",
 		"ciwi-darwin-arm64",
-		"/usr/local/bin/ciwi-agent",
+		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app/Contents/MacOS/ciwi",
 		"/tmp/staged",
 		strings.Repeat("b", 64),
-		"io.github.ciwi.agent",
-		"/Users/test/Library/LaunchAgents/io.github.ciwi.agent.plist",
+		"nl.izmar.ciwi.agent",
+		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app/Contents/Library/LaunchAgents/nl.izmar.ciwi.agent.plist",
 		"/Users/test/Library/Application Support/ciwi/CiwiAgent.app",
 		"/tmp/staged/CiwiAgent.app",
 		"source-1",
@@ -43,7 +43,7 @@ func TestBuildManifestAndReadManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readManifest: %v", err)
 	}
-	if m.AgentLabel != "io.github.ciwi.agent" || m.TargetBinary == "" {
+	if m.AgentLabel != "nl.izmar.ciwi.agent" || m.TargetBinary == "" {
 		t.Fatalf("unexpected read manifest: %+v", m)
 	}
 }
@@ -85,10 +85,10 @@ func TestRunApplyStagedAgentRequiresManifest(t *testing.T) {
 
 func TestRunApplyStagedAgentValidatesManifestFieldsBeforeCommands(t *testing.T) {
 	m := stagedManifest{
-		TargetBinary: "/tmp/ciwi-agent",
+		TargetBinary: "/tmp/ciwi",
 		StagedBinary: "",
 		StagedSHA256: strings.Repeat("a", 64),
-		AgentLabel:   "io.github.ciwi.agent",
+		AgentLabel:   "nl.izmar.ciwi.agent",
 		AgentPlist:   "/tmp/agent.plist",
 	}
 	raw, _ := json.Marshal(m)
@@ -109,10 +109,10 @@ func TestRunApplyStagedAgentDetectsHashMismatch(t *testing.T) {
 		t.Fatalf("write staged: %v", err)
 	}
 	m := stagedManifest{
-		TargetBinary: "/tmp/ciwi-agent",
+		TargetBinary: "/tmp/ciwi",
 		StagedBinary: staged,
 		StagedSHA256: strings.Repeat("0", 64),
-		AgentLabel:   "io.github.ciwi.agent",
+		AgentLabel:   "nl.izmar.ciwi.agent",
 		AgentPlist:   "/tmp/agent.plist",
 	}
 	raw, _ := json.Marshal(m)

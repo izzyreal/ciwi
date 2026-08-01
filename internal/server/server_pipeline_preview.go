@@ -293,7 +293,7 @@ func (s *stateStore) resolveCachedPreviewRunContext(p store.PersistedPipeline, d
 	if err != nil {
 		return pipelineRunContext{}, false, "", nil, fmt.Errorf("load job history for cached preview: %w", err)
 	}
-	cached, err := verifyDependencyRun(jobs, p.ProjectID, p.ProjectName, p.PipelineID)
+	cached, err := verifyDependencyRun(jobs, p.ProjectID, p.PipelineID)
 	if err != nil {
 		if hasPipelineVersioning(p) {
 			return pipelineRunContext{}, false, "", nil, fmt.Errorf("offline_cached_only requires a prior successful %q run: %w", p.PipelineID, err)

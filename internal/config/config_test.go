@@ -272,26 +272,6 @@ pipelines:
 	}
 }
 
-func TestParseRejectsLegacyProjectVault(t *testing.T) {
-	_, err := Parse([]byte(`
-version: 1
-project:
-  name: ciwi
-  vault:
-    connection: home-vault
-pipelines:
-  - id: build
-    jobs:
-      - id: compile
-        timeout_seconds: 60
-        steps:
-          - run: go build ./...
-`), "test-legacy-project-vault")
-	if err == nil || !strings.Contains(err.Error(), "field vault not found") {
-		t.Fatalf("expected legacy project.vault to be rejected, got: %v", err)
-	}
-}
-
 func TestParseRejectsInvalidYAML(t *testing.T) {
 	_, err := Parse([]byte("version: ["), "test-yaml")
 	if err == nil || !strings.Contains(err.Error(), "parse YAML") {
@@ -1091,30 +1071,6 @@ pipeline_chains:
 	}
 	if len(cfg.PipelineChains) != 1 || cfg.PipelineChains[0].Name != "" {
 		t.Fatalf("unexpected parsed pipeline chain: %+v", cfg.PipelineChains)
-	}
-}
-
-func TestParsePipelineChainRejectsLegacyID(t *testing.T) {
-	_, err := Parse([]byte(`
-version: 1
-project:
-  name: ciwi
-pipelines:
-  - id: build
-    jobs:
-      - id: compile
-        runs_on:
-          executor: script
-          shell: posix
-        timeout_seconds: 60
-        steps:
-          - run: go build ./...
-pipeline_chains:
-  - id: build-release
-    pipelines: [build]
-`), "test-legacy-pipeline-chain-id")
-	if err == nil || !strings.Contains(err.Error(), "field id not found") {
-		t.Fatalf("expected strict legacy id rejection, got: %v", err)
 	}
 }
 

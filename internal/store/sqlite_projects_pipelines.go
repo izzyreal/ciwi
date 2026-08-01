@@ -624,14 +624,7 @@ func (s *Store) listPipelineJobs(pipelineDBID int64) ([]PersistedPipelineJob, er
 		_ = json.Unmarshal([]byte(cachesJSON), &j.Caches)
 		_ = json.Unmarshal([]byte(matrixJSON), &j.MatrixInclude)
 		if err := json.Unmarshal([]byte(stepsJSON), &j.Steps); err != nil {
-			// Backward compatibility for existing rows where steps_json is []string.
-			var legacy []string
-			if legacyErr := json.Unmarshal([]byte(stepsJSON), &legacy); legacyErr == nil {
-				j.Steps = make([]config.PipelineJobStep, 0, len(legacy))
-				for _, run := range legacy {
-					j.Steps = append(j.Steps, config.PipelineJobStep{Run: run})
-				}
-			}
+			return nil, fmt.Errorf("decode pipeline job %q steps: %w", j.ID, err)
 		}
 		jobs = append(jobs, j)
 	}

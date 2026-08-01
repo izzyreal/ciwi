@@ -100,7 +100,7 @@ func TestManagedYAMLOperationsRejectVCSProject(t *testing.T) {
 		t.Fatalf("get repository project: %v", err)
 	}
 	if project.SourceKind != protocol.ProjectSourceVCS {
-		t.Fatalf("expected migrated/default VCS source kind, got %+v", project)
+		t.Fatalf("expected VCS source kind, got %+v", project)
 	}
 	if _, err := s.GetManagedYAMLProject(project.ID); !errors.Is(err, ErrProjectIsNotManagedYAML) {
 		t.Fatalf("expected managed YAML read rejection, got %v", err)

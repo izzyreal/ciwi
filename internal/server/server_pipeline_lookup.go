@@ -27,36 +27,25 @@ func (s *stateStore) getPipelineForJobExecution(job protocol.JobExecution) (stor
 	if pipelineID == "" {
 		return store.PersistedPipeline{}, fmt.Errorf("pipeline id is required")
 	}
-	projectID, hasProjectID, err := jobExecutionProjectID(job)
+	projectID, err := jobExecutionProjectID(job)
 	if err != nil {
 		return store.PersistedPipeline{}, err
 	}
-	if hasProjectID {
-		return s.pipelineStore().GetPipelineByProjectIDAndID(projectID, pipelineID)
-	}
-	projectName := strings.TrimSpace(job.Metadata["project"])
-	if projectName == "" {
-		return store.PersistedPipeline{}, fmt.Errorf("project id or name is required")
-	}
-	return s.pipelineStore().GetPipelineByProjectAndID(projectName, pipelineID)
+	return s.pipelineStore().GetPipelineByProjectIDAndID(projectID, pipelineID)
 }
 
-func jobExecutionProjectID(job protocol.JobExecution) (int64, bool, error) {
+func jobExecutionProjectID(job protocol.JobExecution) (int64, error) {
 	raw := strings.TrimSpace(job.Metadata["project_id"])
 	if raw == "" {
-		return 0, false, nil
+		return 0, fmt.Errorf("project id is required")
 	}
 	projectID, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || projectID <= 0 {
-		return 0, false, fmt.Errorf("invalid project id %q", raw)
+		return 0, fmt.Errorf("invalid project id %q", raw)
 	}
-	return projectID, true, nil
+	return projectID, nil
 }
 
-func jobExecutionMatchesProject(job protocol.JobExecution, projectID int64, projectName string) bool {
-	rawProjectID := strings.TrimSpace(job.Metadata["project_id"])
-	if projectID > 0 && rawProjectID != "" {
-		return rawProjectID == strconv.FormatInt(projectID, 10)
-	}
-	return strings.TrimSpace(job.Metadata["project"]) == strings.TrimSpace(projectName)
+func jobExecutionMatchesProject(job protocol.JobExecution, projectID int64) bool {
+	return strings.TrimSpace(job.Metadata["project_id"]) == strconv.FormatInt(projectID, 10)
 }

@@ -71,9 +71,6 @@ func TestWipeAgentJobHistory(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(workspacesDir, "old-workspace-b"), 0o755); err != nil {
 		t.Fatalf("create workspace b: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(workDir, "job-legacy-1"), 0o755); err != nil {
-		t.Fatalf("create legacy job dir: %v", err)
-	}
 	if err := os.MkdirAll(filepath.Join(workDir, "keep-me"), 0o755); err != nil {
 		t.Fatalf("create non-job dir: %v", err)
 	}
@@ -89,13 +86,10 @@ func TestWipeAgentJobHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wipeAgentJobHistory: %v", err)
 	}
-	if !strings.Contains(msg, "removed=3 workspaces") {
+	if !strings.Contains(msg, "removed=2 workspaces") {
 		t.Fatalf("unexpected completion message: %q", msg)
 	}
 
-	if _, err := os.Stat(filepath.Join(workDir, "job-legacy-1")); !os.IsNotExist(err) {
-		t.Fatalf("expected legacy job dir removed, stat err=%v", err)
-	}
 	if _, err := os.Stat(filepath.Join(workspacesDir, "old-workspace-a")); !os.IsNotExist(err) {
 		t.Fatalf("expected old workspace a removed, stat err=%v", err)
 	}

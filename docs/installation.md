@@ -107,14 +107,13 @@ curl -fsSL -o /tmp/uninstall_ciwi_agent_macos.sh \
 sh /tmp/uninstall_ciwi_agent_macos.sh
 ```
 
-Manage lifecycle (user session):
+Manage lifecycle with the bundled service helper:
 
 ```bash
-launchctl disable gui/$(id -u)/nl.izmar.ciwi.agent
-launchctl enable gui/$(id -u)/nl.izmar.ciwi.agent
-launchctl kickstart -k gui/$(id -u)/nl.izmar.ciwi.agent
-launchctl bootout gui/$(id -u)/nl.izmar.ciwi.agent
-launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/nl.izmar.ciwi.agent.plist
+CIWI_SERVICE="$HOME/Library/Application Support/ciwi/CiwiAgent.app/Contents/MacOS/ciwi-service"
+"$CIWI_SERVICE" status-agent
+"$CIWI_SERVICE" unregister-agent
+"$CIWI_SERVICE" register-agent
 ```
 
 Default paths:

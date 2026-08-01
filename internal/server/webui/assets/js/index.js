@@ -36,17 +36,11 @@
     const JOBS_BATCH_SIZE = 5;
     const HISTORY_CARD_WINDOW = 40;
     const HISTORY_CARD_BATCH = HISTORY_CARD_WINDOW;
-    const projectIconURLByName = Object.create(null);
-
     function projectIconURLForJob(job) {
       const m = (job && job.metadata) || {};
       const projectID = String(m.project_id || '').trim();
-      if (projectID) {
-        return '/api/v1/projects/' + encodeURIComponent(projectID) + '/icon';
-      }
-      const projectName = String(m.project || '').trim();
-      if (!projectName) return '';
-      return String(projectIconURLByName[projectName] || '');
+      if (!projectID) return '';
+      return '/api/v1/projects/' + encodeURIComponent(projectID) + '/icon';
     }
 
     function projectListSignature(projects) {
@@ -92,7 +86,6 @@
       root.innerHTML = '';
       data.projects.forEach(project => {
         const projectIconURL = '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon';
-        projectIconURLByName[String(project.name || '').trim()] = projectIconURL;
         const projectKey = String(project.id || project.name || '');
         const details = document.createElement('details');
         details.className = 'project-group';

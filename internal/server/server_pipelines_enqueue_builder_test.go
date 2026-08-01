@@ -387,12 +387,17 @@ pipelines:
 	if err := db.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
+	project, err := db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
 
 	buildExec, err := db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script:         "echo build",
 		TimeoutSeconds: 30,
 		Metadata: map[string]string{
 			"project":                      "ciwi",
+			"project_id":                   int64ToString(project.ID),
 			"pipeline_id":                  "build",
 			"pipeline_run_id":              "run-build-1",
 			"pipeline_version_raw":         "1.2.3",
@@ -491,6 +496,10 @@ pipelines:
 	if err := db.LoadConfig(cfg, "ciwi-project.yaml", "", "", "ciwi-project.yaml"); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
+	project, err := db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
 
 	createSucceeded := func(name, matrixOS string) protocol.JobExecution {
 		t.Helper()
@@ -499,6 +508,7 @@ pipelines:
 			ArtifactGlobs: []string{"dist/**"},
 			Metadata: map[string]string{
 				"project":         "ciwi",
+				"project_id":      int64ToString(project.ID),
 				"pipeline_id":     "build",
 				"pipeline_run_id": "build-run-1",
 				"pipeline_job_id": "compile",
@@ -721,6 +731,7 @@ pipelines:
 		TimeoutSeconds: 30,
 		Metadata: map[string]string{
 			"project":                      "ciwi",
+			"project_id":                   int64ToString(p.ProjectID),
 			"pipeline_id":                  "release",
 			"pipeline_run_id":              "run-release-prev",
 			"pipeline_version_raw":         "1.2.3",
@@ -788,6 +799,7 @@ pipelines:
 		TimeoutSeconds: 30,
 		Metadata: map[string]string{
 			"project":                      "ciwi",
+			"project_id":                   int64ToString(p.ProjectID),
 			"pipeline_id":                  "release",
 			"pipeline_run_id":              "run-release-prev",
 			"pipeline_version_raw":         "1.2.3",

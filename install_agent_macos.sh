@@ -19,7 +19,6 @@ trim_single_line() {
 
 read_existing_github_token() {
   env_path="$1"
-  legacy_plist_path="${2:-}"
   if [ -f "$env_path" ]; then
     awk -F= '
       $1 ~ /^[[:space:]]*CIWI_GITHUB_TOKEN[[:space:]]*$/ {
@@ -31,10 +30,6 @@ read_existing_github_token() {
         exit
       }
     ' "$env_path"
-    return
-  fi
-  if [ -n "$legacy_plist_path" ] && [ -f "$legacy_plist_path" ] && [ -x /usr/libexec/PlistBuddy ]; then
-    /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:CIWI_GITHUB_TOKEN" "$legacy_plist_path" 2>/dev/null || true
     return
   fi
   printf '%s' ""
@@ -380,10 +375,7 @@ require_cmd ditto
 
 REPO="izzyreal/ciwi"
 LABEL="nl.izmar.ciwi.agent"
-LEGACY_UPDATER_LABEL="nl.izmar.ciwi.agent-updater"
 LOG_DIR="$HOME/Library/Logs/ciwi"
-LEGACY_PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
-LEGACY_UPDATER_PLIST_PATH="$HOME/Library/LaunchAgents/${LEGACY_UPDATER_LABEL}.plist"
 APP_SUPPORT_DIR="$HOME/Library/Application Support/ciwi"
 AGENT_ENV_FILE="$APP_SUPPORT_DIR/agent.env"
 WORKDIR="$HOME/.ciwi-agent/work"
@@ -399,7 +391,7 @@ TOKEN_SOURCE="none"
 if [ -n "$INSTALL_GITHUB_TOKEN" ]; then
   TOKEN_SOURCE="env"
 else
-  INSTALL_GITHUB_TOKEN="$(trim_single_line "$(read_existing_github_token "$AGENT_ENV_FILE" "$LEGACY_PLIST_PATH")")"
+  INSTALL_GITHUB_TOKEN="$(trim_single_line "$(read_existing_github_token "$AGENT_ENV_FILE")")"
   if [ -n "$INSTALL_GITHUB_TOKEN" ]; then
     TOKEN_SOURCE="existing-config"
   fi
@@ -460,7 +452,7 @@ if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
 fi
 
 echo "[3/6] Installing binary..."
-mkdir -p "$WORKDIR" "$UPDATES_DIR" "$LOG_DIR" "$APP_SUPPORT_DIR" "$HOME/Library/LaunchAgents"
+mkdir -p "$WORKDIR" "$UPDATES_DIR" "$LOG_DIR" "$APP_SUPPORT_DIR"
 APP_BUNDLE_PATH="$(install_binary "${TMP_DIR}/${ASSET}")"
 APP_MACOS_DIR="${APP_BUNDLE_PATH}/Contents/MacOS"
 APP_BINARY_PATH="${APP_MACOS_DIR}/ciwi"
@@ -513,15 +505,6 @@ plutil -lint "$BUNDLED_PLIST_PATH" >/dev/null
 
 echo "[6/6] Registering bundled agent service..."
 UID_NUM="$(id -u)"
-launchctl bootout "gui/${UID_NUM}/${LEGACY_UPDATER_LABEL}" >/dev/null 2>&1 || true
-launchctl bootout "gui/${UID_NUM}" "$LEGACY_UPDATER_PLIST_PATH" >/dev/null 2>&1 || true
-launchctl disable "gui/${UID_NUM}/${LEGACY_UPDATER_LABEL}" >/dev/null 2>&1 || true
-rm -f "$LEGACY_UPDATER_PLIST_PATH"
-launchctl bootout "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
-launchctl bootout "gui/${UID_NUM}" "$LEGACY_PLIST_PATH" >/dev/null 2>&1 || true
-launchctl enable "gui/${UID_NUM}/${LABEL}" >/dev/null 2>&1 || true
-rm -f "$LEGACY_PLIST_PATH"
-
 if ! "$SERVICE_HELPER_PATH" register-agent; then
   echo "Agent service registration failed. Diagnostics:" >&2
   "$SERVICE_HELPER_PATH" status-agent >&2 || true

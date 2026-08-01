@@ -84,14 +84,14 @@ func findBlockedDependency(job protocol.JobExecution, all []protocol.JobExecutio
 
 func findRequiredJobDependency(job protocol.JobExecution, all []protocol.JobExecution, requiredJobID string) *BlockedDependencyView {
 	runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
-	project := strings.TrimSpace(job.Metadata["project"])
+	projectID := strings.TrimSpace(job.Metadata["project_id"])
 	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
 	candidates := make([]protocol.JobExecution, 0)
 	for _, candidate := range all {
 		if strings.TrimSpace(candidate.Metadata["pipeline_job_id"]) != requiredJobID {
 			continue
 		}
-		if project != "" && strings.TrimSpace(candidate.Metadata["project"]) != project {
+		if projectID != "" && strings.TrimSpace(candidate.Metadata["project_id"]) != projectID {
 			continue
 		}
 		if pipelineID != "" && strings.TrimSpace(candidate.Metadata["pipeline_id"]) != pipelineID {
@@ -113,13 +113,13 @@ func findRequiredJobDependency(job protocol.JobExecution, all []protocol.JobExec
 
 func findUpstreamPipelineDependency(job protocol.JobExecution, all []protocol.JobExecution, upstreamPipelineID string) *BlockedDependencyView {
 	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
-	project := strings.TrimSpace(job.Metadata["project"])
+	projectID := strings.TrimSpace(job.Metadata["project_id"])
 	candidates := make([]protocol.JobExecution, 0)
 	for _, candidate := range all {
 		if strings.TrimSpace(candidate.Metadata["pipeline_id"]) != upstreamPipelineID {
 			continue
 		}
-		if project != "" && strings.TrimSpace(candidate.Metadata["project"]) != project {
+		if projectID != "" && strings.TrimSpace(candidate.Metadata["project_id"]) != projectID {
 			continue
 		}
 		if chainRunID != "" && strings.TrimSpace(candidate.Metadata["chain_run_id"]) != chainRunID {

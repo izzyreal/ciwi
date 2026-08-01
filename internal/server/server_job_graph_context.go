@@ -40,7 +40,6 @@ func buildJobExecutionGraphContext(target protocol.JobExecution, jobs []protocol
 	chainRunID := strings.TrimSpace(meta["chain_run_id"])
 	pipelineRunID := strings.TrimSpace(meta["pipeline_run_id"])
 	projectID := strings.TrimSpace(meta["project_id"])
-	projectName := strings.TrimSpace(meta["project"])
 	currentPipelineID := strings.TrimSpace(meta["pipeline_id"])
 	scope := "job"
 	if chainRunID != "" {
@@ -60,10 +59,7 @@ func buildJobExecutionGraphContext(target protocol.JobExecution, jobs []protocol
 			if strings.TrimSpace(candidate["pipeline_run_id"]) != pipelineRunID || strings.TrimSpace(candidate["pipeline_id"]) != currentPipelineID {
 				continue
 			}
-			if projectID != "" && strings.TrimSpace(candidate["project_id"]) != projectID {
-				continue
-			}
-			if projectID == "" && projectName != "" && strings.TrimSpace(candidate["project"]) != projectName {
+			if strings.TrimSpace(candidate["project_id"]) != projectID {
 				continue
 			}
 		} else if job.ID != target.ID {

@@ -13,7 +13,7 @@ func TestJobExecutionGraphContextAPI(t *testing.T) {
 	defer ts.Close()
 	created, err := state.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script: "echo ok", RequiredCapabilities: map[string]string{}, TimeoutSeconds: 30,
-		Metadata: map[string]string{"project": "demo", "pipeline_id": "build", "pipeline_run_id": "run-1", "pipeline_job_id": "compile"},
+		Metadata: map[string]string{"project": "demo", "project_id": "1", "pipeline_id": "build", "pipeline_run_id": "run-1", "pipeline_job_id": "compile"},
 	})
 	if err != nil {
 		t.Fatalf("create graph API job: %v", err)

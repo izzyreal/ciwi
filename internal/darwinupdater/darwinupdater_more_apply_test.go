@@ -55,7 +55,7 @@ func TestRunApplyStagedAgentBundleInstallUsesServiceHelper(t *testing.T) {
 		StagedSHA256:  sum,
 		TargetBundle:  targetBundle,
 		StagedBundle:  stagedBundle,
-		AgentLabel:    "io.github.ciwi.agent",
+		AgentLabel:    "nl.izmar.ciwi.agent",
 		AgentPlist:    agentPlist,
 	})
 
@@ -138,7 +138,7 @@ func TestRunApplyStagedAgentBundleSwapRollbackOnMissingStagedBundle(t *testing.T
 		StagedSHA256:  sum,
 		TargetBundle:  targetBundle,
 		StagedBundle:  filepath.Join(tmp, "missing", "CiwiAgent.app"),
-		AgentLabel:    "io.github.ciwi.agent",
+		AgentLabel:    "nl.izmar.ciwi.agent",
 		AgentPlist:    agentPlist,
 	})
 

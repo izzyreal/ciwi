@@ -66,7 +66,7 @@ func Open(path string) (*Store, error) {
 	db.SetMaxIdleConns(1)
 
 	s := &Store{db: db}
-	if err := s.migrate(); err != nil {
+	if err := s.initializeSchema(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) migrate() error {
+func (s *Store) initializeSchema() error {
 	stmts := []string{
 		`PRAGMA journal_mode=WAL;`,
 		`PRAGMA busy_timeout=5000;`,
@@ -207,6 +207,8 @@ func (s *Store) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_job_executions_status_created ON job_executions(status, created_utc);`,
 		`CREATE INDEX IF NOT EXISTS idx_job_execution_events_job_created ON job_execution_events(job_execution_id, created_utc);`,
 		`CREATE INDEX IF NOT EXISTS idx_job_execution_events_identity ON job_execution_events(job_execution_id, event_type, timestamp_utc);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_managed_yaml_name ON projects(lower(name)) WHERE source_kind = 'managed_yaml';`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_managed_yaml_path ON projects(config_path) WHERE source_kind = 'managed_yaml';`,
 		`CREATE TABLE IF NOT EXISTS app_state (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -216,169 +218,10 @@ func (s *Store) migrate() error {
 
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
-			return fmt.Errorf("migrate schema: %w", err)
-		}
-	}
-	if err := s.addColumnIfMissing("projects", "repo_url", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "repo_ref", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "config_file", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "loaded_commit", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "source_kind", "TEXT NOT NULL DEFAULT 'vcs'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "config_yaml", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("projects", "config_revision", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_managed_yaml_name ON projects(lower(name)) WHERE source_kind = 'managed_yaml'`); err != nil {
-		return fmt.Errorf("create managed YAML project name index: %w", err)
-	}
-	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_managed_yaml_path ON projects(config_path) WHERE source_kind = 'managed_yaml'`); err != nil {
-		return fmt.Errorf("create managed YAML project path index: %w", err)
-	}
-	if err := s.addColumnIfMissing("pipeline_jobs", "artifacts_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipeline_jobs", "artifact_sources_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipeline_jobs", "caches_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipeline_jobs", "requires_tools_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipeline_jobs", "requires_container_tools_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipeline_jobs", "requires_capabilities_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipeline_jobs", "needs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipelines", "depends_on_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipelines", "versioning_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipeline_chains", "chain_name", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("pipeline_chains", "position", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := s.migratePipelineJobSteps(); err != nil {
-		return err
-	}
-	if err := s.migratePipelineChainIdentity(); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("job_executions", "artifact_globs_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("job_executions", "dependency_artifact_job_ids_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("job_executions", "caches_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("job_executions", "env_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("job_executions", "current_step_text", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("job_executions", "cache_stats_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("job_executions", "runtime_capabilities_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		return err
-	}
-	if err := s.addColumnIfMissing("job_executions", "step_plan_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
-		return err
-	}
-	orphansDeleted, err := s.deleteOrphanedJobExecutionData()
-	if err != nil {
-		return err
-	}
-	outputColumnDropped, err := s.dropColumnIfPresent("job_executions", "output_text")
-	if err != nil {
-		return err
-	}
-	if orphansDeleted > 0 || outputColumnDropped {
-		if err := s.compact(); err != nil {
-			return fmt.Errorf("compact after legacy job data cleanup: %w", err)
+			return fmt.Errorf("initialize schema: %w", err)
 		}
 	}
 	return nil
-}
-
-func (s *Store) addColumnIfMissing(table, col, typ string) error {
-	_, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, col, typ))
-	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-		return fmt.Errorf("add column %s.%s: %w", table, col, err)
-	}
-	return nil
-}
-
-func (s *Store) dropColumnIfPresent(table, col string) (bool, error) {
-	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
-	if err != nil {
-		return false, fmt.Errorf("inspect column %s.%s: %w", table, col, err)
-	}
-	found := false
-	for rows.Next() {
-		var cid, notNull, primaryKey int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &primaryKey); err != nil {
-			_ = rows.Close()
-			return false, fmt.Errorf("scan columns for %s: %w", table, err)
-		}
-		if name == col {
-			found = true
-		}
-	}
-	if err := rows.Close(); err != nil {
-		return false, fmt.Errorf("close columns for %s: %w", table, err)
-	}
-	if !found {
-		return false, nil
-	}
-	if _, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, col)); err != nil {
-		return false, fmt.Errorf("drop column %s.%s: %w", table, col, err)
-	}
-	return true, nil
-}
-
-func (s *Store) deleteOrphanedJobExecutionData() (int64, error) {
-	var deleted int64
-	for _, table := range []string{"job_execution_events", "job_execution_artifacts", "job_execution_test_reports"} {
-		res, err := s.db.Exec(fmt.Sprintf(`
-			DELETE FROM %s
-			WHERE NOT EXISTS (
-				SELECT 1 FROM job_executions WHERE job_executions.id = %s.job_execution_id
-			)
-		`, table, table))
-		if err != nil {
-			return deleted, fmt.Errorf("delete orphaned rows from %s: %w", table, err)
-		}
-		affected, _ := res.RowsAffected()
-		deleted += affected
-	}
-	return deleted, nil
 }
 
 func (s *Store) compact() error {

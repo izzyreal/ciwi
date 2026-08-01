@@ -11,9 +11,9 @@ func (s *stateStore) prepareJobExecutionRerun(original protocol.JobExecution, re
 	if req == nil {
 		return fmt.Errorf("rerun request is required")
 	}
-	projectName := strings.TrimSpace(original.Metadata["project"])
+	projectID := strings.TrimSpace(original.Metadata["project_id"])
 	pipelineID := strings.TrimSpace(original.Metadata["pipeline_id"])
-	if projectName == "" || pipelineID == "" {
+	if projectID == "" || pipelineID == "" {
 		return nil
 	}
 
@@ -60,13 +60,13 @@ func validateRerunNeeds(job protocol.JobExecution, jobs []protocol.JobExecution)
 		return nil
 	}
 	runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
-	projectName := strings.TrimSpace(job.Metadata["project"])
+	projectID := strings.TrimSpace(job.Metadata["project_id"])
 	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
 	for _, need := range needs {
 		found := false
 		for _, candidate := range jobs {
 			if strings.TrimSpace(candidate.Metadata["pipeline_run_id"]) != runID ||
-				strings.TrimSpace(candidate.Metadata["project"]) != projectName ||
+				strings.TrimSpace(candidate.Metadata["project_id"]) != projectID ||
 				strings.TrimSpace(candidate.Metadata["pipeline_id"]) != pipelineID ||
 				strings.TrimSpace(candidate.Metadata["pipeline_job_id"]) != need {
 				continue
