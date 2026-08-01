@@ -1,5 +1,8 @@
 # Architecture
 
+For the current evolvability assessment and staged refactoring direction, see
+[Architecture review — August 2026](architecture-review-2026-08.md).
+
 ciwi is a single codebase that runs in three modes:
 - server
 - agent

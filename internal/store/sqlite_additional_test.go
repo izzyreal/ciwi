@@ -273,6 +273,10 @@ pipeline_chains:
 	if err != nil {
 		t.Fatalf("GetProjectByName: %v", err)
 	}
+	byPath, err := s.GetProjectByConfigPath("ciwi-project.yaml")
+	if err != nil || byPath.ID != project.ID {
+		t.Fatalf("GetProjectByConfigPath: got=%+v err=%v", byPath, err)
+	}
 	projects, err := s.ListProjects()
 	if err != nil {
 		t.Fatalf("ListProjects: %v", err)
@@ -286,6 +290,10 @@ pipeline_chains:
 	}
 	if pipeline.PipelineID != "build" || len(pipeline.Jobs) != 1 {
 		t.Fatalf("unexpected persisted pipeline: %+v", pipeline)
+	}
+	byProjectID, err := s.GetPipelineByProjectIDAndID(project.ID, "build")
+	if err != nil || byProjectID.DBID != pipeline.DBID {
+		t.Fatalf("GetPipelineByProjectIDAndID: got=%+v err=%v", byProjectID, err)
 	}
 
 	byID, err := s.GetPipelineByDBID(pipeline.DBID)
@@ -327,6 +335,71 @@ pipeline_chains:
 	}
 	if _, err := s.GetPipelineChain(project.ID, "missing"); err == nil {
 		t.Fatalf("expected missing pipeline chain lookup to fail")
+	}
+	if _, err := s.GetProjectByConfigPath("missing"); err == nil {
+		t.Fatalf("expected missing config path lookup to fail")
+	}
+	if _, err := s.GetPipelineByProjectIDAndID(project.ID, "missing"); err == nil {
+		t.Fatalf("expected missing project pipeline lookup to fail")
+	}
+}
+
+func TestDeleteProjectRemovesDefinitionAndPreservesExecutionHistory(t *testing.T) {
+	s := openTestStore(t)
+	cfg, err := config.Parse([]byte(`
+version: 1
+project:
+  name: disposable
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+pipeline_chains:
+  - name: Build
+    pipelines: [build]
+`), "delete-project")
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if err := s.LoadConfig(cfg, "disposable.yaml", "", "", ""); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	project, err := s.GetProjectByName("disposable")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	pipeline, err := s.GetPipelineByProjectIDAndID(project.ID, "build")
+	if err != nil {
+		t.Fatalf("get pipeline: %v", err)
+	}
+	execution, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script: "echo history", Metadata: map[string]string{"project_id": fmt.Sprint(project.ID), "pipeline_id": "build"},
+	})
+	if err != nil {
+		t.Fatalf("create historical execution: %v", err)
+	}
+
+	if err := s.DeleteProjectByID(project.ID); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+	if _, err := s.GetProjectByID(project.ID); err == nil {
+		t.Fatalf("expected deleted project to be absent")
+	}
+	if _, err := s.GetPipelineByDBID(pipeline.DBID); err == nil {
+		t.Fatalf("expected project pipeline definitions to be removed")
+	}
+	jobs, err := s.ListJobExecutions()
+	if err != nil {
+		t.Fatalf("list retained history: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].ID != execution.ID {
+		t.Fatalf("expected execution history to survive project deletion, got %+v", jobs)
+	}
+	if err := s.DeleteProjectByID(project.ID); err == nil {
+		t.Fatalf("expected deleting an absent project to fail")
 	}
 }
 

@@ -1,9 +1,37 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLoadReadsConfigAndIncludesPathInErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ciwi-project.yaml")
+	if err := os.WriteFile(path, []byte(`
+version: 1
+project:
+  name: loaded
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil || cfg.Project.Name != "loaded" {
+		t.Fatalf("load config: cfg=%+v err=%v", cfg, err)
+	}
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	if _, err := Load(missing); err == nil || !strings.Contains(err.Error(), missing) {
+		t.Fatalf("expected missing-file error to include path, got %v", err)
+	}
+}
 
 func TestParseValidConfig(t *testing.T) {
 	cfg, err := Parse([]byte(`

@@ -219,6 +219,27 @@ func TestHandleQueueCardsClassifiesDependencyBlockedJobsAsWaiting(t *testing.T) 
 	}
 }
 
+func TestHandleQueueLayoutIncludesOnlyActiveCardsAndPaginates(t *testing.T) {
+	store := &stubStore{listJobExecutionsFn: func() ([]protocol.JobExecution, error) {
+		return []protocol.JobExecution{
+			job("active-chain", "running", "2026-03-29T10:25:36Z", map[string]string{"pipeline_id": "build", "pipeline_run_id": "run-build", "chain_run_id": "chain-active"}),
+			job("active-pipeline", "queued", "2026-03-29T10:25:35Z", map[string]string{"pipeline_id": "lint", "pipeline_run_id": "run-lint"}),
+			job("finished", "succeeded", "2026-03-29T10:25:34Z", map[string]string{"pipeline_id": "release", "pipeline_run_id": "run-release"}),
+		}, nil
+	}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/job-queue/layout?offset=1&limit=1", nil)
+	HandleQueueLayout(rec, req, HandlerDeps{Store: store})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got LayoutResponse
+	mustDecode(t, rec, &got)
+	if got.Offset != 1 || got.Limit != 1 || got.TotalCards != 2 || len(got.Cards) != 1 || got.Cards[0].Key != "pipeline:run-lint||lint" {
+		t.Fatalf("unexpected queue layout: %+v", got)
+	}
+}
+
 func TestSummarizeCardCountsOnlyLatestJobAttempt(t *testing.T) {
 	jobs := []protocol.JobExecution{
 		job("job-retry", "succeeded", "2026-03-29T10:25:36Z", map[string]string{protocol.JobMetadataAttemptRootJobID: "job-original"}),
