@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+package ciwi.native.v1;
+
+option go_package = "github.com/izzyreal/ciwi/pkg/cnp/v1;cnpv1";
+
+message Empty {}
+
+message Hello {
+  string client_name = 1;
+  string client_version = 2;
+  repeated string capabilities = 3;
+}
+
+message Welcome {
+  string server_name = 1;
+  string server_version = 2;
+  string server_instance_id = 3;
+  repeated string capabilities = 4;
+}
+
+message RequestMetadata {
+  string request_id = 1;
+  string idempotency_key = 2;
+  uint32 timeout_ms = 3;
+}
+
+enum StatusCode {
+  STATUS_CODE_UNSPECIFIED = 0;
+  STATUS_CODE_INVALID_ARGUMENT = 1;
+  STATUS_CODE_NOT_FOUND = 2;
+  STATUS_CODE_CONFLICT = 3;
+  STATUS_CODE_FAILED_PRECONDITION = 4;
+  STATUS_CODE_UNAVAILABLE = 5;
+  STATUS_CODE_UNSUPPORTED = 6;
+  STATUS_CODE_INTERNAL = 7;
+}
+
+message ErrorStatus {
+  StatusCode code = 1;
+  string message = 2;
+}
+
+message ServerInfo {
+  string name = 1;
+  uint32 api_version = 2;
+  string version = 3;
+  string hostname = 4;
+}
+
+message PipelineSummary {
+  int64 id = 1;
+  string pipeline_id = 2;
+  string trigger = 3;
+  repeated string depends_on = 4;
+  string source_repo = 5;
+  string source_ref = 6;
+  bool supports_dry_run = 7;
+}
+
+message PipelineChainSummary {
+  string id = 1;
+  string name = 2;
+  repeated string pipelines = 3;
+  bool supports_dry_run = 4;
+  int64 version_pipeline_id = 5;
+}
+
+message ProjectSummary {
+  int64 id = 1;
+  string name = 2;
+  string source_kind = 3;
+  string config_path = 4;
+  string repo_url = 5;
+  string repo_ref = 6;
+  string config_file = 7;
+  string loaded_commit = 8;
+  int64 updated_unix_ms = 9;
+  repeated PipelineSummary pipelines = 10;
+  repeated PipelineChainSummary pipeline_chains = 11;
+}
+
+message ProjectList {
+  repeated ProjectSummary projects = 1;
+}
+
+message FrontPageView {
+  ServerInfo server = 1;
+  repeated ProjectSummary projects = 2;
+  repeated ExecutionCardSummary queued_executions = 3;
+  repeated ExecutionCardSummary history_executions = 4;
+}
+
+message ExecutionSummary {
+  uint32 total_jobs = 1;
+  uint32 succeeded = 2;
+  uint32 failed = 3;
+  uint32 in_progress = 4;
+  uint32 waiting = 5;
+}
+
+message ExecutionCardSummary {
+  string key = 1;
+  string kind = 2;
+  string title = 3;
+  repeated string job_execution_ids = 4;
+  ExecutionSummary summary = 5;
+}
+
+message RunPipelineSelection {
+  string pipeline_job_id = 1;
+  string matrix_name = 2;
+  optional int32 matrix_index = 3;
+  bool dry_run = 4;
+  string source_ref = 5;
+  string agent_id = 6;
+  string execution_mode = 7;
+}
+
+message RunPipelineRequest {
+  int64 pipeline_db_id = 1;
+  RunPipelineSelection selection = 2;
+}
+
+message RunPipelineResult {
+  string project_name = 1;
+  string pipeline_id = 2;
+  uint32 enqueued = 3;
+  repeated string job_execution_ids = 4;
+}
+
+enum ChangeTopic {
+  CHANGE_TOPIC_UNSPECIFIED = 0;
+  CHANGE_TOPIC_SERVER = 1;
+  CHANGE_TOPIC_PROJECTS = 2;
+  CHANGE_TOPIC_AGENTS = 3;
+  CHANGE_TOPIC_QUEUE = 4;
+  CHANGE_TOPIC_HISTORY = 5;
+  CHANGE_TOPIC_UPDATES = 6;
+  CHANGE_TOPIC_VAULT = 7;
+}
+
+message WatchChangesRequest {}
+
+message ChangeEvent {
+  string server_instance_id = 1;
+  uint64 revision = 2;
+  repeated ChangeTopic topics = 3;
+  int64 occurred_unix_ms = 4;
+  bool resync_required = 5;
+}
+
+message Request {
+  RequestMetadata metadata = 1;
+  oneof operation {
+    Empty get_server_info = 10;
+    Empty list_projects = 11;
+    Empty get_front_page_view = 12;
+    RunPipelineRequest run_pipeline = 13;
+    WatchChangesRequest watch_changes = 14;
+  }
+}
+
+message Response {
+  string request_id = 1;
+  oneof result {
+    ServerInfo server_info = 10;
+    ProjectList project_list = 11;
+    FrontPageView front_page_view = 12;
+    RunPipelineResult run_pipeline = 13;
+    ChangeEvent change = 14;
+    ErrorStatus error = 15;
+  }
+}
+
+message ClientMessage {
+  oneof body {
+    Hello hello = 1;
+    Request request = 2;
+  }
+}
+
+message ServerMessage {
+  oneof body {
+    Welcome welcome = 1;
+    Response response = 2;
+  }
+}

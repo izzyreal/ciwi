@@ -1,0 +1,241 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: front-page
+  title: ciwi
+  description: Projects and pipeline entry points
+screen:
+  dataSources:
+    - name: frontPage
+      query: get-front-page-view
+      watchTopics: [server, projects, queue, history]
+  persistence:
+    - name: projectsExpanded
+      storageKey: ciwi.front-page.projects-expanded.v1
+      defaultValue: "true"
+      scope: client
+  root:
+    component: page
+    id: front-page
+    layout:
+      direction: vertical
+      gap: large
+      padding: large
+      maxWidth: page
+    children:
+      - component: row
+        id: masthead
+        layout:
+          direction: horizontal
+          gap: large
+          align: center
+        style:
+          role: hero
+        children:
+          - component: image
+            image:
+              asset: ciwi-logo
+              description: ciwi CI/CD server
+          - component: column
+            layout:
+              direction: vertical
+              gap: small
+              grow: true
+            children:
+              - component: text
+                text:
+                  template: "ciwi {{frontPage.server.version}}"
+                style:
+                  role: title
+                  emphasis: strong
+              - component: text
+                text:
+                  literal: Projects, pipelines and job executions
+                style:
+                  role: subtitle
+                  tone: muted
+          - component: button
+            text:
+              literal: Global Settings
+            icon: settings
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /settings
+      - component: section
+        id: projects
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Projects
+            style:
+              role: heading
+              emphasis: strong
+          - component: list
+            id: project-list
+            layout:
+              direction: vertical
+              gap: medium
+            repeat:
+              source: frontPage.projects
+              as: project
+              key: project.id
+            children:
+              - component: card
+                layout:
+                  direction: vertical
+                  gap: small
+                  padding: medium
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /projects/{{project.id}}
+                children:
+                  - component: text
+                    text:
+                      template: "Project: {{project.name}}"
+                    style:
+                      role: heading
+                      emphasis: strong
+                  - component: text
+                    text:
+                      binding: project.repo_url
+                    visible:
+                      binding: project.repo_url
+                      equals: ""
+                      not: true
+                    style:
+                      role: body
+                      tone: muted
+                      truncate: true
+                  - component: list
+                    layout:
+                      direction: vertical
+                      gap: small
+                    repeat:
+                      source: project.pipelines
+                      as: pipeline
+                      key: pipeline.id
+                    children:
+                      - component: row
+                        layout:
+                          direction: horizontal
+                          gap: medium
+                          align: center
+                        children:
+                          - component: text
+                            text:
+                              binding: pipeline.pipeline_id
+                            style:
+                              role: body
+                              emphasis: strong
+                          - component: spacer
+                            layout:
+                              grow: true
+                          - component: button
+                            text:
+                              literal: Run
+                            icon: player-play
+                            actions:
+                              - on: activate
+                                command: run-pipeline
+                                arguments:
+                                  pipelineDbId: "{{pipeline.id}}"
+                                confirm:
+                                  title: Run pipeline
+                                  message: This adds a new execution without interrupting jobs that are already queued or running.
+        overrides:
+          gio:
+            layout:
+              gap: small
+      - component: section
+        id: queued-executions
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Queued and In Progress Job Executions
+            style:
+              role: heading
+              emphasis: strong
+          - component: list
+            layout:
+              direction: vertical
+              gap: small
+            repeat:
+              source: frontPage.queued_executions
+              as: execution
+              key: execution.key
+            children:
+              - component: card
+                layout:
+                  direction: vertical
+                  gap: small
+                  padding: medium
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /jobs/{{execution.job_execution_ids.0}}
+                children:
+                  - component: text
+                    text:
+                      binding: execution.title
+                    style:
+                      role: heading
+                      emphasis: strong
+                  - component: text
+                    text:
+                      template: "{{execution.summary.in_progress}} active · {{execution.summary.waiting}} waiting · {{execution.summary.total_jobs}} total"
+                    style:
+                      tone: muted
+      - component: section
+        id: execution-history
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Job Execution History
+            style:
+              role: heading
+              emphasis: strong
+          - component: list
+            layout:
+              direction: vertical
+              gap: small
+            repeat:
+              source: frontPage.history_executions
+              as: execution
+              key: execution.key
+            children:
+              - component: card
+                layout:
+                  direction: vertical
+                  gap: small
+                  padding: medium
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /jobs/{{execution.job_execution_ids.0}}
+                children:
+                  - component: text
+                    text:
+                      binding: execution.title
+                    style:
+                      role: heading
+                      emphasis: strong
+                  - component: text
+                    text:
+                      template: "{{execution.summary.succeeded}} succeeded · {{execution.summary.failed}} failed · {{execution.summary.total_jobs}} total"
+                    style:
+                      tone: muted

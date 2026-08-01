@@ -44,6 +44,8 @@ type HandlerDeps struct {
 	AttachProgress                     func(*protocol.JobExecution)
 	MarkAgentSeen                      func(agentID string, ts time.Time)
 	OnJobUpdated                       func(job protocol.JobExecution)
+	OnQueueChanged                     func()
+	OnHistoryChanged                   func()
 	PrepareRerun                       func(original protocol.JobExecution, request *protocol.CreateJobExecutionRequest) error
 	Now                                func() time.Time
 }
@@ -136,6 +138,9 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 				}
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
+			}
+			if deps.OnQueueChanged != nil {
+				deps.OnQueueChanged()
 			}
 			httpx.WriteJSON(w, http.StatusOK, DeleteViewResponse{Deleted: true, JobExecutionID: jobID})
 		default:
@@ -398,6 +403,9 @@ func HandleClearQueue(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if n > 0 && deps.OnQueueChanged != nil {
+		deps.OnQueueChanged()
+	}
 	httpx.WriteJSON(w, http.StatusOK, ClearQueueViewResponse{Cleared: n})
 }
 
@@ -430,6 +438,9 @@ func HandleFlushHistory(w http.ResponseWriter, r *http.Request, deps HandlerDeps
 	}
 	for _, jobID := range deletedIDs {
 		_ = os.RemoveAll(filepath.Join(deps.ArtifactsDir, jobID))
+	}
+	if len(deletedIDs) > 0 && deps.OnHistoryChanged != nil {
+		deps.OnHistoryChanged()
 	}
 	httpx.WriteJSON(w, http.StatusOK, FlushHistoryViewResponse{Flushed: int64(len(deletedIDs))})
 }

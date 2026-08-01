@@ -19,6 +19,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.HandleFunc("/ciwi-logo.png", webui.Handler)
 	r.HandleFunc("/ui/*", webui.Handler)
 	r.HandleFunc("/settings", webui.Handler)
+	r.HandleFunc("/declarative-preview", webui.Handler)
 	r.HandleFunc("/vault", webui.Handler)
 	r.HandleFunc("/agents", webui.Handler)
 	r.HandleFunc("/agents/*", webui.Handler)
@@ -29,6 +30,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.Get("/healthz", healthzHandler)
 	r.Get("/api/v1/server-info", serverInfoHandler)
 	r.Get("/api/v1/runtime-state", s.runtimeStateHandler)
+	r.Get("/api/v1/views/front-page", s.frontPageViewHandler)
 
 	// Agent API
 	r.Post("/api/v1/heartbeat", s.heartbeatHandler)

@@ -1,0 +1,21 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: mango-chaunsa, title: Mango Chaunsa, description: "Honey yellow, soft green and sunlit flesh"}
+theme:
+  colors:
+    background: "#fff8c9"
+    surface: "#fffdf0"
+    surface-subtle: "#f8ed9d"
+    text: "#393113"
+    text-muted: "#71683d"
+    accent: "#dba918"
+    accent-strong: "#768432"
+    border: "#ddcf73"
+    success: "#6e983d"
+    warning: "#d89011"
+    danger: "#b9553e"
+    focus: "#397ca5"
+  gradients:
+    page: {kind: linear, angle: 140, stops: [{color: "#fffce5", position: 0}, {color: "#f1cb3f", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#fffde7", position: 0}, {color: "#f5dd64", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}

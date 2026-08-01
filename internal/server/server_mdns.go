@@ -12,6 +12,14 @@ import (
 )
 
 func startMDNSAdvertiser(serverAddr string) func() {
+	return startMDNSService(serverAddr, "_ciwi._tcp")
+}
+
+func startNativeMDNSAdvertiser(serverAddr string) func() {
+	return startMDNSService(serverAddr, "_ciwi-native._udp")
+}
+
+func startMDNSService(serverAddr, serviceName string) func() {
 	if strings.TrimSpace(envOrDefault("CIWI_MDNS_ENABLE", "true")) == "false" {
 		return func() {}
 	}
@@ -40,7 +48,7 @@ func startMDNSAdvertiser(serverAddr string) func() {
 		"version=" + currentVersion(),
 	}
 	ips := discoverAdvertiseIPs()
-	service, err := mdns.NewMDNSService(instance, "_ciwi._tcp", "", "", portNum, ips, meta)
+	service, err := mdns.NewMDNSService(instance, serviceName, "", "", portNum, ips, meta)
 	if err != nil {
 		slog.Error("mdns advertise service setup failed", "error", err)
 		return func() {}
@@ -50,7 +58,7 @@ func startMDNSAdvertiser(serverAddr string) func() {
 		slog.Error("mdns advertise start failed", "error", err)
 		return func() {}
 	}
-	slog.Info("mdns advertising enabled", "service", "_ciwi._tcp", "instance", instance, "port", port)
+	slog.Info("mdns advertising enabled", "service", serviceName, "instance", instance, "port", port)
 
 	return func() {
 		server.Shutdown()

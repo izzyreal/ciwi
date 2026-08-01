@@ -1,0 +1,25 @@
+body { min-height: 100vh; }
+#declarativeRoot { min-height: 100vh; }
+.dsl-page { width: min(var(--ciwi-page-max, 1600px), calc(100% - 32px)); margin: 16px auto; display: flex; flex-direction: column; gap: 18px; }
+.dsl-row { display: flex; flex-direction: row; }
+.dsl-column, .dsl-section, .dsl-list { display: flex; flex-direction: column; }
+.dsl-card, .dsl-section, .dsl-hero { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.dsl-card { padding: 16px; cursor: pointer; }
+.dsl-card:hover { border-color: var(--accent); background: var(--surface-subtle); }
+.dsl-hero { padding: 24px; background: var(--chrome-card-bg, var(--surface)); }
+.dsl-title { font-size: 38px; line-height: 1.1; font-weight: 800; color: var(--ink); }
+.dsl-heading { font-size: 20px; font-weight: 750; color: var(--ink); }
+.dsl-subtitle { font-size: 21px; }
+.dsl-muted { color: var(--muted); }
+.dsl-strong { font-weight: 700; }
+.dsl-truncate { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dsl-image { width: 220px; max-height: 160px; object-fit: contain; image-rendering: pixelated; }
+.dsl-button { border: 1px solid var(--line); background: var(--surface); color: var(--accent); border-radius: 10px; padding: 10px 14px; font: inherit; cursor: pointer; }
+.dsl-button:hover { border-color: var(--accent); }
+.dsl-error { margin: 24px; padding: 16px; border: 1px solid var(--bad); border-radius: 12px; color: var(--bad); background: var(--surface); }
+@media (max-width: 760px) {
+  .dsl-page { width: min(100% - 16px, var(--ciwi-page-max, 1600px)); margin: 8px auto; }
+  .dsl-hero { padding: 16px; }
+  .dsl-image { width: 110px; }
+  .dsl-title { font-size: 30px; }
+}

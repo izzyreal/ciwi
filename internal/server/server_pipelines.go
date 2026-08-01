@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -99,12 +100,25 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	resp, err := s.enqueuePersistedPipeline(p, &req)
+	resp, err := s.app().pipelines.RunPipeline(r.Context(), application.RunPipelineRequest{
+		PipelineDBID:   pipelineDBID,
+		PipelineJobID:  req.PipelineJobID,
+		MatrixName:     req.MatrixName,
+		MatrixIndex:    req.MatrixIndex,
+		DryRun:         req.DryRun,
+		SourceRef:      req.SourceRef,
+		AgentID:        req.AgentID,
+		ExecutionMode:  req.ExecutionMode,
+		IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 		return
 	}
-	writeJSON(w, http.StatusCreated, resp)
+	writeJSON(w, http.StatusCreated, protocol.RunPipelineResponse{
+		ProjectName: resp.ProjectName, PipelineID: resp.PipelineID, Enqueued: resp.Enqueued,
+		JobExecutionIDs: append([]string(nil), resp.JobExecutionIDs...),
+	})
 }
 
 func (s *stateStore) pipelineChainActionHandler(w http.ResponseWriter, r *http.Request, projectID int64, chainID, action string) {

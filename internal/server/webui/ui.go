@@ -30,6 +30,7 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ui/agents.js":             {"assets/js/agents.js", "application/javascript; charset=utf-8", false},
 	"/ui/agent.js":              {"assets/js/agent.js", "application/javascript; charset=utf-8", false},
 	"/ui/job-execution.js":      {"assets/js/job-execution.js", "application/javascript; charset=utf-8", false},
+	"/ui/declarative.js":        {"assets/js/declarative.js", "application/javascript; charset=utf-8", false},
 	"/ui/css/chrome.css":        {"assets/css/chrome.css", "text/css; charset=utf-8", false},
 	"/ui/css/index.css":         {"assets/css/index.css", "text/css; charset=utf-8", false},
 	"/ui/css/settings.css":      {"assets/css/settings.css", "text/css; charset=utf-8", false},
@@ -38,10 +39,19 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ui/css/agents.css":        {"assets/css/agents.css", "text/css; charset=utf-8", false},
 	"/ui/css/agent.css":         {"assets/css/agent.css", "text/css; charset=utf-8", false},
 	"/ui/css/job-execution.css": {"assets/css/job-execution.css", "text/css; charset=utf-8", false},
+	"/ui/css/declarative.css":   {"assets/css/declarative.css", "text/css; charset=utf-8", false},
 }
 
 // Handler serves ciwi's browser pages and embedded static assets.
 func Handler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/ui/contracts/screens/front-page.json" {
+		serveScreenContract(w, "front-page")
+		return
+	}
+	if r.URL.Path == "/ui/contracts/themes.json" {
+		serveThemeContracts(w)
+		return
+	}
 	if asset, ok := staticRoutes[r.URL.Path]; ok {
 		serveEmbeddedAsset(w, asset)
 		return
@@ -51,6 +61,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/":
 		page = "index"
+	case r.URL.Path == "/declarative-preview":
+		page = "declarative"
 	case r.URL.Path == "/settings":
 		page = "settings"
 	case strings.HasPrefix(r.URL.Path, "/projects/"):

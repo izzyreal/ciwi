@@ -1,22 +1,64 @@
 # Architecture
 
-ciwi is a single codebase that runs in three modes:
+ciwi's service binary runs in three modes:
 - server
 - agent
 - all-in-one
 
-It is designed for private-network CI/CD with explicit, structured contracts between components.
+It is designed for private-network CI/CD with explicit, structured contracts
+between components. A separate `ciwi-desktop` executable is the first native UI
+client.
+
+## Package architecture
+
+```mermaid
+flowchart LR
+  WEB[Browser renderer] --> HTTP[HTTP adapter]
+  GIO[Gio renderer] --> CNPCLIENT[CNP public client]
+  HTTP --> APP[Application services]
+  CNP[CNP QUIC adapter] --> APP
+  CNPCLIENT --> CNP
+  APP --> DOMAIN[Domain types]
+  PRES[Presentation queries] --> APP
+  HTTP --> PRES
+  CNP --> PRES
+  APP --> PORTS[Consumer-owned ports]
+  SQLITE[SQLite adapters] --> PORTS
+  RUNNER[Pipeline runner adapter] --> PORTS
+  DSL[Shared UI DSL and themes] --> WEB
+  DSL --> GIO
+```
+
+The dependency direction is deliberate:
+
+- `internal/domain` contains transport- and persistence-neutral concepts.
+- `internal/application` owns use cases, command semantics, ports, typed
+  errors, idempotency, and change invalidations.
+- `internal/presentation` composes renderer-facing view models.
+- `internal/adapters` maps SQLite, the existing execution engine, QUIC, and Gio
+  to those inner contracts.
+- `internal/server` is the composition root and HTTP adapter. Existing server
+  behavior moves inward by vertical slice rather than by a flag-day rewrite.
+- `pkg/cnp`, `pkg/cnp/v1`, and `pkg/cnpclient` are the public native protocol.
+- `pkg/uidsl` and `ui` are independent of HTTP, CNP, SQLite, and renderer APIs.
+
+Architecture tests enforce the most important import boundaries. Interfaces
+are normally declared by the consuming application service, not collected in a
+generic global interfaces package.
 
 ## High-level architecture
 
 ```mermaid
 flowchart LR
-  subgraph UI[Browser UI]
-    FE[Frontend]
+  subgraph UI[UI clients]
+    FE[Browser renderer]
+    DESKTOP[Gio desktop renderer]
   end
 
   subgraph ServerHost[ciwi Server]
-    API[HTTP API + UI handlers]
+    API[HTTP adapter]
+    NATIVE[CNP v1 / QUIC adapter]
+    APP[Application + presentation services]
     SCHED[Queue + lease coordination]
     UPDATE[Server update controller]
     DB[(SQLite)]
@@ -38,6 +80,9 @@ flowchart LR
   VAULT[(Vault AppRole)]
 
   FE -->|REST/SSE| API
+  DESKTOP -->|CNP v1 / QUIC| NATIVE
+  API --> APP
+  NATIVE --> APP
   API <--> DB
   API <--> ART
   API <--> SCHED
@@ -143,6 +188,14 @@ Primary persisted entities:
 - Deterministic server-side state transitions for jobs.
 - Agent capability and runtime requirement matching before execution.
 - Explicit update orchestration with persisted status.
+- Application behavior is independent of HTTP status codes, handlers,
+  protobuf messages, SQLite rows, HTML, and Gio widgets.
+- Browser and native renderers share semantic screen/theme definitions while
+  retaining platform-specific rendering and accessibility behavior.
+- Mutating commands are idempotent at the application boundary when a caller
+  supplies a command key.
+- Live clients receive invalidations and re-query authoritative views; event
+  payloads are not a second state store.
 
 ## Evolution priorities
 
@@ -157,9 +210,15 @@ Primary persisted entities:
   composition root when those areas next require substantial changes.
 - Prefer focused packages and consumer-owned interfaces over generic model,
   service, or utility layers.
+- Continue moving front-page, project, job, settings, and agent behavior through
+  application/presentation slices. The established browser UI remains valid
+  while each declarative replacement proves behavioral parity.
+- Keep agents on HTTP until agent transport migration has a concrete benefit;
+  CNP is currently a client-facing protocol, not a forced whole-system rewrite.
 
 ## Trust boundaries and assumptions
 
 - Intended for private networks/homelab-style deployments.
 - No claim of hard multi-tenant isolation/security hardening.
+- CNP v1 encrypts with QUIC TLS 1.3 but does not authenticate endpoint identity.
 - Credentials/secrets expected to be managed through Vault mappings or host environment discipline.

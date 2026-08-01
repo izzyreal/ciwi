@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	serverproject "github.com/izzyreal/ciwi/internal/server/project"
@@ -70,6 +71,7 @@ func (s *stateStore) importProjectHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	s.app().changes.Publish(application.ChangeProjects)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -107,6 +109,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			}
 			// Remove in-memory icon cache entry for deleted project.
 			s.setProjectIcon(projectID, "", nil)
+			s.app().changes.Publish(application.ChangeProjects)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		default:
@@ -197,6 +200,7 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		s.app().changes.Publish(application.ChangeProjects)
 		writeJSON(w, http.StatusOK, resp)
 	case "inspect":
 		s.projectInspectHandler(w, r, projectID)
@@ -265,12 +269,16 @@ func (s *stateStore) listProjectsHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	projects, err := s.projectStore().ListProjects()
+	projects, err := s.app().projects.ListProjects(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, projectListViewResponse{Projects: projects})
+	responseProjects := make([]protocol.ProjectSummary, 0, len(projects))
+	for _, project := range projects {
+		responseProjects = append(responseProjects, projectToProtocol(project))
+	}
+	writeJSON(w, http.StatusOK, projectListViewResponse{Projects: responseProjects})
 }
 
 func (s *stateStore) persistImportedProject(req protocol.ImportProjectRequest, cfgContent, loadedCommit, resolvedRepoRef, iconContentType string, iconContent []byte) (protocol.ImportProjectResponse, error) {

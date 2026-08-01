@@ -1,0 +1,21 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: mango-kent, title: Mango Kent, description: Red-green skin and brilliant orange flesh}
+theme:
+  colors:
+    background: "#fff1d3"
+    surface: "#fffaf0"
+    surface-subtle: "#ffe5b0"
+    text: "#3d2418"
+    text-muted: "#775949"
+    accent: "#e77924"
+    accent-strong: "#a83f37"
+    border: "#e4b870"
+    success: "#56864a"
+    warning: "#d78918"
+    danger: "#c53e4a"
+    focus: "#8054b8"
+  gradients:
+    page: {kind: linear, angle: 135, stops: [{color: "#f7d36d", position: 0}, {color: "#f18732", position: 55}, {color: "#b9494b", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#fff8e8", position: 0}, {color: "#f7b548", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}

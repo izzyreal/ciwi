@@ -1,5 +1,10 @@
 # Backend API
 
+ciwi has two first-class client transports. The browser uses the HTTP API
+described below. Native clients use CNP v1 (Protocol Buffers over QUIC),
+described in [`native-client.md`](native-client.md). Both adapters call the same
+application and presentation services; CNP is not an HTTP wrapper.
+
 ## Shared across consumers
 
 - Agent + Frontend:
@@ -18,6 +23,9 @@
 - `POST /api/v1/jobs/{id}/tests`
 
 ## Consumed by frontend UI
+
+- Presentation views:
+  - `GET /api/v1/views/front-page`
 
 - Agents:
   - `GET /api/v1/agents`
@@ -76,6 +84,10 @@
 - Managed YAML updates require the current SHA-256 `revision`; stale updates return `409 Conflict` without changing the project.
 - Managed YAML project names are case-insensitively unique among managed projects, and request bodies are limited to 2 MiB.
 - Machine behavior should rely on structured API payloads, not output log scraping.
+- `POST /api/v1/pipelines/{id}/run-selection` accepts an optional
+  `Idempotency-Key`. Repeating the same command and payload returns the stored
+  result without enqueuing duplicate executions; reusing a key for a different
+  payload returns `409 Conflict`.
 - `POST /api/v1/agents/{agentId}/actions` supports:
   - `{"action":"authorize"}`: allows the agent to lease jobs.
   - `{"action":"unauthorize"}`: prevents the agent from leasing new jobs.

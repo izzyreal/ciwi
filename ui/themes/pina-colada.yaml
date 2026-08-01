@@ -1,0 +1,21 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: pina-colada, title: Piña Colada, description: "Pineapple gold, coconut cream and sandy shore"}
+theme:
+  colors:
+    background: "#fff7dc"
+    surface: "#fffdf5"
+    surface-subtle: "#f7edc9"
+    text: "#393019"
+    text-muted: "#756949"
+    accent: "#b99612"
+    accent-strong: "#627b29"
+    border: "#dbc982"
+    success: "#668f3b"
+    warning: "#d59415"
+    danger: "#bc5443"
+    focus: "#258aa0"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#fffdf5", position: 0}, {color: "#f2d983", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f8e6aa", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}

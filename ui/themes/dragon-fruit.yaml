@@ -1,0 +1,21 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: dragon-fruit, title: Dragon Fruit, description: "Magenta peel, leafy green and speckled white flesh"}
+theme:
+  colors:
+    background: "#fff0f6"
+    surface: "#fffafd"
+    surface-subtle: "#f9dbe8"
+    text: "#321d28"
+    text-muted: "#735768"
+    accent: "#d72f75"
+    accent-strong: "#8f225d"
+    border: "#e4a8c2"
+    success: "#4e965b"
+    warning: "#cf8c21"
+    danger: "#be3459"
+    focus: "#6258c8"
+  gradients:
+    page: {kind: linear, angle: 140, stops: [{color: "#fffafd", position: 0}, {color: "#e63d82", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f1b0cc", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}

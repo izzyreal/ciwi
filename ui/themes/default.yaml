@@ -1,0 +1,26 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: default, title: Default, description: Crisp mint with bolder status colors}
+theme:
+  colors: &colors
+    background: "#edf7f2"
+    surface: "#ffffff"
+    surface-subtle: "#f3faf6"
+    text: "#17231d"
+    text-muted: "#5b6e64"
+    accent: "#2d8067"
+    accent-strong: "#175b47"
+    border: "#b7d7c8"
+    success: "#21885b"
+    warning: "#b87817"
+    danger: "#ba4545"
+    focus: "#2568d8"
+  gradients:
+    page:
+      kind: linear
+      angle: 135
+      stops: [{color: "#f8fcfa", position: 0}, {color: "#dcefe6", position: 100}]
+    hero:
+      kind: radial
+      stops: [{color: "#ffffff", position: 0}, {color: "#e6f5ee", position: 100}]
+  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}

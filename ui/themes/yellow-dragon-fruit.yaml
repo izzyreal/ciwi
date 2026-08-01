@@ -1,0 +1,21 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: yellow-dragon-fruit, title: Yellow Dragon Fruit, description: "Vivid yellow peel, white flesh and seed-black contrast"}
+theme:
+  colors:
+    background: "#fffbd8"
+    surface: "#ffffff"
+    surface-subtle: "#f7f3c5"
+    text: "#25271c"
+    text-muted: "#676b52"
+    accent: "#d6b700"
+    accent-strong: "#6f8c38"
+    border: "#d9cf71"
+    success: "#659443"
+    warning: "#d8930d"
+    danger: "#b94b47"
+    focus: "#426fc2"
+  gradients:
+    page: {kind: linear, angle: 150, stops: [{color: "#ffffff", position: 0}, {color: "#f5db24", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f3e675", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}

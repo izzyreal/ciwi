@@ -214,6 +214,15 @@ func (s *Store) initializeSchema() error {
 			value TEXT NOT NULL,
 			updated_utc TEXT NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS command_receipts (
+			command_key TEXT PRIMARY KEY,
+			operation TEXT NOT NULL,
+			request_fingerprint TEXT NOT NULL,
+			status TEXT NOT NULL,
+			result_json TEXT NOT NULL DEFAULT '',
+			created_utc TEXT NOT NULL,
+			updated_utc TEXT NOT NULL
+		);`,
 	}
 
 	for _, stmt := range stmts {

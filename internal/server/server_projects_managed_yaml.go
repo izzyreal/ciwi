@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
@@ -64,6 +65,7 @@ func (s *stateStore) createManagedYAMLHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	definition.YAML = ""
+	s.app().changes.Publish(application.ChangeProjects)
 	writeJSON(w, http.StatusCreated, definition)
 }
 
@@ -97,6 +99,7 @@ func (s *stateStore) managedYAMLProjectHandler(w http.ResponseWriter, r *http.Re
 			return
 		}
 		definition.YAML = ""
+		s.app().changes.Publish(application.ChangeProjects)
 		writeJSON(w, http.StatusOK, definition)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

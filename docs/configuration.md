@@ -4,6 +4,9 @@
 
 Common variables:
 - `CIWI_SERVER_ADDR`: server bind address (default `:8112`)
+- `CIWI_NATIVE_ADDR`: optional CNP v1 QUIC bind address; unset disables the native listener (example `:8113`)
+- `CIWI_MDNS_ENABLE`: advertise HTTP and enabled native endpoints over mDNS (default `true`)
+- `CIWI_MDNS_INSTANCE`: override the advertised mDNS instance name
 - `CIWI_DB_PATH`: sqlite path (default `ciwi.db`)
 - `CIWI_ARTIFACTS_DIR`: artifact root (default `ciwi-artifacts`)
 - `CIWI_SERVER_URL`: agent target URL (default `http://127.0.0.1:8112`)
@@ -20,6 +23,11 @@ Common variables:
 - `CIWI_UPDATE_REPO`: update repo (default `izzyreal/ciwi`)
 - `CIWI_UPDATE_API_BASE`: update API base (default `https://api.github.com`)
 - `CIWI_LOG_LEVEL`: `debug|info|warn|error` (default `info`)
+
+Native desktop client variables:
+
+- `CIWI_NATIVE_SERVER`: explicit CNP server address, equivalent to `ciwi-desktop -addr`
+- `CIWI_NATIVE_THEME`: shared theme name, equivalent to `ciwi-desktop -theme`
 
 Build-time version embedding:
 - `-X github.com/izzyreal/ciwi/internal/version.Version=<value>`

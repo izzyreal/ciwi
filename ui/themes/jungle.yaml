@@ -1,0 +1,22 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: jungle, title: Jungle, description: "Dense greens, tropical light and volcanic soil"}
+theme:
+  dark: true
+  colors:
+    background: "#071b16"
+    surface: "#102b22"
+    surface-subtle: "#15372a"
+    text: "#e8f7d8"
+    text-muted: "#a8c89a"
+    accent: "#69c45b"
+    accent-strong: "#b6dc54"
+    border: "#3f6f52"
+    success: "#5ed17a"
+    warning: "#e0b84b"
+    danger: "#e36b59"
+    focus: "#7ed6b0"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#071b16", position: 0}, {color: "#183b23", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#284d2a", position: 0}, {color: "#0c241b", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}

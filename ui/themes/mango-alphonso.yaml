@@ -1,0 +1,21 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: mango-alphonso, title: Mango Alphonso, description: Saffron-orange flesh and warm ochre skin}
+theme:
+  colors:
+    background: "#fff0d8"
+    surface: "#fffaf3"
+    surface-subtle: "#ffdfad"
+    text: "#3d2414"
+    text-muted: "#795844"
+    accent: "#e56f16"
+    accent-strong: "#a94b18"
+    border: "#e5ae69"
+    success: "#628b3c"
+    warning: "#cc8412"
+    danger: "#bf4335"
+    focus: "#6758ba"
+  gradients:
+    page: {kind: linear, angle: 135, stops: [{color: "#ffd56f", position: 0}, {color: "#eb741b", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#fff7e9", position: 0}, {color: "#f39a36", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}

@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/adapters/nativequic"
 	"github.com/izzyreal/ciwi/internal/server/jobprogress"
 	servervault "github.com/izzyreal/ciwi/internal/server/vault"
 	"github.com/izzyreal/ciwi/internal/store"
@@ -44,6 +46,8 @@ type agentUpdateRolloutState struct {
 
 type stateStore struct {
 	mu                sync.Mutex
+	applicationOnce   sync.Once
+	application       *serverApplication
 	dependencyMu      sync.Mutex
 	agents            map[string]agentState
 	agentUpdates      map[string]string
@@ -123,7 +127,23 @@ func Run(ctx context.Context) error {
 	stopMDNS := startMDNSAdvertiser(addr)
 	defer stopMDNS()
 
-	errCh := make(chan error, 1)
+	var nativeServer *nativequic.Server
+	nativeAddr := strings.TrimSpace(envOrDefault("CIWI_NATIVE_ADDR", ""))
+	if nativeAddr != "" {
+		app := s.app()
+		nativeServer, err = nativequic.Listen(nativeAddr, nativequic.Services{
+			Server: app.server, Projects: app.projects, FrontPage: app.frontPage,
+			Pipelines: app.pipelines, Changes: app.changes, Version: currentVersion(),
+		})
+		if err != nil {
+			return err
+		}
+		defer nativeServer.Close()
+		stopNativeMDNS := startNativeMDNSAdvertiser(nativeServer.Addr())
+		defer stopNativeMDNS()
+	}
+
+	errCh := make(chan error, 2)
 	go func() {
 		slog.Info("ciwi server started", "addr", addr)
 		err := srv.ListenAndServe()
@@ -133,6 +153,12 @@ func Run(ctx context.Context) error {
 		}
 		errCh <- nil
 	}()
+	if nativeServer != nil {
+		go func() {
+			slog.Info("ciwi native server started", "addr", nativeServer.Addr(), "protocol", nativequic.ALPN)
+			errCh <- nativeServer.Serve(ctx)
+		}()
+	}
 
 	select {
 	case <-ctx.Done():
@@ -140,6 +166,9 @@ func Run(ctx context.Context) error {
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown server: %w", err)
+		}
+		if nativeServer != nil {
+			_ = nativeServer.Close()
 		}
 		slog.Info("ciwi server stopped")
 		return nil

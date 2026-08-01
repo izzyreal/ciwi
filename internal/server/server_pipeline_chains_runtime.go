@@ -6,10 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func (s *stateStore) onJobExecutionUpdated(job protocol.JobExecution) {
+	s.app().changes.Publish(application.ChangeQueue, application.ChangeHistory)
 	status := protocol.NormalizeJobExecutionStatus(job.Status)
 	if !protocol.IsTerminalJobExecutionStatus(status) {
 		return

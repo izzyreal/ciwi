@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 )
@@ -22,8 +23,14 @@ func (s *stateStore) jobExecutionHandlerDeps() jobexecution.HandlerDeps {
 		AttachUnmetRequirementsToExecution: s.attachJobExecutionUnmetRequirementsToJobExecution,
 		MarkAgentSeen:                      s.markAgentSeen,
 		OnJobUpdated:                       s.onJobExecutionUpdated,
-		PrepareRerun:                       s.prepareJobExecutionRerun,
-		AttachProgress:                     attachProgress,
+		OnQueueChanged: func() {
+			s.app().changes.Publish(application.ChangeQueue)
+		},
+		OnHistoryChanged: func() {
+			s.app().changes.Publish(application.ChangeHistory)
+		},
+		PrepareRerun:   s.prepareJobExecutionRerun,
+		AttachProgress: attachProgress,
 	}
 }
 

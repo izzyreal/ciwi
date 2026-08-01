@@ -40,6 +40,8 @@ Note on artifact log verbosity:
 - Pipeline config and runtime model: [`docs/pipelines.md`](docs/pipelines.md)
 - Progress indicators and duration estimates: [`docs/progress-indicators.md`](docs/progress-indicators.md)
 - Backend API reference (grouped by consumer): [`docs/api.md`](docs/api.md)
+- Native CNP protocol and Gio client: [`docs/native-client.md`](docs/native-client.md)
+- Shared declarative UI contract: [`docs/ui-dsl.md`](docs/ui-dsl.md)
 - Vault/AppRole integration: [`docs/vault.md`](docs/vault.md)
 - Operations (update policy, maintenance, troubleshooting): [`docs/operations.md`](docs/operations.md)
 - Architecture and flows: [`docs/architecture.md`](docs/architecture.md)
