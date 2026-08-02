@@ -31,6 +31,12 @@ The `ciwi.ui/v1` schema contains:
 - narrow `web` and `gio` overrides;
 - semantic color, gradient, and dimension tokens.
 
+Icons and bundled images are semantic asset names resolved by each renderer;
+screen documents never contain renderer-specific vector paths or filesystem
+locations. A style can use `toneBinding` to map execution states such as
+`succeeded`, `failed`, `queued`, and `running` onto the shared semantic status
+palette without duplicating status-color logic in every screen.
+
 Ordinary non-control text, including headings, disclosure labels, and status
 copy, is selectable in the Gio adapter. The semantic `code` text role renders
 as a selectable read-only native editor and as a scrollable monospace region in

@@ -77,6 +77,18 @@ func TestParseScreenRejectsUnknownBindingRoot(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesDynamicToneBinding(t *testing.T) {
+	payload := strings.Replace(validScreen, "          - component: card\n", "          - component: card\n            style:\n              toneBinding: project.status\n", 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid tone binding: %v", err)
+	}
+	payload = strings.Replace(payload, "project.status", "unknown.status", 1)
+	_, err := ParseScreen([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid tone binding error = %v", err)
+	}
+}
+
 func TestRenderTextAndResolve(t *testing.T) {
 	data := map[string]any{
 		"frontPage": map[string]any{

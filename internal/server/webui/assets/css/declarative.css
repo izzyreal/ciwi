@@ -16,12 +16,18 @@ body { min-height: 100vh; }
 .dsl-subtitle { font-size: 21px; }
 .dsl-code { white-space: pre-wrap; overflow: auto; max-height: 55vh; padding: 14px; border-radius: 10px; background: var(--surface-subtle); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45; }
 .dsl-muted { color: var(--muted); }
+.dsl-accent { color: var(--accent); }
+.dsl-success { color: var(--ok); }
+.dsl-warning { color: var(--warn); }
 .dsl-danger { color: var(--bad); }
+.dsl-focus { color: var(--focus-ring); }
 .dsl-strong { font-weight: 700; }
+.dsl-badge { display: inline-flex; align-self: flex-start; width: fit-content; padding: 4px 9px; border: 1px solid color-mix(in srgb, currentColor 55%, transparent); border-radius: 999px; background: color-mix(in srgb, currentColor 12%, var(--surface)); font-size: .9em; font-weight: 700; }
 .dsl-truncate { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dsl-image { width: 220px; max-height: 160px; object-fit: contain; image-rendering: pixelated; }
-.dsl-button { border: 1px solid var(--line); background: var(--surface); color: var(--accent); border-radius: 10px; padding: 10px 14px; font: inherit; cursor: pointer; }
+.dsl-button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); border-radius: 10px; padding: 10px 14px; font: inherit; cursor: pointer; }
 .dsl-button:hover { border-color: var(--accent); }
+.dsl-icon { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .dsl-error { margin: 24px; padding: 16px; border: 1px solid var(--bad); border-radius: 12px; color: var(--bad); background: var(--surface); }
 @media (max-width: 760px) {
   .dsl-page { width: min(100% - 16px, var(--ciwi-page-max, 1600px)); margin: 8px auto; }

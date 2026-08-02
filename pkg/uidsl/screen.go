@@ -88,10 +88,11 @@ type Layout struct {
 }
 
 type Style struct {
-	Role     string `yaml:"role,omitempty" json:"role,omitempty"`
-	Emphasis string `yaml:"emphasis,omitempty" json:"emphasis,omitempty"`
-	Tone     string `yaml:"tone,omitempty" json:"tone,omitempty"`
-	Truncate bool   `yaml:"truncate,omitempty" json:"truncate,omitempty"`
+	Role        string `yaml:"role,omitempty" json:"role,omitempty"`
+	Emphasis    string `yaml:"emphasis,omitempty" json:"emphasis,omitempty"`
+	Tone        string `yaml:"tone,omitempty" json:"tone,omitempty"`
+	ToneBinding string `yaml:"toneBinding,omitempty" json:"toneBinding,omitempty"`
+	Truncate    bool   `yaml:"truncate,omitempty" json:"truncate,omitempty"`
 }
 
 type Repeat struct {
@@ -264,6 +265,11 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 	if node.Visible != nil {
 		if err := validateBinding(node.Visible.Binding, scope); err != nil {
 			return fmt.Errorf("%s.visible.binding: %w", path, err)
+		}
+	}
+	if node.Style.ToneBinding != "" {
+		if err := validateBinding(node.Style.ToneBinding, scope); err != nil {
+			return fmt.Errorf("%s.style.toneBinding: %w", path, err)
 		}
 	}
 	for i, action := range node.Actions {

@@ -151,8 +151,8 @@ screen:
                                   - component: text
                                     text:
                                       template: "{{step.position}}. {{step.name}}"
-                                  - component: text
+                                  - component: badge
                                     text:
-                                      template: "({{step.type}})"
+                                      binding: step.type
                                     style:
                                       tone: muted

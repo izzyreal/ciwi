@@ -56,6 +56,17 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if !foundTitle {
 		t.Fatal("front-page title is not rendered as selectable text")
 	}
+	if _, ok := renderer.images["ciwi-logo"]; !ok {
+		t.Fatal("embedded ciwi logo is unavailable to the native renderer")
+	}
+	for _, selectable := range renderer.selectables {
+		if selectable.Text() == "ciwi" {
+			t.Fatal("image was rendered as placeholder text")
+		}
+	}
+	if renderer.icons["settings"] == nil || renderer.icons["player-play"] == nil || renderer.icons["arrow-left"] == nil {
+		t.Fatal("declared screen icons are unavailable to the native renderer")
+	}
 }
 
 func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
@@ -255,6 +266,18 @@ func TestNativeJobOutputBufferKeepsBoundedTail(t *testing.T) {
 	})
 	if !strings.HasPrefix(buffer.text, "[ciwi native: earlier output omitted]\n") || len(buffer.text) > maxNativeOutputBytes+100 {
 		t.Fatalf("buffer length=%d prefix=%q", len(buffer.text), buffer.text[:min(len(buffer.text), 50)])
+	}
+}
+
+func TestSemanticToneUsesSharedStatusCategories(t *testing.T) {
+	tests := map[string]string{
+		"succeeded": "success", "failed": "danger", "queued": "warning",
+		"in progress": "accent", "unknown": "muted",
+	}
+	for status, want := range tests {
+		if got := semanticTone(status); got != want {
+			t.Errorf("semanticTone(%q) = %q, want %q", status, got, want)
+		}
 	}
 }
 

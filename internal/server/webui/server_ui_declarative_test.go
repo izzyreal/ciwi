@@ -96,3 +96,16 @@ func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
 		}
 	}
 }
+
+func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg#icon-"} {
+		if !strings.Contains(script, expected) {
+			t.Errorf("declarative renderer does not contain %q", expected)
+		}
+	}
+}

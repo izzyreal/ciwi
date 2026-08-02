@@ -13,7 +13,7 @@ import (
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
-//go:embed screens/*.yaml themes/*.yaml
+//go:embed assets/* screens/*.yaml themes/*.yaml
 var resources embed.FS
 
 func Read(path string) ([]byte, error) {

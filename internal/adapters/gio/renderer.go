@@ -3,9 +3,11 @@
 package gio
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
+	"image/png"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	"gioui.org/f32"
 	"gioui.org/font"
 	"gioui.org/io/pointer"
+	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -20,6 +23,8 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
+	sharedUI "github.com/izzyreal/ciwi/ui"
+	"golang.org/x/exp/shiny/materialdesign/icons"
 )
 
 type ActionHandler func(uidsl.Action, map[string]string)
@@ -36,6 +41,8 @@ type Renderer struct {
 	disclosures map[string]bool
 	selectables map[string]*widget.Selectable
 	textEditors map[string]*widget.Editor
+	icons       map[string]*widget.Icon
+	images      map[string]paint.ImageOp
 	statusText  widget.Editor
 	shownStatus string
 	onAction    ActionHandler
@@ -52,7 +59,7 @@ type pendingConfirmation struct {
 }
 
 type palette struct {
-	background, backgroundEnd, surface, subtle, text, muted, accent, border, danger color.NRGBA
+	background, backgroundEnd, heroStart, heroEnd, surface, subtle, text, muted, accent, border, success, warning, danger, focus color.NRGBA
 }
 
 func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAction ActionHandler) (*Renderer, error) {
@@ -68,10 +75,18 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	materialTheme.Palette.Bg = colors.background
 	materialTheme.Palette.ContrastBg = colors.accent
 	materialTheme.Palette.ContrastFg = colors.surface
+	iconSet, err := materialIcons()
+	if err != nil {
+		return nil, err
+	}
+	imageSet, err := embeddedImages()
+	if err != nil {
+		return nil, err
+	}
 	renderer := &Renderer{
 		screen: screen, theme: materialTheme, palette: colors, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
-		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{},
+		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, icons: iconSet, images: imageSet,
 	}
 	renderer.statusText.ReadOnly = true
 	return renderer, nil
@@ -231,13 +246,26 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	}
+	if node.Style.ToneBinding != "" {
+		value, err := uidsl.Resolve(data, node.Style.ToneBinding)
+		if err != nil {
+			return r.errorLabel(gtx, err)
+		}
+		node.Style.Tone = semanticTone(fmt.Sprint(value))
+	}
 
 	content := func(gtx layout.Context) layout.Dimensions {
 		if node.Component == "disclosure" {
 			return r.layoutDisclosure(gtx, node, data, path)
 		}
-		if node.Component == "text" || node.Component == "badge" || node.Component == "image" {
+		if node.Component == "text" {
 			return r.layoutText(gtx, node, data, path)
+		}
+		if node.Component == "badge" {
+			return r.layoutBadge(gtx, node, data, path)
+		}
+		if node.Component == "image" {
+			return r.layoutImage(gtx, node)
 		}
 		if node.Component == "button" {
 			return r.layoutButton(gtx, node, data, path)
@@ -245,7 +273,14 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		return r.layoutChildren(gtx, node, data, path)
 	}
 	if node.Component == "card" || node.Component == "disclosure" || node.Component == "section" || node.Style.Role == "hero" {
-		content = r.surface(content, node.Component == "card" || node.Component == "disclosure")
+		padding := unit.Dp(0)
+		if node.Component == "card" || node.Component == "disclosure" {
+			padding = 14
+		}
+		if node.Style.Role == "hero" {
+			padding = 22
+		}
+		content = r.surface(content, padding, node.Style.Role == "hero")
 	}
 	if len(node.Actions) > 0 && node.Component != "button" {
 		button := r.button(path)
@@ -267,9 +302,9 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		label = resolved
 	}
 	expanded := r.disclosures[path]
-	prefix := "▶ "
+	iconName := "chevron-right"
 	if expanded {
-		prefix = "▼ "
+		iconName = "chevron-down"
 	}
 	toggle := r.button(path + "/disclosure-toggle")
 	for toggle.Clicked(gtx) {
@@ -280,9 +315,11 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	header := func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				button := material.Button(r.theme, toggle, strings.TrimSpace(prefix))
-				button.CornerRadius = 8
-				return button.Layout(gtx)
+				description := "Expand " + label
+				if expanded {
+					description = "Collapse " + label
+				}
+				return r.layoutIconButton(gtx, toggle, iconName, description)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				labelPath := path + "/label"
@@ -382,11 +419,8 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 	default:
 		label = material.Body1(r.theme, text)
 	}
-	if node.Style.Tone == "muted" {
-		label.Color = r.palette.muted
-	}
-	if node.Style.Tone == "danger" {
-		label.Color = r.palette.danger
+	if tone, ok := r.toneColor(node.Style.Tone); ok {
+		label.Color = tone
 	}
 	if node.Style.Emphasis == "strong" {
 		label.Font.Weight = font.Bold
@@ -396,6 +430,61 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 	}
 	label.State = r.selectable(path)
 	return label.Layout(gtx)
+}
+
+func (r *Renderer) layoutBadge(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	tone, ok := r.toneColor(node.Style.Tone)
+	if !ok {
+		tone = r.palette.accent
+	}
+	background := tone
+	background.A = 0x24
+	border := tone
+	border.A = 0x90
+	return widget.Border{Color: border, CornerRadius: 999, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(999)).Op(gtx.Ops))
+			return layout.Dimensions{Size: gtx.Constraints.Min}
+		}, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: 4, Right: 9, Bottom: 4, Left: 9}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return r.layoutText(gtx, node, data, path+"/text")
+			})
+		})
+	})
+}
+
+func (r *Renderer) toneColor(tone string) (color.NRGBA, bool) {
+	switch tone {
+	case "muted":
+		return r.palette.muted, true
+	case "accent":
+		return r.palette.accent, true
+	case "success":
+		return r.palette.success, true
+	case "warning":
+		return r.palette.warning, true
+	case "danger":
+		return r.palette.danger, true
+	case "focus":
+		return r.palette.focus, true
+	default:
+		return color.NRGBA{}, false
+	}
+}
+
+func (r *Renderer) layoutImage(gtx layout.Context, node uidsl.Node) layout.Dimensions {
+	if node.Image == nil {
+		return r.errorLabel(gtx, fmt.Errorf("image source is missing"))
+	}
+	source, ok := r.images[node.Image.Asset]
+	if !ok {
+		return r.errorLabel(gtx, fmt.Errorf("image asset %q is unavailable", node.Image.Asset))
+	}
+	semantic.DescriptionOp(node.Image.Description).Add(gtx.Ops)
+	width, height := gtx.Dp(132), gtx.Dp(110)
+	size := gtx.Constraints.Constrain(image.Pt(width, height))
+	gtx.Constraints = layout.Exact(size)
+	return widget.Image{Src: source, Fit: widget.Contain, Position: layout.Center, Scale: 1}.Layout(gtx)
 }
 
 func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
@@ -411,21 +500,96 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 			r.dispatch(node.Actions[0], data)
 		}
 	}
-	style := material.Button(r.theme, button, label)
-	style.CornerRadius = 9
-	return style.Layout(gtx)
+	return r.layoutControlButton(gtx, button, label, node.Icon)
 }
 
-func (r *Renderer) surface(content layout.Widget, card bool) layout.Widget {
+func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string) layout.Dimensions {
+	background := r.palette.surface
+	borderColor := r.palette.border
+	if button.Hovered() {
+		background = r.palette.subtle
+		borderColor = r.palette.accent
+	}
+	if gtx.Focused(button) {
+		borderColor = r.palette.focus
+	}
+	return widget.Border{Color: borderColor, CornerRadius: 9, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(9)).Op(gtx.Ops))
+			return layout.Dimensions{Size: gtx.Constraints.Min}
+		}, func(gtx layout.Context) layout.Dimensions {
+			return material.Clickable(gtx, button, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: 10, Right: 14, Bottom: 10, Left: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					children := make([]layout.FlexChild, 0, 2)
+					icon := r.icons[iconName]
+					if icon != nil {
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(19), gtx.Dp(19)))
+							return icon.Layout(gtx, r.palette.accent)
+						}))
+					}
+					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						inset := layout.Inset{}
+						if icon != nil {
+							inset.Left = 8
+						}
+						labelStyle := material.Body1(r.theme, label)
+						labelStyle.Color = r.palette.accent
+						return inset.Layout(gtx, labelStyle.Layout)
+					}))
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+				})
+			})
+		})
+	})
+}
+
+func (r *Renderer) layoutIconButton(gtx layout.Context, button *widget.Clickable, iconName, description string) layout.Dimensions {
+	icon := r.icons[iconName]
+	if icon == nil {
+		return r.errorLabel(gtx, fmt.Errorf("icon %q is unavailable", iconName))
+	}
+	background := r.palette.surface
+	borderColor := r.palette.border
+	if button.Hovered() {
+		background = r.palette.subtle
+		borderColor = r.palette.accent
+	}
+	if gtx.Focused(button) {
+		borderColor = r.palette.focus
+	}
+	return widget.Border{Color: borderColor, CornerRadius: 9, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(9)).Op(gtx.Ops))
+			return layout.Dimensions{Size: gtx.Constraints.Min}
+		}, func(gtx layout.Context) layout.Dimensions {
+			return material.Clickable(gtx, button, func(gtx layout.Context) layout.Dimensions {
+				semantic.DescriptionOp(description).Add(gtx.Ops)
+				return layout.UniformInset(9).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(19), gtx.Dp(19)))
+					return icon.Layout(gtx, r.palette.accent)
+				})
+			})
+		})
+	})
+}
+
+func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		padding := unit.Dp(0)
-		if card {
-			padding = 14
-		}
 		return widget.Border{Color: r.palette.border, CornerRadius: 12, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				rect := image.Rectangle{Max: gtx.Constraints.Min}
-				paint.FillShape(gtx.Ops, r.palette.surface, clip.UniformRRect(rect, gtx.Dp(12)).Op(gtx.Ops))
+				if hero {
+					stack := clip.UniformRRect(rect, gtx.Dp(12)).Push(gtx.Ops)
+					paint.LinearGradientOp{
+						Stop1: f32.Pt(0, 0), Color1: r.palette.heroStart,
+						Stop2: f32.Pt(float32(rect.Dx()), float32(rect.Dy())), Color2: r.palette.heroEnd,
+					}.Add(gtx.Ops)
+					paint.PaintOp{}.Add(gtx.Ops)
+					stack.Pop()
+				} else {
+					paint.FillShape(gtx.Ops, r.palette.surface, clip.UniformRRect(rect, gtx.Dp(12)).Op(gtx.Ops))
+				}
 				return layout.Dimensions{Size: gtx.Constraints.Min}
 			}, func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(padding).Layout(gtx, content)
@@ -506,7 +670,7 @@ func (r *Renderer) layoutConfirmation(gtx layout.Context) layout.Dimensions {
 				}),
 			)
 		})
-	}, true)(gtx)
+	}, 14, false)(gtx)
 }
 
 func (r *Renderer) requestFrame() {
@@ -596,6 +760,9 @@ func mergeStyle(base, override uidsl.Style) uidsl.Style {
 	if override.Tone != "" {
 		base.Tone = override.Tone
 	}
+	if override.ToneBinding != "" {
+		base.ToneBinding = override.ToneBinding
+	}
 	if override.Truncate {
 		base.Truncate = true
 	}
@@ -632,7 +799,8 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 	for name, target := range map[string]*color.NRGBA{
 		"background": &p.background, "surface": &p.surface, "surface-subtle": &p.subtle,
 		"text": &p.text, "text-muted": &p.muted, "accent": &p.accent,
-		"border": &p.border, "danger": &p.danger,
+		"border": &p.border, "success": &p.success, "warning": &p.warning,
+		"danger": &p.danger, "focus": &p.focus,
 	} {
 		*target, err = get(name)
 		if err != nil {
@@ -640,6 +808,8 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 		}
 	}
 	p.backgroundEnd = p.background
+	p.heroStart = p.surface
+	p.heroEnd = p.subtle
 	if gradient, ok := theme.Gradients["page"]; ok && len(gradient.Stops) >= 2 {
 		p.background, err = parseColor(gradient.Stops[0].Color)
 		if err != nil {
@@ -650,7 +820,61 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 			return palette{}, fmt.Errorf("page gradient end: %w", err)
 		}
 	}
+	if gradient, ok := theme.Gradients["hero"]; ok && len(gradient.Stops) >= 2 {
+		p.heroStart, err = parseColor(gradient.Stops[0].Color)
+		if err != nil {
+			return palette{}, fmt.Errorf("hero gradient start: %w", err)
+		}
+		p.heroEnd, err = parseColor(gradient.Stops[len(gradient.Stops)-1].Color)
+		if err != nil {
+			return palette{}, fmt.Errorf("hero gradient end: %w", err)
+		}
+	}
 	return p, nil
+}
+
+func semanticTone(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "succeeded", "success", "passed", "complete", "completed":
+		return "success"
+	case "failed", "failure", "error", "cancelled", "canceled":
+		return "danger"
+	case "queued", "waiting", "pending", "not reached":
+		return "warning"
+	case "running", "leased", "in progress", "active":
+		return "accent"
+	default:
+		return "muted"
+	}
+}
+
+func materialIcons() (map[string]*widget.Icon, error) {
+	sources := map[string][]byte{
+		"settings": icons.ActionSettings, "arrow-left": icons.NavigationArrowBack,
+		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
+		"chevron-down": icons.NavigationExpandMore,
+	}
+	out := make(map[string]*widget.Icon, len(sources))
+	for name, source := range sources {
+		icon, err := widget.NewIcon(source)
+		if err != nil {
+			return nil, fmt.Errorf("load icon %q: %w", name, err)
+		}
+		out[name] = icon
+	}
+	return out, nil
+}
+
+func embeddedImages() (map[string]paint.ImageOp, error) {
+	payload, err := sharedUI.Read("assets/ciwi-logo.png")
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := png.Decode(bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("decode ciwi logo: %w", err)
+	}
+	return map[string]paint.ImageOp{"ciwi-logo": paint.NewImageOp(decoded)}, nil
 }
 
 func parseColor(value string) (color.NRGBA, error) {

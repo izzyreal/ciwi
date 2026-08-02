@@ -73,11 +73,22 @@ screen:
               gap: small
               padding: medium
             children:
-              - component: text
-                text:
-                  template: "Status: {{jobDetails.status_label}} · Mode: {{jobDetails.mode}}"
-                style:
-                  emphasis: strong
+              - component: row
+                layout:
+                  direction: horizontal
+                  gap: small
+                  align: center
+                children:
+                  - component: badge
+                    text:
+                      binding: jobDetails.status_label
+                    style:
+                      toneBinding: jobDetails.status
+                  - component: badge
+                    text:
+                      binding: jobDetails.mode
+                    style:
+                      tone: muted
               - component: text
                 text:
                   template: "Created: {{jobDetails.created}}"
@@ -199,6 +210,11 @@ screen:
                   direction: vertical
                   gap: small
                 children:
+                  - component: badge
+                    text:
+                      binding: item.status_label
+                    style:
+                      toneBinding: item.status
                   - component: text
                     text:
                       binding: item.description

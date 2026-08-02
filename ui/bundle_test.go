@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestEmbeddedUIBundle(t *testing.T) {
 	screen, err := LoadScreen("front-page")
@@ -30,5 +33,12 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	}
 	if len(themes) != 9 {
 		t.Fatalf("theme count = %d, want 9", len(themes))
+	}
+	logo, err := Read("assets/ciwi-logo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(logo, []byte("\x89PNG\r\n\x1a\n")) {
+		t.Fatal("embedded ciwi logo is not a PNG")
 	}
 }

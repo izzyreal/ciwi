@@ -49,6 +49,16 @@
     return String(text.template || '').replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, binding) => String(resolve(data, binding) ?? ''));
   }
 
+  function semanticTone(value) {
+    switch (String(value || '').trim().toLowerCase()) {
+      case 'succeeded': case 'success': case 'passed': case 'complete': case 'completed': return 'success';
+      case 'failed': case 'failure': case 'error': case 'cancelled': case 'canceled': return 'danger';
+      case 'queued': case 'waiting': case 'pending': case 'not reached': return 'warning';
+      case 'running': case 'leased': case 'in progress': case 'active': return 'accent';
+      default: return 'muted';
+    }
+  }
+
   function withWebOverride(node) {
     const override = node.overrides && node.overrides.web;
     if (!override) return node;
@@ -145,7 +155,8 @@
     if (node.id) element.id = node.id;
     const style = node.style || {};
     if (style.role) element.classList.add('dsl-' + style.role);
-    if (style.tone) element.classList.add('dsl-' + style.tone);
+    const tone = style.toneBinding ? semanticTone(resolve(data, style.toneBinding)) : style.tone;
+    if (tone) element.classList.add('dsl-' + tone);
     if (style.emphasis) element.classList.add('dsl-' + style.emphasis);
     if (style.truncate) element.classList.add('dsl-truncate');
     applyLayout(element, node.layout);
@@ -158,6 +169,15 @@
       element.alt = node.image.description || '';
     } else if (node.text) {
       element.textContent = renderText(node.text, data);
+    }
+    if (node.component === 'button' && node.icon) {
+      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      icon.classList.add('dsl-icon');
+      icon.setAttribute('aria-hidden', 'true');
+      const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+      use.setAttribute('href', '/ui/icons.svg#icon-' + node.icon);
+      icon.appendChild(use);
+      element.prepend(icon);
     }
     bindActions(element, node.actions, data);
     (node.children || []).forEach(child => element.appendChild(renderNode(child, data)));

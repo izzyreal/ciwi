@@ -246,11 +246,11 @@ screen:
                                           binding: job.label
                                         style:
                                           emphasis: strong
-                                      - component: text
+                                      - component: badge
                                         text:
                                           binding: job.status
                                         style:
-                                          tone: muted
+                                          toneBinding: job.status
                                       - component: text
                                         text:
                                           binding: job.current_step
@@ -350,11 +350,11 @@ screen:
                                           binding: job.label
                                         style:
                                           emphasis: strong
-                                      - component: text
+                                      - component: badge
                                         text:
                                           binding: job.status
                                         style:
-                                          tone: muted
+                                          toneBinding: job.status
                                       - component: text
                                         text:
                                           binding: job.current_step

@@ -79,5 +79,9 @@ bounded cursor pages and clients cap their display buffer, so status refreshes
 do not reload large logs. Step navigation and execution controls remain on the
 established job page while their application/CNP slices are built. Agents
 continue to use the existing HTTP protocol.
+
+The Gio adapter resolves the same bundled logo, semantic icon names, theme
+gradients, status tones, and badge roles used by the declarative browser proof;
+these are renderer primitives rather than per-screen native drawings.
 The desktop client deliberately has no HTTP fallback: missing CNP capabilities
 fail visibly instead of silently coupling the native UI to browser endpoints.
