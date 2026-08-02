@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/presentation"
 )
 
 func TestProjectDetailsViewUsesApplicationPresentationShape(t *testing.T) {
@@ -36,5 +38,19 @@ func TestProjectDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	}
 	if steps := view.Pipelines[0].Jobs[0].Steps; len(steps) == 0 || steps[0].Name == "" {
 		t.Fatalf("steps = %+v", steps)
+	}
+}
+
+func TestProjectDetailsResponseCarriesJobDryRunCapability(t *testing.T) {
+	response := projectDetailsToResponse(presentation.ProjectDetailsView{
+		Project: domain.Project{ID: 1, Name: "ciwi"},
+		Pipelines: []presentation.ProjectPipelineView{{
+			ID: 2, PipelineID: "release", Jobs: []presentation.ProjectJobView{{
+				ID: "publish", SupportsDryRun: true,
+			}},
+		}},
+	})
+	if !response.Pipelines[0].Jobs[0].SupportsDryRun {
+		t.Fatal("job dry-run capability was dropped from HTTP presentation response")
 	}
 }

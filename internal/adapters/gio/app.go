@@ -285,7 +285,8 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		}
 		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		result, err := client.RunPipeline(commandCtx, &cnpv1.RunPipelineRequest{
-			PipelineDbId: pipelineID, Selection: &cnpv1.RunPipelineSelection{DryRun: dryRun},
+			PipelineDbId: pipelineID,
+			Selection:    pipelineRunSelection(command.arguments),
 		}, "")
 		cancel()
 		if err != nil {
@@ -313,7 +314,7 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		result, err := client.RunPipelineChain(commandCtx, &cnpv1.RunPipelineChainRequest{
 			ProjectId: projectID, ChainId: chainID,
-			Selection: &cnpv1.RunPipelineSelection{DryRun: dryRun},
+			Selection: pipelineRunSelection(command.arguments),
 		}, "")
 		cancel()
 		if err != nil {
@@ -424,6 +425,16 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		renderer.SetStatus("Theme: " + theme.Metadata.Title)
 	default:
 		renderer.SetStatus("Unsupported native action: " + command.action.Command)
+	}
+}
+
+func pipelineRunSelection(arguments map[string]string) *cnpv1.RunPipelineSelection {
+	return &cnpv1.RunPipelineSelection{
+		PipelineJobId: strings.TrimSpace(arguments["pipelineJobId"]),
+		DryRun:        arguments["dryRun"] == "true",
+		SourceRef:     strings.TrimSpace(arguments["sourceRef"]),
+		AgentId:       strings.TrimSpace(arguments["agentId"]),
+		ExecutionMode: strings.TrimSpace(arguments["executionMode"]),
 	}
 }
 

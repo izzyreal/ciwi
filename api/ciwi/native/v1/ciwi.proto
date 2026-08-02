@@ -118,6 +118,7 @@ message ProjectJobDetails {
   uint32 matrix_count = 7;
   uint32 steps_count = 8;
   repeated ProjectStepDetails steps = 9;
+  bool supports_dry_run = 10;
 }
 
 message ProjectStepDetails {

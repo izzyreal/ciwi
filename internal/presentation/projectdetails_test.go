@@ -16,7 +16,7 @@ func (projectDetailsSourceStub) GetProjectDetails(context.Context, int64) (domai
 			ID: 2, PipelineID: "build", DependsOn: []string{"prepare"},
 			Jobs: []domain.PipelineJobDetails{{
 				ID: "compile", RunsOn: map[string]string{"os": "darwin", "arch": "arm64"},
-				Steps: []domain.PipelineStepDetails{{Index: 0, Type: "run"}, {Index: 1, Type: "test", TestName: "unit"}},
+				Steps: []domain.PipelineStepDetails{{Index: 0, Type: "run"}, {Index: 1, Type: "test", TestName: "unit", SkipDryRun: true}},
 			}},
 		}},
 	}, nil
@@ -32,7 +32,13 @@ func TestProjectDetailsViewDerivesStableLabels(t *testing.T) {
 		t.Fatalf("pipeline = %+v", pipeline)
 	}
 	job := pipeline.Jobs[0]
-	if job.RunsOnLabel != "arch=arm64, os=darwin" || job.Steps[0].Name != "step 1" || job.Steps[1].Name != "test unit" {
+	if job.RunsOnLabel != "arch=arm64, os=darwin" || job.Steps[0].Name != "step 1" || job.Steps[1].Name != "test unit" || !job.SupportsDryRun {
 		t.Fatalf("job = %+v", job)
+	}
+}
+
+func TestPipelineChainSequenceLabel(t *testing.T) {
+	if got := PipelineChainSequenceLabel([]string{"build", "codesign-macos", "release"}); got != "build → codesign-macos → release" {
+		t.Fatalf("sequence label = %q", got)
 	}
 }

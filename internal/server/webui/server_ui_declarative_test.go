@@ -126,7 +126,7 @@ func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg#icon-", "node.component === 'select'", "change-theme"} {
+	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg#icon-", "node.component === 'select'", "change-theme", "runSelectionFromArguments"} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
 		}

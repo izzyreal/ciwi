@@ -57,3 +57,14 @@ func TestFrontPageProjectResponseKeepsEmptyContractFields(t *testing.T) {
 		}
 	}
 }
+
+func TestFrontPageProjectResponseUsesSharedChainSequenceLabel(t *testing.T) {
+	response := frontPageProjectsToResponse([]domain.Project{{
+		ID: 1, Name: "ciwi", PipelineChains: []domain.PipelineChain{{
+			ID: "build+release", Name: "Build and release", Pipelines: []string{"build", "release"},
+		}},
+	}})
+	if got := response[0].PipelineChains[0].SequenceLabel; got != "build → release" {
+		t.Fatalf("sequence label = %q", got)
+	}
+}

@@ -1068,6 +1068,7 @@ type ProjectJobDetails struct {
 	MatrixCount    uint32                 `protobuf:"varint,7,opt,name=matrix_count,json=matrixCount,proto3" json:"matrix_count,omitempty"`
 	StepsCount     uint32                 `protobuf:"varint,8,opt,name=steps_count,json=stepsCount,proto3" json:"steps_count,omitempty"`
 	Steps          []*ProjectStepDetails  `protobuf:"bytes,9,rep,name=steps,proto3" json:"steps,omitempty"`
+	SupportsDryRun bool                   `protobuf:"varint,10,opt,name=supports_dry_run,json=supportsDryRun,proto3" json:"supports_dry_run,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1163,6 +1164,13 @@ func (x *ProjectJobDetails) GetSteps() []*ProjectStepDetails {
 		return x.Steps
 	}
 	return nil
+}
+
+func (x *ProjectJobDetails) GetSupportsDryRun() bool {
+	if x != nil {
+		return x.SupportsDryRun
+	}
+	return false
 }
 
 type ProjectStepDetails struct {
@@ -3686,7 +3694,7 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\n" +
 	"jobs_count\x18\x06 \x01(\rR\tjobsCount\x12(\n" +
 	"\x10supports_dry_run\x18\a \x01(\bR\x0esupportsDryRun\x125\n" +
-	"\x04jobs\x18\b \x03(\v2!.ciwi.native.v1.ProjectJobDetailsR\x04jobs\"\xc6\x02\n" +
+	"\x04jobs\x18\b \x03(\v2!.ciwi.native.v1.ProjectJobDetailsR\x04jobs\"\xf0\x02\n" +
 	"\x11ProjectJobDetails\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05needs\x18\x02 \x03(\tR\x05needs\x12\x1f\n" +
@@ -3699,7 +3707,9 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\fmatrix_count\x18\a \x01(\rR\vmatrixCount\x12\x1f\n" +
 	"\vsteps_count\x18\b \x01(\rR\n" +
 	"stepsCount\x128\n" +
-	"\x05steps\x18\t \x03(\v2\".ciwi.native.v1.ProjectStepDetailsR\x05steps\"\xcc\x01\n" +
+	"\x05steps\x18\t \x03(\v2\".ciwi.native.v1.ProjectStepDetailsR\x05steps\x12(\n" +
+	"\x10supports_dry_run\x18\n" +
+	" \x01(\bR\x0esupportsDryRun\"\xcc\x01\n" +
 	"\x12ProjectStepDetails\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\rR\x05index\x12\x1a\n" +
 	"\bposition\x18\x02 \x01(\rR\bposition\x12\x12\n" +

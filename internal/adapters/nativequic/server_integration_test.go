@@ -70,7 +70,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if projectDetails.Project.Name != "ciwi" || len(projectDetails.Pipelines) != 1 || projectDetails.Pipelines[0].Jobs[0].Steps[0].Name != "Compile" {
+	if projectDetails.Project.Name != "ciwi" || len(projectDetails.Pipelines) != 1 || projectDetails.Pipelines[0].Jobs[0].Steps[0].Name != "Compile" || !projectDetails.Pipelines[0].Jobs[0].SupportsDryRun {
 		t.Fatalf("project details = %#v", projectDetails)
 	}
 	jobDetails, err := client.GetJobDetails(ctx, "job-1")
@@ -309,7 +309,7 @@ func (projectDetailsService) GetProjectDetailsView(context.Context, int64) (pres
 		Pipelines: []presentation.ProjectPipelineView{{
 			ID: 42, PipelineID: "build", JobsCount: 1, SupportsDryRun: true,
 			Jobs: []presentation.ProjectJobView{{
-				ID: "compile", StepsCount: 1,
+				ID: "compile", StepsCount: 1, SupportsDryRun: true,
 				Steps: []presentation.ProjectStepView{{Index: 0, Position: 1, Name: "Compile", Type: "run"}},
 			}},
 		}},
@@ -364,7 +364,7 @@ func testProjects() []domain.Project {
 	return []domain.Project{{
 		ID: 7, Name: "ciwi", RepoURL: "https://github.com/izzyreal/ciwi",
 		Pipelines:      []domain.Pipeline{{ID: 42, PipelineID: "build", SupportsDryRun: true}},
-		PipelineChains: []domain.PipelineChain{{ID: "build+release", Name: "Build and release", Pipelines: []string{"build", "release"}}},
+		PipelineChains: []domain.PipelineChain{{ID: "build+release", Name: "Build and release", Pipelines: []string{"build", "release"}, SupportsDryRun: true}},
 	}}
 }
 

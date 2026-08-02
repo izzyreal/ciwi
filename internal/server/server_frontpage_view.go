@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/presentation"
 )
 
 type frontPageViewResponse struct {
@@ -43,6 +44,7 @@ type frontPagePipelineChainResponse struct {
 	Pipelines         []string `json:"pipelines"`
 	SupportsDryRun    bool     `json:"supports_dry_run"`
 	VersionPipelineID int64    `json:"version_pipeline_id"`
+	SequenceLabel     string   `json:"sequence_label"`
 }
 
 type executionCardResponse struct {
@@ -109,6 +111,7 @@ func frontPageProjectsToResponse(projects []domain.Project) []frontPageProjectRe
 			chains = append(chains, frontPagePipelineChainResponse{
 				ID: chain.ID, Name: chain.Name, Pipelines: append([]string{}, chain.Pipelines...),
 				SupportsDryRun: chain.SupportsDryRun, VersionPipelineID: chain.VersionPipelineID,
+				SequenceLabel: presentation.PipelineChainSequenceLabel(chain.Pipelines),
 			})
 		}
 		updatedUnixMS := int64(0)

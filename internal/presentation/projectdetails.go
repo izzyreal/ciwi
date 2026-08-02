@@ -34,6 +34,7 @@ type ProjectJobView struct {
 	TimeoutSeconds int
 	MatrixCount    int
 	StepsCount     int
+	SupportsDryRun bool
 	Steps          []ProjectStepView
 }
 
@@ -73,7 +74,9 @@ func (q *ProjectDetailsQueries) GetProjectDetailsView(ctx context.Context, proje
 		jobs := make([]ProjectJobView, 0, len(pipeline.Jobs))
 		for _, job := range pipeline.Jobs {
 			steps := make([]ProjectStepView, 0, len(job.Steps))
+			supportsDryRun := false
 			for _, step := range job.Steps {
+				supportsDryRun = supportsDryRun || step.SkipDryRun
 				name := strings.TrimSpace(step.Name)
 				if name == "" && step.Type == "test" {
 					name = "test " + strings.TrimSpace(step.TestName)
@@ -91,7 +94,7 @@ func (q *ProjectDetailsQueries) GetProjectDetailsView(ctx context.Context, proje
 				ID: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: strings.Join(job.Needs, ", "),
 				RunsOnLabel: keyValueLabel(job.RunsOn), ToolsLabel: keyValueLabel(job.RequiresTools),
 				TimeoutSeconds: job.TimeoutSeconds, MatrixCount: job.MatrixCount,
-				StepsCount: len(steps), Steps: steps,
+				StepsCount: len(steps), SupportsDryRun: supportsDryRun, Steps: steps,
 			})
 		}
 		dependencies := strings.Join(pipeline.DependsOn, ", ")
@@ -137,4 +140,8 @@ func defaultValue(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func PipelineChainSequenceLabel(pipelines []string) string {
+	return strings.Join(pipelines, " → ")
 }

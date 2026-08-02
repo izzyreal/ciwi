@@ -34,6 +34,7 @@ type projectJobDetailsResponse struct {
 	TimeoutSeconds int                          `json:"timeout_seconds"`
 	MatrixCount    int                          `json:"matrix_count"`
 	StepsCount     int                          `json:"steps_count"`
+	SupportsDryRun bool                         `json:"supports_dry_run"`
 	Steps          []projectStepDetailsResponse `json:"steps"`
 }
 
@@ -84,7 +85,7 @@ func projectDetailsToResponse(view presentation.ProjectDetailsView) projectDetai
 				ID: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: job.NeedsLabel,
 				RunsOnLabel: job.RunsOnLabel, ToolsLabel: job.ToolsLabel,
 				TimeoutSeconds: job.TimeoutSeconds, MatrixCount: job.MatrixCount,
-				StepsCount: job.StepsCount, Steps: steps,
+				StepsCount: job.StepsCount, SupportsDryRun: job.SupportsDryRun, Steps: steps,
 			})
 		}
 		pipelines = append(pipelines, projectPipelineDetailsResponse{

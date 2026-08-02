@@ -256,11 +256,13 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
-		Project: &cnpv1.ProjectSummary{Id: 1, Name: "ciwi"},
+		Project: &cnpv1.ProjectSummary{Id: 1, Name: "ciwi", PipelineChains: []*cnpv1.PipelineChainSummary{{
+			Id: "build+release", Name: "Build and release", SequenceLabel: "build → release", SupportsDryRun: true,
+		}}},
 		Pipelines: []*cnpv1.ProjectPipelineDetails{{
-			Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 1,
+			Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 1, SupportsDryRun: true,
 			Jobs: []*cnpv1.ProjectJobDetails{{
-				Id: "compile", StepsCount: 1,
+				Id: "compile", StepsCount: 1, SupportsDryRun: true,
 				Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Compile", Type: "run"}},
 			}},
 		}},
@@ -274,18 +276,23 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got < 4 {
-		t.Fatalf("default-expanded pipeline did not expose its Run action and job disclosure: %d widgets", got)
+	if got := len(renderer.buttons); got < 8 {
+		t.Fatalf("project details did not expose chain, pipeline, dry-run, and job controls: %d widgets", got)
 	}
-	var foundJob bool
+	var foundJob, foundChain bool
 	for _, selectable := range renderer.selectables {
 		if selectable.Text() == "Job: compile" {
 			foundJob = true
-			break
+		}
+		if selectable.Text() == "Chain: Build and release" {
+			foundChain = true
 		}
 	}
 	if !foundJob {
 		t.Fatal("pipeline did not default to expanded")
+	}
+	if !foundChain {
+		t.Fatal("project pipeline chain was not rendered")
 	}
 }
 
@@ -562,13 +569,13 @@ func TestSemanticToneUsesSharedStatusCategories(t *testing.T) {
 func TestRendererHonorsActionConfirmation(t *testing.T) {
 	var dispatched bool
 	renderer := &Renderer{onAction: func(_ uidsl.Action, arguments map[string]string) {
-		dispatched = arguments["pipelineDbId"] == "7"
+		dispatched = arguments["pipelineDbId"] == "7" && arguments["pipelineJobId"] == "compile" && arguments["dryRun"] == "true"
 	}}
 	renderer.dispatch(uidsl.Action{
 		Command:   "run-pipeline",
-		Arguments: map[string]string{"pipelineDbId": "{{pipeline.id}}"},
+		Arguments: map[string]string{"pipelineDbId": "{{pipeline.id}}", "pipelineJobId": "{{job.id}}", "dryRun": "true"},
 		Confirm:   &uidsl.Confirmation{Title: "Run pipeline", Message: "Queue another execution."},
-	}, map[string]any{"pipeline": map[string]any{"id": float64(7)}})
+	}, map[string]any{"pipeline": map[string]any{"id": float64(7)}, "job": map[string]any{"id": "compile"}})
 	if renderer.pending == nil {
 		t.Fatal("confirmation was not requested")
 	}
@@ -580,6 +587,16 @@ func TestRendererHonorsActionConfirmation(t *testing.T) {
 	renderer.onAction(pending.action, pending.arguments)
 	if !dispatched {
 		t.Fatal("confirmed action was not dispatched")
+	}
+}
+
+func TestPipelineRunSelectionUsesSharedPipelineAndChainArguments(t *testing.T) {
+	selection := pipelineRunSelection(map[string]string{
+		"pipelineJobId": " compile ", "dryRun": "true", "sourceRef": " feature/native ",
+		"agentId": " agent-1 ", "executionMode": " offline_cached ",
+	})
+	if selection.PipelineJobId != "compile" || !selection.DryRun || selection.SourceRef != "feature/native" || selection.AgentId != "agent-1" || selection.ExecutionMode != "offline_cached" {
+		t.Fatalf("selection = %+v", selection)
 	}
 }
 

@@ -1,8 +1,6 @@
 package nativequic
 
 import (
-	"strings"
-
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
@@ -37,7 +35,7 @@ func projectDetailsToProto(view presentation.ProjectDetailsView) *cnpv1.ProjectD
 				Id: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: job.NeedsLabel,
 				RunsOnLabel: job.RunsOnLabel, ToolsLabel: job.ToolsLabel,
 				TimeoutSeconds: uint32(max(job.TimeoutSeconds, 0)), MatrixCount: uint32(max(job.MatrixCount, 0)),
-				StepsCount: uint32(max(job.StepsCount, 0)), Steps: steps,
+				StepsCount: uint32(max(job.StepsCount, 0)), SupportsDryRun: job.SupportsDryRun, Steps: steps,
 			})
 		}
 		pipelines = append(pipelines, &cnpv1.ProjectPipelineDetails{
@@ -93,7 +91,7 @@ func projectsToProto(projects []domain.Project) []*cnpv1.ProjectSummary {
 			chains = append(chains, &cnpv1.PipelineChainSummary{
 				Id: chain.ID, Name: chain.Name, Pipelines: append([]string(nil), chain.Pipelines...),
 				SupportsDryRun: chain.SupportsDryRun, VersionPipelineId: chain.VersionPipelineID,
-				SequenceLabel: strings.Join(chain.Pipelines, " → "),
+				SequenceLabel: presentation.PipelineChainSequenceLabel(chain.Pipelines),
 			})
 		}
 		updated := int64(0)

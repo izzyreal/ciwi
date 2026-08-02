@@ -84,14 +84,6 @@
     });
   }
 
-  function decorateProjectChains(projects) {
-	(Array.isArray(projects) ? projects : []).forEach(project => {
-	  (Array.isArray(project.pipeline_chains) ? project.pipeline_chains : []).forEach(chain => {
-		chain.sequence_label = (Array.isArray(chain.pipelines) ? chain.pipelines : []).join(' → ');
-	  });
-	});
-  }
-
   function withWebOverride(node) {
     const override = node.overrides && node.overrides.web;
     if (!override) return node;
@@ -117,6 +109,16 @@
     if (layout.maxWidth && layout.maxWidth !== 'page') element.style.maxWidth = /^\d+$/.test(layout.maxWidth) ? layout.maxWidth + 'px' : layout.maxWidth;
     if (layout.minHeight) element.style.minHeight = /^\d+$/.test(layout.minHeight) ? layout.minHeight + 'px' : layout.minHeight;
     if (layout.maxHeight) element.style.maxHeight = /^\d+$/.test(layout.maxHeight) ? layout.maxHeight + 'px' : layout.maxHeight;
+  }
+
+  function runSelectionFromArguments(args) {
+    return {
+      pipeline_job_id: args.pipelineJobId || '',
+      dry_run: args.dryRun === 'true',
+      source_ref: args.sourceRef || '',
+      agent_id: args.agentId || '',
+      execution_mode: args.executionMode || '',
+    };
   }
 
   function elementFor(node) {
@@ -186,7 +188,7 @@
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
             method: 'POST',
             headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
-            body: JSON.stringify({dry_run: args.dryRun === 'true'}),
+            body: JSON.stringify(runSelectionFromArguments(args)),
           });
           if (!response.ok) throw new Error(await response.text());
           element.textContent = 'Queued';
@@ -195,7 +197,7 @@
 		  const path = '/api/v1/projects/' + encodeURIComponent(args.projectId) + '/pipeline-chains/' + encodeURIComponent(args.chainId) + '/run';
 		  const response = await fetch(path, {
 		    method: 'POST', headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
-		    body: JSON.stringify({dry_run: args.dryRun === 'true'}),
+		    body: JSON.stringify(runSelectionFromArguments(args)),
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  element.textContent = 'Queued';
@@ -451,7 +453,6 @@
       applyContractTheme(themes);
       let view = responseView;
       if (!projectMatch && !jobMatch && !settingsMatch) {
-		decorateProjectChains(view.projects);
         decorateExecutionCards(view.queued_executions, true);
         decorateExecutionCards(view.history_executions, false);
       }
