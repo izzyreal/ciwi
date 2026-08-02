@@ -89,6 +89,31 @@ func TestParseScreenValidatesDynamicToneBinding(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesSelectBindings(t *testing.T) {
+	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: select
+        select:
+          value: frontPage.server.version
+          options: frontPage.projects
+          as: projectOption
+          optionValue: projectOption.id
+          optionLabel: projectOption.name
+        actions:
+          - on: change
+            command: toggle
+            arguments:
+              value: "{{selection.value}}"
+      - component: list
+`, 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid select: %v", err)
+	}
+	payload = strings.Replace(payload, "projectOption.name", "missing.name", 1)
+	_, err := ParseScreen([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid select label error = %v", err)
+	}
+}
+
 func TestRenderTextAndResolve(t *testing.T) {
 	data := map[string]any{
 		"frontPage": map[string]any{

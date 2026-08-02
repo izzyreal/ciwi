@@ -89,6 +89,7 @@
       case 'card': return document.createElement('article');
       case 'disclosure': return document.createElement('details');
       case 'button': return document.createElement('button');
+      case 'select': return document.createElement('select');
       case 'image': return document.createElement('img');
       case 'divider': return document.createElement('hr');
       case 'spacer': return document.createElement('span');
@@ -98,11 +99,8 @@
 
   function bindActions(element, actions, data) {
     (actions || []).forEach(action => {
-      if (action.on !== 'activate') return;
-      element.tabIndex = element.tabIndex >= 0 ? element.tabIndex : 0;
-      element.setAttribute('role', element.tagName === 'BUTTON' ? 'button' : 'link');
-      const invoke = async () => {
-        const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, data)]));
+      const invoke = async actionData => {
+        const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, actionData)]));
         if (action.confirm && !window.confirm(action.confirm.message || action.confirm.title || 'Continue?')) return;
         if (action.command === 'navigate' && args.route) {
           const inPreview = window.location.pathname.startsWith('/declarative-preview');
@@ -112,6 +110,10 @@
           window.location.assign(destination);
         }
         else if (action.command === 'refresh') refresh();
+        else if (action.command === 'change-theme') {
+          ciwiApplyTheme(args.theme);
+          await refresh();
+        }
         else if (action.command === 'run-pipeline') {
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
             method: 'POST',
@@ -123,13 +125,23 @@
         }
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
       };
-      element.addEventListener('click', event => {
-        if (element.tagName === 'BUTTON') event.stopPropagation();
-        invoke().catch(error => window.alert(error.message || String(error)));
-      });
-      element.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); invoke().catch(error => window.alert(error.message || String(error))); }
-      });
+      if (action.on === 'activate') {
+        element.tabIndex = element.tabIndex >= 0 ? element.tabIndex : 0;
+        element.setAttribute('role', element.tagName === 'BUTTON' ? 'button' : 'link');
+        element.addEventListener('click', event => {
+          if (element.tagName === 'BUTTON') event.stopPropagation();
+          invoke(data).catch(error => window.alert(error.message || String(error)));
+        });
+        element.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); invoke(data).catch(error => window.alert(error.message || String(error))); }
+        });
+      } else if (action.on === 'change') {
+        element.addEventListener('change', () => {
+          const selected = element.options && element.selectedIndex >= 0 ? element.options[element.selectedIndex] : null;
+          const actionData = Object.assign({}, data, {selection: {value: element.value, label: selected ? selected.textContent : element.value}});
+          invoke(actionData).catch(error => window.alert(error.message || String(error)));
+        });
+      }
     });
   }
 
@@ -167,6 +179,17 @@
     } else if (node.component === 'image' && node.image) {
       element.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
       element.alt = node.image.description || '';
+    } else if (node.component === 'select' && node.select) {
+      const options = resolve(data, node.select.options);
+      const current = String(resolve(data, node.select.value));
+      (Array.isArray(options) ? options : []).forEach(item => {
+        const optionData = Object.assign({}, data, {[node.select.as]: item});
+        const option = document.createElement('option');
+        option.value = String(resolve(optionData, node.select.optionValue));
+        option.textContent = String(resolve(optionData, node.select.optionLabel));
+        option.selected = option.value === current;
+        element.appendChild(option);
+      });
     } else if (node.text) {
       element.textContent = renderText(node.text, data);
     }
@@ -211,19 +234,31 @@
     try {
       const projectMatch = window.location.pathname.match(/^\/declarative-preview\/projects\/(\d+)\/?$/);
       const jobMatch = window.location.pathname.match(/^\/declarative-preview\/jobs\/([^/]+)\/?$/);
-      const screenName = projectMatch ? 'project-details' : (jobMatch ? 'job-details' : 'front-page');
+      const settingsMatch = window.location.pathname.match(/^\/declarative-preview\/settings\/?$/);
+      const screenName = projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : 'front-page'));
       const viewURL = projectMatch
         ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1])
-        : (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : '/api/v1/views/front-page');
-      const bindingRoot = projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : 'frontPage');
+        : (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : '/api/v1/views/front-page'));
+      const bindingRoot = projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : 'frontPage'));
       const [screenResponse, themeResponse, viewResponse] = await Promise.all([
         fetch('/ui/contracts/screens/' + screenName + '.json'),
         fetch('/ui/contracts/themes.json'),
         fetch(viewURL),
       ]);
       if (!screenResponse.ok || !themeResponse.ok || !viewResponse.ok) throw new Error('Could not load declarative view data');
-      const [documentContract, themes, view] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
+      const [documentContract, themes, responseView] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
       applyContractTheme(themes);
+      let view = responseView;
+      if (settingsMatch) {
+        const selectedTheme = ciwiStoredTheme();
+        const themeOptions = themes.map(theme => ({
+          name: theme.metadata.name,
+          title: theme.metadata.title || theme.metadata.name,
+          description: theme.metadata.description || '',
+        }));
+        const selected = themeOptions.find(theme => theme.name === selectedTheme);
+        view = {server: responseView, themes: themeOptions, selected_theme: selectedTheme, selected_theme_description: selected ? selected.description : ''};
+      }
       const fragment = renderNode(documentContract.screen.root, { [bindingRoot]: view });
       root.replaceChildren(fragment);
       if (jobMatch) {

@@ -54,6 +54,21 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	}
 }
 
+func TestSettingsDeclarativeScreenContractRoute(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/settings.json", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var screen uidsl.ScreenDocument
+	if err := json.Unmarshal(recorder.Body.Bytes(), &screen); err != nil {
+		t.Fatal(err)
+	}
+	if screen.Metadata.Name != "settings" {
+		t.Fatalf("screen = %#v", screen)
+	}
+}
+
 func TestDeclarativePreviewUsesSharedContractRenderer(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview", nil))
@@ -84,6 +99,14 @@ func TestDeclarativeJobPreviewUsesSharedRenderer(t *testing.T) {
 	}
 }
 
+func TestDeclarativeSettingsPreviewUsesSharedRenderer(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/settings", nil))
+	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
 	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {
@@ -103,7 +126,7 @@ func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg#icon-"} {
+	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg#icon-", "node.component === 'select'", "change-theme"} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
 		}

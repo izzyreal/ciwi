@@ -55,6 +55,7 @@ type Node struct {
 	Text      *Text               `yaml:"text,omitempty" json:"text,omitempty"`
 	Icon      string              `yaml:"icon,omitempty" json:"icon,omitempty"`
 	Image     *Image              `yaml:"image,omitempty" json:"image,omitempty"`
+	Select    *Select             `yaml:"select,omitempty" json:"select,omitempty"`
 	Layout    Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
 	Style     Style               `yaml:"style,omitempty" json:"style,omitempty"`
 	Repeat    *Repeat             `yaml:"repeat,omitempty" json:"repeat,omitempty"`
@@ -73,6 +74,14 @@ type Text struct {
 type Image struct {
 	Asset       string `yaml:"asset" json:"asset"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+type Select struct {
+	Value       string `yaml:"value" json:"value"`
+	Options     string `yaml:"options" json:"options"`
+	As          string `yaml:"as" json:"as"`
+	OptionValue string `yaml:"optionValue" json:"optionValue"`
+	OptionLabel string `yaml:"optionLabel" json:"optionLabel"`
 }
 
 type Layout struct {
@@ -132,7 +141,7 @@ var components = map[string]bool{
 	"page": true, "column": true, "row": true, "section": true,
 	"card": true, "text": true, "icon": true, "image": true,
 	"disclosure": true,
-	"button":     true, "list": true, "badge": true, "spacer": true,
+	"button":     true, "select": true, "list": true, "badge": true, "spacer": true,
 	"divider": true,
 }
 
@@ -140,6 +149,7 @@ var commands = map[string]bool{
 	"navigate": true, "run-pipeline": true, "run-chain": true,
 	"toggle": true, "refresh": true, "clear-queue": true,
 	"flush-history": true, "delete-execution": true,
+	"change-theme": true,
 }
 
 func ParseScreen(payload []byte) (*ScreenDocument, error) {
@@ -174,7 +184,7 @@ func (d *ScreenDocument) Validate() error {
 		if source.Query == "" {
 			return fmt.Errorf("dataSources[%d].query is required", i)
 		}
-		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" {
+		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" {
 			return fmt.Errorf("dataSources[%d].query %q is not supported", i, source.Query)
 		}
 		for _, topic := range source.WatchTopics {
@@ -217,6 +227,7 @@ var changeTopics = map[string]bool{
 
 func validateNode(node Node, path string, ids map[string]struct{}, inheritedScope map[string]struct{}) error {
 	scope := cloneScope(inheritedScope)
+	actionScope := scope
 	if !components[node.Component] {
 		return fmt.Errorf("%s.component %q is not supported", path, node.Component)
 	}
@@ -262,6 +273,32 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 			}
 		}
 	}
+	if node.Select != nil {
+		if node.Component != "select" {
+			return fmt.Errorf("%s.select is only valid for the select component", path)
+		}
+		if !identifierPattern.MatchString(node.Select.As) {
+			return fmt.Errorf("%s.select.as %q is not a valid identifier", path, node.Select.As)
+		}
+		if err := validateBinding(node.Select.Value, scope); err != nil {
+			return fmt.Errorf("%s.select.value: %w", path, err)
+		}
+		if err := validateBinding(node.Select.Options, scope); err != nil {
+			return fmt.Errorf("%s.select.options: %w", path, err)
+		}
+		optionScope := cloneScope(scope)
+		optionScope[node.Select.As] = struct{}{}
+		if err := validateBinding(node.Select.OptionValue, optionScope); err != nil {
+			return fmt.Errorf("%s.select.optionValue: %w", path, err)
+		}
+		if err := validateBinding(node.Select.OptionLabel, optionScope); err != nil {
+			return fmt.Errorf("%s.select.optionLabel: %w", path, err)
+		}
+		actionScope = cloneScope(scope)
+		actionScope["selection"] = struct{}{}
+	} else if node.Component == "select" {
+		return fmt.Errorf("%s.select is required for the select component", path)
+	}
 	if node.Visible != nil {
 		if err := validateBinding(node.Visible.Binding, scope); err != nil {
 			return fmt.Errorf("%s.visible.binding: %w", path, err)
@@ -279,8 +316,11 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		if !commands[action.Command] {
 			return fmt.Errorf("%s.actions[%d].command %q is not supported", path, i, action.Command)
 		}
+		if node.Component == "select" && action.On != "change" {
+			return fmt.Errorf("%s.actions[%d].on must be change for a select component", path, i)
+		}
 		for name, value := range action.Arguments {
-			if err := validateTemplate(value, scope); err != nil {
+			if err := validateTemplate(value, actionScope); err != nil {
 				return fmt.Errorf("%s.actions[%d].arguments[%s]: %w", path, i, name, err)
 			}
 		}

@@ -1,0 +1,136 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: settings
+  title: ciwi global settings
+  description: Native client appearance and connection settings
+screen:
+  dataSources:
+    - name: settings
+      query: get-settings-view
+      watchTopics: [server]
+  persistence:
+    - name: selectedTheme
+      storageKey: ciwi.ui.theme.v1
+      defaultValue: default
+      scope: client
+  root:
+    component: page
+    id: settings
+    layout:
+      direction: vertical
+      gap: large
+      padding: large
+      maxWidth: page
+    children:
+      - component: row
+        id: settings-header
+        layout:
+          direction: horizontal
+          gap: large
+          align: center
+        style:
+          role: hero
+        children:
+          - component: image
+            image:
+              asset: ciwi-logo
+              description: ciwi CI/CD server
+          - component: column
+            layout:
+              direction: vertical
+              gap: small
+              grow: true
+            children:
+              - component: text
+                text:
+                  template: "ciwi {{settings.server.version}} global settings"
+                style:
+                  role: title
+                  emphasis: strong
+              - component: text
+                text:
+                  literal: Native client appearance and connection
+                style:
+                  role: subtitle
+                  tone: muted
+          - component: button
+            text:
+              literal: Back to Main
+            icon: arrow-left
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /
+      - component: section
+        id: appearance
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Appearance
+            style:
+              role: heading
+              emphasis: strong
+          - component: card
+            layout:
+              direction: vertical
+              gap: medium
+              padding: medium
+            children:
+              - component: text
+                text:
+                  literal: Choose the color theme for this native ciwi client.
+              - component: select
+                select:
+                  value: settings.selected_theme
+                  options: settings.themes
+                  as: themeOption
+                  optionValue: themeOption.name
+                  optionLabel: themeOption.title
+                actions:
+                  - on: change
+                    command: change-theme
+                    arguments:
+                      theme: "{{selection.value}}"
+              - component: text
+                text:
+                  binding: settings.selected_theme_description
+                style:
+                  tone: muted
+      - component: section
+        id: connection
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Connection
+            style:
+              role: heading
+              emphasis: strong
+          - component: card
+            layout:
+              direction: vertical
+              gap: small
+              padding: medium
+            children:
+              - component: text
+                text:
+                  template: "Server: {{settings.server.name}} {{settings.server.version}}"
+                style:
+                  emphasis: strong
+              - component: text
+                text:
+                  template: "Host: {{settings.server.hostname}}"
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  template: "Native protocol API: v{{settings.server.api_version}}"
+                style:
+                  tone: muted

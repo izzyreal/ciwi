@@ -22,7 +22,7 @@ the browser preview and the Gio desktop client.
 The `ciwi.ui/v1` schema contains:
 
 - a typed component tree (`page`, `row`, `column`, `section`, `card`,
-  `disclosure`, `text`, `list`, `button`, and a small set of primitives);
+  `disclosure`, `text`, `list`, `button`, `select`, and a small set of primitives);
 - renderer-neutral layout and semantic style roles;
 - dot-path data bindings and non-executable `{{binding}}` templates;
 - repetitions and visibility conditions;
@@ -36,6 +36,10 @@ screen documents never contain renderer-specific vector paths or filesystem
 locations. A style can use `toneBinding` to map execution states such as
 `succeeded`, `failed`, `queued`, and `running` onto the shared semantic status
 palette without duplicating status-color logic in every screen.
+
+The `select` component binds its value and option list to view data, exposes a
+renderer-neutral `selection` value to its change action, and is rendered as a
+native expandable choice control or a browser `<select>` as appropriate.
 
 Ordinary non-control text, including headings, disclosure labels, and status
 copy, is selectable in the Gio adapter. The semantic `code` text role renders

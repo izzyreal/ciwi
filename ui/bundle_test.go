@@ -27,6 +27,13 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if jobScreen.Metadata.Name != "job-details" {
 		t.Fatalf("job screen name = %q", jobScreen.Metadata.Name)
 	}
+	settingsScreen, err := LoadScreen("settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settingsScreen.Metadata.Name != "settings" {
+		t.Fatalf("settings screen name = %q", settingsScreen.Metadata.Name)
+	}
 	themes, err := LoadThemes()
 	if err != nil {
 		t.Fatal(err)

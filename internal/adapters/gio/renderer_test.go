@@ -4,6 +4,7 @@ package gio
 
 import (
 	"image"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -188,6 +189,126 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if got := len(renderer.buttons); got < 4 {
 		t.Fatalf("expanded pipeline did not expose its Run action and job disclosure: %d widgets", got)
+	}
+}
+
+func TestRendererChangesThemeFromSharedSettingsSelect(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultTheme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes, err := sharedUI.LoadThemes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected string
+	renderer, err := NewRenderer(screen, defaultTheme, func(action uidsl.Action, arguments map[string]string) {
+		if action.Command == "change-theme" {
+			selected = arguments["theme"]
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := settingsBindingData(&cnpv1.ServerInfo{Name: "ciwi", Version: "v0.2.0", Hostname: "buildbox", ApiVersion: 1}, themes, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	selectPath := ""
+	for path := range renderer.buttons {
+		if strings.HasSuffix(path, "/select-toggle") {
+			selectPath = strings.TrimSuffix(path, "/select-toggle")
+			break
+		}
+	}
+	if selectPath == "" {
+		t.Fatal("settings theme select is unavailable")
+	}
+	renderer.button(selectPath + "/select-toggle").Click()
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	spaceOption := renderer.buttons[selectPath+"/option/space"]
+	if spaceOption == nil {
+		t.Fatal("settings theme options were not expanded")
+	}
+	spaceOption.Click()
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if selected != "space" {
+		t.Fatalf("selected theme = %q", selected)
+	}
+	spaceTheme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := renderer.palette.background
+	if err := renderer.SetTheme(spaceTheme); err != nil {
+		t.Fatal(err)
+	}
+	if renderer.ThemeName() != "space" {
+		t.Fatalf("pending theme name = %q", renderer.ThemeName())
+	}
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if renderer.palette.background == before {
+		t.Fatal("theme palette did not change")
+	}
+}
+
+func TestSettingsBindingDataUsesSelectedThemeDescription(t *testing.T) {
+	themes, err := sharedUI.LoadThemes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := settingsBindingData(&cnpv1.ServerInfo{Name: "ciwi", Version: "v0.2.0"}, themes, "jungle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := data["settings"].(map[string]any)
+	if root["selected_theme"] != "jungle" || root["selected_theme_description"] == "" {
+		t.Fatalf("settings binding = %+v", root)
+	}
+}
+
+func TestChangeThemeCommandPersistsNativePreference(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultTheme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, defaultTheme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes, err := sharedUI.LoadThemes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := settingsBindingData(&cnpv1.ServerInfo{Name: "ciwi"}, themes, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	preferencePath := filepath.Join(t.TempDir(), "native-ui.json")
+	handleCommand(t.Context(), nil, renderer, nil, &navigationState{screen: "settings"}, commandRequest{
+		action: uidsl.Action{Command: "change-theme"}, arguments: map[string]string{"theme": "space"},
+	}, preferencePath)
+	preferences, err := loadNativePreferences(preferencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preferences.Theme != "space" || renderer.ThemeName() != "space" {
+		t.Fatalf("preferences=%+v renderer theme=%q", preferences, renderer.ThemeName())
 	}
 }
 

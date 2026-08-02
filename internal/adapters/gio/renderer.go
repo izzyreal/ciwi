@@ -30,25 +30,30 @@ import (
 type ActionHandler func(uidsl.Action, map[string]string)
 
 type Renderer struct {
-	mu          sync.RWMutex
-	screen      *uidsl.ScreenDocument
-	data        any
-	status      string
-	theme       *material.Theme
-	palette     palette
-	list        layout.List
-	buttons     map[string]*widget.Clickable
-	disclosures map[string]bool
-	selectables map[string]*widget.Selectable
-	textEditors map[string]*widget.Editor
-	icons       map[string]*widget.Icon
-	images      map[string]paint.ImageOp
-	statusText  widget.Editor
-	shownStatus string
-	onAction    ActionHandler
-	invalidate  func()
-	pending     *pendingConfirmation
-	resetScroll bool
+	mu               sync.RWMutex
+	screen           *uidsl.ScreenDocument
+	data             any
+	status           string
+	theme            *material.Theme
+	palette          palette
+	themeName        string
+	pendingTheme     *material.Theme
+	pendingPalette   *palette
+	pendingThemeName string
+	list             layout.List
+	buttons          map[string]*widget.Clickable
+	disclosures      map[string]bool
+	selectables      map[string]*widget.Selectable
+	textEditors      map[string]*widget.Editor
+	selectOpen       map[string]bool
+	icons            map[string]*widget.Icon
+	images           map[string]paint.ImageOp
+	statusText       widget.Editor
+	shownStatus      string
+	onAction         ActionHandler
+	invalidate       func()
+	pending          *pendingConfirmation
+	resetScroll      bool
 }
 
 type pendingConfirmation struct {
@@ -66,15 +71,10 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	if screen == nil || theme == nil {
 		return nil, fmt.Errorf("screen and theme are required")
 	}
-	colors, err := paletteFromTheme(theme.Theme)
+	materialTheme, colors, err := rendererTheme(theme)
 	if err != nil {
 		return nil, err
 	}
-	materialTheme := material.NewTheme()
-	materialTheme.Palette.Fg = colors.text
-	materialTheme.Palette.Bg = colors.background
-	materialTheme.Palette.ContrastBg = colors.accent
-	materialTheme.Palette.ContrastFg = colors.surface
 	iconSet, err := materialIcons()
 	if err != nil {
 		return nil, err
@@ -84,9 +84,10 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		return nil, err
 	}
 	renderer := &Renderer{
-		screen: screen, theme: materialTheme, palette: colors, onAction: onAction,
+		screen: screen, theme: materialTheme, palette: colors, themeName: theme.Metadata.Name, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
-		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, icons: iconSet, images: imageSet,
+		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, selectOpen: map[string]bool{},
+		icons: iconSet, images: imageSet,
 	}
 	renderer.statusText.ReadOnly = true
 	return renderer, nil
@@ -112,6 +113,28 @@ func (r *Renderer) SetStatus(status string) {
 	r.mu.Lock()
 	r.status = status
 	r.mu.Unlock()
+}
+
+func (r *Renderer) SetTheme(theme *uidsl.ThemeDocument) error {
+	materialTheme, colors, err := rendererTheme(theme)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.pendingTheme = materialTheme
+	r.pendingPalette = &colors
+	r.pendingThemeName = theme.Metadata.Name
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *Renderer) ThemeName() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.pendingThemeName != "" {
+		return r.pendingThemeName
+	}
+	return r.themeName
 }
 
 func (r *Renderer) SetRootBinding(root, key string, value any) bool {
@@ -145,6 +168,14 @@ func (r *Renderer) SetInvalidate(invalidate func()) {
 
 func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	r.mu.Lock()
+	if r.pendingTheme != nil && r.pendingPalette != nil {
+		r.theme = r.pendingTheme
+		r.palette = *r.pendingPalette
+		r.themeName = r.pendingThemeName
+		r.pendingTheme = nil
+		r.pendingPalette = nil
+		r.pendingThemeName = ""
+	}
 	screen, data, status, resetScroll := r.screen, r.data, r.status, r.resetScroll
 	r.resetScroll = false
 	r.mu.Unlock()
@@ -269,6 +300,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 		if node.Component == "button" {
 			return r.layoutButton(gtx, node, data, path)
+		}
+		if node.Component == "select" {
+			return r.layoutSelect(gtx, node, data, path)
 		}
 		return r.layoutChildren(gtx, node, data, path)
 	}
@@ -501,6 +535,85 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 		}
 	}
 	return r.layoutControlButton(gtx, button, label, node.Icon)
+}
+
+func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	if node.Select == nil {
+		return r.errorLabel(gtx, fmt.Errorf("select configuration is missing"))
+	}
+	value, err := uidsl.Resolve(data, node.Select.Value)
+	if err != nil {
+		return r.errorLabel(gtx, err)
+	}
+	items, err := resolveItems(data, node.Select.Options)
+	if err != nil {
+		return r.errorLabel(gtx, err)
+	}
+	type option struct{ value, label string }
+	options := make([]option, 0, len(items))
+	selectedValue := fmt.Sprint(value)
+	selectedLabel := selectedValue
+	for _, item := range items {
+		itemData := mergeData(data, node.Select.As, item)
+		optionValue, valueErr := uidsl.Resolve(itemData, node.Select.OptionValue)
+		optionLabel, labelErr := uidsl.Resolve(itemData, node.Select.OptionLabel)
+		if valueErr != nil {
+			return r.errorLabel(gtx, valueErr)
+		}
+		if labelErr != nil {
+			return r.errorLabel(gtx, labelErr)
+		}
+		entry := option{value: fmt.Sprint(optionValue), label: fmt.Sprint(optionLabel)}
+		options = append(options, entry)
+		if entry.value == selectedValue {
+			selectedLabel = entry.label
+		}
+	}
+	toggle := r.button(path + "/select-toggle")
+	for toggle.Clicked(gtx) {
+		r.selectOpen[path] = !r.selectOpen[path]
+		r.requestFrame()
+	}
+	header := func(gtx layout.Context) layout.Dimensions {
+		icon := "chevron-down"
+		if r.selectOpen[path] {
+			icon = "chevron-up"
+		}
+		return r.layoutControlButton(gtx, toggle, selectedLabel, icon)
+	}
+	if !r.selectOpen[path] {
+		return header(gtx)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(header),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: 8}.Layout(gtx, r.surface(func(gtx layout.Context) layout.Dimensions {
+				children := make([]layout.FlexChild, 0, len(options))
+				for optionIndex := range options {
+					entry := options[optionIndex]
+					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						choice := r.button(path + "/option/" + entry.value)
+						for choice.Clicked(gtx) {
+							r.selectOpen[path] = false
+							if len(node.Actions) > 0 && entry.value != selectedValue {
+								selectionData := mergeData(data, "selection", map[string]any{"value": entry.value, "label": entry.label})
+								r.dispatch(node.Actions[0], selectionData)
+							}
+							r.requestFrame()
+						}
+						icon := ""
+						if entry.value == selectedValue {
+							icon = "check"
+						}
+						return layout.Inset{Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return r.layoutControlButton(gtx, choice, entry.label, icon)
+						})
+					}))
+				}
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+			}, 10, false))
+		}),
+	)
 }
 
 func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string) layout.Dimensions {
@@ -833,6 +946,22 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 	return p, nil
 }
 
+func rendererTheme(document *uidsl.ThemeDocument) (*material.Theme, palette, error) {
+	if document == nil {
+		return nil, palette{}, fmt.Errorf("theme is required")
+	}
+	colors, err := paletteFromTheme(document.Theme)
+	if err != nil {
+		return nil, palette{}, err
+	}
+	theme := material.NewTheme()
+	theme.Palette.Fg = colors.text
+	theme.Palette.Bg = colors.background
+	theme.Palette.ContrastBg = colors.accent
+	theme.Palette.ContrastFg = colors.surface
+	return theme, colors, nil
+}
+
 func semanticTone(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "succeeded", "success", "passed", "complete", "completed":
@@ -852,7 +981,8 @@ func materialIcons() (map[string]*widget.Icon, error) {
 	sources := map[string][]byte{
 		"settings": icons.ActionSettings, "arrow-left": icons.NavigationArrowBack,
 		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
-		"chevron-down": icons.NavigationExpandMore,
+		"chevron-down": icons.NavigationExpandMore, "chevron-up": icons.NavigationExpandLess,
+		"check": icons.NavigationCheck,
 	}
 	out := make(map[string]*widget.Icon, len(sources))
 	for name, source := range sources {

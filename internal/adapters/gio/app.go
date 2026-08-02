@@ -79,12 +79,35 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
-	screens := map[string]*uidsl.ScreenDocument{
-		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
-	}
-	theme, err := findTheme(options.Theme)
+	settingsScreen, err := sharedUI.LoadScreen("settings")
 	if err != nil {
 		return err
+	}
+	screens := map[string]*uidsl.ScreenDocument{
+		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
+		"settings": settingsScreen,
+	}
+	preferencesPath, err := nativePreferencesPath()
+	if err != nil {
+		return err
+	}
+	preferences, err := loadNativePreferences(preferencesPath)
+	if err != nil {
+		return err
+	}
+	themeName := strings.TrimSpace(options.Theme)
+	if themeName == "" {
+		themeName = strings.TrimSpace(preferences.Theme)
+	}
+	theme, err := findTheme(themeName)
+	if err != nil {
+		if strings.TrimSpace(options.Theme) != "" {
+			return err
+		}
+		theme, err = findTheme("default")
+		if err != nil {
+			return err
+		}
 	}
 	window := new(app.Window)
 	window.Option(app.Title("ciwi native"), app.Size(1180, 780))
@@ -105,7 +128,7 @@ func Run(options Options) error {
 	renderer.SetStatus("Connecting to ciwi…")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go runController(ctx, window, renderer, commands, screens, options)
+	go runController(ctx, window, renderer, commands, screens, options, preferencesPath)
 
 	var operations op.Ops
 	for {
@@ -120,7 +143,7 @@ func Run(options Options) error {
 	}
 }
 
-func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options) {
+func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string) {
 	address, err := nativeAddress(ctx, options.Address)
 	if err != nil {
 		renderer.SetStatus(err.Error())
@@ -225,7 +248,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			outputErrors = nil
 		case command := <-commands:
 			previous := navigation
-			handleCommand(ctx, client, renderer, screens, &navigation, command)
+			handleCommand(ctx, client, renderer, screens, &navigation, command, preferencesPath)
 			if navigation != previous {
 				if navigation.screen == "job-details" {
 					startOutput(navigation.jobID)
@@ -238,7 +261,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	}
 }
 
-func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, command commandRequest) {
+func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, command commandRequest, preferencesPath string) {
 	switch command.action.Command {
 	case "run-pipeline":
 		pipelineID, err := strconv.ParseInt(command.arguments["pipelineDbId"], 10, 64)
@@ -259,6 +282,23 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		if err := navigate(ctx, client, renderer, screens, navigation, command.arguments["route"]); err != nil {
 			renderer.SetStatus("Navigation failed: " + err.Error())
 		}
+	case "change-theme":
+		theme, err := findTheme(command.arguments["theme"])
+		if err != nil {
+			renderer.SetStatus("Theme change failed: " + err.Error())
+			return
+		}
+		if err := renderer.SetTheme(theme); err != nil {
+			renderer.SetStatus("Theme change failed: " + err.Error())
+			return
+		}
+		renderer.SetRootBinding("settings", "selected_theme", theme.Metadata.Name)
+		renderer.SetRootBinding("settings", "selected_theme_description", theme.Metadata.Description)
+		if err := saveNativePreferences(preferencesPath, nativePreferences{Theme: theme.Metadata.Name}); err != nil {
+			renderer.SetStatus("Theme changed, but the preference could not be saved: " + err.Error())
+			return
+		}
+		renderer.SetStatus("Theme: " + theme.Metadata.Title)
 	default:
 		renderer.SetStatus("Unsupported native action: " + command.action.Command)
 	}
@@ -282,6 +322,8 @@ func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer,
 			return fmt.Errorf("invalid job route %q", route)
 		}
 		next = navigationState{screen: "job-details", jobID: jobID}
+	case route == "/settings":
+		next.screen = "settings"
 	default:
 		return fmt.Errorf("unsupported route %q", route)
 	}
@@ -293,6 +335,8 @@ func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer,
 		renderer.SetStatus("Projects")
 	} else if next.screen == "project-details" {
 		renderer.SetStatus("Project details")
+	} else if next.screen == "settings" {
+		renderer.SetStatus("Global settings")
 	} else {
 		renderer.SetStatus("Job details")
 	}
@@ -311,9 +355,30 @@ func refreshScreen(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		return refreshProjectDetails(ctx, client, renderer, screen, navigation.projectID)
 	case "job-details":
 		return refreshJobDetails(ctx, client, renderer, screen, navigation.jobID)
+	case "settings":
+		return refreshSettings(ctx, client, renderer, screen)
 	default:
 		return fmt.Errorf("screen %q is unsupported", navigation.screen)
 	}
+}
+
+func refreshSettings(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument) error {
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	server, err := client.GetServerInfo(requestCtx)
+	if err != nil {
+		return err
+	}
+	themes, err := sharedUI.LoadThemes()
+	if err != nil {
+		return err
+	}
+	data, err := settingsBindingData(server, themes, renderer.ThemeName())
+	if err != nil {
+		return err
+	}
+	renderer.SetScreenAndData(screen, data)
+	return nil
 }
 
 func refreshJobDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, jobID string) error {
@@ -380,6 +445,31 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 	return data, nil
 }
 
+func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument, selectedTheme string) (map[string]any, error) {
+	serverData, err := protobufBindingData("server", "settings server", server)
+	if err != nil {
+		return nil, err
+	}
+	serverBinding, ok := serverData["server"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("settings server binding is malformed")
+	}
+	themeBindings := make([]any, 0, len(themes))
+	selectedDescription := ""
+	for _, theme := range themes {
+		themeBindings = append(themeBindings, map[string]any{
+			"name": theme.Metadata.Name, "title": theme.Metadata.Title, "description": theme.Metadata.Description,
+		})
+		if theme.Metadata.Name == selectedTheme {
+			selectedDescription = theme.Metadata.Description
+		}
+	}
+	return map[string]any{"settings": map[string]any{
+		"server": serverBinding, "themes": themeBindings,
+		"selected_theme": selectedTheme, "selected_theme_description": selectedDescription,
+	}}, nil
+}
+
 func protobufBindingData(root, description string, message proto.Message) (map[string]any, error) {
 	payload, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(message)
 	if err != nil {
@@ -418,6 +508,9 @@ func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent)
 			return true
 		}
 		if navigation.screen == "job-details" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_QUEUE || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY) {
+			return true
+		}
+		if navigation.screen == "settings" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER {
 			return true
 		}
 		if navigation.screen == "front-page" {

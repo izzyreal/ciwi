@@ -80,6 +80,13 @@ do not reload large logs. Step navigation and execution controls remain on the
 established job page while their application/CNP slices are built. Agents
 continue to use the existing HTTP protocol.
 
+Global Settings currently covers native-client appearance and connection
+context. Theme changes apply immediately and are stored in the user's config
+directory as `ciwi/native-ui.json`; an explicit `-theme` or
+`CIWI_NATIVE_THEME` value overrides the saved theme for that launch. Server
+administration sections will appear as their application and CNP command
+slices are added rather than falling back to HTTP.
+
 The Gio adapter resolves the same bundled logo, semantic icon names, theme
 gradients, status tones, and badge roles used by the declarative browser proof;
 these are renderer primitives rather than per-screen native drawings.

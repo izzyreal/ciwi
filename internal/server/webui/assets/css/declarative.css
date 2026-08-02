@@ -27,6 +27,8 @@ body { min-height: 100vh; }
 .dsl-image { width: 220px; max-height: 160px; object-fit: contain; image-rendering: pixelated; }
 .dsl-button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); border-radius: 10px; padding: 10px 14px; font: inherit; cursor: pointer; }
 .dsl-button:hover { border-color: var(--accent); }
+.dsl-select { min-width: 280px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 42px 9px 12px; background: var(--surface); color: var(--ink); font: inherit; }
+.dsl-select:hover, .dsl-select:focus { border-color: var(--accent); }
 .dsl-icon { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .dsl-error { margin: 24px; padding: 16px; border: 1px solid var(--bad); border-radius: 12px; color: var(--bad); background: var(--surface); }
 @media (max-width: 760px) {

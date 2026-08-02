@@ -56,6 +56,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		serveScreenContract(w, "job-details")
 		return
 	}
+	if r.URL.Path == "/ui/contracts/screens/settings.json" {
+		serveScreenContract(w, "settings")
+		return
+	}
 	if r.URL.Path == "/ui/contracts/themes.json" {
 		serveThemeContracts(w)
 		return
@@ -74,6 +78,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/declarative-preview/projects/"):
 		page = "declarative"
 	case strings.HasPrefix(r.URL.Path, "/declarative-preview/jobs/"):
+		page = "declarative"
+	case r.URL.Path == "/declarative-preview/settings" || r.URL.Path == "/declarative-preview/settings/":
 		page = "declarative"
 	case r.URL.Path == "/settings":
 		page = "settings"
