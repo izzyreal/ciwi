@@ -1,0 +1,178 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: run-options
+  title: Run options
+  description: Select a source ref and eligible agent before queueing work
+screen:
+  dataSources:
+    - name: runOptions
+      query: get-run-options
+      watchTopics: [projects, agents]
+  root:
+    component: page
+    id: run-options
+    layout:
+      direction: vertical
+      gap: large
+      padding: large
+      maxWidth: page
+    children:
+      - component: row
+        layout:
+          direction: horizontal
+          gap: medium
+          align: center
+        children:
+          - component: button
+            text:
+              literal: Back
+            icon: arrow-left
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /projects/{{runOptions.project_id}}
+          - component: text
+            text:
+              template: "Run options: {{runOptions.target_label}}"
+            layout:
+              grow: true
+            style:
+              role: title
+              emphasis: strong
+      - component: section
+        layout:
+          direction: vertical
+          gap: medium
+          padding: large
+        children:
+          - component: text
+            text:
+              binding: runOptions.source_repo
+            style:
+              role: body
+              tone: muted
+          - component: text
+            text:
+              template: "{{runOptions.pending_jobs}} job execution(s) will be queued"
+            style:
+              role: body
+          - component: column
+            layout:
+              direction: vertical
+              gap: small
+            children:
+              - component: text
+                text:
+                  literal: Source branch
+                style:
+                  role: body
+                  emphasis: strong
+              - component: select
+                select:
+                  value: runOptions.selected_source_ref
+                  options: runOptions.source_refs
+                  as: sourceRefOption
+                  optionValue: sourceRefOption.value
+                  optionLabel: sourceRefOption.label
+                actions:
+                  - on: change
+                    command: set-run-option
+                    arguments:
+                      field: sourceRef
+                      value: "{{selection.value}}"
+          - component: column
+            layout:
+              direction: vertical
+              gap: small
+            children:
+              - component: text
+                text:
+                  literal: Agent
+                style:
+                  role: body
+                  emphasis: strong
+              - component: select
+                select:
+                  value: runOptions.selected_agent_id
+                  options: runOptions.eligible_agents
+                  as: agentOption
+                  optionValue: agentOption.value
+                  optionLabel: agentOption.label
+                actions:
+                  - on: change
+                    command: set-run-option
+                    arguments:
+                      field: agentId
+                      value: "{{selection.value}}"
+          - component: row
+            visible:
+              binding: runOptions.target_kind
+              equals: pipeline
+            layout:
+              direction: horizontal
+              gap: medium
+              align: center
+            children:
+              - component: button
+                text:
+                  literal: Run Pipeline
+                icon: player-play
+                actions:
+                  - on: activate
+                    command: run-pipeline
+                    arguments:
+                      pipelineDbId: "{{runOptions.pipeline_db_id}}"
+                      sourceRef: "{{runOptions.selected_source_ref}}"
+                      agentId: "{{runOptions.selected_agent_id}}"
+              - component: button
+                text:
+                  literal: Dry Run
+                icon: player-play
+                visible:
+                  binding: runOptions.supports_dry_run
+                actions:
+                  - on: activate
+                    command: run-pipeline
+                    arguments:
+                      pipelineDbId: "{{runOptions.pipeline_db_id}}"
+                      sourceRef: "{{runOptions.selected_source_ref}}"
+                      agentId: "{{runOptions.selected_agent_id}}"
+                      dryRun: "true"
+          - component: row
+            visible:
+              binding: runOptions.target_kind
+              equals: chain
+            layout:
+              direction: horizontal
+              gap: medium
+              align: center
+            children:
+              - component: button
+                text:
+                  literal: Run Chain
+                icon: player-play
+                actions:
+                  - on: activate
+                    command: run-chain
+                    arguments:
+                      projectId: "{{runOptions.project_id}}"
+                      chainId: "{{runOptions.chain_id}}"
+                      sourceRef: "{{runOptions.selected_source_ref}}"
+                      agentId: "{{runOptions.selected_agent_id}}"
+              - component: button
+                text:
+                  literal: Dry Run Chain
+                icon: player-play
+                visible:
+                  binding: runOptions.supports_dry_run
+                actions:
+                  - on: activate
+                    command: run-chain
+                    arguments:
+                      projectId: "{{runOptions.project_id}}"
+                      chainId: "{{runOptions.chain_id}}"
+                      sourceRef: "{{runOptions.selected_source_ref}}"
+                      agentId: "{{runOptions.selected_agent_id}}"
+                      dryRun: "true"

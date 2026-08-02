@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
@@ -364,6 +365,50 @@ pipelines:
 	}
 	if len(payload.Refs) < 2 {
 		t.Fatalf("expected at least two branch refs, got %+v", payload.Refs)
+	}
+}
+
+func TestPipelineRunOptionsViewCombinesSourceRefsAndEligibility(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	repoURL, _, _ := createTestRemoteGitRepo(t)
+	loadPipelineTestConfig(t, s, `
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    trigger: manual
+    vcs_source:
+      repo: `+repoURL+`
+      ref: refs/heads/main
+    jobs:
+      - id: compile
+        runs_on:
+          os: linux
+          arch: amd64
+        timeout_seconds: 30
+        steps:
+          - run: echo build
+`)
+	pipelineID, _ := firstPipelineAndChainIDs(t, s, "ciwi")
+	s.mu.Lock()
+	s.agents["agent-linux"] = agentState{OS: "linux", Arch: "amd64", Capabilities: map[string]string{"shells": "posix"}}
+	s.mu.Unlock()
+
+	endpoint := ts.URL + "/api/v1/views/run-options/pipelines/" + int64ToString(pipelineID) + "?source_ref=refs%2Fheads%2Fmain"
+	resp := mustJSONRequest(t, ts.Client(), http.MethodGet, endpoint, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for pipeline run options, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	var options application.RunOptions
+	decodeJSONBody(t, resp, &options)
+	if options.TargetKind != application.RunTargetPipeline || options.TargetLabel != "build" || options.SelectedSourceRef != "refs/heads/main" {
+		t.Fatalf("unexpected run options: %+v", options)
+	}
+	if options.PendingJobs != 1 || len(options.SourceRefs) < 2 || len(options.EligibleAgents) != 2 || options.EligibleAgents[1].Value != "agent-linux" {
+		t.Fatalf("incomplete run options: %+v", options)
 	}
 }
 

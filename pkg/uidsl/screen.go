@@ -168,6 +168,7 @@ var commands = map[string]bool{
 	"select-timeline-item": true, "change-output-search": true,
 	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
 	"set-disclosures": true,
+	"set-run-option":  true,
 }
 
 func ParseScreen(payload []byte) (*ScreenDocument, error) {
@@ -202,7 +203,7 @@ func (d *ScreenDocument) Validate() error {
 		if source.Query == "" {
 			return fmt.Errorf("dataSources[%d].query is required", i)
 		}
-		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" {
+		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" && source.Query != "get-run-options" {
 			return fmt.Errorf("dataSources[%d].query %q is not supported", i, source.Query)
 		}
 		for _, topic := range source.WatchTopics {

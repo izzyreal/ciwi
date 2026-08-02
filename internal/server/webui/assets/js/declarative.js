@@ -121,6 +121,21 @@
     };
   }
 
+  function runOptionsViewURL(sourceRef, agentID) {
+	const projectPipelineMatch = window.location.pathname.match(/^\/declarative-preview\/run-options\/projects\/(\d+)\/pipelines\/(\d+)\/?$/);
+    const pipelineMatch = window.location.pathname.match(/^\/declarative-preview\/run-options\/pipelines\/(\d+)\/?$/);
+    const chainMatch = window.location.pathname.match(/^\/declarative-preview\/run-options\/projects\/(\d+)\/chains\/([^/]+)\/?$/);
+    let path = '';
+	if (projectPipelineMatch) path = '/api/v1/views/run-options/pipelines/' + encodeURIComponent(projectPipelineMatch[2]);
+    if (pipelineMatch) path = '/api/v1/views/run-options/pipelines/' + encodeURIComponent(pipelineMatch[1]);
+    if (chainMatch) path = '/api/v1/views/run-options/projects/' + encodeURIComponent(chainMatch[1]) + '/chains/' + encodeURIComponent(chainMatch[2]);
+    if (!path) return '';
+    const query = new URLSearchParams();
+    if (sourceRef) query.set('source_ref', sourceRef);
+    if (agentID) query.set('agent_id', agentID);
+    return path + (query.size ? '?' + query.toString() : '');
+  }
+
   function elementFor(node) {
     switch (node.component) {
       case 'page': return document.createElement('main');
@@ -184,6 +199,24 @@
           });
           saveDisclosureStates();
         }
+		else if (action.command === 'set-run-option') {
+		  const options = currentData && currentData.runOptions;
+		  if (!options) throw new Error('Run options are unavailable');
+		  if (args.field === 'sourceRef') {
+		    options.selected_source_ref = args.value || '';
+		    options.selected_agent_id = '';
+		  } else if (args.field === 'agentId') {
+		    options.selected_agent_id = args.value || '';
+		    renderCurrent();
+		    return;
+		  } else {
+		    throw new Error('Unsupported run option');
+		  }
+		  const response = await fetch(runOptionsViewURL(options.selected_source_ref, options.selected_agent_id));
+		  if (!response.ok) throw new Error(await response.text());
+		  currentData = {runOptions: await response.json()};
+		  renderCurrent();
+		}
         else if (action.command === 'run-pipeline') {
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
             method: 'POST',
@@ -438,11 +471,13 @@
       const projectMatch = window.location.pathname.match(/^\/declarative-preview\/projects\/(\d+)\/?$/);
       const jobMatch = window.location.pathname.match(/^\/declarative-preview\/jobs\/([^/]+)\/?$/);
       const settingsMatch = window.location.pathname.match(/^\/declarative-preview\/settings\/?$/);
-      const screenName = projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : 'front-page'));
+	  const runOptionsURL = runOptionsViewURL('', '');
+	  const runOptionsMatch = runOptionsURL !== '';
+	  const screenName = runOptionsMatch ? 'run-options' : (projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : 'front-page')));
       const viewURL = projectMatch
         ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1])
-        : (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : '/api/v1/views/front-page'));
-      const bindingRoot = projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : 'frontPage'));
+		: (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : (runOptionsMatch ? runOptionsURL : '/api/v1/views/front-page')));
+	  const bindingRoot = runOptionsMatch ? 'runOptions' : (projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : 'frontPage')));
       const [screenResponse, themeResponse, viewResponse] = await Promise.all([
         fetch('/ui/contracts/screens/' + screenName + '.json'),
         fetch('/ui/contracts/themes.json'),
@@ -452,7 +487,7 @@
       const [documentContract, themes, responseView] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
       applyContractTheme(themes);
       let view = responseView;
-      if (!projectMatch && !jobMatch && !settingsMatch) {
+	  if (!projectMatch && !jobMatch && !settingsMatch && !runOptionsMatch) {
         decorateExecutionCards(view.queued_executions, true);
         decorateExecutionCards(view.history_executions, false);
       }

@@ -180,6 +180,48 @@ func runPipelineChainRequestFromProto(request *cnpv1.RunPipelineChainRequest, id
 	return result
 }
 
+func runOptionsRequestFromProto(request *cnpv1.GetRunOptionsRequest) application.RunOptionsRequest {
+	if request == nil {
+		return application.RunOptionsRequest{}
+	}
+	result := application.RunOptionsRequest{
+		PipelineDBID: request.PipelineDbId, ProjectID: request.ProjectId, ChainID: request.ChainId,
+		IncludeSourceRefs: true, IncludeEligibleAgents: true, AllowMissingSourceRepo: true,
+	}
+	if selection := request.Selection; selection != nil {
+		result.PipelineJobID = selection.PipelineJobId
+		result.MatrixName = selection.MatrixName
+		if selection.MatrixIndex != nil {
+			index := int(selection.GetMatrixIndex())
+			result.MatrixIndex = &index
+		}
+		result.DryRun = selection.DryRun
+		result.SourceRef = selection.SourceRef
+		result.AgentID = selection.AgentId
+		result.ExecutionMode = selection.ExecutionMode
+	}
+	return result
+}
+
+func runOptionsToProto(options application.RunOptions) *cnpv1.RunOptionsView {
+	return &cnpv1.RunOptionsView{
+		TargetKind: options.TargetKind, TargetLabel: options.TargetLabel, PipelineDbId: options.PipelineDBID,
+		ProjectId: options.ProjectID, ChainId: options.ChainID, SupportsDryRun: options.SupportsDryRun,
+		SourceRepo: options.SourceRepo, DefaultSourceRef: options.DefaultSourceRef,
+		SourceRefs: runOptionListToProto(options.SourceRefs), EligibleAgents: runOptionListToProto(options.EligibleAgents),
+		PendingJobs: uint32(max(options.PendingJobs, 0)), SelectedSourceRef: options.SelectedSourceRef,
+		SelectedAgentId: options.SelectedAgentID,
+	}
+}
+
+func runOptionListToProto(options []application.RunOption) []*cnpv1.RunOption {
+	result := make([]*cnpv1.RunOption, 0, len(options))
+	for _, option := range options {
+		result = append(result, &cnpv1.RunOption{Value: option.Value, Label: option.Label})
+	}
+	return result
+}
+
 func changeToProto(change application.Change) *cnpv1.ChangeEvent {
 	topics := make([]cnpv1.ChangeTopic, 0, len(change.Topics))
 	for _, topic := range change.Topics {

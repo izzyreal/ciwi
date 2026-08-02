@@ -136,6 +136,7 @@ func Run(ctx context.Context) error {
 			ProjectDetails: app.projectDetails,
 			JobDetails:     app.jobDetails,
 			Pipelines:      app.pipelines, PipelineChains: app.pipelineChains,
+			RunOptions:        app.runOptions,
 			ExecutionCommands: app.executionCommands, ExecutionControls: app.executionControls,
 			Changes: app.changes, Version: currentVersion(),
 		})

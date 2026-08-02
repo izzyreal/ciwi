@@ -28,6 +28,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		JobDetails:        jobDetailsService{},
 		Pipelines:         pipelines,
 		PipelineChains:    pipelines,
+		RunOptions:        pipelines,
 		ExecutionCommands: executions,
 		ExecutionControls: executions,
 		Changes:           changes,
@@ -113,6 +114,12 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if chainRequest.ProjectID != 7 || chainRequest.ChainID != "build+release" || !chainRequest.DryRun || chainRequest.IdempotencyKey != "stable-chain-key" {
 		t.Fatalf("mapped chain request = %#v", chainRequest)
 	}
+	runOptions, err := client.GetRunOptions(ctx, &cnpv1.GetRunOptionsRequest{
+		PipelineDbId: 42, Selection: &cnpv1.RunPipelineSelection{SourceRef: "refs/heads/main"},
+	})
+	if err != nil || runOptions.TargetLabel != "build" || len(runOptions.EligibleAgents) != 2 || runOptions.SelectedSourceRef != "refs/heads/main" {
+		t.Fatalf("run options = %#v, %v", runOptions, err)
+	}
 	cleared, err := client.ClearExecutionQueue(ctx, "clear-command-key")
 	if err != nil || cleared.Cleared != 2 {
 		t.Fatalf("clear queue = %#v, %v", cleared, err)
@@ -144,7 +151,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -176,7 +183,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
-		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -204,7 +211,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
+		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -386,6 +393,18 @@ func (s *pipelineService) RunPipeline(_ context.Context, request application.Run
 	s.request = request
 	s.mu.Unlock()
 	return application.RunPipelineResult{ProjectName: "ciwi", PipelineID: "build", Enqueued: 1, JobExecutionIDs: []string{"job-1"}}, nil
+}
+
+func (s *pipelineService) GetRunOptions(_ context.Context, request application.RunOptionsRequest) (application.RunOptions, error) {
+	return application.RunOptions{
+		TargetKind: application.RunTargetPipeline, TargetLabel: "build", PipelineDBID: request.PipelineDBID,
+		ProjectID: 7, SupportsDryRun: true, SourceRepo: "https://github.com/izzyreal/ciwi",
+		DefaultSourceRef:  request.SourceRef,
+		SelectedSourceRef: request.SourceRef,
+		SourceRefs:        []application.RunOption{{Value: "refs/heads/main", Label: "main"}},
+		EligibleAgents:    []application.RunOption{{Value: "", Label: "Any eligible agent"}, {Value: "agent-1", Label: "agent-1"}},
+		PendingJobs:       1,
+	}, nil
 }
 
 func (s *pipelineService) lastRequest() application.RunPipelineRequest {

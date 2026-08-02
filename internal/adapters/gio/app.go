@@ -32,9 +32,20 @@ type commandRequest struct {
 }
 
 type navigationState struct {
-	screen    string
-	projectID int64
-	jobID     string
+	screen       string
+	projectID    int64
+	pipelineDBID int64
+	chainID      string
+	jobID        string
+	sourceRef    string
+	agentID      string
+}
+
+type runOptionsLoadResult struct {
+	navigation navigationState
+	generation uint64
+	data       map[string]any
+	err        error
 }
 
 type jobOutputBuffer struct {
@@ -86,9 +97,13 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	runOptionsScreen, err := sharedUI.LoadScreen("run-options")
+	if err != nil {
+		return err
+	}
 	screens := map[string]*uidsl.ScreenDocument{
 		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
-		"settings": settingsScreen,
+		"settings": settingsScreen, "run-options": runOptionsScreen,
 	}
 	preferencesPath, err := nativePreferencesPath()
 	if err != nil {
@@ -198,6 +213,30 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	}
 	defer stopOutput()
 	defer client.Close()
+	runOptionsLoads := make(chan runOptionsLoadResult, 8)
+	var runOptionsCancel context.CancelFunc
+	var runOptionsGeneration uint64
+	startRunOptionsLoad := func(target navigationState) {
+		if runOptionsCancel != nil {
+			runOptionsCancel()
+		}
+		loadCtx, cancelLoad := context.WithCancel(ctx)
+		runOptionsCancel = cancelLoad
+		runOptionsGeneration++
+		generation := runOptionsGeneration
+		go func() {
+			data, loadErr := loadRunOptions(loadCtx, client, target)
+			select {
+			case runOptionsLoads <- runOptionsLoadResult{navigation: target, generation: generation, data: data, err: loadErr}:
+			case <-ctx.Done():
+			}
+		}()
+	}
+	defer func() {
+		if runOptionsCancel != nil {
+			runOptionsCancel()
+		}
+	}()
 	navigation := navigationState{screen: "front-page"}
 	if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
 		renderer.SetStatus(err.Error())
@@ -264,6 +303,12 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			}
 			if change.ResyncRequired || relevantScreenChange(navigation, change) {
+				if navigation.screen == "run-options" {
+					renderer.SetStatus("Refreshing run options…")
+					startRunOptionsLoad(navigation)
+					window.Invalidate()
+					continue
+				}
 				if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
 					renderer.SetStatus("Refresh failed: " + err.Error())
 				}
@@ -296,7 +341,59 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				window.Invalidate()
 			}
 			outputErrors = nil
+		case result := <-runOptionsLoads:
+			if navigation != result.navigation || result.generation != runOptionsGeneration {
+				continue
+			}
+			if result.err != nil {
+				renderer.SetStatus("Run options failed: " + result.err.Error())
+			} else {
+				renderer.SetScreenAndData(screens["run-options"], result.data)
+				renderer.SetStatus("Run options")
+			}
+			window.Invalidate()
 		case command := <-commands:
+			if command.action.Command == "navigate" {
+				next, parseErr := navigationForRoute(command.arguments["route"])
+				if parseErr != nil {
+					renderer.SetStatus("Navigation failed: " + parseErr.Error())
+					window.Invalidate()
+					continue
+				}
+				if next.screen == "run-options" {
+					navigation = next
+					stopOutput()
+					renderer.SetScreenAndData(screens["run-options"], runOptionsLoadingData(next))
+					renderer.SetStatus("Loading run options…")
+					startRunOptionsLoad(next)
+					window.Invalidate()
+					continue
+				}
+				if navigation.screen == "run-options" && runOptionsCancel != nil {
+					runOptionsCancel()
+					runOptionsCancel = nil
+					runOptionsGeneration++
+				}
+			}
+			if command.action.Command == "set-run-option" && navigation.screen == "run-options" {
+				field := strings.TrimSpace(command.arguments["field"])
+				value := strings.TrimSpace(command.arguments["value"])
+				refreshEligibility, selectionErr := applyRunOptionSelection(renderer, &navigation, field, value)
+				if selectionErr != nil {
+					renderer.SetStatus(selectionErr.Error())
+					window.Invalidate()
+					continue
+				}
+				if !refreshEligibility {
+					window.Invalidate()
+					continue
+				}
+				renderer.SetRootBinding("runOptions", "target_kind", "loading")
+				renderer.SetStatus("Refreshing eligible agents…")
+				startRunOptionsLoad(navigation)
+				window.Invalidate()
+				continue
+			}
 			previous := navigation
 			handleCommand(ctx, client, renderer, screens, &navigation, command, preferencesPath)
 			if navigation != previous {
@@ -376,6 +473,19 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetTransientStatus(fmt.Sprintf("Queued %d dry-run execution(s) for chain %s", result.Enqueued, chainLabel), nativeNoticeDuration)
 		} else {
 			renderer.SetTransientStatus(fmt.Sprintf("Queued %d execution(s) for chain %s", result.Enqueued, chainLabel), nativeNoticeDuration)
+		}
+	case "set-run-option":
+		field := strings.TrimSpace(command.arguments["field"])
+		value := strings.TrimSpace(command.arguments["value"])
+		refreshEligibility, err := applyRunOptionSelection(renderer, navigation, field, value)
+		if err != nil {
+			renderer.SetStatus(err.Error())
+			return
+		}
+		if refreshEligibility {
+			if err := refreshRunOptions(ctx, client, renderer, screens["run-options"], *navigation); err != nil {
+				renderer.SetStatus("Run options refresh failed: " + err.Error())
+			}
 		}
 	case "clear-queue":
 		renderer.SetStatus("Clearing queued executions…")
@@ -479,6 +589,23 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 	}
 }
 
+func applyRunOptionSelection(renderer *Renderer, navigation *navigationState, field, value string) (bool, error) {
+	switch field {
+	case "sourceRef":
+		navigation.sourceRef = value
+		navigation.agentID = ""
+		renderer.SetRootBinding("runOptions", "selected_source_ref", value)
+		renderer.SetRootBinding("runOptions", "selected_agent_id", "")
+		return true, nil
+	case "agentId":
+		navigation.agentID = value
+		renderer.SetRootBinding("runOptions", "selected_agent_id", value)
+		return false, nil
+	default:
+		return false, fmt.Errorf("unsupported run option")
+	}
+}
+
 func pipelineRunSelection(arguments map[string]string) *cnpv1.RunPipelineSelection {
 	return &cnpv1.RunPipelineSelection{
 		PipelineJobId: strings.TrimSpace(arguments["pipelineJobId"]),
@@ -501,27 +628,9 @@ func splitExecutionIDs(raw string) []string {
 }
 
 func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, route string) error {
-	route = strings.TrimSpace(route)
-	next := navigationState{}
-	switch {
-	case route == "/":
-		next.screen = "front-page"
-	case strings.HasPrefix(route, "/projects/"):
-		projectID, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(route, "/projects/"), "/"), 10, 64)
-		if err != nil || projectID <= 0 {
-			return fmt.Errorf("invalid project route %q", route)
-		}
-		next = navigationState{screen: "project-details", projectID: projectID}
-	case strings.HasPrefix(route, "/jobs/"):
-		jobID := strings.Trim(strings.TrimPrefix(route, "/jobs/"), "/")
-		if jobID == "" || strings.Contains(jobID, "/") {
-			return fmt.Errorf("invalid job route %q", route)
-		}
-		next = navigationState{screen: "job-details", jobID: jobID}
-	case route == "/settings":
-		next.screen = "settings"
-	default:
-		return fmt.Errorf("unsupported route %q", route)
+	next, err := navigationForRoute(route)
+	if err != nil {
+		return err
 	}
 	if err := refreshScreen(ctx, client, renderer, screens, next); err != nil {
 		return err
@@ -533,10 +642,65 @@ func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer,
 		renderer.SetStatus("Project details")
 	} else if next.screen == "settings" {
 		renderer.SetStatus("Global settings")
+	} else if next.screen == "run-options" {
+		renderer.SetStatus("Run options")
 	} else {
 		renderer.SetStatus("Job details")
 	}
 	return nil
+}
+
+func navigationForRoute(route string) (navigationState, error) {
+	route = strings.TrimSpace(route)
+	next := navigationState{}
+	switch {
+	case route == "/":
+		next.screen = "front-page"
+	case strings.HasPrefix(route, "/projects/"):
+		projectID, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(route, "/projects/"), "/"), 10, 64)
+		if err != nil || projectID <= 0 {
+			return navigationState{}, fmt.Errorf("invalid project route %q", route)
+		}
+		next = navigationState{screen: "project-details", projectID: projectID}
+	case strings.HasPrefix(route, "/jobs/"):
+		jobID := strings.Trim(strings.TrimPrefix(route, "/jobs/"), "/")
+		if jobID == "" || strings.Contains(jobID, "/") {
+			return navigationState{}, fmt.Errorf("invalid job route %q", route)
+		}
+		next = navigationState{screen: "job-details", jobID: jobID}
+	case strings.HasPrefix(route, "/run-options/projects/") && strings.Contains(route, "/pipelines/"):
+		parts := strings.Split(strings.Trim(strings.TrimPrefix(route, "/run-options/projects/"), "/"), "/")
+		if len(parts) != 3 || parts[1] != "pipelines" {
+			return navigationState{}, fmt.Errorf("invalid pipeline run-options route %q", route)
+		}
+		projectID, projectErr := strconv.ParseInt(parts[0], 10, 64)
+		pipelineID, pipelineErr := strconv.ParseInt(parts[2], 10, 64)
+		if projectErr != nil || projectID <= 0 || pipelineErr != nil || pipelineID <= 0 {
+			return navigationState{}, fmt.Errorf("invalid pipeline run-options route %q", route)
+		}
+		next = navigationState{screen: "run-options", projectID: projectID, pipelineDBID: pipelineID}
+	case strings.HasPrefix(route, "/run-options/pipelines/"):
+		pipelineID, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(route, "/run-options/pipelines/"), "/"), 10, 64)
+		if err != nil || pipelineID <= 0 {
+			return navigationState{}, fmt.Errorf("invalid pipeline run-options route %q", route)
+		}
+		next = navigationState{screen: "run-options", pipelineDBID: pipelineID}
+	case strings.HasPrefix(route, "/run-options/projects/"):
+		parts := strings.Split(strings.Trim(strings.TrimPrefix(route, "/run-options/projects/"), "/"), "/")
+		if len(parts) != 3 || parts[1] != "chains" {
+			return navigationState{}, fmt.Errorf("invalid chain run-options route %q", route)
+		}
+		projectID, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil || projectID <= 0 || strings.TrimSpace(parts[2]) == "" {
+			return navigationState{}, fmt.Errorf("invalid chain run-options route %q", route)
+		}
+		next = navigationState{screen: "run-options", projectID: projectID, chainID: parts[2]}
+	case route == "/settings":
+		next.screen = "settings"
+	default:
+		return navigationState{}, fmt.Errorf("unsupported route %q", route)
+	}
+	return next, nil
 }
 
 func refreshScreen(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState) error {
@@ -553,9 +717,47 @@ func refreshScreen(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		return refreshJobDetails(ctx, client, renderer, screen, navigation.jobID)
 	case "settings":
 		return refreshSettings(ctx, client, renderer, screen)
+	case "run-options":
+		return refreshRunOptions(ctx, client, renderer, screen, navigation)
 	default:
 		return fmt.Errorf("screen %q is unsupported", navigation.screen)
 	}
+}
+
+func refreshRunOptions(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, navigation navigationState) error {
+	data, err := loadRunOptions(ctx, client, navigation)
+	if err != nil {
+		return err
+	}
+	renderer.SetScreenAndData(screen, data)
+	return nil
+}
+
+func loadRunOptions(ctx context.Context, client *cnpclient.Client, navigation navigationState) (map[string]any, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, 70*time.Second)
+	defer cancel()
+	view, err := client.GetRunOptions(requestCtx, &cnpv1.GetRunOptionsRequest{
+		PipelineDbId: navigation.pipelineDBID, ProjectId: navigation.projectID, ChainId: navigation.chainID,
+		Selection: &cnpv1.RunPipelineSelection{SourceRef: navigation.sourceRef, AgentId: navigation.agentID},
+	})
+	if err != nil {
+		return nil, err
+	}
+	data, err := protobufBindingData("runOptions", "run-options", view)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func runOptionsLoadingData(navigation navigationState) map[string]any {
+	return map[string]any{"runOptions": map[string]any{
+		"target_kind": "loading", "target_label": "Loading…", "pipeline_db_id": navigation.pipelineDBID,
+		"project_id": navigation.projectID, "chain_id": navigation.chainID, "supports_dry_run": false,
+		"source_repo": "Fetching source branches and eligible agents…", "default_source_ref": "",
+		"selected_source_ref": navigation.sourceRef, "selected_agent_id": navigation.agentID,
+		"source_refs": []any{}, "eligible_agents": []any{}, "pending_jobs": float64(0),
+	}}
 }
 
 func refreshSettings(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument) error {
@@ -774,6 +976,9 @@ func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent)
 			return true
 		}
 		if navigation.screen == "settings" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER {
+			return true
+		}
+		if navigation.screen == "run-options" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS) {
 			return true
 		}
 		if navigation.screen == "front-page" {

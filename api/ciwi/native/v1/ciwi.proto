@@ -270,6 +270,34 @@ message RunPipelineChainResult {
   string chain_name = 5;
 }
 
+message GetRunOptionsRequest {
+  int64 pipeline_db_id = 1;
+  int64 project_id = 2;
+  string chain_id = 3;
+  RunPipelineSelection selection = 4;
+}
+
+message RunOption {
+  string value = 1;
+  string label = 2;
+}
+
+message RunOptionsView {
+  string target_kind = 1;
+  string target_label = 2;
+  int64 pipeline_db_id = 3;
+  int64 project_id = 4;
+  string chain_id = 5;
+  bool supports_dry_run = 6;
+  string source_repo = 7;
+  string default_source_ref = 8;
+  repeated RunOption source_refs = 9;
+  repeated RunOption eligible_agents = 10;
+  uint32 pending_jobs = 11;
+  string selected_source_ref = 12;
+  string selected_agent_id = 13;
+}
+
 message ClearExecutionQueueRequest {}
 
 message ClearExecutionQueueResult {
@@ -322,6 +350,7 @@ message Request {
     ControlExecutionRequest cancel_execution = 20;
     ControlExecutionRequest rerun_execution = 21;
     RunPipelineChainRequest run_pipeline_chain = 22;
+    GetRunOptionsRequest get_run_options = 23;
   }
 }
 
@@ -342,6 +371,7 @@ message Response {
     CancelExecutionResult cancel_execution = 21;
     RerunExecutionResult rerun_execution = 22;
     RunPipelineChainResult run_pipeline_chain = 23;
+    RunOptionsView run_options = 24;
   }
 }
 

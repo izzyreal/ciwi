@@ -138,6 +138,17 @@ func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) GetRunOptions(ctx context.Context, request *cnpv1.GetRunOptionsRequest) (*cnpv1.RunOptionsView, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetRunOptions{GetRunOptions: request}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetRunOptions(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) GetJobDetails(ctx context.Context, jobExecutionID string) (*cnpv1.JobDetailsView, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetJobDetails{
 		GetJobDetails: &cnpv1.GetJobDetailsRequest{JobExecutionId: jobExecutionID},

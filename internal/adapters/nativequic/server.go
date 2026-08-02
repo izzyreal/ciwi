@@ -43,6 +43,9 @@ type Services struct {
 	PipelineChains interface {
 		RunPipelineChain(context.Context, application.RunPipelineChainRequest) (application.RunPipelineChainResult, error)
 	}
+	RunOptions interface {
+		GetRunOptions(context.Context, application.RunOptionsRequest) (application.RunOptions, error)
+	}
 	ExecutionCommands interface {
 		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
 		FlushHistory(context.Context, application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error)
@@ -61,7 +64,7 @@ type Server struct {
 }
 
 func Listen(address string, services Services) (*Server, error) {
-	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native QUIC services are incomplete")
 	}
 	tlsConfig, err := serverTLSConfig()
@@ -129,7 +132,7 @@ func (s *Server) handleConnection(ctx context.Context, connection *quic.Conn) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "execution_housekeeping", "execution_controls", "watch_changes",
+			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "execution_housekeeping", "execution_controls", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -312,6 +315,12 @@ func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Res
 				ProjectName: result.ProjectName, ChainId: result.ChainID, ChainName: result.ChainName, Enqueued: uint32(result.Enqueued),
 				JobExecutionIds: append([]string(nil), result.JobExecutionIDs...),
 			}}
+		}
+	case *cnpv1.Request_GetRunOptions:
+		var result application.RunOptions
+		result, err = s.services.RunOptions.GetRunOptions(ctx, runOptionsRequestFromProto(operation.GetRunOptions))
+		if err == nil {
+			response.Result = &cnpv1.Response_RunOptions{RunOptions: runOptionsToProto(result)}
 		}
 	case *cnpv1.Request_ClearExecutionQueue:
 		var result application.ClearExecutionQueueResult

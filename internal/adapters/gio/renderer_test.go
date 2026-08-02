@@ -447,8 +447,8 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got != 9 {
-		t.Fatalf("job view created %d interactive widgets, want execution controls, Back, timeline selection, and output controls", got)
+	if got := len(renderer.buttons); got != 8 {
+		t.Fatalf("job view created %d clickable widgets, want execution controls, Back, timeline selection, and output buttons", got)
 	}
 	if len(renderer.scrollers) != 1 {
 		t.Fatalf("horizontal execution-path scrollers = %d", len(renderer.scrollers))
@@ -598,6 +598,96 @@ func TestPipelineRunSelectionUsesSharedPipelineAndChainArguments(t *testing.T) {
 	})
 	if selection.PipelineJobId != "compile" || !selection.DryRun || selection.SourceRef != "feature/native" || selection.AgentId != "agent-1" || selection.ExecutionMode != "offline_cached" {
 		t.Fatalf("selection = %+v", selection)
+	}
+}
+
+func TestRendererLaysOutSharedRunOptions(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("run-options")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := protobufBindingData("runOptions", "run-options", &cnpv1.RunOptionsView{
+		TargetKind: "pipeline", TargetLabel: "build", PipelineDbId: 42, ProjectId: 7,
+		SupportsDryRun: true, SourceRepo: "https://github.com/izzyreal/ciwi", PendingJobs: 6,
+		DefaultSourceRef: "refs/heads/main", SelectedSourceRef: "refs/heads/main",
+		SourceRefs:     []*cnpv1.RunOption{{Value: "refs/heads/main", Label: "main"}},
+		EligibleAgents: []*cnpv1.RunOption{{Value: "", Label: "Any eligible agent"}, {Value: "agent-1", Label: "agent-1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	dimensions := renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if dimensions.Size != image.Pt(1100, 760) {
+		t.Fatalf("dimensions = %v", dimensions.Size)
+	}
+	selectToggles := 0
+	for path := range renderer.buttons {
+		if strings.HasSuffix(path, "/select-toggle") {
+			selectToggles++
+		}
+	}
+	if selectToggles != 2 {
+		t.Fatalf("select controls = %d, want source-ref and agent selectors", selectToggles)
+	}
+}
+
+func TestSetAgentRunOptionUpdatesNavigationAndBinding(t *testing.T) {
+	renderer := &Renderer{data: map[string]any{"runOptions": map[string]any{"selected_agent_id": ""}}}
+	navigation := &navigationState{screen: "run-options", pipelineDBID: 42}
+	refreshEligibility, err := applyRunOptionSelection(renderer, navigation, "agentId", "agent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshEligibility {
+		t.Fatal("agent selection should not recompute eligibility")
+	}
+	if navigation.agentID != "agent-1" {
+		t.Fatalf("selected agent = %q", navigation.agentID)
+	}
+	root := renderer.data.(map[string]any)["runOptions"].(map[string]any)
+	if root["selected_agent_id"] != "agent-1" {
+		t.Fatalf("binding selected_agent_id = %#v", root["selected_agent_id"])
+	}
+	refreshEligibility, err = applyRunOptionSelection(renderer, navigation, "sourceRef", "refs/heads/main")
+	if err != nil || !refreshEligibility {
+		t.Fatalf("source selection refresh=%v error=%v", refreshEligibility, err)
+	}
+}
+
+func TestPipelineRunOptionsRoutePreservesProjectForImmediateBack(t *testing.T) {
+	navigation, err := navigationForRoute("/run-options/projects/7/pipelines/42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if navigation.screen != "run-options" || navigation.projectID != 7 || navigation.pipelineDBID != 42 {
+		t.Fatalf("navigation = %+v", navigation)
+	}
+	root := runOptionsLoadingData(navigation)["runOptions"].(map[string]any)
+	if root["project_id"] != int64(7) || root["target_kind"] != "loading" {
+		t.Fatalf("loading data = %+v", root)
+	}
+}
+
+func TestInteractiveControlsDoNotReceiveGenericActionWrapper(t *testing.T) {
+	for _, component := range []string{"button", "select", "input"} {
+		if !componentHandlesOwnActions(component) {
+			t.Errorf("%s should dispatch its own actions", component)
+		}
+	}
+	for _, component := range []string{"card", "row", "text"} {
+		if componentHandlesOwnActions(component) {
+			t.Errorf("%s should retain generic action wrapping", component)
+		}
 	}
 }
 

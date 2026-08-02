@@ -80,7 +80,7 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		s.pipelineSourceRefsHandler(w, p)
+		s.pipelineSourceRefsHandler(r.Context(), w, p)
 		return
 	}
 	if parts[1] == "eligible-agents" {
@@ -166,7 +166,7 @@ func (s *stateStore) pipelineChainActionHandler(w http.ResponseWriter, r *http.R
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		s.pipelineChainSourceRefsHandler(w, ch)
+		s.pipelineChainSourceRefsHandler(r.Context(), w, ch)
 		return
 	}
 	if action == "eligible-agents" {

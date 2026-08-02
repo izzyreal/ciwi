@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/requirements"
 	"github.com/izzyreal/ciwi/internal/store"
@@ -28,18 +29,18 @@ func (s *stateStore) pipelineEligibleAgentsHandler(w http.ResponseWriter, p stor
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	_, pending, err := s.preparePendingPipelineJobs(p, &selection, enqueuePipelineOptions{
-		allowSelectionNeedsGap: true,
-		allowUnsatisfiedDeps:   true,
+	options, err := s.app().runOptions.GetRunOptions(r.Context(), application.RunOptionsRequest{
+		PipelineDBID: p.DBID, PipelineJobID: selection.PipelineJobID, MatrixName: selection.MatrixName,
+		MatrixIndex: selection.MatrixIndex, DryRun: selection.DryRun, SourceRef: selection.SourceRef, AgentID: selection.AgentID,
+		ExecutionMode: selection.ExecutionMode, IncludeEligibleAgents: true,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ids := s.eligibleAgentsForPendingJobs(pending)
 	writeJSON(w, http.StatusOK, eligibleAgentsResponse{
-		EligibleAgentIDs: ids,
-		PendingJobs:      len(pending),
+		EligibleAgentIDs: agentIDsFromRunOptions(options.EligibleAgents),
+		PendingJobs:      options.PendingJobs,
 	})
 }
 
@@ -53,16 +54,29 @@ func (s *stateStore) pipelineChainEligibleAgentsHandler(w http.ResponseWriter, c
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	pending, err := s.preparePendingPipelineChainJobs(ch, &selection)
+	options, err := s.app().runOptions.GetRunOptions(r.Context(), application.RunOptionsRequest{
+		ProjectID: ch.ProjectID, ChainID: ch.ChainID, PipelineJobID: selection.PipelineJobID,
+		MatrixName: selection.MatrixName, MatrixIndex: selection.MatrixIndex, DryRun: selection.DryRun,
+		SourceRef: selection.SourceRef, AgentID: selection.AgentID, ExecutionMode: selection.ExecutionMode, IncludeEligibleAgents: true,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ids := s.eligibleAgentsForPendingJobs(pending)
 	writeJSON(w, http.StatusOK, eligibleAgentsResponse{
-		EligibleAgentIDs: ids,
-		PendingJobs:      len(pending),
+		EligibleAgentIDs: agentIDsFromRunOptions(options.EligibleAgents),
+		PendingJobs:      options.PendingJobs,
 	})
+}
+
+func agentIDsFromRunOptions(options []application.RunOption) []string {
+	ids := make([]string, 0, len(options))
+	for _, option := range options {
+		if id := strings.TrimSpace(option.Value); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 func (s *stateStore) preparePendingPipelineChainJobs(ch store.PersistedPipelineChain, selection *protocol.RunPipelineSelectionRequest) ([]pendingJob, error) {

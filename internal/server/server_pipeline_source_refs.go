@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -40,43 +41,49 @@ func shouldApplySourceRefOverride(pipelineRepo, overrideRepo string) bool {
 	return sameSourceRepo(pipelineRepo, overrideRepo)
 }
 
-func (s *stateStore) pipelineSourceRefsHandler(w http.ResponseWriter, p store.PersistedPipeline) {
-	view, err := buildSourceRefsView(strings.TrimSpace(p.SourceRepo), strings.TrimSpace(p.SourceRef))
+func (s *stateStore) pipelineSourceRefsHandler(ctx context.Context, w http.ResponseWriter, p store.PersistedPipeline) {
+	options, err := s.app().runOptions.GetRunOptions(ctx, application.RunOptionsRequest{
+		PipelineDBID: p.DBID, IncludeSourceRefs: true,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, sourceRefsResponseFromRunOptions(options))
 }
 
-func (s *stateStore) pipelineChainSourceRefsHandler(w http.ResponseWriter, ch store.PersistedPipelineChain) {
+func (s *stateStore) pipelineChainSourceRefsHandler(ctx context.Context, w http.ResponseWriter, ch store.PersistedPipelineChain) {
 	if len(ch.Pipelines) == 0 {
 		http.Error(w, "pipeline chain has no pipelines", http.StatusBadRequest)
 		return
 	}
-	firstID := strings.TrimSpace(ch.Pipelines[0])
-	if firstID == "" {
-		http.Error(w, "pipeline chain has empty first pipeline id", http.StatusBadRequest)
-		return
-	}
-	first, err := s.pipelineStore().GetPipelineByProjectIDAndID(ch.ProjectID, firstID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("load pipeline %q in chain %q: %v", firstID, ch.ChainName, err), http.StatusBadRequest)
-		return
-	}
-	view, err := buildSourceRefsView(strings.TrimSpace(first.SourceRepo), strings.TrimSpace(first.SourceRef))
+	options, err := s.app().runOptions.GetRunOptions(ctx, application.RunOptionsRequest{
+		ProjectID: ch.ProjectID, ChainID: ch.ChainID, IncludeSourceRefs: true,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, sourceRefsResponseFromRunOptions(options))
+}
+
+func sourceRefsResponseFromRunOptions(options application.RunOptions) sourceRefsViewResponse {
+	refs := make([]sourceRefOptionView, 0, len(options.SourceRefs))
+	for _, option := range options.SourceRefs {
+		refs = append(refs, sourceRefOptionView{Name: option.Label, Ref: option.Value})
+	}
+	return sourceRefsViewResponse{SourceRepo: options.SourceRepo, DefaultRef: options.DefaultSourceRef, Refs: refs}
 }
 
 func buildSourceRefsView(sourceRepo, defaultRef string) (sourceRefsViewResponse, error) {
+	return buildSourceRefsViewContext(context.Background(), sourceRepo, defaultRef)
+}
+
+func buildSourceRefsViewContext(ctx context.Context, sourceRepo, defaultRef string) (sourceRefsViewResponse, error) {
 	if sourceRepo == "" {
 		return sourceRefsViewResponse{}, fmt.Errorf("pipeline vcs_source.repo is empty")
 	}
-	options, err := listRemoteBranchRefs(sourceRepo)
+	options, err := listRemoteBranchRefsContext(ctx, sourceRepo)
 	if err != nil {
 		return sourceRefsViewResponse{}, err
 	}
@@ -113,7 +120,11 @@ func buildSourceRefsView(sourceRepo, defaultRef string) (sourceRefsViewResponse,
 }
 
 func listRemoteBranchRefs(repoURL string) ([]sourceRefOptionView, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	return listRemoteBranchRefsContext(context.Background(), repoURL)
+}
+
+func listRemoteBranchRefsContext(parent context.Context, repoURL string) ([]sourceRefOptionView, error) {
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
 	out, err := runCmd(ctx, "", "git", "ls-remote", "--heads", repoURL)
 	if err != nil {

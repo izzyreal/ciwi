@@ -405,7 +405,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		content = r.surface(content, padding, node.Style.Role == "hero")
 	}
 	widgetFn := content
-	if len(node.Actions) > 0 && node.Component != "button" {
+	if len(node.Actions) > 0 && !componentHandlesOwnActions(node.Component) {
 		button := r.button(path)
 		for button.Clicked(gtx) {
 			r.dispatchFromLayout(gtx, node.Actions[0], data)
@@ -415,6 +415,15 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 	}
 	return r.constrainNode(gtx, node, widgetFn)
+}
+
+func componentHandlesOwnActions(component string) bool {
+	switch component {
+	case "button", "select", "input":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
@@ -1465,6 +1474,7 @@ func semanticTone(value string) string {
 func materialIcons() (map[string]*widget.Icon, error) {
 	sources := map[string][]byte{
 		"settings": icons.ActionSettings, "arrow-left": icons.NavigationArrowBack,
+		"adjustments": icons.ImageTune,
 		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
 		"chevron-down": icons.NavigationExpandMore, "chevron-up": icons.NavigationExpandLess,
 		"check": icons.NavigationCheck, "copy": icons.ContentContentCopy,

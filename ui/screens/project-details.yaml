@@ -105,6 +105,15 @@ screen:
                           tone: muted
                   - component: button
                     text:
+                      literal: Options
+                    icon: adjustments
+                    actions:
+                      - on: activate
+                        command: navigate
+                        arguments:
+                          route: /run-options/projects/{{projectDetails.project.id}}/chains/{{chain.id}}
+                  - component: button
+                    text:
                       literal: Run Chain
                     icon: player-play
                     actions:
@@ -164,6 +173,15 @@ screen:
                           grow: true
                         style:
                           tone: muted
+                      - component: button
+                        text:
+                          literal: Options
+                        icon: adjustments
+                        actions:
+                          - on: activate
+                            command: navigate
+                            arguments:
+                              route: /run-options/projects/{{projectDetails.project.id}}/pipelines/{{pipeline.id}}
                       - component: button
                         text:
                           literal: Run
