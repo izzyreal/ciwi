@@ -480,8 +480,8 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	if got := len(renderer.buttons); got != 8 {
 		t.Fatalf("job view created %d clickable widgets, want execution controls, Back, timeline selection, and output buttons", got)
 	}
-	if len(renderer.scrollers) != 1 {
-		t.Fatalf("horizontal execution-path scrollers = %d", len(renderer.scrollers))
+	if len(renderer.scrollers) != 2 {
+		t.Fatalf("execution-path and grouped-output scrollers = %d", len(renderer.scrollers))
 	}
 }
 
@@ -498,21 +498,24 @@ func TestJobOutputBindingUsesSelectableReadOnlyEditor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{Id: "job-1", Title: "Job: compile", StatusLabel: "Running", Mode: "Run"})
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-1", Title: "Job: compile", StatusLabel: "Running", Mode: "Run",
+		OutputGroups: []*cnpv1.JobOutputGroup{{Id: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Compile"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	renderer.SetScreenAndData(screen, data)
-	renderer.SetRootBinding("jobDetails", "output", "hello\n")
+	renderer.SetDisclosureStates(map[string]bool{"job-output:job-1:step:1": true})
+	renderer.ApplyJobOutput(jobOutputSnapshot{Outputs: map[string]string{"step:1": "hello\n"}})
 	var operations op.Ops
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
-	if len(renderer.textEditors) != 1 {
-		t.Fatalf("text editors = %d", len(renderer.textEditors))
+	editor := renderer.outputEditors["step:1"]
+	if editor == nil {
+		t.Fatalf("output editors = %+v", renderer.outputEditors)
 	}
-	for _, editor := range renderer.textEditors {
-		if !editor.ReadOnly || editor.Text() != "hello\n" {
-			t.Fatalf("editor readOnly=%v text=%q", editor.ReadOnly, editor.Text())
-		}
+	if !editor.ReadOnly || editor.Text() != "hello\n" {
+		t.Fatalf("editor readOnly=%v text=%q", editor.ReadOnly, editor.Text())
 	}
 }
 
@@ -535,6 +538,7 @@ func TestRendererSelectsTimelineItemAndFindsOutput(t *testing.T) {
 			{Id: "phase:1", Title: "Prepare workspace", Status: "succeeded", StatusLabel: "Succeeded"},
 			{Id: "step:1", Title: "Compile", Status: "succeeded", StatusLabel: "Succeeded"},
 		},
+		OutputGroups: []*cnpv1.JobOutputGroup{{Id: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Compile", Reached: true}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -550,14 +554,15 @@ func TestRendererSelectsTimelineItemAndFindsOutput(t *testing.T) {
 	if err != nil || selected != "step:1" {
 		t.Fatalf("selected timeline item = %v, err=%v", selected, err)
 	}
-	renderer.outputEditor = new(widget.Editor)
-	renderer.outputEditor.ReadOnly = true
-	renderer.outputEditor.SetText("compile one\ncompile two\n")
-	renderer.SetRootBinding("jobDetails", "output", "compile one\ncompile two\n")
+	outputEditor := new(widget.Editor)
+	outputEditor.ReadOnly = true
+	outputEditor.SetText("compile one\ncompile two\n")
+	renderer.outputEditors["step:1"] = outputEditor
+	renderer.ApplyJobOutput(jobOutputSnapshot{Outputs: map[string]string{"step:1": "compile one\ncompile two\n"}, Errors: map[string]string{}, ExitCodes: map[string]string{}})
 	renderer.dispatchFromLayout(gtx, uidsl.Action{
 		Command: "change-output-search", Arguments: map[string]string{"query": "{{input.value}}"},
 	}, mergeData(renderer.data, "input", map[string]any{"value": "compile"}))
-	if start, end := renderer.outputEditor.Selection(); start != 0 || end != len("compile") {
+	if start, end := outputEditor.Selection(); start != 0 || end != len("compile") {
 		t.Fatalf("first output selection = %d:%d", start, end)
 	}
 	count, err := uidsl.Resolve(renderer.data, "jobDetails.output_search_count")
@@ -578,10 +583,10 @@ func TestNativeJobOutputBufferKeepsBoundedTail(t *testing.T) {
 	buffer.reset("job-1")
 	buffer.append(&cnpv1.JobOutputBatch{
 		JobExecutionId: "job-1",
-		Lines:          []*cnpv1.JobOutputLine{{Text: strings.Repeat("x", maxNativeOutputBytes+100)}},
+		Events:         []*cnpv1.JobOutputEvent{{Type: "output", ItemId: "step:1", Text: strings.Repeat("x", maxNativeOutputBytes+100)}},
 	})
-	if !strings.HasPrefix(buffer.text, "[ciwi native: earlier output omitted]\n") || len(buffer.text) > maxNativeOutputBytes+100 {
-		t.Fatalf("buffer length=%d prefix=%q", len(buffer.text), buffer.text[:min(len(buffer.text), 50)])
+	if !buffer.omitted["step:1"] || len(buffer.events) != 1 || len(buffer.events[0].Text) > maxNativeOutputBytes {
+		t.Fatalf("buffer events=%d omitted=%v text length=%d", len(buffer.events), buffer.omitted, len(buffer.events[0].Text))
 	}
 }
 

@@ -15,7 +15,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 		Script: "go test ./...", Metadata: map[string]string{
 			"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "unit-tests",
 		},
-		StepPlan: []protocol.JobStepPlanItem{{Index: 1, Total: 1, Name: "Run tests", Script: "go test ./..."}},
+		StepPlan: []protocol.JobStepPlanItem{{Index: 1, Total: 1, Name: "Run tests", YAMLLiteral: "run: go test ./...", Script: "go test ./..."}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,8 +32,11 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if view.ID != job.ID || view.Title != "Job: unit-tests" || view.Context == "" || view.Status != "queued" {
 		t.Fatalf("view = %+v", view)
 	}
-	if len(view.Timeline) < 3 || view.Timeline[2].Title != "Job step 3/3: Run tests" {
+	if len(view.Timeline) < 3 || view.Timeline[2].Title != "Job step 1/1: Run tests" {
 		t.Fatalf("timeline = %+v", view.Timeline)
+	}
+	if len(view.OutputGroups) != len(view.Timeline) || view.OutputGroups[2].YAMLLiteral == "" || view.OutputGroups[2].ExpandedCommand != "go test ./..." {
+		t.Fatalf("output groups = %+v", view.OutputGroups)
 	}
 	if err := state.db.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
 		Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "Run tests"}, Output: "\x1b[32mok\x1b[0m\n",
@@ -49,7 +52,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if err := json.NewDecoder(outputResponse.Body).Decode(&output); err != nil {
 		t.Fatal(err)
 	}
-	if output.NextEventID <= 0 || output.Terminal || len(output.Lines) != 1 || output.Lines[0].Text != "ok\n" {
+	if output.NextEventID <= 0 || output.Terminal || len(output.Events) != 1 || output.Events[0].Text != "ok\n" {
 		t.Fatalf("output = %+v", output)
 	}
 }

@@ -347,23 +347,174 @@ screen:
                 style:
                   tone: muted
           - component: card
+            id: job-output-system
             layout:
               direction: vertical
               gap: small
-              maxHeight: "420"
+              padding: small
+            visible:
+              binding: jobDetails.system_output
+              empty: true
+              not: true
             children:
               - component: text
-                id: job-output-text
                 text:
-                  binding: jobDetails.output
+                  literal: System messages
+                style:
+                  emphasis: strong
+              - component: text
+                id: job-output-system-text
+                text:
+                  binding: jobDetails.system_output
                 style:
                   role: code
-              - component: text
-                id: job-output-empty
+          - component: scroller
+            id: job-output-groups
+            layout:
+              direction: vertical
+              gap: small
+              maxHeight: "720"
+            repeat:
+              source: jobDetails.output_groups
+              as: outputGroup
+              key: outputGroup.id
+            children:
+              - component: disclosure
                 text:
-                  literal: No output reported yet.
-                visible:
-                  binding: jobDetails.output
-                  empty: true
+                  binding: outputGroup.title
+                disclosure:
+                  defaultExpanded: false
+                  stateKey: "{{outputGroup.state_key}}"
+                layout:
+                  direction: vertical
+                  gap: small
+                  padding: medium
                 style:
-                  tone: muted
+                  toneBinding: outputGroup.status
+                children:
+                  - component: text
+                    text:
+                      binding: outputGroup.command_summary
+                    visible:
+                      binding: outputGroup.command_summary
+                      empty: true
+                      not: true
+                    style:
+                      role: code
+                      tone: muted
+                      truncate: true
+                  - component: badge
+                    text:
+                      binding: outputGroup.status_label
+                    style:
+                      toneBinding: outputGroup.status
+                  - component: text
+                    text:
+                      template: "Started: {{outputGroup.started}}"
+                    visible:
+                      binding: outputGroup.started
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
+                  - component: text
+                    text:
+                      template: "Duration: {{outputGroup.duration}}"
+                    visible:
+                      binding: outputGroup.duration
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
+                  - component: text
+                    text:
+                      template: "Exit code: {{outputGroup.exit_code}}"
+                    visible:
+                      binding: outputGroup.exit_code
+                      empty: true
+                      not: true
+                  - component: text
+                    text:
+                      template: "Error: {{outputGroup.error}}"
+                    visible:
+                      binding: outputGroup.error
+                      empty: true
+                      not: true
+                    style:
+                      tone: danger
+                  - component: text
+                    text:
+                      literal: Details
+                    visible:
+                      binding: outputGroup.is_phase
+                    style:
+                      emphasis: strong
+                  - component: text
+                    text:
+                      binding: outputGroup.details
+                    visible:
+                      binding: outputGroup.is_phase
+                    style:
+                      role: code
+                  - component: text
+                    text:
+                      literal: YAML literal
+                    visible:
+                      binding: outputGroup.is_step
+                    style:
+                      emphasis: strong
+                  - component: text
+                    text:
+                      binding: outputGroup.yaml_literal
+                    visible:
+                      binding: outputGroup.is_step
+                    style:
+                      role: code
+                  - component: text
+                    text:
+                      literal: Expanded command
+                    visible:
+                      binding: outputGroup.is_step
+                    style:
+                      emphasis: strong
+                  - component: text
+                    text:
+                      binding: outputGroup.expanded_command
+                    visible:
+                      binding: outputGroup.is_step
+                    style:
+                      role: code
+                  - component: text
+                    text:
+                      literal: Output
+                    style:
+                      emphasis: strong
+                  - component: text
+                    id: job-output-group-text
+                    text:
+                      binding: outputGroup.output
+                    visible:
+                      binding: outputGroup.output
+                      empty: true
+                      not: true
+                    style:
+                      role: code
+                  - component: text
+                    text:
+                      binding: outputGroup.empty_output_label
+                    visible:
+                      binding: outputGroup.output
+                      empty: true
+                    style:
+                      role: code
+                      tone: muted
+                  - component: button
+                    text:
+                      literal: Collapse
+                    icon: arrow-up
+                    actions:
+                      - on: activate
+                        command: set-disclosures
+                        arguments:
+                          prefix: "{{outputGroup.state_key}}"
+                          expanded: "false"

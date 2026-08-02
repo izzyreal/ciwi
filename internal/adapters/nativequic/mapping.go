@@ -66,22 +66,36 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 			ExitCode: item.ExitCode, Error: item.Error,
 		})
 	}
+	outputGroups := make([]*cnpv1.JobOutputGroup, 0, len(view.OutputGroups))
+	for _, group := range view.OutputGroups {
+		outputGroups = append(outputGroups, &cnpv1.JobOutputGroup{
+			Id: group.ID, StateKey: group.StateKey, Kind: group.Kind, Title: group.Title,
+			CommandSummary: group.CommandSummary, Status: group.Status, StatusLabel: group.StatusLabel,
+			Reached: group.Reached, Started: group.Started, Duration: group.Duration,
+			ExitCode: group.ExitCode, Error: group.Error, Details: group.Details,
+			YamlLiteral: group.YAMLLiteral, ExpandedCommand: group.ExpandedCommand,
+		})
+	}
 	return &cnpv1.JobDetailsView{
 		Id: view.ID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, Timeline: timeline, CanCancel: view.CanCancel, CanRerun: view.CanRerun,
+		OutputGroups: outputGroups,
 	}
 }
 
 func jobOutputToProto(view presentation.JobOutputView) *cnpv1.JobOutputBatch {
-	lines := make([]*cnpv1.JobOutputLine, 0, len(view.Lines))
-	for _, line := range view.Lines {
-		lines = append(lines, &cnpv1.JobOutputLine{EventId: line.EventID, Text: line.Text})
+	events := make([]*cnpv1.JobOutputEvent, 0, len(view.Events))
+	for _, event := range view.Events {
+		events = append(events, &cnpv1.JobOutputEvent{
+			EventId: event.EventID, Type: event.Type, ItemId: event.ItemID, Text: event.Text,
+			Error: event.Error, ExitCode: event.ExitCode,
+		})
 	}
 	return &cnpv1.JobOutputBatch{
 		JobExecutionId: view.JobExecutionID, NextEventId: view.NextEventID,
-		Lines: lines, HasMore: view.HasMore, Terminal: view.Terminal,
+		Events: events, HasMore: view.HasMore, Terminal: view.Terminal,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -50,14 +51,19 @@ func (r *Repository) ListJobOutputAfter(ctx context.Context, jobID string, after
 			break
 		}
 		itemKind, itemName, itemIndex, itemTotal := "", "", 0, 0
+		itemID := ""
 		if event.Phase != nil {
 			itemKind, itemName, itemIndex, itemTotal = "phase", event.Phase.Name, event.Phase.Index, event.Phase.Total
+			itemID = strings.TrimSpace(event.Phase.ID)
 		} else if event.Step != nil {
 			itemKind, itemName, itemIndex, itemTotal = "step", event.Step.Name, event.Step.Index, event.Step.Total
+			if event.Step.Index > 0 {
+				itemID = fmt.Sprintf("step:%d", event.Step.Index)
+			}
 		}
 		batch.Events = append(batch.Events, domain.JobOutputEvent{
 			ID: event.ID, Type: outputEventType(event.Type), Message: event.Message, Output: event.Output,
-			Error: event.Error, ExitCode: copyInt(event.ExitCode), ItemKind: itemKind,
+			Error: event.Error, ExitCode: copyInt(event.ExitCode), ItemID: itemID, ItemKind: itemKind,
 			ItemName: itemName, ItemIndex: itemIndex, ItemTotal: itemTotal,
 		})
 		if event.ID > batch.NextEventID {
@@ -115,6 +121,12 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 		StartedUTC: job.StartedUTC, FinishedUTC: job.FinishedUTC, ExitCode: copyInt(job.ExitCode), Error: strings.TrimSpace(job.Error),
 	}
 	states := timelineStates(events)
+	stepsByIndex := make(map[int]protocol.JobStepPlanItem, len(job.StepPlan))
+	for _, step := range job.StepPlan {
+		if step.Index > 0 {
+			stepsByIndex[step.Index] = step
+		}
+	}
 	terminal := protocol.IsTerminalJobExecutionStatus(details.Status)
 	for _, item := range protocol.BuildJobExecutionTimeline(job) {
 		state := states[item.ID]
@@ -126,16 +138,25 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 				status = "pending"
 			}
 		}
-		details.Timeline = append(details.Timeline, domain.JobTimelineItem{
+		timelineItem := domain.JobTimelineItem{
 			ID: item.ID, Kind: item.Kind, Name: item.Name, Description: item.Description,
-			Index: item.Index, Total: item.Total, Status: status, DurationMS: state.durationMS,
+			Index: item.Index, Total: item.Total, Reached: state.reached, Status: status, StartedUTC: state.startedUTC, DurationMS: state.durationMS,
 			ExitCode: copyInt(state.exitCode), Error: state.error,
-		})
+		}
+		if item.Kind == "step" {
+			if step, ok := stepsByIndex[item.StepIndex]; ok {
+				timelineItem.YAMLLiteral = step.YAMLLiteral
+				timelineItem.Command = step.Script
+			}
+		}
+		details.Timeline = append(details.Timeline, timelineItem)
 	}
 	return details
 }
 
 type timelineState struct {
+	reached    bool
+	startedUTC time.Time
 	status     string
 	durationMS int64
 	exitCode   *int
@@ -155,9 +176,11 @@ func timelineStates(events []protocol.JobExecutionEvent) map[string]timelineStat
 			continue
 		}
 		state := states[id]
+		state.reached = true
 		switch event.Type {
 		case protocol.JobExecutionEventTypePhaseStarted, protocol.JobExecutionEventTypeStepStarted:
 			state.status = "in progress"
+			state.startedUTC = event.TimestampUTC
 		case protocol.JobExecutionEventTypePhaseFinished, protocol.JobExecutionEventTypeStepFinished:
 			state.status = "succeeded"
 			if strings.TrimSpace(event.Error) != "" || (event.ExitCode != nil && *event.ExitCode != 0) {

@@ -157,6 +157,7 @@ message JobDetailsView {
   repeated JobTimelineItem timeline = 15;
   bool can_cancel = 16;
   bool can_rerun = 17;
+  repeated JobOutputGroup output_groups = 18;
 }
 
 message ControlExecutionRequest {
@@ -186,6 +187,24 @@ message JobTimelineItem {
   string error = 9;
 }
 
+message JobOutputGroup {
+  string id = 1;
+  string state_key = 2;
+  string kind = 3;
+  string title = 4;
+  string command_summary = 5;
+  string status = 6;
+  string status_label = 7;
+  bool reached = 8;
+  string started = 9;
+  string duration = 10;
+  string exit_code = 11;
+  string error = 12;
+  string details = 13;
+  string yaml_literal = 14;
+  string expanded_command = 15;
+}
+
 message WatchJobOutputRequest {
   string job_execution_id = 1;
   int64 after_event_id = 2;
@@ -194,14 +213,18 @@ message WatchJobOutputRequest {
 message JobOutputBatch {
   string job_execution_id = 1;
   int64 next_event_id = 2;
-  repeated JobOutputLine lines = 3;
+  repeated JobOutputEvent events = 3;
   bool has_more = 4;
   bool terminal = 5;
 }
 
-message JobOutputLine {
+message JobOutputEvent {
   int64 event_id = 1;
-  string text = 2;
+  string type = 2;
+  string item_id = 3;
+  string text = 4;
+  string error = 5;
+  string exit_code = 6;
 }
 
 message ExecutionSummary {

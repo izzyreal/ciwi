@@ -172,6 +172,7 @@
         else if (action.command === 'select-timeline-item') {
           data.jobDetails.selected_timeline_item = data.item;
           renderCurrent();
+          revealBrowserOutputGroup(data.jobDetails, args.id);
         }
         else if (action.command === 'change-output-search') {
           data.jobDetails.output_search = args.query || '';
@@ -519,8 +520,26 @@
     return matches;
   }
 
+  function jobOutputSources(view) {
+    const sources = [{itemID: '', text: String(view.system_output || '')}];
+    (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
+      sources.push({itemID: String(group.id || ''), text: String(group.output || '')});
+    });
+    return sources;
+  }
+
+  function groupedOutputMatches(view) {
+    const matches = [];
+    jobOutputSources(view).forEach(source => {
+      outputMatchRanges(source.text, view.output_search).forEach(range => {
+        matches.push({itemID: source.itemID, start: range[0], end: range[1]});
+      });
+    });
+    return matches;
+  }
+
   function updateOutputSearch(view, direction) {
-    const matches = outputMatchRanges(view.output, view.output_search);
+    const matches = groupedOutputMatches(view);
     if (!matches.length) {
       view.output_match_index = 0;
       view.output_search_count = '0/0';
@@ -533,11 +552,31 @@
     view.output_search_count = String(view.output_match_index + 1) + '/' + String(matches.length);
   }
 
+  function browserOutputGroup(view, itemID) {
+    return (Array.isArray(view.output_groups) ? view.output_groups : []).find(group => String(group.id || '') === String(itemID || ''));
+  }
+
+  function revealBrowserOutputGroup(view, itemID) {
+    const group = browserOutputGroup(view, itemID);
+    if (!group) return null;
+    const target = document.querySelector('[data-disclosure-key="' + CSS.escape(String(group.state_key || '')) + '"]');
+    if (!target) return null;
+    target.open = true;
+    disclosureStates[String(group.state_key || '')] = true;
+    saveDisclosureStates();
+    target.scrollIntoView({block: 'nearest'});
+    return target;
+  }
+
   function selectBrowserOutputMatch(view) {
-    const target = document.getElementById('job-output-text');
-    const matches = outputMatchRanges(view.output, view.output_search);
+    const matches = groupedOutputMatches(view);
     const match = matches[Number(view.output_match_index || 0)];
-    if (!target || !target.firstChild || !match) return;
+    if (!match) return;
+    const disclosure = match.itemID ? revealBrowserOutputGroup(view, match.itemID) : null;
+    const target = disclosure
+      ? disclosure.querySelector('#job-output-group-text')
+      : document.getElementById('job-output-system-text');
+    if (!target || !target.firstChild) return;
     const selection = window.getSelection();
     const range = document.createRange();
     range.setStart(target.firstChild, match[0]);
@@ -546,26 +585,78 @@
     selection.addRange(range);
   }
 
+  function initializeJobOutputView(view) {
+    view.system_output = '';
+    (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
+      group.output = '';
+      group.is_phase = group.kind === 'phase';
+      group.is_step = group.kind !== 'phase';
+      group.empty_output_label = group.reached ? '(no output)' : '(step was not reached)';
+      group.yaml_literal = group.yaml_literal || '(none)';
+      group.expanded_command = group.expanded_command || '(none)';
+      group.details = group.details || '(none)';
+    });
+    rebuildJobOutputText(view);
+  }
+
+  function appendBoundedOutput(view, itemID, text) {
+    if (!text) return;
+    const group = itemID ? browserOutputGroup(view, itemID) : null;
+    const fieldOwner = group || view;
+    const field = group ? 'output' : 'system_output';
+    let output = String(fieldOwner[field] || '') + String(text);
+    if (output.length > maxOutputCharacters) {
+      output = '[ciwi: earlier output omitted]\n' + output.slice(output.length - maxOutputCharacters);
+    }
+    fieldOwner[field] = output;
+  }
+
+  function rebuildJobOutputText(view) {
+    const sections = [];
+    if (view.system_output) sections.push('System messages\n' + view.system_output);
+    (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
+      const body = String(group.output || '') || String(group.empty_output_label || '');
+      sections.push(String(group.title || 'Execution item') + '\n' + body);
+    });
+    view.output = sections.join('\n\n');
+  }
+
+  function mergeJobOutputBatch(view, batch) {
+    (Array.isArray(batch.events) ? batch.events : []).forEach(event => {
+      const itemID = String(event.item_id || '');
+      if (event.type === 'system-message' || event.type === 'output') {
+        appendBoundedOutput(view, event.type === 'system-message' ? '' : itemID, event.text || '');
+      }
+      if (event.type === 'finished') {
+        const group = browserOutputGroup(view, itemID);
+        if (group) {
+          group.reached = true;
+          group.status = event.error ? 'failed' : 'succeeded';
+          group.status_label = event.error ? 'Failed' : 'Succeeded';
+          group.error = event.error || '';
+          group.exit_code = event.exit_code || '';
+          group.empty_output_label = group.output ? '' : '(no output)';
+        }
+      }
+    });
+    rebuildJobOutputText(view);
+    updateOutputSearch(view, 0);
+  }
+
   async function watchJobOutput(jobID, generation) {
     let afterEventID = 0;
-    let output = '';
     while (generation === outputWatchGeneration) {
       const response = await fetch('/api/v1/views/jobs/' + encodeURIComponent(jobID) + '/output?after_event_id=' + String(afterEventID));
       if (!response.ok) throw new Error(await response.text());
       const batch = await response.json();
-      (Array.isArray(batch.lines) ? batch.lines : []).forEach(line => { output += String(line.text || ''); });
-      if (output.length > maxOutputCharacters) {
-        output = '[ciwi: earlier output omitted]\n' + output.slice(output.length - maxOutputCharacters);
-      }
-      const outputElement = document.getElementById('job-output-text');
-      if (outputElement) outputElement.textContent = output;
       if (currentData && currentData.jobDetails) {
-        currentData.jobDetails.output = output;
-        updateOutputSearch(currentData.jobDetails, 0);
-        if (outputElement && currentData.jobDetails.output_tailing) outputElement.scrollTop = outputElement.scrollHeight;
+        mergeJobOutputBatch(currentData.jobDetails, batch);
+        renderCurrent();
+        if (currentData.jobDetails.output_tailing) {
+          const outputElement = document.getElementById('job-output-groups');
+          if (outputElement) outputElement.scrollTop = outputElement.scrollHeight;
+        }
       }
-      const emptyElement = document.getElementById('job-output-empty');
-      if (emptyElement) emptyElement.hidden = output !== '';
       const nextEventID = Number(batch.next_event_id || afterEventID);
       if (Number.isFinite(nextEventID) && nextEventID >= afterEventID) afterEventID = nextEventID;
       if (batch.terminal && !batch.has_more) return;
@@ -638,7 +729,7 @@
 		};
       }
       if (jobMatch) {
-        view.output = view.output || '';
+        initializeJobOutputView(view);
         view.output_search = '';
         view.output_search_count = '0/0';
         view.output_match_index = 0;
@@ -654,8 +745,11 @@
       if (jobMatch) {
         watchJobOutput(jobMatch[1], generation).catch(error => {
           if (generation !== outputWatchGeneration) return;
-          const outputElement = document.getElementById('job-output-text');
-          if (outputElement) outputElement.textContent = 'Output stream failed: ' + (error.message || String(error));
+          if (currentData && currentData.jobDetails) {
+            appendBoundedOutput(currentData.jobDetails, '', 'Output stream failed: ' + (error.message || String(error)) + '\n');
+            rebuildJobOutputText(currentData.jobDetails);
+            renderCurrent();
+          }
         });
       }
     } catch (error) {

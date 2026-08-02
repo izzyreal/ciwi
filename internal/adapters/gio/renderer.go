@@ -35,40 +35,55 @@ import (
 type ActionHandler func(uidsl.Action, map[string]string)
 
 type Renderer struct {
-	mu                    sync.RWMutex
-	screen                *uidsl.ScreenDocument
-	data                  any
-	status                string
-	statusExpires         time.Time
-	theme                 *material.Theme
-	palette               palette
-	themeName             string
-	pendingTheme          *material.Theme
-	pendingPalette        *palette
-	pendingThemeName      string
-	list                  layout.List
-	buttons               map[string]*widget.Clickable
-	disclosures           map[string]bool
-	persistentDisclosures map[string]bool
-	onDisclosureChange    func(map[string]bool)
-	selectables           map[string]*widget.Selectable
-	textEditors           map[string]*widget.Editor
-	inputEditors          map[string]*widget.Editor
-	selectOpen            map[string]bool
-	scrollers             map[string]*layout.List
-	icons                 map[string]*widget.Icon
-	images                map[string]paint.ImageOp
-	statusText            widget.Editor
-	shownStatus           string
-	onAction              ActionHandler
-	invalidate            func()
-	pending               *pendingConfirmation
-	resetScroll           bool
-	outputTailing         bool
-	outputSearch          string
-	outputMatch           int
-	outputEditor          *widget.Editor
-	renderedJobID         string
+	mu                     sync.RWMutex
+	screen                 *uidsl.ScreenDocument
+	data                   any
+	status                 string
+	statusExpires          time.Time
+	theme                  *material.Theme
+	palette                palette
+	themeName              string
+	pendingTheme           *material.Theme
+	pendingPalette         *palette
+	pendingThemeName       string
+	list                   layout.List
+	buttons                map[string]*widget.Clickable
+	disclosures            map[string]bool
+	persistentDisclosures  map[string]bool
+	onDisclosureChange     func(map[string]bool)
+	selectables            map[string]*widget.Selectable
+	textEditors            map[string]*widget.Editor
+	inputEditors           map[string]*widget.Editor
+	selectOpen             map[string]bool
+	scrollers              map[string]*layout.List
+	icons                  map[string]*widget.Icon
+	images                 map[string]paint.ImageOp
+	statusText             widget.Editor
+	shownStatus            string
+	onAction               ActionHandler
+	invalidate             func()
+	pending                *pendingConfirmation
+	resetScroll            bool
+	outputTailing          bool
+	outputSearch           string
+	outputMatch            int
+	outputEditors          map[string]*widget.Editor
+	outputScroller         *layout.List
+	pendingOutputSelection *outputSelection
+	renderedJobID          string
+}
+
+type outputSelection struct {
+	itemID string
+	start  int
+	end    int
+}
+
+type jobOutputSnapshot struct {
+	System    string
+	Outputs   map[string]string
+	Errors    map[string]string
+	ExitCodes map[string]string
 }
 
 type pendingConfirmation struct {
@@ -103,7 +118,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
 		persistentDisclosures: map[string]bool{},
 		selectables:           map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
-		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{},
+		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{}, outputEditors: map[string]*widget.Editor{},
 		icons: iconSet, images: imageSet,
 	}
 	renderer.statusText.ReadOnly = true
@@ -178,6 +193,113 @@ func (r *Renderer) SetRepeatedItemBinding(root, collection, keyField, keyValue, 
 	nextData[root] = nextRoot
 	r.data = nextData
 	return true
+}
+
+func (r *Renderer) ApplyJobOutput(snapshot jobOutputSnapshot) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, ok := r.data.(map[string]any)
+	if !ok {
+		return false
+	}
+	rootData, ok := data["jobDetails"].(map[string]any)
+	if !ok {
+		return false
+	}
+	groups, ok := rootData["output_groups"].([]any)
+	if !ok {
+		return false
+	}
+	nextGroups := make([]any, 0, len(groups))
+	for _, raw := range groups {
+		group, groupOK := raw.(map[string]any)
+		if !groupOK {
+			nextGroups = append(nextGroups, raw)
+			continue
+		}
+		nextGroup := make(map[string]any, len(group)+3)
+		for key, value := range group {
+			nextGroup[key] = value
+		}
+		itemID := fmt.Sprint(group["id"])
+		nextGroup["output"] = snapshot.Outputs[itemID]
+		if value := snapshot.Errors[itemID]; value != "" {
+			nextGroup["error"] = value
+			nextGroup["status"] = "failed"
+			nextGroup["status_label"] = "Failed"
+		}
+		if value := snapshot.ExitCodes[itemID]; value != "" {
+			nextGroup["exit_code"] = value
+		}
+		nextGroups = append(nextGroups, nextGroup)
+	}
+	nextRoot := make(map[string]any, len(rootData)+3)
+	for key, value := range rootData {
+		nextRoot[key] = value
+	}
+	nextRoot["system_output"] = snapshot.System
+	nextRoot["output_groups"] = nextGroups
+	nextRoot["output"] = structuredOutputPlainText(nextRoot, nextGroups, snapshot.System)
+	nextData := make(map[string]any, len(data))
+	for key, value := range data {
+		nextData[key] = value
+	}
+	nextData["jobDetails"] = nextRoot
+	if r.outputSearch != "" {
+		matches := groupedOutputMatches(nextData, r.outputSearch)
+		if len(matches) == 0 {
+			r.outputMatch = 0
+			nextRoot["output_search_count"] = "0/0"
+		} else {
+			if r.outputMatch >= len(matches) {
+				r.outputMatch = 0
+			}
+			nextRoot["output_search_count"] = fmt.Sprintf("%d/%d", r.outputMatch+1, len(matches))
+		}
+	}
+	r.data = nextData
+	return true
+}
+
+func structuredOutputPlainText(root map[string]any, groups []any, systemOutput string) string {
+	var out strings.Builder
+	out.WriteString("ciwi job log\n")
+	out.WriteString("Job execution ID: " + fmt.Sprint(root["id"]) + "\n")
+	out.WriteString("Status: " + fmt.Sprint(root["status"]) + "\n\n")
+	if strings.TrimSpace(systemOutput) != "" {
+		out.WriteString(strings.TrimRight(systemOutput, "\n") + "\n\n")
+	}
+	for _, raw := range groups {
+		group, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		out.WriteString("--------------------------------------------------------------------------------\n")
+		out.WriteString(fmt.Sprint(group["title"]) + "\n")
+		out.WriteString("--------------------------------------------------------------------------------\n")
+		if fmt.Sprint(group["reached"]) != "true" {
+			out.WriteString("Status: Not reached\n")
+		}
+		for _, field := range []struct{ key, label string }{{"started", "Started"}, {"duration", "Duration"}, {"exit_code", "Exit code"}, {"error", "Error"}} {
+			if value := strings.TrimSpace(fmt.Sprint(group[field.key])); value != "" {
+				out.WriteString(field.label + ": " + value + "\n")
+			}
+		}
+		out.WriteString("\n")
+		if fmt.Sprint(group["kind"]) == "phase" {
+			out.WriteString("Details:\n" + fmt.Sprint(group["details"]) + "\n")
+		} else {
+			out.WriteString("YAML literal:\n'''\n" + fmt.Sprint(group["yaml_literal"]) + "\n'''\n\n")
+			out.WriteString("Expanded command:\n'''\n" + fmt.Sprint(group["expanded_command"]) + "\n'''\n")
+		}
+		out.WriteString("\nOutput:\n'''\n")
+		output := fmt.Sprint(group["output"])
+		if output == "" && fmt.Sprint(group["reached"]) != "true" {
+			output = "(step was not reached)"
+		}
+		out.WriteString(output + "\n'''\n\n")
+	}
+	return out.String()
 }
 
 func (r *Renderer) SetStatus(status string) {
@@ -301,7 +423,9 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 			r.outputTailing = false
 			r.outputSearch = ""
 			r.outputMatch = 0
-			r.outputEditor = nil
+			r.outputEditors = map[string]*widget.Editor{}
+			r.outputScroller = nil
+			r.pendingOutputSelection = nil
 		}
 	}
 	backgroundClip := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
@@ -694,11 +818,22 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 				editor.SetCaret(runeCount, runeCount)
 			}
 		}
-		if node.ID == "job-output-text" {
-			r.outputEditor = editor
-			if outputChanged && r.outputSearch != "" {
-				r.selectOutputMatch(text, r.outputSearch, 0, false)
+		outputItemID := ""
+		if node.ID == "job-output-group-text" {
+			if value, resolveErr := uidsl.Resolve(data, "outputGroup.id"); resolveErr == nil {
+				outputItemID = fmt.Sprint(value)
+				r.outputEditors[outputItemID] = editor
+				if outputChanged && r.outputTailing {
+					runeCount := utf8.RuneCountInString(text)
+					editor.SetCaret(runeCount, runeCount)
+				}
 			}
+		} else if node.ID == "job-output-system-text" {
+			r.outputEditors[""] = editor
+		}
+		if pending := r.pendingOutputSelection; pending != nil && pending.itemID == outputItemID && (node.ID == "job-output-group-text" || node.ID == "job-output-system-text") {
+			editor.SetCaret(pending.start, pending.end)
+			r.pendingOutputSelection = nil
 		}
 		style := material.Editor(r.theme, editor, "")
 		style.Font.Typeface = font.Typeface("Go Mono")
@@ -868,9 +1003,6 @@ func (r *Renderer) layoutInput(gtx layout.Context, node uidsl.Node, data any, pa
 	if (changed || submitted) && len(node.Actions) > 0 {
 		inputData := mergeData(data, "input", map[string]any{"value": editor.Text()})
 		r.dispatchFromLayout(gtx, node.Actions[0], inputData)
-		if submitted && r.outputEditor != nil {
-			gtx.Execute(key.FocusCmd{Tag: r.outputEditor})
-		}
 	}
 	return widget.Border{Color: r.palette.border, CornerRadius: 9, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: 8, Right: 11, Bottom: 8, Left: 11}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -893,8 +1025,16 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	}
 	list := r.scrollers[path]
 	if list == nil {
-		list = &layout.List{Axis: layout.Horizontal}
+		axis := layout.Horizontal
+		if node.Layout.Direction == "vertical" {
+			axis = layout.Vertical
+		}
+		list = &layout.List{Axis: axis}
 		r.scrollers[path] = list
+	}
+	if node.ID == "job-output-groups" {
+		r.outputScroller = list
+		list.ScrollToEnd = r.outputTailing
 	}
 	return list.Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
 		itemData := mergeData(data, node.Repeat.As, items[index])
@@ -902,9 +1042,15 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 		if key, resolveErr := uidsl.Resolve(itemData, node.Repeat.Key); resolveErr == nil {
 			itemPath = path + "/" + fmt.Sprint(key)
 		}
-		return layout.Inset{Right: spacing(node.Layout.Gap)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		inset := layout.Inset{Right: spacing(node.Layout.Gap)}
+		component := "row"
+		if list.Axis == layout.Vertical {
+			inset = layout.Inset{Bottom: spacing(node.Layout.Gap)}
+			component = "column"
+		}
+		return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			container := node
-			container.Component = "row"
+			container.Component = component
 			container.Repeat = nil
 			container.Actions = nil
 			return r.layoutChildren(gtx, container, itemData, itemPath)
@@ -1139,6 +1285,22 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 			itemMap, ok := item.(map[string]any)
 			if ok && fmt.Sprint(itemMap["id"]) == arguments["id"] {
 				r.SetRootBinding("jobDetails", "selected_timeline_item", itemMap)
+				if groups, groupErr := resolveItems(data, "jobDetails.output_groups"); groupErr == nil {
+					for index, rawGroup := range groups {
+						group, groupOK := rawGroup.(map[string]any)
+						if !groupOK || fmt.Sprint(group["id"]) != arguments["id"] {
+							continue
+						}
+						stateKey := fmt.Sprint(group["state_key"])
+						if stateKey != "" {
+							r.setDisclosureState(stateKey, true, true)
+						}
+						if r.outputScroller != nil {
+							r.outputScroller.ScrollTo(index)
+						}
+						break
+					}
+				}
 				r.SetStatus("Selected " + fmt.Sprint(itemMap["title"]))
 				r.requestFrame()
 				return
@@ -1148,22 +1310,24 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 		r.outputSearch = arguments["query"]
 		r.outputMatch = 0
 		r.SetRootBinding("jobDetails", "output_search", r.outputSearch)
-		output, _ := uidsl.Resolve(data, "jobDetails.output")
-		r.selectOutputMatch(fmt.Sprint(output), r.outputSearch, 0, true)
+		r.selectGroupedOutputMatch(data, r.outputSearch, 0, true)
 		r.requestFrame()
 	case "find-output":
 		direction := 1
 		if arguments["direction"] == "previous" {
 			direction = -1
 		}
-		output, _ := uidsl.Resolve(data, "jobDetails.output")
 		query := arguments["query"]
 		if query == "" {
 			query = r.outputSearch
 		}
-		r.selectOutputMatch(fmt.Sprint(output), query, direction, true)
-		if r.outputEditor != nil {
-			gtx.Execute(key.FocusCmd{Tag: r.outputEditor})
+		r.selectGroupedOutputMatch(data, query, direction, true)
+		if pending := r.pendingOutputSelection; pending == nil {
+			if matches := groupedOutputMatches(data, query); len(matches) > 0 {
+				if editor := r.outputEditors[matches[r.outputMatch].itemID]; editor != nil {
+					gtx.Execute(key.FocusCmd{Tag: editor})
+				}
+			}
 		}
 		r.requestFrame()
 	case "copy-output":
@@ -1179,9 +1343,8 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 		label := "Tailing: Off"
 		if r.outputTailing {
 			label = "Tailing: On"
-			if r.outputEditor != nil {
-				runeCount := utf8.RuneCountInString(r.outputEditor.Text())
-				r.outputEditor.SetCaret(runeCount, runeCount)
+			if r.outputScroller != nil {
+				r.outputScroller.ScrollToEnd = true
 			}
 		}
 		r.SetRootBinding("jobDetails", "tailing_label", label)
@@ -1205,8 +1368,15 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 	}
 }
 
-func (r *Renderer) selectOutputMatch(output, query string, direction int, selectMatch bool) {
-	matches := outputMatches(output, query)
+type groupedOutputMatch struct {
+	itemID string
+	index  int
+	start  int
+	end    int
+}
+
+func (r *Renderer) selectGroupedOutputMatch(data any, query string, direction int, selectMatch bool) {
+	matches := groupedOutputMatches(data, query)
 	if len(matches) == 0 {
 		r.outputMatch = 0
 		r.SetRootBinding("jobDetails", "output_search_count", "0/0")
@@ -1220,10 +1390,59 @@ func (r *Renderer) selectOutputMatch(output, query string, direction int, select
 		r.outputMatch = 0
 	}
 	r.SetRootBinding("jobDetails", "output_search_count", fmt.Sprintf("%d/%d", r.outputMatch+1, len(matches)))
-	if selectMatch && r.outputEditor != nil {
+	if selectMatch {
 		match := matches[r.outputMatch]
-		r.outputEditor.SetCaret(match[0], match[1])
+		if match.itemID != "" {
+			if groups, err := resolveItems(data, "jobDetails.output_groups"); err == nil {
+				for index, raw := range groups {
+					group, ok := raw.(map[string]any)
+					if !ok || fmt.Sprint(group["id"]) != match.itemID {
+						continue
+					}
+					stateKey := fmt.Sprint(group["state_key"])
+					if stateKey != "" {
+						r.setDisclosureState(stateKey, true, true)
+					}
+					if r.outputScroller != nil {
+						r.outputScroller.ScrollTo(index)
+					}
+					break
+				}
+			}
+		}
+		if editor := r.outputEditors[match.itemID]; editor != nil {
+			editor.SetCaret(match.start, match.end)
+			r.pendingOutputSelection = nil
+		} else {
+			r.pendingOutputSelection = &outputSelection{itemID: match.itemID, start: match.start, end: match.end}
+		}
 	}
+}
+
+func groupedOutputMatches(data any, query string) []groupedOutputMatch {
+	if query == "" {
+		return nil
+	}
+	sources := []struct{ itemID, text string }{}
+	if system, err := uidsl.Resolve(data, "jobDetails.system_output"); err == nil && fmt.Sprint(system) != "" {
+		sources = append(sources, struct{ itemID, text string }{"", fmt.Sprint(system)})
+	}
+	if groups, err := resolveItems(data, "jobDetails.output_groups"); err == nil {
+		for _, raw := range groups {
+			group, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			sources = append(sources, struct{ itemID, text string }{fmt.Sprint(group["id"]), fmt.Sprint(group["output"])})
+		}
+	}
+	var matches []groupedOutputMatch
+	for sourceIndex, source := range sources {
+		for _, match := range outputMatches(source.text, query) {
+			matches = append(matches, groupedOutputMatch{itemID: source.itemID, index: sourceIndex, start: match[0], end: match[1]})
+		}
+	}
+	return matches
 }
 
 func outputMatches(output, query string) [][2]int {

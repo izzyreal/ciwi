@@ -9,24 +9,25 @@ import (
 )
 
 type jobDetailsViewResponse struct {
-	ID          string                    `json:"id"`
-	Title       string                    `json:"title"`
-	Context     string                    `json:"context"`
-	Status      string                    `json:"status"`
-	StatusLabel string                    `json:"status_label"`
-	CurrentStep string                    `json:"current_step"`
-	Agent       string                    `json:"agent"`
-	Mode        string                    `json:"mode"`
-	Created     string                    `json:"created"`
-	Started     string                    `json:"started"`
-	Finished    string                    `json:"finished"`
-	Duration    string                    `json:"duration"`
-	ExitCode    string                    `json:"exit_code"`
-	Error       string                    `json:"error"`
-	CanCancel   bool                      `json:"can_cancel"`
-	CanRerun    bool                      `json:"can_rerun"`
-	Output      string                    `json:"output"`
-	Timeline    []jobTimelineViewResponse `json:"timeline"`
+	ID           string                       `json:"id"`
+	Title        string                       `json:"title"`
+	Context      string                       `json:"context"`
+	Status       string                       `json:"status"`
+	StatusLabel  string                       `json:"status_label"`
+	CurrentStep  string                       `json:"current_step"`
+	Agent        string                       `json:"agent"`
+	Mode         string                       `json:"mode"`
+	Created      string                       `json:"created"`
+	Started      string                       `json:"started"`
+	Finished     string                       `json:"finished"`
+	Duration     string                       `json:"duration"`
+	ExitCode     string                       `json:"exit_code"`
+	Error        string                       `json:"error"`
+	CanCancel    bool                         `json:"can_cancel"`
+	CanRerun     bool                         `json:"can_rerun"`
+	Output       string                       `json:"output"`
+	Timeline     []jobTimelineViewResponse    `json:"timeline"`
+	OutputGroups []jobOutputGroupViewResponse `json:"output_groups"`
 }
 
 type jobTimelineViewResponse struct {
@@ -41,17 +42,39 @@ type jobTimelineViewResponse struct {
 	Error       string `json:"error"`
 }
 
-type jobOutputViewResponse struct {
-	JobExecutionID string                      `json:"job_execution_id"`
-	Lines          []jobOutputLineViewResponse `json:"lines"`
-	NextEventID    int64                       `json:"next_event_id"`
-	HasMore        bool                        `json:"has_more"`
-	Terminal       bool                        `json:"terminal"`
+type jobOutputGroupViewResponse struct {
+	ID              string `json:"id"`
+	StateKey        string `json:"state_key"`
+	Kind            string `json:"kind"`
+	Title           string `json:"title"`
+	CommandSummary  string `json:"command_summary"`
+	Status          string `json:"status"`
+	StatusLabel     string `json:"status_label"`
+	Reached         bool   `json:"reached"`
+	Started         string `json:"started"`
+	Duration        string `json:"duration"`
+	ExitCode        string `json:"exit_code"`
+	Error           string `json:"error"`
+	Details         string `json:"details"`
+	YAMLLiteral     string `json:"yaml_literal"`
+	ExpandedCommand string `json:"expanded_command"`
 }
 
-type jobOutputLineViewResponse struct {
-	EventID int64  `json:"event_id"`
-	Text    string `json:"text"`
+type jobOutputViewResponse struct {
+	JobExecutionID string                       `json:"job_execution_id"`
+	Events         []jobOutputEventViewResponse `json:"events"`
+	NextEventID    int64                        `json:"next_event_id"`
+	HasMore        bool                         `json:"has_more"`
+	Terminal       bool                         `json:"terminal"`
+}
+
+type jobOutputEventViewResponse struct {
+	EventID  int64  `json:"event_id"`
+	Type     string `json:"type"`
+	ItemID   string `json:"item_id"`
+	Text     string `json:"text"`
+	Error    string `json:"error"`
+	ExitCode string `json:"exit_code"`
 }
 
 func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Request) {
@@ -93,12 +116,15 @@ func (s *stateStore) jobOutputViewHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 		return
 	}
-	lines := make([]jobOutputLineViewResponse, 0, len(view.Lines))
-	for _, line := range view.Lines {
-		lines = append(lines, jobOutputLineViewResponse{EventID: line.EventID, Text: line.Text})
+	events := make([]jobOutputEventViewResponse, 0, len(view.Events))
+	for _, event := range view.Events {
+		events = append(events, jobOutputEventViewResponse{
+			EventID: event.EventID, Type: event.Type, ItemID: event.ItemID, Text: event.Text,
+			Error: event.Error, ExitCode: event.ExitCode,
+		})
 	}
 	writeJSON(w, http.StatusOK, jobOutputViewResponse{
-		JobExecutionID: view.JobExecutionID, Lines: lines, NextEventID: view.NextEventID,
+		JobExecutionID: view.JobExecutionID, Events: events, NextEventID: view.NextEventID,
 		HasMore: view.HasMore, Terminal: view.Terminal,
 	})
 }
@@ -112,10 +138,19 @@ func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewRespon
 			ExitCode: item.ExitCode, Error: item.Error,
 		})
 	}
+	outputGroups := make([]jobOutputGroupViewResponse, 0, len(view.OutputGroups))
+	for _, group := range view.OutputGroups {
+		outputGroups = append(outputGroups, jobOutputGroupViewResponse{
+			ID: group.ID, StateKey: group.StateKey, Kind: group.Kind, Title: group.Title,
+			CommandSummary: group.CommandSummary, Status: group.Status, StatusLabel: group.StatusLabel,
+			Reached: group.Reached, Started: group.Started, Duration: group.Duration, ExitCode: group.ExitCode,
+			Error: group.Error, Details: group.Details, YAMLLiteral: group.YAMLLiteral, ExpandedCommand: group.ExpandedCommand,
+		})
+	}
 	return jobDetailsViewResponse{
 		ID: view.ID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
-		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun, Timeline: timeline,
+		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun, Timeline: timeline, OutputGroups: outputGroups,
 	}
 }

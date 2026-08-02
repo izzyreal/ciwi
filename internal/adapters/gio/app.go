@@ -49,8 +49,9 @@ type runOptionsLoadResult struct {
 }
 
 type jobOutputBuffer struct {
-	jobID string
-	text  string
+	jobID   string
+	events  []*cnpv1.JobOutputEvent
+	omitted map[string]bool
 }
 
 const (
@@ -113,24 +114,70 @@ func nextReconnectDelay(current time.Duration) time.Duration {
 
 func (b *jobOutputBuffer) reset(jobID string) {
 	b.jobID = jobID
-	b.text = ""
+	b.events = nil
+	b.omitted = map[string]bool{}
 }
 
 func (b *jobOutputBuffer) append(batch *cnpv1.JobOutputBatch) {
 	if batch == nil || (b.jobID != "" && batch.JobExecutionId != b.jobID) {
 		return
 	}
-	for _, line := range batch.Lines {
-		b.text += line.Text
+	for _, event := range batch.Events {
+		if event == nil {
+			continue
+		}
+		copy := *event
+		if len(copy.Text) > maxNativeOutputBytes {
+			copy.Text = strings.ToValidUTF8(copy.Text[len(copy.Text)-maxNativeOutputBytes:], "")
+			b.omitted[copy.ItemId] = true
+		}
+		b.events = append(b.events, &copy)
 	}
-	if len(b.text) > maxNativeOutputBytes {
-		tail := b.text[len(b.text)-maxNativeOutputBytes:]
-		b.text = "[ciwi native: earlier output omitted]\n" + strings.ToValidUTF8(tail, "")
+	for bufferedOutputBytes(b.events) > maxNativeOutputBytes && len(b.events) > 1 {
+		removed := b.events[0]
+		b.events = b.events[1:]
+		if removed.Text != "" {
+			b.omitted[removed.ItemId] = true
+		}
 	}
 }
 
 func (b *jobOutputBuffer) apply(renderer *Renderer) {
-	renderer.SetRootBinding("jobDetails", "output", b.text)
+	snapshot := jobOutputSnapshot{Outputs: map[string]string{}, Errors: map[string]string{}, ExitCodes: map[string]string{}}
+	for _, event := range b.events {
+		switch event.Type {
+		case "system-message":
+			snapshot.System += event.Text
+		case "output":
+			snapshot.Outputs[event.ItemId] += event.Text
+		case "finished":
+			if event.Error != "" {
+				snapshot.Errors[event.ItemId] = event.Error
+			}
+			if event.ExitCode != "" {
+				snapshot.ExitCodes[event.ItemId] = event.ExitCode
+			}
+		}
+	}
+	const omitted = "[ciwi native: earlier output omitted]\n"
+	for itemID := range b.omitted {
+		if itemID == "" {
+			snapshot.System = omitted + snapshot.System
+		} else {
+			snapshot.Outputs[itemID] = omitted + snapshot.Outputs[itemID]
+		}
+	}
+	renderer.ApplyJobOutput(snapshot)
+}
+
+func bufferedOutputBytes(events []*cnpv1.JobOutputEvent) int {
+	total := 0
+	for _, event := range events {
+		if event != nil {
+			total += len(event.Text)
+		}
+	}
+	return total
 }
 
 func Run(options Options) error {
@@ -1345,9 +1392,30 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 	}
 	if root, ok := data["jobDetails"].(map[string]any); ok {
 		root["output"] = ""
+		root["system_output"] = ""
 		root["output_search"] = ""
 		root["output_search_count"] = "0/0"
 		root["tailing_label"] = "Tailing: Off"
+		if groups, ok := root["output_groups"].([]any); ok {
+			for _, raw := range groups {
+				entry, entryOK := raw.(map[string]any)
+				if !entryOK {
+					continue
+				}
+				entry["output"] = ""
+				entry["is_phase"] = fmt.Sprint(entry["kind"]) == "phase"
+				entry["is_step"] = fmt.Sprint(entry["kind"]) != "phase"
+				entry["empty_output_label"] = "(no output)"
+				if reached, _ := entry["reached"].(bool); !reached {
+					entry["empty_output_label"] = "(step was not reached)"
+				}
+				for _, field := range []string{"details", "yaml_literal", "expanded_command"} {
+					if strings.TrimSpace(fmt.Sprint(entry[field])) == "" {
+						entry[field] = "(none)"
+					}
+				}
+			}
+		}
 		if timeline, ok := root["timeline"].([]any); ok && len(timeline) > 0 {
 			selected := timeline[0]
 			for _, item := range timeline {

@@ -65,10 +65,14 @@ type JobTimelineItem struct {
 	Description string
 	Index       int
 	Total       int
+	Reached     bool
 	Status      string
+	StartedUTC  time.Time
 	DurationMS  int64
 	ExitCode    *int
 	Error       string
+	YAMLLiteral string
+	Command     string
 }
 
 type JobOutputBatch struct {
@@ -88,6 +92,7 @@ const (
 type JobOutputEvent struct {
 	ID        int64
 	Type      string
+	ItemID    string
 	Message   string
 	Output    string
 	Error     string

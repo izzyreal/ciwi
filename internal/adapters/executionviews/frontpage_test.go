@@ -81,7 +81,7 @@ func TestRepositoryBoundsOutputPageByPayloadSize(t *testing.T) {
 func TestRepositoryBuildsTransportNeutralJobTimeline(t *testing.T) {
 	now := time.Now().UTC()
 	exitCode := 1
-	step := protocol.JobStepPlanItem{Index: 1, Total: 2, Name: "Compile"}
+	step := protocol.JobStepPlanItem{Index: 1, Total: 2, Name: "Compile", YAMLLiteral: "run: go build ./...", Script: "go build ./..."}
 	repository := NewRepository(executionStoreStub{
 		jobs: []protocol.JobExecution{{
 			ID: "job-1", Status: "failed", CreatedUTC: now, StartedUTC: now.Add(time.Second),
@@ -89,7 +89,7 @@ func TestRepositoryBuildsTransportNeutralJobTimeline(t *testing.T) {
 			Metadata: map[string]string{"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "macos", "dry_run": "1"},
 		}},
 		events: map[string][]protocol.JobExecutionEvent{"job-1": {
-			{Type: protocol.JobExecutionEventTypeStepStarted, Step: &step},
+			{Type: protocol.JobExecutionEventTypeStepStarted, TimestampUTC: now.Add(time.Second), Step: &step},
 			{Type: protocol.JobExecutionEventTypeStepFinished, Step: &step, ExitCode: &exitCode, Error: "compile failed", DurationMS: 1200},
 		}},
 	}, 40)
@@ -102,6 +102,9 @@ func TestRepositoryBuildsTransportNeutralJobTimeline(t *testing.T) {
 	}
 	if len(details.Timeline) < 4 || details.Timeline[2].Status != "failed" || details.Timeline[3].Status != "not reached" {
 		t.Fatalf("timeline = %+v", details.Timeline)
+	}
+	if !details.Timeline[2].Reached || details.Timeline[2].StartedUTC.IsZero() || details.Timeline[2].YAMLLiteral != "run: go build ./..." || details.Timeline[2].Command != "go build ./..." || details.Timeline[3].Reached {
+		t.Fatalf("timeline details = %+v", details.Timeline)
 	}
 }
 

@@ -12,23 +12,24 @@ import (
 )
 
 type JobDetailsView struct {
-	ID          string
-	Title       string
-	Context     string
-	Status      string
-	StatusLabel string
-	CurrentStep string
-	Agent       string
-	Mode        string
-	Created     string
-	Started     string
-	Finished    string
-	Duration    string
-	ExitCode    string
-	Error       string
-	CanCancel   bool
-	CanRerun    bool
-	Timeline    []JobTimelineView
+	ID           string
+	Title        string
+	Context      string
+	Status       string
+	StatusLabel  string
+	CurrentStep  string
+	Agent        string
+	Mode         string
+	Created      string
+	Started      string
+	Finished     string
+	Duration     string
+	ExitCode     string
+	Error        string
+	CanCancel    bool
+	CanRerun     bool
+	Timeline     []JobTimelineView
+	OutputGroups []JobOutputGroupView
 }
 
 type JobTimelineView struct {
@@ -43,17 +44,39 @@ type JobTimelineView struct {
 	Error       string
 }
 
+type JobOutputGroupView struct {
+	ID              string
+	StateKey        string
+	Kind            string
+	Title           string
+	CommandSummary  string
+	Status          string
+	StatusLabel     string
+	Reached         bool
+	Started         string
+	Duration        string
+	ExitCode        string
+	Error           string
+	Details         string
+	YAMLLiteral     string
+	ExpandedCommand string
+}
+
 type JobOutputView struct {
 	JobExecutionID string
-	Lines          []JobOutputLineView
+	Events         []JobOutputEventView
 	NextEventID    int64
 	HasMore        bool
 	Terminal       bool
 }
 
-type JobOutputLineView struct {
-	EventID int64
-	Text    string
+type JobOutputEventView struct {
+	EventID  int64
+	Type     string
+	ItemID   string
+	Text     string
+	Error    string
+	ExitCode string
 }
 
 type JobDetailsQueries struct {
@@ -78,12 +101,15 @@ func (q *JobDetailsQueries) GetJobOutputView(ctx context.Context, jobID string, 
 	view := JobOutputView{
 		JobExecutionID: batch.JobExecutionID, NextEventID: batch.NextEventID,
 		HasMore: batch.HasMore, Terminal: batch.Terminal,
-		Lines: make([]JobOutputLineView, 0, len(batch.Events)),
+		Events: make([]JobOutputEventView, 0, len(batch.Events)),
 	}
 	for _, event := range batch.Events {
-		text := renderOutputEvent(event)
-		if text != "" {
-			view.Lines = append(view.Lines, JobOutputLineView{EventID: event.ID, Text: text})
+		text := outputEventText(event)
+		if event.Type != "" {
+			view.Events = append(view.Events, JobOutputEventView{
+				EventID: event.ID, Type: event.Type, ItemID: event.ItemID, Text: text,
+				Error: strings.TrimSpace(event.Error), ExitCode: formatExitCode(event.ExitCode),
+			})
 		}
 	}
 	return view, nil
@@ -114,20 +140,44 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 	if !details.StartedUTC.IsZero() && !details.FinishedUTC.IsZero() && !details.FinishedUTC.Before(details.StartedUTC) {
 		view.Duration = formatDuration(details.FinishedUTC.Sub(details.StartedUTC))
 	}
+	phaseTotal, stepTotal := 0, 0
+	for _, item := range details.Timeline {
+		if item.Kind == "phase" {
+			phaseTotal++
+		} else {
+			stepTotal++
+		}
+	}
+	phaseIndex, stepIndex := 0, 0
 	view.Timeline = make([]JobTimelineView, 0, len(details.Timeline))
+	view.OutputGroups = make([]JobOutputGroupView, 0, len(details.Timeline))
 	for _, item := range details.Timeline {
 		prefix := "Job step"
+		categoryIndex, categoryTotal := stepIndex+1, stepTotal
 		if item.Kind == "phase" {
 			prefix = "Ciwi phase"
+			phaseIndex++
+			categoryIndex, categoryTotal = phaseIndex, phaseTotal
+		} else {
+			stepIndex++
+			categoryIndex = stepIndex
 		}
-		title := fmt.Sprintf("%s %d/%d", prefix, item.Index, item.Total)
+		title := fmt.Sprintf("%s %d/%d", prefix, categoryIndex, categoryTotal)
 		if name := strings.TrimSpace(item.Name); name != "" {
 			title += ": " + name
 		}
+		reached := item.Reached || (item.Status != "" && item.Status != "pending" && item.Status != "not reached")
 		view.Timeline = append(view.Timeline, JobTimelineView{
 			ID: item.ID, Kind: item.Kind, Title: title, Description: item.Description,
 			Status: item.Status, StatusLabel: humanStatus(item.Status), Duration: formatDurationMS(item.DurationMS),
 			ExitCode: formatExitCode(item.ExitCode), Error: item.Error,
+		})
+		view.OutputGroups = append(view.OutputGroups, JobOutputGroupView{
+			ID: item.ID, StateKey: "job-output:" + details.ID + ":" + item.ID, Kind: item.Kind, Title: title,
+			CommandSummary: strings.Join(strings.Fields(item.Command), " "), Status: item.Status,
+			StatusLabel: humanStatus(item.Status), Reached: reached, Started: formatTimestamp(item.StartedUTC),
+			Duration: formatDurationMS(item.DurationMS), ExitCode: formatExitCode(item.ExitCode), Error: item.Error,
+			Details: item.Description, YAMLLiteral: item.YAMLLiteral, ExpandedCommand: item.Command,
 		})
 	}
 	return view
@@ -214,7 +264,7 @@ func firstNonEmpty(values ...string) string {
 	return "execution"
 }
 
-func renderOutputEvent(event domain.JobOutputEvent) string {
+func outputEventText(event domain.JobOutputEvent) string {
 	text := ""
 	switch event.Type {
 	case domain.JobOutputEventSystemMessage:
@@ -222,40 +272,13 @@ func renderOutputEvent(event domain.JobOutputEvent) string {
 	case domain.JobOutputEventOutput:
 		text = event.Output
 	case domain.JobOutputEventFinished:
-		if strings.TrimSpace(event.Error) == "" && (event.ExitCode == nil || *event.ExitCode == 0) {
-			return ""
-		}
-		kind := event.ItemKind
-		if kind == "" {
-			kind = "execution item"
-		}
-		title := outputItemTitle(event)
-		text = fmt.Sprintf("[%s] failed: %s", kind, title)
-		if errText := strings.TrimSpace(event.Error); errText != "" {
-			text += " (" + errText + ")"
-		} else if event.ExitCode != nil {
-			text += fmt.Sprintf(" (exit=%d)", *event.ExitCode)
-		}
+		return ""
 	}
 	text = cleanOutputText(text)
 	if text != "" && !strings.HasSuffix(text, "\n") {
 		text += "\n"
 	}
 	return text
-}
-
-func outputItemTitle(event domain.JobOutputEvent) string {
-	name := strings.Join(strings.Fields(event.ItemName), " ")
-	if event.ItemIndex > 0 && event.ItemTotal > 0 {
-		if name == "" {
-			return fmt.Sprintf("%d/%d", event.ItemIndex, event.ItemTotal)
-		}
-		return fmt.Sprintf("%d/%d: %s", event.ItemIndex, event.ItemTotal, name)
-	}
-	if name != "" {
-		return name
-	}
-	return "unknown"
 }
 
 var outputANSIEscapeRE = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]`)

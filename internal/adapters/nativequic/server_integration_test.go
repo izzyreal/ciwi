@@ -82,7 +82,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if jobDetails.Title != "Job: compile" || len(jobDetails.Timeline) != 1 || jobDetails.Timeline[0].Status != "succeeded" || !jobDetails.CanRerun {
+	if jobDetails.Title != "Job: compile" || len(jobDetails.Timeline) != 1 || jobDetails.Timeline[0].Status != "succeeded" || len(jobDetails.OutputGroups) != 1 || jobDetails.OutputGroups[0].ExpandedCommand != "go build ./..." || !jobDetails.CanRerun {
 		t.Fatalf("job details = %#v", jobDetails)
 	}
 	output, outputErrors, err := client.WatchJobOutput(ctx, "job-1", 0)
@@ -90,7 +90,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		t.Fatal(err)
 	}
 	batch := receiveOutput(t, output, outputErrors)
-	if !batch.Terminal || batch.NextEventId != 1 || len(batch.Lines) != 1 || batch.Lines[0].Text != "compiled\n" {
+	if !batch.Terminal || batch.NextEventId != 1 || len(batch.Events) != 1 || batch.Events[0].Text != "compiled\n" {
 		t.Fatalf("job output = %#v", batch)
 	}
 
@@ -233,13 +233,13 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	initial := receiveOutput(t, batches, errorsOut)
-	if initial.Terminal || initial.NextEventId != 0 || len(initial.Lines) != 0 {
+	if initial.Terminal || initial.NextEventId != 0 || len(initial.Events) != 0 {
 		t.Fatalf("initial output = %#v", initial)
 	}
 	jobDetails.setReady()
 	changes.Publish(application.ChangeQueue)
 	next := receiveOutput(t, batches, errorsOut)
-	if !next.Terminal || next.NextEventId != 2 || len(next.Lines) != 1 || next.Lines[0].Text != "next\n" {
+	if !next.Terminal || next.NextEventId != 2 || len(next.Events) != 1 || next.Events[0].Text != "next\n" {
 		t.Fatalf("next output = %#v", next)
 	}
 }
@@ -400,8 +400,9 @@ type jobDetailsService struct{}
 func (jobDetailsService) GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error) {
 	return presentation.JobDetailsView{
 		ID: "job-1", Title: "Job: compile", Status: "succeeded", StatusLabel: "Succeeded",
-		CanRerun: true,
-		Timeline: []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
+		CanRerun:     true,
+		Timeline:     []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
+		OutputGroups: []presentation.JobOutputGroupView{{ID: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded", Reached: true, YAMLLiteral: "run: go build ./...", ExpandedCommand: "go build ./..."}},
 	}, nil
 }
 
@@ -428,14 +429,14 @@ func (s *streamingJobDetailsService) GetJobOutputView(context.Context, string, i
 	}
 	return presentation.JobOutputView{
 		JobExecutionID: "job-running", NextEventID: 2, Terminal: true,
-		Lines: []presentation.JobOutputLineView{{EventID: 2, Text: "next\n"}},
+		Events: []presentation.JobOutputEventView{{EventID: 2, Type: "output", ItemID: "step:1", Text: "next\n"}},
 	}, nil
 }
 
 func (jobDetailsService) GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error) {
 	return presentation.JobOutputView{
 		JobExecutionID: "job-1", NextEventID: 1, Terminal: true,
-		Lines: []presentation.JobOutputLineView{{EventID: 1, Text: "compiled\n"}},
+		Events: []presentation.JobOutputEventView{{EventID: 1, Type: "output", ItemID: "step:1", Text: "compiled\n"}},
 	}, nil
 }
 
