@@ -84,6 +84,14 @@
     });
   }
 
+  function decorateProjectChains(projects) {
+	(Array.isArray(projects) ? projects : []).forEach(project => {
+	  (Array.isArray(project.pipeline_chains) ? project.pipeline_chains : []).forEach(chain => {
+		chain.sequence_label = (Array.isArray(chain.pipelines) ? chain.pipelines : []).join(' → ');
+	  });
+	});
+  }
+
   function withWebOverride(node) {
     const override = node.overrides && node.overrides.web;
     if (!override) return node;
@@ -178,11 +186,20 @@
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
             method: 'POST',
             headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
-            body: '{}',
+            body: JSON.stringify({dry_run: args.dryRun === 'true'}),
           });
           if (!response.ok) throw new Error(await response.text());
           element.textContent = 'Queued';
         }
+		else if (action.command === 'run-chain') {
+		  const path = '/api/v1/projects/' + encodeURIComponent(args.projectId) + '/pipeline-chains/' + encodeURIComponent(args.chainId) + '/run';
+		  const response = await fetch(path, {
+		    method: 'POST', headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+		    body: JSON.stringify({dry_run: args.dryRun === 'true'}),
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  element.textContent = 'Queued';
+		}
 		else if (action.command === 'clear-queue') {
 		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
 		  if (!response.ok) throw new Error(await response.text());
@@ -434,6 +451,7 @@
       applyContractTheme(themes);
       let view = responseView;
       if (!projectMatch && !jobMatch && !settingsMatch) {
+		decorateProjectChains(view.projects);
         decorateExecutionCards(view.queued_executions, true);
         decorateExecutionCards(view.history_executions, false);
       }

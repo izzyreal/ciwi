@@ -127,6 +127,31 @@ func (s *stateStore) pipelineChainActionHandler(w http.ResponseWriter, r *http.R
 		http.NotFound(w, r)
 		return
 	}
+	if action == "run" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req protocol.RunPipelineSelectionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		resp, err := s.app().pipelineChains.RunPipelineChain(r.Context(), application.RunPipelineChainRequest{
+			ProjectID: projectID, ChainID: chainID, PipelineJobID: req.PipelineJobID, MatrixName: req.MatrixName,
+			MatrixIndex: req.MatrixIndex, DryRun: req.DryRun, SourceRef: req.SourceRef, AgentID: req.AgentID,
+			ExecutionMode: req.ExecutionMode, IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusCreated, protocol.RunPipelineResponse{
+			ProjectName: resp.ProjectName, PipelineChainID: resp.ChainID, PipelineChainName: resp.ChainName, Enqueued: resp.Enqueued,
+			JobExecutionIDs: append([]string(nil), resp.JobExecutionIDs...),
+		})
+		return
+	}
 	ch, err := s.pipelineStore().GetPipelineChain(projectID, chainID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -152,21 +177,6 @@ func (s *stateStore) pipelineChainActionHandler(w http.ResponseWriter, r *http.R
 		s.pipelineChainDryRunPreviewHandler(w, ch, r)
 		return
 	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req protocol.RunPipelineSelectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	resp, err := s.enqueuePersistedPipelineChain(ch, &req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineChain, selection *protocol.RunPipelineSelectionRequest) (protocol.RunPipelineResponse, error) {

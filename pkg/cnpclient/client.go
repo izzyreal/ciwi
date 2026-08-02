@@ -165,6 +165,20 @@ func (c *Client) RunPipeline(ctx context.Context, request *cnpv1.RunPipelineRequ
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) RunPipelineChain(ctx context.Context, request *cnpv1.RunPipelineChainRequest, idempotencyKey string) (*cnpv1.RunPipelineChainResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_RunPipelineChain{RunPipelineChain: request}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetRunPipelineChain(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) ClearExecutionQueue(ctx context.Context, idempotencyKey string) (*cnpv1.ClearExecutionQueueResult, error) {
 	if idempotencyKey == "" {
 		idempotencyKey = uuid.NewString()

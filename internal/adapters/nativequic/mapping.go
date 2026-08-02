@@ -1,6 +1,8 @@
 package nativequic
 
 import (
+	"strings"
+
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
@@ -91,6 +93,7 @@ func projectsToProto(projects []domain.Project) []*cnpv1.ProjectSummary {
 			chains = append(chains, &cnpv1.PipelineChainSummary{
 				Id: chain.ID, Name: chain.Name, Pipelines: append([]string(nil), chain.Pipelines...),
 				SupportsDryRun: chain.SupportsDryRun, VersionPipelineId: chain.VersionPipelineID,
+				SequenceLabel: strings.Join(chain.Pipelines, " → "),
 			})
 		}
 		updated := int64(0)
@@ -142,6 +145,28 @@ func runPipelineRequestFromProto(request *cnpv1.RunPipelineRequest, idempotencyK
 		return application.RunPipelineRequest{IdempotencyKey: idempotencyKey}
 	}
 	result := application.RunPipelineRequest{PipelineDBID: request.PipelineDbId, IdempotencyKey: idempotencyKey}
+	if selection := request.Selection; selection != nil {
+		result.PipelineJobID = selection.PipelineJobId
+		result.MatrixName = selection.MatrixName
+		if selection.MatrixIndex != nil {
+			index := int(selection.GetMatrixIndex())
+			result.MatrixIndex = &index
+		}
+		result.DryRun = selection.DryRun
+		result.SourceRef = selection.SourceRef
+		result.AgentID = selection.AgentId
+		result.ExecutionMode = selection.ExecutionMode
+	}
+	return result
+}
+
+func runPipelineChainRequestFromProto(request *cnpv1.RunPipelineChainRequest, idempotencyKey string) application.RunPipelineChainRequest {
+	if request == nil {
+		return application.RunPipelineChainRequest{IdempotencyKey: idempotencyKey}
+	}
+	result := application.RunPipelineChainRequest{
+		ProjectID: request.ProjectId, ChainID: request.ChainId, IdempotencyKey: idempotencyKey,
+	}
 	if selection := request.Selection; selection != nil {
 		result.PipelineJobID = selection.PipelineJobId
 		result.MatrixName = selection.MatrixName

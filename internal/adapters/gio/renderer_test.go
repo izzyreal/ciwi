@@ -36,7 +36,8 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
 		Projects: []*cnpv1.ProjectSummary{{
 			Id: 1, Name: "ciwi", RepoUrl: "https://github.com/izzyreal/ciwi",
-			Pipelines: []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build"}},
+			Pipelines:      []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build", SupportsDryRun: true}},
+			PipelineChains: []*cnpv1.PipelineChainSummary{{Id: "build+release", Name: "Build and release", SequenceLabel: "build → release", SupportsDryRun: true}},
 		}},
 	})
 	if err != nil {
@@ -49,14 +50,43 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
 	var foundTitle bool
+	var foundChain bool
 	for _, selectable := range renderer.selectables {
 		if selectable.Text() == "ciwi v0.2.0" {
 			foundTitle = true
-			break
+		}
+		if selectable.Text() == "Chain: Build and release" {
+			foundChain = true
 		}
 	}
 	if !foundTitle {
 		t.Fatal("front-page title is not rendered as selectable text")
+	}
+	if !foundChain {
+		t.Fatal("front-page pipeline chain is not rendered")
+	}
+	buttonsWithDryRun := len(renderer.buttons)
+	view := &cnpv1.FrontPageView{
+		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
+		Projects: []*cnpv1.ProjectSummary{{
+			Id: 1, Name: "ciwi", RepoUrl: "https://github.com/izzyreal/ciwi",
+			Pipelines:      []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build"}},
+			PipelineChains: []*cnpv1.PipelineChainSummary{{Id: "build+release", Name: "Build and release", SequenceLabel: "build → release"}},
+		}},
+	}
+	withoutDryRun, err := frontPageBindingData(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison.SetData(withoutDryRun)
+	operations.Reset()
+	comparison.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if got := buttonsWithDryRun - len(comparison.buttons); got != 2 {
+		t.Fatalf("dry-run controls added %d buttons, want one pipeline and one chain button", got)
 	}
 	if _, ok := renderer.images["ciwi-logo"]; !ok {
 		t.Fatal("embedded ciwi logo is unavailable to the native renderer")

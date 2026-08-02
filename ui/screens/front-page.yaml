@@ -131,6 +131,68 @@ screen:
                       direction: vertical
                       gap: small
                     repeat:
+                      source: project.pipeline_chains
+                      as: chain
+                      key: chain.id
+                    children:
+                      - component: row
+                        layout:
+                          direction: horizontal
+                          gap: medium
+                          align: center
+                        children:
+                          - component: column
+                            layout:
+                              direction: vertical
+                              gap: small
+                              grow: true
+                            children:
+                              - component: text
+                                text:
+                                  template: "Chain: {{chain.name}}"
+                                style:
+                                  role: body
+                                  emphasis: strong
+                              - component: text
+                                text:
+                                  binding: chain.sequence_label
+                                style:
+                                  role: body
+                                  tone: muted
+                          - component: button
+                            text:
+                              literal: Run Chain
+                            icon: player-play
+                            actions:
+                              - on: activate
+                                command: run-chain
+                                arguments:
+                                  projectId: "{{project.id}}"
+                                  chainId: "{{chain.id}}"
+                                confirm:
+                                  title: Run pipeline chain
+                                  message: Queues every pipeline in this chain as one independent run. It does not interrupt jobs that are already queued or running.
+                          - component: button
+                            text:
+                              literal: Dry Run
+                            icon: player-play
+                            visible:
+                              binding: chain.supports_dry_run
+                            actions:
+                              - on: activate
+                                command: run-chain
+                                arguments:
+                                  projectId: "{{project.id}}"
+                                  chainId: "{{chain.id}}"
+                                  dryRun: "true"
+                                confirm:
+                                  title: Dry-run pipeline chain
+                                  message: Queues a dry-run execution of every pipeline in this chain. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
+                  - component: list
+                    layout:
+                      direction: vertical
+                      gap: small
+                    repeat:
                       source: project.pipelines
                       as: pipeline
                       key: pipeline.id
@@ -162,6 +224,21 @@ screen:
                                 confirm:
                                   title: Run pipeline
                                   message: This adds a new execution without interrupting jobs that are already queued or running.
+                          - component: button
+                            text:
+                              literal: Dry Run
+                            icon: player-play
+                            visible:
+                              binding: pipeline.supports_dry_run
+                            actions:
+                              - on: activate
+                                command: run-pipeline
+                                arguments:
+                                  pipelineDbId: "{{pipeline.id}}"
+                                  dryRun: "true"
+                                confirm:
+                                  title: Dry-run pipeline
+                                  message: Queues a dry-run execution of this pipeline. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
         overrides:
           gio:
             layout:

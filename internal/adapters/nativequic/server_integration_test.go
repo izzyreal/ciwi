@@ -27,6 +27,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		ProjectDetails:    projectDetailsService{},
 		JobDetails:        jobDetailsService{},
 		Pipelines:         pipelines,
+		PipelineChains:    pipelines,
 		ExecutionCommands: executions,
 		ExecutionControls: executions,
 		Changes:           changes,
@@ -62,7 +63,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if frontPage.Server.Version != "v0.2.0" || len(frontPage.Projects) != 1 || len(frontPage.QueuedExecutions) != 1 {
+	if frontPage.Server.Version != "v0.2.0" || len(frontPage.Projects) != 1 || len(frontPage.QueuedExecutions) != 1 || frontPage.Projects[0].PipelineChains[0].SequenceLabel != "build → release" {
 		t.Fatalf("front page = %#v", frontPage)
 	}
 	projectDetails, err := client.GetProjectDetails(ctx, 7)
@@ -102,6 +103,16 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if request.PipelineDBID != 42 || request.PipelineJobID != "linux" || !request.DryRun || request.IdempotencyKey != "stable-command-key" {
 		t.Fatalf("mapped request = %#v", request)
 	}
+	chainResult, err := client.RunPipelineChain(ctx, &cnpv1.RunPipelineChainRequest{
+		ProjectId: 7, ChainId: "build+release", Selection: &cnpv1.RunPipelineSelection{DryRun: true},
+	}, "stable-chain-key")
+	if err != nil || chainResult.Enqueued != 2 {
+		t.Fatalf("chain result = %#v, %v", chainResult, err)
+	}
+	chainRequest := pipelines.lastChainRequest()
+	if chainRequest.ProjectID != 7 || chainRequest.ChainID != "build+release" || !chainRequest.DryRun || chainRequest.IdempotencyKey != "stable-chain-key" {
+		t.Fatalf("mapped chain request = %#v", chainRequest)
+	}
 	cleared, err := client.ClearExecutionQueue(ctx, "clear-command-key")
 	if err != nil || cleared.Cleared != 2 {
 		t.Fatalf("clear queue = %#v, %v", cleared, err)
@@ -133,7 +144,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -165,7 +176,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
-		Pipelines: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -193,7 +204,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: failingPipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
+		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -358,8 +369,16 @@ func testProjects() []domain.Project {
 }
 
 type pipelineService struct {
-	mu      sync.Mutex
-	request application.RunPipelineRequest
+	mu           sync.Mutex
+	request      application.RunPipelineRequest
+	chainRequest application.RunPipelineChainRequest
+}
+
+func (s *pipelineService) RunPipelineChain(_ context.Context, request application.RunPipelineChainRequest) (application.RunPipelineChainResult, error) {
+	s.mu.Lock()
+	s.chainRequest = request
+	s.mu.Unlock()
+	return application.RunPipelineChainResult{ProjectName: "ciwi", ChainID: request.ChainID, ChainName: "Build and release", Enqueued: 2, JobExecutionIDs: []string{"job-1", "job-2"}}, nil
 }
 
 func (s *pipelineService) RunPipeline(_ context.Context, request application.RunPipelineRequest) (application.RunPipelineResult, error) {
@@ -373,6 +392,12 @@ func (s *pipelineService) lastRequest() application.RunPipelineRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.request
+}
+
+func (s *pipelineService) lastChainRequest() application.RunPipelineChainRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.chainRequest
 }
 
 type failingPipelineService struct{}

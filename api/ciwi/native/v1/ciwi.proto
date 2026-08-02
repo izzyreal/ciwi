@@ -64,6 +64,7 @@ message PipelineChainSummary {
   repeated string pipelines = 3;
   bool supports_dry_run = 4;
   int64 version_pipeline_id = 5;
+  string sequence_label = 6;
 }
 
 message ProjectSummary {
@@ -254,6 +255,20 @@ message RunPipelineResult {
   repeated string job_execution_ids = 4;
 }
 
+message RunPipelineChainRequest {
+  int64 project_id = 1;
+  string chain_id = 2;
+  RunPipelineSelection selection = 3;
+}
+
+message RunPipelineChainResult {
+  string project_name = 1;
+  string chain_id = 2;
+  uint32 enqueued = 3;
+  repeated string job_execution_ids = 4;
+  string chain_name = 5;
+}
+
 message ClearExecutionQueueRequest {}
 
 message ClearExecutionQueueResult {
@@ -305,6 +320,7 @@ message Request {
     FlushExecutionHistoryRequest flush_execution_history = 19;
     ControlExecutionRequest cancel_execution = 20;
     ControlExecutionRequest rerun_execution = 21;
+    RunPipelineChainRequest run_pipeline_chain = 22;
   }
 }
 
@@ -324,6 +340,7 @@ message Response {
     FlushExecutionHistoryResult flush_execution_history = 20;
     CancelExecutionResult cancel_execution = 21;
     RerunExecutionResult rerun_execution = 22;
+    RunPipelineChainResult run_pipeline_chain = 23;
   }
 }
 

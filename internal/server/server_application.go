@@ -20,6 +20,7 @@ type serverApplication struct {
 	server            *application.ServerQueries
 	projects          *application.ProjectQueries
 	pipelines         *application.PipelineCommands
+	pipelineChains    *application.PipelineChainCommands
 	executions        *application.ExecutionQueries
 	executionCommands *application.ExecutionCommands
 	executionControls *application.ExecutionControlCommands
@@ -55,6 +56,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 			receipts,
 			changes,
 		),
+		pipelineChains:    application.NewPipelineChainCommands(pipelineChainRunnerAdapter{state: s}, receipts, changes),
 		executions:        executionQueries,
 		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
 		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),
@@ -63,6 +65,32 @@ func newServerApplication(s *stateStore) *serverApplication {
 		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),
 		changes:           changes,
 	}
+}
+
+type pipelineChainRunnerAdapter struct {
+	state *stateStore
+}
+
+func (a pipelineChainRunnerAdapter) RunPipelineChain(ctx context.Context, request application.RunPipelineChainRequest) (application.RunPipelineChainResult, error) {
+	if err := ctx.Err(); err != nil {
+		return application.RunPipelineChainResult{}, err
+	}
+	chain, err := a.state.pipelineStore().GetPipelineChain(request.ProjectID, request.ChainID)
+	if err != nil {
+		return application.RunPipelineChainResult{}, application.NewError(application.ErrorNotFound, err.Error(), err)
+	}
+	selection := &protocol.RunPipelineSelectionRequest{
+		PipelineJobID: request.PipelineJobID, MatrixName: request.MatrixName, MatrixIndex: request.MatrixIndex,
+		DryRun: request.DryRun, SourceRef: request.SourceRef, AgentID: request.AgentID, ExecutionMode: request.ExecutionMode,
+	}
+	result, err := a.state.enqueuePersistedPipelineChain(chain, selection)
+	if err != nil {
+		return application.RunPipelineChainResult{}, application.NewError(application.ErrorInvalidArgument, err.Error(), err)
+	}
+	return application.RunPipelineChainResult{
+		ProjectName: result.ProjectName, ChainID: result.PipelineChainID, ChainName: result.PipelineChainName, Enqueued: result.Enqueued,
+		JobExecutionIDs: append([]string(nil), result.JobExecutionIDs...),
+	}, nil
 }
 
 type executionControllerAdapter struct {

@@ -277,15 +277,54 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetStatus("Invalid pipeline identifier")
 			return
 		}
-		renderer.SetStatus("Queuing pipeline…")
+		dryRun := command.arguments["dryRun"] == "true"
+		if dryRun {
+			renderer.SetStatus("Queuing pipeline dry run…")
+		} else {
+			renderer.SetStatus("Queuing pipeline…")
+		}
 		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.RunPipeline(commandCtx, &cnpv1.RunPipelineRequest{PipelineDbId: pipelineID}, "")
+		result, err := client.RunPipeline(commandCtx, &cnpv1.RunPipelineRequest{
+			PipelineDbId: pipelineID, Selection: &cnpv1.RunPipelineSelection{DryRun: dryRun},
+		}, "")
 		cancel()
 		if err != nil {
 			renderer.SetStatus("Run failed: " + err.Error())
 			return
 		}
-		renderer.SetStatus(fmt.Sprintf("Queued %d execution(s) for %s", result.Enqueued, result.PipelineId))
+		if dryRun {
+			renderer.SetStatus(fmt.Sprintf("Queued %d dry-run execution(s) for %s", result.Enqueued, result.PipelineId))
+		} else {
+			renderer.SetStatus(fmt.Sprintf("Queued %d execution(s) for %s", result.Enqueued, result.PipelineId))
+		}
+	case "run-chain":
+		projectID, err := strconv.ParseInt(command.arguments["projectId"], 10, 64)
+		chainID := strings.TrimSpace(command.arguments["chainId"])
+		if err != nil || projectID <= 0 || chainID == "" {
+			renderer.SetStatus("Invalid pipeline chain identifier")
+			return
+		}
+		dryRun := command.arguments["dryRun"] == "true"
+		if dryRun {
+			renderer.SetStatus("Queuing pipeline chain dry run…")
+		} else {
+			renderer.SetStatus("Queuing pipeline chain…")
+		}
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := client.RunPipelineChain(commandCtx, &cnpv1.RunPipelineChainRequest{
+			ProjectId: projectID, ChainId: chainID,
+			Selection: &cnpv1.RunPipelineSelection{DryRun: dryRun},
+		}, "")
+		cancel()
+		if err != nil {
+			renderer.SetStatus("Run chain failed: " + err.Error())
+			return
+		}
+		if dryRun {
+			renderer.SetStatus(fmt.Sprintf("Queued %d dry-run execution(s) for chain %s", result.Enqueued, result.ChainId))
+		} else {
+			renderer.SetStatus(fmt.Sprintf("Queued %d execution(s) for chain %s", result.Enqueued, result.ChainId))
+		}
 	case "clear-queue":
 		renderer.SetStatus("Clearing queued executions…")
 		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
