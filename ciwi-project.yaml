@@ -71,11 +71,80 @@ pipelines:
             run: mkdir -p dist
           - name: Build ciwi binary
             run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
+      - id: desktop-macos-unsigned
+        needs:
+          - unit-tests
+        runs_on:
+          executor: script
+          shell: posix
+          os: darwin
+          arch: arm64
+        go_cache: {}
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
+            xcodebuild: "*"
+            plistbuddy: "*"
+        timeout_seconds: 1200
+        artifacts:
+          - dist/desktop-macos-unsigned/**
+        steps:
+          - name: Prepare macOS desktop output
+            run: rm -rf dist/desktop-macos-unsigned && mkdir -p dist/desktop-macos-unsigned
+          - name: Build universal macOS desktop app
+            run: sh packaging/build-macos-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-macos-unsigned
+      - id: desktop-windows-amd64
+        needs:
+          - unit-tests
+        runs_on:
+          executor: script
+          shell: powershell
+          os: windows
+          arch: amd64
+        go_cache: {}
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
+            wix: ">=6.0.0"
+        timeout_seconds: 1800
+        artifacts:
+          - dist/Ciwi-Client-windows-Setup-x86_64-v*.exe
+        steps:
+          - name: Prepare Windows desktop output
+            run: New-Item -ItemType Directory -Force -Path dist | Out-Null
+          - name: Build Windows desktop installer
+            run: $version = (Get-Content VERSION -Raw).Trim(); & powershell -ExecutionPolicy Bypass -File packaging\build-windows-installer.ps1 -Version $version -OutputExe "dist\Ciwi-Client-windows-Setup-x86_64-v$version.exe"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - id: desktop-linux-amd64
+        needs:
+          - unit-tests
+        runs_on:
+          executor: script
+          shell: posix
+          os: linux
+          arch: amd64
+        go_cache: {}
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
+            zip: "*"
+            xorg-dev: "*"
+        timeout_seconds: 1200
+        artifacts:
+          - dist/Ciwi-Client-linux-amd64-v*.zip
+        steps:
+          - name: Prepare Linux desktop output
+            run: mkdir -p dist
+          - name: Build Linux desktop archive
+            run: sh packaging/build-linux-zip.sh "${CIWI_PIPELINE_VERSION}" "dist/Ciwi-Client-linux-amd64-v${CIWI_PIPELINE_VERSION}.zip"
   - id: release
     trigger: manual
     depends_on:
       - build
       - codesign-macos
+      - package-macos
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     versioning:
@@ -96,8 +165,14 @@ pipelines:
         artifact_sources:
           - pipeline: build
             job: build-cross-platform
+          - pipeline: build
+            job: desktop-windows-amd64
+          - pipeline: build
+            job: desktop-linux-amd64
           - pipeline: codesign-macos
             job: macos-codesign
+          - pipeline: package-macos
+            job: macos-dmg
         runs_on:
           executor: script
           shell: posix
@@ -162,6 +237,9 @@ pipelines:
               test -f dist/codesigned-macos/ciwi-darwin-arm64.zip
               test -f dist/ciwi-windows-amd64.exe
               test -f dist/ciwi-windows-arm64.exe
+              test -f "dist/Ciwi-Client-macos-v${CIWI_PIPELINE_VERSION}.dmg"
+              test -f "dist/Ciwi-Client-windows-Setup-x86_64-v${CIWI_PIPELINE_VERSION}.exe"
+              test -f "dist/Ciwi-Client-linux-amd64-v${CIWI_PIPELINE_VERSION}.zip"
               for f in \
                 dist/ciwi-linux-amd64 \
                 dist/ciwi-darwin-amd64 \
@@ -169,7 +247,10 @@ pipelines:
                 dist/codesigned-macos/ciwi-darwin-amd64.zip \
                 dist/codesigned-macos/ciwi-darwin-arm64.zip \
                 dist/ciwi-windows-amd64.exe \
-                dist/ciwi-windows-arm64.exe; do
+                dist/ciwi-windows-arm64.exe \
+                "dist/Ciwi-Client-macos-v${CIWI_PIPELINE_VERSION}.dmg" \
+                "dist/Ciwi-Client-windows-Setup-x86_64-v${CIWI_PIPELINE_VERSION}.exe" \
+                "dist/Ciwi-Client-linux-amd64-v${CIWI_PIPELINE_VERSION}.zip"; do
                 shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
               done > dist/ciwi-checksums.txt
               test -f dist/ciwi-checksums.txt
@@ -196,6 +277,9 @@ pipelines:
                 dist/codesigned-macos/ciwi-darwin-arm64.zip \
                 dist/ciwi-windows-amd64.exe \
                 dist/ciwi-windows-arm64.exe \
+                "dist/Ciwi-Client-macos-v${CIWI_PIPELINE_VERSION}.dmg" \
+                "dist/Ciwi-Client-windows-Setup-x86_64-v${CIWI_PIPELINE_VERSION}.exe" \
+                "dist/Ciwi-Client-linux-amd64-v${CIWI_PIPELINE_VERSION}.zip" \
                 dist/ciwi-checksums.txt
               TOTAL="$#"
               IDX=0
@@ -237,6 +321,8 @@ pipelines:
             job: build-cross-platform
             matrix:
               name: darwin-arm64
+          - pipeline: build
+            job: desktop-macos-unsigned
         runs_on:
           executor: script
           shell: posix
@@ -247,7 +333,7 @@ pipelines:
             codesign: "*"
         timeout_seconds: 1200
         artifacts:
-          - dist/codesigned-macos/*.zip
+          - dist/codesigned-macos/**
         steps:
           - name: Check Apple signing credentials
             run: test -n "$DEV_IDENTITY_APP" && test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
@@ -277,7 +363,7 @@ pipelines:
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
           - name: Verify macOS binaries
-            run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
+            run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64 && test -d dist/desktop-macos-unsigned/Ciwi.app
           - name: Prepare macOS bundle output
             run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
             skip_dry_run: true
@@ -335,10 +421,108 @@ pipelines:
               NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
+          - name: Sign macOS desktop app
+            run: codesign --force --deep --strict --options=runtime --entitlements packaging/macos-entitlements.plist --timestamp --sign "$DEV_IDENTITY_APP" dist/desktop-macos-unsigned/Ciwi.app
+            skip_dry_run: true
+            vault:
+              connection: home-vault
+              secrets:
+                - name: dev-identity-app
+                  mount: kv
+                  path: apple-id
+                  key: dev-identity-app
+            env:
+              DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+          - name: Verify macOS desktop signature
+            run: codesign --verify --deep --strict -v dist/desktop-macos-unsigned/Ciwi.app
+            skip_dry_run: true
+          - name: Publish signed macOS desktop app
+            run: cp -R dist/desktop-macos-unsigned/Ciwi.app dist/codesigned-macos/Ciwi.app
+            skip_dry_run: true
+
+  - id: package-macos
+    trigger: manual
+    depends_on:
+      - codesign-macos
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: macos-dmg
+        artifact_sources:
+          - pipeline: codesign-macos
+            job: macos-codesign
+        runs_on:
+          executor: script
+          shell: posix
+          os: darwin
+          arch: arm64
+        requires:
+          tools:
+            dmgbuild: "*"
+            notarytool: "*"
+            stapler: "*"
+        timeout_seconds: 2400
+        artifacts:
+          - dist/Ciwi-Client-macos-v*.dmg
+        steps:
+          - name: Check Apple notarization credentials
+            run: test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
+            skip_dry_run: true
+            vault:
+              connection: home-vault
+              secrets:
+                - name: notarytool-password
+                  mount: kv
+                  path: notarytool
+                  key: password
+                - name: apple-team-id
+                  mount: kv
+                  path: apple-id
+                  key: team-id
+                - name: apple-id
+                  mount: kv
+                  path: apple-id
+                  key: email
+            env:
+              NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
+              APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
+              APPLE_ID: "{{ secret.apple-id }}"
+          - name: Verify signed macOS desktop app
+            run: test -d dist/codesigned-macos/Ciwi.app && codesign --verify --deep --strict -v dist/codesigned-macos/Ciwi.app
+            skip_dry_run: true
+          - name: Build macOS desktop disk image
+            run: sh packaging/build-macos-dmg.sh dist/codesigned-macos/Ciwi.app "${CIWI_PIPELINE_VERSION}" "dist/Ciwi-Client-macos-v${CIWI_PIPELINE_VERSION}.dmg"
+            skip_dry_run: true
+          - name: Notarize macOS desktop disk image
+            run: RESULT_JSON="$PWD/dist/notary-result-ciwi-client-macos.json" && xcrun notarytool submit "$PWD/dist/Ciwi-Client-macos-v${CIWI_PIPELINE_VERSION}.dmg" --apple-id "$APPLE_ID" --password "$NOTARYTOOL_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --output-format json > "$RESULT_JSON" && STATUS="$(/usr/bin/plutil -extract status raw -o - "$RESULT_JSON")" && SUBMISSION_ID="$(/usr/bin/plutil -extract id raw -o - "$RESULT_JSON")" && if [ "$STATUS" != "Accepted" ]; then echo "notarytool status=${STATUS} submission_id=${SUBMISSION_ID}"; xcrun notarytool log "$SUBMISSION_ID" --apple-id "$APPLE_ID" --password "$NOTARYTOOL_PASSWORD" --team-id "$APPLE_TEAM_ID"; exit 1; fi
+            skip_dry_run: true
+            vault:
+              connection: home-vault
+              secrets:
+                - name: notarytool-password
+                  mount: kv
+                  path: notarytool
+                  key: password
+                - name: apple-team-id
+                  mount: kv
+                  path: apple-id
+                  key: team-id
+                - name: apple-id
+                  mount: kv
+                  path: apple-id
+                  key: email
+            env:
+              NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
+              APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
+              APPLE_ID: "{{ secret.apple-id }}"
+          - name: Staple macOS desktop disk image
+            run: xcrun stapler staple "$PWD/dist/Ciwi-Client-macos-v${CIWI_PIPELINE_VERSION}.dmg"
+            skip_dry_run: true
 
 pipeline_chains:
   - name: Build and release
     pipelines:
       - build
       - codesign-macos
+      - package-macos
       - release

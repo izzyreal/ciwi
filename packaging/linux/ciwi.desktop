@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ciwi
+Comment=Projects, pipelines and job executions
+Exec=ciwi
+Icon=ciwi
+Terminal=false
+Categories=Development;System;
+

@@ -13,7 +13,7 @@ open another port:
 CIWI_NATIVE_ADDR=:8113 ciwi server
 ```
 
-Build and run the macOS-first desktop client:
+Build and run the desktop client on macOS, Windows, or Linux:
 
 ```bash
 go build -o ciwi-desktop ./cmd/ciwi-desktop
@@ -30,6 +30,22 @@ The browser proof of the same declarative screen is available at
 `/declarative-preview/projects/{projectId}` and execution navigation under
 `/declarative-preview/jobs/{jobExecutionId}`. These routes are intentionally
 separate from the established pages until behavioral parity is complete.
+
+## Desktop packages
+
+The `Build and release` chain publishes three native-client packages in
+addition to the established server and agent binaries:
+
+- a signed, notarized universal macOS DMG (`arm64` and `x86_64`);
+- a Windows x64 WiX installer;
+- a Linux amd64 ZIP with the executable, pixel-art icon, desktop entry, and
+  installation notes.
+
+All three derive their application icon from ciwi's pixel-art favicon. The
+Linux build currently targets Gio's X11/OpenGL backend and deliberately omits
+the optional Wayland and Vulkan backends to keep this first archive's native
+dependency surface small. See the README inside the ZIP for runtime library
+names.
 
 ## Wire contract
 
@@ -74,7 +90,8 @@ The vertical slices support server information, the shared front page, inline
 queued/history execution cards with explicit job-detail navigation, project
 details with nested pipelines/jobs/configured steps, job execution snapshots
 with a horizontally navigable phase/step timeline, searchable and selectable
-incremental output, output copying and tailing, ordinary and dry-run enqueue
+incremental output grouped into ciwi phases and YAML job steps, output copying
+and tailing, ordinary and dry-run enqueue
 commands for individual pipelines and named pipeline chains from the front page
 and Project Details, including job-scoped execution controls, native back
 navigation, and live invalidations. Output streams use
@@ -88,12 +105,11 @@ through idempotent CNP commands. Cancellation updates server state but does not
 forcibly terminate an agent process that is already running. Agents continue to
 use the existing HTTP protocol.
 
-Global Settings currently covers native-client appearance and connection
-context. Theme changes apply immediately and are stored in the user's config
+Global Settings covers native-client appearance, connection context, project
+management, agent administration, and server update/rollback controls. Theme
+changes apply immediately and are stored in the user's config
 directory as `ciwi/native-ui.json`, alongside keyed disclosure state; an explicit `-theme` or
-`CIWI_NATIVE_THEME` value overrides the saved theme for that launch. Server
-administration sections will appear as their application and CNP command
-slices are added rather than falling back to HTTP.
+`CIWI_NATIVE_THEME` value overrides the saved theme for that launch.
 
 The Gio adapter resolves the same bundled logo, semantic icon names, theme
 gradients, status tones, and badge roles used by the declarative browser proof;

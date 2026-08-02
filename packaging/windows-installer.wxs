@@ -1,0 +1,55 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Ciwi"
+      Manufacturer="izmar"
+      Version="$(var.Version)"
+      UpgradeCode="175F0CC9-B24A-4555-9755-1C38EA1FB333"
+      InstallerVersion="500"
+      Scope="perMachine"
+      Language="1033">
+    <SummaryInformation Description="Ciwi native client installer" Manufacturer="izmar" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Ciwi is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon.ico" SourceFile="$(var.AppIcon)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Ciwi" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Ciwi" />
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="Ciwi" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents">
+      <Component Id="cmpCiwiExe" Directory="INSTALLFOLDER" Guid="*">
+        <File Id="filCiwiExe" Source="$(var.AppExe)" KeyPath="yes" />
+      </Component>
+      <Component Id="cmpStartMenuShortcut" Directory="ApplicationProgramsFolder" Guid="*">
+        <Shortcut
+            Id="StartMenuShortcut"
+            Name="Ciwi"
+            Description="Launch the Ciwi native client"
+            Target="[INSTALLFOLDER]Ciwi.exe"
+            WorkingDirectory="INSTALLFOLDER"
+            Icon="AppIcon.ico"
+            IconIndex="0" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue
+            Root="HKLM"
+            Key="Software\izmar\Ciwi"
+            Name="Installed"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>
+

@@ -1,0 +1,17 @@
+<Wix
+    xmlns="http://wixtoolset.org/schemas/v4/wxs"
+    xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle
+      Name="Ciwi"
+      Version="$(var.Version)"
+      Manufacturer="izmar"
+      UpgradeCode="849FF0EB-50CF-4E6F-953C-D6DB18DFF487"
+      IconSourceFile="$(var.AppIcon)">
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl="" />
+    </BootstrapperApplication>
+    <Chain>
+      <MsiPackage SourceFile="$(var.MsiPath)" />
+    </Chain>
+  </Bundle>
+</Wix>

@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !linux && !windows
 
 package main
 
@@ -8,6 +8,6 @@ import (
 )
 
 func main() {
-	_, _ = fmt.Fprintln(os.Stderr, "ciwi-desktop currently supports macOS; the CNP client library is platform-independent")
+	_, _ = fmt.Fprintln(os.Stderr, "ciwi-desktop currently supports macOS, Windows, and Linux; the CNP client library is platform-independent")
 	os.Exit(1)
 }
