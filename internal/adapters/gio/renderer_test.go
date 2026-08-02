@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -597,6 +598,23 @@ func TestPipelineRunSelectionUsesSharedPipelineAndChainArguments(t *testing.T) {
 	})
 	if selection.PipelineJobId != "compile" || !selection.DryRun || selection.SourceRef != "feature/native" || selection.AgentId != "agent-1" || selection.ExecutionMode != "offline_cached" {
 		t.Fatalf("selection = %+v", selection)
+	}
+}
+
+func TestTransientStatusExpiresWithoutClearingPersistentErrors(t *testing.T) {
+	renderer := &Renderer{}
+	renderer.SetTransientStatus("Queued", time.Hour)
+	expires := renderer.StatusExpiry()
+	if expires.IsZero() || renderer.ClearExpiredStatus(expires.Add(-time.Nanosecond)) {
+		t.Fatal("transient status expired too early")
+	}
+	if !renderer.ClearExpiredStatus(expires) || renderer.status != "" || !renderer.StatusExpiry().IsZero() {
+		t.Fatalf("expired status was not cleared: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
+	}
+	renderer.SetTransientStatus("Queued", time.Hour)
+	renderer.SetStatus("Run failed")
+	if !renderer.StatusExpiry().IsZero() || renderer.ClearExpiredStatus(time.Now().Add(2*time.Hour)) || renderer.status != "Run failed" {
+		t.Fatalf("persistent status unexpectedly expired: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
 	}
 }
 

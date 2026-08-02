@@ -42,7 +42,10 @@ type jobOutputBuffer struct {
 	text  string
 }
 
-const maxNativeOutputBytes = 1024 * 1024
+const (
+	maxNativeOutputBytes = 1024 * 1024
+	nativeNoticeDuration = 6 * time.Second
+)
 
 func (b *jobOutputBuffer) reset(jobID string) {
 	b.jobID = jobID
@@ -199,9 +202,43 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
 		renderer.SetStatus(err.Error())
 	} else {
-		renderer.SetStatus("Connected to " + address)
+		renderer.SetTransientStatus("Connected to "+address, nativeNoticeDuration)
 	}
 	window.Invalidate()
+	var statusTimer *time.Timer
+	var statusExpiry <-chan time.Time
+	scheduleStatusExpiry := func() {
+		expires := renderer.StatusExpiry()
+		if expires.IsZero() {
+			if statusTimer != nil {
+				statusTimer.Stop()
+			}
+			statusExpiry = nil
+			return
+		}
+		delay := time.Until(expires)
+		if delay < 0 {
+			delay = 0
+		}
+		if statusTimer == nil {
+			statusTimer = time.NewTimer(delay)
+		} else {
+			if !statusTimer.Stop() {
+				select {
+				case <-statusTimer.C:
+				default:
+				}
+			}
+			statusTimer.Reset(delay)
+		}
+		statusExpiry = statusTimer.C
+	}
+	scheduleStatusExpiry()
+	defer func() {
+		if statusTimer != nil {
+			statusTimer.Stop()
+		}
+	}()
 
 	watchCtx, watchCancel := context.WithCancel(ctx)
 	defer watchCancel()
@@ -216,6 +253,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		select {
 		case <-ctx.Done():
 			return
+		case now := <-statusExpiry:
+			if renderer.ClearExpiredStatus(now) {
+				window.Invalidate()
+			}
+			statusExpiry = nil
 		case change, ok := <-changes:
 			if !ok {
 				changes = nil
@@ -264,6 +306,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					stopOutput()
 				}
 			}
+			scheduleStatusExpiry()
 			window.Invalidate()
 		}
 	}
@@ -293,10 +336,14 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetStatus("Run failed: " + err.Error())
 			return
 		}
+		target := strings.TrimSpace(result.PipelineId)
+		if jobID := strings.TrimSpace(command.arguments["pipelineJobId"]); jobID != "" {
+			target += " / " + jobID
+		}
 		if dryRun {
-			renderer.SetStatus(fmt.Sprintf("Queued %d dry-run execution(s) for %s", result.Enqueued, result.PipelineId))
+			renderer.SetTransientStatus(fmt.Sprintf("Queued %d dry-run execution(s) for %s", result.Enqueued, target), nativeNoticeDuration)
 		} else {
-			renderer.SetStatus(fmt.Sprintf("Queued %d execution(s) for %s", result.Enqueued, result.PipelineId))
+			renderer.SetTransientStatus(fmt.Sprintf("Queued %d execution(s) for %s", result.Enqueued, target), nativeNoticeDuration)
 		}
 	case "run-chain":
 		projectID, err := strconv.ParseInt(command.arguments["projectId"], 10, 64)
@@ -321,10 +368,14 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetStatus("Run chain failed: " + err.Error())
 			return
 		}
+		chainLabel := strings.TrimSpace(result.ChainName)
+		if chainLabel == "" {
+			chainLabel = strings.TrimSpace(result.ChainId)
+		}
 		if dryRun {
-			renderer.SetStatus(fmt.Sprintf("Queued %d dry-run execution(s) for chain %s", result.Enqueued, result.ChainId))
+			renderer.SetTransientStatus(fmt.Sprintf("Queued %d dry-run execution(s) for chain %s", result.Enqueued, chainLabel), nativeNoticeDuration)
 		} else {
-			renderer.SetStatus(fmt.Sprintf("Queued %d execution(s) for chain %s", result.Enqueued, result.ChainId))
+			renderer.SetTransientStatus(fmt.Sprintf("Queued %d execution(s) for chain %s", result.Enqueued, chainLabel), nativeNoticeDuration)
 		}
 	case "clear-queue":
 		renderer.SetStatus("Clearing queued executions…")
@@ -339,7 +390,7 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetStatus("Queue cleared, but refresh failed: " + err.Error())
 			return
 		}
-		renderer.SetStatus(fmt.Sprintf("Cleared %d queued execution(s)", result.Cleared))
+		renderer.SetTransientStatus(fmt.Sprintf("Cleared %d queued execution(s)", result.Cleared), nativeNoticeDuration)
 	case "flush-history", "delete-execution":
 		request := &cnpv1.FlushExecutionHistoryRequest{All: command.action.Command == "flush-history"}
 		if !request.All {
@@ -361,7 +412,7 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetStatus("History removed, but refresh failed: " + err.Error())
 			return
 		}
-		renderer.SetStatus(fmt.Sprintf("Removed %d execution(s) from history", result.Flushed))
+		renderer.SetTransientStatus(fmt.Sprintf("Removed %d execution(s) from history", result.Flushed), nativeNoticeDuration)
 	case "cancel-execution":
 		jobID := strings.TrimSpace(command.arguments["jobExecutionId"])
 		if jobID == "" {
@@ -380,7 +431,7 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetStatus("Execution cancelled, but refresh failed: " + err.Error())
 			return
 		}
-		renderer.SetStatus("Execution " + result.JobExecutionId + " marked failed")
+		renderer.SetTransientStatus("Execution "+result.JobExecutionId+" marked failed", nativeNoticeDuration)
 	case "rerun-execution":
 		jobID := strings.TrimSpace(command.arguments["jobExecutionId"])
 		if jobID == "" {
@@ -399,7 +450,7 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetStatus("Rerun queued, but navigation failed: " + err.Error())
 			return
 		}
-		renderer.SetStatus("Queued rerun " + result.JobExecutionId)
+		renderer.SetTransientStatus("Queued rerun "+result.JobExecutionId, nativeNoticeDuration)
 	case "navigate":
 		if err := navigate(ctx, client, renderer, screens, navigation, command.arguments["route"]); err != nil {
 			renderer.SetStatus("Navigation failed: " + err.Error())
@@ -422,7 +473,7 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			renderer.SetStatus("Theme changed, but the preference could not be saved: " + err.Error())
 			return
 		}
-		renderer.SetStatus("Theme: " + theme.Metadata.Title)
+		renderer.SetTransientStatus("Theme: "+theme.Metadata.Title, nativeNoticeDuration)
 	default:
 		renderer.SetStatus("Unsupported native action: " + command.action.Command)
 	}

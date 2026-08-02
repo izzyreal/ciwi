@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"gioui.org/f32"
@@ -38,6 +39,7 @@ type Renderer struct {
 	screen                *uidsl.ScreenDocument
 	data                  any
 	status                string
+	statusExpires         time.Time
 	theme                 *material.Theme
 	palette               palette
 	themeName             string
@@ -130,7 +132,36 @@ func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 func (r *Renderer) SetStatus(status string) {
 	r.mu.Lock()
 	r.status = status
+	r.statusExpires = time.Time{}
 	r.mu.Unlock()
+}
+
+func (r *Renderer) SetTransientStatus(status string, duration time.Duration) {
+	r.mu.Lock()
+	r.status = status
+	if duration > 0 {
+		r.statusExpires = time.Now().Add(duration)
+	} else {
+		r.statusExpires = time.Time{}
+	}
+	r.mu.Unlock()
+}
+
+func (r *Renderer) StatusExpiry() time.Time {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.statusExpires
+}
+
+func (r *Renderer) ClearExpiredStatus(now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.statusExpires.IsZero() || now.Before(r.statusExpires) {
+		return false
+	}
+	r.status = ""
+	r.statusExpires = time.Time{}
+	return true
 }
 
 func (r *Renderer) SetTheme(theme *uidsl.ThemeDocument) error {
