@@ -153,6 +153,23 @@ message JobDetailsView {
   string exit_code = 13;
   string error = 14;
   repeated JobTimelineItem timeline = 15;
+  bool can_cancel = 16;
+  bool can_rerun = 17;
+}
+
+message ControlExecutionRequest {
+  string job_execution_id = 1;
+}
+
+message CancelExecutionResult {
+  string job_execution_id = 1;
+  string status = 2;
+}
+
+message RerunExecutionResult {
+  string original_job_execution_id = 1;
+  string job_execution_id = 2;
+  string status = 3;
 }
 
 message JobTimelineItem {
@@ -286,6 +303,8 @@ message Request {
     WatchJobOutputRequest watch_job_output = 17;
     ClearExecutionQueueRequest clear_execution_queue = 18;
     FlushExecutionHistoryRequest flush_execution_history = 19;
+    ControlExecutionRequest cancel_execution = 20;
+    ControlExecutionRequest rerun_execution = 21;
   }
 }
 
@@ -303,6 +322,8 @@ message Response {
     JobOutputBatch job_output = 18;
     ClearExecutionQueueResult clear_execution_queue = 19;
     FlushExecutionHistoryResult flush_execution_history = 20;
+    CancelExecutionResult cancel_execution = 21;
+    RerunExecutionResult rerun_execution = 22;
   }
 }
 

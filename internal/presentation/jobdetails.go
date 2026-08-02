@@ -26,6 +26,8 @@ type JobDetailsView struct {
 	Duration    string
 	ExitCode    string
 	Error       string
+	CanCancel   bool
+	CanRerun    bool
 	Timeline    []JobTimelineView
 }
 
@@ -102,6 +104,7 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 		Status: details.Status, StatusLabel: humanStatus(details.Status), CurrentStep: details.CurrentStep,
 		Agent: details.AgentID, Created: formatTimestamp(details.CreatedUTC), Started: formatTimestamp(details.StartedUTC),
 		Finished: formatTimestamp(details.FinishedUTC), ExitCode: formatExitCode(details.ExitCode), Error: details.Error,
+		CanCancel: canCancelJob(details), CanRerun: canRerunJob(details),
 	}
 	if details.DryRun {
 		view.Mode = "Dry run"
@@ -128,6 +131,26 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 		})
 	}
 	return view
+}
+
+func canCancelJob(details domain.JobExecutionDetails) bool {
+	switch strings.ToLower(strings.TrimSpace(details.Status)) {
+	case "queued", "leased", "running", "in progress":
+		return true
+	default:
+		return false
+	}
+}
+
+func canRerunJob(details domain.JobExecutionDetails) bool {
+	if !details.StartedUTC.IsZero() {
+		return true
+	}
+	if strings.ToLower(strings.TrimSpace(details.Status)) != "failed" {
+		return false
+	}
+	reason := strings.ToLower(strings.TrimSpace(details.Error))
+	return (strings.HasPrefix(reason, "cancelled: required job ") || strings.HasPrefix(reason, "cancelled: upstream pipeline ")) && strings.HasSuffix(reason, " failed")
 }
 
 func jobContext(details domain.JobExecutionDetails) string {

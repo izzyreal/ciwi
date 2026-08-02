@@ -23,6 +23,8 @@ type jobDetailsViewResponse struct {
 	Duration    string                    `json:"duration"`
 	ExitCode    string                    `json:"exit_code"`
 	Error       string                    `json:"error"`
+	CanCancel   bool                      `json:"can_cancel"`
+	CanRerun    bool                      `json:"can_rerun"`
 	Output      string                    `json:"output"`
 	Timeline    []jobTimelineViewResponse `json:"timeline"`
 }
@@ -114,6 +116,6 @@ func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewRespon
 		ID: view.ID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
-		Error: view.Error, Timeline: timeline,
+		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun, Timeline: timeline,
 	}
 }

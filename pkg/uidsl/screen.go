@@ -163,6 +163,7 @@ var commands = map[string]bool{
 	"navigate": true, "run-pipeline": true, "run-chain": true,
 	"toggle": true, "refresh": true, "clear-queue": true,
 	"flush-history": true, "delete-execution": true,
+	"cancel-execution": true, "rerun-execution": true,
 	"change-theme":         true,
 	"select-timeline-item": true, "change-output-search": true,
 	"find-output": true, "copy-output": true, "toggle-output-tailing": true,

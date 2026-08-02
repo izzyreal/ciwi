@@ -1437,7 +1437,7 @@ func materialIcons() (map[string]*widget.Icon, error) {
 		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
 		"chevron-down": icons.NavigationExpandMore, "chevron-up": icons.NavigationExpandLess,
 		"check": icons.NavigationCheck, "copy": icons.ContentContentCopy,
-		"trash":       icons.ActionDelete,
+		"trash": icons.ActionDelete, "refresh": icons.NavigationRefresh, "circle-x": icons.NavigationCancel,
 		"chevrons-up": icons.NavigationUnfoldLess, "chevrons-down": icons.NavigationUnfoldMore,
 		"status-success": icons.ActionCheckCircle, "status-danger": icons.AlertErrorOutline,
 		"status-waiting": icons.ActionHourglassEmpty, "status-running": icons.AVPlayCircleOutline,

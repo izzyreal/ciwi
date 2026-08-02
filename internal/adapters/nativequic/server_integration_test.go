@@ -28,6 +28,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		JobDetails:        jobDetailsService{},
 		Pipelines:         pipelines,
 		ExecutionCommands: executions,
+		ExecutionControls: executions,
 		Changes:           changes,
 		Version:           "v0.2.0",
 	})
@@ -75,7 +76,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if jobDetails.Title != "Job: compile" || len(jobDetails.Timeline) != 1 || jobDetails.Timeline[0].Status != "succeeded" {
+	if jobDetails.Title != "Job: compile" || len(jobDetails.Timeline) != 1 || jobDetails.Timeline[0].Status != "succeeded" || !jobDetails.CanRerun {
 		t.Fatalf("job details = %#v", jobDetails)
 	}
 	output, outputErrors, err := client.WatchJobOutput(ctx, "job-1", 0)
@@ -112,6 +113,14 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if executions.clearRequest.IdempotencyKey != "clear-command-key" || executions.flushRequest.IdempotencyKey != "flush-command-key" || !reflect.DeepEqual(executions.flushRequest.JobExecutionIDs, []string{"job-1", "job-2"}) {
 		t.Fatalf("execution command mapping = clear %#v, flush %#v", executions.clearRequest, executions.flushRequest)
 	}
+	cancelled, err := client.CancelExecution(ctx, "job-1", "cancel-command-key")
+	if err != nil || cancelled.Status != "failed" {
+		t.Fatalf("cancel execution = %#v, %v", cancelled, err)
+	}
+	rerun, err := client.RerunExecution(ctx, "job-1", "rerun-command-key")
+	if err != nil || rerun.JobExecutionId != "job-rerun" {
+		t.Fatalf("rerun execution = %#v, %v", rerun, err)
+	}
 }
 
 func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
@@ -124,7 +133,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: &pipelineService{}, ExecutionCommands: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -156,7 +165,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
-		Pipelines: &pipelineService{}, ExecutionCommands: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -184,7 +193,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: failingPipelineService{}, ExecutionCommands: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
+		Pipelines: failingPipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -301,6 +310,7 @@ type jobDetailsService struct{}
 func (jobDetailsService) GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error) {
 	return presentation.JobDetailsView{
 		ID: "job-1", Title: "Job: compile", Status: "succeeded", StatusLabel: "Succeeded",
+		CanRerun: true,
 		Timeline: []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
 	}, nil
 }
@@ -384,4 +394,12 @@ func (s *executionCommandService) ClearQueue(_ context.Context, request applicat
 func (s *executionCommandService) FlushHistory(_ context.Context, request application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error) {
 	s.flushRequest = request
 	return application.FlushExecutionHistoryResult{Flushed: 2}, nil
+}
+
+func (s *executionCommandService) Cancel(_ context.Context, request application.ExecutionControlRequest) (application.CancelExecutionResult, error) {
+	return application.CancelExecutionResult{JobExecutionID: request.JobExecutionID, Status: "failed"}, nil
+}
+
+func (s *executionCommandService) Rerun(_ context.Context, request application.ExecutionControlRequest) (application.RerunExecutionResult, error) {
+	return application.RerunExecutionResult{OriginalJobExecutionID: request.JobExecutionID, JobExecutionID: "job-rerun", Status: "queued"}, nil
 }

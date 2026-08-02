@@ -2,11 +2,13 @@ package jobexecution
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/httpx"
@@ -17,35 +19,15 @@ func handleJobCancel(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	job, err := deps.Store.GetJobExecution(jobID)
+	updated, err := CancelJobExecution(deps.Store, jobID, nowUTC(deps))
 	if err != nil {
-		http.Error(w, "job not found", http.StatusNotFound)
-		return
-	}
-	if !protocol.IsActiveJobExecutionStatus(job.Status) {
-		http.Error(w, "job is not active", http.StatusConflict)
-		return
-	}
-	agentID := strings.TrimSpace(job.LeasedByAgentID)
-	if agentID == "" {
-		agentID = "server-control"
-	}
-	updated, err := deps.Store.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      agentID,
-		Status:       protocol.JobExecutionStatusFailed,
-		Error:        "cancelled by user",
-		TimestampUTC: nowUTC(deps),
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := deps.Store.AppendJobExecutionEvents(jobID, []protocol.JobExecutionEvent{{
-		Type:         protocol.JobExecutionEventTypeSystemMessage,
-		TimestampUTC: nowUTC(deps),
-		Message:      "[control] job cancelled by user",
-	}}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		} else if strings.Contains(err.Error(), "not active") {
+			status = http.StatusConflict
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(updated)})
@@ -56,14 +38,55 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	job, err := deps.Store.GetJobExecution(jobID)
+	clone, err := RerunJobExecution(deps.Store, jobID, deps.PrepareRerun)
 	if err != nil {
-		http.Error(w, "job not found", http.StatusNotFound)
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		} else if strings.Contains(err.Error(), "has not started") || strings.Contains(err.Error(), "dependencies") || strings.Contains(err.Error(), "required job") {
+			status = http.StatusConflict
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
+	httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(clone)})
+}
+
+func CancelJobExecution(store Store, jobID string, now time.Time) (protocol.JobExecution, error) {
+	job, err := store.GetJobExecution(jobID)
+	if err != nil {
+		return protocol.JobExecution{}, fmt.Errorf("job not found: %w", err)
+	}
+	if !protocol.IsActiveJobExecutionStatus(job.Status) {
+		return protocol.JobExecution{}, fmt.Errorf("job is not active")
+	}
+	agentID := strings.TrimSpace(job.LeasedByAgentID)
+	if agentID == "" {
+		agentID = "server-control"
+	}
+	updated, err := store.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID: agentID, Status: protocol.JobExecutionStatusFailed,
+		Error: "cancelled by user", TimestampUTC: now,
+	})
+	if err != nil {
+		return protocol.JobExecution{}, err
+	}
+	if err := store.AppendJobExecutionEvents(jobID, []protocol.JobExecutionEvent{{
+		Type: protocol.JobExecutionEventTypeSystemMessage, TimestampUTC: now,
+		Message: "[control] job cancelled by user",
+	}}); err != nil {
+		return protocol.JobExecution{}, err
+	}
+	return updated, nil
+}
+
+func RerunJobExecution(store Store, jobID string, prepare func(protocol.JobExecution, *protocol.CreateJobExecutionRequest) error) (protocol.JobExecution, error) {
+	job, err := store.GetJobExecution(jobID)
+	if err != nil {
+		return protocol.JobExecution{}, fmt.Errorf("job not found: %w", err)
+	}
 	if job.StartedUTC.IsZero() && !isDependencyBlockedJob(job) {
-		http.Error(w, "job has not started yet", http.StatusConflict)
-		return
+		return protocol.JobExecution{}, fmt.Errorf("job has not started yet")
 	}
 	metadata := cloneStringMap(job.Metadata)
 	if metadata == nil {
@@ -76,29 +99,17 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 	metadata[protocol.JobMetadataAttemptRootJobID] = rootID
 	metadata[protocol.JobMetadataRerunOfJobID] = job.ID
 	request := protocol.CreateJobExecutionRequest{
-		Script:                   job.Script,
-		Env:                      cloneStringMap(job.Env),
-		RequiredCapabilities:     cloneStringMap(job.RequiredCapabilities),
-		TimeoutSeconds:           job.TimeoutSeconds,
-		ArtifactGlobs:            append([]string(nil), job.ArtifactGlobs...),
-		DependencyArtifactJobIDs: append([]string(nil), job.DependencyArtifactJobIDs...),
-		Caches:                   cloneJobCaches(job.Caches),
-		Source:                   cloneSource(job.Source),
-		Metadata:                 metadata,
-		StepPlan:                 cloneJobStepPlan(job.StepPlan),
+		Script: job.Script, Env: cloneStringMap(job.Env), RequiredCapabilities: cloneStringMap(job.RequiredCapabilities),
+		TimeoutSeconds: job.TimeoutSeconds, ArtifactGlobs: append([]string(nil), job.ArtifactGlobs...),
+		DependencyArtifactJobIDs: append([]string(nil), job.DependencyArtifactJobIDs...), Caches: cloneJobCaches(job.Caches),
+		Source: cloneSource(job.Source), Metadata: metadata, StepPlan: cloneJobStepPlan(job.StepPlan),
 	}
-	if deps.PrepareRerun != nil {
-		if err := deps.PrepareRerun(job, &request); err != nil {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
+	if prepare != nil {
+		if err := prepare(job, &request); err != nil {
+			return protocol.JobExecution{}, err
 		}
 	}
-	clone, err := deps.Store.CreateJobExecution(request)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(clone)})
+	return store.CreateJobExecution(request)
 }
 
 func handleJobStatus(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {

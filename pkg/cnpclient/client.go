@@ -197,6 +197,38 @@ func (c *Client) FlushExecutionHistory(ctx context.Context, request *cnpv1.Flush
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) CancelExecution(ctx context.Context, jobExecutionID, idempotencyKey string) (*cnpv1.CancelExecutionResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_CancelExecution{
+		CancelExecution: &cnpv1.ControlExecutionRequest{JobExecutionId: jobExecutionID},
+	}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetCancelExecution(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) RerunExecution(ctx context.Context, jobExecutionID, idempotencyKey string) (*cnpv1.RerunExecutionResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_RerunExecution{
+		RerunExecution: &cnpv1.ControlExecutionRequest{JobExecutionId: jobExecutionID},
+	}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetRerunExecution(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <-chan error, error) {
 	stream, err := c.connection.OpenStreamSync(ctx)
 	if err != nil {

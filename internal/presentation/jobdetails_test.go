@@ -41,8 +41,24 @@ func TestJobDetailsViewFormatsExecutionSnapshot(t *testing.T) {
 	if view.Title != "Job: macos" || view.Context != "ciwi · pipeline build · arm64 · execution job-1" || view.Duration != "1.5s" {
 		t.Fatalf("view = %+v", view)
 	}
+	if !view.CanRerun || view.CanCancel {
+		t.Fatalf("execution controls = can rerun %v, can cancel %v", view.CanRerun, view.CanCancel)
+	}
 	if len(view.Timeline) != 1 || view.Timeline[0].Title != "Job step 1/1: Compile" || view.Timeline[0].Duration != "1.2s" {
 		t.Fatalf("timeline = %+v", view.Timeline)
+	}
+}
+
+func TestJobDetailsViewExposesEligibleControls(t *testing.T) {
+	queued := presentJobDetails(domain.JobExecutionDetails{ID: "queued", Status: "queued"})
+	if !queued.CanCancel || queued.CanRerun {
+		t.Fatalf("queued controls = %+v", queued)
+	}
+	blocked := presentJobDetails(domain.JobExecutionDetails{
+		ID: "blocked", Status: "failed", Error: "cancelled: upstream pipeline build failed",
+	})
+	if blocked.CanCancel || !blocked.CanRerun {
+		t.Fatalf("blocked controls = %+v", blocked)
 	}
 }
 

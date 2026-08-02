@@ -44,6 +44,10 @@ type Services struct {
 		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
 		FlushHistory(context.Context, application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error)
 	}
+	ExecutionControls interface {
+		Cancel(context.Context, application.ExecutionControlRequest) (application.CancelExecutionResult, error)
+		Rerun(context.Context, application.ExecutionControlRequest) (application.RerunExecutionResult, error)
+	}
 	Changes *application.ChangeHub
 	Version string
 }
@@ -54,7 +58,7 @@ type Server struct {
 }
 
 func Listen(address string, services Services) (*Server, error) {
-	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.ExecutionCommands == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native QUIC services are incomplete")
 	}
 	tlsConfig, err := serverTLSConfig()
@@ -122,7 +126,7 @@ func (s *Server) handleConnection(ctx context.Context, connection *quic.Conn) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "execution_housekeeping", "watch_changes",
+			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "execution_housekeeping", "execution_controls", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -312,6 +316,24 @@ func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Res
 		})
 		if err == nil {
 			response.Result = &cnpv1.Response_FlushExecutionHistory{FlushExecutionHistory: &cnpv1.FlushExecutionHistoryResult{Flushed: result.Flushed}}
+		}
+	case *cnpv1.Request_CancelExecution:
+		var result application.CancelExecutionResult
+		result, err = s.services.ExecutionControls.Cancel(ctx, application.ExecutionControlRequest{
+			JobExecutionID: operation.CancelExecution.GetJobExecutionId(), IdempotencyKey: request.Metadata.IdempotencyKey,
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_CancelExecution{CancelExecution: &cnpv1.CancelExecutionResult{JobExecutionId: result.JobExecutionID, Status: result.Status}}
+		}
+	case *cnpv1.Request_RerunExecution:
+		var result application.RerunExecutionResult
+		result, err = s.services.ExecutionControls.Rerun(ctx, application.ExecutionControlRequest{
+			JobExecutionID: operation.RerunExecution.GetJobExecutionId(), IdempotencyKey: request.Metadata.IdempotencyKey,
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_RerunExecution{RerunExecution: &cnpv1.RerunExecutionResult{
+				OriginalJobExecutionId: result.OriginalJobExecutionID, JobExecutionId: result.JobExecutionID, Status: result.Status,
+			}}
 		}
 	default:
 		err = application.NewError(application.ErrorUnsupported, "unsupported native operation", nil)

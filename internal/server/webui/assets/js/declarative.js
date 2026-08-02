@@ -199,6 +199,19 @@
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
 		}
+		else if (action.command === 'cancel-execution') {
+		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId) + '/cancel', {method: 'POST'});
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
+		}
+		else if (action.command === 'rerun-execution') {
+		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId) + '/rerun', {method: 'POST'});
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  const rerunID = result && result.job_execution && result.job_execution.id;
+		  if (!rerunID) throw new Error('Rerun response did not include an execution identifier');
+		  window.location.assign('/declarative-preview/jobs/' + encodeURIComponent(rerunID));
+		}
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
       };
       if (action.on === 'activate') {

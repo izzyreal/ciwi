@@ -60,7 +60,7 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 		Id: view.ID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
-		Error: view.Error, Timeline: timeline,
+		Error: view.Error, Timeline: timeline, CanCancel: view.CanCancel, CanRerun: view.CanRerun,
 	}
 }
 

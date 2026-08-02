@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	executionviewsadapter "github.com/izzyreal/ciwi/internal/adapters/executionviews"
 	sqliteadapter "github.com/izzyreal/ciwi/internal/adapters/sqlite"
@@ -12,6 +13,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 )
 
 type serverApplication struct {
@@ -20,6 +22,7 @@ type serverApplication struct {
 	pipelines         *application.PipelineCommands
 	executions        *application.ExecutionQueries
 	executionCommands *application.ExecutionCommands
+	executionControls *application.ExecutionControlCommands
 	frontPage         *presentation.FrontPageQueries
 	projectDetails    *presentation.ProjectDetailsQueries
 	jobDetails        *presentation.JobDetailsQueries
@@ -54,10 +57,52 @@ func newServerApplication(s *stateStore) *serverApplication {
 		),
 		executions:        executionQueries,
 		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
+		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),
 		frontPage:         presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
 		projectDetails:    presentation.NewProjectDetailsQueries(projectQueries),
 		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),
 		changes:           changes,
+	}
+}
+
+type executionControllerAdapter struct {
+	state *stateStore
+}
+
+func (a executionControllerAdapter) CancelExecution(ctx context.Context, jobID string) (application.CancelExecutionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return application.CancelExecutionResult{}, err
+	}
+	job, err := jobexecution.CancelJobExecution(a.state.jobExecutionStore(), jobID, time.Now().UTC())
+	if err != nil {
+		return application.CancelExecutionResult{}, executionControlError(err)
+	}
+	return application.CancelExecutionResult{JobExecutionID: job.ID, Status: protocol.NormalizeJobExecutionStatus(job.Status)}, nil
+}
+
+func (a executionControllerAdapter) RerunExecution(ctx context.Context, jobID string) (application.RerunExecutionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return application.RerunExecutionResult{}, err
+	}
+	job, err := jobexecution.RerunJobExecution(a.state.jobExecutionStore(), jobID, a.state.prepareJobExecutionRerun)
+	if err != nil {
+		return application.RerunExecutionResult{}, executionControlError(err)
+	}
+	return application.RerunExecutionResult{
+		OriginalJobExecutionID: jobID, JobExecutionID: job.ID,
+		Status: protocol.NormalizeJobExecutionStatus(job.Status),
+	}, nil
+}
+
+func executionControlError(err error) error {
+	message := strings.TrimSpace(err.Error())
+	switch {
+	case strings.Contains(strings.ToLower(message), "not found"):
+		return application.NewError(application.ErrorNotFound, message, err)
+	case strings.Contains(message, "not active"), strings.Contains(message, "has not started"), strings.Contains(message, "dependencies"), strings.Contains(message, "required job"):
+		return application.NewError(application.ErrorFailedPrecondition, message, err)
+	default:
+		return application.WrapInternal("control job execution", err)
 	}
 }
 

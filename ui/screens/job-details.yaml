@@ -48,6 +48,34 @@ screen:
                   truncate: true
           - component: button
             text:
+              literal: Run Job Again
+            icon: refresh
+            visible:
+              binding: jobDetails.can_rerun
+            actions:
+              - on: activate
+                command: rerun-execution
+                arguments:
+                  jobExecutionId: "{{jobDetails.id}}"
+                confirm:
+                  title: Run this job again?
+                  message: Creates an independent queued attempt from this stored execution. It does not interrupt, replace, or otherwise affect jobs that are already queued or running.
+          - component: button
+            text:
+              literal: Cancel Execution
+            icon: circle-x
+            visible:
+              binding: jobDetails.can_cancel
+            actions:
+              - on: activate
+                command: cancel-execution
+                arguments:
+                  jobExecutionId: "{{jobDetails.id}}"
+                confirm:
+                  title: Cancel this execution?
+                  message: Marks this execution failed on the server. A process already running on an agent is not forcibly terminated and may finish in the background; other queued and running executions are unaffected.
+          - component: button
+            text:
               literal: Back to Executions
             icon: arrow-left
             actions:

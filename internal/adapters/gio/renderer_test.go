@@ -395,6 +395,7 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
 		Id: "job-1", Title: "Job: compile", Context: "ciwi · pipeline build · execution job-1",
 		Status: "running", StatusLabel: "Running", Mode: "Run", Created: "2026-08-02T10:00:00Z",
+		CanCancel: true, CanRerun: true,
 		Timeline: []*cnpv1.JobTimelineItem{{
 			Id: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "in progress", StatusLabel: "In progress",
 		}},
@@ -408,8 +409,8 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got != 7 {
-		t.Fatalf("job view created %d interactive widgets, want Back, timeline selection, and output controls", got)
+	if got := len(renderer.buttons); got != 9 {
+		t.Fatalf("job view created %d interactive widgets, want execution controls, Back, timeline selection, and output controls", got)
 	}
 	if len(renderer.scrollers) != 1 {
 		t.Fatalf("horizontal execution-path scrollers = %d", len(renderer.scrollers))

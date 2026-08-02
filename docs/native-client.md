@@ -80,9 +80,11 @@ bounded cursor pages and clients cap their display buffer, so status refreshes
 do not reload large logs. The front page can clear queued executions, flush all
 terminal history, or delete one execution card through idempotent application
 commands exposed by CNP; deleting history also removes its server-side
-artifacts, but never clears agent caches or workspaces. Rerun and cancellation
-controls remain on the established job page while their application/CNP slices
-are built. Agents continue to use the existing HTTP protocol.
+artifacts, but never clears agent caches or workspaces. Eligible Job Details
+views can also queue an independent rerun or mark an active execution failed
+through idempotent CNP commands. Cancellation updates server state but does not
+forcibly terminate an agent process that is already running. Agents continue to
+use the existing HTTP protocol.
 
 Global Settings currently covers native-client appearance and connection
 context. Theme changes apply immediately and are stored in the user's config

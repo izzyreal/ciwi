@@ -322,6 +322,44 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetStatus(fmt.Sprintf("Removed %d execution(s) from history", result.Flushed))
+	case "cancel-execution":
+		jobID := strings.TrimSpace(command.arguments["jobExecutionId"])
+		if jobID == "" {
+			renderer.SetStatus("No execution identifier was supplied")
+			return
+		}
+		renderer.SetStatus("Cancelling execution…")
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := client.CancelExecution(commandCtx, jobID, "")
+		cancel()
+		if err != nil {
+			renderer.SetStatus("Cancel failed: " + err.Error())
+			return
+		}
+		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
+			renderer.SetStatus("Execution cancelled, but refresh failed: " + err.Error())
+			return
+		}
+		renderer.SetStatus("Execution " + result.JobExecutionId + " marked failed")
+	case "rerun-execution":
+		jobID := strings.TrimSpace(command.arguments["jobExecutionId"])
+		if jobID == "" {
+			renderer.SetStatus("No execution identifier was supplied")
+			return
+		}
+		renderer.SetStatus("Queueing independent rerun…")
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := client.RerunExecution(commandCtx, jobID, "")
+		cancel()
+		if err != nil {
+			renderer.SetStatus("Rerun failed: " + err.Error())
+			return
+		}
+		if err := navigate(ctx, client, renderer, screens, navigation, "/jobs/"+result.JobExecutionId); err != nil {
+			renderer.SetStatus("Rerun queued, but navigation failed: " + err.Error())
+			return
+		}
+		renderer.SetStatus("Queued rerun " + result.JobExecutionId)
 	case "navigate":
 		if err := navigate(ctx, client, renderer, screens, navigation, command.arguments["route"]); err != nil {
 			renderer.SetStatus("Navigation failed: " + err.Error())
