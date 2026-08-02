@@ -6,7 +6,8 @@ if [ "$#" -ne 2 ]; then
     exit 1
 fi
 
-VERSION=$1
+VERSION=${1#v}
+VERSION=${VERSION#V}
 OUTPUT_DIRECTORY=$2
 GOGIO_VERSION=${GOGIO_VERSION:-v0.10.0}
 WORK_DIRECTORY=$(mktemp -d "${TMPDIR:-/tmp}/ciwi-macos-app.XXXXXX")
@@ -24,7 +25,7 @@ go run "gioui.org/cmd/gogio@${GOGIO_VERSION}" \
     -name Ciwi \
     -version "${VERSION}.1" \
     -icon packaging/icons/ciwi.png \
-    -ldflags "-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${VERSION}" \
+    -ldflags "-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" \
     -o "$WORK_DIRECTORY/apps/Ciwi.app" \
     ./cmd/ciwi-desktop
 

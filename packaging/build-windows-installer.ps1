@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$Version = $Version.Trim() -replace '^[vV]', ''
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $gogioVersion = if ($env:GOGIO_VERSION) { $env:GOGIO_VERSION } else { "v0.10.0" }
 $appExe = Join-Path $repoRoot "dist\Ciwi.exe"
@@ -35,7 +36,7 @@ New-Item -ItemType Directory -Force -Path (Split-Path -Parent $resolvedOutput), 
     -name Ciwi `
     -version "$Version.1" `
     -icon (Join-Path $repoRoot "packaging\icons\ciwi.png") `
-    -ldflags "-s -w -X github.com/izzyreal/ciwi/internal/version.Version=$Version" `
+    -ldflags "-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v$Version" `
     -o $appExe `
     ./cmd/ciwi-desktop
 if ($LASTEXITCODE -ne 0) { throw "gogio failed to build Ciwi.exe" }

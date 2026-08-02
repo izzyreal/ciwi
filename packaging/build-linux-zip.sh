@@ -6,7 +6,8 @@ if [ "$#" -ne 2 ]; then
     exit 1
 fi
 
-VERSION=$1
+VERSION=${1#v}
+VERSION=${VERSION#V}
 OUTPUT_ZIP=$2
 WORK_DIRECTORY=$(mktemp -d "${TMPDIR:-/tmp}/ciwi-linux-client.XXXXXX")
 PACKAGE_DIRECTORY="$WORK_DIRECTORY/Ciwi"
@@ -21,7 +22,7 @@ mkdir -p "$PACKAGE_DIRECTORY"
 CGO_ENABLED=1 go build \
     -tags nowayland,novulkan \
     -trimpath \
-    -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${VERSION}" \
+    -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" \
     -o "$PACKAGE_DIRECTORY/ciwi" \
     ./cmd/ciwi-desktop
 cp packaging/icons/ciwi.png "$PACKAGE_DIRECTORY/ciwi.png"
