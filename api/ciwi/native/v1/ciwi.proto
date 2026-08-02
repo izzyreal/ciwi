@@ -167,6 +167,24 @@ message JobTimelineItem {
   string error = 9;
 }
 
+message WatchJobOutputRequest {
+  string job_execution_id = 1;
+  int64 after_event_id = 2;
+}
+
+message JobOutputBatch {
+  string job_execution_id = 1;
+  int64 next_event_id = 2;
+  repeated JobOutputLine lines = 3;
+  bool has_more = 4;
+  bool terminal = 5;
+}
+
+message JobOutputLine {
+  int64 event_id = 1;
+  string text = 2;
+}
+
 message ExecutionSummary {
   uint32 total_jobs = 1;
   uint32 succeeded = 2;
@@ -236,6 +254,7 @@ message Request {
     WatchChangesRequest watch_changes = 14;
     GetProjectDetailsRequest get_project_details = 15;
     GetJobDetailsRequest get_job_details = 16;
+    WatchJobOutputRequest watch_job_output = 17;
   }
 }
 
@@ -250,6 +269,7 @@ message Response {
     ErrorStatus error = 15;
     ProjectDetailsView project_details = 16;
     JobDetailsView job_details = 17;
+    JobOutputBatch job_output = 18;
   }
 }
 

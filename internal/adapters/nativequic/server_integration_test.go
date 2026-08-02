@@ -75,6 +75,14 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if jobDetails.Title != "Job: compile" || len(jobDetails.Timeline) != 1 || jobDetails.Timeline[0].Status != "succeeded" {
 		t.Fatalf("job details = %#v", jobDetails)
 	}
+	output, outputErrors, err := client.WatchJobOutput(ctx, "job-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := receiveOutput(t, output, outputErrors)
+	if !batch.Terminal || batch.NextEventId != 1 || len(batch.Lines) != 1 || batch.Lines[0].Text != "compiled\n" {
+		t.Fatalf("job output = %#v", batch)
+	}
 
 	result, err := client.RunPipeline(ctx, &cnpv1.RunPipelineRequest{
 		PipelineDbId: 42,
@@ -126,6 +134,36 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	}
 	if len(change.Topics) != 2 || change.Topics[0] != cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS || change.Topics[1] != cnpv1.ChangeTopic_CHANGE_TOPIC_QUEUE {
 		t.Fatalf("change topics = %v", change.Topics)
+	}
+}
+
+func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
+	changes := application.NewChangeHub()
+	jobDetails := &streamingJobDetailsService{}
+	server := startServer(t, nativequic.Services{
+		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
+		Pipelines: &pipelineService{}, Changes: changes, Version: "v0.2.0",
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := cnpclient.Dial(ctx, server.Addr(), "ciwi-test", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	batches, errorsOut, err := client.WatchJobOutput(ctx, "job-running", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := receiveOutput(t, batches, errorsOut)
+	if initial.Terminal || initial.NextEventId != 0 || len(initial.Lines) != 0 {
+		t.Fatalf("initial output = %#v", initial)
+	}
+	jobDetails.setReady()
+	changes.Publish(application.ChangeQueue)
+	next := receiveOutput(t, batches, errorsOut)
+	if !next.Terminal || next.NextEventId != 2 || len(next.Lines) != 1 || next.Lines[0].Text != "next\n" {
+		t.Fatalf("next output = %#v", next)
 	}
 }
 
@@ -188,6 +226,22 @@ func receiveEvent(t *testing.T, events <-chan *cnpv1.ChangeEvent, errorsOut <-ch
 	return nil
 }
 
+func receiveOutput(t *testing.T, batches <-chan *cnpv1.JobOutputBatch, errorsOut <-chan error) *cnpv1.JobOutputBatch {
+	t.Helper()
+	select {
+	case batch := <-batches:
+		if batch == nil {
+			t.Fatal("job output stream closed")
+		}
+		return batch
+	case err := <-errorsOut:
+		t.Fatalf("job output error = %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for job output")
+	}
+	return nil
+}
+
 type serverService struct{}
 
 func (serverService) GetServerInfo(context.Context) (domain.ServerInfo, error) {
@@ -234,6 +288,40 @@ func (jobDetailsService) GetJobDetailsView(context.Context, string) (presentatio
 	return presentation.JobDetailsView{
 		ID: "job-1", Title: "Job: compile", Status: "succeeded", StatusLabel: "Succeeded",
 		Timeline: []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
+	}, nil
+}
+
+type streamingJobDetailsService struct {
+	mu    sync.Mutex
+	ready bool
+}
+
+func (s *streamingJobDetailsService) setReady() {
+	s.mu.Lock()
+	s.ready = true
+	s.mu.Unlock()
+}
+
+func (s *streamingJobDetailsService) GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error) {
+	return presentation.JobDetailsView{ID: "job-running", Status: "running"}, nil
+}
+
+func (s *streamingJobDetailsService) GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.ready {
+		return presentation.JobOutputView{JobExecutionID: "job-running"}, nil
+	}
+	return presentation.JobOutputView{
+		JobExecutionID: "job-running", NextEventID: 2, Terminal: true,
+		Lines: []presentation.JobOutputLineView{{EventID: 2, Text: "next\n"}},
+	}, nil
+}
+
+func (jobDetailsService) GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error) {
+	return presentation.JobOutputView{
+		JobExecutionID: "job-1", NextEventID: 1, Terminal: true,
+		Lines: []presentation.JobOutputLineView{{EventID: 1, Text: "compiled\n"}},
 	}, nil
 }
 

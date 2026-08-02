@@ -14,6 +14,74 @@ type Store interface {
 	ListJobExecutions() ([]protocol.JobExecution, error)
 	GetJobExecution(string) (protocol.JobExecution, error)
 	ListJobExecutionTimelineEvents(string) ([]protocol.JobExecutionEvent, error)
+	ListJobExecutionEventsPageAfter(string, int64, int) ([]protocol.JobExecutionEvent, error)
+}
+
+const (
+	outputPageSize  = 128
+	outputPageBytes = 512 * 1024
+)
+
+func (r *Repository) ListJobOutputAfter(ctx context.Context, jobID string, afterEventID int64) (domain.JobOutputBatch, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.JobOutputBatch{}, err
+	}
+	job, err := r.store.GetJobExecution(jobID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return domain.JobOutputBatch{}, domain.ErrJobExecutionNotFound
+		}
+		return domain.JobOutputBatch{}, err
+	}
+	events, err := r.store.ListJobExecutionEventsPageAfter(jobID, afterEventID, outputPageSize)
+	if err != nil {
+		return domain.JobOutputBatch{}, err
+	}
+	batch := domain.JobOutputBatch{
+		JobExecutionID: jobID, NextEventID: afterEventID,
+		Terminal: protocol.IsTerminalJobExecutionStatus(protocol.NormalizeJobExecutionStatus(job.Status)),
+		Events:   make([]domain.JobOutputEvent, 0, len(events)),
+	}
+	pageBytes := 0
+	for eventIndex, event := range events {
+		eventBytes := len(event.Output) + len(event.Message) + len(event.Error)
+		if len(batch.Events) > 0 && pageBytes+eventBytes > outputPageBytes {
+			batch.HasMore = true
+			break
+		}
+		itemKind, itemName, itemIndex, itemTotal := "", "", 0, 0
+		if event.Phase != nil {
+			itemKind, itemName, itemIndex, itemTotal = "phase", event.Phase.Name, event.Phase.Index, event.Phase.Total
+		} else if event.Step != nil {
+			itemKind, itemName, itemIndex, itemTotal = "step", event.Step.Name, event.Step.Index, event.Step.Total
+		}
+		batch.Events = append(batch.Events, domain.JobOutputEvent{
+			ID: event.ID, Type: outputEventType(event.Type), Message: event.Message, Output: event.Output,
+			Error: event.Error, ExitCode: copyInt(event.ExitCode), ItemKind: itemKind,
+			ItemName: itemName, ItemIndex: itemIndex, ItemTotal: itemTotal,
+		})
+		if event.ID > batch.NextEventID {
+			batch.NextEventID = event.ID
+		}
+		pageBytes += eventBytes
+		if eventIndex == len(events)-1 && len(events) == outputPageSize {
+			batch.HasMore = true
+		}
+	}
+	return batch, nil
+}
+
+func outputEventType(eventType string) string {
+	switch eventType {
+	case protocol.JobExecutionEventTypeSystemMessage:
+		return domain.JobOutputEventSystemMessage
+	case protocol.JobExecutionEventTypeStepOutput, protocol.JobExecutionEventTypePhaseOutput:
+		return domain.JobOutputEventOutput
+	case protocol.JobExecutionEventTypeStepFinished, protocol.JobExecutionEventTypePhaseFinished:
+		return domain.JobOutputEventFinished
+	default:
+		return ""
+	}
 }
 
 func (r *Repository) GetJobExecutionDetails(ctx context.Context, jobID string) (domain.JobExecutionDetails, error) {

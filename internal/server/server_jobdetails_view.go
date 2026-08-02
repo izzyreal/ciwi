@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/presentation"
@@ -22,6 +23,7 @@ type jobDetailsViewResponse struct {
 	Duration    string                    `json:"duration"`
 	ExitCode    string                    `json:"exit_code"`
 	Error       string                    `json:"error"`
+	Output      string                    `json:"output"`
 	Timeline    []jobTimelineViewResponse `json:"timeline"`
 }
 
@@ -37,10 +39,33 @@ type jobTimelineViewResponse struct {
 	Error       string `json:"error"`
 }
 
+type jobOutputViewResponse struct {
+	JobExecutionID string                      `json:"job_execution_id"`
+	Lines          []jobOutputLineViewResponse `json:"lines"`
+	NextEventID    int64                       `json:"next_event_id"`
+	HasMore        bool                        `json:"has_more"`
+	Terminal       bool                        `json:"terminal"`
+}
+
+type jobOutputLineViewResponse struct {
+	EventID int64  `json:"event_id"`
+	Text    string `json:"text"`
+}
+
 func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Request) {
-	jobID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/views/jobs/"), "/")
-	if jobID == "" || strings.Contains(jobID, "/") {
+	relative := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/views/jobs/"), "/")
+	parts := strings.Split(relative, "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" || len(parts) > 2 {
 		http.Error(w, "invalid job execution id", http.StatusBadRequest)
+		return
+	}
+	jobID := strings.TrimSpace(parts[0])
+	if len(parts) == 2 {
+		if parts[1] != "output" {
+			http.NotFound(w, r)
+			return
+		}
+		s.jobOutputViewHandler(w, r, jobID)
 		return
 	}
 	view, err := s.app().jobDetails.GetJobDetailsView(r.Context(), jobID)
@@ -49,6 +74,31 @@ func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, jobDetailsToResponse(view))
+}
+
+func (s *stateStore) jobOutputViewHandler(w http.ResponseWriter, r *http.Request, jobID string) {
+	afterEventID := int64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("after_event_id")); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 0 {
+			http.Error(w, "after_event_id must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		afterEventID = parsed
+	}
+	view, err := s.app().jobDetails.GetJobOutputView(r.Context(), jobID, afterEventID)
+	if err != nil {
+		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
+		return
+	}
+	lines := make([]jobOutputLineViewResponse, 0, len(view.Lines))
+	for _, line := range view.Lines {
+		lines = append(lines, jobOutputLineViewResponse{EventID: line.EventID, Text: line.Text})
+	}
+	writeJSON(w, http.StatusOK, jobOutputViewResponse{
+		JobExecutionID: view.JobExecutionID, Lines: lines, NextEventID: view.NextEventID,
+		HasMore: view.HasMore, Terminal: view.Terminal,
+	})
 }
 
 func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewResponse {

@@ -11,6 +11,28 @@ import (
 type ExecutionCardRepository interface {
 	ListFrontPageExecutionCards(context.Context) ([]domain.ExecutionCard, []domain.ExecutionCard, error)
 	GetJobExecutionDetails(context.Context, string) (domain.JobExecutionDetails, error)
+	ListJobOutputAfter(context.Context, string, int64) (domain.JobOutputBatch, error)
+}
+
+func (q *ExecutionQueries) GetJobOutput(ctx context.Context, jobID string, afterEventID int64) (domain.JobOutputBatch, error) {
+	if q == nil || q.repository == nil {
+		return domain.JobOutputBatch{}, NewError(ErrorUnavailable, "execution repository unavailable", nil)
+	}
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" {
+		return domain.JobOutputBatch{}, NewError(ErrorInvalidArgument, "job execution id is required", nil)
+	}
+	if afterEventID < 0 {
+		return domain.JobOutputBatch{}, NewError(ErrorInvalidArgument, "after event id must be non-negative", nil)
+	}
+	batch, err := q.repository.ListJobOutputAfter(ctx, jobID, afterEventID)
+	if errors.Is(err, domain.ErrJobExecutionNotFound) {
+		return domain.JobOutputBatch{}, NewError(ErrorNotFound, "job execution not found", err)
+	}
+	if err != nil {
+		return domain.JobOutputBatch{}, WrapInternal("get job output", err)
+	}
+	return batch, nil
 }
 
 func (q *ExecutionQueries) GetJobExecutionDetails(ctx context.Context, jobID string) (domain.JobExecutionDetails, error) {

@@ -56,3 +56,30 @@ type JobTimelineItem struct {
 	ExitCode    *int
 	Error       string
 }
+
+type JobOutputBatch struct {
+	JobExecutionID string
+	Events         []JobOutputEvent
+	NextEventID    int64
+	HasMore        bool
+	Terminal       bool
+}
+
+const (
+	JobOutputEventSystemMessage = "system-message"
+	JobOutputEventOutput        = "output"
+	JobOutputEventFinished      = "finished"
+)
+
+type JobOutputEvent struct {
+	ID        int64
+	Type      string
+	Message   string
+	Output    string
+	Error     string
+	ExitCode  *int
+	ItemKind  string
+	ItemName  string
+	ItemIndex int
+	ItemTotal int
+}

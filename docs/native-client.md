@@ -43,6 +43,7 @@ separate from the established pages until behavioral parity is complete.
 - Negotiation: the first bidirectional stream is `Hello` / `Welcome`
 - Requests: one independent bidirectional stream per request
 - Live state: a long-lived `WatchChanges` stream of coalescible invalidations
+- Live output: a cursor-based `WatchJobOutput` stream of bounded event pages
 - 0-RTT and QUIC datagrams: disabled in v1
 
 The server exposes typed status codes rather than HTTP status codes. Mutating
@@ -71,10 +72,11 @@ certificate pinning or a pairing flow without changing application services.
 
 The vertical slices support server information, the shared front page, project
 details with nested pipelines/jobs/configured steps, job execution snapshots
-with phase/step timelines, pipeline enqueue commands, native back navigation,
-and live invalidations. Status and error output remain selectable and copyable.
-Incremental log streaming and execution controls remain on the established job
-page while their application/CNP slices are built. Agents continue to use the
-existing HTTP protocol.
+with phase/step timelines, selectable incremental output, pipeline enqueue
+commands, native back navigation, and live invalidations. Output streams use
+bounded cursor pages and clients cap their display buffer, so status refreshes
+do not reload large logs. Step navigation and execution controls remain on the
+established job page while their application/CNP slices are built. Agents
+continue to use the existing HTTP protocol.
 The desktop client deliberately has no HTTP fallback: missing CNP capabilities
 fail visibly instead of silently coupling the native UI to browser endpoints.

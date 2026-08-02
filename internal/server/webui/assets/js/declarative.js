@@ -2,6 +2,8 @@
   'use strict';
 
   const root = document.getElementById('declarativeRoot');
+  let outputWatchGeneration = 0;
+  const maxOutputCharacters = 1024 * 1024;
 
   function gradientCSS(gradient) {
     if (!gradient || !Array.isArray(gradient.stops)) return '';
@@ -162,7 +164,30 @@
     return element;
   }
 
+  async function watchJobOutput(jobID, generation) {
+    let afterEventID = 0;
+    let output = '';
+    while (generation === outputWatchGeneration) {
+      const response = await fetch('/api/v1/views/jobs/' + encodeURIComponent(jobID) + '/output?after_event_id=' + String(afterEventID));
+      if (!response.ok) throw new Error(await response.text());
+      const batch = await response.json();
+      (Array.isArray(batch.lines) ? batch.lines : []).forEach(line => { output += String(line.text || ''); });
+      if (output.length > maxOutputCharacters) {
+        output = '[ciwi: earlier output omitted]\n' + output.slice(output.length - maxOutputCharacters);
+      }
+      const outputElement = document.getElementById('job-output-text');
+      if (outputElement) outputElement.textContent = output;
+      const emptyElement = document.getElementById('job-output-empty');
+      if (emptyElement) emptyElement.hidden = output !== '';
+      const nextEventID = Number(batch.next_event_id || afterEventID);
+      if (Number.isFinite(nextEventID) && nextEventID >= afterEventID) afterEventID = nextEventID;
+      if (batch.terminal && !batch.has_more) return;
+      if (!batch.has_more) await new Promise(resolve => window.setTimeout(resolve, 500));
+    }
+  }
+
   async function refresh() {
+    const generation = ++outputWatchGeneration;
     try {
       const projectMatch = window.location.pathname.match(/^\/declarative-preview\/projects\/(\d+)\/?$/);
       const jobMatch = window.location.pathname.match(/^\/declarative-preview\/jobs\/([^/]+)\/?$/);
@@ -181,6 +206,13 @@
       applyContractTheme(themes);
       const fragment = renderNode(documentContract.screen.root, { [bindingRoot]: view });
       root.replaceChildren(fragment);
+      if (jobMatch) {
+        watchJobOutput(jobMatch[1], generation).catch(error => {
+          if (generation !== outputWatchGeneration) return;
+          const outputElement = document.getElementById('job-output-text');
+          if (outputElement) outputElement.textContent = 'Output stream failed: ' + (error.message || String(error));
+        });
+      }
     } catch (error) {
       const message = document.createElement('div');
       message.className = 'dsl-error';

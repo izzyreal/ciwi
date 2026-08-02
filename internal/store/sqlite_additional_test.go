@@ -126,6 +126,17 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	if gotEvents[0].ID <= 0 || gotEvents[1].ID <= gotEvents[0].ID || gotEvents[2].ID <= gotEvents[1].ID || gotEvents[3].ID <= gotEvents[2].ID {
 		t.Fatalf("expected increasing event ids, got %+v", gotEvents)
 	}
+	firstPage, err := s.ListJobExecutionEventsPageAfter(job.ID, 0, 2)
+	if err != nil {
+		t.Fatalf("ListJobExecutionEventsPageAfter first: %v", err)
+	}
+	secondPage, err := s.ListJobExecutionEventsPageAfter(job.ID, firstPage[len(firstPage)-1].ID, 2)
+	if err != nil {
+		t.Fatalf("ListJobExecutionEventsPageAfter second: %v", err)
+	}
+	if len(firstPage) != 2 || len(secondPage) != 2 || firstPage[1].ID >= secondPage[0].ID {
+		t.Fatalf("unexpected pages first=%+v second=%+v", firstPage, secondPage)
+	}
 	delta, err := s.ListJobExecutionEventsAfter(job.ID, gotEvents[2].ID)
 	if err != nil {
 		t.Fatalf("ListJobExecutionEventsAfter: %v", err)

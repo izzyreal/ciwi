@@ -35,6 +35,7 @@ type Services struct {
 	}
 	JobDetails interface {
 		GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error)
+		GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error)
 	}
 	Pipelines interface {
 		RunPipeline(context.Context, application.RunPipelineRequest) (application.RunPipelineResult, error)
@@ -117,7 +118,7 @@ func (s *Server) handleConnection(ctx context.Context, connection *quic.Conn) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "projects", "front_page", "project_details", "job_details", "run_pipeline", "watch_changes",
+			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -159,10 +160,90 @@ func (s *Server) handleRequestStream(parent context.Context, stream *quic.Stream
 		s.writeChanges(ctx, stream, request.Metadata.RequestId)
 		return
 	}
+	if operation, watch := request.Operation.(*cnpv1.Request_WatchJobOutput); watch {
+		s.writeJobOutput(ctx, stream, request.Metadata.RequestId, operation.WatchJobOutput)
+		return
+	}
 	response := s.execute(ctx, request)
 	if err := writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}}); err != nil && !errors.Is(err, io.EOF) {
 		slog.Debug("write native response failed", "error", err)
 	}
+}
+
+func (s *Server) writeJobOutput(ctx context.Context, stream *quic.Stream, requestID string, request *cnpv1.WatchJobOutputRequest) {
+	if request == nil {
+		response := &cnpv1.Response{RequestId: requestID, Result: &cnpv1.Response_Error{
+			Error: errorToProto(application.NewError(application.ErrorInvalidArgument, "job output request is required", nil)),
+		}}
+		_ = writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}})
+		return
+	}
+	afterEventID := request.GetAfterEventId()
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
+	changes := s.services.Changes.Watch(watchCtx)
+	select {
+	case _, ok := <-changes:
+		if !ok {
+			return
+		}
+	case <-ctx.Done():
+		return
+	case <-stream.Context().Done():
+		return
+	}
+	for {
+		view, err := s.services.JobDetails.GetJobOutputView(ctx, request.GetJobExecutionId(), afterEventID)
+		response := &cnpv1.Response{RequestId: requestID}
+		if err != nil {
+			response.Result = &cnpv1.Response_Error{Error: errorToProto(err)}
+		} else {
+			response.Result = &cnpv1.Response_JobOutput{JobOutput: jobOutputToProto(view)}
+		}
+		if writeErr := writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}}); writeErr != nil {
+			return
+		}
+		if err != nil {
+			return
+		}
+		afterEventID = view.NextEventID
+		if view.Terminal && !view.HasMore {
+			return
+		}
+		if view.HasMore {
+			continue
+		}
+		if !waitForExecutionChange(ctx, stream, changes) {
+			return
+		}
+	}
+}
+
+func waitForExecutionChange(ctx context.Context, stream *quic.Stream, changes <-chan application.Change) bool {
+	for {
+		select {
+		case change, ok := <-changes:
+			if !ok {
+				return false
+			}
+			if change.Resync || hasExecutionChange(change.Topics) {
+				return true
+			}
+		case <-ctx.Done():
+			return false
+		case <-stream.Context().Done():
+			return false
+		}
+	}
+}
+
+func hasExecutionChange(topics []application.ChangeTopic) bool {
+	for _, topic := range topics {
+		if topic == application.ChangeQueue || topic == application.ChangeHistory {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Response {
@@ -222,9 +303,22 @@ func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Res
 }
 
 func (s *Server) writeChanges(ctx context.Context, stream *quic.Stream, requestID string) {
-	for change := range s.services.Changes.Watch(ctx) {
-		response := &cnpv1.Response{RequestId: requestID, Result: &cnpv1.Response_Change{Change: changeToProto(change)}}
-		if err := writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}}); err != nil {
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
+	changes := s.services.Changes.Watch(watchCtx)
+	for {
+		select {
+		case change, ok := <-changes:
+			if !ok {
+				return
+			}
+			response := &cnpv1.Response{RequestId: requestID, Result: &cnpv1.Response_Change{Change: changeToProto(change)}}
+			if err := writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}}); err != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		case <-stream.Context().Done():
 			return
 		}
 	}

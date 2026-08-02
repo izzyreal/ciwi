@@ -37,6 +37,35 @@ type navigationState struct {
 	jobID     string
 }
 
+type jobOutputBuffer struct {
+	jobID string
+	text  string
+}
+
+const maxNativeOutputBytes = 1024 * 1024
+
+func (b *jobOutputBuffer) reset(jobID string) {
+	b.jobID = jobID
+	b.text = ""
+}
+
+func (b *jobOutputBuffer) append(batch *cnpv1.JobOutputBatch) {
+	if batch == nil || (b.jobID != "" && batch.JobExecutionId != b.jobID) {
+		return
+	}
+	for _, line := range batch.Lines {
+		b.text += line.Text
+	}
+	if len(b.text) > maxNativeOutputBytes {
+		tail := b.text[len(b.text)-maxNativeOutputBytes:]
+		b.text = "[ciwi native: earlier output omitted]\n" + strings.ToValidUTF8(tail, "")
+	}
+}
+
+func (b *jobOutputBuffer) apply(renderer *Renderer) {
+	renderer.SetRootBinding("jobDetails", "output", b.text)
+}
+
 func Run(options Options) error {
 	frontPageScreen, err := sharedUI.LoadScreen("front-page")
 	if err != nil {
@@ -106,6 +135,34 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		window.Invalidate()
 		return
 	}
+	var outputBatches <-chan *cnpv1.JobOutputBatch
+	var outputErrors <-chan error
+	var outputCancel context.CancelFunc
+	outputBuffer := &jobOutputBuffer{}
+	stopOutput := func() {
+		if outputCancel != nil {
+			outputCancel()
+		}
+		outputCancel = nil
+		outputBatches = nil
+		outputErrors = nil
+	}
+	startOutput := func(jobID string) {
+		stopOutput()
+		outputBuffer.reset(jobID)
+		outputBuffer.apply(renderer)
+		streamCtx, cancelStream := context.WithCancel(ctx)
+		batches, errorsOut, streamErr := client.WatchJobOutput(streamCtx, jobID, 0)
+		if streamErr != nil {
+			cancelStream()
+			renderer.SetStatus("Output stream unavailable: " + streamErr.Error())
+			return
+		}
+		outputCancel = cancelStream
+		outputBatches = batches
+		outputErrors = errorsOut
+	}
+	defer stopOutput()
 	defer client.Close()
 	navigation := navigationState{screen: "front-page"}
 	if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
@@ -137,6 +194,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
 					renderer.SetStatus("Refresh failed: " + err.Error())
 				}
+				if navigation.screen == "job-details" {
+					outputBuffer.apply(renderer)
+				}
 				window.Invalidate()
 			}
 		case watchErr, ok := <-watchErrors:
@@ -145,8 +205,34 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				window.Invalidate()
 			}
 			watchErrors = nil
+		case batch, ok := <-outputBatches:
+			if !ok {
+				outputBatches = nil
+				continue
+			}
+			outputBuffer.append(batch)
+			outputBuffer.apply(renderer)
+			window.Invalidate()
+		case outputErr, ok := <-outputErrors:
+			if !ok {
+				outputErrors = nil
+				continue
+			}
+			if outputErr != nil {
+				renderer.SetStatus("Output stream stopped: " + outputErr.Error())
+				window.Invalidate()
+			}
+			outputErrors = nil
 		case command := <-commands:
+			previous := navigation
 			handleCommand(ctx, client, renderer, screens, &navigation, command)
+			if navigation != previous {
+				if navigation.screen == "job-details" {
+					startOutput(navigation.jobID)
+				} else {
+					stopOutput()
+				}
+			}
 			window.Invalidate()
 		}
 	}
@@ -284,7 +370,14 @@ func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, 
 }
 
 func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
-	return protobufBindingData("jobDetails", "job-details", view)
+	data, err := protobufBindingData("jobDetails", "job-details", view)
+	if err != nil {
+		return nil, err
+	}
+	if root, ok := data["jobDetails"].(map[string]any); ok {
+		root["output"] = ""
+	}
+	return data, nil
 }
 
 func protobufBindingData(root, description string, message proto.Message) (map[string]any, error) {

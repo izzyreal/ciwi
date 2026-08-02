@@ -4,6 +4,7 @@ package gio
 
 import (
 	"image"
+	"strings"
 	"testing"
 
 	"gioui.org/layout"
@@ -119,8 +120,52 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got != 2 {
-		t.Fatalf("collapsed job view created %d interactive widgets, want Back and one timeline disclosure", got)
+	if got := len(renderer.buttons); got != 3 {
+		t.Fatalf("collapsed job view created %d interactive widgets, want Back, output, and timeline disclosures", got)
+	}
+}
+
+func TestJobOutputBindingUsesSelectableReadOnlyEditor(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{Id: "job-1", Title: "Job: compile", StatusLabel: "Running", Mode: "Run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetScreenAndData(screen, data)
+	renderer.SetRootBinding("jobDetails", "output", "hello\n")
+	renderer.disclosures["job-details/root/2/1"] = true
+	var operations op.Ops
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if len(renderer.textEditors) != 1 {
+		t.Fatalf("text editors = %d", len(renderer.textEditors))
+	}
+	for _, editor := range renderer.textEditors {
+		if !editor.ReadOnly || editor.Text() != "hello\n" {
+			t.Fatalf("editor readOnly=%v text=%q", editor.ReadOnly, editor.Text())
+		}
+	}
+}
+
+func TestNativeJobOutputBufferKeepsBoundedTail(t *testing.T) {
+	buffer := &jobOutputBuffer{}
+	buffer.reset("job-1")
+	buffer.append(&cnpv1.JobOutputBatch{
+		JobExecutionId: "job-1",
+		Lines:          []*cnpv1.JobOutputLine{{Text: strings.Repeat("x", maxNativeOutputBytes+100)}},
+	})
+	if !strings.HasPrefix(buffer.text, "[ciwi native: earlier output omitted]\n") || len(buffer.text) > maxNativeOutputBytes+100 {
+		t.Fatalf("buffer length=%d prefix=%q", len(buffer.text), buffer.text[:min(len(buffer.text), 50)])
 	}
 }
 

@@ -3,8 +3,10 @@ package presentation
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/izzyreal/ciwi/internal/domain"
 )
@@ -39,16 +41,50 @@ type JobTimelineView struct {
 	Error       string
 }
 
+type JobOutputView struct {
+	JobExecutionID string
+	Lines          []JobOutputLineView
+	NextEventID    int64
+	HasMore        bool
+	Terminal       bool
+}
+
+type JobOutputLineView struct {
+	EventID int64
+	Text    string
+}
+
 type JobDetailsQueries struct {
 	executions interface {
 		GetJobExecutionDetails(context.Context, string) (domain.JobExecutionDetails, error)
+		GetJobOutput(context.Context, string, int64) (domain.JobOutputBatch, error)
 	}
 }
 
 func NewJobDetailsQueries(executions interface {
 	GetJobExecutionDetails(context.Context, string) (domain.JobExecutionDetails, error)
+	GetJobOutput(context.Context, string, int64) (domain.JobOutputBatch, error)
 }) *JobDetailsQueries {
 	return &JobDetailsQueries{executions: executions}
+}
+
+func (q *JobDetailsQueries) GetJobOutputView(ctx context.Context, jobID string, afterEventID int64) (JobOutputView, error) {
+	batch, err := q.executions.GetJobOutput(ctx, jobID, afterEventID)
+	if err != nil {
+		return JobOutputView{}, err
+	}
+	view := JobOutputView{
+		JobExecutionID: batch.JobExecutionID, NextEventID: batch.NextEventID,
+		HasMore: batch.HasMore, Terminal: batch.Terminal,
+		Lines: make([]JobOutputLineView, 0, len(batch.Events)),
+	}
+	for _, event := range batch.Events {
+		text := renderOutputEvent(event)
+		if text != "" {
+			view.Lines = append(view.Lines, JobOutputLineView{EventID: event.ID, Text: text})
+		}
+	}
+	return view, nil
 }
 
 func (q *JobDetailsQueries) GetJobDetailsView(ctx context.Context, jobID string) (JobDetailsView, error) {
@@ -153,4 +189,67 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return "execution"
+}
+
+func renderOutputEvent(event domain.JobOutputEvent) string {
+	text := ""
+	switch event.Type {
+	case domain.JobOutputEventSystemMessage:
+		text = event.Message
+	case domain.JobOutputEventOutput:
+		text = event.Output
+	case domain.JobOutputEventFinished:
+		if strings.TrimSpace(event.Error) == "" && (event.ExitCode == nil || *event.ExitCode == 0) {
+			return ""
+		}
+		kind := event.ItemKind
+		if kind == "" {
+			kind = "execution item"
+		}
+		title := outputItemTitle(event)
+		text = fmt.Sprintf("[%s] failed: %s", kind, title)
+		if errText := strings.TrimSpace(event.Error); errText != "" {
+			text += " (" + errText + ")"
+		} else if event.ExitCode != nil {
+			text += fmt.Sprintf(" (exit=%d)", *event.ExitCode)
+		}
+	}
+	text = cleanOutputText(text)
+	if text != "" && !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	return text
+}
+
+func outputItemTitle(event domain.JobOutputEvent) string {
+	name := strings.Join(strings.Fields(event.ItemName), " ")
+	if event.ItemIndex > 0 && event.ItemTotal > 0 {
+		if name == "" {
+			return fmt.Sprintf("%d/%d", event.ItemIndex, event.ItemTotal)
+		}
+		return fmt.Sprintf("%d/%d: %s", event.ItemIndex, event.ItemTotal, name)
+	}
+	if name != "" {
+		return name
+	}
+	return "unknown"
+}
+
+var outputANSIEscapeRE = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]`)
+
+func cleanOutputText(text string) string {
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	text = outputANSIEscapeRE.ReplaceAllString(text, "")
+	var clean strings.Builder
+	for len(text) > 0 {
+		r, size := utf8.DecodeRuneInString(text)
+		text = text[size:]
+		if r == utf8.RuneError && size == 1 {
+			continue
+		}
+		if r == '\n' || r == '\t' || r >= 0x20 {
+			clean.WriteRune(r)
+		}
+	}
+	return clean.String()
 }

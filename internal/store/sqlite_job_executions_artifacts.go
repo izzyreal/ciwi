@@ -243,6 +243,42 @@ func (s *Store) ListJobExecutionEventsAfter(jobID string, afterID int64) ([]prot
 	return out, nil
 }
 
+func (s *Store) ListJobExecutionEventsPageAfter(jobID string, afterID int64, limit int) ([]protocol.JobExecutionEvent, error) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, fmt.Errorf("job id is required")
+	}
+	if afterID < 0 {
+		afterID = 0
+	}
+	if limit <= 0 || limit > 512 {
+		limit = 128
+	}
+	rows, err := s.db.Query(`
+		SELECT id, event_type, timestamp_utc, payload_json
+		FROM job_execution_events
+		WHERE job_execution_id = ? AND id > ?
+		ORDER BY id ASC
+		LIMIT ?
+	`, jobID, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list event page: %w", err)
+	}
+	defer rows.Close()
+	out := []protocol.JobExecutionEvent{}
+	for rows.Next() {
+		var id int64
+		var eventType, tsRaw, payloadRaw string
+		if err := rows.Scan(&id, &eventType, &tsRaw, &payloadRaw); err != nil {
+			return nil, fmt.Errorf("scan event page: %w", err)
+		}
+		out = append(out, decodeJobExecutionEvent(id, eventType, tsRaw, payloadRaw))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate event page: %w", err)
+	}
+	return out, nil
+}
+
 func (s *Store) ListJobExecutionEventsForJobs(jobIDs []string, eventType string) (map[string][]protocol.JobExecutionEvent, error) {
 	out := make(map[string][]protocol.JobExecutionEvent, len(jobIDs))
 	if len(jobIDs) == 0 {

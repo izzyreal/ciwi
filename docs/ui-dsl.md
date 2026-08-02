@@ -31,6 +31,10 @@ The `ciwi.ui/v1` schema contains:
 - narrow `web` and `gio` overrides;
 - semantic color, gradient, and dimension tokens.
 
+The semantic `code` text role renders as a selectable read-only native editor
+and as a scrollable monospace region in the browser adapter; it does not embed
+or execute source code.
+
 It intentionally does not contain selectors, arbitrary CSS properties, DOM
 APIs, Gio types, scripts, URLs to executable resources, protobuf messages, or
 transport calls. Renderer adapters own focus, accessibility, text selection,

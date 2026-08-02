@@ -83,3 +83,16 @@ func TestDeclarativeJobPreviewUsesSharedRenderer(t *testing.T) {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	for _, expected := range []string{"/api/v1/views/jobs/", "/output?after_event_id=", "maxOutputCharacters"} {
+		if !strings.Contains(script, expected) {
+			t.Errorf("declarative renderer does not contain %q", expected)
+		}
+	}
+}

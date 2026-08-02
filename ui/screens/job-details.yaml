@@ -138,6 +138,40 @@ screen:
                 style:
                   tone: danger
       - component: section
+        id: execution-output
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Output / Error
+            style:
+              role: heading
+              emphasis: strong
+          - component: disclosure
+            text:
+              literal: Live output
+            layout:
+              direction: vertical
+              gap: small
+            children:
+              - component: text
+                id: job-output-text
+                text:
+                  binding: jobDetails.output
+                style:
+                  role: code
+              - component: text
+                id: job-output-empty
+                text:
+                  literal: No output reported yet.
+                visible:
+                  binding: jobDetails.output
+                  equals: ""
+                style:
+                  tone: muted
+      - component: section
         id: execution-path
         layout:
           direction: vertical

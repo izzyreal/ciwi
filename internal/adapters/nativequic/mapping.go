@@ -64,6 +64,17 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 	}
 }
 
+func jobOutputToProto(view presentation.JobOutputView) *cnpv1.JobOutputBatch {
+	lines := make([]*cnpv1.JobOutputLine, 0, len(view.Lines))
+	for _, line := range view.Lines {
+		lines = append(lines, &cnpv1.JobOutputLine{EventId: line.EventID, Text: line.Text})
+	}
+	return &cnpv1.JobOutputBatch{
+		JobExecutionId: view.JobExecutionID, NextEventId: view.NextEventID,
+		Lines: lines, HasMore: view.HasMore, Terminal: view.Terminal,
+	}
+}
+
 func projectsToProto(projects []domain.Project) []*cnpv1.ProjectSummary {
 	out := make([]*cnpv1.ProjectSummary, 0, len(projects))
 	for _, project := range projects {

@@ -33,6 +33,7 @@ type Renderer struct {
 	list        layout.List
 	buttons     map[string]*widget.Clickable
 	disclosures map[string]bool
+	textEditors map[string]*widget.Editor
 	statusText  widget.Editor
 	shownStatus string
 	onAction    ActionHandler
@@ -68,6 +69,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	renderer := &Renderer{
 		screen: screen, theme: materialTheme, palette: colors, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
+		textEditors: map[string]*widget.Editor{},
 	}
 	renderer.statusText.ReadOnly = true
 	return renderer, nil
@@ -93,6 +95,31 @@ func (r *Renderer) SetStatus(status string) {
 	r.mu.Lock()
 	r.status = status
 	r.mu.Unlock()
+}
+
+func (r *Renderer) SetRootBinding(root, key string, value any) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, ok := r.data.(map[string]any)
+	if !ok {
+		return false
+	}
+	rootData, ok := data[root].(map[string]any)
+	if !ok {
+		return false
+	}
+	nextRoot := make(map[string]any, len(rootData)+1)
+	for existingKey, existingValue := range rootData {
+		nextRoot[existingKey] = existingValue
+	}
+	nextRoot[key] = value
+	nextData := make(map[string]any, len(data))
+	for existingKey, existingValue := range data {
+		nextData[existingKey] = existingValue
+	}
+	nextData[root] = nextRoot
+	r.data = nextData
+	return true
 }
 
 func (r *Renderer) SetInvalidate(invalidate func()) {
@@ -208,7 +235,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			return r.layoutDisclosure(gtx, node, data, path)
 		}
 		if node.Component == "text" || node.Component == "badge" || node.Component == "image" {
-			return r.layoutText(gtx, node, data)
+			return r.layoutText(gtx, node, data, path)
 		}
 		if node.Component == "button" {
 			return r.layoutButton(gtx, node, data, path)
@@ -288,7 +315,7 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 	})
 }
 
-func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any) layout.Dimensions {
+func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
 	text := "ciwi"
 	if node.Text != nil {
 		resolved, err := uidsl.RenderText(data, *node.Text)
@@ -296,6 +323,21 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any) lay
 			return r.errorLabel(gtx, err)
 		}
 		text = resolved
+	}
+	if node.Style.Role == "code" {
+		editor := r.textEditors[path]
+		if editor == nil {
+			editor = &widget.Editor{ReadOnly: true}
+			r.textEditors[path] = editor
+		}
+		if editor.Text() != text {
+			editor.SetText(text)
+		}
+		style := material.Editor(r.theme, editor, "")
+		style.Font.Typeface = font.Typeface("Go Mono")
+		style.TextSize = unit.Sp(13)
+		style.Color = r.palette.text
+		return layout.UniformInset(12).Layout(gtx, style.Layout)
 	}
 	var label material.LabelStyle
 	switch node.Style.Role {

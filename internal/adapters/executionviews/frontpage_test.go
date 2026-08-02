@@ -2,6 +2,7 @@ package executionviews
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,8 +28,54 @@ func (s executionStoreStub) ListJobExecutionTimelineEvents(id string) ([]protoco
 	return append([]protocol.JobExecutionEvent(nil), s.events[id]...), nil
 }
 
+func (s executionStoreStub) ListJobExecutionEventsPageAfter(id string, after int64, limit int) ([]protocol.JobExecutionEvent, error) {
+	events := s.events[id]
+	out := make([]protocol.JobExecutionEvent, 0, min(len(events), limit))
+	for _, event := range events {
+		if event.ID > after && len(out) < limit {
+			out = append(out, event)
+		}
+	}
+	return out, nil
+}
+
 func (s executionStoreStub) ListJobExecutions() ([]protocol.JobExecution, error) {
 	return append([]protocol.JobExecution(nil), s.jobs...), nil
+}
+
+func TestRepositoryPagesJobOutputAndAdvancesOverLifecycleEvents(t *testing.T) {
+	repository := NewRepository(executionStoreStub{
+		jobs: []protocol.JobExecution{{ID: "job-1", Status: "running"}},
+		events: map[string][]protocol.JobExecutionEvent{"job-1": {
+			{ID: 4, Type: protocol.JobExecutionEventTypeStepStarted, Step: &protocol.JobStepPlanItem{Index: 1}},
+			{ID: 5, Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 1}, Output: "hello"},
+		}},
+	}, 40)
+	batch, err := repository.ListJobOutputAfter(t.Context(), "job-1", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.NextEventID != 5 || batch.Terminal || len(batch.Events) != 2 || batch.Events[1].Type != domain.JobOutputEventOutput {
+		t.Fatalf("batch = %+v", batch)
+	}
+}
+
+func TestRepositoryBoundsOutputPageByPayloadSize(t *testing.T) {
+	large := strings.Repeat("x", 300*1024)
+	repository := NewRepository(executionStoreStub{
+		jobs: []protocol.JobExecution{{ID: "job-1", Status: "running"}},
+		events: map[string][]protocol.JobExecutionEvent{"job-1": {
+			{ID: 1, Type: protocol.JobExecutionEventTypeStepOutput, Output: large},
+			{ID: 2, Type: protocol.JobExecutionEventTypeStepOutput, Output: large},
+		}},
+	}, 40)
+	batch, err := repository.ListJobOutputAfter(t.Context(), "job-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Events) != 1 || batch.NextEventID != 1 || !batch.HasMore {
+		t.Fatalf("batch events=%d next=%d hasMore=%v", len(batch.Events), batch.NextEventID, batch.HasMore)
+	}
 }
 
 func TestRepositoryBuildsTransportNeutralJobTimeline(t *testing.T) {

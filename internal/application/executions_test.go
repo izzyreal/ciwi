@@ -21,6 +21,10 @@ func (s executionRepositoryStub) GetJobExecutionDetails(context.Context, string)
 	return s.details, s.err
 }
 
+func (s executionRepositoryStub) ListJobOutputAfter(context.Context, string, int64) (domain.JobOutputBatch, error) {
+	return domain.JobOutputBatch{}, s.err
+}
+
 func TestGetJobExecutionDetailsValidatesAndMapsNotFound(t *testing.T) {
 	queries := NewExecutionQueries(executionRepositoryStub{})
 	if _, err := queries.GetJobExecutionDetails(t.Context(), " "); ErrorKindOf(err) != ErrorInvalidArgument {
@@ -29,5 +33,12 @@ func TestGetJobExecutionDetailsValidatesAndMapsNotFound(t *testing.T) {
 	queries = NewExecutionQueries(executionRepositoryStub{err: domain.ErrJobExecutionNotFound})
 	if _, err := queries.GetJobExecutionDetails(t.Context(), "missing"); ErrorKindOf(err) != ErrorNotFound || !errors.Is(err, domain.ErrJobExecutionNotFound) {
 		t.Fatalf("not found error = %v", err)
+	}
+}
+
+func TestGetJobOutputValidatesCursor(t *testing.T) {
+	queries := NewExecutionQueries(executionRepositoryStub{})
+	if _, err := queries.GetJobOutput(t.Context(), "job-1", -1); ErrorKindOf(err) != ErrorInvalidArgument {
+		t.Fatalf("invalid cursor error = %v", err)
 	}
 }

@@ -73,7 +73,7 @@ func (c *Client) hello(ctx context.Context, clientName, clientVersion string) er
 	}
 	message := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Hello{Hello: &cnpv1.Hello{
 		ClientName: clientName, ClientVersion: clientVersion,
-		Capabilities: []string{"protobuf", "invalidation_stream"},
+		Capabilities: []string{"protobuf", "invalidation_stream", "job_output_stream"},
 	}}}
 	if err := cnp.Write(stream, message); err != nil {
 		stream.CancelRead(0x101)
@@ -185,6 +185,8 @@ func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <
 	go func() {
 		defer close(events)
 		defer close(errorsOut)
+		stopCancellation := context.AfterFunc(ctx, func() { stream.CancelRead(0) })
+		defer stopCancellation()
 		reader := cnp.NewReader(stream)
 		for {
 			var message cnpv1.ServerMessage
@@ -217,6 +219,64 @@ func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <
 		}
 	}()
 	return events, errorsOut, nil
+}
+
+func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afterEventID int64) (<-chan *cnpv1.JobOutputBatch, <-chan error, error) {
+	stream, err := c.connection.OpenStreamSync(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open job output stream: %w", err)
+	}
+	requestID := uuid.NewString()
+	request := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Request{Request: &cnpv1.Request{
+		Metadata: &cnpv1.RequestMetadata{RequestId: requestID},
+		Operation: &cnpv1.Request_WatchJobOutput{WatchJobOutput: &cnpv1.WatchJobOutputRequest{
+			JobExecutionId: jobExecutionID, AfterEventId: afterEventID,
+		}},
+	}}}
+	if err := cnp.Write(stream, request); err != nil {
+		stream.CancelRead(0x101)
+		return nil, nil, fmt.Errorf("write job output request: %w", err)
+	}
+	_ = stream.Close()
+	batches := make(chan *cnpv1.JobOutputBatch, 1)
+	errorsOut := make(chan error, 1)
+	go func() {
+		defer close(batches)
+		defer close(errorsOut)
+		stopCancellation := context.AfterFunc(ctx, func() { stream.CancelRead(0) })
+		defer stopCancellation()
+		reader := cnp.NewReader(stream)
+		for {
+			var message cnpv1.ServerMessage
+			if err := reader.Read(&message); err != nil {
+				if ctx.Err() == nil && !errors.Is(err, io.EOF) {
+					errorsOut <- err
+				}
+				return
+			}
+			response := message.GetResponse()
+			if response == nil || response.RequestId != requestID {
+				errorsOut <- fmt.Errorf("invalid job output response")
+				return
+			}
+			if status := response.GetError(); status != nil {
+				errorsOut <- &Error{Code: status.Code, Message: status.Message}
+				return
+			}
+			batch := response.GetJobOutput()
+			if batch == nil {
+				errorsOut <- unexpectedResult(response)
+				return
+			}
+			select {
+			case batches <- batch:
+			case <-ctx.Done():
+				stream.CancelRead(0)
+				return
+			}
+		}
+	}()
+	return batches, errorsOut, nil
 }
 
 func (c *Client) call(ctx context.Context, request *cnpv1.Request, idempotencyKey string) (*cnpv1.Response, error) {
