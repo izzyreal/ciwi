@@ -34,37 +34,39 @@ import (
 type ActionHandler func(uidsl.Action, map[string]string)
 
 type Renderer struct {
-	mu               sync.RWMutex
-	screen           *uidsl.ScreenDocument
-	data             any
-	status           string
-	theme            *material.Theme
-	palette          palette
-	themeName        string
-	pendingTheme     *material.Theme
-	pendingPalette   *palette
-	pendingThemeName string
-	list             layout.List
-	buttons          map[string]*widget.Clickable
-	disclosures      map[string]bool
-	selectables      map[string]*widget.Selectable
-	textEditors      map[string]*widget.Editor
-	inputEditors     map[string]*widget.Editor
-	selectOpen       map[string]bool
-	scrollers        map[string]*layout.List
-	icons            map[string]*widget.Icon
-	images           map[string]paint.ImageOp
-	statusText       widget.Editor
-	shownStatus      string
-	onAction         ActionHandler
-	invalidate       func()
-	pending          *pendingConfirmation
-	resetScroll      bool
-	outputTailing    bool
-	outputSearch     string
-	outputMatch      int
-	outputEditor     *widget.Editor
-	renderedJobID    string
+	mu                    sync.RWMutex
+	screen                *uidsl.ScreenDocument
+	data                  any
+	status                string
+	theme                 *material.Theme
+	palette               palette
+	themeName             string
+	pendingTheme          *material.Theme
+	pendingPalette        *palette
+	pendingThemeName      string
+	list                  layout.List
+	buttons               map[string]*widget.Clickable
+	disclosures           map[string]bool
+	persistentDisclosures map[string]bool
+	onDisclosureChange    func(map[string]bool)
+	selectables           map[string]*widget.Selectable
+	textEditors           map[string]*widget.Editor
+	inputEditors          map[string]*widget.Editor
+	selectOpen            map[string]bool
+	scrollers             map[string]*layout.List
+	icons                 map[string]*widget.Icon
+	images                map[string]paint.ImageOp
+	statusText            widget.Editor
+	shownStatus           string
+	onAction              ActionHandler
+	invalidate            func()
+	pending               *pendingConfirmation
+	resetScroll           bool
+	outputTailing         bool
+	outputSearch          string
+	outputMatch           int
+	outputEditor          *widget.Editor
+	renderedJobID         string
 }
 
 type pendingConfirmation struct {
@@ -97,7 +99,8 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	renderer := &Renderer{
 		screen: screen, theme: materialTheme, palette: colors, themeName: theme.Metadata.Name, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
-		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
+		persistentDisclosures: map[string]bool{},
+		selectables:           map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
 		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{},
 		icons: iconSet, images: imageSet,
 	}
@@ -179,6 +182,18 @@ func (r *Renderer) SetRootBinding(root, key string, value any) bool {
 
 func (r *Renderer) SetInvalidate(invalidate func()) {
 	r.invalidate = invalidate
+}
+
+func (r *Renderer) SetDisclosureStates(states map[string]bool) {
+	for key, expanded := range states {
+		if strings.TrimSpace(key) != "" {
+			r.disclosures[key] = expanded
+		}
+	}
+}
+
+func (r *Renderer) SetDisclosureChange(handler func(map[string]bool)) {
+	r.onDisclosureChange = handler
 }
 
 func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
@@ -380,16 +395,23 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		}
 		label = resolved
 	}
-	expanded := r.disclosures[path]
+	stateKey, persistent := r.disclosureStateKey(node, data, path)
+	expanded, exists := r.disclosures[stateKey]
+	if !exists {
+		expanded = node.Disclosure != nil && node.Disclosure.DefaultExpanded
+		r.disclosures[stateKey] = expanded
+	}
+	if persistent {
+		r.persistentDisclosures[stateKey] = true
+	}
 	iconName := "chevron-right"
 	if expanded {
 		iconName = "chevron-down"
 	}
 	toggle := r.button(path + "/disclosure-toggle")
 	for toggle.Clicked(gtx) {
-		r.disclosures[path] = !expanded
 		expanded = !expanded
-		r.requestFrame()
+		r.setDisclosureState(stateKey, expanded, persistent)
 	}
 	header := func(gtx layout.Context) layout.Dimensions {
 		toggleWidget := func(gtx layout.Context) layout.Dimensions {
@@ -404,9 +426,8 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			labelClick := r.button(path + "/disclosure-label")
 			for labelClick.Clicked(gtx) {
 				if r.selectable(labelPath).SelectionLen() == 0 {
-					r.disclosures[path] = !expanded
 					expanded = !expanded
-					r.requestFrame()
+					r.setDisclosureState(stateKey, expanded, persistent)
 				}
 			}
 			return labelClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -460,6 +481,37 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			})
 		}),
 	)
+}
+
+func (r *Renderer) disclosureStateKey(node uidsl.Node, data any, fallback string) (string, bool) {
+	if node.Disclosure == nil || strings.TrimSpace(node.Disclosure.StateKey) == "" {
+		return fallback, false
+	}
+	key, err := uidsl.RenderText(data, uidsl.Text{Template: node.Disclosure.StateKey})
+	if err != nil || strings.TrimSpace(key) == "" {
+		return fallback, false
+	}
+	return key, true
+}
+
+func (r *Renderer) setDisclosureState(key string, expanded, persistent bool) {
+	r.disclosures[key] = expanded
+	if persistent {
+		r.persistentDisclosures[key] = true
+		r.notifyDisclosureChange()
+	}
+	r.requestFrame()
+}
+
+func (r *Renderer) notifyDisclosureChange() {
+	if r.onDisclosureChange == nil {
+		return
+	}
+	states := make(map[string]bool, len(r.persistentDisclosures))
+	for key := range r.persistentDisclosures {
+		states[key] = r.disclosures[key]
+	}
+	r.onDisclosureChange(states)
 }
 
 func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
@@ -996,6 +1048,20 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 		}
 		r.SetRootBinding("jobDetails", "tailing_label", label)
 		r.requestFrame()
+	case "set-disclosures":
+		prefix := arguments["prefix"]
+		expanded, parseErr := strconv.ParseBool(arguments["expanded"])
+		if parseErr != nil || prefix == "" {
+			r.SetStatus("Invalid disclosure group")
+			return
+		}
+		for key := range r.persistentDisclosures {
+			if strings.HasPrefix(key, prefix) {
+				r.disclosures[key] = expanded
+			}
+		}
+		r.notifyDisclosureChange()
+		r.requestFrame()
 	default:
 		r.dispatch(action, data)
 	}
@@ -1371,6 +1437,7 @@ func materialIcons() (map[string]*widget.Icon, error) {
 		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
 		"chevron-down": icons.NavigationExpandMore, "chevron-up": icons.NavigationExpandLess,
 		"check": icons.NavigationCheck, "copy": icons.ContentContentCopy,
+		"chevrons-up": icons.NavigationUnfoldLess, "chevrons-down": icons.NavigationUnfoldMore,
 		"status-success": icons.ActionCheckCircle, "status-danger": icons.AlertErrorOutline,
 		"status-waiting": icons.ActionHourglassEmpty, "status-running": icons.AVPlayCircleOutline,
 	}

@@ -85,11 +85,19 @@ screen:
               as: project
               key: project.id
             children:
-              - component: card
+              - component: disclosure
+                text:
+                  template: "Project: {{project.name}}"
+                disclosure:
+                  defaultExpanded: true
+                  stateKey: "front-project:{{project.id}}"
                 layout:
                   direction: vertical
                   gap: small
                   padding: medium
+                style:
+                  role: body
+                  emphasis: strong
                 children:
                   - component: row
                     layout:
@@ -99,12 +107,17 @@ screen:
                     children:
                       - component: text
                         text:
-                          template: "Project: {{project.name}}"
+                          binding: project.repo_url
                         layout:
                           grow: true
+                        visible:
+                          binding: project.repo_url
+                          equals: ""
+                          not: true
                         style:
-                          role: heading
-                          emphasis: strong
+                          role: body
+                          tone: muted
+                          truncate: true
                       - component: button
                         text:
                           literal: View details
@@ -113,17 +126,6 @@ screen:
                             command: navigate
                             arguments:
                               route: /projects/{{project.id}}
-                  - component: text
-                    text:
-                      binding: project.repo_url
-                    visible:
-                      binding: project.repo_url
-                      equals: ""
-                      not: true
-                    style:
-                      role: body
-                      tone: muted
-                      truncate: true
                   - component: list
                     layout:
                       direction: vertical
@@ -170,12 +172,40 @@ screen:
           direction: vertical
           gap: medium
         children:
-          - component: text
-            text:
-              literal: Queued and In Progress Job Executions
-            style:
-              role: heading
-              emphasis: strong
+          - component: row
+            layout:
+              direction: horizontal
+              gap: small
+              align: center
+            children:
+              - component: text
+                text:
+                  literal: Queued and In Progress Job Executions
+                layout:
+                  grow: true
+                style:
+                  role: heading
+                  emphasis: strong
+              - component: button
+                text:
+                  literal: Collapse All
+                icon: chevrons-up
+                actions:
+                  - on: activate
+                    command: set-disclosures
+                    arguments:
+                      prefix: "front-queued:"
+                      expanded: "false"
+              - component: button
+                text:
+                  literal: Expand All
+                icon: chevrons-down
+                actions:
+                  - on: activate
+                    command: set-disclosures
+                    arguments:
+                      prefix: "front-queued:"
+                      expanded: "true"
           - component: list
             layout:
               direction: vertical
@@ -186,6 +216,8 @@ screen:
               key: execution.key
             children:
               - component: disclosure
+                disclosure:
+                  stateKey: "front-queued:{{execution.key}}"
                 layout:
                   direction: vertical
                   gap: small
@@ -278,12 +310,40 @@ screen:
           direction: vertical
           gap: medium
         children:
-          - component: text
-            text:
-              literal: Job Execution History
-            style:
-              role: heading
-              emphasis: strong
+          - component: row
+            layout:
+              direction: horizontal
+              gap: small
+              align: center
+            children:
+              - component: text
+                text:
+                  literal: Job Execution History
+                layout:
+                  grow: true
+                style:
+                  role: heading
+                  emphasis: strong
+              - component: button
+                text:
+                  literal: Collapse All
+                icon: chevrons-up
+                actions:
+                  - on: activate
+                    command: set-disclosures
+                    arguments:
+                      prefix: "front-history:"
+                      expanded: "false"
+              - component: button
+                text:
+                  literal: Expand All
+                icon: chevrons-down
+                actions:
+                  - on: activate
+                    command: set-disclosures
+                    arguments:
+                      prefix: "front-history:"
+                      expanded: "true"
           - component: list
             layout:
               direction: vertical
@@ -294,6 +354,8 @@ screen:
               key: execution.key
             children:
               - component: disclosure
+                disclosure:
+                  stateKey: "front-history:{{execution.key}}"
                 layout:
                   direction: vertical
                   gap: small

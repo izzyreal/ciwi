@@ -83,7 +83,7 @@ continue to use the existing HTTP protocol.
 
 Global Settings currently covers native-client appearance and connection
 context. Theme changes apply immediately and are stored in the user's config
-directory as `ciwi/native-ui.json`; an explicit `-theme` or
+directory as `ciwi/native-ui.json`, alongside keyed disclosure state; an explicit `-theme` or
 `CIWI_NATIVE_THEME` value overrides the saved theme for that launch. Server
 administration sections will appear as their application and CNP command
 slices are added rather than falling back to HTTP.

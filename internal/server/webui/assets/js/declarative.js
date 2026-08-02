@@ -6,6 +6,19 @@
   const maxOutputCharacters = 1024 * 1024;
   let currentDocument = null;
   let currentData = null;
+  const disclosureStorageKey = 'ciwi.declarative.disclosures.v1';
+  const disclosureStates = loadDisclosureStates();
+
+  function loadDisclosureStates() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(disclosureStorageKey) || '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) { return {}; }
+  }
+
+  function saveDisclosureStates() {
+    try { localStorage.setItem(disclosureStorageKey, JSON.stringify(disclosureStates)); } catch (_) {}
+  }
 
   function gradientCSS(gradient) {
     if (!gradient || !Array.isArray(gradient.stops)) return '';
@@ -152,6 +165,14 @@
           data.jobDetails.tailing_label = data.jobDetails.output_tailing ? 'Tailing: On' : 'Tailing: Off';
           renderCurrent();
         }
+        else if (action.command === 'set-disclosures') {
+          const expanded = args.expanded === 'true';
+          document.querySelectorAll('[data-disclosure-key^="' + CSS.escape(args.prefix || '') + '"]').forEach(details => {
+            details.open = expanded;
+            disclosureStates[details.dataset.disclosureKey] = expanded;
+          });
+          saveDisclosureStates();
+        }
         else if (action.command === 'run-pipeline') {
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
             method: 'POST',
@@ -229,8 +250,23 @@
 	    summary.appendChild(label);
 	  } else {
 	    summary.textContent = renderText(node.text, data) || 'Details';
-	  }
+      }
       element.appendChild(summary);
+      if (node.disclosure) {
+        const stateKey = node.disclosure.stateKey ? renderText({template: node.disclosure.stateKey}, data) : '';
+        if (stateKey) {
+          element.dataset.disclosureKey = stateKey;
+          element.open = Object.prototype.hasOwnProperty.call(disclosureStates, stateKey)
+            ? !!disclosureStates[stateKey]
+            : !!node.disclosure.defaultExpanded;
+          element.addEventListener('toggle', () => {
+            disclosureStates[stateKey] = element.open;
+            saveDisclosureStates();
+          });
+        } else {
+          element.open = !!node.disclosure.defaultExpanded;
+        }
+      }
     } else if (node.component === 'image' && node.image) {
       element.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
       element.alt = node.image.description || '';

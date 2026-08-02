@@ -136,6 +136,22 @@ func TestParseScreenValidatesInputBindingAndChangeScope(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesDisclosureStateKey(t *testing.T) {
+	payload := strings.Replace(validScreen, "          - component: card\n", `          - component: disclosure
+            disclosure:
+              defaultExpanded: true
+              stateKey: "front-project:{{project.id}}"
+`, 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid disclosure: %v", err)
+	}
+	payload = strings.Replace(payload, "project.id", "missing.id", 1)
+	_, err := ParseScreen([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid disclosure state key error = %v", err)
+	}
+}
+
 func TestRenderTextAndResolve(t *testing.T) {
 	data := map[string]any{
 		"frontPage": map[string]any{

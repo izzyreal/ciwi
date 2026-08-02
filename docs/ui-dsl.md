@@ -44,6 +44,9 @@ native expandable choice control or a browser `<select>` as appropriate.
 The single-line `input` component similarly exposes `input.value` to a change
 action. A repeated `scroller` describes a bounded horizontal collection while
 leaving native gesture handling and browser overflow behavior to each adapter.
+Disclosures can declare a renderer-neutral initial state and a templated stable
+state key. Clients persist only keyed disclosure state; unkeyed disclosures
+retain ordinary screen-session behavior.
 
 Ordinary non-control text, including headings, disclosure labels, and status
 copy, is selectable in the Gio adapter. The semantic `code` text role renders

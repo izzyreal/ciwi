@@ -124,6 +124,14 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	renderer.SetDisclosureStates(preferences.Disclosures)
+	renderer.SetDisclosureChange(func(states map[string]bool) {
+		if err := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
+			preferences.Disclosures = states
+		}); err != nil {
+			renderer.SetStatus("Disclosure state could not be saved: " + err.Error())
+		}
+	})
 	renderer.SetInvalidate(window.Invalidate)
 	renderer.SetStatus("Connecting to ciwi…")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -294,7 +302,9 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		}
 		renderer.SetRootBinding("settings", "selected_theme", theme.Metadata.Name)
 		renderer.SetRootBinding("settings", "selected_theme_description", theme.Metadata.Description)
-		if err := saveNativePreferences(preferencesPath, nativePreferences{Theme: theme.Metadata.Name}); err != nil {
+		if err := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
+			preferences.Theme = theme.Metadata.Name
+		}); err != nil {
 			renderer.SetStatus("Theme changed, but the preference could not be saved: " + err.Error())
 			return
 		}

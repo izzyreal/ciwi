@@ -8,11 +8,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 type nativePreferences struct {
-	Theme string `json:"theme"`
+	Theme       string          `json:"theme"`
+	Disclosures map[string]bool `json:"disclosures,omitempty"`
 }
+
+var nativePreferencesMu sync.Mutex
 
 func nativePreferencesPath() (string, error) {
 	directory, err := os.UserConfigDir()
@@ -67,4 +71,15 @@ func saveNativePreferences(path string, preferences nativePreferences) error {
 		return fmt.Errorf("replace native client preferences: %w", err)
 	}
 	return nil
+}
+
+func updateNativePreferences(path string, update func(*nativePreferences)) error {
+	nativePreferencesMu.Lock()
+	defer nativePreferencesMu.Unlock()
+	preferences, err := loadNativePreferences(path)
+	if err != nil {
+		return err
+	}
+	update(&preferences)
+	return saveNativePreferences(path, preferences)
 }

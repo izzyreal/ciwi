@@ -84,6 +84,8 @@ screen:
               - component: disclosure
                 text:
                   template: "Pipeline: {{pipeline.pipeline_id}}"
+                disclosure:
+                  defaultExpanded: true
                 layout:
                   direction: vertical
                   gap: medium

@@ -107,20 +107,12 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 	if navigated {
 		t.Fatal("collapsed execution card navigated while being laid out")
 	}
+	const historyStateKey = "front-history:pipeline:build"
 	var historyDisclosure string
-	for key := range renderer.disclosures {
-		if strings.Contains(key, "pipeline:build") {
-			historyDisclosure = key
+	for key := range renderer.buttons {
+		if strings.Contains(key, "pipeline:build") && strings.HasSuffix(key, "/disclosure-toggle") {
+			historyDisclosure = strings.TrimSuffix(key, "/disclosure-toggle")
 			break
-		}
-	}
-	if historyDisclosure == "" {
-		// Disclosure state is lazy; identify its stable toggle button path.
-		for key := range renderer.buttons {
-			if strings.Contains(key, "pipeline:build") && strings.HasSuffix(key, "/disclosure-toggle") {
-				historyDisclosure = strings.TrimSuffix(key, "/disclosure-toggle")
-				break
-			}
 		}
 	}
 	if historyDisclosure == "" {
@@ -131,14 +123,14 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 	renderer.button(historyDisclosure + "/disclosure-label").Click()
 	operations.Reset()
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
-	if renderer.disclosures[historyDisclosure] {
+	if renderer.disclosures[historyStateKey] {
 		t.Fatal("selecting disclosure label text unexpectedly expanded the card")
 	}
 	label.ClearSelection()
 	renderer.button(historyDisclosure + "/disclosure-label").Click()
 	operations.Reset()
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
-	if !renderer.disclosures[historyDisclosure] {
+	if !renderer.disclosures[historyStateKey] {
 		t.Fatal("clicking disclosure label did not expand the card")
 	}
 	operations.Reset()
@@ -151,6 +143,64 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 	}
 	if !foundJob {
 		t.Fatal("expanded execution card does not show its job rows")
+	}
+}
+
+func TestRendererPersistsProjectDisclosureAndBulkExecutionState(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted map[string]bool
+	renderer.SetDisclosureChange(func(states map[string]bool) { persisted = states })
+	data, err := frontPageBindingData(&cnpv1.FrontPageView{
+		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
+		Projects: []*cnpv1.ProjectSummary{{
+			Id: 1, Name: "ciwi", Pipelines: []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build"}},
+		}},
+		HistoryExecutions: []*cnpv1.ExecutionCardSummary{{
+			Key: "pipeline:build", Title: "ciwi build", Summary: &cnpv1.ExecutionSummary{TotalJobs: 1, Succeeded: 1},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	gtx := layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))}
+	renderer.Layout(gtx)
+	if !renderer.disclosures["front-project:1"] {
+		t.Fatal("project disclosure did not default to expanded")
+	}
+	var projectPath string
+	for path, selectable := range renderer.selectables {
+		if selectable.Text() == "Project: ciwi" && strings.HasSuffix(path, "/label") {
+			projectPath = strings.TrimSuffix(path, "/label")
+			break
+		}
+	}
+	if projectPath == "" {
+		t.Fatal("project disclosure label was not rendered")
+	}
+	renderer.button(projectPath + "/disclosure-toggle").Click()
+	operations.Reset()
+	renderer.Layout(gtx)
+	if renderer.disclosures["front-project:1"] || persisted["front-project:1"] {
+		t.Fatalf("collapsed project state was not persisted: state=%v persisted=%v", renderer.disclosures, persisted)
+	}
+	renderer.dispatchFromLayout(gtx, uidsl.Action{
+		Command: "set-disclosures", Arguments: map[string]string{"prefix": "front-history:", "expanded": "true"},
+	}, data)
+	if !renderer.disclosures["front-history:pipeline:build"] || !persisted["front-history:pipeline:build"] {
+		t.Fatalf("bulk-expanded history state was not persisted: state=%v persisted=%v", renderer.disclosures, persisted)
 	}
 }
 
@@ -186,14 +236,18 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got != 3 {
-		t.Fatalf("collapsed project view created %d interactive widgets, want Back plus pipeline disclosure controls", got)
-	}
-	renderer.disclosures["project-details/root/1/1/7/0"] = true
-	operations.Reset()
-	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if got := len(renderer.buttons); got < 4 {
-		t.Fatalf("expanded pipeline did not expose its Run action and job disclosure: %d widgets", got)
+		t.Fatalf("default-expanded pipeline did not expose its Run action and job disclosure: %d widgets", got)
+	}
+	var foundJob bool
+	for _, selectable := range renderer.selectables {
+		if selectable.Text() == "Job: compile" {
+			foundJob = true
+			break
+		}
+	}
+	if !foundJob {
+		t.Fatal("pipeline did not default to expanded")
 	}
 }
 

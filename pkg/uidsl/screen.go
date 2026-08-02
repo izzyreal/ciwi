@@ -50,20 +50,21 @@ type Persistence struct {
 }
 
 type Node struct {
-	Component string              `yaml:"component" json:"component"`
-	ID        string              `yaml:"id,omitempty" json:"id,omitempty"`
-	Text      *Text               `yaml:"text,omitempty" json:"text,omitempty"`
-	Icon      string              `yaml:"icon,omitempty" json:"icon,omitempty"`
-	Image     *Image              `yaml:"image,omitempty" json:"image,omitempty"`
-	Select    *Select             `yaml:"select,omitempty" json:"select,omitempty"`
-	Input     *Input              `yaml:"input,omitempty" json:"input,omitempty"`
-	Layout    Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
-	Style     Style               `yaml:"style,omitempty" json:"style,omitempty"`
-	Repeat    *Repeat             `yaml:"repeat,omitempty" json:"repeat,omitempty"`
-	Visible   *Condition          `yaml:"visible,omitempty" json:"visible,omitempty"`
-	Actions   []Action            `yaml:"actions,omitempty" json:"actions,omitempty"`
-	Children  []Node              `yaml:"children,omitempty" json:"children,omitempty"`
-	Overrides map[string]Override `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+	Component  string              `yaml:"component" json:"component"`
+	ID         string              `yaml:"id,omitempty" json:"id,omitempty"`
+	Text       *Text               `yaml:"text,omitempty" json:"text,omitempty"`
+	Icon       string              `yaml:"icon,omitempty" json:"icon,omitempty"`
+	Image      *Image              `yaml:"image,omitempty" json:"image,omitempty"`
+	Select     *Select             `yaml:"select,omitempty" json:"select,omitempty"`
+	Input      *Input              `yaml:"input,omitempty" json:"input,omitempty"`
+	Disclosure *Disclosure         `yaml:"disclosure,omitempty" json:"disclosure,omitempty"`
+	Layout     Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
+	Style      Style               `yaml:"style,omitempty" json:"style,omitempty"`
+	Repeat     *Repeat             `yaml:"repeat,omitempty" json:"repeat,omitempty"`
+	Visible    *Condition          `yaml:"visible,omitempty" json:"visible,omitempty"`
+	Actions    []Action            `yaml:"actions,omitempty" json:"actions,omitempty"`
+	Children   []Node              `yaml:"children,omitempty" json:"children,omitempty"`
+	Overrides  map[string]Override `yaml:"overrides,omitempty" json:"overrides,omitempty"`
 }
 
 type Text struct {
@@ -88,6 +89,11 @@ type Select struct {
 type Input struct {
 	Value       string `yaml:"value" json:"value"`
 	Placeholder string `yaml:"placeholder,omitempty" json:"placeholder,omitempty"`
+}
+
+type Disclosure struct {
+	DefaultExpanded bool   `yaml:"defaultExpanded,omitempty" json:"defaultExpanded,omitempty"`
+	StateKey        string `yaml:"stateKey,omitempty" json:"stateKey,omitempty"`
 }
 
 type Layout struct {
@@ -160,6 +166,7 @@ var commands = map[string]bool{
 	"change-theme":         true,
 	"select-timeline-item": true, "change-output-search": true,
 	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
+	"set-disclosures": true,
 }
 
 func ParseScreen(payload []byte) (*ScreenDocument, error) {
@@ -323,6 +330,16 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		actionScope["input"] = struct{}{}
 	} else if node.Component == "input" {
 		return fmt.Errorf("%s.input is required for the input component", path)
+	}
+	if node.Disclosure != nil {
+		if node.Component != "disclosure" {
+			return fmt.Errorf("%s.disclosure is only valid for the disclosure component", path)
+		}
+		if node.Disclosure.StateKey != "" {
+			if err := validateTemplate(node.Disclosure.StateKey, scope); err != nil {
+				return fmt.Errorf("%s.disclosure.stateKey: %w", path, err)
+			}
+		}
 	}
 	if node.Visible != nil {
 		if err := validateBinding(node.Visible.Binding, scope); err != nil {
