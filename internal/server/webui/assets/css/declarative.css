@@ -3,10 +3,19 @@ body { min-height: 100vh; }
 .dsl-page { width: min(var(--ciwi-page-max, 1600px), calc(100% - 32px)); margin: 16px auto; display: flex; flex-direction: column; gap: 18px; }
 .dsl-row { display: flex; flex-direction: row; }
 .dsl-column, .dsl-section, .dsl-list { display: flex; flex-direction: column; }
+.dsl-scroller { display: flex; flex-direction: row; overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
 .dsl-card, .dsl-section, .dsl-hero { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.dsl-section { padding: 14px; }
 .dsl-disclosure { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 14px; }
 .dsl-disclosure > summary { color: var(--accent); cursor: pointer; font-weight: 750; }
 .dsl-disclosure[open] > summary { margin-bottom: 14px; }
+.dsl-execution-row > summary { display:flex; align-items:center; gap:9px; font-size:14px; color:var(--ink); }
+.dsl-execution-row-image { width:28px; height:28px; object-fit:contain; image-rendering:pixelated; }
+.dsl-execution-row-status { color:currentColor; font-size:15px; line-height:1; }
+.dsl-execution-row.dsl-success .dsl-execution-row-status { color:var(--ok); }
+.dsl-execution-row.dsl-danger .dsl-execution-row-status { color:var(--bad); }
+.dsl-execution-row.dsl-warning .dsl-execution-row-status { color:var(--warn); }
+.dsl-execution-row.dsl-accent .dsl-execution-row-status { color:var(--accent); }
 .dsl-card { padding: 16px; }
 .dsl-card[role="link"] { cursor: pointer; }
 .dsl-card[role="link"]:hover { border-color: var(--accent); background: var(--surface-subtle); }
@@ -29,6 +38,8 @@ body { min-height: 100vh; }
 .dsl-button:hover { border-color: var(--accent); }
 .dsl-select { min-width: 280px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 42px 9px 12px; background: var(--surface); color: var(--ink); font: inherit; }
 .dsl-select:hover, .dsl-select:focus { border-color: var(--accent); }
+.dsl-input { min-height: 44px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--surface); color: var(--ink); font: inherit; }
+.dsl-input:hover, .dsl-input:focus { border-color: var(--accent); outline: none; }
 .dsl-icon { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .dsl-error { margin: 24px; padding: 16px; border: 1px solid var(--bad); border-radius: 12px; color: var(--bad); background: var(--surface); }
 @media (max-width: 760px) {

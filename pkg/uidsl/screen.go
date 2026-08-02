@@ -56,6 +56,7 @@ type Node struct {
 	Icon      string              `yaml:"icon,omitempty" json:"icon,omitempty"`
 	Image     *Image              `yaml:"image,omitempty" json:"image,omitempty"`
 	Select    *Select             `yaml:"select,omitempty" json:"select,omitempty"`
+	Input     *Input              `yaml:"input,omitempty" json:"input,omitempty"`
 	Layout    Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
 	Style     Style               `yaml:"style,omitempty" json:"style,omitempty"`
 	Repeat    *Repeat             `yaml:"repeat,omitempty" json:"repeat,omitempty"`
@@ -84,6 +85,11 @@ type Select struct {
 	OptionLabel string `yaml:"optionLabel" json:"optionLabel"`
 }
 
+type Input struct {
+	Value       string `yaml:"value" json:"value"`
+	Placeholder string `yaml:"placeholder,omitempty" json:"placeholder,omitempty"`
+}
+
 type Layout struct {
 	Direction string `yaml:"direction,omitempty" json:"direction,omitempty"`
 	Gap       string `yaml:"gap,omitempty" json:"gap,omitempty"`
@@ -94,6 +100,8 @@ type Layout struct {
 	Grow      bool   `yaml:"grow,omitempty" json:"grow,omitempty"`
 	MinWidth  string `yaml:"minWidth,omitempty" json:"minWidth,omitempty"`
 	MaxWidth  string `yaml:"maxWidth,omitempty" json:"maxWidth,omitempty"`
+	MinHeight string `yaml:"minHeight,omitempty" json:"minHeight,omitempty"`
+	MaxHeight string `yaml:"maxHeight,omitempty" json:"maxHeight,omitempty"`
 }
 
 type Style struct {
@@ -141,7 +149,7 @@ var components = map[string]bool{
 	"page": true, "column": true, "row": true, "section": true,
 	"card": true, "text": true, "icon": true, "image": true,
 	"disclosure": true,
-	"button":     true, "select": true, "list": true, "badge": true, "spacer": true,
+	"button":     true, "select": true, "input": true, "list": true, "scroller": true, "badge": true, "spacer": true,
 	"divider": true,
 }
 
@@ -149,7 +157,9 @@ var commands = map[string]bool{
 	"navigate": true, "run-pipeline": true, "run-chain": true,
 	"toggle": true, "refresh": true, "clear-queue": true,
 	"flush-history": true, "delete-execution": true,
-	"change-theme": true,
+	"change-theme":         true,
+	"select-timeline-item": true, "change-output-search": true,
+	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
 }
 
 func ParseScreen(payload []byte) (*ScreenDocument, error) {
@@ -231,6 +241,9 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 	if !components[node.Component] {
 		return fmt.Errorf("%s.component %q is not supported", path, node.Component)
 	}
+	if node.Component == "scroller" && node.Repeat == nil {
+		return fmt.Errorf("%s.repeat is required for the scroller component", path)
+	}
 	if node.ID != "" {
 		if !identifierPattern.MatchString(node.ID) {
 			return fmt.Errorf("%s.id %q is not a valid identifier", path, node.ID)
@@ -299,6 +312,18 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 	} else if node.Component == "select" {
 		return fmt.Errorf("%s.select is required for the select component", path)
 	}
+	if node.Input != nil {
+		if node.Component != "input" {
+			return fmt.Errorf("%s.input is only valid for the input component", path)
+		}
+		if err := validateBinding(node.Input.Value, scope); err != nil {
+			return fmt.Errorf("%s.input.value: %w", path, err)
+		}
+		actionScope = cloneScope(scope)
+		actionScope["input"] = struct{}{}
+	} else if node.Component == "input" {
+		return fmt.Errorf("%s.input is required for the input component", path)
+	}
 	if node.Visible != nil {
 		if err := validateBinding(node.Visible.Binding, scope); err != nil {
 			return fmt.Errorf("%s.visible.binding: %w", path, err)
@@ -318,6 +343,9 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		}
 		if node.Component == "select" && action.On != "change" {
 			return fmt.Errorf("%s.actions[%d].on must be change for a select component", path, i)
+		}
+		if node.Component == "input" && action.On != "change" {
+			return fmt.Errorf("%s.actions[%d].on must be change for an input component", path, i)
 		}
 		for name, value := range action.Arguments {
 			if err := validateTemplate(value, actionScope); err != nil {

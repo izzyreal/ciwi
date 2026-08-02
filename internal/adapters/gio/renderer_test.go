@@ -10,6 +10,7 @@ import (
 
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/widget"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
@@ -97,6 +98,10 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 		t.Fatal(err)
 	}
 	renderer.SetData(data)
+	status, err := uidsl.Resolve(data, "frontPage.history_executions.0.status")
+	if err != nil || status != "succeeded" {
+		t.Fatalf("history execution status = %v, err=%v", status, err)
+	}
 	var operations op.Ops
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if navigated {
@@ -341,8 +346,11 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got != 5 {
-		t.Fatalf("collapsed job view created %d interactive widgets, want Back plus output and timeline disclosure controls", got)
+	if got := len(renderer.buttons); got != 7 {
+		t.Fatalf("job view created %d interactive widgets, want Back, timeline selection, and output controls", got)
+	}
+	if len(renderer.scrollers) != 1 {
+		t.Fatalf("horizontal execution-path scrollers = %d", len(renderer.scrollers))
 	}
 }
 
@@ -365,7 +373,6 @@ func TestJobOutputBindingUsesSelectableReadOnlyEditor(t *testing.T) {
 	}
 	renderer.SetScreenAndData(screen, data)
 	renderer.SetRootBinding("jobDetails", "output", "hello\n")
-	renderer.disclosures["job-details/root/2/1"] = true
 	var operations op.Ops
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if len(renderer.textEditors) != 1 {
@@ -375,6 +382,63 @@ func TestJobOutputBindingUsesSelectableReadOnlyEditor(t *testing.T) {
 		if !editor.ReadOnly || editor.Text() != "hello\n" {
 			t.Fatalf("editor readOnly=%v text=%q", editor.ReadOnly, editor.Text())
 		}
+	}
+}
+
+func TestRendererSelectsTimelineItemAndFindsOutput(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-1", Title: "Job: compile", StatusLabel: "Succeeded", Mode: "Run",
+		Timeline: []*cnpv1.JobTimelineItem{
+			{Id: "phase:1", Title: "Prepare workspace", Status: "succeeded", StatusLabel: "Succeeded"},
+			{Id: "step:1", Title: "Compile", Status: "succeeded", StatusLabel: "Succeeded"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	gtx := layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))}
+	renderer.Layout(gtx)
+	renderer.dispatchFromLayout(gtx, uidsl.Action{
+		Command: "select-timeline-item", Arguments: map[string]string{"id": "{{item.id}}"},
+	}, mergeData(data, "item", map[string]any{"id": "step:1"}))
+	selected, err := uidsl.Resolve(renderer.data, "jobDetails.selected_timeline_item.id")
+	if err != nil || selected != "step:1" {
+		t.Fatalf("selected timeline item = %v, err=%v", selected, err)
+	}
+	renderer.outputEditor = new(widget.Editor)
+	renderer.outputEditor.ReadOnly = true
+	renderer.outputEditor.SetText("compile one\ncompile two\n")
+	renderer.SetRootBinding("jobDetails", "output", "compile one\ncompile two\n")
+	renderer.dispatchFromLayout(gtx, uidsl.Action{
+		Command: "change-output-search", Arguments: map[string]string{"query": "{{input.value}}"},
+	}, mergeData(renderer.data, "input", map[string]any{"value": "compile"}))
+	if start, end := renderer.outputEditor.Selection(); start != 0 || end != len("compile") {
+		t.Fatalf("first output selection = %d:%d", start, end)
+	}
+	count, err := uidsl.Resolve(renderer.data, "jobDetails.output_search_count")
+	if err != nil || count != "1/2" {
+		t.Fatalf("output search count = %v, err=%v", count, err)
+	}
+}
+
+func TestOutputMatchesUsesRuneOffsets(t *testing.T) {
+	matches := outputMatches("héllo hello", "hello")
+	if len(matches) != 1 || matches[0] != [2]int{6, 11} {
+		t.Fatalf("matches = %#v", matches)
 	}
 }
 

@@ -73,10 +73,11 @@ certificate pinning or a pairing flow without changing application services.
 The vertical slices support server information, the shared front page, inline
 queued/history execution cards with explicit job-detail navigation, project
 details with nested pipelines/jobs/configured steps, job execution snapshots
-with phase/step timelines, selectable incremental output, pipeline enqueue
+with a horizontally navigable phase/step timeline, searchable and selectable
+incremental output, output copying and tailing, pipeline enqueue
 commands, native back navigation, and live invalidations. Output streams use
 bounded cursor pages and clients cap their display buffer, so status refreshes
-do not reload large logs. Step navigation and execution controls remain on the
+do not reload large logs. Server-side execution controls remain on the
 established job page while their application/CNP slices are built. Agents
 continue to use the existing HTTP protocol.
 

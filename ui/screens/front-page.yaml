@@ -189,12 +189,16 @@ screen:
                 layout:
                   direction: vertical
                   gap: small
-                  padding: medium
+                  padding: small
                 text:
-                  binding: execution.title
+                  template: "{{execution.title}} · {{execution.summary.in_progress}} active · {{execution.summary.waiting}} waiting"
+                image:
+                  asset: ciwi-logo
+                  description: ciwi execution
                 style:
-                  role: heading
+                  role: execution-row
                   emphasis: strong
+                  toneBinding: execution.status
                 children:
                   - component: text
                     text:
@@ -293,12 +297,16 @@ screen:
                 layout:
                   direction: vertical
                   gap: small
-                  padding: medium
+                  padding: small
                 text:
-                  binding: execution.title
+                  template: "{{execution.title}} · {{execution.summary.succeeded}}/{{execution.summary.total_jobs}} successful"
+                image:
+                  asset: ciwi-logo
+                  description: ciwi execution
                 style:
-                  role: heading
+                  role: execution-row
                   emphasis: strong
+                  toneBinding: execution.status
                 children:
                   - component: text
                     text:

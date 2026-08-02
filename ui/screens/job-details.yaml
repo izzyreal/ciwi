@@ -149,6 +149,108 @@ screen:
                 style:
                   tone: danger
       - component: section
+        id: execution-path
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Execution path
+            style:
+              role: heading
+              emphasis: strong
+          - component: scroller
+            layout:
+              direction: horizontal
+              gap: small
+              maxHeight: "118"
+            repeat:
+              source: jobDetails.timeline
+              as: item
+              key: item.id
+            children:
+              - component: card
+                layout:
+                  direction: vertical
+                  gap: small
+                  padding: small
+                  minWidth: "235"
+                  maxWidth: "300"
+                  minHeight: "86"
+                actions:
+                  - on: activate
+                    command: select-timeline-item
+                    arguments:
+                      id: "{{item.id}}"
+                children:
+                  - component: text
+                    text:
+                      binding: item.title
+                    style:
+                      emphasis: strong
+                      truncate: true
+                  - component: badge
+                    text:
+                      binding: item.status_label
+                    style:
+                      toneBinding: item.status
+          - component: card
+            id: selected-execution-step
+            layout:
+              direction: vertical
+              gap: small
+              padding: medium
+            children:
+              - component: text
+                text:
+                  binding: jobDetails.selected_timeline_item.title
+                style:
+                  emphasis: strong
+              - component: badge
+                text:
+                  binding: jobDetails.selected_timeline_item.status_label
+                visible:
+                  binding: jobDetails.selected_timeline_item.status_label
+                  equals: ""
+                  not: true
+                style:
+                  toneBinding: jobDetails.selected_timeline_item.status
+              - component: text
+                text:
+                  binding: jobDetails.selected_timeline_item.description
+                visible:
+                  binding: jobDetails.selected_timeline_item.description
+                  equals: ""
+                  not: true
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  template: "Duration: {{jobDetails.selected_timeline_item.duration}}"
+                visible:
+                  binding: jobDetails.selected_timeline_item.duration
+                  equals: ""
+                  not: true
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  template: "Exit code: {{jobDetails.selected_timeline_item.exit_code}}"
+                visible:
+                  binding: jobDetails.selected_timeline_item.exit_code
+                  equals: ""
+                  not: true
+              - component: text
+                text:
+                  template: "Error: {{jobDetails.selected_timeline_item.error}}"
+                visible:
+                  binding: jobDetails.selected_timeline_item.error
+                  equals: ""
+                  not: true
+                style:
+                  tone: danger
+      - component: section
         id: execution-output
         layout:
           direction: vertical
@@ -160,12 +262,67 @@ screen:
             style:
               role: heading
               emphasis: strong
-          - component: disclosure
-            text:
-              literal: Live output
+          - component: row
+            layout:
+              direction: horizontal
+              gap: small
+              align: center
+            children:
+              - component: button
+                text:
+                  binding: jobDetails.tailing_label
+                actions:
+                  - on: activate
+                    command: toggle-output-tailing
+              - component: button
+                text:
+                  literal: Copy Output
+                icon: copy
+                actions:
+                  - on: activate
+                    command: copy-output
+              - component: input
+                layout:
+                  grow: true
+                  minWidth: "180"
+                input:
+                  value: jobDetails.output_search
+                  placeholder: Search output
+                actions:
+                  - on: change
+                    command: change-output-search
+                    arguments:
+                      query: "{{input.value}}"
+              - component: button
+                text:
+                  literal: Previous
+                icon: chevron-up
+                actions:
+                  - on: activate
+                    command: find-output
+                    arguments:
+                      query: "{{jobDetails.output_search}}"
+                      direction: previous
+              - component: button
+                text:
+                  literal: Next
+                icon: chevron-down
+                actions:
+                  - on: activate
+                    command: find-output
+                    arguments:
+                      query: "{{jobDetails.output_search}}"
+                      direction: next
+              - component: text
+                text:
+                  binding: jobDetails.output_search_count
+                style:
+                  tone: muted
+          - component: card
             layout:
               direction: vertical
               gap: small
+              maxHeight: "420"
             children:
               - component: text
                 id: job-output-text
@@ -182,70 +339,3 @@ screen:
                   equals: ""
                 style:
                   tone: muted
-      - component: section
-        id: execution-path
-        layout:
-          direction: vertical
-          gap: medium
-        children:
-          - component: text
-            text:
-              literal: Execution path
-            style:
-              role: heading
-              emphasis: strong
-          - component: list
-            layout:
-              direction: vertical
-              gap: small
-            repeat:
-              source: jobDetails.timeline
-              as: item
-              key: item.id
-            children:
-              - component: disclosure
-                text:
-                  template: "{{item.title}} · {{item.status_label}}"
-                layout:
-                  direction: vertical
-                  gap: small
-                children:
-                  - component: badge
-                    text:
-                      binding: item.status_label
-                    style:
-                      toneBinding: item.status
-                  - component: text
-                    text:
-                      binding: item.description
-                    visible:
-                      binding: item.description
-                      equals: ""
-                      not: true
-                    style:
-                      tone: muted
-                  - component: text
-                    text:
-                      template: "Duration: {{item.duration}}"
-                    visible:
-                      binding: item.duration
-                      equals: ""
-                      not: true
-                    style:
-                      tone: muted
-                  - component: text
-                    text:
-                      template: "Exit code: {{item.exit_code}}"
-                    visible:
-                      binding: item.exit_code
-                      equals: ""
-                      not: true
-                  - component: text
-                    text:
-                      template: "Error: {{item.error}}"
-                    visible:
-                      binding: item.error
-                      equals: ""
-                      not: true
-                    style:
-                      tone: danger

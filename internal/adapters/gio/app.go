@@ -427,7 +427,45 @@ func refreshProjectDetails(ctx context.Context, client *cnpclient.Client, render
 }
 
 func frontPageBindingData(view *cnpv1.FrontPageView) (map[string]any, error) {
-	return protobufBindingData("frontPage", "front-page", view)
+	data, err := protobufBindingData("frontPage", "front-page", view)
+	if err != nil {
+		return nil, err
+	}
+	root, ok := data["frontPage"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("front-page binding is malformed")
+	}
+	decorateExecutionCards(root["queued_executions"], true)
+	decorateExecutionCards(root["history_executions"], false)
+	return data, nil
+}
+
+func decorateExecutionCards(value any, queued bool) {
+	cards, ok := value.([]any)
+	if !ok {
+		return
+	}
+	for _, card := range cards {
+		entry, entryOK := card.(map[string]any)
+		summary, summaryOK := entry["summary"].(map[string]any)
+		if !entryOK || !summaryOK {
+			continue
+		}
+		status := "succeeded"
+		if numberValue(summary["failed"]) > 0 {
+			status = "failed"
+		} else if queued && numberValue(summary["in_progress"]) > 0 {
+			status = "running"
+		} else if queued {
+			status = "waiting"
+		}
+		entry["status"] = status
+	}
+}
+
+func numberValue(value any) float64 {
+	number, _ := value.(float64)
+	return number
 }
 
 func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, error) {
@@ -441,6 +479,28 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 	}
 	if root, ok := data["jobDetails"].(map[string]any); ok {
 		root["output"] = ""
+		root["output_search"] = ""
+		root["output_search_count"] = "0/0"
+		root["tailing_label"] = "Tailing: Off"
+		if timeline, ok := root["timeline"].([]any); ok && len(timeline) > 0 {
+			selected := timeline[0]
+			for _, item := range timeline {
+				entry, entryOK := item.(map[string]any)
+				if !entryOK {
+					continue
+				}
+				status := strings.ToLower(fmt.Sprint(entry["status"]))
+				if status == "running" || status == "in progress" || status == "failed" {
+					selected = item
+					break
+				}
+			}
+			root["selected_timeline_item"] = selected
+		} else {
+			root["selected_timeline_item"] = map[string]any{
+				"id": "", "title": "No execution steps reported", "description": "", "status": "", "status_label": "", "duration": "", "exit_code": "", "error": "",
+			}
+		}
 	}
 	return data, nil
 }

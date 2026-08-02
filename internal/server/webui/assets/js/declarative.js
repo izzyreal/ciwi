@@ -4,6 +4,8 @@
   const root = document.getElementById('declarativeRoot');
   let outputWatchGeneration = 0;
   const maxOutputCharacters = 1024 * 1024;
+  let currentDocument = null;
+  let currentData = null;
 
   function gradientCSS(gradient) {
     if (!gradient || !Array.isArray(gradient.stops)) return '';
@@ -59,6 +61,15 @@
     }
   }
 
+  function decorateExecutionCards(cards, queued) {
+    (Array.isArray(cards) ? cards : []).forEach(card => {
+      const summary = card.summary || {};
+      card.status = Number(summary.failed || 0) > 0
+        ? 'failed'
+        : (queued ? (Number(summary.in_progress || 0) > 0 ? 'running' : 'waiting') : 'succeeded');
+    });
+  }
+
   function withWebOverride(node) {
     const override = node.overrides && node.overrides.web;
     if (!override) return node;
@@ -80,6 +91,10 @@
     if (layout.justify) element.style.justifyContent = layout.justify;
     if (layout.wrap) element.style.flexWrap = 'wrap';
     if (layout.grow) element.style.flexGrow = '1';
+    if (layout.minWidth) element.style.minWidth = /^\d+$/.test(layout.minWidth) ? layout.minWidth + 'px' : layout.minWidth;
+    if (layout.maxWidth && layout.maxWidth !== 'page') element.style.maxWidth = /^\d+$/.test(layout.maxWidth) ? layout.maxWidth + 'px' : layout.maxWidth;
+    if (layout.minHeight) element.style.minHeight = /^\d+$/.test(layout.minHeight) ? layout.minHeight + 'px' : layout.minHeight;
+    if (layout.maxHeight) element.style.maxHeight = /^\d+$/.test(layout.maxHeight) ? layout.maxHeight + 'px' : layout.maxHeight;
   }
 
   function elementFor(node) {
@@ -90,6 +105,7 @@
       case 'disclosure': return document.createElement('details');
       case 'button': return document.createElement('button');
       case 'select': return document.createElement('select');
+      case 'input': return document.createElement('input');
       case 'image': return document.createElement('img');
       case 'divider': return document.createElement('hr');
       case 'spacer': return document.createElement('span');
@@ -113,6 +129,28 @@
         else if (action.command === 'change-theme') {
           ciwiApplyTheme(args.theme);
           await refresh();
+        }
+        else if (action.command === 'select-timeline-item') {
+          data.jobDetails.selected_timeline_item = data.item;
+          renderCurrent();
+        }
+        else if (action.command === 'change-output-search') {
+          data.jobDetails.output_search = args.query || '';
+          updateOutputSearch(data.jobDetails, 0);
+          renderCurrent();
+        }
+        else if (action.command === 'find-output') {
+          updateOutputSearch(data.jobDetails, args.direction === 'previous' ? -1 : 1);
+          renderCurrent();
+          selectBrowserOutputMatch(data.jobDetails);
+        }
+        else if (action.command === 'copy-output') {
+          await navigator.clipboard.writeText(String(data.jobDetails.output || ''));
+        }
+        else if (action.command === 'toggle-output-tailing') {
+          data.jobDetails.output_tailing = !data.jobDetails.output_tailing;
+          data.jobDetails.tailing_label = data.jobDetails.output_tailing ? 'Tailing: On' : 'Tailing: Off';
+          renderCurrent();
         }
         else if (action.command === 'run-pipeline') {
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
@@ -138,7 +176,9 @@
       } else if (action.on === 'change') {
         element.addEventListener('change', () => {
           const selected = element.options && element.selectedIndex >= 0 ? element.options[element.selectedIndex] : null;
-          const actionData = Object.assign({}, data, {selection: {value: element.value, label: selected ? selected.textContent : element.value}});
+          const actionData = element.tagName === 'INPUT'
+            ? Object.assign({}, data, {input: {value: element.value}})
+            : Object.assign({}, data, {selection: {value: element.value, label: selected ? selected.textContent : element.value}});
           invoke(actionData).catch(error => window.alert(error.message || String(error)));
         });
       }
@@ -152,7 +192,7 @@
       const equal = String(resolve(data, node.visible.binding)) === String(node.visible.equals || 'true');
       if (node.visible.not ? equal : !equal) return document.createDocumentFragment();
     }
-    if (node.repeat) {
+    if (node.repeat && node.component !== 'scroller') {
       const list = resolve(data, node.repeat.source);
       const fragment = document.createDocumentFragment();
       (Array.isArray(list) ? list : []).forEach(item => {
@@ -174,7 +214,22 @@
     applyLayout(element, node.layout);
     if (node.component === 'disclosure') {
       const summary = document.createElement('summary');
-      summary.textContent = renderText(node.text, data) || 'Details';
+	  if (style.role === 'execution-row' && node.image) {
+	    const image = document.createElement('img');
+	    image.className = 'dsl-execution-row-image';
+	    image.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
+	    image.alt = node.image.description || '';
+	    summary.appendChild(image);
+	    const status = document.createElement('span');
+	    status.className = 'dsl-execution-row-status';
+	    status.textContent = '●';
+	    summary.appendChild(status);
+	    const label = document.createElement('span');
+	    label.textContent = renderText(node.text, data) || 'Details';
+	    summary.appendChild(label);
+	  } else {
+	    summary.textContent = renderText(node.text, data) || 'Details';
+	  }
       element.appendChild(summary);
     } else if (node.component === 'image' && node.image) {
       element.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
@@ -190,6 +245,10 @@
         option.selected = option.value === current;
         element.appendChild(option);
       });
+    } else if (node.component === 'input' && node.input) {
+      element.type = 'text';
+      element.value = String(resolve(data, node.input.value) ?? '');
+      element.placeholder = node.input.placeholder || '';
     } else if (node.text) {
       element.textContent = renderText(node.text, data);
     }
@@ -203,8 +262,62 @@
       element.prepend(icon);
     }
     bindActions(element, node.actions, data);
-    (node.children || []).forEach(child => element.appendChild(renderNode(child, data)));
+    if (node.component === 'scroller' && node.repeat) {
+      const list = resolve(data, node.repeat.source);
+      (Array.isArray(list) ? list : []).forEach(item => {
+        const itemData = Object.assign({}, data, {[node.repeat.as]: item});
+        (node.children || []).forEach(child => element.appendChild(renderNode(child, itemData)));
+      });
+    } else {
+      (node.children || []).forEach(child => element.appendChild(renderNode(child, data)));
+    }
     return element;
+  }
+
+  function renderCurrent() {
+    if (!currentDocument || !currentData) return;
+    root.replaceChildren(renderNode(currentDocument.screen.root, currentData));
+  }
+
+  function outputMatchRanges(output, query) {
+    if (!query) return [];
+    const source = String(output || '').toLocaleLowerCase();
+    const needle = String(query).toLocaleLowerCase();
+    const matches = [];
+    for (let offset = 0; offset <= source.length - needle.length;) {
+      const index = source.indexOf(needle, offset);
+      if (index < 0) break;
+      matches.push([index, index + needle.length]);
+      offset = index + needle.length;
+    }
+    return matches;
+  }
+
+  function updateOutputSearch(view, direction) {
+    const matches = outputMatchRanges(view.output, view.output_search);
+    if (!matches.length) {
+      view.output_match_index = 0;
+      view.output_search_count = '0/0';
+      return;
+    }
+    const current = Number(view.output_match_index || 0);
+    view.output_match_index = direction > 0
+      ? (current + 1) % matches.length
+      : (direction < 0 ? (current - 1 + matches.length) % matches.length : Math.min(current, matches.length - 1));
+    view.output_search_count = String(view.output_match_index + 1) + '/' + String(matches.length);
+  }
+
+  function selectBrowserOutputMatch(view) {
+    const target = document.getElementById('job-output-text');
+    const matches = outputMatchRanges(view.output, view.output_search);
+    const match = matches[Number(view.output_match_index || 0)];
+    if (!target || !target.firstChild || !match) return;
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.setStart(target.firstChild, match[0]);
+    range.setEnd(target.firstChild, match[1]);
+    selection.removeAllRanges();
+    selection.addRange(range);
   }
 
   async function watchJobOutput(jobID, generation) {
@@ -220,6 +333,11 @@
       }
       const outputElement = document.getElementById('job-output-text');
       if (outputElement) outputElement.textContent = output;
+      if (currentData && currentData.jobDetails) {
+        currentData.jobDetails.output = output;
+        updateOutputSearch(currentData.jobDetails, 0);
+        if (outputElement && currentData.jobDetails.output_tailing) outputElement.scrollTop = outputElement.scrollHeight;
+      }
       const emptyElement = document.getElementById('job-output-empty');
       if (emptyElement) emptyElement.hidden = output !== '';
       const nextEventID = Number(batch.next_event_id || afterEventID);
@@ -249,6 +367,10 @@
       const [documentContract, themes, responseView] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
       applyContractTheme(themes);
       let view = responseView;
+      if (!projectMatch && !jobMatch && !settingsMatch) {
+        decorateExecutionCards(view.queued_executions, true);
+        decorateExecutionCards(view.history_executions, false);
+      }
       if (settingsMatch) {
         const selectedTheme = ciwiStoredTheme();
         const themeOptions = themes.map(theme => ({
@@ -259,8 +381,20 @@
         const selected = themeOptions.find(theme => theme.name === selectedTheme);
         view = {server: responseView, themes: themeOptions, selected_theme: selectedTheme, selected_theme_description: selected ? selected.description : ''};
       }
-      const fragment = renderNode(documentContract.screen.root, { [bindingRoot]: view });
-      root.replaceChildren(fragment);
+      if (jobMatch) {
+        view.output = view.output || '';
+        view.output_search = '';
+        view.output_search_count = '0/0';
+        view.output_match_index = 0;
+        view.output_tailing = false;
+        view.tailing_label = 'Tailing: Off';
+        view.selected_timeline_item = Array.isArray(view.timeline) && view.timeline.length
+          ? view.timeline[0]
+          : {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
+      }
+      currentDocument = documentContract;
+      currentData = { [bindingRoot]: view };
+      renderCurrent();
       if (jobMatch) {
         watchJobOutput(jobMatch[1], generation).catch(error => {
           if (generation !== outputWatchGeneration) return;

@@ -114,6 +114,28 @@ func TestParseScreenValidatesSelectBindings(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesInputBindingAndChangeScope(t *testing.T) {
+	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: input
+        input:
+          value: frontPage.server.version
+          placeholder: Search output
+        actions:
+          - on: change
+            command: change-output-search
+            arguments:
+              query: "{{input.value}}"
+      - component: list
+`, 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid input: %v", err)
+	}
+	payload = strings.Replace(payload, "frontPage.server.version", "missing.value", 1)
+	_, err := ParseScreen([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid input binding error = %v", err)
+	}
+}
+
 func TestRenderTextAndResolve(t *testing.T) {
 	data := map[string]any{
 		"frontPage": map[string]any{
