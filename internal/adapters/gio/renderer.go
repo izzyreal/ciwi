@@ -24,17 +24,20 @@ import (
 type ActionHandler func(uidsl.Action, map[string]string)
 
 type Renderer struct {
-	mu         sync.RWMutex
-	screen     *uidsl.ScreenDocument
-	data       any
-	status     string
-	theme      *material.Theme
-	palette    palette
-	list       layout.List
-	buttons    map[string]*widget.Clickable
-	onAction   ActionHandler
-	invalidate func()
-	pending    *pendingConfirmation
+	mu          sync.RWMutex
+	screen      *uidsl.ScreenDocument
+	data        any
+	status      string
+	theme       *material.Theme
+	palette     palette
+	list        layout.List
+	buttons     map[string]*widget.Clickable
+	disclosures map[string]bool
+	statusText  widget.Editor
+	shownStatus string
+	onAction    ActionHandler
+	invalidate  func()
+	pending     *pendingConfirmation
 }
 
 type pendingConfirmation struct {
@@ -61,14 +64,23 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	materialTheme.Palette.Bg = colors.background
 	materialTheme.Palette.ContrastBg = colors.accent
 	materialTheme.Palette.ContrastFg = colors.surface
-	return &Renderer{
+	renderer := &Renderer{
 		screen: screen, theme: materialTheme, palette: colors, onAction: onAction,
-		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{},
-	}, nil
+		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
+	}
+	renderer.statusText.ReadOnly = true
+	return renderer, nil
 }
 
 func (r *Renderer) SetData(data any) {
 	r.mu.Lock()
+	r.data = data
+	r.mu.Unlock()
+}
+
+func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
+	r.mu.Lock()
+	r.screen = screen
 	r.data = data
 	r.mu.Unlock()
 }
@@ -85,7 +97,7 @@ func (r *Renderer) SetInvalidate(invalidate func()) {
 
 func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	r.mu.RLock()
-	data, status := r.data, r.status
+	screen, data, status := r.screen, r.data, r.status
 	r.mu.RUnlock()
 	backgroundClip := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 	paint.LinearGradientOp{
@@ -98,9 +110,11 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		if status == "" {
 			status = "Loading…"
 		}
-		return layout.Center.Layout(gtx, material.Body1(r.theme, status).Layout)
+		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return r.layoutStatus(gtx, status)
+		})
 	}
-	root := applyGioOverride(r.screen.Screen.Root)
+	root := applyGioOverride(screen.Screen.Root)
 	children := root.Children
 	body := func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: 16, Right: 18, Bottom: 16, Left: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -109,10 +123,12 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 					if status == "" {
 						return layout.Dimensions{}
 					}
-					return layout.Inset{Top: 10, Bottom: 10}.Layout(gtx, material.Body2(r.theme, status).Layout)
+					return layout.Inset{Top: 10, Bottom: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return r.layoutStatus(gtx, status)
+					})
 				}
 				return layout.Inset{Bottom: spacing(root.Layout.Gap)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return r.layoutNode(gtx, children[index], data, fmt.Sprintf("root/%d", index))
+					return r.layoutNode(gtx, children[index], data, fmt.Sprintf("%s/root/%d", screen.Metadata.Name, index))
 				})
 			})
 		})
@@ -128,6 +144,17 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Stacked(r.layoutConfirmation),
 	)
+}
+
+func (r *Renderer) layoutStatus(gtx layout.Context, status string) layout.Dimensions {
+	if status != r.shownStatus {
+		r.statusText.SetText(status)
+		r.shownStatus = status
+	}
+	style := material.Editor(r.theme, &r.statusText, "")
+	style.TextSize = unit.Sp(14)
+	style.Color = r.palette.muted
+	return style.Layout(gtx)
 }
 
 func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path string) layout.Dimensions {
@@ -169,6 +196,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 	}
 
 	content := func(gtx layout.Context) layout.Dimensions {
+		if node.Component == "disclosure" {
+			return r.layoutDisclosure(gtx, node, data, path)
+		}
 		if node.Component == "text" || node.Component == "badge" || node.Component == "image" {
 			return r.layoutText(gtx, node, data)
 		}
@@ -177,8 +207,8 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 		return r.layoutChildren(gtx, node, data, path)
 	}
-	if node.Component == "card" || node.Component == "section" || node.Style.Role == "hero" {
-		content = r.surface(content, node.Component == "card")
+	if node.Component == "card" || node.Component == "disclosure" || node.Component == "section" || node.Style.Role == "hero" {
+		content = r.surface(content, node.Component == "card" || node.Component == "disclosure")
 	}
 	if len(node.Actions) > 0 && node.Component != "button" {
 		button := r.button(path)
@@ -188,6 +218,41 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		return button.Layout(gtx, content)
 	}
 	return content(gtx)
+}
+
+func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	label := "Details"
+	if node.Text != nil {
+		resolved, err := uidsl.RenderText(data, *node.Text)
+		if err != nil {
+			return r.errorLabel(gtx, err)
+		}
+		label = resolved
+	}
+	expanded := r.disclosures[path]
+	prefix := "▶ "
+	if expanded {
+		prefix = "▼ "
+	}
+	toggle := r.button(path + "/disclosure-toggle")
+	for toggle.Clicked(gtx) {
+		r.disclosures[path] = !expanded
+		expanded = !expanded
+		r.requestFrame()
+	}
+	header := material.Button(r.theme, toggle, prefix+label)
+	header.CornerRadius = 8
+	if !expanded {
+		return header.Layout(gtx)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(header.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return r.layoutChildren(gtx, node, data, path+"/content")
+			})
+		}),
+	)
 }
 
 func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {

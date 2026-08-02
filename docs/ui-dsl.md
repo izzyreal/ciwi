@@ -13,12 +13,16 @@ language. It is a ciwi UI schema, not a general browser implementation.
 Every client embeds the same versioned bundle. A native server cannot send
 HTML, CSS, JavaScript, or replacement UI code to the desktop executable.
 
+The shared bundle currently contains front-page and project-details screens.
+Both render from the same presentation contracts in the browser preview and
+the Gio desktop client.
+
 ## Design boundaries
 
 The `ciwi.ui/v1` schema contains:
 
-- a typed component tree (`page`, `row`, `column`, `section`, `card`, `text`,
-  `list`, `button`, and a small set of primitives);
+- a typed component tree (`page`, `row`, `column`, `section`, `card`,
+  `disclosure`, `text`, `list`, `button`, and a small set of primitives);
 - renderer-neutral layout and semantic style roles;
 - dot-path data bindings and non-executable `{{binding}}` templates;
 - repetitions and visibility conditions;

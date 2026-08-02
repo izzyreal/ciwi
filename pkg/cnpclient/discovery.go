@@ -30,9 +30,7 @@ func Discover(ctx context.Context, timeout time.Duration) ([]Endpoint, error) {
 		timeout = time.Second
 	}
 	entries := make(chan *mdns.ServiceEntry, 64)
-	params := mdns.DefaultParams(DiscoveryService)
-	params.Timeout = timeout
-	params.Entries = entries
+	params := newDiscoveryParams(timeout, entries)
 	collected := make(chan []Endpoint, 1)
 	go func() {
 		var endpoints []Endpoint
@@ -50,6 +48,18 @@ func Discover(ctx context.Context, timeout time.Duration) ([]Endpoint, error) {
 		return nil, fmt.Errorf("discover ciwi native endpoints: %w", err)
 	}
 	return uniqueEndpoints(endpoints), ctx.Err()
+}
+
+func newDiscoveryParams(timeout time.Duration, entries chan<- *mdns.ServiceEntry) *mdns.QueryParam {
+	params := mdns.DefaultParams(DiscoveryService)
+	params.Timeout = timeout
+	params.Entries = entries
+	// Some otherwise healthy macOS/network configurations have no IPv6
+	// multicast route. The mdns package treats that send failure as fatal even
+	// when IPv4 discovery is available. IPv6 responses can still be discovered;
+	// this only disables sending the query over IPv6.
+	params.DisableIPv6 = true
+	return params
 }
 
 func endpointFromEntry(entry *mdns.ServiceEntry) (Endpoint, bool) {

@@ -92,3 +92,19 @@ func TestRenderTextAndResolve(t *testing.T) {
 		t.Fatalf("RenderText() = %q", text)
 	}
 }
+
+func TestResolveUsesJSONNamesForStructInputs(t *testing.T) {
+	value, err := Resolve(struct {
+		Project struct {
+			Name string `json:"name"`
+		} `json:"project"`
+	}{Project: struct {
+		Name string `json:"name"`
+	}{Name: "ciwi"}}, "project.name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "ciwi" {
+		t.Fatalf("value = %#v", value)
+	}
+}

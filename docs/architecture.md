@@ -213,6 +213,9 @@ Primary persisted entities:
 - Continue moving front-page, project, job, settings, and agent behavior through
   application/presentation slices. The established browser UI remains valid
   while each declarative replacement proves behavioral parity.
+- Build the job-details query/navigation slice after the front-page and project
+  structure slices, retaining the established browser page until log streaming,
+  step navigation, and execution controls reach parity.
 - Keep agents on HTTP until agent transport migration has a concrete benefit;
   CNP is currently a client-facing protocol, not a forced whole-system rewrite.
 

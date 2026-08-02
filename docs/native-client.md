@@ -26,8 +26,9 @@ the same explicit address as `-addr`. `-theme` or `CIWI_NATIVE_THEME` selects
 one of the shared theme names.
 
 The browser proof of the same declarative screen is available at
-`/declarative-preview`. It is intentionally separate from the established
-front page until behavioral parity is complete.
+`/declarative-preview`; project navigation continues under
+`/declarative-preview/projects/{projectId}`. These routes are intentionally
+separate from the established pages until behavioral parity is complete.
 
 ## Wire contract
 
@@ -67,8 +68,9 @@ certificate pinning or a pairing flow without changing application services.
 
 ## Current scope
 
-The vertical slice supports server information, projects, the shared front-page
-view, pipeline enqueue commands, and live invalidations. Agents continue to use
-the existing HTTP protocol. The desktop client deliberately has no HTTP
-fallback: missing CNP capabilities fail visibly instead of silently coupling
-the native UI to browser endpoints.
+The vertical slices support server information, the shared front page, project
+details with nested pipelines/jobs/configured steps, pipeline enqueue commands,
+native back navigation, and live invalidations. Status and error output remain
+selectable and copyable. Agents continue to use the existing HTTP protocol.
+The desktop client deliberately has no HTTP fallback: missing CNP capabilities
+fail visibly instead of silently coupling the native UI to browser endpoints.

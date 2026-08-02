@@ -91,6 +91,48 @@ message FrontPageView {
   repeated ExecutionCardSummary history_executions = 4;
 }
 
+message ProjectDetailsView {
+  ProjectSummary project = 1;
+  repeated ProjectPipelineDetails pipelines = 2;
+}
+
+message ProjectPipelineDetails {
+  int64 id = 1;
+  string pipeline_id = 2;
+  string trigger = 3;
+  repeated string depends_on = 4;
+  string dependencies = 5;
+  uint32 jobs_count = 6;
+  bool supports_dry_run = 7;
+  repeated ProjectJobDetails jobs = 8;
+}
+
+message ProjectJobDetails {
+  string id = 1;
+  repeated string needs = 2;
+  string needs_label = 3;
+  string runs_on_label = 4;
+  string tools_label = 5;
+  uint32 timeout_seconds = 6;
+  uint32 matrix_count = 7;
+  uint32 steps_count = 8;
+  repeated ProjectStepDetails steps = 9;
+}
+
+message ProjectStepDetails {
+  uint32 index = 1;
+  uint32 position = 2;
+  string name = 3;
+  string type = 4;
+  string command = 5;
+  bool skip_dry_run = 6;
+  repeated string environment = 7;
+}
+
+message GetProjectDetailsRequest {
+  int64 project_id = 1;
+}
+
 message ExecutionSummary {
   uint32 total_jobs = 1;
   uint32 succeeded = 2;
@@ -158,6 +200,7 @@ message Request {
     Empty get_front_page_view = 12;
     RunPipelineRequest run_pipeline = 13;
     WatchChangesRequest watch_changes = 14;
+    GetProjectDetailsRequest get_project_details = 15;
   }
 }
 
@@ -170,6 +213,7 @@ message Response {
     RunPipelineResult run_pipeline = 13;
     ChangeEvent change = 14;
     ErrorStatus error = 15;
+    ProjectDetailsView project_details = 16;
   }
 }
 

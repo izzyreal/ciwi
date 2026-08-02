@@ -125,6 +125,19 @@ func (c *Client) GetFrontPageView(ctx context.Context) (*cnpv1.FrontPageView, er
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1.ProjectDetailsView, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetProjectDetails{
+		GetProjectDetails: &cnpv1.GetProjectDetailsRequest{ProjectId: projectID},
+	}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetProjectDetails(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) RunPipeline(ctx context.Context, request *cnpv1.RunPipelineRequest, idempotencyKey string) (*cnpv1.RunPipelineResult, error) {
 	if idempotencyKey == "" {
 		idempotencyKey = uuid.NewString()

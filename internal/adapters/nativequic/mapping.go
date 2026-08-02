@@ -3,6 +3,7 @@ package nativequic
 import (
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/presentation"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 )
 
@@ -10,6 +11,40 @@ func serverInfoToProto(info domain.ServerInfo) *cnpv1.ServerInfo {
 	return &cnpv1.ServerInfo{
 		Name: info.Name, ApiVersion: uint32(info.APIVersion), Version: info.Version, Hostname: info.Hostname,
 	}
+}
+
+func projectDetailsToProto(view presentation.ProjectDetailsView) *cnpv1.ProjectDetailsView {
+	projects := projectsToProto([]domain.Project{view.Project})
+	var project *cnpv1.ProjectSummary
+	if len(projects) > 0 {
+		project = projects[0]
+	}
+	pipelines := make([]*cnpv1.ProjectPipelineDetails, 0, len(view.Pipelines))
+	for _, pipeline := range view.Pipelines {
+		jobs := make([]*cnpv1.ProjectJobDetails, 0, len(pipeline.Jobs))
+		for _, job := range pipeline.Jobs {
+			steps := make([]*cnpv1.ProjectStepDetails, 0, len(job.Steps))
+			for _, step := range job.Steps {
+				steps = append(steps, &cnpv1.ProjectStepDetails{
+					Index: uint32(step.Index), Position: uint32(step.Position), Name: step.Name,
+					Type: step.Type, Command: step.Command, SkipDryRun: step.SkipDryRun,
+					Environment: append([]string{}, step.Environment...),
+				})
+			}
+			jobs = append(jobs, &cnpv1.ProjectJobDetails{
+				Id: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: job.NeedsLabel,
+				RunsOnLabel: job.RunsOnLabel, ToolsLabel: job.ToolsLabel,
+				TimeoutSeconds: uint32(max(job.TimeoutSeconds, 0)), MatrixCount: uint32(max(job.MatrixCount, 0)),
+				StepsCount: uint32(max(job.StepsCount, 0)), Steps: steps,
+			})
+		}
+		pipelines = append(pipelines, &cnpv1.ProjectPipelineDetails{
+			Id: pipeline.ID, PipelineId: pipeline.PipelineID, Trigger: pipeline.Trigger,
+			DependsOn: append([]string{}, pipeline.DependsOn...), Dependencies: pipeline.Dependencies,
+			JobsCount: uint32(max(pipeline.JobsCount, 0)), SupportsDryRun: pipeline.SupportsDryRun, Jobs: jobs,
+		})
+	}
+	return &cnpv1.ProjectDetailsView{Project: project, Pipelines: pipelines}
 }
 
 func projectsToProto(projects []domain.Project) []*cnpv1.ProjectSummary {

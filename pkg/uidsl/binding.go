@@ -1,7 +1,6 @@
 package uidsl
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -11,37 +10,72 @@ import (
 // Resolve evaluates a dot-separated binding against renderer view data. It
 // supports string-keyed maps, structs through their JSON names, and slices.
 func Resolve(root any, binding string) (any, error) {
-	var normalized any
-	encoded, err := json.Marshal(root)
-	if err != nil {
-		return nil, fmt.Errorf("normalize binding data: %w", err)
-	}
-	if err := json.Unmarshal(encoded, &normalized); err != nil {
-		return nil, fmt.Errorf("normalize binding data: %w", err)
-	}
-	current := normalized
+	current := root
 	for _, part := range strings.Split(binding, ".") {
 		if part == "" {
 			return nil, fmt.Errorf("invalid binding %q", binding)
 		}
-		switch value := current.(type) {
-		case map[string]any:
-			var exists bool
-			current, exists = value[part]
-			if !exists {
-				return nil, fmt.Errorf("binding %q does not exist", binding)
-			}
-		case []any:
-			index, err := strconv.Atoi(part)
-			if err != nil || index < 0 || index >= len(value) {
-				return nil, fmt.Errorf("binding %q has invalid list index %q", binding, part)
-			}
-			current = value[index]
-		default:
-			return nil, fmt.Errorf("binding %q cannot descend through %s", binding, reflect.TypeOf(current))
+		var err error
+		current, err = resolveBindingPart(current, part, binding)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return current, nil
+}
+
+func resolveBindingPart(current any, part, binding string) (any, error) {
+	if current == nil {
+		return nil, fmt.Errorf("binding %q cannot descend through <nil>", binding)
+	}
+
+	value := reflect.ValueOf(current)
+	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return nil, fmt.Errorf("binding %q cannot descend through <nil>", binding)
+		}
+		value = value.Elem()
+	}
+
+	switch value.Kind() {
+	case reflect.Map:
+		if value.Type().Key().Kind() != reflect.String {
+			break
+		}
+		key := reflect.ValueOf(part).Convert(value.Type().Key())
+		item := value.MapIndex(key)
+		if !item.IsValid() {
+			return nil, fmt.Errorf("binding %q does not exist", binding)
+		}
+		return item.Interface(), nil
+	case reflect.Slice, reflect.Array:
+		index, err := strconv.Atoi(part)
+		if err != nil || index < 0 || index >= value.Len() {
+			return nil, fmt.Errorf("binding %q has invalid list index %q", binding, part)
+		}
+		return value.Index(index).Interface(), nil
+	case reflect.Struct:
+		valueType := value.Type()
+		for index := 0; index < valueType.NumField(); index++ {
+			field := valueType.Field(index)
+			if field.PkgPath != "" { // Unexported.
+				continue
+			}
+			name := field.Name
+			if tagName := strings.Split(field.Tag.Get("json"), ",")[0]; tagName != "" {
+				if tagName == "-" {
+					continue
+				}
+				name = tagName
+			}
+			if name == part {
+				return value.Field(index).Interface(), nil
+			}
+		}
+		return nil, fmt.Errorf("binding %q does not exist", binding)
+	}
+
+	return nil, fmt.Errorf("binding %q cannot descend through %s", binding, reflect.TypeOf(current))
 }
 
 // RenderText evaluates a text expression. Templates use {{binding.path}}

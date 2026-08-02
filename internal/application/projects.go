@@ -2,12 +2,31 @@ package application
 
 import (
 	"context"
+	"errors"
 
 	"github.com/izzyreal/ciwi/internal/domain"
 )
 
 type ProjectRepository interface {
 	ListProjects(context.Context) ([]domain.Project, error)
+	GetProjectDetails(context.Context, int64) (domain.ProjectDetails, error)
+}
+
+func (q *ProjectQueries) GetProjectDetails(ctx context.Context, projectID int64) (domain.ProjectDetails, error) {
+	if projectID <= 0 {
+		return domain.ProjectDetails{}, NewError(ErrorInvalidArgument, "project id must be positive", nil)
+	}
+	if q == nil || q.repository == nil {
+		return domain.ProjectDetails{}, NewError(ErrorUnavailable, "project repository unavailable", nil)
+	}
+	details, err := q.repository.GetProjectDetails(ctx, projectID)
+	if errors.Is(err, domain.ErrProjectNotFound) {
+		return domain.ProjectDetails{}, NewError(ErrorNotFound, "project not found", err)
+	}
+	if err != nil {
+		return domain.ProjectDetails{}, WrapInternal("get project details", err)
+	}
+	return details, nil
 }
 
 type ProjectQueries struct {

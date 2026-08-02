@@ -14,12 +14,13 @@ import (
 )
 
 type serverApplication struct {
-	server     *application.ServerQueries
-	projects   *application.ProjectQueries
-	pipelines  *application.PipelineCommands
-	executions *application.ExecutionQueries
-	frontPage  *presentation.FrontPageQueries
-	changes    *application.ChangeHub
+	server         *application.ServerQueries
+	projects       *application.ProjectQueries
+	pipelines      *application.PipelineCommands
+	executions     *application.ExecutionQueries
+	frontPage      *presentation.FrontPageQueries
+	projectDetails *presentation.ProjectDetailsQueries
+	changes        *application.ChangeHub
 }
 
 type localServerInfoSource struct{}
@@ -47,9 +48,10 @@ func newServerApplication(s *stateStore) *serverApplication {
 			sqliteadapter.NewCommandReceiptRepository(s.db),
 			changes,
 		),
-		executions: executionQueries,
-		frontPage:  presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
-		changes:    changes,
+		executions:     executionQueries,
+		frontPage:      presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
+		projectDetails: presentation.NewProjectDetailsQueries(projectQueries),
+		changes:        changes,
 	}
 }
 

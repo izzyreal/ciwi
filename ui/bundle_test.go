@@ -10,6 +10,13 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if screen.Metadata.Name != "front-page" {
 		t.Fatalf("screen name = %q", screen.Metadata.Name)
 	}
+	projectScreen, err := LoadScreen("project-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projectScreen.Metadata.Name != "project-details" {
+		t.Fatalf("project screen name = %q", projectScreen.Metadata.Name)
+	}
 	themes, err := LoadThemes()
 	if err != nil {
 		t.Fatal(err)

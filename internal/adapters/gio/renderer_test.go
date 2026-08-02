@@ -26,6 +26,9 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !renderer.statusText.ReadOnly {
+		t.Fatal("status text must remain selectable but read-only")
+	}
 	data, err := frontPageBindingData(&cnpv1.FrontPageView{
 		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
 		Projects: []*cnpv1.ProjectSummary{{
@@ -41,6 +44,49 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	dimensions := renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
+	}
+}
+
+func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("project-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
+		Project: &cnpv1.ProjectSummary{Id: 1, Name: "ciwi"},
+		Pipelines: []*cnpv1.ProjectPipelineDetails{{
+			Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 1,
+			Jobs: []*cnpv1.ProjectJobDetails{{
+				Id: "compile", StepsCount: 1,
+				Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Compile", Type: "run"}},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	dimensions := renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if dimensions.Size != image.Pt(1100, 760) {
+		t.Fatalf("dimensions = %v", dimensions.Size)
+	}
+	if got := len(renderer.buttons); got != 2 {
+		t.Fatalf("collapsed project view created %d interactive widgets, want only Back and pipeline disclosure", got)
+	}
+	renderer.disclosures["project-details/root/1/1/7/0"] = true
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if got := len(renderer.buttons); got < 4 {
+		t.Fatalf("expanded pipeline did not expose its Run action and job disclosure: %d widgets", got)
 	}
 }
 
@@ -75,5 +121,49 @@ func TestNativeAddressNormalizesListenStyleAddress(t *testing.T) {
 	}
 	if address != "127.0.0.1:8113" {
 		t.Fatalf("address = %q", address)
+	}
+}
+
+func BenchmarkRendererProjectDetailsCollapsed(b *testing.B) {
+	screen, err := sharedUI.LoadScreen("project-details")
+	if err != nil {
+		b.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		b.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	view := &cnpv1.ProjectDetailsView{Project: &cnpv1.ProjectSummary{Id: 1, Name: "VMPC2000XL"}}
+	for pipelineIndex := 0; pipelineIndex < 10; pipelineIndex++ {
+		pipeline := &cnpv1.ProjectPipelineDetails{
+			Id: int64(pipelineIndex + 1), PipelineId: "pipeline", Dependencies: "none", JobsCount: 2,
+		}
+		for jobIndex := 0; jobIndex < 2; jobIndex++ {
+			job := &cnpv1.ProjectJobDetails{Id: "job", StepsCount: 12}
+			for stepIndex := 0; stepIndex < 12; stepIndex++ {
+				job.Steps = append(job.Steps, &cnpv1.ProjectStepDetails{
+					Index: uint32(stepIndex), Position: uint32(stepIndex + 1), Name: "Configured build step", Type: "run",
+				})
+			}
+			pipeline.Jobs = append(pipeline.Jobs, job)
+		}
+		view.Pipelines = append(view.Pipelines, pipeline)
+	}
+	data, err := projectDetailsBindingData(view)
+	if err != nil {
+		b.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	constraints := layout.Exact(image.Pt(1900, 1200))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		operations.Reset()
+		renderer.Layout(layout.Context{Ops: &operations, Constraints: constraints})
 	}
 }

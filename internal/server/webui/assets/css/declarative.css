@@ -4,8 +4,12 @@ body { min-height: 100vh; }
 .dsl-row { display: flex; flex-direction: row; }
 .dsl-column, .dsl-section, .dsl-list { display: flex; flex-direction: column; }
 .dsl-card, .dsl-section, .dsl-hero { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-.dsl-card { padding: 16px; cursor: pointer; }
-.dsl-card:hover { border-color: var(--accent); background: var(--surface-subtle); }
+.dsl-disclosure { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 14px; }
+.dsl-disclosure > summary { color: var(--accent); cursor: pointer; font-weight: 750; }
+.dsl-disclosure[open] > summary { margin-bottom: 14px; }
+.dsl-card { padding: 16px; }
+.dsl-card[role="link"] { cursor: pointer; }
+.dsl-card[role="link"]:hover { border-color: var(--accent); background: var(--surface-subtle); }
 .dsl-hero { padding: 24px; background: var(--chrome-card-bg, var(--surface)); }
 .dsl-title { font-size: 38px; line-height: 1.1; font-weight: 800; color: var(--ink); }
 .dsl-heading { font-size: 20px; font-weight: 750; color: var(--ink); }

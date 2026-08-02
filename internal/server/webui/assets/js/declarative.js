@@ -75,6 +75,7 @@
       case 'page': return document.createElement('main');
       case 'section': return document.createElement('section');
       case 'card': return document.createElement('article');
+      case 'disclosure': return document.createElement('details');
       case 'button': return document.createElement('button');
       case 'image': return document.createElement('img');
       case 'divider': return document.createElement('hr');
@@ -91,7 +92,13 @@
       const invoke = async () => {
         const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, data)]));
         if (action.confirm && !window.confirm(action.confirm.message || action.confirm.title || 'Continue?')) return;
-        if (action.command === 'navigate' && args.route) window.location.assign(args.route);
+        if (action.command === 'navigate' && args.route) {
+          const inPreview = window.location.pathname.startsWith('/declarative-preview');
+          const destination = inPreview
+            ? (args.route === '/' ? '/declarative-preview' : '/declarative-preview' + args.route)
+            : args.route;
+          window.location.assign(destination);
+        }
         else if (action.command === 'refresh') refresh();
         else if (action.command === 'run-pipeline') {
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
@@ -140,7 +147,11 @@
     if (style.emphasis) element.classList.add('dsl-' + style.emphasis);
     if (style.truncate) element.classList.add('dsl-truncate');
     applyLayout(element, node.layout);
-    if (node.component === 'image' && node.image) {
+    if (node.component === 'disclosure') {
+      const summary = document.createElement('summary');
+      summary.textContent = renderText(node.text, data) || 'Details';
+      element.appendChild(summary);
+    } else if (node.component === 'image' && node.image) {
       element.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
       element.alt = node.image.description || '';
     } else if (node.text) {
@@ -153,15 +164,19 @@
 
   async function refresh() {
     try {
+      const projectMatch = window.location.pathname.match(/^\/declarative-preview\/projects\/(\d+)\/?$/);
+      const screenName = projectMatch ? 'project-details' : 'front-page';
+      const viewURL = projectMatch ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1]) : '/api/v1/views/front-page';
+      const bindingRoot = projectMatch ? 'projectDetails' : 'frontPage';
       const [screenResponse, themeResponse, viewResponse] = await Promise.all([
-        fetch('/ui/contracts/screens/front-page.json'),
+        fetch('/ui/contracts/screens/' + screenName + '.json'),
         fetch('/ui/contracts/themes.json'),
-        fetch('/api/v1/views/front-page'),
+        fetch(viewURL),
       ]);
-      if (!screenResponse.ok || !themeResponse.ok || !viewResponse.ok) throw new Error('Could not load declarative front page data');
-      const [documentContract, themes, frontPage] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
+      if (!screenResponse.ok || !themeResponse.ok || !viewResponse.ok) throw new Error('Could not load declarative view data');
+      const [documentContract, themes, view] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
       applyContractTheme(themes);
-      const fragment = renderNode(documentContract.screen.root, { frontPage });
+      const fragment = renderNode(documentContract.screen.root, { [bindingRoot]: view });
       root.replaceChildren(fragment);
     } catch (error) {
       const message = document.createElement('div');

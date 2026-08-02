@@ -133,7 +133,8 @@ func Run(ctx context.Context) error {
 		app := s.app()
 		nativeServer, err = nativequic.Listen(nativeAddr, nativequic.Services{
 			Server: app.server, Projects: app.projects, FrontPage: app.frontPage,
-			Pipelines: app.pipelines, Changes: app.changes, Version: currentVersion(),
+			ProjectDetails: app.projectDetails,
+			Pipelines:      app.pipelines, Changes: app.changes, Version: currentVersion(),
 		})
 		if err != nil {
 			return err

@@ -1,0 +1,158 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: project-details
+  title: ciwi project
+  description: Project pipelines, jobs and configured steps
+screen:
+  dataSources:
+    - name: projectDetails
+      query: get-project-details
+      watchTopics: [projects]
+  root:
+    component: page
+    id: project-details
+    layout:
+      direction: vertical
+      gap: large
+      padding: large
+      maxWidth: page
+    children:
+      - component: row
+        id: project-header
+        layout:
+          direction: horizontal
+          gap: medium
+          align: center
+        style:
+          role: hero
+        children:
+          - component: column
+            layout:
+              direction: vertical
+              gap: small
+              grow: true
+            children:
+              - component: text
+                text:
+                  template: "Project: {{projectDetails.project.name}}"
+                style:
+                  role: title
+                  emphasis: strong
+              - component: text
+                text:
+                  binding: projectDetails.project.repo_url
+                visible:
+                  binding: projectDetails.project.repo_url
+                  equals: ""
+                  not: true
+                style:
+                  role: subtitle
+                  tone: muted
+                  truncate: true
+          - component: button
+            text:
+              literal: Back to Projects
+            icon: arrow-left
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /
+      - component: section
+        id: project-structure
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Structure
+            style:
+              role: heading
+              emphasis: strong
+          - component: list
+            id: project-pipelines
+            layout:
+              direction: vertical
+              gap: medium
+            repeat:
+              source: projectDetails.pipelines
+              as: pipeline
+              key: pipeline.id
+            children:
+              - component: disclosure
+                text:
+                  template: "Pipeline: {{pipeline.pipeline_id}}"
+                layout:
+                  direction: vertical
+                  gap: medium
+                children:
+                  - component: row
+                    layout:
+                      direction: horizontal
+                      gap: medium
+                      align: center
+                    children:
+                      - component: text
+                        text:
+                          template: "{{pipeline.jobs_count}} job(s) · depends on: {{pipeline.dependencies}}"
+                        layout:
+                          grow: true
+                        style:
+                          tone: muted
+                      - component: button
+                        text:
+                          literal: Run
+                        icon: player-play
+                        actions:
+                          - on: activate
+                            command: run-pipeline
+                            arguments:
+                              pipelineDbId: "{{pipeline.id}}"
+                            confirm:
+                              title: Run pipeline
+                              message: This adds a new execution without interrupting jobs that are already queued or running.
+                  - component: list
+                    layout:
+                      direction: vertical
+                      gap: small
+                    repeat:
+                      source: pipeline.jobs
+                      as: job
+                      key: job.id
+                    children:
+                      - component: disclosure
+                        text:
+                          template: "Job: {{job.id}}"
+                        layout:
+                          direction: vertical
+                          gap: small
+                        children:
+                          - component: text
+                            text:
+                              template: "{{job.steps_count}} step(s) · runs on: {{job.runs_on_label}}"
+                            style:
+                              tone: muted
+                          - component: list
+                            layout:
+                              direction: vertical
+                              gap: small
+                            repeat:
+                              source: job.steps
+                              as: step
+                              key: step.index
+                            children:
+                              - component: row
+                                layout:
+                                  direction: horizontal
+                                  gap: small
+                                children:
+                                  - component: text
+                                    text:
+                                      template: "{{step.position}}. {{step.name}}"
+                                  - component: text
+                                    text:
+                                      template: "({{step.type}})"
+                                    style:
+                                      tone: muted

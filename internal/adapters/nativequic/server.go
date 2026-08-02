@@ -30,6 +30,9 @@ type Services struct {
 	FrontPage interface {
 		GetFrontPageView(context.Context) (presentation.FrontPageView, error)
 	}
+	ProjectDetails interface {
+		GetProjectDetailsView(context.Context, int64) (presentation.ProjectDetailsView, error)
+	}
 	Pipelines interface {
 		RunPipeline(context.Context, application.RunPipelineRequest) (application.RunPipelineResult, error)
 	}
@@ -43,7 +46,7 @@ type Server struct {
 }
 
 func Listen(address string, services Services) (*Server, error) {
-	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.Pipelines == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.Pipelines == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native QUIC services are incomplete")
 	}
 	tlsConfig, err := serverTLSConfig()
@@ -111,7 +114,7 @@ func (s *Server) handleConnection(ctx context.Context, connection *quic.Conn) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "projects", "front_page", "run_pipeline", "watch_changes",
+			"server_info", "projects", "front_page", "project_details", "run_pipeline", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -184,6 +187,12 @@ func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Res
 				QueuedExecutions:  executionCardsToProto(view.QueuedExecutions),
 				HistoryExecutions: executionCardsToProto(view.HistoryExecutions),
 			}}
+		}
+	case *cnpv1.Request_GetProjectDetails:
+		var view presentation.ProjectDetailsView
+		view, err = s.services.ProjectDetails.GetProjectDetailsView(ctx, operation.GetProjectDetails.GetProjectId())
+		if err == nil {
+			response.Result = &cnpv1.Response_ProjectDetails{ProjectDetails: projectDetailsToProto(view)}
 		}
 	case *cnpv1.Request_RunPipeline:
 		var result application.RunPipelineResult

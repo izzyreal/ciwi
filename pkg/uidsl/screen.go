@@ -130,7 +130,8 @@ var templateBindingPattern = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
 var components = map[string]bool{
 	"page": true, "column": true, "row": true, "section": true,
 	"card": true, "text": true, "icon": true, "image": true,
-	"button": true, "list": true, "badge": true, "spacer": true,
+	"disclosure": true,
+	"button":     true, "list": true, "badge": true, "spacer": true,
 	"divider": true,
 }
 
@@ -172,7 +173,7 @@ func (d *ScreenDocument) Validate() error {
 		if source.Query == "" {
 			return fmt.Errorf("dataSources[%d].query is required", i)
 		}
-		if source.Query != "get-front-page-view" {
+		if source.Query != "get-front-page-view" && source.Query != "get-project-details" {
 			return fmt.Errorf("dataSources[%d].query %q is not supported", i, source.Query)
 		}
 		for _, topic := range source.WatchTopics {

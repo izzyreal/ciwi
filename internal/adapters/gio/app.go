@@ -17,6 +17,7 @@ import (
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type Options struct {
@@ -30,10 +31,22 @@ type commandRequest struct {
 	arguments map[string]string
 }
 
+type navigationState struct {
+	screen    string
+	projectID int64
+}
+
 func Run(options Options) error {
-	screen, err := sharedUI.LoadScreen("front-page")
+	frontPageScreen, err := sharedUI.LoadScreen("front-page")
 	if err != nil {
 		return err
+	}
+	projectDetailsScreen, err := sharedUI.LoadScreen("project-details")
+	if err != nil {
+		return err
+	}
+	screens := map[string]*uidsl.ScreenDocument{
+		"front-page": frontPageScreen, "project-details": projectDetailsScreen,
 	}
 	theme, err := findTheme(options.Theme)
 	if err != nil {
@@ -43,7 +56,7 @@ func Run(options Options) error {
 	window.Option(app.Title("ciwi native"), app.Size(1180, 780))
 	commands := make(chan commandRequest, 16)
 	var renderer *Renderer
-	renderer, err = NewRenderer(screen, theme, func(action uidsl.Action, arguments map[string]string) {
+	renderer, err = NewRenderer(frontPageScreen, theme, func(action uidsl.Action, arguments map[string]string) {
 		select {
 		case commands <- commandRequest{action: action, arguments: arguments}:
 		default:
@@ -58,7 +71,7 @@ func Run(options Options) error {
 	renderer.SetStatus("Connecting to ciwi…")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go runController(ctx, window, renderer, commands, options)
+	go runController(ctx, window, renderer, commands, screens, options)
 
 	var operations op.Ops
 	for {
@@ -73,7 +86,7 @@ func Run(options Options) error {
 	}
 }
 
-func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, options Options) {
+func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options) {
 	address, err := nativeAddress(ctx, options.Address)
 	if err != nil {
 		renderer.SetStatus(err.Error())
@@ -89,7 +102,8 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		return
 	}
 	defer client.Close()
-	if err := refreshFrontPage(ctx, client, renderer); err != nil {
+	navigation := navigationState{screen: "front-page"}
+	if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
 		renderer.SetStatus(err.Error())
 	} else {
 		renderer.SetStatus("Connected to " + address)
@@ -114,8 +128,8 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				changes = nil
 				continue
 			}
-			if change.ResyncRequired || relevantFrontPageChange(change) {
-				if err := refreshFrontPage(ctx, client, renderer); err != nil {
+			if change.ResyncRequired || relevantScreenChange(navigation, change) {
+				if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
 					renderer.SetStatus("Refresh failed: " + err.Error())
 				}
 				window.Invalidate()
@@ -127,13 +141,13 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			watchErrors = nil
 		case command := <-commands:
-			handleCommand(ctx, client, renderer, command)
+			handleCommand(ctx, client, renderer, screens, &navigation, command)
 			window.Invalidate()
 		}
 	}
 }
 
-func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Renderer, command commandRequest) {
+func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, command commandRequest) {
 	switch command.action.Command {
 	case "run-pipeline":
 		pipelineID, err := strconv.ParseInt(command.arguments["pipelineDbId"], 10, 64)
@@ -151,13 +165,57 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		}
 		renderer.SetStatus(fmt.Sprintf("Queued %d execution(s) for %s", result.Enqueued, result.PipelineId))
 	case "navigate":
-		renderer.SetStatus("Navigation is the next native-client slice (target " + command.arguments["route"] + ")")
+		if err := navigate(ctx, client, renderer, screens, navigation, command.arguments["route"]); err != nil {
+			renderer.SetStatus("Navigation failed: " + err.Error())
+		}
 	default:
 		renderer.SetStatus("Unsupported native action: " + command.action.Command)
 	}
 }
 
-func refreshFrontPage(ctx context.Context, client *cnpclient.Client, renderer *Renderer) error {
+func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, route string) error {
+	route = strings.TrimSpace(route)
+	next := navigationState{}
+	switch {
+	case route == "/":
+		next.screen = "front-page"
+	case strings.HasPrefix(route, "/projects/"):
+		projectID, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(route, "/projects/"), "/"), 10, 64)
+		if err != nil || projectID <= 0 {
+			return fmt.Errorf("invalid project route %q", route)
+		}
+		next = navigationState{screen: "project-details", projectID: projectID}
+	default:
+		return fmt.Errorf("unsupported route %q", route)
+	}
+	if err := refreshScreen(ctx, client, renderer, screens, next); err != nil {
+		return err
+	}
+	*navigation = next
+	if next.screen == "front-page" {
+		renderer.SetStatus("Projects")
+	} else {
+		renderer.SetStatus("Project details")
+	}
+	return nil
+}
+
+func refreshScreen(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState) error {
+	screen := screens[navigation.screen]
+	if screen == nil {
+		return fmt.Errorf("screen %q is unavailable", navigation.screen)
+	}
+	switch navigation.screen {
+	case "front-page":
+		return refreshFrontPage(ctx, client, renderer, screen)
+	case "project-details":
+		return refreshProjectDetails(ctx, client, renderer, screen, navigation.projectID)
+	default:
+		return fmt.Errorf("screen %q is unsupported", navigation.screen)
+	}
+}
+
+func refreshFrontPage(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument) error {
 	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	view, err := client.GetFrontPageView(requestCtx)
@@ -168,20 +226,43 @@ func refreshFrontPage(ctx context.Context, client *cnpclient.Client, renderer *R
 	if err != nil {
 		return err
 	}
-	renderer.SetData(data)
+	renderer.SetScreenAndData(screen, data)
+	return nil
+}
+
+func refreshProjectDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, projectID int64) error {
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	view, err := client.GetProjectDetails(requestCtx, projectID)
+	if err != nil {
+		return err
+	}
+	data, err := projectDetailsBindingData(view)
+	if err != nil {
+		return err
+	}
+	renderer.SetScreenAndData(screen, data)
 	return nil
 }
 
 func frontPageBindingData(view *cnpv1.FrontPageView) (map[string]any, error) {
-	payload, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(view)
+	return protobufBindingData("frontPage", "front-page", view)
+}
+
+func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, error) {
+	return protobufBindingData("projectDetails", "project-details", view)
+}
+
+func protobufBindingData(root, description string, message proto.Message) (map[string]any, error) {
+	payload, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(message)
 	if err != nil {
-		return nil, fmt.Errorf("encode front-page binding data: %w", err)
+		return nil, fmt.Errorf("encode %s binding data: %w", description, err)
 	}
 	var normalized map[string]any
 	if err := json.Unmarshal(payload, &normalized); err != nil {
-		return nil, fmt.Errorf("decode front-page binding data: %w", err)
+		return nil, fmt.Errorf("decode %s binding data: %w", description, err)
 	}
-	return map[string]any{"frontPage": normalized}, nil
+	return map[string]any{root: normalized}, nil
 }
 
 func nativeAddress(ctx context.Context, explicit string) (string, error) {
@@ -204,12 +285,17 @@ func nativeAddress(ctx context.Context, explicit string) (string, error) {
 	return endpoints[0].Address, nil
 }
 
-func relevantFrontPageChange(change *cnpv1.ChangeEvent) bool {
+func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent) bool {
 	for _, topic := range change.Topics {
-		switch topic {
-		case cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER, cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS,
-			cnpv1.ChangeTopic_CHANGE_TOPIC_QUEUE, cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY:
+		if navigation.screen == "project-details" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS {
 			return true
+		}
+		if navigation.screen == "front-page" {
+			switch topic {
+			case cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER, cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS,
+				cnpv1.ChangeTopic_CHANGE_TOPIC_QUEUE, cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY:
+				return true
+			}
 		}
 	}
 	return false

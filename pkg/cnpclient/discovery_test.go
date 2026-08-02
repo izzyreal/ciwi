@@ -3,6 +3,7 @@ package cnpclient
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/mdns"
 )
@@ -17,6 +18,13 @@ func TestEndpointFromEntry(t *testing.T) {
 	}
 	if endpoint.Address != "192.0.2.8:8113" || endpoint.Version != "v0.2.0" || endpoint.APIVersion != "1" {
 		t.Fatalf("endpoint = %#v", endpoint)
+	}
+}
+
+func TestDiscoveryUsesIPv4QueryWhenIPv6MulticastIsUnavailable(t *testing.T) {
+	params := newDiscoveryParams(time.Second, make(chan *mdns.ServiceEntry))
+	if !params.DisableIPv6 || params.DisableIPv4 {
+		t.Fatalf("discovery address families: disableIPv4=%v disableIPv6=%v", params.DisableIPv4, params.DisableIPv6)
 	}
 }
 

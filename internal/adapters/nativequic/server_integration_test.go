@@ -19,12 +19,13 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	changes := application.NewChangeHub()
 	pipelines := &pipelineService{}
 	server := startServer(t, nativequic.Services{
-		Server:    serverService{},
-		Projects:  projectService{},
-		FrontPage: frontPageService{},
-		Pipelines: pipelines,
-		Changes:   changes,
-		Version:   "v0.2.0",
+		Server:         serverService{},
+		Projects:       projectService{},
+		FrontPage:      frontPageService{},
+		ProjectDetails: projectDetailsService{},
+		Pipelines:      pipelines,
+		Changes:        changes,
+		Version:        "v0.2.0",
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -59,6 +60,13 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if frontPage.Server.Version != "v0.2.0" || len(frontPage.Projects) != 1 || len(frontPage.QueuedExecutions) != 1 {
 		t.Fatalf("front page = %#v", frontPage)
 	}
+	projectDetails, err := client.GetProjectDetails(ctx, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projectDetails.Project.Name != "ciwi" || len(projectDetails.Pipelines) != 1 || projectDetails.Pipelines[0].Jobs[0].Steps[0].Name != "Compile" {
+		t.Fatalf("project details = %#v", projectDetails)
+	}
 
 	result, err := client.RunPipeline(ctx, &cnpv1.RunPipelineRequest{
 		PipelineDbId: 42,
@@ -85,7 +93,7 @@ func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
 func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{},
+		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{},
 		Pipelines: &pipelineService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -115,7 +123,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{},
+		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{},
 		Pipelines: failingPipelineService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -193,6 +201,21 @@ func (frontPageService) GetFrontPageView(context.Context) (presentation.FrontPag
 		QueuedExecutions: []domain.ExecutionCard{{
 			Key: "pipeline:run-1", Kind: "pipeline", Title: "ciwi build",
 			JobExecutionIDs: []string{"job-1"}, Summary: domain.ExecutionSummary{TotalJobs: 1, InProgress: 1},
+		}},
+	}, nil
+}
+
+type projectDetailsService struct{}
+
+func (projectDetailsService) GetProjectDetailsView(context.Context, int64) (presentation.ProjectDetailsView, error) {
+	return presentation.ProjectDetailsView{
+		Project: testProjects()[0],
+		Pipelines: []presentation.ProjectPipelineView{{
+			ID: 42, PipelineID: "build", JobsCount: 1, SupportsDryRun: true,
+			Jobs: []presentation.ProjectJobView{{
+				ID: "compile", StepsCount: 1,
+				Steps: []presentation.ProjectStepView{{Index: 0, Position: 1, Name: "Compile", Type: "run"}},
+			}},
 		}},
 	}, nil
 }

@@ -31,6 +31,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.Get("/api/v1/server-info", serverInfoHandler)
 	r.Get("/api/v1/runtime-state", s.runtimeStateHandler)
 	r.Get("/api/v1/views/front-page", s.frontPageViewHandler)
+	r.Get("/api/v1/views/projects/*", s.projectDetailsViewHandler)
 
 	// Agent API
 	r.Post("/api/v1/heartbeat", s.heartbeatHandler)

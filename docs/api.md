@@ -26,6 +26,7 @@ application and presentation services; CNP is not an HTTP wrapper.
 
 - Presentation views:
   - `GET /api/v1/views/front-page`
+  - `GET /api/v1/views/projects/{projectId}`
 
 - Agents:
   - `GET /api/v1/agents`
