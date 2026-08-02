@@ -135,7 +135,8 @@ func Run(ctx context.Context) error {
 			Server: app.server, Projects: app.projects, FrontPage: app.frontPage,
 			ProjectDetails: app.projectDetails,
 			JobDetails:     app.jobDetails,
-			Pipelines:      app.pipelines, Changes: app.changes, Version: currentVersion(),
+			Pipelines:      app.pipelines, ExecutionCommands: app.executionCommands,
+			Changes: app.changes, Version: currentVersion(),
 		})
 		if err != nil {
 			return err

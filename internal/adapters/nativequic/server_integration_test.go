@@ -3,6 +3,7 @@ package nativequic_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -18,15 +19,17 @@ import (
 func TestClientServerVerticalSlice(t *testing.T) {
 	changes := application.NewChangeHub()
 	pipelines := &pipelineService{}
+	executions := &executionCommandService{}
 	server := startServer(t, nativequic.Services{
-		Server:         serverService{},
-		Projects:       projectService{},
-		FrontPage:      frontPageService{},
-		ProjectDetails: projectDetailsService{},
-		JobDetails:     jobDetailsService{},
-		Pipelines:      pipelines,
-		Changes:        changes,
-		Version:        "v0.2.0",
+		Server:            serverService{},
+		Projects:          projectService{},
+		FrontPage:         frontPageService{},
+		ProjectDetails:    projectDetailsService{},
+		JobDetails:        jobDetailsService{},
+		Pipelines:         pipelines,
+		ExecutionCommands: executions,
+		Changes:           changes,
+		Version:           "v0.2.0",
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -98,6 +101,17 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if request.PipelineDBID != 42 || request.PipelineJobID != "linux" || !request.DryRun || request.IdempotencyKey != "stable-command-key" {
 		t.Fatalf("mapped request = %#v", request)
 	}
+	cleared, err := client.ClearExecutionQueue(ctx, "clear-command-key")
+	if err != nil || cleared.Cleared != 2 {
+		t.Fatalf("clear queue = %#v, %v", cleared, err)
+	}
+	flushed, err := client.FlushExecutionHistory(ctx, &cnpv1.FlushExecutionHistoryRequest{JobExecutionIds: []string{"job-1", "job-2"}}, "flush-command-key")
+	if err != nil || flushed.Flushed != 2 {
+		t.Fatalf("flush history = %#v, %v", flushed, err)
+	}
+	if executions.clearRequest.IdempotencyKey != "clear-command-key" || executions.flushRequest.IdempotencyKey != "flush-command-key" || !reflect.DeepEqual(executions.flushRequest.JobExecutionIDs, []string{"job-1", "job-2"}) {
+		t.Fatalf("execution command mapping = clear %#v, flush %#v", executions.clearRequest, executions.flushRequest)
+	}
 }
 
 func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
@@ -110,7 +124,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: &pipelineService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, ExecutionCommands: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -142,7 +156,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
-		Pipelines: &pipelineService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, ExecutionCommands: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -170,7 +184,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: failingPipelineService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
+		Pipelines: failingPipelineService{}, ExecutionCommands: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -355,4 +369,19 @@ type failingPipelineService struct{}
 
 func (failingPipelineService) RunPipeline(context.Context, application.RunPipelineRequest) (application.RunPipelineResult, error) {
 	return application.RunPipelineResult{}, application.NewError(application.ErrorNotFound, "pipeline not found", nil)
+}
+
+type executionCommandService struct {
+	clearRequest application.ClearExecutionQueueRequest
+	flushRequest application.FlushExecutionHistoryRequest
+}
+
+func (s *executionCommandService) ClearQueue(_ context.Context, request application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error) {
+	s.clearRequest = request
+	return application.ClearExecutionQueueResult{Cleared: 2}, nil
+}
+
+func (s *executionCommandService) FlushHistory(_ context.Context, request application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error) {
+	s.flushRequest = request
+	return application.FlushExecutionHistoryResult{Flushed: 2}, nil
 }

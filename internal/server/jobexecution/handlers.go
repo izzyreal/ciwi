@@ -2,6 +2,7 @@ package jobexecution
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/httpx"
 )
@@ -35,7 +37,11 @@ type Store interface {
 }
 
 type HandlerDeps struct {
-	Store                              Store
+	Store             Store
+	ExecutionCommands interface {
+		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
+		FlushHistory(context.Context, application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error)
+	}
 	ArtifactsDir                       string
 	AttachTestSummaries                func([]protocol.JobExecution)
 	AttachUnmetRequirements            func([]protocol.JobExecution)
@@ -398,6 +404,15 @@ func HandleClearQueue(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if deps.ExecutionCommands != nil {
+		result, err := deps.ExecutionCommands.ClearQueue(r.Context(), application.ClearExecutionQueueRequest{IdempotencyKey: r.Header.Get("Idempotency-Key")})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, ClearQueueViewResponse{Cleared: result.Cleared})
+		return
+	}
 	n, err := deps.Store.ClearQueuedJobExecutions()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -424,6 +439,18 @@ func HandleFlushHistory(w http.ResponseWriter, r *http.Request, deps HandlerDeps
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
+	}
+	if deps.ExecutionCommands != nil {
+		result, err := deps.ExecutionCommands.FlushHistory(r.Context(), application.FlushExecutionHistoryRequest{
+			All: req.JobExecutionIDs == nil, JobExecutionIDs: append([]string(nil), req.JobExecutionIDs...),
+			IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, FlushHistoryViewResponse{Flushed: result.Flushed})
+		return
 	}
 	var deletedIDs []string
 	var err error

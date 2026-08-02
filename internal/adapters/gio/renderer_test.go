@@ -66,7 +66,7 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 			t.Fatal("image was rendered as placeholder text")
 		}
 	}
-	if renderer.icons["settings"] == nil || renderer.icons["player-play"] == nil || renderer.icons["arrow-left"] == nil {
+	if renderer.icons["settings"] == nil || renderer.icons["player-play"] == nil || renderer.icons["arrow-left"] == nil || renderer.icons["trash"] == nil {
 		t.Fatal("declared screen icons are unavailable to the native renderer")
 	}
 }
@@ -91,7 +91,8 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
 		HistoryExecutions: []*cnpv1.ExecutionCardSummary{{
 			Key: "pipeline:build", Title: "ciwi build", Summary: &cnpv1.ExecutionSummary{TotalJobs: 1, Succeeded: 1},
-			Sections: []*cnpv1.ExecutionCardSection{{Key: "build", Label: "build", Jobs: []*cnpv1.ExecutionCardJob{{Id: "job-1", Label: "linux", Status: "succeeded"}}}},
+			JobExecutionIds: []string{"job-1", "job-2"},
+			Sections:        []*cnpv1.ExecutionCardSection{{Key: "build", Label: "build", Jobs: []*cnpv1.ExecutionCardJob{{Id: "job-1", Label: "linux", Status: "succeeded"}}}},
 		}},
 	})
 	if err != nil {
@@ -101,6 +102,13 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 	status, err := uidsl.Resolve(data, "frontPage.history_executions.0.status")
 	if err != nil || status != "succeeded" {
 		t.Fatalf("history execution status = %v, err=%v", status, err)
+	}
+	ids, err := uidsl.Resolve(data, "frontPage.history_executions.0.job_execution_ids_csv")
+	if err != nil || ids != "job-1,job-2" {
+		t.Fatalf("history execution ids = %v, err=%v", ids, err)
+	}
+	if got := splitExecutionIDs(" job-1,job-2 ,, "); len(got) != 2 || got[0] != "job-1" || got[1] != "job-2" {
+		t.Fatalf("split execution ids = %v", got)
 	}
 	var operations op.Ops
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})

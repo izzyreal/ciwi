@@ -165,6 +165,38 @@ func (c *Client) RunPipeline(ctx context.Context, request *cnpv1.RunPipelineRequ
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) ClearExecutionQueue(ctx context.Context, idempotencyKey string) (*cnpv1.ClearExecutionQueueResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_ClearExecutionQueue{
+		ClearExecutionQueue: &cnpv1.ClearExecutionQueueRequest{},
+	}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetClearExecutionQueue(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) FlushExecutionHistory(ctx context.Context, request *cnpv1.FlushExecutionHistoryRequest, idempotencyKey string) (*cnpv1.FlushExecutionHistoryResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_FlushExecutionHistory{
+		FlushExecutionHistory: request,
+	}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetFlushExecutionHistory(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <-chan error, error) {
 	stream, err := c.connection.OpenStreamSync(ctx)
 	if err != nil {

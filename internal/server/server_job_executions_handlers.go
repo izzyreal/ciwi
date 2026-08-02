@@ -16,6 +16,7 @@ func (s *stateStore) jobExecutionHandlerDeps() jobexecution.HandlerDeps {
 	}
 	return jobexecution.HandlerDeps{
 		Store:                              s.jobExecutionStore(),
+		ExecutionCommands:                  s.app().executionCommands,
 		ArtifactsDir:                       s.artifactsDir,
 		AttachTestSummaries:                s.attachJobExecutionTestSummaries,
 		AttachUnmetRequirements:            s.attachJobExecutionUnmetRequirements,

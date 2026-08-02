@@ -237,6 +237,21 @@ message RunPipelineResult {
   repeated string job_execution_ids = 4;
 }
 
+message ClearExecutionQueueRequest {}
+
+message ClearExecutionQueueResult {
+  int64 cleared = 1;
+}
+
+message FlushExecutionHistoryRequest {
+  bool all = 1;
+  repeated string job_execution_ids = 2;
+}
+
+message FlushExecutionHistoryResult {
+  int64 flushed = 1;
+}
+
 enum ChangeTopic {
   CHANGE_TOPIC_UNSPECIFIED = 0;
   CHANGE_TOPIC_SERVER = 1;
@@ -269,6 +284,8 @@ message Request {
     GetProjectDetailsRequest get_project_details = 15;
     GetJobDetailsRequest get_job_details = 16;
     WatchJobOutputRequest watch_job_output = 17;
+    ClearExecutionQueueRequest clear_execution_queue = 18;
+    FlushExecutionHistoryRequest flush_execution_history = 19;
   }
 }
 
@@ -284,6 +301,8 @@ message Response {
     ProjectDetailsView project_details = 16;
     JobDetailsView job_details = 17;
     JobOutputBatch job_output = 18;
+    ClearExecutionQueueResult clear_execution_queue = 19;
+    FlushExecutionHistoryResult flush_execution_history = 20;
   }
 }
 

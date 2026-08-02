@@ -286,6 +286,42 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetStatus(fmt.Sprintf("Queued %d execution(s) for %s", result.Enqueued, result.PipelineId))
+	case "clear-queue":
+		renderer.SetStatus("Clearing queued executions…")
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := client.ClearExecutionQueue(commandCtx, "")
+		cancel()
+		if err != nil {
+			renderer.SetStatus("Clear queue failed: " + err.Error())
+			return
+		}
+		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
+			renderer.SetStatus("Queue cleared, but refresh failed: " + err.Error())
+			return
+		}
+		renderer.SetStatus(fmt.Sprintf("Cleared %d queued execution(s)", result.Cleared))
+	case "flush-history", "delete-execution":
+		request := &cnpv1.FlushExecutionHistoryRequest{All: command.action.Command == "flush-history"}
+		if !request.All {
+			request.JobExecutionIds = splitExecutionIDs(command.arguments["jobExecutionIds"])
+			if len(request.JobExecutionIds) == 0 {
+				renderer.SetStatus("No execution identifiers were supplied")
+				return
+			}
+		}
+		renderer.SetStatus("Removing execution history…")
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := client.FlushExecutionHistory(commandCtx, request, "")
+		cancel()
+		if err != nil {
+			renderer.SetStatus("Flush history failed: " + err.Error())
+			return
+		}
+		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
+			renderer.SetStatus("History removed, but refresh failed: " + err.Error())
+			return
+		}
+		renderer.SetStatus(fmt.Sprintf("Removed %d execution(s) from history", result.Flushed))
 	case "navigate":
 		if err := navigate(ctx, client, renderer, screens, navigation, command.arguments["route"]); err != nil {
 			renderer.SetStatus("Navigation failed: " + err.Error())
@@ -312,6 +348,17 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 	default:
 		renderer.SetStatus("Unsupported native action: " + command.action.Command)
 	}
+}
+
+func splitExecutionIDs(raw string) []string {
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if id := strings.TrimSpace(part); id != "" {
+			result = append(result, id)
+		}
+	}
+	return result
 }
 
 func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, route string) error {
@@ -470,6 +517,13 @@ func decorateExecutionCards(value any, queued bool) {
 			status = "waiting"
 		}
 		entry["status"] = status
+		if ids, ok := entry["job_execution_ids"].([]any); ok {
+			parts := make([]string, 0, len(ids))
+			for _, id := range ids {
+				parts = append(parts, fmt.Sprint(id))
+			}
+			entry["job_execution_ids_csv"] = strings.Join(parts, ",")
+		}
 	}
 }
 

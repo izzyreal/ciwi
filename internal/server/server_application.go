@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	executionviewsadapter "github.com/izzyreal/ciwi/internal/adapters/executionviews"
@@ -14,14 +15,15 @@ import (
 )
 
 type serverApplication struct {
-	server         *application.ServerQueries
-	projects       *application.ProjectQueries
-	pipelines      *application.PipelineCommands
-	executions     *application.ExecutionQueries
-	frontPage      *presentation.FrontPageQueries
-	projectDetails *presentation.ProjectDetailsQueries
-	jobDetails     *presentation.JobDetailsQueries
-	changes        *application.ChangeHub
+	server            *application.ServerQueries
+	projects          *application.ProjectQueries
+	pipelines         *application.PipelineCommands
+	executions        *application.ExecutionQueries
+	executionCommands *application.ExecutionCommands
+	frontPage         *presentation.FrontPageQueries
+	projectDetails    *presentation.ProjectDetailsQueries
+	jobDetails        *presentation.JobDetailsQueries
+	changes           *application.ChangeHub
 }
 
 type localServerInfoSource struct{}
@@ -41,20 +43,55 @@ func newServerApplication(s *stateStore) *serverApplication {
 	projectQueries := application.NewProjectQueries(sqliteadapter.NewProjectRepository(s.db))
 	executionQueries := application.NewExecutionQueries(executionviewsadapter.NewRepository(s.db, 40))
 	changes := application.NewChangeHub()
+	receipts := sqliteadapter.NewCommandReceiptRepository(s.db)
 	return &serverApplication{
 		server:   serverQueries,
 		projects: projectQueries,
 		pipelines: application.NewPipelineCommands(
 			pipelineRunnerAdapter{state: s},
-			sqliteadapter.NewCommandReceiptRepository(s.db),
+			receipts,
 			changes,
 		),
-		executions:     executionQueries,
-		frontPage:      presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
-		projectDetails: presentation.NewProjectDetailsQueries(projectQueries),
-		jobDetails:     presentation.NewJobDetailsQueries(executionQueries),
-		changes:        changes,
+		executions:        executionQueries,
+		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
+		frontPage:         presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
+		projectDetails:    presentation.NewProjectDetailsQueries(projectQueries),
+		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),
+		changes:           changes,
 	}
+}
+
+type executionMutatorAdapter struct {
+	state *stateStore
+}
+
+func (a executionMutatorAdapter) ClearQueuedExecutions(ctx context.Context) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return a.state.jobExecutionStore().ClearQueuedJobExecutions()
+}
+
+func (a executionMutatorAdapter) FlushExecutionHistory(ctx context.Context, all bool, jobIDs []string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var (
+		deleted []string
+		err     error
+	)
+	if all {
+		deleted, err = a.state.jobExecutionStore().FlushJobExecutionHistory()
+	} else {
+		deleted, err = a.state.jobExecutionStore().FlushJobExecutionHistoryByIDs(jobIDs)
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, jobID := range deleted {
+		_ = os.RemoveAll(filepath.Join(a.state.artifactsDir, jobID))
+	}
+	return deleted, nil
 }
 
 func (s *stateStore) app() *serverApplication {

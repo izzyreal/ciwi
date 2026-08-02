@@ -80,6 +80,7 @@
       card.status = Number(summary.failed || 0) > 0
         ? 'failed'
         : (queued ? (Number(summary.in_progress || 0) > 0 ? 'running' : 'waiting') : 'succeeded');
+	  card.job_execution_ids_csv = (Array.isArray(card.job_execution_ids) ? card.job_execution_ids : []).join(',');
     });
   }
 
@@ -182,6 +183,22 @@
           if (!response.ok) throw new Error(await response.text());
           element.textContent = 'Queued';
         }
+		else if (action.command === 'clear-queue') {
+		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
+		}
+		else if (action.command === 'flush-history' || action.command === 'delete-execution') {
+		  const ids = action.command === 'delete-execution'
+		    ? String(args.jobExecutionIds || '').split(',').map(value => value.trim()).filter(Boolean)
+		    : null;
+		  const body = ids === null ? {} : {job_execution_ids: ids};
+		  const response = await fetch('/api/v1/jobs/flush-history', {
+		    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
+		}
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
       };
       if (action.on === 'activate') {

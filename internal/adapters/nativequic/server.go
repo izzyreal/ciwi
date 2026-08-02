@@ -40,6 +40,10 @@ type Services struct {
 	Pipelines interface {
 		RunPipeline(context.Context, application.RunPipelineRequest) (application.RunPipelineResult, error)
 	}
+	ExecutionCommands interface {
+		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
+		FlushHistory(context.Context, application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error)
+	}
 	Changes *application.ChangeHub
 	Version string
 }
@@ -50,7 +54,7 @@ type Server struct {
 }
 
 func Listen(address string, services Services) (*Server, error) {
-	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.ExecutionCommands == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native QUIC services are incomplete")
 	}
 	tlsConfig, err := serverTLSConfig()
@@ -118,7 +122,7 @@ func (s *Server) handleConnection(ctx context.Context, connection *quic.Conn) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "watch_changes",
+			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "execution_housekeeping", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -292,6 +296,22 @@ func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Res
 				ProjectName: result.ProjectName, PipelineId: result.PipelineID, Enqueued: uint32(result.Enqueued),
 				JobExecutionIds: append([]string(nil), result.JobExecutionIDs...),
 			}}
+		}
+	case *cnpv1.Request_ClearExecutionQueue:
+		var result application.ClearExecutionQueueResult
+		result, err = s.services.ExecutionCommands.ClearQueue(ctx, application.ClearExecutionQueueRequest{IdempotencyKey: request.Metadata.IdempotencyKey})
+		if err == nil {
+			response.Result = &cnpv1.Response_ClearExecutionQueue{ClearExecutionQueue: &cnpv1.ClearExecutionQueueResult{Cleared: result.Cleared}}
+		}
+	case *cnpv1.Request_FlushExecutionHistory:
+		operationRequest := operation.FlushExecutionHistory
+		var result application.FlushExecutionHistoryResult
+		result, err = s.services.ExecutionCommands.FlushHistory(ctx, application.FlushExecutionHistoryRequest{
+			All: operationRequest.GetAll(), JobExecutionIDs: append([]string(nil), operationRequest.GetJobExecutionIds()...),
+			IdempotencyKey: request.Metadata.IdempotencyKey,
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_FlushExecutionHistory{FlushExecutionHistory: &cnpv1.FlushExecutionHistoryResult{Flushed: result.Flushed}}
 		}
 	default:
 		err = application.NewError(application.ErrorUnsupported, "unsupported native operation", nil)

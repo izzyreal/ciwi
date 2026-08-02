@@ -188,6 +188,16 @@ screen:
                   emphasis: strong
               - component: button
                 text:
+                  literal: Clear Queue
+                icon: trash
+                actions:
+                  - on: activate
+                    command: clear-queue
+                    confirm:
+                      title: Clear queued executions?
+                      message: Removes queued and leased execution records from the server. Running jobs continue, and agent caches and workspaces are not cleared.
+              - component: button
+                text:
                   literal: Collapse All
                 icon: chevrons-up
                 actions:
@@ -326,6 +336,16 @@ screen:
                   emphasis: strong
               - component: button
                 text:
+                  literal: Flush History
+                icon: trash
+                actions:
+                  - on: activate
+                    command: flush-history
+                    confirm:
+                      title: Flush execution history?
+                      message: Removes all terminal execution records and their server-side artifacts. It does not clear caches or workspaces on agents, and it does not affect queued or running jobs.
+              - component: button
+                text:
                   literal: Collapse All
                 icon: chevrons-up
                 actions:
@@ -370,6 +390,26 @@ screen:
                   emphasis: strong
                   toneBinding: execution.status
                 children:
+                  - component: row
+                    layout:
+                      direction: horizontal
+                      align: center
+                    children:
+                      - component: spacer
+                        layout:
+                          grow: true
+                      - component: button
+                        text:
+                          literal: Delete execution
+                        icon: trash
+                        actions:
+                          - on: activate
+                            command: delete-execution
+                            arguments:
+                              jobExecutionIds: "{{execution.job_execution_ids_csv}}"
+                            confirm:
+                              title: Delete this execution?
+                              message: Removes this execution's terminal job records and server-side artifacts. It does not clear caches or workspaces on agents, and it does not affect queued or running jobs.
                   - component: text
                     text:
                       template: "{{execution.summary.succeeded}} succeeded · {{execution.summary.failed}} failed · {{execution.summary.total_jobs}} total"

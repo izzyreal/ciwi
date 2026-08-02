@@ -903,7 +903,7 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(9)).Op(gtx.Ops))
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
-			return material.Clickable(gtx, button, func(gtx layout.Context) layout.Dimensions {
+			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: 10, Right: 14, Bottom: 10, Left: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					children := make([]layout.FlexChild, 0, 2)
 					icon := r.icons[iconName]
@@ -949,7 +949,7 @@ func (r *Renderer) layoutIconButton(gtx layout.Context, button *widget.Clickable
 			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(9)).Op(gtx.Ops))
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
-			return material.Clickable(gtx, button, func(gtx layout.Context) layout.Dimensions {
+			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				semantic.DescriptionOp(description).Add(gtx.Ops)
 				return layout.UniformInset(9).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(19), gtx.Dp(19)))
@@ -1182,7 +1182,7 @@ func (r *Renderer) layoutConfirmation(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEnd}.Layout(gtx,
 						layout.Rigid(material.Button(r.theme, cancel, "Cancel").Layout),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: 10}.Layout(gtx, material.Button(r.theme, confirm, "Run").Layout)
+							return layout.Inset{Left: 10}.Layout(gtx, material.Button(r.theme, confirm, "Confirm").Layout)
 						}),
 					)
 				}),
@@ -1437,6 +1437,7 @@ func materialIcons() (map[string]*widget.Icon, error) {
 		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
 		"chevron-down": icons.NavigationExpandMore, "chevron-up": icons.NavigationExpandLess,
 		"check": icons.NavigationCheck, "copy": icons.ContentContentCopy,
+		"trash":       icons.ActionDelete,
 		"chevrons-up": icons.NavigationUnfoldLess, "chevrons-down": icons.NavigationUnfoldMore,
 		"status-success": icons.ActionCheckCircle, "status-danger": icons.AlertErrorOutline,
 		"status-waiting": icons.ActionHourglassEmpty, "status-running": icons.AVPlayCircleOutline,

@@ -77,9 +77,12 @@ with a horizontally navigable phase/step timeline, searchable and selectable
 incremental output, output copying and tailing, pipeline enqueue
 commands, native back navigation, and live invalidations. Output streams use
 bounded cursor pages and clients cap their display buffer, so status refreshes
-do not reload large logs. Server-side execution controls remain on the
-established job page while their application/CNP slices are built. Agents
-continue to use the existing HTTP protocol.
+do not reload large logs. The front page can clear queued executions, flush all
+terminal history, or delete one execution card through idempotent application
+commands exposed by CNP; deleting history also removes its server-side
+artifacts, but never clears agent caches or workspaces. Rerun and cancellation
+controls remain on the established job page while their application/CNP slices
+are built. Agents continue to use the existing HTTP protocol.
 
 Global Settings currently covers native-client appearance and connection
 context. Theme changes apply immediately and are stored in the user's config
