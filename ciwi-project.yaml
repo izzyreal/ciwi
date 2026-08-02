@@ -128,9 +128,7 @@ pipelines:
         requires:
           tools:
             git: "*"
-            go: ">=1.24"
-            zip: "*"
-            xorg-dev: "*"
+            docker: "*"
         timeout_seconds: 1200
         artifacts:
           - dist/Ciwi-Client-linux-amd64-v*.zip
@@ -138,7 +136,7 @@ pipelines:
           - name: Prepare Linux desktop output
             run: mkdir -p dist
           - name: Build Linux desktop archive
-            run: VERSION="${CIWI_PIPELINE_VERSION#v}" && sh packaging/build-linux-zip.sh "$VERSION" "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip"
+            run: VERSION="${CIWI_PIPELINE_VERSION#v}" && sh packaging/build-linux-container.sh "$VERSION" "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip"
   - id: release
     trigger: manual
     depends_on:
