@@ -165,9 +165,12 @@
   async function refresh() {
     try {
       const projectMatch = window.location.pathname.match(/^\/declarative-preview\/projects\/(\d+)\/?$/);
-      const screenName = projectMatch ? 'project-details' : 'front-page';
-      const viewURL = projectMatch ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1]) : '/api/v1/views/front-page';
-      const bindingRoot = projectMatch ? 'projectDetails' : 'frontPage';
+      const jobMatch = window.location.pathname.match(/^\/declarative-preview\/jobs\/([^/]+)\/?$/);
+      const screenName = projectMatch ? 'project-details' : (jobMatch ? 'job-details' : 'front-page');
+      const viewURL = projectMatch
+        ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1])
+        : (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : '/api/v1/views/front-page');
+      const bindingRoot = projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : 'frontPage');
       const [screenResponse, themeResponse, viewResponse] = await Promise.all([
         fetch('/ui/contracts/screens/' + screenName + '.json'),
         fetch('/ui/contracts/themes.json'),

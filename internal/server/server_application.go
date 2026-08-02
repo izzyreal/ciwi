@@ -20,6 +20,7 @@ type serverApplication struct {
 	executions     *application.ExecutionQueries
 	frontPage      *presentation.FrontPageQueries
 	projectDetails *presentation.ProjectDetailsQueries
+	jobDetails     *presentation.JobDetailsQueries
 	changes        *application.ChangeHub
 }
 
@@ -38,7 +39,7 @@ func (localServerInfoSource) ServerInfo(context.Context) (domain.ServerInfo, err
 func newServerApplication(s *stateStore) *serverApplication {
 	serverQueries := application.NewServerQueries(localServerInfoSource{})
 	projectQueries := application.NewProjectQueries(sqliteadapter.NewProjectRepository(s.db))
-	executionQueries := application.NewExecutionQueries(executionviewsadapter.NewRepository(s.jobExecutionStore(), 40))
+	executionQueries := application.NewExecutionQueries(executionviewsadapter.NewRepository(s.db, 40))
 	changes := application.NewChangeHub()
 	return &serverApplication{
 		server:   serverQueries,
@@ -51,6 +52,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 		executions:     executionQueries,
 		frontPage:      presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
 		projectDetails: presentation.NewProjectDetailsQueries(projectQueries),
+		jobDetails:     presentation.NewJobDetailsQueries(executionQueries),
 		changes:        changes,
 	}
 }

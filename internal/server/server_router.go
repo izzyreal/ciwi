@@ -20,6 +20,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.HandleFunc("/ui/*", webui.Handler)
 	r.HandleFunc("/settings", webui.Handler)
 	r.HandleFunc("/declarative-preview", webui.Handler)
+	r.HandleFunc("/declarative-preview/*", webui.Handler)
 	r.HandleFunc("/vault", webui.Handler)
 	r.HandleFunc("/agents", webui.Handler)
 	r.HandleFunc("/agents/*", webui.Handler)
@@ -32,6 +33,7 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.Get("/api/v1/runtime-state", s.runtimeStateHandler)
 	r.Get("/api/v1/views/front-page", s.frontPageViewHandler)
 	r.Get("/api/v1/views/projects/*", s.projectDetailsViewHandler)
+	r.Get("/api/v1/views/jobs/*", s.jobDetailsViewHandler)
 
 	// Agent API
 	r.Post("/api/v1/heartbeat", s.heartbeatHandler)

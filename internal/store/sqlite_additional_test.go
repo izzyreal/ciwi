@@ -157,6 +157,18 @@ func TestStoreArtifactsAndEventsRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("append phase duration events: %v", err)
 	}
+	timelineEvents, err := s.ListJobExecutionTimelineEvents(job.ID)
+	if err != nil {
+		t.Fatalf("ListJobExecutionTimelineEvents: %v", err)
+	}
+	if len(timelineEvents) != 4 {
+		t.Fatalf("expected lifecycle events without output, got %+v", timelineEvents)
+	}
+	for _, event := range timelineEvents {
+		if event.Type == protocol.JobExecutionEventTypeStepOutput || event.Type == protocol.JobExecutionEventTypePhaseOutput || event.Output != "" {
+			t.Fatalf("timeline query returned output event: %+v", event)
+		}
+	}
 	durationEvents, err := s.ListJobExecutionDurationEventsForJobs([]string{job.ID, job.ID})
 	if err != nil {
 		t.Fatalf("ListJobExecutionDurationEventsForJobs: %v", err)

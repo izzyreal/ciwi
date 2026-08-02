@@ -34,6 +34,7 @@ type commandRequest struct {
 type navigationState struct {
 	screen    string
 	projectID int64
+	jobID     string
 }
 
 func Run(options Options) error {
@@ -45,8 +46,12 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	jobDetailsScreen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		return err
+	}
 	screens := map[string]*uidsl.ScreenDocument{
-		"front-page": frontPageScreen, "project-details": projectDetailsScreen,
+		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
 	}
 	theme, err := findTheme(options.Theme)
 	if err != nil {
@@ -185,6 +190,12 @@ func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer,
 			return fmt.Errorf("invalid project route %q", route)
 		}
 		next = navigationState{screen: "project-details", projectID: projectID}
+	case strings.HasPrefix(route, "/jobs/"):
+		jobID := strings.Trim(strings.TrimPrefix(route, "/jobs/"), "/")
+		if jobID == "" || strings.Contains(jobID, "/") {
+			return fmt.Errorf("invalid job route %q", route)
+		}
+		next = navigationState{screen: "job-details", jobID: jobID}
 	default:
 		return fmt.Errorf("unsupported route %q", route)
 	}
@@ -194,8 +205,10 @@ func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer,
 	*navigation = next
 	if next.screen == "front-page" {
 		renderer.SetStatus("Projects")
-	} else {
+	} else if next.screen == "project-details" {
 		renderer.SetStatus("Project details")
+	} else {
+		renderer.SetStatus("Job details")
 	}
 	return nil
 }
@@ -210,9 +223,26 @@ func refreshScreen(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		return refreshFrontPage(ctx, client, renderer, screen)
 	case "project-details":
 		return refreshProjectDetails(ctx, client, renderer, screen, navigation.projectID)
+	case "job-details":
+		return refreshJobDetails(ctx, client, renderer, screen, navigation.jobID)
 	default:
 		return fmt.Errorf("screen %q is unsupported", navigation.screen)
 	}
+}
+
+func refreshJobDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, jobID string) error {
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	view, err := client.GetJobDetails(requestCtx, jobID)
+	if err != nil {
+		return err
+	}
+	data, err := jobDetailsBindingData(view)
+	if err != nil {
+		return err
+	}
+	renderer.SetScreenAndData(screen, data)
+	return nil
 }
 
 func refreshFrontPage(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument) error {
@@ -253,6 +283,10 @@ func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, 
 	return protobufBindingData("projectDetails", "project-details", view)
 }
 
+func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
+	return protobufBindingData("jobDetails", "job-details", view)
+}
+
 func protobufBindingData(root, description string, message proto.Message) (map[string]any, error) {
 	payload, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(message)
 	if err != nil {
@@ -288,6 +322,9 @@ func nativeAddress(ctx context.Context, explicit string) (string, error) {
 func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent) bool {
 	for _, topic := range change.Topics {
 		if navigation.screen == "project-details" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS {
+			return true
+		}
+		if navigation.screen == "job-details" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_QUEUE || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY) {
 			return true
 		}
 		if navigation.screen == "front-page" {

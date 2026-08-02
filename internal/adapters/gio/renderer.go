@@ -38,6 +38,7 @@ type Renderer struct {
 	onAction    ActionHandler
 	invalidate  func()
 	pending     *pendingConfirmation
+	resetScroll bool
 }
 
 type pendingConfirmation struct {
@@ -80,6 +81,9 @@ func (r *Renderer) SetData(data any) {
 
 func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 	r.mu.Lock()
+	if r.screen == nil || screen == nil || r.screen.Metadata.Name != screen.Metadata.Name {
+		r.resetScroll = true
+	}
 	r.screen = screen
 	r.data = data
 	r.mu.Unlock()
@@ -96,9 +100,13 @@ func (r *Renderer) SetInvalidate(invalidate func()) {
 }
 
 func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
-	r.mu.RLock()
-	screen, data, status := r.screen, r.data, r.status
-	r.mu.RUnlock()
+	r.mu.Lock()
+	screen, data, status, resetScroll := r.screen, r.data, r.status, r.resetScroll
+	r.resetScroll = false
+	r.mu.Unlock()
+	if resetScroll {
+		r.list.Position = layout.Position{}
+	}
 	backgroundClip := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 	paint.LinearGradientOp{
 		Stop1: f32.Pt(0, 0), Color1: r.palette.background,
@@ -302,6 +310,9 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any) lay
 	}
 	if node.Style.Tone == "muted" {
 		label.Color = r.palette.muted
+	}
+	if node.Style.Tone == "danger" {
+		label.Color = r.palette.danger
 	}
 	if node.Style.Emphasis == "strong" {
 		label.Font.Weight = font.Bold

@@ -173,7 +173,7 @@ func (d *ScreenDocument) Validate() error {
 		if source.Query == "" {
 			return fmt.Errorf("dataSources[%d].query is required", i)
 		}
-		if source.Query != "get-front-page-view" && source.Query != "get-project-details" {
+		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" {
 			return fmt.Errorf("dataSources[%d].query %q is not supported", i, source.Query)
 		}
 		for _, topic := range source.WatchTopics {

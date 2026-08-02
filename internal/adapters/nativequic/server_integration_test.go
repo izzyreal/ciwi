@@ -23,6 +23,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		Projects:       projectService{},
 		FrontPage:      frontPageService{},
 		ProjectDetails: projectDetailsService{},
+		JobDetails:     jobDetailsService{},
 		Pipelines:      pipelines,
 		Changes:        changes,
 		Version:        "v0.2.0",
@@ -67,6 +68,13 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if projectDetails.Project.Name != "ciwi" || len(projectDetails.Pipelines) != 1 || projectDetails.Pipelines[0].Jobs[0].Steps[0].Name != "Compile" {
 		t.Fatalf("project details = %#v", projectDetails)
 	}
+	jobDetails, err := client.GetJobDetails(ctx, "job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobDetails.Title != "Job: compile" || len(jobDetails.Timeline) != 1 || jobDetails.Timeline[0].Status != "succeeded" {
+		t.Fatalf("job details = %#v", jobDetails)
+	}
 
 	result, err := client.RunPipeline(ctx, &cnpv1.RunPipelineRequest{
 		PipelineDbId: 42,
@@ -93,7 +101,7 @@ func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
 func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{},
+		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: &pipelineService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -123,7 +131,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{},
+		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: failingPipelineService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -217,6 +225,15 @@ func (projectDetailsService) GetProjectDetailsView(context.Context, int64) (pres
 				Steps: []presentation.ProjectStepView{{Index: 0, Position: 1, Name: "Compile", Type: "run"}},
 			}},
 		}},
+	}, nil
+}
+
+type jobDetailsService struct{}
+
+func (jobDetailsService) GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error) {
+	return presentation.JobDetailsView{
+		ID: "job-1", Title: "Job: compile", Status: "succeeded", StatusLabel: "Succeeded",
+		Timeline: []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
 	}, nil
 }
 

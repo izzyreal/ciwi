@@ -1,0 +1,201 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: job-details
+  title: ciwi job execution
+  description: Job execution status and phase/step timeline
+screen:
+  dataSources:
+    - name: jobDetails
+      query: get-job-details
+      watchTopics: [queue, history]
+  root:
+    component: page
+    id: job-details
+    layout:
+      direction: vertical
+      gap: large
+      padding: large
+      maxWidth: page
+    children:
+      - component: row
+        id: job-header
+        layout:
+          direction: horizontal
+          gap: medium
+          align: center
+        style:
+          role: hero
+        children:
+          - component: column
+            layout:
+              direction: vertical
+              gap: small
+              grow: true
+            children:
+              - component: text
+                text:
+                  binding: jobDetails.title
+                style:
+                  role: title
+                  emphasis: strong
+              - component: text
+                text:
+                  binding: jobDetails.context
+                style:
+                  role: subtitle
+                  tone: muted
+                  truncate: true
+          - component: button
+            text:
+              literal: Back to Executions
+            icon: arrow-left
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /
+      - component: section
+        id: execution-summary
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Execution
+            style:
+              role: heading
+              emphasis: strong
+          - component: card
+            layout:
+              direction: vertical
+              gap: small
+              padding: medium
+            children:
+              - component: text
+                text:
+                  template: "Status: {{jobDetails.status_label}} · Mode: {{jobDetails.mode}}"
+                style:
+                  emphasis: strong
+              - component: text
+                text:
+                  template: "Created: {{jobDetails.created}}"
+                visible:
+                  binding: jobDetails.created
+                  equals: ""
+                  not: true
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  template: "Started: {{jobDetails.started}}"
+                visible:
+                  binding: jobDetails.started
+                  equals: ""
+                  not: true
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  template: "Finished: {{jobDetails.finished}} · Duration: {{jobDetails.duration}}"
+                visible:
+                  binding: jobDetails.finished
+                  equals: ""
+                  not: true
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  template: "Agent: {{jobDetails.agent}}"
+                visible:
+                  binding: jobDetails.agent
+                  equals: ""
+                  not: true
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  template: "Current step: {{jobDetails.current_step}}"
+                visible:
+                  binding: jobDetails.current_step
+                  equals: ""
+                  not: true
+              - component: text
+                text:
+                  template: "Exit code: {{jobDetails.exit_code}}"
+                visible:
+                  binding: jobDetails.exit_code
+                  equals: ""
+                  not: true
+              - component: text
+                text:
+                  template: "Error: {{jobDetails.error}}"
+                visible:
+                  binding: jobDetails.error
+                  equals: ""
+                  not: true
+                style:
+                  tone: danger
+      - component: section
+        id: execution-path
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Execution path
+            style:
+              role: heading
+              emphasis: strong
+          - component: list
+            layout:
+              direction: vertical
+              gap: small
+            repeat:
+              source: jobDetails.timeline
+              as: item
+              key: item.id
+            children:
+              - component: disclosure
+                text:
+                  template: "{{item.title}} · {{item.status_label}}"
+                layout:
+                  direction: vertical
+                  gap: small
+                children:
+                  - component: text
+                    text:
+                      binding: item.description
+                    visible:
+                      binding: item.description
+                      equals: ""
+                      not: true
+                    style:
+                      tone: muted
+                  - component: text
+                    text:
+                      template: "Duration: {{item.duration}}"
+                    visible:
+                      binding: item.duration
+                      equals: ""
+                      not: true
+                    style:
+                      tone: muted
+                  - component: text
+                    text:
+                      template: "Exit code: {{item.exit_code}}"
+                    visible:
+                      binding: item.exit_code
+                      equals: ""
+                      not: true
+                  - component: text
+                    text:
+                      template: "Error: {{item.error}}"
+                    visible:
+                      binding: item.error
+                      equals: ""
+                      not: true
+                    style:
+                      tone: danger

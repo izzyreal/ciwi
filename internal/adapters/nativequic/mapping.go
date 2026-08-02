@@ -47,6 +47,23 @@ func projectDetailsToProto(view presentation.ProjectDetailsView) *cnpv1.ProjectD
 	return &cnpv1.ProjectDetailsView{Project: project, Pipelines: pipelines}
 }
 
+func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
+	timeline := make([]*cnpv1.JobTimelineItem, 0, len(view.Timeline))
+	for _, item := range view.Timeline {
+		timeline = append(timeline, &cnpv1.JobTimelineItem{
+			Id: item.ID, Kind: item.Kind, Title: item.Title, Description: item.Description,
+			Status: item.Status, StatusLabel: item.StatusLabel, Duration: item.Duration,
+			ExitCode: item.ExitCode, Error: item.Error,
+		})
+	}
+	return &cnpv1.JobDetailsView{
+		Id: view.ID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
+		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
+		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
+		Error: view.Error, Timeline: timeline,
+	}
+}
+
 func projectsToProto(projects []domain.Project) []*cnpv1.ProjectSummary {
 	out := make([]*cnpv1.ProjectSummary, 0, len(projects))
 	for _, project := range projects {

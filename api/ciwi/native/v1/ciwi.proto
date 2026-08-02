@@ -133,6 +133,40 @@ message GetProjectDetailsRequest {
   int64 project_id = 1;
 }
 
+message GetJobDetailsRequest {
+  string job_execution_id = 1;
+}
+
+message JobDetailsView {
+  string id = 1;
+  string title = 2;
+  string context = 3;
+  string status = 4;
+  string status_label = 5;
+  string current_step = 6;
+  string agent = 7;
+  string mode = 8;
+  string created = 9;
+  string started = 10;
+  string finished = 11;
+  string duration = 12;
+  string exit_code = 13;
+  string error = 14;
+  repeated JobTimelineItem timeline = 15;
+}
+
+message JobTimelineItem {
+  string id = 1;
+  string kind = 2;
+  string title = 3;
+  string description = 4;
+  string status = 5;
+  string status_label = 6;
+  string duration = 7;
+  string exit_code = 8;
+  string error = 9;
+}
+
 message ExecutionSummary {
   uint32 total_jobs = 1;
   uint32 succeeded = 2;
@@ -201,6 +235,7 @@ message Request {
     RunPipelineRequest run_pipeline = 13;
     WatchChangesRequest watch_changes = 14;
     GetProjectDetailsRequest get_project_details = 15;
+    GetJobDetailsRequest get_job_details = 16;
   }
 }
 
@@ -214,6 +249,7 @@ message Response {
     ChangeEvent change = 14;
     ErrorStatus error = 15;
     ProjectDetailsView project_details = 16;
+    JobDetailsView job_details = 17;
   }
 }
 

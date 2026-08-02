@@ -15,6 +15,7 @@ body { min-height: 100vh; }
 .dsl-heading { font-size: 20px; font-weight: 750; color: var(--ink); }
 .dsl-subtitle { font-size: 21px; }
 .dsl-muted { color: var(--muted); }
+.dsl-danger { color: var(--bad); }
 .dsl-strong { font-weight: 700; }
 .dsl-truncate { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dsl-image { width: 220px; max-height: 160px; object-fit: contain; image-rendering: pixelated; }

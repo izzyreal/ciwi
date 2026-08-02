@@ -13,9 +13,9 @@ language. It is a ciwi UI schema, not a general browser implementation.
 Every client embeds the same versioned bundle. A native server cannot send
 HTML, CSS, JavaScript, or replacement UI code to the desktop executable.
 
-The shared bundle currently contains front-page and project-details screens.
-Both render from the same presentation contracts in the browser preview and
-the Gio desktop client.
+The shared bundle currently contains front-page, project-details, and
+job-details screens. All three render from the same presentation contracts in
+the browser preview and the Gio desktop client.
 
 ## Design boundaries
 

@@ -1,5 +1,12 @@
 package domain
 
+import (
+	"errors"
+	"time"
+)
+
+var ErrJobExecutionNotFound = errors.New("job execution not found")
+
 type ExecutionCard struct {
 	Key             string
 	Kind            string
@@ -14,4 +21,38 @@ type ExecutionSummary struct {
 	Failed     int
 	InProgress int
 	Waiting    int
+}
+
+// JobExecutionDetails is a transport- and persistence-neutral snapshot of one
+// execution. Output is intentionally excluded: live logs use a separate,
+// incremental query so large histories do not inflate every status refresh.
+type JobExecutionDetails struct {
+	ID            string
+	ProjectName   string
+	PipelineID    string
+	PipelineJobID string
+	MatrixName    string
+	Status        string
+	CurrentStep   string
+	AgentID       string
+	DryRun        bool
+	CreatedUTC    time.Time
+	StartedUTC    time.Time
+	FinishedUTC   time.Time
+	ExitCode      *int
+	Error         string
+	Timeline      []JobTimelineItem
+}
+
+type JobTimelineItem struct {
+	ID          string
+	Kind        string
+	Name        string
+	Description string
+	Index       int
+	Total       int
+	Status      string
+	DurationMS  int64
+	ExitCode    *int
+	Error       string
 }

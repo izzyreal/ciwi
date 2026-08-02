@@ -90,6 +90,40 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	}
 }
 
+func TestRendererLaysOutSharedJobDetails(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-1", Title: "Job: compile", Context: "ciwi · pipeline build · execution job-1",
+		Status: "running", StatusLabel: "Running", Mode: "Run", Created: "2026-08-02T10:00:00Z",
+		Timeline: []*cnpv1.JobTimelineItem{{
+			Id: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "in progress", StatusLabel: "In progress",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	dimensions := renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if dimensions.Size != image.Pt(1100, 760) {
+		t.Fatalf("dimensions = %v", dimensions.Size)
+	}
+	if got := len(renderer.buttons); got != 2 {
+		t.Fatalf("collapsed job view created %d interactive widgets, want Back and one timeline disclosure", got)
+	}
+}
+
 func TestRendererHonorsActionConfirmation(t *testing.T) {
 	var dispatched bool
 	renderer := &Renderer{onAction: func(_ uidsl.Action, arguments map[string]string) {

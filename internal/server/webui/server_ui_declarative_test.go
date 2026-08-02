@@ -39,6 +39,21 @@ func TestProjectDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	}
 }
 
+func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/job-details.json", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var screen uidsl.ScreenDocument
+	if err := json.Unmarshal(recorder.Body.Bytes(), &screen); err != nil {
+		t.Fatal(err)
+	}
+	if screen.Metadata.Name != "job-details" {
+		t.Fatalf("screen = %#v", screen)
+	}
+}
+
 func TestDeclarativePreviewUsesSharedContractRenderer(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview", nil))
@@ -56,6 +71,14 @@ func TestDeclarativePreviewUsesSharedContractRenderer(t *testing.T) {
 func TestDeclarativeProjectPreviewUsesSharedRenderer(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/projects/7", nil))
+	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestDeclarativeJobPreviewUsesSharedRenderer(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/jobs/job-1", nil))
 	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}

@@ -175,6 +175,41 @@ func (s *Store) ListJobExecutionEvents(jobID string) ([]protocol.JobExecutionEve
 	return s.ListJobExecutionEventsAfter(jobID, 0)
 }
 
+// ListJobExecutionTimelineEvents excludes output and system-message payloads.
+// Snapshot consumers can derive phase/step state without loading potentially
+// very large logs on every queue/history invalidation.
+func (s *Store) ListJobExecutionTimelineEvents(jobID string) ([]protocol.JobExecutionEvent, error) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, fmt.Errorf("job id is required")
+	}
+	rows, err := s.db.Query(`
+		SELECT id, event_type, timestamp_utc, payload_json
+		FROM job_execution_events
+		WHERE job_execution_id = ? AND event_type IN (?, ?, ?, ?)
+		ORDER BY id ASC
+	`, jobID,
+		protocol.JobExecutionEventTypePhaseStarted, protocol.JobExecutionEventTypePhaseFinished,
+		protocol.JobExecutionEventTypeStepStarted, protocol.JobExecutionEventTypeStepFinished,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list timeline events: %w", err)
+	}
+	defer rows.Close()
+	out := []protocol.JobExecutionEvent{}
+	for rows.Next() {
+		var id int64
+		var eventType, tsRaw, payloadRaw string
+		if err := rows.Scan(&id, &eventType, &tsRaw, &payloadRaw); err != nil {
+			return nil, fmt.Errorf("scan timeline event: %w", err)
+		}
+		out = append(out, decodeJobExecutionEvent(id, eventType, tsRaw, payloadRaw))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate timeline events: %w", err)
+	}
+	return out, nil
+}
+
 func (s *Store) ListJobExecutionEventsAfter(jobID string, afterID int64) ([]protocol.JobExecutionEvent, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return nil, fmt.Errorf("job id is required")
