@@ -126,12 +126,12 @@ func (b *jobOutputBuffer) append(batch *cnpv1.JobOutputBatch) {
 		if event == nil {
 			continue
 		}
-		copy := *event
-		if len(copy.Text) > maxNativeOutputBytes {
-			copy.Text = strings.ToValidUTF8(copy.Text[len(copy.Text)-maxNativeOutputBytes:], "")
-			b.omitted[copy.ItemId] = true
+		eventCopy := proto.Clone(event).(*cnpv1.JobOutputEvent)
+		if len(eventCopy.Text) > maxNativeOutputBytes {
+			eventCopy.Text = strings.ToValidUTF8(eventCopy.Text[len(eventCopy.Text)-maxNativeOutputBytes:], "")
+			b.omitted[eventCopy.ItemId] = true
 		}
-		b.events = append(b.events, &copy)
+		b.events = append(b.events, eventCopy)
 	}
 	for bufferedOutputBytes(b.events) > maxNativeOutputBytes && len(b.events) > 1 {
 		removed := b.events[0]
