@@ -99,23 +99,20 @@ pipelines:
           - unit-tests
         runs_on:
           executor: script
-          shell: powershell
-          os: windows
-          arch: amd64
+          shell: posix
         go_cache: {}
         requires:
           tools:
             git: "*"
             go: ">=1.24"
-            wix: ">=6.0.0"
-        timeout_seconds: 1800
+        timeout_seconds: 1200
         artifacts:
-          - dist/Ciwi-Client-windows-Setup-x86_64-v*.exe
+          - dist/desktop-windows-amd64/**
         steps:
           - name: Prepare Windows desktop output
-            run: New-Item -ItemType Directory -Force -Path dist | Out-Null
-          - name: Build Windows desktop installer
-            run: $version = (Get-Content VERSION -Raw).Trim(); & powershell -ExecutionPolicy Bypass -File packaging\build-windows-installer.ps1 -Version $version -OutputExe "dist\Ciwi-Client-windows-Setup-x86_64-v$version.exe"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            run: rm -rf dist/desktop-windows-amd64 && mkdir -p dist/desktop-windows-amd64
+          - name: Build Windows desktop application
+            run: sh packaging/build-windows-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-windows-amd64/Ciwi.exe
       - id: desktop-linux-amd64
         needs:
           - unit-tests
@@ -131,18 +128,76 @@ pipelines:
             docker: "*"
         timeout_seconds: 1200
         artifacts:
-          - dist/Ciwi-Client-linux-amd64-v*.zip
+          - dist/desktop-linux-amd64/**
         steps:
           - name: Prepare Linux desktop output
-            run: mkdir -p dist
+            run: rm -rf dist/desktop-linux-amd64 && mkdir -p dist/desktop-linux-amd64
+          - name: Build Linux desktop application
+            run: sh packaging/build-linux-container.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-linux-amd64/ciwi
+  - id: package-windows
+    trigger: manual
+    depends_on:
+      - build
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: windows-installer
+        artifact_sources:
+          - pipeline: build
+            job: desktop-windows-amd64
+        runs_on:
+          executor: script
+          shell: powershell
+          os: windows
+          arch: amd64
+        requires:
+          tools:
+            git: "*"
+            wix: ">=6.0.0"
+        timeout_seconds: 1200
+        artifacts:
+          - dist/Ciwi-Client-windows-Setup-x86_64-v*.exe
+        steps:
+          - name: Verify Windows desktop application
+            run: if (-not (Test-Path -LiteralPath "dist\desktop-windows-amd64\Ciwi.exe" -PathType Leaf)) { throw "Windows desktop application artifact is missing" }
+          - name: Build Windows desktop installer
+            run: $version = ((Get-Content VERSION -Raw).Trim() -replace '^[vV]', ''); & powershell -ExecutionPolicy Bypass -File packaging\build-windows-installer.ps1 -InputExe "dist\desktop-windows-amd64\Ciwi.exe" -Version $version -OutputExe "dist\Ciwi-Client-windows-Setup-x86_64-v$version.exe"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  - id: package-linux
+    trigger: manual
+    depends_on:
+      - build
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: linux-archive
+        artifact_sources:
+          - pipeline: build
+            job: desktop-linux-amd64
+        runs_on:
+          executor: script
+          shell: posix
+          os: linux
+          arch: amd64
+        requires:
+          tools:
+            git: "*"
+            zip: "*"
+        timeout_seconds: 600
+        artifacts:
+          - dist/Ciwi-Client-linux-amd64-v*.zip
+        steps:
+          - name: Verify Linux desktop application
+            run: test -f dist/desktop-linux-amd64/ciwi
           - name: Build Linux desktop archive
-            run: VERSION="${CIWI_PIPELINE_VERSION#v}" && sh packaging/build-linux-container.sh "$VERSION" "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip"
+            run: VERSION="${CIWI_PIPELINE_VERSION#v}" && sh packaging/build-linux-zip.sh dist/desktop-linux-amd64/ciwi "$VERSION" "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip"
   - id: release
     trigger: manual
     depends_on:
       - build
       - codesign-macos
       - package-macos
+      - package-windows
+      - package-linux
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     versioning:
@@ -163,10 +218,10 @@ pipelines:
         artifact_sources:
           - pipeline: build
             job: build-cross-platform
-          - pipeline: build
-            job: desktop-windows-amd64
-          - pipeline: build
-            job: desktop-linux-amd64
+          - pipeline: package-windows
+            job: windows-installer
+          - pipeline: package-linux
+            job: linux-archive
           - pipeline: codesign-macos
             job: macos-codesign
           - pipeline: package-macos
@@ -525,4 +580,6 @@ pipeline_chains:
       - build
       - codesign-macos
       - package-macos
+      - package-windows
+      - package-linux
       - release

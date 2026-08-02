@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
 func (s *stateStore) attachJobExecutionTestSummaries(jobs []protocol.JobExecution) {
@@ -47,33 +48,24 @@ func (s *stateStore) attachJobExecutionTestSummary(job *protocol.JobExecution) {
 	}
 }
 
-func (s *stateStore) attachJobExecutionUnmetRequirements(jobs []protocol.JobExecution) {
-	s.mu.Lock()
-	agents := make(map[string]agentState, len(s.agents))
-	for id, a := range s.agents {
-		agents[id] = a
-	}
-	s.mu.Unlock()
+func (s *stateStore) attachJobExecutionSchedulingDiagnoses(jobs []protocol.JobExecution) {
+	agents := s.schedulingAgentSnapshots(time.Now().UTC())
 	for i := range jobs {
-		if !protocol.IsQueuedJobExecutionStatus(jobs[i].Status) {
+		if !protocol.IsQueuedJobExecutionStatus(jobs[i].Status) || protocol.IsJobWaitingForPrerequisites(jobs[i]) {
 			continue
 		}
-		jobs[i].UnmetRequirements = diagnoseUnmetRequirements(jobs[i].RequiredCapabilities, agents)
+		diagnosis := requirements.DiagnoseScheduling(jobs[i].RequiredCapabilities, agents)
+		jobs[i].SchedulingDiagnosis = &diagnosis
 	}
 }
 
-func (s *stateStore) attachJobExecutionUnmetRequirementsToJobExecution(job *protocol.JobExecution) {
+func (s *stateStore) attachJobExecutionSchedulingDiagnosis(job *protocol.JobExecution) {
 	if job == nil {
 		return
 	}
-	if !protocol.IsQueuedJobExecutionStatus(job.Status) {
+	if !protocol.IsQueuedJobExecutionStatus(job.Status) || protocol.IsJobWaitingForPrerequisites(*job) {
 		return
 	}
-	s.mu.Lock()
-	agents := make(map[string]agentState, len(s.agents))
-	for id, a := range s.agents {
-		agents[id] = a
-	}
-	s.mu.Unlock()
-	job.UnmetRequirements = diagnoseUnmetRequirements(job.RequiredCapabilities, agents)
+	diagnosis := requirements.DiagnoseScheduling(job.RequiredCapabilities, s.schedulingAgentSnapshots(time.Now().UTC()))
+	job.SchedulingDiagnosis = &diagnosis
 }

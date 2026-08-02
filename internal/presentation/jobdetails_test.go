@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
 type jobDetailsSourceStub struct {
@@ -66,6 +67,25 @@ func TestJobDetailsViewExposesEligibleControls(t *testing.T) {
 	})
 	if blocked.CanCancel || !blocked.CanRerun {
 		t.Fatalf("blocked controls = %+v", blocked)
+	}
+}
+
+func TestJobDetailsViewLimitsClosestSchedulingAgents(t *testing.T) {
+	agents := []requirements.AgentAssessment{{AgentID: "matching", CapabilityMatch: true, AvailabilityIssues: []string{"busy"}}}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		agents = append(agents, requirements.AgentAssessment{
+			AgentID: id, CapabilityIssues: []requirements.MatchIssue{{Message: "os expected windows, got linux"}},
+		})
+	}
+	view := presentJobDetails(domain.JobExecutionDetails{ID: "queued", Status: "queued", SchedulingDiagnosis: &requirements.SchedulingDiagnosis{
+		State: requirements.DiagnosisWaiting, Summary: "Matching agent matching is busy",
+		Requirements: []string{"windows", "wix >=6.0.0"}, Agents: agents,
+	}})
+	if len(view.SchedulingAgents) != 4 || view.SchedulingAdditional != "1 additional agent(s) do not match" {
+		t.Fatalf("scheduling view = %+v additional=%q", view.SchedulingAgents, view.SchedulingAdditional)
+	}
+	if view.SchedulingAgents[0].Status != "Unavailable" || view.SchedulingRequirements == "" {
+		t.Fatalf("scheduling view = %+v", view)
 	}
 }
 

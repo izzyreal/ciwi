@@ -15,6 +15,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 		Script: "go test ./...", Metadata: map[string]string{
 			"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "unit-tests",
 		},
+		RequiredCapabilities: map[string]string{"os": "windows", "requires.tool.wix": ">=6.0.0"},
 		StepPlan: []protocol.JobStepPlanItem{{Index: 1, Total: 1, Name: "Run tests", YAMLLiteral: "run: go test ./...", Script: "go test ./..."}},
 	})
 	if err != nil {
@@ -31,6 +32,9 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	}
 	if view.ID != job.ID || view.Title != "Job: unit-tests" || view.Context == "" || view.Status != "queued" {
 		t.Fatalf("view = %+v", view)
+	}
+	if view.SchedulingDiagnosis == nil || view.SchedulingDiagnosis.Summary != "No agents are registered" {
+		t.Fatalf("scheduling diagnosis = %+v", view.SchedulingDiagnosis)
 	}
 	if len(view.Timeline) < 3 || view.Timeline[2].Title != "Job step 1/1: Run tests" {
 		t.Fatalf("timeline = %+v", view.Timeline)

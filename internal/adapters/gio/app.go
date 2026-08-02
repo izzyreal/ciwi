@@ -1373,6 +1373,29 @@ func decorateExecutionCards(value any, queued bool) {
 			}
 			entry["job_execution_ids_csv"] = strings.Join(parts, ",")
 		}
+		if sections, ok := entry["sections"].([]any); ok {
+			for _, rawSection := range sections {
+				section, _ := rawSection.(map[string]any)
+				jobs, _ := section["jobs"].([]any)
+				for _, rawJob := range jobs {
+					job, _ := rawJob.(map[string]any)
+					ensureSchedulingDiagnosisBinding(job)
+				}
+			}
+		}
+	}
+}
+
+func ensureSchedulingDiagnosisBinding(value map[string]any) {
+	if value == nil {
+		return
+	}
+	if _, ok := value["scheduling_diagnosis"].(map[string]any); ok {
+		return
+	}
+	value["scheduling_diagnosis"] = map[string]any{
+		"state": "", "summary": "", "requirements": []any{}, "requirements_label": "",
+		"agents": []any{}, "additional_agents_label": "",
 	}
 }
 
@@ -1391,6 +1414,7 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 		return nil, err
 	}
 	if root, ok := data["jobDetails"].(map[string]any); ok {
+		ensureSchedulingDiagnosisBinding(root)
 		root["output"] = ""
 		root["system_output"] = ""
 		root["output_search"] = ""

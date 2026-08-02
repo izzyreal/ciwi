@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/httpx"
 )
@@ -17,10 +18,10 @@ type Store interface {
 }
 
 type HandlerDeps struct {
-	Store                   Store
-	AttachTestSummaries     func([]protocol.JobExecution)
-	AttachUnmetRequirements func([]protocol.JobExecution)
-	AttachProgress          func([]protocol.JobExecution)
+	Store                     Store
+	AttachTestSummaries       func([]protocol.JobExecution)
+	AttachSchedulingDiagnoses func([]protocol.JobExecution)
+	AttachProgress            func([]protocol.JobExecution)
 }
 
 type LayoutResponse struct {
@@ -119,7 +120,7 @@ type JobView struct {
 	ExitCode             *int                              `json:"exit_code,omitempty"`
 	Error                string                            `json:"error,omitempty"`
 	TestSummary          *protocol.JobExecutionTestSummary `json:"test_summary,omitempty"`
-	UnmetRequirements    []string                          `json:"unmet_requirements,omitempty"`
+	SchedulingDiagnosis  *domain.SchedulingDiagnosis       `json:"scheduling_diagnosis,omitempty"`
 	SensitiveValues      []string                          `json:"sensitive_values,omitempty"`
 	ExpectedDurationMS   int64                             `json:"expected_duration_ms,omitempty"`
 }
@@ -431,8 +432,8 @@ func enrichPageJobs(jobs []protocol.JobExecution, cards []executionCard, deps Ha
 	if deps.AttachTestSummaries != nil {
 		deps.AttachTestSummaries(pageJobs)
 	}
-	if deps.AttachUnmetRequirements != nil {
-		deps.AttachUnmetRequirements(pageJobs)
+	if deps.AttachSchedulingDiagnoses != nil {
+		deps.AttachSchedulingDiagnoses(pageJobs)
 	}
 	for i, idx := range indices {
 		jobs[idx] = pageJobs[i]
@@ -805,7 +806,7 @@ func jobView(job protocol.JobExecution) *JobView {
 		ExitCode:             job.ExitCode,
 		Error:                job.Error,
 		TestSummary:          job.TestSummary,
-		UnmetRequirements:    job.UnmetRequirements,
+		SchedulingDiagnosis:  job.SchedulingDiagnosis,
 		SensitiveValues:      job.SensitiveValues,
 		ExpectedDurationMS:   job.ExpectedDurationMS,
 	}

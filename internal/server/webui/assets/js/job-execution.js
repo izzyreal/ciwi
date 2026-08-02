@@ -662,18 +662,6 @@
     }
 
 
-    function formatJobDetailUnmetRequirementHTML(reason) {
-      const text = String(reason || '').trim();
-      if (!text) return '';
-      let m = text.match(/^missing tool\s+(.+)$/i);
-      if (m) return 'Missing tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code>';
-      m = text.match(/^tool\s+(\S+)\s+unavailable$/i);
-      if (m) return 'Tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code> unavailable';
-      m = text.match(/^tool\s+(\S+)\s+does not satisfy\s+(.+)$/i);
-      if (m) return 'Tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code> does not satisfy <code>' + escapeHtml(String(m[2] || '').trim()) + '</code>';
-      return escapeHtml(text);
-    }
-
     function renderModeValue(dryRun) {
       const label = dryRun ? 'Dry run' : 'Ordinary run';
       return '' +
@@ -784,10 +772,41 @@
       return out;
     }
 
-    function renderToolRequirements(requiredCaps, runtimeCaps, jobStatus, unmetRequirements) {
+    function renderSchedulingDiagnosis(schedulingDiagnosis) {
+      const card = document.getElementById('schedulingCard');
+      const box = document.getElementById('schedulingBox');
+      if (!card || !box) return;
+      const diagnosis = schedulingDiagnosis || null;
+      const summary = String((diagnosis && diagnosis.summary) || '').trim();
+      if (!summary) {
+        card.style.display = 'none';
+        box.textContent = '';
+        return;
+      }
+      card.style.display = '';
+      const requirements = Array.isArray(diagnosis.requirements) ? diagnosis.requirements : [];
+      const agents = Array.isArray(diagnosis.agents) ? diagnosis.agents : [];
+      const compatibleAgents = agents.filter(agent => !!agent.capability_match);
+      const incompatibleAgents = agents.filter(agent => !agent.capability_match);
+      const displayedAgents = compatibleAgents.concat(incompatibleAgents.slice(0, 3));
+      const agentRows = displayedAgents.map(agent => {
+        const capabilityIssues = Array.isArray(agent.capability_issues) ? agent.capability_issues : [];
+        const availabilityIssues = Array.isArray(agent.availability_issues) ? agent.availability_issues : [];
+        const details = availabilityIssues.concat(capabilityIssues.map(issue => String((issue && issue.message) || ''))).filter(Boolean);
+        const status = agent.available ? 'eligible' : (agent.capability_match ? 'unavailable' : 'does not match');
+        return '<li><strong>' + escapeHtml(String(agent.agent_id || 'agent')) + '</strong>: ' + escapeHtml(status + (details.length ? ' — ' + details.join('; ') : '')) + '</li>';
+      }).join('');
+      const hidden = Math.max(0, incompatibleAgents.length - 3);
+      box.className = diagnosis.state === 'ready' ? 'req-ok' : 'req-issues';
+      box.innerHTML = '<strong>' + escapeHtml(summary) + '</strong>' +
+        (requirements.length ? '<div style="margin-top:6px;">Required: ' + requirements.map(value => '<code>' + escapeHtml(String(value || '')) + '</code>').join(', ') + '</div>' : '') +
+        (agentRows ? '<ul>' + agentRows + '</ul>' : '') +
+        (hidden ? '<div>' + escapeHtml(String(hidden) + ' additional agent(s) do not match') + '</div>' : '');
+    }
+
+    function renderToolRequirements(requiredCaps, runtimeCaps, jobStatus) {
       const req = requiredCaps || {};
       const caps = runtimeCaps || {};
-      const unmet = Array.isArray(unmetRequirements) ? unmetRequirements : [];
       const hostRows = requirementRows(req, 'requires.tool.');
       const containerRows = requirementRows(req, 'requires.container.tool.');
       const status = String(jobStatus || '').trim().toLowerCase();
@@ -805,15 +824,11 @@
           return String(caps[key] || '').trim() !== '';
         });
         if (!hasObservedRuntimeData) {
-          if (prefix === 'host.tool.' && unmet.length > 0) {
-            const queuedIssues = unmet.map(formatJobDetailUnmetRequirementHTML).filter(Boolean);
-            box.className = 'req-issues';
-            box.innerHTML = '<strong>Requirements mismatch</strong><ul>' + queuedIssues.map(i => '<li>' + i + '</li>').join('') + '</ul>';
-            return;
-          }
           box.className = 'req-empty';
-          if (isQueuedJobStatus(status) || isRunningJobStatus(status)) {
-            box.textContent = 'Pending runtime capability report from agent.';
+          if (isQueuedJobStatus(status)) {
+            box.textContent = 'No agent has leased this job yet; runtime capability data is not available.';
+          } else if (isRunningJobStatus(status)) {
+            box.textContent = 'Waiting for the leased agent runtime capability report.';
           } else {
             box.textContent = 'Runtime capability report unavailable for this execution.';
           }
@@ -2596,7 +2611,8 @@
           { label: 'Exit Code', value: (job.exit_code === null || job.exit_code === undefined) ? '' : String(job.exit_code) },
         ];
         renderCacheStats(job.cache_stats);
-        renderToolRequirements(job.required_capabilities, job.runtime_capabilities, job.status, job.unmet_requirements);
+        renderSchedulingDiagnosis(job.scheduling_diagnosis);
+        renderToolRequirements(job.required_capabilities, job.runtime_capabilities, job.status);
 
         const meta = document.getElementById('metaGrid');
         const metaHTML = rows.map(r =>

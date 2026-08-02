@@ -50,7 +50,7 @@ func (localServerInfoSource) ServerInfo(context.Context) (domain.ServerInfo, err
 func newServerApplication(s *stateStore) *serverApplication {
 	serverQueries := application.NewServerQueries(localServerInfoSource{})
 	projectQueries := application.NewProjectQueries(sqliteadapter.NewProjectRepository(s.db))
-	executionQueries := application.NewExecutionQueries(executionviewsadapter.NewRepository(s.db, 40))
+	executionQueries := application.NewExecutionQueries(executionviewsadapter.NewRepository(s.db, 40, schedulingAgentSourceAdapter{state: s}))
 	agentQueries := application.NewAgentQueries(agentRepositoryAdapter{state: s})
 	changes := application.NewChangeHub()
 	receipts := sqliteadapter.NewCommandReceiptRepository(s.db)

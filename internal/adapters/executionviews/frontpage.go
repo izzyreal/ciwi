@@ -8,6 +8,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/requirements"
 	"github.com/izzyreal/ciwi/internal/server/jobhistory"
 )
 
@@ -16,6 +17,10 @@ type Store interface {
 	GetJobExecution(string) (protocol.JobExecution, error)
 	ListJobExecutionTimelineEvents(string) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionEventsPageAfter(string, int64, int) ([]protocol.JobExecutionEvent, error)
+}
+
+type SchedulingAgentSource interface {
+	ListSchedulingAgents(context.Context) ([]requirements.AgentSnapshot, error)
 }
 
 const (
@@ -101,6 +106,11 @@ func (r *Repository) GetJobExecutionDetails(ctx context.Context, jobID string) (
 		}
 		return domain.JobExecutionDetails{}, err
 	}
+	jobs := []protocol.JobExecution{job}
+	if err := r.attachSchedulingDiagnoses(ctx, jobs); err != nil {
+		return domain.JobExecutionDetails{}, err
+	}
+	job = jobs[0]
 	events, err := r.store.ListJobExecutionTimelineEvents(jobID)
 	if err != nil {
 		return domain.JobExecutionDetails{}, err
@@ -119,6 +129,7 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 		CurrentStep: strings.TrimSpace(job.CurrentStep), AgentID: strings.TrimSpace(job.LeasedByAgentID),
 		DryRun: protocol.JobMetadataValue(job, protocol.JobMetadataDryRun) == "1", CreatedUTC: job.CreatedUTC,
 		StartedUTC: job.StartedUTC, FinishedUTC: job.FinishedUTC, ExitCode: copyInt(job.ExitCode), Error: strings.TrimSpace(job.Error),
+		SchedulingDiagnosis: job.SchedulingDiagnosis,
 	}
 	states := timelineStates(events)
 	stepsByIndex := make(map[int]protocol.JobStepPlanItem, len(job.StepPlan))
@@ -204,15 +215,20 @@ func copyInt(value *int) *int {
 }
 
 type Repository struct {
-	store Store
-	limit int
+	store      Store
+	limit      int
+	scheduling SchedulingAgentSource
 }
 
-func NewRepository(store Store, limit int) *Repository {
+func NewRepository(store Store, limit int, scheduling ...SchedulingAgentSource) *Repository {
 	if limit <= 0 {
 		limit = 40
 	}
-	return &Repository{store: store, limit: limit}
+	var source SchedulingAgentSource
+	if len(scheduling) > 0 {
+		source = scheduling[0]
+	}
+	return &Repository{store: store, limit: limit, scheduling: source}
 }
 
 func (r *Repository) ListFrontPageExecutionCards(ctx context.Context) ([]domain.ExecutionCard, []domain.ExecutionCard, error) {
@@ -221,6 +237,9 @@ func (r *Repository) ListFrontPageExecutionCards(ctx context.Context) ([]domain.
 	}
 	jobs, err := r.store.ListJobExecutions()
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := r.attachSchedulingDiagnoses(ctx, jobs); err != nil {
 		return nil, nil, err
 	}
 	queued := mapCards(jobhistory.SummaryCards(jobs, true, r.limit))
@@ -271,7 +290,7 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 		}
 		return []domain.ExecutionCardJob{{
 			ID: item.Job.ID, Label: label, Status: protocol.NormalizeJobExecutionStatus(item.Job.Status),
-			CurrentStep: strings.TrimSpace(item.Job.CurrentStep),
+			CurrentStep: strings.TrimSpace(item.Job.CurrentStep), SchedulingDiagnosis: item.Job.SchedulingDiagnosis,
 		}}
 	}
 	out := make([]domain.ExecutionCardJob, 0, len(item.Items))
@@ -279,4 +298,22 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 		out = append(out, mapCardItemJobs(child)...)
 	}
 	return out
+}
+
+func (r *Repository) attachSchedulingDiagnoses(ctx context.Context, jobs []protocol.JobExecution) error {
+	if r.scheduling == nil {
+		return nil
+	}
+	agents, err := r.scheduling.ListSchedulingAgents(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range jobs {
+		if !protocol.IsQueuedJobExecutionStatus(jobs[i].Status) || protocol.IsJobWaitingForPrerequisites(jobs[i]) {
+			continue
+		}
+		diagnosis := requirements.DiagnoseScheduling(jobs[i].RequiredCapabilities, agents)
+		jobs[i].SchedulingDiagnosis = &diagnosis
+	}
+	return nil
 }

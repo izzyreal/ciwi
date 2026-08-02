@@ -12,6 +12,7 @@ type agentJobExecutionStore interface {
 	CreateJobExecution(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
 	LeaseJobExecution(agentID string, agentCaps map[string]string) (*protocol.JobExecution, error)
 	AgentHasActiveJobExecution(agentID string) (bool, error)
+	ListActiveJobExecutionAgentIDs() (map[string]bool, error)
 	UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	MergeJobExecutionEnv(jobID string, patch map[string]string) (map[string]string, error)
 }

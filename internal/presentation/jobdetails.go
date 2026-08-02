@@ -12,24 +12,36 @@ import (
 )
 
 type JobDetailsView struct {
-	ID           string
-	Title        string
-	Context      string
-	Status       string
-	StatusLabel  string
-	CurrentStep  string
-	Agent        string
-	Mode         string
-	Created      string
-	Started      string
-	Finished     string
-	Duration     string
-	ExitCode     string
-	Error        string
-	CanCancel    bool
-	CanRerun     bool
-	Timeline     []JobTimelineView
-	OutputGroups []JobOutputGroupView
+	ID                     string
+	Title                  string
+	Context                string
+	Status                 string
+	StatusLabel            string
+	CurrentStep            string
+	Agent                  string
+	Mode                   string
+	Created                string
+	Started                string
+	Finished               string
+	Duration               string
+	ExitCode               string
+	Error                  string
+	CanCancel              bool
+	CanRerun               bool
+	SchedulingState        string
+	SchedulingSummary      string
+	SchedulingRequirements string
+	SchedulingAgents       []SchedulingAgentView
+	SchedulingAdditional   string
+	Timeline               []JobTimelineView
+	OutputGroups           []JobOutputGroupView
+}
+
+type SchedulingAgentView struct {
+	AgentID string
+	Status  string
+	Details string
+	Tone    string
 }
 
 type JobTimelineView struct {
@@ -137,6 +149,7 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 	} else {
 		view.Mode = "Run"
 	}
+	applySchedulingDiagnosis(&view, details.SchedulingDiagnosis)
 	if !details.StartedUTC.IsZero() && !details.FinishedUTC.IsZero() && !details.FinishedUTC.Before(details.StartedUTC) {
 		view.Duration = formatDuration(details.FinishedUTC.Sub(details.StartedUTC))
 	}
@@ -181,6 +194,43 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 		})
 	}
 	return view
+}
+
+func applySchedulingDiagnosis(view *JobDetailsView, diagnosis *domain.SchedulingDiagnosis) {
+	if view == nil || diagnosis == nil {
+		return
+	}
+	view.SchedulingState = diagnosis.State
+	view.SchedulingSummary = diagnosis.Summary
+	view.SchedulingRequirements = strings.Join(diagnosis.Requirements, " · ")
+	incompatibleShown := 0
+	incompatibleTotal := 0
+	for _, agent := range diagnosis.Agents {
+		if !agent.CapabilityMatch {
+			incompatibleTotal++
+			if incompatibleShown >= 3 {
+				continue
+			}
+			incompatibleShown++
+		}
+		status, tone := "Does not match", "danger"
+		details := make([]string, 0, len(agent.CapabilityIssues)+len(agent.AvailabilityIssues))
+		if agent.CapabilityMatch && agent.Available {
+			status, tone = "Eligible", "success"
+		} else if agent.CapabilityMatch {
+			status, tone = "Unavailable", "warning"
+		}
+		details = append(details, agent.AvailabilityIssues...)
+		for _, issue := range agent.CapabilityIssues {
+			details = append(details, issue.Message)
+		}
+		view.SchedulingAgents = append(view.SchedulingAgents, SchedulingAgentView{
+			AgentID: agent.AgentID, Status: status, Details: strings.Join(details, "; "), Tone: tone,
+		})
+	}
+	if hidden := incompatibleTotal - incompatibleShown; hidden > 0 {
+		view.SchedulingAdditional = fmt.Sprintf("%d additional agent(s) do not match", hidden)
+	}
 }
 
 func canCancelJob(details domain.JobExecutionDetails) bool {

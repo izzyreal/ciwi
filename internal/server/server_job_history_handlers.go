@@ -13,10 +13,10 @@ func (s *stateStore) jobHistoryHandlerDeps() jobhistory.HandlerDeps {
 		attachProgress = s.jobProgress.AttachJobEstimates
 	}
 	return jobhistory.HandlerDeps{
-		Store:                   s.jobExecutionStore(),
-		AttachTestSummaries:     s.attachJobExecutionTestSummaries,
-		AttachUnmetRequirements: s.attachJobExecutionUnmetRequirements,
-		AttachProgress:          attachProgress,
+		Store:                     s.jobExecutionStore(),
+		AttachTestSummaries:       s.attachJobExecutionTestSummaries,
+		AttachSchedulingDiagnoses: s.attachJobExecutionSchedulingDiagnoses,
+		AttachProgress:            attachProgress,
 	}
 }
 

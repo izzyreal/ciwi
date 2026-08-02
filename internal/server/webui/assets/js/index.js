@@ -564,7 +564,7 @@
           finished_utc: job.finished_utc || '',
           error: job.error || '',
           test_summary: job.test_summary || null,
-          unmet_requirements: job.unmet_requirements || [],
+		  scheduling_diagnosis: job.scheduling_diagnosis || null,
         } : null,
         items: (Array.isArray(current.items) ? current.items : []).map(historyItemRenderState),
       };

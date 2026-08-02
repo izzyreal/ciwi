@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
 func TestHandleByIDRootBranchesAndRouting(t *testing.T) {
@@ -58,9 +59,9 @@ func TestHandleByIDRootBranchesAndRouting(t *testing.T) {
 				attachTest = true
 				job.TestSummary = &protocol.JobExecutionTestSummary{Total: 1}
 			},
-			AttachUnmetRequirementsToExecution: func(job *protocol.JobExecution) {
+			AttachSchedulingDiagnosis: func(job *protocol.JobExecution) {
 				attachReq = true
-				job.UnmetRequirements = []string{"tool:cmake:missing"}
+				job.SchedulingDiagnosis = &requirements.SchedulingDiagnosis{Summary: "cmake missing"}
 			},
 		})
 		if rec.Code != http.StatusOK {
@@ -69,7 +70,7 @@ func TestHandleByIDRootBranchesAndRouting(t *testing.T) {
 		if !attachTest || !attachReq {
 			t.Fatalf("expected both attach hooks to run")
 		}
-		if !strings.Contains(rec.Body.String(), "\"test_summary\"") || !strings.Contains(rec.Body.String(), "\"unmet_requirements\"") {
+		if !strings.Contains(rec.Body.String(), "\"test_summary\"") || !strings.Contains(rec.Body.String(), "\"scheduling_diagnosis\"") {
 			t.Fatalf("expected enriched payload, got %s", rec.Body.String())
 		}
 	})

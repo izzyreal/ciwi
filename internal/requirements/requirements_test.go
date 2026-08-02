@@ -32,7 +32,7 @@ func TestToolConstraintMatch(t *testing.T) {
 	}
 }
 
-func TestDiagnoseUnmetRequirements(t *testing.T) {
+func TestMatchAgentRequiresOneAgentToSatisfyEverything(t *testing.T) {
 	required := map[string]string{
 		"os":                "linux",
 		"arch":              "amd64",
@@ -42,44 +42,43 @@ func TestDiagnoseUnmetRequirements(t *testing.T) {
 		"agent_id":          "agent-a",
 	}
 
-	agents := []AgentSnapshot{
-		{
-			ID:   "agent-a",
-			OS:   "linux",
-			Arch: "amd64",
-			Capabilities: map[string]string{
-				"shells":   "posix,cmd",
-				"tool.go":  "1.24.1",
-				"tool.git": "2.49.0",
-			},
+	agent := AgentSnapshot{
+		ID:   "agent-a",
+		OS:   "linux",
+		Arch: "amd64",
+		Capabilities: map[string]string{
+			"shells":   "posix,cmd",
+			"tool.go":  "1.24.1",
+			"tool.git": "2.49.0",
 		},
 	}
-
-	reasons := DiagnoseUnmetRequirements(required, agents)
-	if len(reasons) != 0 {
-		t.Fatalf("expected no unmet requirements, got %v", reasons)
+	if result := MatchAgent(required, agent); !result.Matches {
+		t.Fatalf("expected requirements to match, got %v", result.Issues)
 	}
 }
 
-func TestDiagnoseUnmetRequirementsNoAgents(t *testing.T) {
-	reasons := DiagnoseUnmetRequirements(map[string]string{"os": "linux"}, nil)
-	if len(reasons) != 1 || reasons[0] != "no agents connected" {
-		t.Fatalf("unexpected reasons: %v", reasons)
+func TestDiagnoseSchedulingDoesNotCombineDifferentAgents(t *testing.T) {
+	diagnosis := DiagnoseScheduling(map[string]string{"os": "windows", "requires.tool.wix": ">=6.0.0"}, []AgentSnapshot{
+		{ID: "windows-without-wix", OS: "windows", Freshness: "online", Authorized: true},
+		{ID: "linux-with-wix", OS: "linux", Freshness: "online", Authorized: true, Capabilities: map[string]string{"tool.wix": "6.0.2"}},
+	})
+	if diagnosis.State != DiagnosisIncompatible {
+		t.Fatalf("state = %q, want %q: %+v", diagnosis.State, DiagnosisIncompatible, diagnosis)
 	}
 }
 
-func TestDiagnoseUnmetRequirementsIgnoresContainerToolRequirements(t *testing.T) {
+func TestDiagnoseSchedulingAvailabilityAndContainerTools(t *testing.T) {
 	required := map[string]string{
-		"os":                            "linux",
-		"arch":                          "amd64",
-		"shell":                         "posix",
-		"requires.tool.docker":          "*",
-		"requires.container.tool.cmake": "*",
-		"requires.container.tool.ninja": "*",
+		"os":                             "linux",
+		"arch":                           "amd64",
+		"shell":                          "posix",
+		"requires.tool.docker":           "*",
+		"requires.container.tool.cmake":  "*",
+		"requires.container.tool.ninja":  "*",
 		"requires.container.tool.ccache": "*",
 	}
 
-	agents := []AgentSnapshot{
+	diagnosis := DiagnoseScheduling(required, []AgentSnapshot{
 		{
 			ID:   "agent-a",
 			OS:   "linux",
@@ -88,11 +87,26 @@ func TestDiagnoseUnmetRequirementsIgnoresContainerToolRequirements(t *testing.T)
 				"shells":      "posix",
 				"tool.docker": "28.0.0",
 			},
+			Freshness: "online", Authorized: true, Busy: true,
 		},
+	})
+	if diagnosis.State != DiagnosisWaiting || len(diagnosis.Agents) != 1 || !diagnosis.Agents[0].CapabilityMatch {
+		t.Fatalf("unexpected diagnosis: %+v", diagnosis)
 	}
+	if got := diagnosis.Agents[0].AvailabilityIssues; len(got) != 1 || got[0] != "busy" {
+		t.Fatalf("availability issues = %v", got)
+	}
+}
 
-	reasons := DiagnoseUnmetRequirements(required, agents)
-	if len(reasons) != 0 {
-		t.Fatalf("expected container tool requirements to be ignored in diagnosis, got %v", reasons)
+func TestDiagnoseSchedulingNoAgentsAndReadyAgent(t *testing.T) {
+	missing := DiagnoseScheduling(map[string]string{"os": "linux"}, nil)
+	if missing.Summary != "No agents are registered" || missing.State != DiagnosisIncompatible {
+		t.Fatalf("unexpected empty-fleet diagnosis: %+v", missing)
+	}
+	ready := DiagnoseScheduling(map[string]string{"os": "linux"}, []AgentSnapshot{{
+		ID: "agent-a", OS: "linux", Freshness: "online", Authorized: true,
+	}})
+	if ready.State != DiagnosisReady || ready.Summary == "" {
+		t.Fatalf("unexpected ready diagnosis: %+v", ready)
 	}
 }

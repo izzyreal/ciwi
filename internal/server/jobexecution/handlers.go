@@ -42,18 +42,18 @@ type HandlerDeps struct {
 		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
 		FlushHistory(context.Context, application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error)
 	}
-	ArtifactsDir                       string
-	AttachTestSummaries                func([]protocol.JobExecution)
-	AttachUnmetRequirements            func([]protocol.JobExecution)
-	AttachTestSummary                  func(*protocol.JobExecution)
-	AttachUnmetRequirementsToExecution func(*protocol.JobExecution)
-	AttachProgress                     func(*protocol.JobExecution)
-	MarkAgentSeen                      func(agentID string, ts time.Time)
-	OnJobUpdated                       func(job protocol.JobExecution)
-	OnQueueChanged                     func()
-	OnHistoryChanged                   func()
-	PrepareRerun                       func(original protocol.JobExecution, request *protocol.CreateJobExecutionRequest) error
-	Now                                func() time.Time
+	ArtifactsDir              string
+	AttachTestSummaries       func([]protocol.JobExecution)
+	AttachSchedulingDiagnoses func([]protocol.JobExecution)
+	AttachTestSummary         func(*protocol.JobExecution)
+	AttachSchedulingDiagnosis func(*protocol.JobExecution)
+	AttachProgress            func(*protocol.JobExecution)
+	MarkAgentSeen             func(agentID string, ts time.Time)
+	OnJobUpdated              func(job protocol.JobExecution)
+	OnQueueChanged            func()
+	OnHistoryChanged          func()
+	PrepareRerun              func(original protocol.JobExecution, request *protocol.CreateJobExecutionRequest) error
+	Now                       func() time.Time
 }
 
 func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
@@ -80,8 +80,8 @@ func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 			if deps.AttachTestSummaries != nil {
 				deps.AttachTestSummaries(page)
 			}
-			if deps.AttachUnmetRequirements != nil {
-				deps.AttachUnmetRequirements(page)
+			if deps.AttachSchedulingDiagnoses != nil {
+				deps.AttachSchedulingDiagnoses(page)
 			}
 			pageViews := ViewsFromProtocol(page)
 			httpx.WriteJSON(w, http.StatusOK, PagedViewResponse{
@@ -97,8 +97,8 @@ func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) 
 		if deps.AttachTestSummaries != nil {
 			deps.AttachTestSummaries(jobs)
 		}
-		if deps.AttachUnmetRequirements != nil {
-			deps.AttachUnmetRequirements(jobs)
+		if deps.AttachSchedulingDiagnoses != nil {
+			deps.AttachSchedulingDiagnoses(jobs)
 		}
 		httpx.WriteJSON(w, http.StatusOK, ListViewResponse{JobExecutions: ViewsFromProtocol(jobs)})
 	default:
@@ -129,8 +129,8 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 			if deps.AttachTestSummary != nil {
 				deps.AttachTestSummary(&job)
 			}
-			if deps.AttachUnmetRequirementsToExecution != nil {
-				deps.AttachUnmetRequirementsToExecution(&job)
+			if deps.AttachSchedulingDiagnosis != nil {
+				deps.AttachSchedulingDiagnosis(&job)
 			}
 			if deps.AttachProgress != nil {
 				deps.AttachProgress(&job)

@@ -2,8 +2,10 @@ package requirements
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"golang.org/x/mod/semver"
 )
 
@@ -12,97 +14,198 @@ type AgentSnapshot struct {
 	OS           string
 	Arch         string
 	Capabilities map[string]string
+	Freshness    string
+	Authorized   bool
+	Deactivated  bool
+	Updating     bool
+	Busy         bool
 }
 
-func DiagnoseUnmetRequirements(required map[string]string, agents []AgentSnapshot) []string {
-	if len(required) == 0 {
-		return nil
-	}
-	if len(agents) == 0 {
-		return []string{"no agents connected"}
-	}
+const (
+	DiagnosisReady        = domain.SchedulingReady
+	DiagnosisWaiting      = domain.SchedulingWaiting
+	DiagnosisIncompatible = domain.SchedulingIncompatible
+)
 
-	reasons := []string{}
-	for key, value := range required {
-		if strings.HasPrefix(key, "requires.tool.") {
+type MatchIssue = domain.SchedulingMatchIssue
+type AgentAssessment = domain.SchedulingAgentAssessment
+type SchedulingDiagnosis = domain.SchedulingDiagnosis
+
+type MatchResult struct {
+	Matches bool
+	Issues  []MatchIssue
+}
+
+// MatchAgent is the canonical scheduler capability matcher. All requirements
+// must be satisfied by this one agent; capabilities from different agents are
+// never combined.
+func MatchAgent(required map[string]string, agent AgentSnapshot) MatchResult {
+	return MatchCapabilities(required, mergeCapabilities(agent))
+}
+
+func MatchCapabilities(required, observed map[string]string) MatchResult {
+	issues := make([]MatchIssue, 0)
+	keys := make([]string, 0, len(required))
+	for key := range required {
+		if !strings.HasPrefix(key, "requires.container.tool.") {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		expected := strings.TrimSpace(required[key])
+		actualKey := key
+		matched := false
+		code := "capability_mismatch"
+		switch {
+		case strings.HasPrefix(key, "requires.tool."):
 			tool := strings.TrimPrefix(key, "requires.tool.")
-			constraint := strings.TrimSpace(value)
-			seenTool := false
-			satisfied := false
-			for _, agent := range agents {
-				agentValue := strings.TrimSpace(agent.Capabilities["tool."+tool])
-				if agentValue != "" {
-					seenTool = true
-				}
-				if ToolConstraintMatch(agentValue, constraint) {
-					satisfied = true
-					break
-				}
-			}
-			if !satisfied {
-				if !seenTool {
-					reasons = append(reasons, "missing tool "+tool)
-				} else if constraint == "" || constraint == "*" {
-					reasons = append(reasons, "tool "+tool+" unavailable")
-				} else {
-					reasons = append(reasons, "tool "+tool+" does not satisfy "+constraint)
-				}
-			}
+			actualKey = "tool." + tool
+			matched = ToolConstraintMatch(strings.TrimSpace(observed[actualKey]), expected)
+			code = "tool_mismatch"
+		case key == "shell":
+			matched = ShellCapabilityMatch(observed, expected)
+			code = "shell_mismatch"
+		default:
+			matched = strings.TrimSpace(observed[actualKey]) == expected
+		}
+		if matched {
 			continue
 		}
+		actual := strings.TrimSpace(observed[actualKey])
+		issues = append(issues, MatchIssue{
+			Code: code, Key: key, Expected: expected, Actual: actual,
+			Message: mismatchMessage(key, expected, actual),
+		})
+	}
+	return MatchResult{Matches: len(issues) == 0, Issues: issues}
+}
 
-		if strings.HasPrefix(key, "requires.container.tool.") {
-			// Container tool requirements are validated by the agent runtime
-			// probe after lease, so queued-job diagnosis should not treat them
-			// as agent-selection mismatches.
-			continue
+func DiagnoseScheduling(required map[string]string, agents []AgentSnapshot) SchedulingDiagnosis {
+	diagnosis := SchedulingDiagnosis{Requirements: RequirementLabels(required)}
+	if len(agents) == 0 {
+		diagnosis.State = DiagnosisIncompatible
+		diagnosis.Summary = "No agents are registered"
+		return diagnosis
+	}
+
+	sortedAgents := append([]AgentSnapshot(nil), agents...)
+	sort.Slice(sortedAgents, func(i, j int) bool { return sortedAgents[i].ID < sortedAgents[j].ID })
+	matching := 0
+	available := 0
+	for _, agent := range sortedAgents {
+		match := MatchAgent(required, agent)
+		availabilityIssues := agentAvailabilityIssues(agent)
+		assessment := AgentAssessment{
+			AgentID: strings.TrimSpace(agent.ID), CapabilityMatch: match.Matches,
+			Available:        match.Matches && len(availabilityIssues) == 0,
+			CapabilityIssues: match.Issues, AvailabilityIssues: availabilityIssues,
 		}
-
-		if key == "shell" {
-			requiredShell := strings.TrimSpace(value)
-			ok := false
-			for _, agent := range agents {
-				if ShellCapabilityMatch(mergeCapabilities(agent), requiredShell) {
-					ok = true
-					break
-				}
+		if match.Matches {
+			matching++
+			if assessment.Available {
+				available++
 			}
-			if !ok {
-				reasons = append(reasons, fmt.Sprintf("no agent with %s=%s", key, requiredShell))
-			}
-			continue
 		}
-
-		if key == "agent_id" {
-			requiredAgentID := strings.TrimSpace(value)
-			ok := false
-			for _, agent := range agents {
-				if strings.TrimSpace(agent.ID) == requiredAgentID {
-					ok = true
-					break
-				}
-			}
-			if !ok {
-				reasons = append(reasons, fmt.Sprintf("no agent with %s=%s", key, requiredAgentID))
-			}
-			continue
+		diagnosis.Agents = append(diagnosis.Agents, assessment)
+	}
+	sort.SliceStable(diagnosis.Agents, func(i, j int) bool {
+		left, right := diagnosis.Agents[i], diagnosis.Agents[j]
+		if left.CapabilityMatch != right.CapabilityMatch {
+			return left.CapabilityMatch
 		}
+		if len(left.CapabilityIssues) != len(right.CapabilityIssues) {
+			return len(left.CapabilityIssues) < len(right.CapabilityIssues)
+		}
+		return left.AgentID < right.AgentID
+	})
 
-		requiredValue := strings.TrimSpace(value)
-		ok := false
-		for _, agent := range agents {
-			caps := mergeCapabilities(agent)
-			if strings.TrimSpace(caps[key]) == requiredValue {
-				ok = true
+	switch {
+	case available > 0:
+		diagnosis.State = DiagnosisReady
+		diagnosis.Summary = "Eligible agent available; awaiting lease"
+	case matching == 1:
+		diagnosis.State = DiagnosisWaiting
+		for _, agent := range diagnosis.Agents {
+			if agent.CapabilityMatch {
+				diagnosis.Summary = "Matching agent " + agent.AgentID + " is " + strings.Join(agent.AvailabilityIssues, ", ")
 				break
 			}
 		}
-		if !ok {
-			reasons = append(reasons, fmt.Sprintf("no agent with %s=%s", key, requiredValue))
+	case matching > 1:
+		diagnosis.State = DiagnosisWaiting
+		diagnosis.Summary = fmt.Sprintf("%d matching agents are currently unavailable", matching)
+	default:
+		diagnosis.State = DiagnosisIncompatible
+		diagnosis.Summary = "No agent matches all requirements"
+		if len(diagnosis.Requirements) > 0 {
+			diagnosis.Summary += ": " + strings.Join(diagnosis.Requirements, ", ")
 		}
 	}
+	return diagnosis
+}
 
-	return reasons
+func RequirementLabels(required map[string]string) []string {
+	labels := make([]string, 0, len(required))
+	for key, value := range required {
+		value = strings.TrimSpace(value)
+		switch {
+		case strings.HasPrefix(key, "requires.container.tool."):
+			continue
+		case strings.HasPrefix(key, "requires.tool."):
+			tool := strings.TrimPrefix(key, "requires.tool.")
+			if value == "" || value == "*" {
+				labels = append(labels, tool)
+			} else {
+				labels = append(labels, tool+" "+value)
+			}
+		case key == "shell":
+			labels = append(labels, value+" shell")
+		case key == "agent_id":
+			labels = append(labels, "agent "+value)
+		case key == "os", key == "arch":
+			labels = append(labels, value)
+		default:
+			labels = append(labels, key+"="+value)
+		}
+	}
+	sort.Strings(labels)
+	return labels
+}
+
+func agentAvailabilityIssues(agent AgentSnapshot) []string {
+	issues := make([]string, 0, 5)
+	switch strings.ToLower(strings.TrimSpace(agent.Freshness)) {
+	case "online":
+	case "stale":
+		issues = append(issues, "stale")
+	default:
+		issues = append(issues, "offline")
+	}
+	if !agent.Authorized {
+		issues = append(issues, "unauthorized")
+	}
+	if agent.Deactivated {
+		issues = append(issues, "deactivated")
+	}
+	if agent.Updating {
+		issues = append(issues, "updating")
+	}
+	if agent.Busy {
+		issues = append(issues, "busy")
+	}
+	return issues
+}
+
+func mismatchMessage(key, expected, actual string) string {
+	actualLabel := actual
+	if actualLabel == "" {
+		actualLabel = "missing"
+	}
+	if strings.HasPrefix(key, "requires.tool.") {
+		return fmt.Sprintf("tool %s expected %s, got %s", strings.TrimPrefix(key, "requires.tool."), expected, actualLabel)
+	}
+	return fmt.Sprintf("%s expected %s, got %s", key, expected, actualLabel)
 }
 
 func ShellCapabilityMatch(agentCapabilities map[string]string, requiredValue string) bool {
@@ -173,13 +276,13 @@ func ToolConstraintMatch(agentValue, constraint string) bool {
 }
 
 func mergeCapabilities(agent AgentSnapshot) map[string]string {
-	merged := map[string]string{
-		"os":   strings.TrimSpace(agent.OS),
-		"arch": strings.TrimSpace(agent.Arch),
-	}
+	merged := map[string]string{}
 	for key, value := range agent.Capabilities {
 		merged[key] = value
 	}
+	merged["agent_id"] = strings.TrimSpace(agent.ID)
+	merged["os"] = strings.TrimSpace(agent.OS)
+	merged["arch"] = strings.TrimSpace(agent.Arch)
 	return merged
 }
 

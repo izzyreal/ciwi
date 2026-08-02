@@ -9,25 +9,41 @@ import (
 )
 
 type jobDetailsViewResponse struct {
-	ID           string                       `json:"id"`
-	Title        string                       `json:"title"`
-	Context      string                       `json:"context"`
-	Status       string                       `json:"status"`
-	StatusLabel  string                       `json:"status_label"`
-	CurrentStep  string                       `json:"current_step"`
-	Agent        string                       `json:"agent"`
-	Mode         string                       `json:"mode"`
-	Created      string                       `json:"created"`
-	Started      string                       `json:"started"`
-	Finished     string                       `json:"finished"`
-	Duration     string                       `json:"duration"`
-	ExitCode     string                       `json:"exit_code"`
-	Error        string                       `json:"error"`
-	CanCancel    bool                         `json:"can_cancel"`
-	CanRerun     bool                         `json:"can_rerun"`
-	Output       string                       `json:"output"`
-	Timeline     []jobTimelineViewResponse    `json:"timeline"`
-	OutputGroups []jobOutputGroupViewResponse `json:"output_groups"`
+	ID                  string                          `json:"id"`
+	Title               string                          `json:"title"`
+	Context             string                          `json:"context"`
+	Status              string                          `json:"status"`
+	StatusLabel         string                          `json:"status_label"`
+	CurrentStep         string                          `json:"current_step"`
+	Agent               string                          `json:"agent"`
+	Mode                string                          `json:"mode"`
+	Created             string                          `json:"created"`
+	Started             string                          `json:"started"`
+	Finished            string                          `json:"finished"`
+	Duration            string                          `json:"duration"`
+	ExitCode            string                          `json:"exit_code"`
+	Error               string                          `json:"error"`
+	CanCancel           bool                            `json:"can_cancel"`
+	CanRerun            bool                            `json:"can_rerun"`
+	Output              string                          `json:"output"`
+	Timeline            []jobTimelineViewResponse       `json:"timeline"`
+	OutputGroups        []jobOutputGroupViewResponse    `json:"output_groups"`
+	SchedulingDiagnosis *jobSchedulingDiagnosisResponse `json:"scheduling_diagnosis,omitempty"`
+}
+
+type jobSchedulingDiagnosisResponse struct {
+	State                 string                       `json:"state"`
+	Summary               string                       `json:"summary"`
+	RequirementsLabel     string                       `json:"requirements_label"`
+	Agents                []jobSchedulingAgentResponse `json:"agents"`
+	AdditionalAgentsLabel string                       `json:"additional_agents_label"`
+}
+
+type jobSchedulingAgentResponse struct {
+	AgentID string `json:"agent_id"`
+	Status  string `json:"status"`
+	Details string `json:"details"`
+	Tone    string `json:"tone"`
 }
 
 type jobTimelineViewResponse struct {
@@ -147,10 +163,24 @@ func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewRespon
 			Error: group.Error, Details: group.Details, YAMLLiteral: group.YAMLLiteral, ExpandedCommand: group.ExpandedCommand,
 		})
 	}
-	return jobDetailsViewResponse{
+	response := jobDetailsViewResponse{
 		ID: view.ID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun, Timeline: timeline, OutputGroups: outputGroups,
 	}
+	if view.SchedulingSummary != "" {
+		agents := make([]jobSchedulingAgentResponse, 0, len(view.SchedulingAgents))
+		for _, agent := range view.SchedulingAgents {
+			agents = append(agents, jobSchedulingAgentResponse{
+				AgentID: agent.AgentID, Status: agent.Status, Details: agent.Details, Tone: agent.Tone,
+			})
+		}
+		response.SchedulingDiagnosis = &jobSchedulingDiagnosisResponse{
+			State: view.SchedulingState, Summary: view.SchedulingSummary,
+			RequirementsLabel: view.SchedulingRequirements, Agents: agents,
+			AdditionalAgentsLabel: view.SchedulingAdditional,
+		}
+	}
+	return response
 }

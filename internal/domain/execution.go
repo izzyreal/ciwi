@@ -23,10 +23,11 @@ type ExecutionCardSection struct {
 }
 
 type ExecutionCardJob struct {
-	ID          string
-	Label       string
-	Status      string
-	CurrentStep string
+	ID                  string
+	Label               string
+	Status              string
+	CurrentStep         string
+	SchedulingDiagnosis *SchedulingDiagnosis
 }
 
 type ExecutionSummary struct {
@@ -41,21 +42,51 @@ type ExecutionSummary struct {
 // execution. Output is intentionally excluded: live logs use a separate,
 // incremental query so large histories do not inflate every status refresh.
 type JobExecutionDetails struct {
-	ID            string
-	ProjectName   string
-	PipelineID    string
-	PipelineJobID string
-	MatrixName    string
-	Status        string
-	CurrentStep   string
-	AgentID       string
-	DryRun        bool
-	CreatedUTC    time.Time
-	StartedUTC    time.Time
-	FinishedUTC   time.Time
-	ExitCode      *int
-	Error         string
-	Timeline      []JobTimelineItem
+	ID                  string
+	ProjectName         string
+	PipelineID          string
+	PipelineJobID       string
+	MatrixName          string
+	Status              string
+	CurrentStep         string
+	AgentID             string
+	DryRun              bool
+	CreatedUTC          time.Time
+	StartedUTC          time.Time
+	FinishedUTC         time.Time
+	ExitCode            *int
+	Error               string
+	SchedulingDiagnosis *SchedulingDiagnosis
+	Timeline            []JobTimelineItem
+}
+
+const (
+	SchedulingReady        = "ready"
+	SchedulingWaiting      = "waiting"
+	SchedulingIncompatible = "incompatible"
+)
+
+type SchedulingMatchIssue struct {
+	Code     string `json:"code"`
+	Key      string `json:"key"`
+	Expected string `json:"expected,omitempty"`
+	Actual   string `json:"actual,omitempty"`
+	Message  string `json:"message"`
+}
+
+type SchedulingAgentAssessment struct {
+	AgentID            string                 `json:"agent_id"`
+	CapabilityMatch    bool                   `json:"capability_match"`
+	Available          bool                   `json:"available"`
+	CapabilityIssues   []SchedulingMatchIssue `json:"capability_issues,omitempty"`
+	AvailabilityIssues []string               `json:"availability_issues,omitempty"`
+}
+
+type SchedulingDiagnosis struct {
+	State        string                      `json:"state"`
+	Summary      string                      `json:"summary"`
+	Requirements []string                    `json:"requirements,omitempty"`
+	Agents       []SchedulingAgentAssessment `json:"agents,omitempty"`
 }
 
 type JobTimelineItem struct {

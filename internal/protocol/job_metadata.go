@@ -14,3 +14,7 @@ const (
 func JobMetadataValue(job JobExecution, key string) string {
 	return strings.TrimSpace(job.Metadata[key])
 }
+
+func IsJobWaitingForPrerequisites(job JobExecution) bool {
+	return strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" || strings.TrimSpace(job.Metadata["needs_blocked"]) == "1"
+}

@@ -158,6 +158,25 @@ message JobDetailsView {
   bool can_cancel = 16;
   bool can_rerun = 17;
   repeated JobOutputGroup output_groups = 18;
+  SchedulingDiagnosis scheduling_diagnosis = 19;
+}
+
+message SchedulingDiagnosis {
+  string state = 1;
+  string summary = 2;
+  repeated string requirements = 3;
+  repeated SchedulingAgentAssessment agents = 4;
+  string requirements_label = 5;
+  string additional_agents_label = 6;
+}
+
+message SchedulingAgentAssessment {
+  string agent_id = 1;
+  string status = 2;
+  string details = 3;
+  string tone = 4;
+  bool capability_match = 5;
+  bool available = 6;
 }
 
 message ControlExecutionRequest {
@@ -255,6 +274,7 @@ message ExecutionCardJob {
   string label = 2;
   string status = 3;
   string current_step = 4;
+  SchedulingDiagnosis scheduling_diagnosis = 5;
 }
 
 message RunPipelineSelection {

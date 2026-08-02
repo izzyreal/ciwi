@@ -15,15 +15,15 @@ func (s *stateStore) jobExecutionHandlerDeps() jobexecution.HandlerDeps {
 		attachProgress = func(job *protocol.JobExecution) { _ = s.jobProgress.AttachDetailEstimate(job) }
 	}
 	return jobexecution.HandlerDeps{
-		Store:                              s.jobExecutionStore(),
-		ExecutionCommands:                  s.app().executionCommands,
-		ArtifactsDir:                       s.artifactsDir,
-		AttachTestSummaries:                s.attachJobExecutionTestSummaries,
-		AttachUnmetRequirements:            s.attachJobExecutionUnmetRequirements,
-		AttachTestSummary:                  s.attachJobExecutionTestSummary,
-		AttachUnmetRequirementsToExecution: s.attachJobExecutionUnmetRequirementsToJobExecution,
-		MarkAgentSeen:                      s.markAgentSeen,
-		OnJobUpdated:                       s.onJobExecutionUpdated,
+		Store:                     s.jobExecutionStore(),
+		ExecutionCommands:         s.app().executionCommands,
+		ArtifactsDir:              s.artifactsDir,
+		AttachTestSummaries:       s.attachJobExecutionTestSummaries,
+		AttachSchedulingDiagnoses: s.attachJobExecutionSchedulingDiagnoses,
+		AttachTestSummary:         s.attachJobExecutionTestSummary,
+		AttachSchedulingDiagnosis: s.attachJobExecutionSchedulingDiagnosis,
+		MarkAgentSeen:             s.markAgentSeen,
+		OnJobUpdated:              s.onJobExecutionUpdated,
 		OnQueueChanged: func() {
 			s.app().changes.Publish(application.ChangeQueue)
 		},

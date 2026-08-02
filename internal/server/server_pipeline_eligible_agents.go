@@ -191,39 +191,7 @@ func (s *stateStore) eligibleAgentsForPendingJobs(pending []pendingJob) []string
 }
 
 func agentMatchesRequiredCapabilities(agentID string, agent agentState, required map[string]string) bool {
-	if len(required) == 0 {
-		return true
-	}
-	merged := cloneMap(agent.Capabilities)
-	if merged == nil {
-		merged = map[string]string{}
-	}
-	merged["os"] = strings.TrimSpace(agent.OS)
-	merged["arch"] = strings.TrimSpace(agent.Arch)
-	merged["agent_id"] = strings.TrimSpace(agentID)
-
-	for key, requiredValue := range required {
-		requiredValue = strings.TrimSpace(requiredValue)
-		switch {
-		case strings.HasPrefix(key, "requires.tool."):
-			tool := strings.TrimPrefix(key, "requires.tool.")
-			observed := strings.TrimSpace(merged["tool."+tool])
-			if !requirements.ToolConstraintMatch(observed, requiredValue) {
-				return false
-			}
-		case strings.HasPrefix(key, "requires.container.tool."):
-			// Container tool checks happen on agent runtime probe; scheduler-side
-			// eligibility follows existing lease behavior by not hard-filtering here.
-			continue
-		case key == "shell":
-			if !requirements.ShellCapabilityMatch(merged, requiredValue) {
-				return false
-			}
-		default:
-			if strings.TrimSpace(merged[key]) != requiredValue {
-				return false
-			}
-		}
-	}
-	return true
+	return requirements.MatchAgent(required, requirements.AgentSnapshot{
+		ID: agentID, OS: agent.OS, Arch: agent.Arch, Capabilities: agent.Capabilities,
+	}).Matches
 }

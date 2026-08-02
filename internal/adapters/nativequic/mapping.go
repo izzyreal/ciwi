@@ -1,6 +1,8 @@
 package nativequic
 
 import (
+	"strings"
+
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
@@ -81,7 +83,7 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, Timeline: timeline, CanCancel: view.CanCancel, CanRerun: view.CanRerun,
-		OutputGroups: outputGroups,
+		OutputGroups: outputGroups, SchedulingDiagnosis: presentedSchedulingDiagnosisToProto(view),
 	}
 }
 
@@ -155,11 +157,56 @@ func executionCardSectionsToProto(sections []domain.ExecutionCardSection) []*cnp
 		for _, job := range section.Jobs {
 			jobs = append(jobs, &cnpv1.ExecutionCardJob{
 				Id: job.ID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
+				SchedulingDiagnosis: schedulingDiagnosisToProto(job.SchedulingDiagnosis),
 			})
 		}
 		out = append(out, &cnpv1.ExecutionCardSection{Key: section.Key, Label: section.Label, Jobs: jobs})
 	}
 	return out
+}
+
+func presentedSchedulingDiagnosisToProto(view presentation.JobDetailsView) *cnpv1.SchedulingDiagnosis {
+	if view.SchedulingSummary == "" {
+		return nil
+	}
+	agents := make([]*cnpv1.SchedulingAgentAssessment, 0, len(view.SchedulingAgents))
+	for _, agent := range view.SchedulingAgents {
+		agents = append(agents, &cnpv1.SchedulingAgentAssessment{
+			AgentId: agent.AgentID, Status: agent.Status, Details: agent.Details, Tone: agent.Tone,
+		})
+	}
+	return &cnpv1.SchedulingDiagnosis{
+		State: view.SchedulingState, Summary: view.SchedulingSummary,
+		RequirementsLabel: view.SchedulingRequirements, AdditionalAgentsLabel: view.SchedulingAdditional,
+		Agents: agents,
+	}
+}
+
+func schedulingDiagnosisToProto(diagnosis *domain.SchedulingDiagnosis) *cnpv1.SchedulingDiagnosis {
+	if diagnosis == nil {
+		return nil
+	}
+	agents := make([]*cnpv1.SchedulingAgentAssessment, 0, len(diagnosis.Agents))
+	for _, agent := range diagnosis.Agents {
+		status, tone := "Does not match", "danger"
+		if agent.CapabilityMatch && agent.Available {
+			status, tone = "Eligible", "success"
+		} else if agent.CapabilityMatch {
+			status, tone = "Unavailable", "warning"
+		}
+		details := append([]string(nil), agent.AvailabilityIssues...)
+		for _, issue := range agent.CapabilityIssues {
+			details = append(details, issue.Message)
+		}
+		agents = append(agents, &cnpv1.SchedulingAgentAssessment{
+			AgentId: agent.AgentID, Status: status, Details: strings.Join(details, "; "), Tone: tone,
+			CapabilityMatch: agent.CapabilityMatch, Available: agent.Available,
+		})
+	}
+	return &cnpv1.SchedulingDiagnosis{
+		State: diagnosis.State, Summary: diagnosis.Summary, Requirements: append([]string(nil), diagnosis.Requirements...),
+		RequirementsLabel: strings.Join(diagnosis.Requirements, " · "), Agents: agents,
+	}
 }
 
 func runPipelineRequestFromProto(request *cnpv1.RunPipelineRequest, idempotencyKey string) application.RunPipelineRequest {

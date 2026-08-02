@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
 func TestHandleCollectionPagedViewHistory(t *testing.T) {
@@ -30,9 +31,9 @@ func TestHandleCollectionPagedViewHistory(t *testing.T) {
 			jobs[i].TestSummary = &protocol.JobExecutionTestSummary{Total: 1, Passed: 1}
 		}
 	}
-	deps.AttachUnmetRequirements = func(jobs []protocol.JobExecution) {
+	deps.AttachSchedulingDiagnoses = func(jobs []protocol.JobExecution) {
 		for i := range jobs {
-			jobs[i].UnmetRequirements = []string{"none"}
+			jobs[i].SchedulingDiagnosis = &requirements.SchedulingDiagnosis{Summary: "none"}
 		}
 	}
 
@@ -51,7 +52,7 @@ func TestHandleCollectionPagedViewHistory(t *testing.T) {
 	if len(got.JobExecutions) != 1 || got.JobExecutions[0].ID != "h-2" {
 		t.Fatalf("unexpected page jobs: %+v", got.JobExecutions)
 	}
-	if got.JobExecutions[0].TestSummary == nil || len(got.JobExecutions[0].UnmetRequirements) != 1 {
+	if got.JobExecutions[0].TestSummary == nil || got.JobExecutions[0].SchedulingDiagnosis == nil {
 		t.Fatalf("expected attachers to enrich page jobs: %+v", got.JobExecutions[0])
 	}
 }

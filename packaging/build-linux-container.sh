@@ -2,18 +2,18 @@
 set -eu
 
 if [ "$#" -ne 2 ]; then
-    echo "usage: $0 <version> <output_zip>" >&2
+    echo "usage: $0 <version> <output_binary>" >&2
     exit 1
 fi
 
 VERSION=${1#v}
 VERSION=${VERSION#V}
-OUTPUT_ZIP=$2
+OUTPUT_BINARY=$2
 ROOT_DIRECTORY=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 
-mkdir -p "$(dirname "$OUTPUT_ZIP")"
-OUTPUT_DIRECTORY=$(CDPATH= cd -- "$(dirname "$OUTPUT_ZIP")" && pwd)
-OUTPUT_NAME=$(basename "$OUTPUT_ZIP")
+mkdir -p "$(dirname "$OUTPUT_BINARY")"
+OUTPUT_DIRECTORY=$(CDPATH= cd -- "$(dirname "$OUTPUT_BINARY")" && pwd)
+OUTPUT_NAME=$(basename "$OUTPUT_BINARY")
 IMAGE_TAG=ciwi-linux-desktop-builder:go1.25.7-amd64
 CONTAINER_ENGINE=${CONTAINER_ENGINE:-docker}
 CONTAINER_PLATFORM=${CONTAINER_PLATFORM:-linux/amd64}
@@ -57,5 +57,5 @@ if [ -n "${GOMODCACHE:-}" ]; then
 fi
 
 "$@" "$IMAGE_TAG" sh -c \
-    'mkdir -p "$HOME" && exec sh packaging/build-linux-zip.sh "$1" "$2"' \
+    'mkdir -p "$HOME" && exec sh packaging/build-linux-app.sh "$1" "$2"' \
     sh "$VERSION" "/output/$OUTPUT_NAME"

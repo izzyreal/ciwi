@@ -8,7 +8,7 @@ screen:
   dataSources:
     - name: jobDetails
       query: get-job-details
-      watchTopics: [queue, history]
+      watchTopics: [agents, agent-eligibility, queue, history]
   root:
     component: page
     id: job-details
@@ -176,6 +176,77 @@ screen:
                   not: true
                 style:
                   tone: danger
+              - component: column
+                layout:
+                  direction: vertical
+                  gap: small
+                visible:
+                  binding: jobDetails.scheduling_diagnosis.summary
+                  empty: true
+                  not: true
+                children:
+                  - component: text
+                    text:
+                      literal: Scheduling
+                    style:
+                      emphasis: strong
+                  - component: text
+                    text:
+                      binding: jobDetails.scheduling_diagnosis.summary
+                  - component: text
+                    text:
+                      template: "Required: {{jobDetails.scheduling_diagnosis.requirements_label}}"
+                    visible:
+                      binding: jobDetails.scheduling_diagnosis.requirements_label
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
+                  - component: list
+                    layout:
+                      direction: vertical
+                      gap: small
+                    repeat:
+                      source: jobDetails.scheduling_diagnosis.agents
+                      as: schedulingAgent
+                      key: schedulingAgent.agent_id
+                    children:
+                      - component: row
+                        layout:
+                          direction: horizontal
+                          gap: small
+                          align: center
+                        children:
+                          - component: text
+                            text:
+                              binding: schedulingAgent.agent_id
+                            style:
+                              emphasis: strong
+                          - component: badge
+                            text:
+                              binding: schedulingAgent.status
+                            style:
+                              toneBinding: schedulingAgent.tone
+                          - component: text
+                            text:
+                              binding: schedulingAgent.details
+                            visible:
+                              binding: schedulingAgent.details
+                              empty: true
+                              not: true
+                            layout:
+                              grow: true
+                            style:
+                              tone: muted
+                  - component: text
+                    text:
+                      binding: jobDetails.scheduling_diagnosis.additional_agents_label
+                    visible:
+                      binding: jobDetails.scheduling_diagnosis.additional_agents_label
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
       - component: section
         id: execution-path
         layout:

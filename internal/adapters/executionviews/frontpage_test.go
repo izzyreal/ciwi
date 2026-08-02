@@ -8,7 +8,14 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/requirements"
 )
+
+type schedulingSourceStub struct{ agents []requirements.AgentSnapshot }
+
+func (s schedulingSourceStub) ListSchedulingAgents(context.Context) ([]requirements.AgentSnapshot, error) {
+	return append([]requirements.AgentSnapshot(nil), s.agents...), nil
+}
 
 type executionStoreStub struct {
 	jobs   []protocol.JobExecution
@@ -136,5 +143,30 @@ func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 	}
 	if len(history) != 1 || history[0].Summary.Succeeded != 1 {
 		t.Fatalf("history cards = %+v", history)
+	}
+}
+
+func TestRepositoryAddsSchedulingDiagnosisToQueuedViewsAndDetails(t *testing.T) {
+	store := executionStoreStub{jobs: []protocol.JobExecution{{
+		ID: "windows", Status: protocol.JobExecutionStatusQueued,
+		RequiredCapabilities: map[string]string{"os": "windows", "requires.tool.wix": ">=6.0.0"},
+	}}}
+	repository := NewRepository(store, 40, schedulingSourceStub{agents: []requirements.AgentSnapshot{{
+		ID: "linux", OS: "linux", Freshness: "online", Authorized: true,
+	}}})
+	queued, _, err := repository.ListFrontPageExecutionCards(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := queued[0].Sections[0].Jobs[0]
+	if job.SchedulingDiagnosis == nil || job.SchedulingDiagnosis.State != requirements.DiagnosisIncompatible {
+		t.Fatalf("queued diagnosis = %+v", job.SchedulingDiagnosis)
+	}
+	details, err := repository.GetJobExecutionDetails(t.Context(), "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.SchedulingDiagnosis == nil || details.SchedulingDiagnosis.Summary == "" {
+		t.Fatalf("details diagnosis = %+v", details.SchedulingDiagnosis)
 	}
 }

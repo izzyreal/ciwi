@@ -1,5 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
+    [string]$InputExe,
+
+    [Parameter(Mandatory = $true)]
     [string]$Version,
 
     [Parameter(Mandatory = $true)]
@@ -9,8 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Version = $Version.Trim() -replace '^[vV]', ''
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$gogioVersion = if ($env:GOGIO_VERSION) { $env:GOGIO_VERSION } else { "v0.10.0" }
-$appExe = Join-Path $repoRoot "dist\Ciwi.exe"
+$appExe = [System.IO.Path]::GetFullPath($InputExe)
 $iconPath = Join-Path $repoRoot "packaging\icons\ciwi.ico"
 $installerWxs = Join-Path $PSScriptRoot "windows-installer.wxs"
 $bundleWxs = Join-Path $PSScriptRoot "windows-bundle.wxs"
@@ -27,20 +29,9 @@ function Resolve-Wix {
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $resolvedOutput), $intermediateDir | Out-Null
-
-& go run "gioui.org/cmd/gogio@$gogioVersion" `
-    -target windows `
-    -arch amd64 `
-    -minsdk 10 `
-    -appid nl.izmar.ciwi.desktop `
-    -name Ciwi `
-    -version "$Version.1" `
-    -icon (Join-Path $repoRoot "packaging\icons\ciwi.png") `
-    -ldflags "-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v$Version" `
-    -o $appExe `
-    ./cmd/ciwi-desktop
-if ($LASTEXITCODE -ne 0) { throw "gogio failed to build Ciwi.exe" }
-Remove-Item (Join-Path $repoRoot "cmd\ciwi-desktop\Ciwi_windows_amd64.syso") -ErrorAction SilentlyContinue
+if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) {
+    throw "Windows application executable not found: $appExe"
+}
 
 $wix = Resolve-Wix
 $wixVersion = (& $wix --version).Trim()

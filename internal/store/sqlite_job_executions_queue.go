@@ -159,6 +159,34 @@ func (s *Store) AgentHasActiveJobExecution(agentID string) (bool, error) {
 	return count > 0, nil
 }
 
+func (s *Store) ListActiveJobExecutionAgentIDs() (map[string]bool, error) {
+	rows, err := s.db.Query(`
+		SELECT DISTINCT leased_by_agent_id
+		FROM job_executions
+		WHERE status IN (?, ?)
+		  AND leased_by_agent_id IS NOT NULL
+		  AND TRIM(leased_by_agent_id) <> ''
+	`, protocol.JobExecutionStatusLeased, protocol.JobExecutionStatusRunning)
+	if err != nil {
+		return nil, fmt.Errorf("list agents with active jobs: %w", err)
+	}
+	defer rows.Close()
+	result := map[string]bool{}
+	for rows.Next() {
+		var agentID string
+		if err := rows.Scan(&agentID); err != nil {
+			return nil, fmt.Errorf("scan agent with active job: %w", err)
+		}
+		if agentID = strings.TrimSpace(agentID); agentID != "" {
+			result[agentID] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate agents with active jobs: %w", err)
+	}
+	return result, nil
+}
+
 func (s *Store) ListQueuedJobExecutions() ([]protocol.JobExecution, error) {
 	rows, err := s.db.Query(`
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,

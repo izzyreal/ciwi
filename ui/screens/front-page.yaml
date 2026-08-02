@@ -8,7 +8,7 @@ screen:
   dataSources:
     - name: frontPage
       query: get-front-page-view
-      watchTopics: [server, projects, queue, history]
+      watchTopics: [server, projects, agents, agent-eligibility, queue, history]
   persistence:
     - name: projectsExpanded
       storageKey: ciwi.front-page.projects-expanded.v1
@@ -410,6 +410,15 @@ screen:
                                           not: true
                                         style:
                                           tone: muted
+                                      - component: text
+                                        text:
+                                          binding: job.scheduling_diagnosis.summary
+                                        visible:
+                                          binding: job.scheduling_diagnosis.summary
+                                          empty: true
+                                          not: true
+                                        style:
+                                          tone: warning
                                   - component: button
                                     text:
                                       literal: Open details
@@ -578,6 +587,15 @@ screen:
                                           not: true
                                         style:
                                           tone: muted
+                                      - component: text
+                                        text:
+                                          binding: job.scheduling_diagnosis.summary
+                                        visible:
+                                          binding: job.scheduling_diagnosis.summary
+                                          empty: true
+                                          not: true
+                                        style:
+                                          tone: warning
                                   - component: button
                                     text:
                                       literal: Open details

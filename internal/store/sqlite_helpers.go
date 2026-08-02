@@ -83,33 +83,7 @@ func scanJobExecution(scanner interface{ Scan(dest ...any) error }) (protocol.Jo
 }
 
 func capabilitiesMatch(agentCapabilities, requiredCapabilities map[string]string) bool {
-	if len(requiredCapabilities) == 0 {
-		return true
-	}
-	for k, requiredValue := range requiredCapabilities {
-		if strings.HasPrefix(k, "requires.tool.") {
-			tool := strings.TrimPrefix(k, "requires.tool.")
-			agentValue := strings.TrimSpace(agentCapabilities["tool."+tool])
-			if !requirements.ToolConstraintMatch(agentValue, strings.TrimSpace(requiredValue)) {
-				return false
-			}
-			continue
-		}
-		if strings.HasPrefix(k, "requires.container.tool.") {
-			// Container tool constraints are validated by the agent runtime probe.
-			continue
-		}
-		if k == "shell" {
-			if !requirements.ShellCapabilityMatch(agentCapabilities, requiredValue) {
-				return false
-			}
-			continue
-		}
-		if agentCapabilities[k] != requiredValue {
-			return false
-		}
-	}
-	return true
+	return requirements.MatchCapabilities(requiredCapabilities, agentCapabilities).Matches
 }
 
 func nullableTime(t time.Time) sql.NullString {

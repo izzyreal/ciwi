@@ -31,17 +31,17 @@ func TestJobExecutionEnrichmentHelpers(t *testing.T) {
 	}
 
 	s.agents = map[string]agentState{
-		"agent-1": {OS: "linux", Arch: "amd64", Capabilities: map[string]string{"tool.git": "2.41.0"}},
+		"agent-1": {OS: "linux", Arch: "amd64", Authorized: true, LastSeenUTC: time.Now().UTC(), Capabilities: map[string]string{"tool.git": "2.41.0"}},
 	}
-	s.attachJobExecutionUnmetRequirements(jobs)
-	if len(jobs[0].UnmetRequirements) != 0 {
-		t.Fatalf("expected requirements to be met, got %+v", jobs[0].UnmetRequirements)
+	s.attachJobExecutionSchedulingDiagnoses(jobs)
+	if jobs[0].SchedulingDiagnosis == nil || jobs[0].SchedulingDiagnosis.State != "ready" {
+		t.Fatalf("expected ready scheduling diagnosis, got %+v", jobs[0].SchedulingDiagnosis)
 	}
 
 	queued := protocol.JobExecution{ID: "q", Status: protocol.JobExecutionStatusQueued, RequiredCapabilities: map[string]string{"os": "darwin"}}
-	s.attachJobExecutionUnmetRequirementsToJobExecution(&queued)
-	if len(queued.UnmetRequirements) == 0 {
-		t.Fatalf("expected unmet requirements for darwin requirement")
+	s.attachJobExecutionSchedulingDiagnosis(&queued)
+	if queued.SchedulingDiagnosis == nil || queued.SchedulingDiagnosis.State != "incompatible" {
+		t.Fatalf("expected incompatible diagnosis for darwin requirement: %+v", queued.SchedulingDiagnosis)
 	}
 
 	s.agents["agent-2"] = agentState{}
@@ -59,5 +59,5 @@ func TestJobExecutionEnrichmentHelpers(t *testing.T) {
 	}
 
 	s.attachJobExecutionTestSummary(nil)
-	s.attachJobExecutionUnmetRequirementsToJobExecution(nil)
+	s.attachJobExecutionSchedulingDiagnosis(nil)
 }

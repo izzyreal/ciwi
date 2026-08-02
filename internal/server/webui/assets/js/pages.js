@@ -57,32 +57,24 @@ function pipelineChainAPIPath(projectID, chainID, action) {
     '/pipeline-chains/' + encodeURIComponent(String(chainID || '')) + '/' + String(action || '');
 }
 
-function formatUnmetRequirementHTML(reason) {
-  const text = String(reason || '').trim();
-  if (!text) return '';
-  let m = text.match(/^missing tool\s+(.+)$/i);
-  if (m) return 'Missing tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code>';
-  m = text.match(/^tool\s+(\S+)\s+unavailable$/i);
-  if (m) return 'Tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code> unavailable';
-  m = text.match(/^tool\s+(\S+)\s+does not satisfy\s+(.+)$/i);
-  if (m) {
-    return 'Tool <code>' + escapeHtml(String(m[1] || '').trim()) + '</code> does not satisfy <code>' + escapeHtml(String(m[2] || '').trim()) + '</code>';
-  }
-  return escapeHtml(text);
-}
-
-function formatUnmetRequirementsInlineHTML(reasons) {
-  const rows = Array.isArray(reasons) ? reasons : [];
-  const htmlRows = rows.map(formatUnmetRequirementHTML).filter(Boolean);
-  if (!htmlRows.length) return '';
-  return htmlRows.join('; ');
-}
-
-function formatUnmetRequirementsTooltipHTML(reasons) {
-  const rows = Array.isArray(reasons) ? reasons : [];
-  const htmlRows = rows.map(formatUnmetRequirementHTML).filter(Boolean);
-  if (!htmlRows.length) return '';
-  return '<strong>Missing requirements</strong><div style="margin-top:6px;">' + htmlRows.join('<br />') + '</div>';
+function formatSchedulingTooltipHTML(diagnosis) {
+	const current = diagnosis || {};
+	const requirements = Array.isArray(current.requirements) ? current.requirements : [];
+	const agents = Array.isArray(current.agents) ? current.agents : [];
+	let html = '<strong>Scheduling</strong><div style="margin-top:6px;">' + escapeHtml(String(current.summary || '')) + '</div>';
+	if (requirements.length) {
+		html += '<div style="margin-top:6px;"><strong>Required:</strong> ' + requirements.map(value => '<code>' + escapeHtml(String(value || '')) + '</code>').join(', ') + '</div>';
+	}
+	if (agents.length) {
+		html += '<div style="margin-top:6px;">' + agents.map(agent => {
+			const capabilityIssues = Array.isArray(agent.capability_issues) ? agent.capability_issues : [];
+			const availabilityIssues = Array.isArray(agent.availability_issues) ? agent.availability_issues : [];
+			const details = availabilityIssues.concat(capabilityIssues.map(issue => String((issue && issue.message) || ''))).filter(Boolean);
+			const state = agent.available ? 'eligible' : (agent.capability_match ? 'unavailable' : 'does not match');
+			return '<strong>' + escapeHtml(String(agent.agent_id || 'agent')) + ':</strong> ' + escapeHtml(state + (details.length ? ' — ' + details.join('; ') : ''));
+		}).join('<br />') + '</div>';
+	}
+	return html;
 }
 
 function buildJobExecutionRow(job, opts = {}) {
@@ -124,27 +116,26 @@ function buildJobExecutionRow(job, opts = {}) {
     '<td>' + cellText(formatTimestamp(job.created_utc)) + '</td>';
 
   if (includeReason) {
-    const reasons = (job.unmet_requirements || []);
-    const waitingReason = jobWaitingReason(job);
-    const reasonTd = document.createElement('td');
-    if (reasons.length === 0 && !waitingReason) {
-      reasonTd.innerHTML = cellText('');
-    } else if (reasons.length === 0) {
-      reasonTd.innerHTML = cellText(waitingReason);
-    } else {
-      const summaryHTML = formatUnmetRequirementsInlineHTML(reasons);
-      const summaryText = reasons.map(reason => String(reason || '').trim()).filter(Boolean).join('; ');
-      const combinedSummaryText = (waitingReason ? (waitingReason + '; ') : '') + summaryText;
-      const combinedSummaryHTML = (waitingReason ? (escapeHtml(waitingReason) + '; ') : '') + summaryHTML;
+		const diagnosis = job.scheduling_diagnosis || null;
+		const schedulingSummary = String((diagnosis && diagnosis.summary) || '').trim();
+		const waitingReason = jobWaitingReason(job);
+		const reasonTd = document.createElement('td');
+		if (!schedulingSummary && !waitingReason) {
+			reasonTd.innerHTML = cellText('');
+		} else if (!schedulingSummary) {
+			reasonTd.innerHTML = cellText(waitingReason);
+		} else {
+			const combinedSummaryText = (waitingReason ? (waitingReason + '; ') : '') + schedulingSummary;
+			const combinedSummaryHTML = escapeHtml(combinedSummaryText);
       reasonTd.innerHTML = '' +
         '<span class="ciwi-job-reason">' +
           '<span class="ciwi-job-reason-summary">' + (fixedLines > 0 ? ('<span class="ciwi-job-cell ciwi-job-cell-lines-' + String(fixedLines) + '" data-ciwi-overflow-text="' + escapeHtml(combinedSummaryText) + '">' + combinedSummaryHTML + '</span>') : combinedSummaryHTML) + '</span>' +
-          '<span class="ciwi-job-reason-info" tabindex="0" aria-label="Missing requirements info">' + ciwiIconHTML('info-circle') + '</span>' +
+					'<span class="ciwi-job-reason-info" tabindex="0" aria-label="Scheduling details">' + ciwiIconHTML('info-circle') + '</span>' +
         '</span>';
       const info = reasonTd.querySelector('.ciwi-job-reason-info');
       if (info && typeof createHoverTooltip === 'function') {
         createHoverTooltip(info, {
-          html: formatUnmetRequirementsTooltipHTML(reasons),
+					html: formatSchedulingTooltipHTML(diagnosis),
           lingerMs: 2000,
           owner: 'queue-reason-' + String(job.id || ''),
         });
@@ -203,7 +194,7 @@ function buildJobExecutionRow(job, opts = {}) {
 
 function jobRowRenderKey(job) {
   const m = (job && job.metadata) || {};
-  const reasons = ((job && job.unmet_requirements) || []).join('|');
+	const scheduling = JSON.stringify((job && job.scheduling_diagnosis) || null);
   return [
     job && job.id || '',
     job && job.status || '',
@@ -216,7 +207,7 @@ function jobRowRenderKey(job) {
     m.matrix_name || '',
     m.build_version || '',
     m.build_target || '',
-    reasons,
+		scheduling,
   ].join('\x1f');
 }
 

@@ -3,6 +3,7 @@ package jobexecution
 import (
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -30,7 +31,7 @@ type View struct {
 	ExitCode                 *int                                `json:"exit_code,omitempty"`
 	Error                    string                              `json:"error,omitempty"`
 	TestSummary              *protocol.JobExecutionTestSummary   `json:"test_summary,omitempty"`
-	UnmetRequirements        []string                            `json:"unmet_requirements,omitempty"`
+	SchedulingDiagnosis      *domain.SchedulingDiagnosis         `json:"scheduling_diagnosis,omitempty"`
 	SensitiveValues          []string                            `json:"sensitive_values,omitempty"`
 	ExpectedDurationMS       int64                               `json:"expected_duration_ms,omitempty"`
 	StepExpectedDuration     map[int]int64                       `json:"step_expected_duration_ms,omitempty"`
@@ -121,7 +122,7 @@ func ViewFromProtocol(job protocol.JobExecution) View {
 		ExitCode:                 job.ExitCode,
 		Error:                    job.Error,
 		TestSummary:              job.TestSummary,
-		UnmetRequirements:        job.UnmetRequirements,
+		SchedulingDiagnosis:      job.SchedulingDiagnosis,
 		SensitiveValues:          job.SensitiveValues,
 		ExpectedDurationMS:       job.ExpectedDurationMS,
 		StepExpectedDuration:     job.StepExpectedDuration,
