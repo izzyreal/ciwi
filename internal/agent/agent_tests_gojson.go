@@ -33,9 +33,16 @@ func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport 
 		elapsed  float64
 		outputSB strings.Builder
 	}
+	type packageState struct {
+		name     string
+		failed   bool
+		outputSB strings.Builder
+	}
 
 	order := make([]caseKey, 0)
 	cases := make(map[caseKey]*caseState)
+	packageOrder := make([]string, 0)
+	packages := make(map[string]*packageState)
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -47,6 +54,22 @@ func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport 
 			continue
 		}
 		if strings.TrimSpace(ev.Test) == "" {
+			packageName := strings.TrimSpace(ev.Package)
+			if packageName == "" && ev.Action != "fail" {
+				continue
+			}
+			st, ok := packages[packageName]
+			if !ok {
+				st = &packageState{name: packageName}
+				packages[packageName] = st
+				packageOrder = append(packageOrder, packageName)
+			}
+			if ev.Output != "" {
+				st.outputSB.WriteString(ev.Output)
+			}
+			if ev.Action == "fail" {
+				st.failed = true
+			}
 			continue
 		}
 		key := caseKey{pkg: ev.Package, test: ev.Test}
@@ -79,6 +102,7 @@ func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport 
 		Format: "go-test-json",
 		Cases:  make([]protocol.TestCase, 0, len(order)),
 	}
+	failedPackages := make(map[string]bool)
 	for _, key := range order {
 		st := cases[key]
 		status := st.status
@@ -101,9 +125,32 @@ func parseGoTestJSONSuite(name string, lines []string) protocol.TestSuiteReport 
 			suite.Passed++
 		case "fail":
 			suite.Failed++
+			failedPackages[st.pkg] = true
 		case "skip":
 			suite.Skipped++
 		}
+	}
+	for _, packageName := range packageOrder {
+		st := packages[packageName]
+		if !st.failed || failedPackages[packageName] {
+			continue
+		}
+		output := st.outputSB.String()
+		file, line, _ := parseGoTestOutputSourceLocation(output)
+		displayPackage := st.name
+		if displayPackage == "" {
+			displayPackage = "(go test)"
+		}
+		suite.Cases = append(suite.Cases, protocol.TestCase{
+			Package: displayPackage,
+			Name:    "Package build or setup",
+			File:    file,
+			Line:    line,
+			Status:  "fail",
+			Output:  output,
+		})
+		suite.Total++
+		suite.Failed++
 	}
 	return suite
 }

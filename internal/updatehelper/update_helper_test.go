@@ -1,6 +1,7 @@
 package updatehelper
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,7 @@ func TestRunRequiresMandatoryFlags(t *testing.T) {
 }
 
 func TestRunFailsWhenNewBinaryMissing(t *testing.T) {
+	const impossiblePID = int(1 << 30)
 	tmp := t.TempDir()
 	target := filepath.Join(tmp, "ciwi")
 	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {
@@ -38,7 +40,7 @@ func TestRunFailsWhenNewBinaryMissing(t *testing.T) {
 	err := Run([]string{
 		"--target", target,
 		"--new", missingNew,
-		"--pid", "1",
+		"--pid", fmt.Sprint(impossiblePID),
 	})
 	if err == nil || !strings.Contains(err.Error(), "move new binary into place") {
 		t.Fatalf("expected move-new error, got %v", err)
