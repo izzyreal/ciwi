@@ -167,9 +167,11 @@ var commands = map[string]bool{
 	"change-theme":         true,
 	"select-timeline-item": true, "change-output-search": true,
 	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
-	"set-disclosures": true,
-	"set-run-option":  true,
-	"agent-action":    true,
+	"set-disclosures":          true,
+	"set-run-option":           true,
+	"agent-action":             true,
+	"project-action":           true,
+	"set-project-import-field": true, "import-project": true,
 }
 
 func ParseScreen(payload []byte) (*ScreenDocument, error) {

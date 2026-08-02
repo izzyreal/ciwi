@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -32,46 +30,14 @@ func (s *stateStore) importProjectHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(req.RepoURL) == "" {
-		http.Error(w, "repo_url is required", http.StatusBadRequest)
-		return
-	}
-	if req.ConfigFile == "" {
-		req.ConfigFile = "ciwi-project.yaml"
-	}
-	configFile := filepath.Clean(req.ConfigFile)
-	if configFile == "." || configFile == "" || filepath.Base(configFile) != configFile {
-		http.Error(w, "config_file must point to a root-level file", http.StatusBadRequest)
-		return
-	}
-	req.ConfigFile = configFile
-	if _, err := exec.LookPath("git"); err != nil {
-		http.Error(w, "git not found on server", http.StatusInternalServerError)
-		return
-	}
-
-	tmpDir, err := os.MkdirTemp("", "ciwi-import-*")
+	resp, err := s.app().projectCommands.Import(r.Context(), application.ImportProjectRequest{
+		RepoURL: req.RepoURL, RepoRef: req.RepoRef, ConfigFile: req.ConfigFile,
+		IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("create temp dir: %v", err), http.StatusInternalServerError)
+		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 		return
 	}
-	defer os.RemoveAll(tmpDir)
-
-	importCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-	defer cancel()
-
-	fetchRes, err := fetchProjectConfigAndIcon(importCtx, tmpDir, req.RepoURL, req.RepoRef, req.ConfigFile)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	resp, err := s.persistImportedProject(req, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.ResolvedRef, fetchRes.IconContentType, fetchRes.IconContentBytes)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	s.app().changes.Publish(application.ChangeProjects)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -99,17 +65,14 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusOK, projectDetailViewResponse{Project: detail})
 			return
 		case http.MethodDelete:
-			if err := s.projectStore().DeleteProjectByID(projectID); err != nil {
-				if strings.Contains(strings.ToLower(err.Error()), "not found") {
-					http.Error(w, err.Error(), http.StatusNotFound)
-					return
-				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+			_, err := s.app().projectCommands.Execute(r.Context(), application.ProjectActionRequest{
+				ProjectID: projectID, Action: application.ProjectActionDelete,
+				IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+			})
+			if err != nil {
+				http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 				return
 			}
-			// Remove in-memory icon cache entry for deleted project.
-			s.setProjectIcon(projectID, "", nil)
-			s.app().changes.Publish(application.ChangeProjects)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		default:
@@ -156,52 +119,15 @@ func (s *stateStore) projectByIDHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		project, err := s.projectStore().GetProjectByID(projectID)
+		result, err := s.app().projectCommands.Execute(r.Context(), application.ProjectActionRequest{
+			ProjectID: projectID, Action: application.ProjectActionReload,
+			IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+		})
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 			return
 		}
-		if project.SourceKind == protocol.ProjectSourceManagedYAML {
-			http.Error(w, "managed YAML projects cannot be reloaded from VCS", http.StatusConflict)
-			return
-		}
-		if strings.TrimSpace(project.RepoURL) == "" {
-			http.Error(w, "project has no repo_url configured", http.StatusBadRequest)
-			return
-		}
-		configFile := project.ConfigFile
-		if configFile == "" {
-			configFile = "ciwi-project.yaml"
-		}
-
-		tmpDir, err := os.MkdirTemp("", "ciwi-reload-*")
-		if err != nil {
-			http.Error(w, fmt.Sprintf("create temp dir: %v", err), http.StatusInternalServerError)
-			return
-		}
-		defer os.RemoveAll(tmpDir)
-
-		reloadCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-		defer cancel()
-
-		fetchRes, err := fetchProjectConfigAndIcon(reloadCtx, tmpDir, project.RepoURL, project.RepoRef, configFile)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		resp, err := s.persistImportedProject(protocol.ImportProjectRequest{
-			RepoURL:    project.RepoURL,
-			RepoRef:    project.RepoRef,
-			ConfigFile: configFile,
-		}, fetchRes.ConfigContent, fetchRes.SourceCommit, fetchRes.ResolvedRef, fetchRes.IconContentType, fetchRes.IconContentBytes)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		s.app().changes.Publish(application.ChangeProjects)
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, http.StatusOK, result)
 	case "inspect":
 		s.projectInspectHandler(w, r, projectID)
 		return

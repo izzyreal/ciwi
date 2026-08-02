@@ -488,7 +488,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			window.Invalidate()
 		case command := <-commands:
-			if client == nil && command.action.Command != "change-theme" {
+			if client == nil && command.action.Command != "change-theme" && command.action.Command != "set-project-import-field" {
 				renderer.SetStatus("Server is offline; reconnecting…")
 				window.Invalidate()
 				continue
@@ -725,6 +725,73 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			message = "Agent request accepted"
 		}
 		renderer.SetTransientStatus(message, nativeNoticeDuration)
+	case "project-action":
+		projectID, err := strconv.ParseInt(strings.TrimSpace(command.arguments["projectId"]), 10, 64)
+		action := strings.TrimSpace(command.arguments["action"])
+		if err != nil || projectID <= 0 || action == "" {
+			renderer.SetStatus("Project action is incomplete")
+			return
+		}
+		projectKey := strconv.FormatInt(projectID, 10)
+		progress := "Updating…"
+		if action == "reload" {
+			progress = "Reloading…"
+		} else if action == "delete" {
+			progress = "Deleting…"
+		}
+		renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_status", progress)
+		renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_tone", "muted")
+		commandCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		result, err := client.ProjectAction(commandCtx, projectID, action, "")
+		cancel()
+		if err != nil {
+			failure := "Action failed: " + err.Error()
+			if action == "reload" {
+				failure = "Reload failed: " + err.Error()
+			}
+			renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_status", failure)
+			renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_tone", "danger")
+			return
+		}
+		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
+			renderer.SetStatus("Project updated, but refresh failed: " + err.Error())
+			return
+		}
+		if action == "reload" {
+			renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_status", "Reloaded successfully")
+			renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_tone", "success")
+		} else {
+			renderer.SetTransientStatus(result.Message, nativeNoticeDuration)
+		}
+	case "set-project-import-field":
+		binding := map[string]string{"repoUrl": "import_repo_url", "repoRef": "import_repo_ref", "configFile": "import_config_file"}[strings.TrimSpace(command.arguments["field"])]
+		if binding == "" {
+			renderer.SetStatus("Unknown project import field")
+			return
+		}
+		renderer.SetRootBinding("settings", binding, command.arguments["value"])
+	case "import-project":
+		repoURL := strings.TrimSpace(command.arguments["repoUrl"])
+		if repoURL == "" {
+			renderer.SetStatus("Repository URL is required")
+			return
+		}
+		renderer.SetStatus("Importing project…")
+		commandCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		result, err := client.ImportProject(commandCtx, &cnpv1.ImportProjectRequest{
+			RepoUrl: repoURL, RepoRef: strings.TrimSpace(command.arguments["repoRef"]),
+			ConfigFile: strings.TrimSpace(command.arguments["configFile"]),
+		}, "")
+		cancel()
+		if err != nil {
+			renderer.SetStatus("Project import failed: " + err.Error())
+			return
+		}
+		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
+			renderer.SetStatus("Project imported, but refresh failed: " + err.Error())
+			return
+		}
+		renderer.SetTransientStatus("Imported "+result.ProjectName, nativeNoticeDuration)
 	case "refresh":
 		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
 			renderer.SetStatus("Refresh failed: " + err.Error())
@@ -958,6 +1025,10 @@ func refreshSettings(ctx context.Context, client *cnpclient.Client, renderer *Re
 	if err != nil {
 		return err
 	}
+	projects, err := client.ListProjects(requestCtx)
+	if err != nil {
+		return err
+	}
 	themes, err := sharedUI.LoadThemes()
 	if err != nil {
 		return err
@@ -966,8 +1037,45 @@ func refreshSettings(ctx context.Context, client *cnpclient.Client, renderer *Re
 	if err != nil {
 		return err
 	}
+	settings, ok := data["settings"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("settings binding is malformed")
+	}
+	projectData, err := protobufBindingData("projects", "settings projects", projects)
+	if err != nil {
+		return err
+	}
+	projectRoot, ok := projectData["projects"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("settings projects binding is malformed")
+	}
+	projectItems, _ := projectRoot["projects"].([]any)
+	decorateSettingsProjects(projectItems)
+	settings["projects"] = projectItems
 	renderer.SetScreenAndData(screen, data)
 	return nil
+}
+
+func decorateSettingsProjects(projects []any) {
+	for _, item := range projects {
+		project, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		sourceKind := strings.TrimSpace(fmt.Sprint(project["source_kind"]))
+		project["can_reload"] = sourceKind != "managed_yaml"
+		project["action_status"] = ""
+		project["action_tone"] = "muted"
+		if sourceKind == "managed_yaml" {
+			project["source_label"] = "Managed YAML stored in ciwi"
+			continue
+		}
+		label := strings.TrimSpace(fmt.Sprint(project["repo_url"]))
+		if ref := strings.TrimSpace(fmt.Sprint(project["repo_ref"])); ref != "" {
+			label += " · " + ref
+		}
+		project["source_label"] = label
+	}
 }
 
 func refreshJobDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, jobID string) error {
@@ -1122,7 +1230,8 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 	}
 	return map[string]any{"settings": map[string]any{
 		"server": serverBinding, "themes": themeBindings,
-		"selected_theme": selectedTheme, "selected_theme_description": selectedDescription,
+		"selected_theme": selectedTheme, "selected_theme_description": selectedDescription, "projects": []any{},
+		"import_repo_url": "", "import_repo_ref": "", "import_config_file": "ciwi-project.yaml",
 	}}, nil
 }
 
@@ -1166,7 +1275,7 @@ func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent)
 		if navigation.screen == "job-details" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_QUEUE || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY) {
 			return true
 		}
-		if navigation.screen == "settings" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER {
+		if navigation.screen == "settings" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS) {
 			return true
 		}
 		if navigation.screen == "run-options" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY) {

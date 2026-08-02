@@ -8,7 +8,7 @@ screen:
   dataSources:
     - name: settings
       query: get-settings-view
-      watchTopics: [server]
+      watchTopics: [server, projects]
   persistence:
     - name: selectedTheme
       storageKey: ciwi.ui.theme.v1
@@ -101,6 +101,142 @@ screen:
                   binding: settings.selected_theme_description
                 style:
                   tone: muted
+      - component: section
+        id: projects
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Projects
+            style:
+              role: heading
+              emphasis: strong
+          - component: text
+            text:
+              literal: Reload repository definitions or remove projects from ciwi. Existing execution history is preserved when a project is deleted.
+            style:
+              tone: muted
+          - component: card
+            layout:
+              direction: horizontal
+              gap: small
+              padding: medium
+              align: center
+              wrap: true
+            children:
+              - component: input
+                layout:
+                  grow: true
+                  minWidth: "280"
+                input:
+                  value: settings.import_repo_url
+                  placeholder: Repository URL
+                actions:
+                  - on: change
+                    command: set-project-import-field
+                    arguments: {field: repoUrl, value: "{{input.value}}"}
+              - component: input
+                layout:
+                  minWidth: "160"
+                input:
+                  value: settings.import_repo_ref
+                  placeholder: Ref (optional)
+                actions:
+                  - on: change
+                    command: set-project-import-field
+                    arguments: {field: repoRef, value: "{{input.value}}"}
+              - component: input
+                layout:
+                  minWidth: "180"
+                input:
+                  value: settings.import_config_file
+                  placeholder: ciwi-project.yaml
+                actions:
+                  - on: change
+                    command: set-project-import-field
+                    arguments: {field: configFile, value: "{{input.value}}"}
+              - component: button
+                text:
+                  literal: Add Repository Project
+                actions:
+                  - on: activate
+                    command: import-project
+                    arguments:
+                      repoUrl: "{{settings.import_repo_url}}"
+                      repoRef: "{{settings.import_repo_ref}}"
+                      configFile: "{{settings.import_config_file}}"
+          - component: list
+            layout:
+              direction: vertical
+              gap: small
+            repeat:
+              source: settings.projects
+              as: project
+              key: project.id
+            children:
+              - component: card
+                layout:
+                  direction: horizontal
+                  gap: medium
+                  padding: medium
+                  align: center
+                children:
+                  - component: column
+                    layout:
+                      direction: vertical
+                      gap: small
+                      grow: true
+                    children:
+                      - component: text
+                        text:
+                          template: "Project: {{project.name}}"
+                        style:
+                          emphasis: strong
+                      - component: text
+                        text:
+                          binding: project.source_label
+                        style:
+                          tone: muted
+                  - component: button
+                    text:
+                      literal: View
+                    actions:
+                      - on: activate
+                        command: navigate
+                        arguments:
+                          route: /projects/{{project.id}}
+                  - component: button
+                    text:
+                      literal: Reload from VCS
+                    icon: refresh
+                    visible:
+                      binding: project.can_reload
+                    actions:
+                      - on: activate
+                        command: project-action
+                        arguments: {projectId: "{{project.id}}", action: reload}
+                  - component: button
+                    text:
+                      literal: Delete
+                    icon: trash
+                    actions:
+                      - on: activate
+                        command: project-action
+                        arguments: {projectId: "{{project.id}}", action: delete}
+                        confirm:
+                          title: Delete project?
+                          message: Removes this project and its pipelines and chains from ciwi. Existing job execution history remains available.
+                  - component: text
+                    text:
+                      binding: project.action_status
+                    visible:
+                      binding: project.action_status
+                      equals: ""
+                      not: true
+                    style:
+                      toneBinding: project.action_tone
       - component: section
         id: connection
         layout:

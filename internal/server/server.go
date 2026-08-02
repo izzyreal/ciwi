@@ -132,7 +132,7 @@ func Run(ctx context.Context) error {
 	if nativeAddr != "" {
 		app := s.app()
 		nativeServer, err = nativequic.Listen(nativeAddr, nativequic.Services{
-			Server: app.server, Projects: app.projects, FrontPage: app.frontPage,
+			Server: app.server, Projects: app.projects, ProjectCommands: app.projectCommands, FrontPage: app.frontPage,
 			ProjectDetails: app.projectDetails,
 			JobDetails:     app.jobDetails,
 			Pipelines:      app.pipelines, PipelineChains: app.pipelineChains,

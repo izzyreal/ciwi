@@ -182,6 +182,41 @@ screen:
                       - on: activate
                         command: agent-action
                         arguments: {agentId: "{{agent.id}}", action: update}
+                  - component: button
+                    text:
+                      literal: Wipe Cache
+                    icon: trash
+                    visible:
+                      binding: agent.can_contact
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: wipe-cache}
+                        confirm:
+                          title: Wipe agent cache?
+                          message: Requests removal of the agent's local dependency and build caches. Server history and artifacts are not removed. Running work may lose cached data.
+                  - component: button
+                    text:
+                      literal: Flush Job History
+                    icon: trash
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: flush-job-history}
+                        confirm:
+                          title: Flush this agent's job history?
+                          message: Removes finished execution records and artifacts associated with this agent and asks it to clear its local job history. Dependency and build caches are not cleared.
+                  - component: button
+                    text:
+                      literal: Delete Agent
+                    icon: trash
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: delete}
+                        confirm:
+                          title: Delete agent record?
+                          message: Removes the server's stored record for this agent. It does not uninstall or stop the agent; a running agent may register again on its next heartbeat.
               - component: text
                 text:
                   binding: agent.recent_log

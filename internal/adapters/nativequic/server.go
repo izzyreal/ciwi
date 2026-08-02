@@ -27,6 +27,10 @@ type Services struct {
 	Projects interface {
 		ListProjects(context.Context) ([]domain.Project, error)
 	}
+	ProjectCommands interface {
+		Execute(context.Context, application.ProjectActionRequest) (application.ProjectActionResult, error)
+		Import(context.Context, application.ImportProjectRequest) (application.ImportProjectResult, error)
+	}
 	FrontPage interface {
 		GetFrontPageView(context.Context) (presentation.FrontPageView, error)
 	}
@@ -70,7 +74,7 @@ type Server struct {
 }
 
 func Listen(address string, services Services) (*Server, error) {
-	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native QUIC services are incomplete")
 	}
 	tlsConfig, err := serverTLSConfig()
@@ -138,7 +142,7 @@ func (s *Server) handleConnection(ctx context.Context, connection *quic.Conn) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_actions", "execution_housekeeping", "execution_controls", "watch_changes",
+			"server_info", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_actions", "execution_housekeeping", "execution_controls", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -343,6 +347,29 @@ func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Res
 		if err == nil {
 			response.Result = &cnpv1.Response_AgentAction{AgentAction: &cnpv1.AgentActionResult{
 				Requested: result.Requested, AgentId: result.AgentID, Message: result.Message, Target: result.Target,
+			}}
+		}
+	case *cnpv1.Request_ProjectAction:
+		var result application.ProjectActionResult
+		result, err = s.services.ProjectCommands.Execute(ctx, application.ProjectActionRequest{
+			ProjectID: operation.ProjectAction.GetProjectId(), Action: operation.ProjectAction.GetAction(),
+			IdempotencyKey: request.Metadata.IdempotencyKey,
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_ProjectAction{ProjectAction: &cnpv1.ProjectActionResult{
+				ProjectId: result.ProjectID, Message: result.Message,
+			}}
+		}
+	case *cnpv1.Request_ImportProject:
+		var result application.ImportProjectResult
+		result, err = s.services.ProjectCommands.Import(ctx, application.ImportProjectRequest{
+			RepoURL: operation.ImportProject.GetRepoUrl(), RepoRef: operation.ImportProject.GetRepoRef(),
+			ConfigFile: operation.ImportProject.GetConfigFile(), IdempotencyKey: request.Metadata.IdempotencyKey,
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_ImportProject{ImportProject: &cnpv1.ImportProjectResult{
+				ProjectName: result.ProjectName, RepoUrl: result.RepoURL, RepoRef: result.RepoRef,
+				ConfigFile: result.ConfigFile, Pipelines: uint32(max(result.Pipelines, 0)),
 			}}
 		}
 	case *cnpv1.Request_ClearExecutionQueue:

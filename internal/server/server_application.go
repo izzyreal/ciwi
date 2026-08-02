@@ -19,6 +19,7 @@ import (
 type serverApplication struct {
 	server            *application.ServerQueries
 	projects          *application.ProjectQueries
+	projectCommands   *application.ProjectCommands
 	pipelines         *application.PipelineCommands
 	pipelineChains    *application.PipelineChainCommands
 	runOptions        *application.RunOptionsQueries
@@ -53,8 +54,9 @@ func newServerApplication(s *stateStore) *serverApplication {
 	changes := application.NewChangeHub()
 	receipts := sqliteadapter.NewCommandReceiptRepository(s.db)
 	return &serverApplication{
-		server:   serverQueries,
-		projects: projectQueries,
+		server:          serverQueries,
+		projects:        projectQueries,
+		projectCommands: application.NewProjectCommands(projectMutatorAdapter{state: s}, receipts, changes),
 		pipelines: application.NewPipelineCommands(
 			pipelineRunnerAdapter{state: s},
 			receipts,

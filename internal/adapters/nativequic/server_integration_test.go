@@ -23,6 +23,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	server := startServer(t, nativequic.Services{
 		Server:            serverService{},
 		Projects:          projectService{},
+		ProjectCommands:   projectService{},
 		FrontPage:         frontPageService{},
 		ProjectDetails:    projectDetailsService{},
 		JobDetails:        jobDetailsService{},
@@ -130,6 +131,14 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil || !agentResult.Requested || agentResult.AgentId != "agent-1" {
 		t.Fatalf("agent action = %#v, %v", agentResult, err)
 	}
+	projectResult, err := client.ProjectAction(ctx, 7, application.ProjectActionReload, "project-command-key")
+	if err != nil || projectResult.ProjectId != 7 {
+		t.Fatalf("project action = %#v, %v", projectResult, err)
+	}
+	importResult, err := client.ImportProject(ctx, &cnpv1.ImportProjectRequest{RepoUrl: "https://example.test/repo.git", ConfigFile: "ciwi-project.yaml"}, "import-command-key")
+	if err != nil || importResult.ProjectName != "imported" || importResult.Pipelines != 1 {
+		t.Fatalf("project import = %#v, %v", importResult, err)
+	}
 	cleared, err := client.ClearExecutionQueue(ctx, "clear-command-key")
 	if err != nil || cleared.Cleared != 2 {
 		t.Fatalf("clear queue = %#v, %v", cleared, err)
@@ -160,7 +169,7 @@ func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
 func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -192,7 +201,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	changes := application.NewChangeHub()
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -220,7 +229,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -303,6 +312,14 @@ type projectService struct{}
 
 func (projectService) ListProjects(context.Context) ([]domain.Project, error) {
 	return testProjects(), nil
+}
+
+func (projectService) Execute(_ context.Context, request application.ProjectActionRequest) (application.ProjectActionResult, error) {
+	return application.ProjectActionResult{ProjectID: request.ProjectID, Message: request.Action + " complete"}, nil
+}
+
+func (projectService) Import(_ context.Context, request application.ImportProjectRequest) (application.ImportProjectResult, error) {
+	return application.ImportProjectResult{ProjectName: "imported", RepoURL: request.RepoURL, ConfigFile: request.ConfigFile, Pipelines: 1}, nil
 }
 
 type frontPageService struct{}

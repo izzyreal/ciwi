@@ -121,12 +121,63 @@ func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 	if screen != nil && screen.Metadata.Name == "job-details" {
 		preserveJobUIState(r.data, data)
 	}
+	if screen != nil && screen.Metadata.Name == "settings" {
+		preserveSettingsUIState(r.data, data)
+	}
 	if r.screen == nil || screen == nil || r.screen.Metadata.Name != screen.Metadata.Name {
 		r.resetScroll = true
 	}
 	r.screen = screen
 	r.data = data
 	r.mu.Unlock()
+}
+
+func (r *Renderer) SetRepeatedItemBinding(root, collection, keyField, keyValue, field string, value any) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, ok := r.data.(map[string]any)
+	if !ok {
+		return false
+	}
+	rootData, ok := data[root].(map[string]any)
+	if !ok {
+		return false
+	}
+	items, ok := rootData[collection].([]any)
+	if !ok {
+		return false
+	}
+	nextItems := append([]any(nil), items...)
+	found := false
+	for index, raw := range items {
+		item, itemOK := raw.(map[string]any)
+		if !itemOK || fmt.Sprint(item[keyField]) != keyValue {
+			continue
+		}
+		nextItem := make(map[string]any, len(item)+1)
+		for existingKey, existingValue := range item {
+			nextItem[existingKey] = existingValue
+		}
+		nextItem[field] = value
+		nextItems[index] = nextItem
+		found = true
+		break
+	}
+	if !found {
+		return false
+	}
+	nextRoot := make(map[string]any, len(rootData))
+	for existingKey, existingValue := range rootData {
+		nextRoot[existingKey] = existingValue
+	}
+	nextRoot[collection] = nextItems
+	nextData := make(map[string]any, len(data))
+	for existingKey, existingValue := range data {
+		nextData[existingKey] = existingValue
+	}
+	nextData[root] = nextRoot
+	r.data = nextData
+	return true
 }
 
 func (r *Renderer) SetStatus(status string) {
@@ -290,13 +341,24 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	if r.pending == nil {
 		return body(gtx)
 	}
+	return layoutModalOverlay(gtx, body, r.layoutConfirmation)
+}
+
+func layoutModalOverlay(gtx layout.Context, body, confirmation layout.Widget) layout.Dimensions {
+	viewportConstraints := gtx.Constraints
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
-		layout.Expanded(body),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			// Stack removes the minimum constraints from stacked children. Restore
+			// the viewport constraints so showing a modal cannot reflow the page
+			// underneath it.
+			gtx.Constraints = viewportConstraints
+			return body(gtx)
+		}),
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.Fill(gtx.Ops, color.NRGBA{A: 0x70})
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		}),
-		layout.Stacked(r.layoutConfirmation),
+		layout.Stacked(confirmation),
 	)
 }
 
@@ -1374,6 +1436,48 @@ func preserveJobUIState(previous, next any) {
 			if entryOK && fmt.Sprint(entry["id"]) == selectedID {
 				nextRoot["selected_timeline_item"] = entry
 				return
+			}
+		}
+	}
+}
+
+func preserveSettingsUIState(previous, next any) {
+	previousData, previousOK := previous.(map[string]any)
+	nextData, nextOK := next.(map[string]any)
+	if !previousOK || !nextOK {
+		return
+	}
+	previousRoot, previousOK := previousData["settings"].(map[string]any)
+	nextRoot, nextOK := nextData["settings"].(map[string]any)
+	if !previousOK || !nextOK {
+		return
+	}
+	for _, field := range []string{"import_repo_url", "import_repo_ref", "import_config_file"} {
+		if value, exists := previousRoot[field]; exists {
+			nextRoot[field] = value
+		}
+	}
+	statuses := map[string]map[string]any{}
+	if projects, ok := previousRoot["projects"].([]any); ok {
+		for _, raw := range projects {
+			project, projectOK := raw.(map[string]any)
+			if !projectOK || strings.TrimSpace(fmt.Sprint(project["action_status"])) == "" {
+				continue
+			}
+			statuses[fmt.Sprint(project["id"])] = map[string]any{
+				"status": project["action_status"], "tone": project["action_tone"],
+			}
+		}
+	}
+	if projects, ok := nextRoot["projects"].([]any); ok {
+		for _, raw := range projects {
+			project, projectOK := raw.(map[string]any)
+			if !projectOK {
+				continue
+			}
+			if status, exists := statuses[fmt.Sprint(project["id"])]; exists {
+				project["action_status"] = status["status"]
+				project["action_tone"] = status["tone"]
 			}
 		}
 	}

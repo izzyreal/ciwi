@@ -139,6 +139,36 @@ func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) ProjectAction(ctx context.Context, projectID int64, action, idempotencyKey string) (*cnpv1.ProjectActionResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_ProjectAction{
+		ProjectAction: &cnpv1.ProjectActionRequest{ProjectId: projectID, Action: action},
+	}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetProjectAction(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) ImportProject(ctx context.Context, request *cnpv1.ImportProjectRequest, idempotencyKey string) (*cnpv1.ImportProjectResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_ImportProject{ImportProject: request}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetImportProject(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) GetRunOptions(ctx context.Context, request *cnpv1.GetRunOptionsRequest) (*cnpv1.RunOptionsView, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetRunOptions{GetRunOptions: request}}, "")
 	if err != nil {

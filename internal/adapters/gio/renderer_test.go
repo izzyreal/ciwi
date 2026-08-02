@@ -591,6 +591,80 @@ func TestRendererHonorsActionConfirmation(t *testing.T) {
 	}
 }
 
+func TestModalOverlayPreservesBodyViewportConstraints(t *testing.T) {
+	var operations op.Ops
+	constraints := layout.Exact(image.Pt(1100, 760))
+	gtx := layout.Context{Ops: &operations, Constraints: constraints}
+	var bodyConstraints layout.Constraints
+
+	dimensions := layoutModalOverlay(gtx, func(gtx layout.Context) layout.Dimensions {
+		bodyConstraints = gtx.Constraints
+		return layout.Dimensions{Size: gtx.Constraints.Max}
+	}, func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: image.Pt(400, 240)}
+	})
+
+	if bodyConstraints != constraints {
+		t.Fatalf("body constraints = %#v, want %#v", bodyConstraints, constraints)
+	}
+	if dimensions.Size != constraints.Max {
+		t.Fatalf("overlay dimensions = %v, want %v", dimensions.Size, constraints.Max)
+	}
+}
+
+func TestRendererUpdatesRepeatedItemBindingWithoutMutatingInput(t *testing.T) {
+	project := map[string]any{"id": float64(7), "action_status": ""}
+	data := map[string]any{"settings": map[string]any{"projects": []any{project}}}
+	renderer := &Renderer{data: data}
+
+	if !renderer.SetRepeatedItemBinding("settings", "projects", "id", "7", "action_status", "Reloading…") {
+		t.Fatal("project binding was not found")
+	}
+	if project["action_status"] != "" {
+		t.Fatal("input data was mutated")
+	}
+	root := renderer.data.(map[string]any)["settings"].(map[string]any)
+	updated := root["projects"].([]any)[0].(map[string]any)
+	if updated["action_status"] != "Reloading…" {
+		t.Fatalf("action_status = %q", updated["action_status"])
+	}
+	if renderer.SetRepeatedItemBinding("settings", "projects", "id", "8", "action_status", "unexpected") {
+		t.Fatal("missing project was reported as updated")
+	}
+}
+
+func TestPreserveSettingsUIStateAcrossRefresh(t *testing.T) {
+	previous := map[string]any{"settings": map[string]any{
+		"import_repo_url": "https://example.test/repo",
+		"projects": []any{
+			map[string]any{"id": float64(7), "action_status": "Reloaded successfully", "action_tone": "success"},
+			map[string]any{"id": float64(8), "action_status": "", "action_tone": "muted"},
+		},
+	}}
+	next := map[string]any{"settings": map[string]any{
+		"import_repo_url": "",
+		"projects": []any{
+			map[string]any{"id": float64(7), "action_status": "", "action_tone": "muted"},
+			map[string]any{"id": float64(8), "action_status": "", "action_tone": "muted"},
+		},
+	}}
+
+	preserveSettingsUIState(previous, next)
+	root := next["settings"].(map[string]any)
+	if root["import_repo_url"] != "https://example.test/repo" {
+		t.Fatalf("import_repo_url = %q", root["import_repo_url"])
+	}
+	projects := root["projects"].([]any)
+	first := projects[0].(map[string]any)
+	if first["action_status"] != "Reloaded successfully" || first["action_tone"] != "success" {
+		t.Fatalf("preserved project state = %#v", first)
+	}
+	second := projects[1].(map[string]any)
+	if second["action_status"] != "" {
+		t.Fatalf("empty project state should not be overlaid: %#v", second)
+	}
+}
+
 func TestPipelineRunSelectionUsesSharedPipelineAndChainArguments(t *testing.T) {
 	selection := pipelineRunSelection(map[string]string{
 		"pipelineJobId": " compile ", "dryRun": "true", "sourceRef": " feature/native ",

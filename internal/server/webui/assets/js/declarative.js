@@ -244,6 +244,32 @@
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
 		}
+		else if (action.command === 'project-action') {
+		  const path = '/api/v1/projects/' + encodeURIComponent(args.projectId) + (args.action === 'reload' ? '/reload' : '');
+		  const response = await fetch(path, {
+		    method: args.action === 'delete' ? 'DELETE' : 'POST',
+		    headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+		    body: args.action === 'delete' ? undefined : '{}',
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
+		}
+		else if (action.command === 'set-project-import-field') {
+		  const settings = currentData && currentData.settings;
+		  if (!settings) throw new Error('Settings are unavailable');
+		  const binding = {repoUrl: 'import_repo_url', repoRef: 'import_repo_ref', configFile: 'import_config_file'}[args.field];
+		  if (!binding) throw new Error('Unknown project import field');
+		  settings[binding] = args.value || '';
+		}
+		else if (action.command === 'import-project') {
+		  const response = await fetch('/api/v1/projects/import', {
+		    method: 'POST',
+		    headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+		    body: JSON.stringify({repo_url: args.repoUrl, repo_ref: args.repoRef, config_file: args.configFile}),
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
+		}
 		else if (action.command === 'clear-queue') {
 		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
 		  if (!response.ok) throw new Error(await response.text());
@@ -509,7 +535,21 @@
           description: theme.metadata.description || '',
         }));
         const selected = themeOptions.find(theme => theme.name === selectedTheme);
-        view = {server: responseView, themes: themeOptions, selected_theme: selectedTheme, selected_theme_description: selected ? selected.description : ''};
+		const projectsResponse = await fetch('/api/v1/projects');
+		if (!projectsResponse.ok) throw new Error(await projectsResponse.text());
+		const projectsPayload = await projectsResponse.json();
+		const projects = Array.isArray(projectsPayload.projects) ? projectsPayload.projects : [];
+		projects.forEach(project => {
+		  project.can_reload = String(project.source_kind || '') !== 'managed_yaml';
+		  project.source_label = project.can_reload
+		    ? [project.repo_url || '', project.repo_ref || ''].filter(Boolean).join(' · ')
+		    : 'Managed YAML stored in ciwi';
+		});
+		view = {
+		  server: responseView, themes: themeOptions, projects,
+		  selected_theme: selectedTheme, selected_theme_description: selected ? selected.description : '',
+		  import_repo_url: '', import_repo_ref: '', import_config_file: 'ciwi-project.yaml',
+		};
       }
       if (jobMatch) {
         view.output = view.output || '';
