@@ -17,7 +17,7 @@ func SummaryCards(jobs []protocol.JobExecution, active bool, limit int) []CardVi
 	}
 	out := make([]CardView, 0, len(cards))
 	for _, card := range cards {
-		out = append(out, cardView(jobs, card, false, false))
+		out = append(out, cardView(jobs, card, true, false))
 	}
 	return out
 }

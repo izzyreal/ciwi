@@ -17,7 +17,7 @@ func TestFrontPageViewIncludesExecutionCardSummaries(t *testing.T) {
 	_, err := state.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script: "true",
 		Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "build", "pipeline_run_id": "run-1",
+			"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "linux", "pipeline_run_id": "run-1",
 		},
 	})
 	if err != nil {
@@ -34,6 +34,9 @@ func TestFrontPageViewIncludesExecutionCardSummaries(t *testing.T) {
 	}
 	if len(response.QueuedExecutions) != 1 || response.QueuedExecutions[0].Summary.InProgress != 1 {
 		t.Fatalf("queued executions = %+v", response.QueuedExecutions)
+	}
+	if len(response.QueuedExecutions[0].Sections) != 1 || response.QueuedExecutions[0].Sections[0].Jobs[0].Label != "linux" {
+		t.Fatalf("queued execution sections = %+v", response.QueuedExecutions[0].Sections)
 	}
 }
 

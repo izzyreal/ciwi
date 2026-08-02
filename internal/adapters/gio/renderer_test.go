@@ -46,6 +46,95 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
+	var foundTitle bool
+	for _, selectable := range renderer.selectables {
+		if selectable.Text() == "ciwi v0.2.0" {
+			foundTitle = true
+			break
+		}
+	}
+	if !foundTitle {
+		t.Fatal("front-page title is not rendered as selectable text")
+	}
+}
+
+func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var navigated bool
+	renderer, err := NewRenderer(screen, theme, func(action uidsl.Action, _ map[string]string) {
+		navigated = action.Command == "navigate"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := frontPageBindingData(&cnpv1.FrontPageView{
+		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
+		HistoryExecutions: []*cnpv1.ExecutionCardSummary{{
+			Key: "pipeline:build", Title: "ciwi build", Summary: &cnpv1.ExecutionSummary{TotalJobs: 1, Succeeded: 1},
+			Sections: []*cnpv1.ExecutionCardSection{{Key: "build", Label: "build", Jobs: []*cnpv1.ExecutionCardJob{{Id: "job-1", Label: "linux", Status: "succeeded"}}}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if navigated {
+		t.Fatal("collapsed execution card navigated while being laid out")
+	}
+	var historyDisclosure string
+	for key := range renderer.disclosures {
+		if strings.Contains(key, "pipeline:build") {
+			historyDisclosure = key
+			break
+		}
+	}
+	if historyDisclosure == "" {
+		// Disclosure state is lazy; identify its stable toggle button path.
+		for key := range renderer.buttons {
+			if strings.Contains(key, "pipeline:build") && strings.HasSuffix(key, "/disclosure-toggle") {
+				historyDisclosure = strings.TrimSuffix(key, "/disclosure-toggle")
+				break
+			}
+		}
+	}
+	if historyDisclosure == "" {
+		t.Fatal("history execution is not rendered as a disclosure")
+	}
+	label := renderer.selectable(historyDisclosure + "/label")
+	label.SetCaret(0, 2)
+	renderer.button(historyDisclosure + "/disclosure-label").Click()
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if renderer.disclosures[historyDisclosure] {
+		t.Fatal("selecting disclosure label text unexpectedly expanded the card")
+	}
+	label.ClearSelection()
+	renderer.button(historyDisclosure + "/disclosure-label").Click()
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if !renderer.disclosures[historyDisclosure] {
+		t.Fatal("clicking disclosure label did not expand the card")
+	}
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	var foundJob bool
+	for _, selectable := range renderer.selectables {
+		if selectable.Text() == "linux" {
+			foundJob = true
+		}
+	}
+	if !foundJob {
+		t.Fatal("expanded execution card does not show its job rows")
+	}
 }
 
 func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
@@ -80,8 +169,8 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got != 2 {
-		t.Fatalf("collapsed project view created %d interactive widgets, want only Back and pipeline disclosure", got)
+	if got := len(renderer.buttons); got != 3 {
+		t.Fatalf("collapsed project view created %d interactive widgets, want Back plus pipeline disclosure controls", got)
 	}
 	renderer.disclosures["project-details/root/1/1/7/0"] = true
 	operations.Reset()
@@ -120,8 +209,8 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got != 3 {
-		t.Fatalf("collapsed job view created %d interactive widgets, want Back, output, and timeline disclosures", got)
+	if got := len(renderer.buttons); got != 5 {
+		t.Fatalf("collapsed job view created %d interactive widgets, want Back plus output and timeline disclosure controls", got)
 	}
 }
 

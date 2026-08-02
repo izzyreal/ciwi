@@ -13,6 +13,20 @@ type ExecutionCard struct {
 	Title           string
 	JobExecutionIDs []string
 	Summary         ExecutionSummary
+	Sections        []ExecutionCardSection
+}
+
+type ExecutionCardSection struct {
+	Key   string
+	Label string
+	Jobs  []ExecutionCardJob
+}
+
+type ExecutionCardJob struct {
+	ID          string
+	Label       string
+	Status      string
+	CurrentStep string
 }
 
 type ExecutionSummary struct {

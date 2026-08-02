@@ -12,6 +12,7 @@ import (
 
 	"gioui.org/f32"
 	"gioui.org/font"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -33,6 +34,7 @@ type Renderer struct {
 	list        layout.List
 	buttons     map[string]*widget.Clickable
 	disclosures map[string]bool
+	selectables map[string]*widget.Selectable
 	textEditors map[string]*widget.Editor
 	statusText  widget.Editor
 	shownStatus string
@@ -69,7 +71,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	renderer := &Renderer{
 		screen: screen, theme: materialTheme, palette: colors, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
-		textEditors: map[string]*widget.Editor{},
+		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{},
 	}
 	renderer.statusText.ReadOnly = true
 	return renderer, nil
@@ -275,13 +277,43 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		expanded = !expanded
 		r.requestFrame()
 	}
-	header := material.Button(r.theme, toggle, prefix+label)
-	header.CornerRadius = 8
+	header := func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				button := material.Button(r.theme, toggle, strings.TrimSpace(prefix))
+				button.CornerRadius = 8
+				return button.Layout(gtx)
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				labelPath := path + "/label"
+				labelClick := r.button(path + "/disclosure-label")
+				for labelClick.Clicked(gtx) {
+					if r.selectable(labelPath).SelectionLen() == 0 {
+						r.disclosures[path] = !expanded
+						expanded = !expanded
+						r.requestFrame()
+					}
+				}
+				return labelClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						defer pointer.PassOp{}.Push(gtx.Ops).Pop()
+						textNode := node
+						textNode.Component = "text"
+						textNode.Text = &uidsl.Text{Literal: label}
+						if textNode.Style.Role == "" {
+							textNode.Style.Role = "heading"
+						}
+						return r.layoutText(gtx, textNode, data, labelPath)
+					})
+				})
+			}),
+		)
+	}
 	if !expanded {
-		return header.Layout(gtx)
+		return header(gtx)
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(header.Layout),
+		layout.Rigid(header),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return r.layoutChildren(gtx, node, data, path+"/content")
@@ -362,6 +394,7 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 	if node.Style.Truncate {
 		label.MaxLines = 1
 	}
+	label.State = r.selectable(path)
 	return label.Layout(gtx)
 }
 
@@ -454,10 +487,14 @@ func (r *Renderer) layoutConfirmation(gtx layout.Context) layout.Dimensions {
 	}
 	return r.surface(func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: 22, Right: 22, Bottom: 22, Left: 22}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			title := material.H6(r.theme, pending.title)
+			title.State = r.selectable("confirmation/title")
+			message := material.Body1(r.theme, pending.message)
+			message.State = r.selectable("confirmation/message")
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(material.H6(r.theme, pending.title).Layout),
+				layout.Rigid(title.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Top: 12, Bottom: 20}.Layout(gtx, material.Body1(r.theme, pending.message).Layout)
+					return layout.Inset{Top: 12, Bottom: 20}.Layout(gtx, message.Layout)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEnd}.Layout(gtx,
@@ -487,9 +524,22 @@ func (r *Renderer) button(key string) *widget.Clickable {
 	return button
 }
 
+func (r *Renderer) selectable(key string) *widget.Selectable {
+	if r.selectables == nil {
+		r.selectables = map[string]*widget.Selectable{}
+	}
+	if selectable := r.selectables[key]; selectable != nil {
+		return selectable
+	}
+	selectable := new(widget.Selectable)
+	r.selectables[key] = selectable
+	return selectable
+}
+
 func (r *Renderer) errorLabel(gtx layout.Context, err error) layout.Dimensions {
 	label := material.Body2(r.theme, err.Error())
 	label.Color = r.palette.danger
+	label.State = r.selectable("error/" + err.Error())
 	return label.Layout(gtx)
 }
 

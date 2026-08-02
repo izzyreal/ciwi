@@ -108,8 +108,8 @@ func TestRepositoryBuildsTransportNeutralJobTimeline(t *testing.T) {
 func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 	now := time.Now().UTC()
 	repository := NewRepository(executionStoreStub{jobs: []protocol.JobExecution{
-		{ID: "running", Status: "running", CreatedUTC: now, Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "build", "pipeline_run_id": "run-build",
+		{ID: "running", Status: "running", CurrentStep: "Compile", CreatedUTC: now, Metadata: map[string]string{
+			"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "linux", "pipeline_run_id": "run-build",
 		}},
 		{ID: "queued", Status: "queued", CreatedUTC: now.Add(-time.Second), Metadata: map[string]string{
 			"project": "ciwi", "pipeline_id": "build", "pipeline_run_id": "run-build",
@@ -124,6 +124,12 @@ func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 	}
 	if len(queued) != 1 || queued[0].Summary.TotalJobs != 2 || queued[0].Summary.InProgress != 2 {
 		t.Fatalf("queued cards = %+v", queued)
+	}
+	if len(queued[0].Sections) != 1 || len(queued[0].Sections[0].Jobs) != 2 {
+		t.Fatalf("queued card sections = %+v", queued[0].Sections)
+	}
+	if got := queued[0].Sections[0].Jobs[0]; got.ID != "running" || got.Label != "linux" || got.CurrentStep != "Compile" {
+		t.Fatalf("queued job = %+v", got)
 	}
 	if len(history) != 1 || history[0].Summary.Succeeded != 1 {
 		t.Fatalf("history cards = %+v", history)

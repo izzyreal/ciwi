@@ -117,7 +117,22 @@ func executionCardsToProto(cards []domain.ExecutionCard) []*cnpv1.ExecutionCardS
 				Failed: uint32(card.Summary.Failed), InProgress: uint32(card.Summary.InProgress),
 				Waiting: uint32(card.Summary.Waiting),
 			},
+			Sections: executionCardSectionsToProto(card.Sections),
 		})
+	}
+	return out
+}
+
+func executionCardSectionsToProto(sections []domain.ExecutionCardSection) []*cnpv1.ExecutionCardSection {
+	out := make([]*cnpv1.ExecutionCardSection, 0, len(sections))
+	for _, section := range sections {
+		jobs := make([]*cnpv1.ExecutionCardJob, 0, len(section.Jobs))
+		for _, job := range section.Jobs {
+			jobs = append(jobs, &cnpv1.ExecutionCardJob{
+				Id: job.ID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
+			})
+		}
+		out = append(out, &cnpv1.ExecutionCardSection{Key: section.Key, Label: section.Label, Jobs: jobs})
 	}
 	return out
 }

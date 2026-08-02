@@ -199,6 +199,20 @@ message ExecutionCardSummary {
   string title = 3;
   repeated string job_execution_ids = 4;
   ExecutionSummary summary = 5;
+  repeated ExecutionCardSection sections = 6;
+}
+
+message ExecutionCardSection {
+  string key = 1;
+  string label = 2;
+  repeated ExecutionCardJob jobs = 3;
+}
+
+message ExecutionCardJob {
+  string id = 1;
+  string label = 2;
+  string status = 3;
+  string current_step = 4;
 }
 
 message RunPipelineSelection {

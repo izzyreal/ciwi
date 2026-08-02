@@ -90,18 +90,29 @@ screen:
                   direction: vertical
                   gap: small
                   padding: medium
-                actions:
-                  - on: activate
-                    command: navigate
-                    arguments:
-                      route: /projects/{{project.id}}
                 children:
-                  - component: text
-                    text:
-                      template: "Project: {{project.name}}"
-                    style:
-                      role: heading
-                      emphasis: strong
+                  - component: row
+                    layout:
+                      direction: horizontal
+                      gap: medium
+                      align: center
+                    children:
+                      - component: text
+                        text:
+                          template: "Project: {{project.name}}"
+                        layout:
+                          grow: true
+                        style:
+                          role: heading
+                          emphasis: strong
+                      - component: button
+                        text:
+                          literal: View details
+                        actions:
+                          - on: activate
+                            command: navigate
+                            arguments:
+                              route: /projects/{{project.id}}
                   - component: text
                     text:
                       binding: project.repo_url
@@ -174,28 +185,89 @@ screen:
               as: execution
               key: execution.key
             children:
-              - component: card
+              - component: disclosure
                 layout:
                   direction: vertical
                   gap: small
                   padding: medium
-                actions:
-                  - on: activate
-                    command: navigate
-                    arguments:
-                      route: /jobs/{{execution.job_execution_ids.0}}
+                text:
+                  binding: execution.title
+                style:
+                  role: heading
+                  emphasis: strong
                 children:
-                  - component: text
-                    text:
-                      binding: execution.title
-                    style:
-                      role: heading
-                      emphasis: strong
                   - component: text
                     text:
                       template: "{{execution.summary.in_progress}} active · {{execution.summary.waiting}} waiting · {{execution.summary.total_jobs}} total"
                     style:
                       tone: muted
+                  - component: list
+                    layout:
+                      direction: vertical
+                      gap: small
+                    repeat:
+                      source: execution.sections
+                      as: section
+                      key: section.key
+                    children:
+                      - component: column
+                        layout:
+                          direction: vertical
+                          gap: small
+                        children:
+                          - component: text
+                            text:
+                              template: "Pipeline: {{section.label}}"
+                            style:
+                              emphasis: strong
+                          - component: list
+                            layout:
+                              direction: vertical
+                              gap: small
+                            repeat:
+                              source: section.jobs
+                              as: job
+                              key: job.id
+                            children:
+                              - component: row
+                                layout:
+                                  direction: horizontal
+                                  gap: medium
+                                  align: center
+                                children:
+                                  - component: column
+                                    layout:
+                                      direction: vertical
+                                      gap: small
+                                      grow: true
+                                    children:
+                                      - component: text
+                                        text:
+                                          binding: job.label
+                                        style:
+                                          emphasis: strong
+                                      - component: text
+                                        text:
+                                          binding: job.status
+                                        style:
+                                          tone: muted
+                                      - component: text
+                                        text:
+                                          binding: job.current_step
+                                        visible:
+                                          binding: job.current_step
+                                          equals: ""
+                                          not: true
+                                        style:
+                                          tone: muted
+                                  - component: button
+                                    text:
+                                      literal: Open details
+                                    actions:
+                                      - on: activate
+                                        command: navigate
+                                        arguments:
+                                          route: /jobs/{{job.id}}
       - component: section
         id: execution-history
         layout:
@@ -217,25 +289,86 @@ screen:
               as: execution
               key: execution.key
             children:
-              - component: card
+              - component: disclosure
                 layout:
                   direction: vertical
                   gap: small
                   padding: medium
-                actions:
-                  - on: activate
-                    command: navigate
-                    arguments:
-                      route: /jobs/{{execution.job_execution_ids.0}}
+                text:
+                  binding: execution.title
+                style:
+                  role: heading
+                  emphasis: strong
                 children:
-                  - component: text
-                    text:
-                      binding: execution.title
-                    style:
-                      role: heading
-                      emphasis: strong
                   - component: text
                     text:
                       template: "{{execution.summary.succeeded}} succeeded · {{execution.summary.failed}} failed · {{execution.summary.total_jobs}} total"
                     style:
                       tone: muted
+                  - component: list
+                    layout:
+                      direction: vertical
+                      gap: small
+                    repeat:
+                      source: execution.sections
+                      as: section
+                      key: section.key
+                    children:
+                      - component: column
+                        layout:
+                          direction: vertical
+                          gap: small
+                        children:
+                          - component: text
+                            text:
+                              template: "Pipeline: {{section.label}}"
+                            style:
+                              emphasis: strong
+                          - component: list
+                            layout:
+                              direction: vertical
+                              gap: small
+                            repeat:
+                              source: section.jobs
+                              as: job
+                              key: job.id
+                            children:
+                              - component: row
+                                layout:
+                                  direction: horizontal
+                                  gap: medium
+                                  align: center
+                                children:
+                                  - component: column
+                                    layout:
+                                      direction: vertical
+                                      gap: small
+                                      grow: true
+                                    children:
+                                      - component: text
+                                        text:
+                                          binding: job.label
+                                        style:
+                                          emphasis: strong
+                                      - component: text
+                                        text:
+                                          binding: job.status
+                                        style:
+                                          tone: muted
+                                      - component: text
+                                        text:
+                                          binding: job.current_step
+                                        visible:
+                                          binding: job.current_step
+                                          equals: ""
+                                          not: true
+                                        style:
+                                          tone: muted
+                                  - component: button
+                                    text:
+                                      literal: Open details
+                                    actions:
+                                      - on: activate
+                                        command: navigate
+                                        arguments:
+                                          route: /jobs/{{job.id}}

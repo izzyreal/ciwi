@@ -46,11 +46,25 @@ type frontPagePipelineChainResponse struct {
 }
 
 type executionCardResponse struct {
-	Key             string                   `json:"key"`
-	Kind            string                   `json:"kind"`
-	Title           string                   `json:"title"`
-	JobExecutionIDs []string                 `json:"job_execution_ids"`
-	Summary         executionSummaryResponse `json:"summary"`
+	Key             string                         `json:"key"`
+	Kind            string                         `json:"kind"`
+	Title           string                         `json:"title"`
+	JobExecutionIDs []string                       `json:"job_execution_ids"`
+	Summary         executionSummaryResponse       `json:"summary"`
+	Sections        []executionCardSectionResponse `json:"sections"`
+}
+
+type executionCardSectionResponse struct {
+	Key   string                     `json:"key"`
+	Label string                     `json:"label"`
+	Jobs  []executionCardJobResponse `json:"jobs"`
+}
+
+type executionCardJobResponse struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Status      string `json:"status"`
+	CurrentStep string `json:"current_step"`
 }
 
 type executionSummaryResponse struct {
@@ -121,7 +135,22 @@ func executionCardsToResponse(cards []domain.ExecutionCard) []executionCardRespo
 				TotalJobs: card.Summary.TotalJobs, Succeeded: card.Summary.Succeeded,
 				Failed: card.Summary.Failed, InProgress: card.Summary.InProgress, Waiting: card.Summary.Waiting,
 			},
+			Sections: executionCardSectionsToResponse(card.Sections),
 		})
+	}
+	return out
+}
+
+func executionCardSectionsToResponse(sections []domain.ExecutionCardSection) []executionCardSectionResponse {
+	out := make([]executionCardSectionResponse, 0, len(sections))
+	for _, section := range sections {
+		jobs := make([]executionCardJobResponse, 0, len(section.Jobs))
+		for _, job := range section.Jobs {
+			jobs = append(jobs, executionCardJobResponse{
+				ID: job.ID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
+			})
+		}
+		out = append(out, executionCardSectionResponse{Key: section.Key, Label: section.Label, Jobs: jobs})
 	}
 	return out
 }

@@ -70,7 +70,8 @@ certificate pinning or a pairing flow without changing application services.
 
 ## Current scope
 
-The vertical slices support server information, the shared front page, project
+The vertical slices support server information, the shared front page, inline
+queued/history execution cards with explicit job-detail navigation, project
 details with nested pipelines/jobs/configured steps, job execution snapshots
 with phase/step timelines, selectable incremental output, pipeline enqueue
 commands, native back navigation, and live invalidations. Output streams use

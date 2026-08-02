@@ -215,7 +215,45 @@ func mapCards(cards []jobhistory.CardView) []domain.ExecutionCard {
 				TotalJobs: card.Summary.TotalJobs, Succeeded: card.Summary.Succeeded,
 				Failed: card.Summary.Failed, InProgress: card.Summary.InProgress, Waiting: card.Summary.Waiting,
 			},
+			Sections: mapCardSections(card.Sections),
 		})
+	}
+	return out
+}
+
+func mapCardSections(sections []jobhistory.SectionView) []domain.ExecutionCardSection {
+	out := make([]domain.ExecutionCardSection, 0, len(sections))
+	for _, section := range sections {
+		label := strings.TrimSpace(section.Label)
+		if label == "" {
+			label = "Execution"
+		}
+		mapped := domain.ExecutionCardSection{Key: section.Key, Label: label}
+		for _, item := range section.Items {
+			mapped.Jobs = append(mapped.Jobs, mapCardItemJobs(item)...)
+		}
+		out = append(out, mapped)
+	}
+	return out
+}
+
+func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
+	if item.Job != nil {
+		label := strings.TrimSpace(item.MatrixLabel)
+		if label == "" {
+			label = strings.TrimSpace(item.Job.Metadata["pipeline_job_id"])
+		}
+		if label == "" {
+			label = strings.TrimSpace(item.Job.ID)
+		}
+		return []domain.ExecutionCardJob{{
+			ID: item.Job.ID, Label: label, Status: protocol.NormalizeJobExecutionStatus(item.Job.Status),
+			CurrentStep: strings.TrimSpace(item.Job.CurrentStep),
+		}}
+	}
+	out := make([]domain.ExecutionCardJob, 0, len(item.Items))
+	for _, child := range item.Items {
+		out = append(out, mapCardItemJobs(child)...)
 	}
 	return out
 }
