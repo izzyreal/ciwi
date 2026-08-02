@@ -792,6 +792,102 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetTransientStatus("Imported "+result.ProjectName, nativeNoticeDuration)
+	case "set-server-update-option":
+		binding := map[string]string{
+			"update": "selected_update_version", "rollback": "selected_rollback_version",
+		}[strings.TrimSpace(command.arguments["field"])]
+		if binding == "" {
+			renderer.SetStatus("Unknown server update option")
+			return
+		}
+		renderer.SetRootBinding("settings", binding, strings.TrimSpace(command.arguments["value"]))
+	case "check-server-updates":
+		renderer.SetRootBinding("settings", "update_result", "Checking for updates…")
+		renderer.SetRootBinding("settings", "update_result_tone", "muted")
+		commandCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		result, err := client.CheckServerUpdates(commandCtx)
+		cancel()
+		if err != nil {
+			renderer.SetRootBinding("settings", "update_versions", versionOptions(nil, "Update check failed"))
+			renderer.SetRootBinding("settings", "selected_update_version", "")
+			renderer.SetRootBinding("settings", "update_result", "Update check failed: "+err.Error())
+			renderer.SetRootBinding("settings", "update_result_tone", "danger")
+			return
+		}
+		renderer.SetRootBinding("settings", "update_versions", versionOptions(result.AvailableVersions, "No newer versions available"))
+		selected := ""
+		if len(result.AvailableVersions) > 0 {
+			selected = result.AvailableVersions[0]
+		}
+		renderer.SetRootBinding("settings", "selected_update_version", selected)
+		message := strings.TrimSpace(result.Message)
+		if result.UpdateAvailable {
+			message = "Update available: " + result.CurrentVersion + " → " + result.LatestVersion
+			if result.AssetName != "" {
+				message += " (" + result.AssetName + ")"
+			}
+		} else if message == "" {
+			message = "Up to date (" + result.CurrentVersion + ")"
+		}
+		renderer.SetRootBinding("settings", "update_result", message)
+		renderer.SetRootBinding("settings", "update_result_tone", "success")
+	case "refresh-rollback-versions":
+		renderer.SetRootBinding("settings", "rollback_result", "Refreshing versions…")
+		renderer.SetRootBinding("settings", "rollback_result_tone", "muted")
+		commandCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		result, err := client.ListServerUpdateVersions(commandCtx)
+		cancel()
+		if err != nil {
+			renderer.SetRootBinding("settings", "rollback_versions", versionOptions(nil, "Version load failed"))
+			renderer.SetRootBinding("settings", "selected_rollback_version", "")
+			renderer.SetRootBinding("settings", "rollback_result", "Version load failed: "+err.Error())
+			renderer.SetRootBinding("settings", "rollback_result_tone", "danger")
+			return
+		}
+		renderer.SetRootBinding("settings", "rollback_versions", versionOptions(result.Versions, "No lower versions available"))
+		selected := ""
+		if len(result.Versions) > 0 {
+			selected = result.Versions[0]
+		}
+		renderer.SetRootBinding("settings", "selected_rollback_version", selected)
+		renderer.SetRootBinding("settings", "rollback_result", fmt.Sprintf("Found %d rollback version(s)", len(result.Versions)))
+		renderer.SetRootBinding("settings", "rollback_result_tone", "success")
+	case "server-update-action":
+		action := strings.TrimSpace(command.arguments["action"])
+		target := strings.TrimSpace(command.arguments["targetVersion"])
+		resultField := "update_result"
+		if action == "rollback" {
+			resultField = "rollback_result"
+		}
+		if (action == "apply" || action == "rollback") && target == "" {
+			renderer.SetRootBinding("settings", resultField, "Select a version first")
+			renderer.SetRootBinding("settings", resultField+"_tone", "danger")
+			return
+		}
+		progress := "Starting " + action + "…"
+		if action == "restart" {
+			progress = "Requesting server restart…"
+		}
+		renderer.SetRootBinding("settings", resultField, progress)
+		renderer.SetRootBinding("settings", resultField+"_tone", "muted")
+		commandCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
+		result, err := client.ServerUpdateAction(commandCtx, action, target)
+		cancel()
+		if err != nil {
+			label := map[string]string{"apply": "Update", "rollback": "Rollback", "restart": "Restart"}[action]
+			if label == "" {
+				label = "Request"
+			}
+			renderer.SetRootBinding("settings", resultField, label+" failed: "+err.Error())
+			renderer.SetRootBinding("settings", resultField+"_tone", "danger")
+			return
+		}
+		message := strings.TrimSpace(result.Message)
+		if message == "" {
+			message = "Request accepted"
+		}
+		renderer.SetRootBinding("settings", resultField, message)
+		renderer.SetRootBinding("settings", resultField+"_tone", "success")
 	case "refresh":
 		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
 			renderer.SetStatus("Refresh failed: " + err.Error())
@@ -1029,6 +1125,7 @@ func refreshSettings(ctx context.Context, client *cnpclient.Client, renderer *Re
 	if err != nil {
 		return err
 	}
+	updateStatus, updateStatusErr := client.GetServerUpdateStatus(requestCtx)
 	themes, err := sharedUI.LoadThemes()
 	if err != nil {
 		return err
@@ -1052,8 +1149,73 @@ func refreshSettings(ctx context.Context, client *cnpclient.Client, renderer *Re
 	projectItems, _ := projectRoot["projects"].([]any)
 	decorateSettingsProjects(projectItems)
 	settings["projects"] = projectItems
+	decorateSettingsUpdate(settings, updateStatus, updateStatusErr)
 	renderer.SetScreenAndData(screen, data)
 	return nil
+}
+
+func decorateSettingsUpdate(settings map[string]any, status *cnpv1.ServerUpdateStatus, statusErr error) {
+	settings["update_versions"] = versionOptions(nil, "Check for updates")
+	settings["selected_update_version"] = ""
+	settings["rollback_versions"] = versionOptions(nil, "Refresh versions")
+	settings["selected_rollback_version"] = ""
+	settings["update_result"] = ""
+	settings["update_result_tone"] = "muted"
+	settings["rollback_result"] = ""
+	settings["rollback_result_tone"] = "muted"
+	if statusErr != nil || status == nil {
+		settings["update_supported"] = false
+		settings["update_capability_notice"] = "Update status unavailable"
+		settings["update_status_label"] = ""
+		return
+	}
+	settings["update_supported"] = status.SelfUpdateSupported
+	settings["update_current_version"] = status.CurrentVersion
+	settings["update_last_apply_status"] = status.LastApplyStatus
+	notice := strings.TrimSpace(status.SelfUpdateReason)
+	if status.ServerMode == "dev" {
+		notice = "Running in dev mode. Updates disabled."
+	} else if !status.SelfUpdateSupported && notice == "" {
+		notice = "Server self-updates are unavailable in this installation."
+	}
+	settings["update_capability_notice"] = notice
+	parts := []string{}
+	if status.CurrentVersion != "" {
+		parts = append(parts, "Current: "+status.CurrentVersion)
+	}
+	if status.LatestVersion != "" {
+		parts = append(parts, "Latest: "+status.LatestVersion)
+	}
+	if status.UpdateAvailable && status.CurrentVersion != status.LatestVersion {
+		parts = append(parts, "Update available")
+	}
+	if status.LastApplyStatus != "" {
+		parts = append(parts, "Apply: "+status.LastApplyStatus)
+	}
+	if status.Message != "" {
+		parts = append(parts, "Message: "+status.Message)
+	}
+	settings["update_status_label"] = strings.Join(parts, " · ")
+	settings["blocked_agent_notice"] = ""
+	if len(status.BlockedAgentIds) > 0 {
+		settings["blocked_agent_notice"] = "Agents requiring manual update: " + strings.Join(status.BlockedAgentIds, ", ")
+	}
+}
+
+func versionOptions(versions []string, emptyLabel string) []any {
+	if len(versions) == 0 {
+		return []any{map[string]any{"value": "", "label": emptyLabel}}
+	}
+	result := make([]any, 0, len(versions))
+	for _, version := range versions {
+		if version = strings.TrimSpace(version); version != "" {
+			result = append(result, map[string]any{"value": version, "label": version})
+		}
+	}
+	if len(result) == 0 {
+		return []any{map[string]any{"value": "", "label": emptyLabel}}
+	}
+	return result
 }
 
 func decorateSettingsProjects(projects []any) {
@@ -1232,6 +1394,11 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 		"server": serverBinding, "themes": themeBindings,
 		"selected_theme": selectedTheme, "selected_theme_description": selectedDescription, "projects": []any{},
 		"import_repo_url": "", "import_repo_ref": "", "import_config_file": "ciwi-project.yaml",
+		"update_supported": false, "update_capability_notice": "Update status unavailable", "update_status_label": "", "blocked_agent_notice": "",
+		"update_current_version": "", "update_last_apply_status": "",
+		"update_versions": versionOptions(nil, "Check for updates"), "selected_update_version": "",
+		"rollback_versions": versionOptions(nil, "Refresh versions"), "selected_rollback_version": "",
+		"update_result": "", "update_result_tone": "muted", "rollback_result": "", "rollback_result_tone": "muted",
 	}}, nil
 }
 
@@ -1275,7 +1442,7 @@ func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent)
 		if navigation.screen == "job-details" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_QUEUE || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY) {
 			return true
 		}
-		if navigation.screen == "settings" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS) {
+		if navigation.screen == "settings" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_UPDATES) {
 			return true
 		}
 		if navigation.screen == "run-options" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY) {

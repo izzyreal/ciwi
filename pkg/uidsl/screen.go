@@ -62,6 +62,7 @@ type Node struct {
 	Style      Style               `yaml:"style,omitempty" json:"style,omitempty"`
 	Repeat     *Repeat             `yaml:"repeat,omitempty" json:"repeat,omitempty"`
 	Visible    *Condition          `yaml:"visible,omitempty" json:"visible,omitempty"`
+	Enabled    *Condition          `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	Actions    []Action            `yaml:"actions,omitempty" json:"actions,omitempty"`
 	Children   []Node              `yaml:"children,omitempty" json:"children,omitempty"`
 	Overrides  map[string]Override `yaml:"overrides,omitempty" json:"overrides,omitempty"`
@@ -127,6 +128,7 @@ type Repeat struct {
 type Condition struct {
 	Binding string `yaml:"binding" json:"binding"`
 	Equals  string `yaml:"equals,omitempty" json:"equals,omitempty"`
+	Empty   bool   `yaml:"empty,omitempty" json:"empty,omitempty"`
 	Not     bool   `yaml:"not,omitempty" json:"not,omitempty"`
 }
 
@@ -172,6 +174,8 @@ var commands = map[string]bool{
 	"agent-action":             true,
 	"project-action":           true,
 	"set-project-import-field": true, "import-project": true,
+	"set-server-update-option": true, "check-server-updates": true,
+	"refresh-rollback-versions": true, "server-update-action": true,
 }
 
 func ParseScreen(payload []byte) (*ScreenDocument, error) {

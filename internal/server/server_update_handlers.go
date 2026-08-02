@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/izzyreal/ciwi/internal/application"
 )
 
 var (
@@ -43,7 +46,20 @@ func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	infos, err := s.fetchAvailableUpdateInfos(r.Context())
+	result, err := s.app().updates.Check(r.Context())
+	if err != nil {
+		writeApplicationHTTPError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updateCheckResponse{
+		CurrentVersion: result.CurrentVersion, LatestVersion: result.LatestVersion,
+		AvailableVersions: append([]string(nil), result.AvailableVersions...), UpdateAvailable: result.UpdateAvailable,
+		ReleaseURL: result.ReleaseURL, AssetName: result.AssetName, Message: result.Message,
+	})
+}
+
+func (s *stateStore) checkForUpdates(ctx context.Context) updateCheckResponse {
+	infos, err := s.fetchAvailableUpdateInfos(ctx)
 	if err != nil {
 		_ = s.persistUpdateStatus(map[string]string{
 			updateKeyLastCheckedUTC:  time.Now().UTC().Format(time.RFC3339Nano),
@@ -51,11 +67,10 @@ func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) 
 			updateKeyMessage:         err.Error(),
 			"update_available":       "0",
 		})
-		writeJSON(w, http.StatusOK, updateCheckResponse{
+		return updateCheckResponse{
 			CurrentVersion: currentVersion(),
 			Message:        err.Error(),
-		})
-		return
+		}
 	}
 
 	current := currentVersion()
@@ -94,7 +109,7 @@ func (s *stateStore) updateCheckHandler(w http.ResponseWriter, r *http.Request) 
 		"update_available":       boolString(resp.UpdateAvailable),
 		updateKeyMessage:         resp.Message,
 	})
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }
 
 func (s *stateStore) updateApplyHandler(w http.ResponseWriter, r *http.Request) {
@@ -141,10 +156,18 @@ func (s *stateStore) updateTagsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	tags, err := s.fetchUpdateTags(r.Context())
+	result, err := s.listUpdateTags(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *stateStore) listUpdateTags(ctx context.Context) (updateTagsResponse, error) {
+	tags, err := s.fetchUpdateTags(ctx)
+	if err != nil {
+		return updateTagsResponse{}, err
 	}
 	current := strings.TrimSpace(currentVersion())
 	if current != "" {
@@ -159,18 +182,59 @@ func (s *stateStore) updateTagsHandler(w http.ResponseWriter, r *http.Request) {
 			tags = append([]string{current}, tags...)
 		}
 	}
-	writeJSON(w, http.StatusOK, updateTagsResponse{
+	return updateTagsResponse{
 		Tags:           tags,
 		CurrentVersion: current,
-	})
+	}, nil
 }
 
 func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Request, targetVersion string, rollback bool) {
+	action := application.ServerUpdateActionApply
+	if rollback {
+		action = application.ServerUpdateActionRollback
+	}
+	result, err := s.app().updates.Execute(r.Context(), application.ServerUpdateActionRequest{Action: action, TargetVersion: targetVersion})
+	if err != nil {
+		writeApplicationHTTPError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updateApplyResponse{
+		Updated: result.Updated, Message: result.Message, Target: result.TargetVersion,
+		TargetVersion: result.TargetVersion, CurrentVersion: result.CurrentVersion, Staged: result.Staged,
+	})
+}
+
+func writeApplicationHTTPError(w http.ResponseWriter, err error) {
+	statusCode := http.StatusInternalServerError
+	switch application.ErrorKindOf(err) {
+	case application.ErrorInvalidArgument:
+		statusCode = http.StatusBadRequest
+	case application.ErrorNotFound:
+		statusCode = http.StatusNotFound
+	case application.ErrorConflict:
+		statusCode = http.StatusConflict
+	case application.ErrorFailedPrecondition:
+		statusCode = http.StatusPreconditionFailed
+	case application.ErrorUnavailable:
+		statusCode = http.StatusServiceUnavailable
+	case application.ErrorUnsupported:
+		statusCode = http.StatusNotImplemented
+	}
+	http.Error(w, err.Error(), statusCode)
+}
+
+type updateApplyError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *updateApplyError) Error() string { return e.Message }
+
+func (s *stateStore) applyUpdateTarget(ctx context.Context, targetVersion string, rollback bool) (updateApplyResponse, error) {
 	s.update.mu.Lock()
 	if s.update.inProgress {
 		s.update.mu.Unlock()
-		http.Error(w, "update already in progress", http.StatusConflict)
-		return
+		return updateApplyResponse{}, &updateApplyError{StatusCode: http.StatusConflict, Message: "update already in progress"}
 	}
 	s.update.inProgress = true
 	s.update.lastMessage = "update started"
@@ -188,20 +252,18 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 
 	exePath, err := serverExecutablePathFn()
 	if err != nil {
-		s.failUpdateApply(w, http.StatusInternalServerError, "resolve executable path: "+err.Error(), "resolve executable path: "+err.Error())
-		return
+		msg := "resolve executable path: " + err.Error()
+		return updateApplyResponse{}, s.failUpdateApply(http.StatusInternalServerError, msg, msg)
 	}
 	exePath, _ = filepath.Abs(exePath)
 	if serverLooksLikeGoRunBinaryFn(exePath) {
 		msg := "self-update is unavailable for go run binaries; run built ciwi binary instead"
-		s.failUpdateApply(w, http.StatusBadRequest, msg, msg)
-		return
+		return updateApplyResponse{}, s.failUpdateApply(http.StatusBadRequest, msg, msg)
 	}
 
-	info, err := s.fetchUpdateInfoForTag(r.Context(), targetVersion)
+	info, err := s.fetchUpdateInfoForTag(ctx, targetVersion)
 	if err != nil {
-		s.failUpdateApply(w, http.StatusBadRequest, err.Error(), err.Error())
-		return
+		return updateApplyResponse{}, s.failUpdateApply(http.StatusBadRequest, err.Error(), err.Error())
 	}
 	if !isVersionDifferent(info.TagName, currentVersion()) {
 		msg := "already at target version"
@@ -214,44 +276,38 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 			updateKeyLatestVersion:   info.TagName,
 		})
 		_ = s.setAgentUpdateTarget(currentVersion())
-		writeJSON(w, http.StatusOK, updateApplyResponse{
+		return updateApplyResponse{
 			Updated: false,
 			Message: msg,
 			Target:  info.TagName,
-		})
-		return
+		}, nil
 	}
 
-	newBinPath, err := serverDownloadUpdateAssetFn(r.Context(), info.Asset.URL, info.Asset.Name)
+	newBinPath, err := serverDownloadUpdateAssetFn(ctx, info.Asset.URL, info.Asset.Name)
 	if err != nil {
 		msg := "download update asset: " + err.Error()
-		s.failUpdateApply(w, http.StatusBadRequest, msg, msg)
-		return
+		return updateApplyResponse{}, s.failUpdateApply(http.StatusBadRequest, msg, msg)
 	}
 	if strings.TrimSpace(info.ChecksumAsset.URL) != "" {
-		checksumText, err := serverDownloadTextAssetFn(r.Context(), info.ChecksumAsset.URL)
+		checksumText, err := serverDownloadTextAssetFn(ctx, info.ChecksumAsset.URL)
 		if err != nil {
 			msg := "download checksum asset: " + err.Error()
-			s.failUpdateApply(w, http.StatusBadRequest, msg, msg)
-			return
+			return updateApplyResponse{}, s.failUpdateApply(http.StatusBadRequest, msg, msg)
 		}
 		if err := serverVerifyFileSHA256Fn(newBinPath, info.Asset.Name, checksumText); err != nil {
 			msg := "checksum verification failed: " + err.Error()
-			s.failUpdateApply(w, http.StatusBadRequest, msg, msg)
-			return
+			return updateApplyResponse{}, s.failUpdateApply(http.StatusBadRequest, msg, msg)
 		}
 	}
 
 	if serverIsLinuxSystemUpdaterEnabledFn() {
 		if err := serverStageLinuxUpdateBinaryFn(info.TagName, info, newBinPath); err != nil {
 			msg := "stage update: " + err.Error()
-			s.failUpdateApply(w, http.StatusInternalServerError, msg, msg)
-			return
+			return updateApplyResponse{}, s.failUpdateApply(http.StatusInternalServerError, msg, msg)
 		}
 		if err := serverTriggerLinuxSystemUpdaterFn(); err != nil {
 			msg := "trigger updater: " + err.Error()
-			s.failUpdateApply(w, http.StatusInternalServerError, msg, msg)
-			return
+			return updateApplyResponse{}, s.failUpdateApply(http.StatusInternalServerError, msg, msg)
 		}
 		_ = s.persistUpdateStatus(map[string]string{
 			updateKeyLastApplyStatus:    updateStatusStaged,
@@ -260,27 +316,24 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 			updateKeyReloadProjectsPend: "1",
 		})
 		_ = s.setAgentUpdateTarget(info.TagName)
-		writeJSON(w, http.StatusOK, updateApplyResponse{
+		return updateApplyResponse{
 			Updated:        true,
 			Message:        updateApplyMessage(rollback, true),
 			TargetVersion:  info.TagName,
 			CurrentVersion: currentVersion(),
 			Staged:         true,
-		})
-		return
+		}, nil
 	}
 
 	helperPath := filepath.Join(filepath.Dir(newBinPath), "ciwi-update-helper-"+strconv.FormatInt(time.Now().UnixNano(), 10)+serverExeExtFn())
 	if err := serverCopyFileFn(exePath, helperPath, 0o755); err != nil {
 		msg := "prepare update helper: " + err.Error()
-		s.failUpdateApply(w, http.StatusInternalServerError, msg, msg)
-		return
+		return updateApplyResponse{}, s.failUpdateApply(http.StatusInternalServerError, msg, msg)
 	}
 
 	if err := serverStartUpdateHelperFn(helperPath, exePath, newBinPath, os.Getpid(), os.Args[1:]); err != nil {
 		msg := "start update helper: " + err.Error()
-		s.failUpdateApply(w, http.StatusInternalServerError, msg, msg)
-		return
+		return updateApplyResponse{}, s.failUpdateApply(http.StatusInternalServerError, msg, msg)
 	}
 	_ = s.persistUpdateStatus(map[string]string{
 		updateKeyLastApplyStatus:    updateStatusSuccess,
@@ -290,25 +343,26 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 	})
 	_ = s.setAgentUpdateTarget(info.TagName)
 
-	writeJSON(w, http.StatusOK, updateApplyResponse{
+	result := updateApplyResponse{
 		Updated:        true,
 		Message:        updateApplyMessage(rollback, false),
 		TargetVersion:  info.TagName,
 		CurrentVersion: currentVersion(),
-	})
+	}
 
 	go func() {
 		time.Sleep(250 * time.Millisecond)
 		os.Exit(0)
 	}()
+	return result, nil
 }
 
-func (s *stateStore) failUpdateApply(w http.ResponseWriter, statusCode int, responseMessage, persistMessage string) {
+func (s *stateStore) failUpdateApply(statusCode int, responseMessage, persistMessage string) error {
 	_ = s.persistUpdateStatus(map[string]string{
 		updateKeyLastApplyStatus: updateStatusFailed,
 		updateKeyMessage:         strings.TrimSpace(persistMessage),
 	})
-	http.Error(w, strings.TrimSpace(responseMessage), statusCode)
+	return &updateApplyError{StatusCode: statusCode, Message: strings.TrimSpace(responseMessage)}
 }
 
 func updateApplyMessage(rollback, staged bool) string {
@@ -329,10 +383,18 @@ func (s *stateStore) updateStatusHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	state, err := s.updateStateStore().ListAppState()
+	result, err := s.getUpdateStatus()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *stateStore) getUpdateStatus() (updateStatusResponse, error) {
+	state, err := s.updateStateStore().ListAppState()
+	if err != nil {
+		return updateStatusResponse{}, err
 	}
 	// Always expose live runtime version; persisted status can be stale across restarts.
 	state["update_current_version"] = currentVersion()
@@ -343,7 +405,7 @@ func (s *stateStore) updateStatusHandler(w http.ResponseWriter, r *http.Request)
 	state["update_agent_target_version"] = strings.TrimSpace(s.getAgentUpdateTarget())
 	blockedAgents := s.listAgentsBlockedOnNonServiceSelfUpdate()
 	state["update_agent_non_service_agents"] = strings.Join(blockedAgents, ",")
-	writeJSON(w, http.StatusOK, updateStatusResponse{Status: state})
+	return updateStatusResponse{Status: state}, nil
 }
 
 func (s *stateStore) persistUpdateStatus(values map[string]string) error {

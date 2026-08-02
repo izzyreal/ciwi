@@ -3,6 +3,7 @@
 package gio
 
 import (
+	"fmt"
 	"image"
 	"path/filepath"
 	"strings"
@@ -326,20 +327,20 @@ func TestRendererChangesThemeFromSharedSettingsSelect(t *testing.T) {
 	renderer.SetData(data)
 	var operations op.Ops
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
-	selectPath := ""
+	var spaceOption *widget.Clickable
 	for path := range renderer.buttons {
-		if strings.HasSuffix(path, "/select-toggle") {
-			selectPath = strings.TrimSuffix(path, "/select-toggle")
+		if !strings.HasSuffix(path, "/select-toggle") {
+			continue
+		}
+		candidate := strings.TrimSuffix(path, "/select-toggle")
+		renderer.button(candidate + "/select-toggle").Click()
+		operations.Reset()
+		renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+		if option := renderer.buttons[candidate+"/option/space"]; option != nil {
+			spaceOption = option
 			break
 		}
 	}
-	if selectPath == "" {
-		t.Fatal("settings theme select is unavailable")
-	}
-	renderer.button(selectPath + "/select-toggle").Click()
-	operations.Reset()
-	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
-	spaceOption := renderer.buttons[selectPath+"/option/space"]
 	if spaceOption == nil {
 		t.Fatal("settings theme options were not expanded")
 	}
@@ -379,6 +380,35 @@ func TestSettingsBindingDataUsesSelectedThemeDescription(t *testing.T) {
 	root := data["settings"].(map[string]any)
 	if root["selected_theme"] != "jungle" || root["selected_theme_description"] == "" {
 		t.Fatalf("settings binding = %+v", root)
+	}
+}
+
+func TestDecorateSettingsUpdateBuildsNativeStatus(t *testing.T) {
+	settings := map[string]any{}
+	decorateSettingsUpdate(settings, &cnpv1.ServerUpdateStatus{
+		CurrentVersion: "v0.2.0", LatestVersion: "v0.2.1", UpdateAvailable: true,
+		SelfUpdateSupported: true, LastApplyStatus: "success", Message: "ready",
+		BlockedAgentIds: []string{"agent-manual"},
+	}, nil)
+	if settings["update_supported"] != true {
+		t.Fatalf("update_supported = %#v", settings["update_supported"])
+	}
+	status := fmt.Sprint(settings["update_status_label"])
+	if !strings.Contains(status, "Current: v0.2.0") || !strings.Contains(status, "Update available") {
+		t.Fatalf("update_status_label = %q", status)
+	}
+	if !strings.Contains(fmt.Sprint(settings["blocked_agent_notice"]), "agent-manual") {
+		t.Fatalf("blocked_agent_notice = %q", settings["blocked_agent_notice"])
+	}
+}
+
+func TestConditionEnabledUsesDeclarativeBinding(t *testing.T) {
+	data := map[string]any{"settings": map[string]any{"supported": true, "selection": ""}}
+	if !conditionEnabled(&uidsl.Condition{Binding: "settings.supported"}, data) {
+		t.Fatal("true binding was disabled")
+	}
+	if conditionEnabled(&uidsl.Condition{Binding: "settings.selection", Empty: true, Not: true}, data) {
+		t.Fatal("empty selection was enabled")
 	}
 }
 
@@ -662,6 +692,26 @@ func TestPreserveSettingsUIStateAcrossRefresh(t *testing.T) {
 	second := projects[1].(map[string]any)
 	if second["action_status"] != "" {
 		t.Fatalf("empty project state should not be overlaid: %#v", second)
+	}
+}
+
+func TestPreserveSettingsUIStateRecognizesCompletedUpdate(t *testing.T) {
+	previous := map[string]any{"settings": map[string]any{
+		"selected_update_version": "v0.2.2", "selected_rollback_version": "",
+		"update_result": "Waiting for restart…", "update_result_tone": "muted",
+		"update_versions":   []any{map[string]any{"value": "v0.2.2", "label": "v0.2.2"}},
+		"rollback_versions": []any{map[string]any{"value": "", "label": "Refresh versions"}},
+	}}
+	next := map[string]any{"settings": map[string]any{
+		"update_current_version": "0.2.2", "selected_update_version": "", "selected_rollback_version": "",
+		"update_result": "", "update_result_tone": "muted", "rollback_result": "", "rollback_result_tone": "muted",
+		"update_versions": []any{}, "rollback_versions": []any{},
+	}}
+
+	preserveSettingsUIState(previous, next)
+	root := next["settings"].(map[string]any)
+	if root["update_result"] != "Update successful." || root["selected_update_version"] != "" {
+		t.Fatalf("completed update state = %#v", root)
 	}
 }
 

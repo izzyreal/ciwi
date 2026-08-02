@@ -360,6 +360,50 @@ message ImportProjectResult {
   uint32 pipelines = 5;
 }
 
+message ServerUpdateStatus {
+  string current_version = 1;
+  string latest_version = 2;
+  bool update_available = 3;
+  string last_checked_utc = 4;
+  string last_apply_status = 5;
+  string last_apply_utc = 6;
+  string message = 7;
+  string server_mode = 8;
+  bool self_update_supported = 9;
+  string self_update_reason = 10;
+  string agent_target_version = 11;
+  repeated string blocked_agent_ids = 12;
+}
+
+message ServerUpdateCheckResult {
+  string current_version = 1;
+  string latest_version = 2;
+  repeated string available_versions = 3;
+  bool update_available = 4;
+  string release_url = 5;
+  string asset_name = 6;
+  string message = 7;
+}
+
+message ServerUpdateVersions {
+  repeated string versions = 1;
+  string current_version = 2;
+}
+
+message ServerUpdateActionRequest {
+  string action = 1;
+  string target_version = 2;
+}
+
+message ServerUpdateActionResult {
+  bool updated = 1;
+  bool restarting = 2;
+  bool staged = 3;
+  string message = 4;
+  string target_version = 5;
+  string current_version = 6;
+}
+
 message ClearExecutionQueueRequest {}
 
 message ClearExecutionQueueResult {
@@ -418,6 +462,10 @@ message Request {
     AgentActionRequest agent_action = 25;
     ProjectActionRequest project_action = 26;
     ImportProjectRequest import_project = 27;
+    Empty get_server_update_status = 28;
+    Empty check_server_updates = 29;
+    Empty list_server_update_versions = 30;
+    ServerUpdateActionRequest server_update_action = 31;
   }
 }
 
@@ -443,6 +491,10 @@ message Response {
     AgentActionResult agent_action = 26;
     ProjectActionResult project_action = 27;
     ImportProjectResult import_project = 28;
+    ServerUpdateStatus server_update_status = 29;
+    ServerUpdateCheckResult server_update_check = 30;
+    ServerUpdateVersions server_update_versions = 31;
+    ServerUpdateActionResult server_update_action = 32;
   }
 }
 

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/izzyreal/ciwi/internal/application"
 )
 
 type serverRestartResponse struct {
@@ -21,13 +23,14 @@ func (s *stateStore) serverRestartHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	message := s.requestServerRestart()
-	_ = s.persistUpdateStatus(map[string]string{
-		"update_message": message,
-	})
+	result, err := s.app().updates.Execute(r.Context(), application.ServerUpdateActionRequest{Action: application.ServerUpdateActionRestart})
+	if err != nil {
+		writeApplicationHTTPError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, serverRestartResponse{
-		Restarting: true,
-		Message:    message,
+		Restarting: result.Restarting,
+		Message:    result.Message,
 	})
 }
 

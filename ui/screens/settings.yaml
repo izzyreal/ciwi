@@ -8,7 +8,7 @@ screen:
   dataSources:
     - name: settings
       query: get-settings-view
-      watchTopics: [server, projects]
+      watchTopics: [server, projects, updates]
   persistence:
     - name: selectedTheme
       storageKey: ciwi.ui.theme.v1
@@ -54,6 +54,17 @@ screen:
                 style:
                   role: subtitle
                   tone: muted
+          - component: button
+            text:
+              literal: Restart Server
+            icon: refresh
+            actions:
+              - on: activate
+                command: server-update-action
+                arguments: {action: restart, targetVersion: ""}
+                confirm:
+                  title: Restart Server
+                  message: Restart ciwi server now? The native client will reconnect automatically.
           - component: button
             text:
               literal: Back to Main
@@ -233,10 +244,212 @@ screen:
                       binding: project.action_status
                     visible:
                       binding: project.action_status
-                      equals: ""
+                      empty: true
                       not: true
                     style:
                       toneBinding: project.action_tone
+      - component: row
+        id: server-version-management
+        layout:
+          direction: horizontal
+          gap: large
+          align: start
+          wrap: true
+        children:
+          - component: section
+            id: server-updates
+            layout:
+              direction: vertical
+              gap: medium
+              grow: true
+              minWidth: "420"
+            children:
+              - component: text
+                text:
+                  literal: Server Updates
+                style:
+                  role: heading
+                  emphasis: strong
+              - component: card
+                layout:
+                  direction: vertical
+                  gap: medium
+                  padding: medium
+                children:
+                  - component: row
+                    layout:
+                      direction: horizontal
+                      gap: small
+                      align: center
+                      wrap: true
+                    children:
+                      - component: button
+                        text:
+                          literal: Check for updates
+                        enabled:
+                          binding: settings.update_supported
+                        actions:
+                          - on: activate
+                            command: check-server-updates
+                      - component: select
+                        layout:
+                          grow: true
+                          minWidth: "210"
+                        enabled:
+                          binding: settings.update_supported
+                        select:
+                          value: settings.selected_update_version
+                          options: settings.update_versions
+                          as: versionOption
+                          optionValue: versionOption.value
+                          optionLabel: versionOption.label
+                        actions:
+                          - on: change
+                            command: set-server-update-option
+                            arguments: {field: update, value: "{{selection.value}}"}
+                      - component: button
+                        text:
+                          literal: Update now
+                        enabled:
+                          binding: settings.selected_update_version
+                          empty: true
+                          not: true
+                        actions:
+                          - on: activate
+                            command: server-update-action
+                            arguments: {action: apply, targetVersion: "{{settings.selected_update_version}}"}
+                            confirm:
+                              title: Apply Update
+                              message: "Update server and agents to {{settings.selected_update_version}} and restart ciwi?"
+                  - component: text
+                    text:
+                      binding: settings.update_result
+                    visible:
+                      binding: settings.update_result
+                      empty: true
+                      not: true
+                    style:
+                      toneBinding: settings.update_result_tone
+                  - component: text
+                    text:
+                      binding: settings.update_capability_notice
+                    visible:
+                      binding: settings.update_capability_notice
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
+                  - component: text
+                    text:
+                      literal: Agents update after the server update, once their queued or running jobs finish.
+                    style:
+                      tone: muted
+                  - component: text
+                    text:
+                      binding: settings.update_status_label
+                    visible:
+                      binding: settings.update_status_label
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
+                  - component: text
+                    text:
+                      binding: settings.blocked_agent_notice
+                    visible:
+                      binding: settings.blocked_agent_notice
+                      empty: true
+                      not: true
+                    style:
+                      tone: warning
+          - component: section
+            id: rollback
+            layout:
+              direction: vertical
+              gap: medium
+              grow: true
+              minWidth: "420"
+            children:
+              - component: text
+                text:
+                  literal: Rollback
+                style:
+                  role: heading
+                  emphasis: strong
+              - component: card
+                layout:
+                  direction: vertical
+                  gap: medium
+                  padding: medium
+                children:
+                  - component: row
+                    layout:
+                      direction: horizontal
+                      gap: small
+                      align: center
+                      wrap: true
+                    children:
+                      - component: select
+                        layout:
+                          grow: true
+                          minWidth: "210"
+                        enabled:
+                          binding: settings.update_supported
+                        select:
+                          value: settings.selected_rollback_version
+                          options: settings.rollback_versions
+                          as: versionOption
+                          optionValue: versionOption.value
+                          optionLabel: versionOption.label
+                        actions:
+                          - on: change
+                            command: set-server-update-option
+                            arguments: {field: rollback, value: "{{selection.value}}"}
+                      - component: button
+                        text:
+                          literal: Refresh versions
+                        enabled:
+                          binding: settings.update_supported
+                        actions:
+                          - on: activate
+                            command: refresh-rollback-versions
+                      - component: button
+                        text:
+                          literal: Rollback
+                        enabled:
+                          binding: settings.selected_rollback_version
+                          empty: true
+                          not: true
+                        actions:
+                          - on: activate
+                            command: server-update-action
+                            arguments: {action: rollback, targetVersion: "{{settings.selected_rollback_version}}"}
+                            confirm:
+                              title: Rollback
+                              message: "Rollback server and agents to {{settings.selected_rollback_version}}?"
+                  - component: text
+                    text:
+                      binding: settings.rollback_result
+                    visible:
+                      binding: settings.rollback_result
+                      empty: true
+                      not: true
+                    style:
+                      toneBinding: settings.rollback_result_tone
+                  - component: text
+                    text:
+                      binding: settings.update_capability_notice
+                    visible:
+                      binding: settings.update_capability_notice
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
+                  - component: text
+                    text:
+                      literal: Shows only versions lower than the current server version.
+                    style:
+                      tone: muted
       - component: section
         id: connection
         layout:

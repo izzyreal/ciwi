@@ -31,6 +31,12 @@ type Services struct {
 		Execute(context.Context, application.ProjectActionRequest) (application.ProjectActionResult, error)
 		Import(context.Context, application.ImportProjectRequest) (application.ImportProjectResult, error)
 	}
+	Updates interface {
+		Status(context.Context) (application.ServerUpdateStatus, error)
+		Check(context.Context) (application.ServerUpdateCheckResult, error)
+		Versions(context.Context) (application.ServerUpdateVersions, error)
+		Execute(context.Context, application.ServerUpdateActionRequest) (application.ServerUpdateActionResult, error)
+	}
 	FrontPage interface {
 		GetFrontPageView(context.Context) (presentation.FrontPageView, error)
 	}
@@ -74,7 +80,7 @@ type Server struct {
 }
 
 func Listen(address string, services Services) (*Server, error) {
-	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native QUIC services are incomplete")
 	}
 	tlsConfig, err := serverTLSConfig()
@@ -142,7 +148,7 @@ func (s *Server) handleConnection(ctx context.Context, connection *quic.Conn) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_actions", "execution_housekeeping", "execution_controls", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_actions", "execution_housekeeping", "execution_controls", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -370,6 +376,41 @@ func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Res
 			response.Result = &cnpv1.Response_ImportProject{ImportProject: &cnpv1.ImportProjectResult{
 				ProjectName: result.ProjectName, RepoUrl: result.RepoURL, RepoRef: result.RepoRef,
 				ConfigFile: result.ConfigFile, Pipelines: uint32(max(result.Pipelines, 0)),
+			}}
+		}
+	case *cnpv1.Request_GetServerUpdateStatus:
+		var result application.ServerUpdateStatus
+		result, err = s.services.Updates.Status(ctx)
+		if err == nil {
+			response.Result = &cnpv1.Response_ServerUpdateStatus{ServerUpdateStatus: serverUpdateStatusToProto(result)}
+		}
+	case *cnpv1.Request_CheckServerUpdates:
+		var result application.ServerUpdateCheckResult
+		result, err = s.services.Updates.Check(ctx)
+		if err == nil {
+			response.Result = &cnpv1.Response_ServerUpdateCheck{ServerUpdateCheck: &cnpv1.ServerUpdateCheckResult{
+				CurrentVersion: result.CurrentVersion, LatestVersion: result.LatestVersion,
+				AvailableVersions: append([]string(nil), result.AvailableVersions...), UpdateAvailable: result.UpdateAvailable,
+				ReleaseUrl: result.ReleaseURL, AssetName: result.AssetName, Message: result.Message,
+			}}
+		}
+	case *cnpv1.Request_ListServerUpdateVersions:
+		var result application.ServerUpdateVersions
+		result, err = s.services.Updates.Versions(ctx)
+		if err == nil {
+			response.Result = &cnpv1.Response_ServerUpdateVersions{ServerUpdateVersions: &cnpv1.ServerUpdateVersions{
+				Versions: append([]string(nil), result.Versions...), CurrentVersion: result.CurrentVersion,
+			}}
+		}
+	case *cnpv1.Request_ServerUpdateAction:
+		var result application.ServerUpdateActionResult
+		result, err = s.services.Updates.Execute(ctx, application.ServerUpdateActionRequest{
+			Action: operation.ServerUpdateAction.GetAction(), TargetVersion: operation.ServerUpdateAction.GetTargetVersion(),
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_ServerUpdateAction{ServerUpdateAction: &cnpv1.ServerUpdateActionResult{
+				Updated: result.Updated, Restarting: result.Restarting, Staged: result.Staged, Message: result.Message,
+				TargetVersion: result.TargetVersion, CurrentVersion: result.CurrentVersion,
 			}}
 		}
 	case *cnpv1.Request_ClearExecutionQueue:

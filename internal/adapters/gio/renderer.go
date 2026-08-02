@@ -383,7 +383,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		if err != nil {
 			return r.errorLabel(gtx, err)
 		}
-		equal := fmt.Sprint(value) == defaultString(node.Visible.Equals, "true")
+		equal := conditionEqual(node.Visible, value)
 		if (!node.Visible.Not && !equal) || (node.Visible.Not && equal) {
 			return layout.Dimensions{}
 		}
@@ -825,13 +825,14 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 			label = resolved
 		}
 	}
+	enabled := conditionEnabled(node.Enabled, data)
 	button := r.button(path)
 	for button.Clicked(gtx) {
-		if len(node.Actions) > 0 {
+		if enabled && len(node.Actions) > 0 {
 			r.dispatchFromLayout(gtx, node.Actions[0], data)
 		}
 	}
-	return r.layoutControlButton(gtx, button, label, node.Icon)
+	return r.layoutControlButton(gtx, button, label, node.Icon, enabled)
 }
 
 func (r *Renderer) layoutInput(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
@@ -915,6 +916,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 	if node.Select == nil {
 		return r.errorLabel(gtx, fmt.Errorf("select configuration is missing"))
 	}
+	enabled := conditionEnabled(node.Enabled, data)
 	value, err := uidsl.Resolve(data, node.Select.Value)
 	if err != nil {
 		return r.errorLabel(gtx, err)
@@ -945,15 +947,20 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 	}
 	toggle := r.button(path + "/select-toggle")
 	for toggle.Clicked(gtx) {
-		r.selectOpen[path] = !r.selectOpen[path]
-		r.requestFrame()
+		if enabled {
+			r.selectOpen[path] = !r.selectOpen[path]
+			r.requestFrame()
+		}
+	}
+	if !enabled {
+		r.selectOpen[path] = false
 	}
 	header := func(gtx layout.Context) layout.Dimensions {
 		icon := "chevron-down"
 		if r.selectOpen[path] {
 			icon = "chevron-up"
 		}
-		return r.layoutControlButton(gtx, toggle, selectedLabel, icon)
+		return r.layoutControlButton(gtx, toggle, selectedLabel, icon, enabled)
 	}
 	if !r.selectOpen[path] {
 		return header(gtx)
@@ -980,7 +987,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 							icon = "check"
 						}
 						return layout.Inset{Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return r.layoutControlButton(gtx, choice, entry.label, icon)
+							return r.layoutControlButton(gtx, choice, entry.label, icon, true)
 						})
 					}))
 				}
@@ -990,14 +997,14 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 	)
 }
 
-func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string) layout.Dimensions {
+func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string, enabled bool) layout.Dimensions {
 	background := r.palette.surface
 	borderColor := r.palette.border
-	if button.Hovered() {
+	if enabled && button.Hovered() {
 		background = r.palette.subtle
 		borderColor = r.palette.accent
 	}
-	if gtx.Focused(button) {
+	if enabled && gtx.Focused(button) {
 		borderColor = r.palette.focus
 	}
 	return widget.Border{Color: borderColor, CornerRadius: 9, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1012,7 +1019,11 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 					if icon != nil {
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(19), gtx.Dp(19)))
-							return icon.Layout(gtx, r.palette.accent)
+							iconColor := r.palette.accent
+							if !enabled {
+								iconColor = r.palette.muted
+							}
+							return icon.Layout(gtx, iconColor)
 						}))
 					}
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1023,6 +1034,9 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 						labelStyle := material.Body1(r.theme, label)
 						labelStyle.TextSize = unit.Sp(14)
 						labelStyle.Color = r.palette.accent
+						if !enabled {
+							labelStyle.Color = r.palette.muted
+						}
 						return inset.Layout(gtx, labelStyle.Layout)
 					}))
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
@@ -1030,6 +1044,28 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 			})
 		})
 	})
+}
+
+func conditionEnabled(condition *uidsl.Condition, data any) bool {
+	if condition == nil {
+		return true
+	}
+	value, err := uidsl.Resolve(data, condition.Binding)
+	if err != nil {
+		return false
+	}
+	equal := conditionEqual(condition, value)
+	if condition.Not {
+		return !equal
+	}
+	return equal
+}
+
+func conditionEqual(condition *uidsl.Condition, value any) bool {
+	if condition != nil && condition.Empty {
+		return fmt.Sprint(value) == ""
+	}
+	return fmt.Sprint(value) == defaultString(condition.Equals, "true")
 }
 
 func (r *Renderer) layoutIconButton(gtx layout.Context, button *widget.Clickable, iconName, description string) layout.Dimensions {
@@ -1452,10 +1488,28 @@ func preserveSettingsUIState(previous, next any) {
 	if !previousOK || !nextOK {
 		return
 	}
-	for _, field := range []string{"import_repo_url", "import_repo_ref", "import_config_file"} {
+	for _, field := range []string{
+		"import_repo_url", "import_repo_ref", "import_config_file",
+		"update_versions", "selected_update_version", "rollback_versions", "selected_rollback_version",
+		"update_result", "update_result_tone", "rollback_result", "rollback_result_tone",
+	} {
 		if value, exists := previousRoot[field]; exists {
 			nextRoot[field] = value
 		}
+	}
+	selectedTarget := strings.TrimPrefix(strings.TrimSpace(fmt.Sprint(previousRoot["selected_update_version"])), "v")
+	if selectedTarget == "" {
+		selectedTarget = strings.TrimPrefix(strings.TrimSpace(fmt.Sprint(previousRoot["selected_rollback_version"])), "v")
+	}
+	currentVersion := strings.TrimPrefix(strings.TrimSpace(fmt.Sprint(nextRoot["update_current_version"])), "v")
+	if selectedTarget != "" && currentVersion == selectedTarget {
+		nextRoot["update_result"] = "Update successful."
+		nextRoot["update_result_tone"] = "success"
+		nextRoot["rollback_result"] = ""
+		nextRoot["selected_update_version"] = ""
+		nextRoot["selected_rollback_version"] = ""
+		nextRoot["update_versions"] = []any{map[string]any{"value": "", "label": "Check for updates"}}
+		nextRoot["rollback_versions"] = []any{map[string]any{"value": "", "label": "Refresh versions"}}
 	}
 	statuses := map[string]map[string]any{}
 	if projects, ok := previousRoot["projects"].([]any); ok {

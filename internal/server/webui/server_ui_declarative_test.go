@@ -125,6 +125,16 @@ func TestDeclarativeSettingsPreviewUsesSharedRenderer(t *testing.T) {
 	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	for _, field := range []string{"project.action_status = ''", "project.action_tone = 'muted'"} {
+		if !strings.Contains(script, field) {
+			t.Errorf("settings preview does not initialize %q", field)
+		}
+	}
 }
 
 func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {

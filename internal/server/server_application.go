@@ -20,6 +20,7 @@ type serverApplication struct {
 	server            *application.ServerQueries
 	projects          *application.ProjectQueries
 	projectCommands   *application.ProjectCommands
+	updates           *application.ServerUpdateOperations
 	pipelines         *application.PipelineCommands
 	pipelineChains    *application.PipelineChainCommands
 	runOptions        *application.RunOptionsQueries
@@ -57,6 +58,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 		server:          serverQueries,
 		projects:        projectQueries,
 		projectCommands: application.NewProjectCommands(projectMutatorAdapter{state: s}, receipts, changes),
+		updates:         application.NewServerUpdateOperations(serverUpdateAdapter{state: s}, changes),
 		pipelines: application.NewPipelineCommands(
 			pipelineRunnerAdapter{state: s},
 			receipts,

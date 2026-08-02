@@ -270,6 +270,52 @@
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
 		}
+		else if (action.command === 'set-server-update-option') {
+		  const settings = currentData && currentData.settings;
+		  if (!settings) throw new Error('Settings are unavailable');
+		  const binding = args.field === 'rollback' ? 'selected_rollback_version' : 'selected_update_version';
+		  settings[binding] = args.value || '';
+		}
+		else if (action.command === 'check-server-updates') {
+		  const response = await fetch('/api/v1/update/check', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  const settings = currentData.settings;
+		  const versions = Array.isArray(result.available_versions) ? result.available_versions : [];
+		  settings.update_versions = declarativeVersionOptions(versions, 'No newer versions available');
+		  settings.selected_update_version = versions[0] || '';
+		  settings.update_result = result.update_available
+		    ? 'Update available: ' + result.current_version + ' → ' + result.latest_version
+		    : (result.message || 'Up to date (' + result.current_version + ')');
+		  settings.update_result_tone = 'success';
+		  renderCurrent();
+		}
+		else if (action.command === 'refresh-rollback-versions') {
+		  const response = await fetch('/api/v1/update/tags');
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  const versions = (Array.isArray(result.tags) ? result.tags : []).filter(version => isDeclarativeLowerVersion(version, result.current_version));
+		  const settings = currentData.settings;
+		  settings.rollback_versions = declarativeVersionOptions(versions, 'No lower versions available');
+		  settings.selected_rollback_version = versions[0] || '';
+		  settings.rollback_result = 'Found ' + versions.length + ' rollback version(s)';
+		  settings.rollback_result_tone = 'success';
+		  renderCurrent();
+		}
+		else if (action.command === 'server-update-action') {
+		  const path = args.action === 'restart' ? '/api/v1/server/restart' : (args.action === 'rollback' ? '/api/v1/update/rollback' : '/api/v1/update/apply');
+		  const response = await fetch(path, {
+		    method: 'POST', headers: {'Content-Type': 'application/json'},
+		    body: JSON.stringify(args.action === 'restart' ? {} : {target_version: args.targetVersion || ''}),
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  const settings = currentData.settings;
+		  const field = args.action === 'rollback' ? 'rollback_result' : 'update_result';
+		  settings[field] = result.message || 'Request accepted';
+		  settings[field + '_tone'] = 'success';
+		  renderCurrent();
+		}
 		else if (action.command === 'clear-queue') {
 		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
 		  if (!response.ok) throw new Error(await response.text());
@@ -327,7 +373,9 @@
     const node = withWebOverride(rawNode);
     if (node.hidden) return document.createDocumentFragment();
     if (node.visible) {
-      const equal = String(resolve(data, node.visible.binding)) === String(node.visible.equals || 'true');
+	  const equal = node.visible.empty
+	    ? String(resolve(data, node.visible.binding)) === ''
+	    : String(resolve(data, node.visible.binding)) === String(node.visible.equals || 'true');
       if (node.visible.not ? equal : !equal) return document.createDocumentFragment();
     }
     if (node.repeat && node.component !== 'scroller') {
@@ -350,6 +398,12 @@
     if (style.emphasis) element.classList.add('dsl-' + style.emphasis);
     if (style.truncate) element.classList.add('dsl-truncate');
     applyLayout(element, node.layout);
+	if (node.enabled) {
+	  const equal = node.enabled.empty
+	    ? String(resolve(data, node.enabled.binding)) === ''
+	    : String(resolve(data, node.enabled.binding)) === String(node.enabled.equals || 'true');
+	  element.disabled = node.enabled.not ? equal : !equal;
+	}
     if (node.component === 'disclosure') {
       const summary = document.createElement('summary');
 	  if (style.role === 'execution-row' && node.image) {
@@ -430,6 +484,25 @@
   function renderCurrent() {
     if (!currentDocument || !currentData) return;
     root.replaceChildren(renderNode(currentDocument.screen.root, currentData));
+  }
+
+  function declarativeVersionOptions(versions, emptyLabel) {
+	const values = (Array.isArray(versions) ? versions : []).map(value => String(value || '').trim()).filter(Boolean);
+	return values.length ? values.map(value => ({value, label: value})) : [{value: '', label: emptyLabel}];
+  }
+
+  function isDeclarativeLowerVersion(candidate, current) {
+	const parse = value => {
+	  const match = String(value || '').trim().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)/);
+	  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+	};
+	const left = parse(candidate);
+	const right = parse(current);
+	if (!left || !right) return false;
+	for (let index = 0; index < 3; index += 1) {
+	  if (left[index] !== right[index]) return left[index] < right[index];
+	}
+	return false;
   }
 
   function outputMatchRanges(output, query) {
@@ -537,10 +610,16 @@
         const selected = themeOptions.find(theme => theme.name === selectedTheme);
 		const projectsResponse = await fetch('/api/v1/projects');
 		if (!projectsResponse.ok) throw new Error(await projectsResponse.text());
+		const updateStatusResponse = await fetch('/api/v1/update/status');
+		if (!updateStatusResponse.ok) throw new Error(await updateStatusResponse.text());
 		const projectsPayload = await projectsResponse.json();
+		const updateStatusPayload = await updateStatusResponse.json();
+		const updateStatus = updateStatusPayload.status || {};
 		const projects = Array.isArray(projectsPayload.projects) ? projectsPayload.projects : [];
 		projects.forEach(project => {
 		  project.can_reload = String(project.source_kind || '') !== 'managed_yaml';
+		  project.action_status = '';
+		  project.action_tone = 'muted';
 		  project.source_label = project.can_reload
 		    ? [project.repo_url || '', project.repo_ref || ''].filter(Boolean).join(' · ')
 		    : 'Managed YAML stored in ciwi';
@@ -549,6 +628,13 @@
 		  server: responseView, themes: themeOptions, projects,
 		  selected_theme: selectedTheme, selected_theme_description: selected ? selected.description : '',
 		  import_repo_url: '', import_repo_ref: '', import_config_file: 'ciwi-project.yaml',
+		  update_supported: String(updateStatus.update_server_self_update_supported || '') === '1',
+		  update_capability_notice: updateStatus.update_server_mode === 'dev' ? 'Running in dev mode. Updates disabled.' : (updateStatus.update_server_self_update_reason || ''),
+		  update_status_label: ['Current: ' + (updateStatus.update_current_version || ''), updateStatus.update_message ? 'Message: ' + updateStatus.update_message : ''].filter(Boolean).join(' · '),
+		  blocked_agent_notice: updateStatus.update_agent_non_service_agents ? 'Agents requiring manual update: ' + updateStatus.update_agent_non_service_agents : '',
+		  update_versions: declarativeVersionOptions([], 'Check for updates'), selected_update_version: '',
+		  rollback_versions: declarativeVersionOptions([], 'Refresh versions'), selected_rollback_version: '',
+		  update_result: '', update_result_tone: 'muted', rollback_result: '', rollback_result_tone: 'muted',
 		};
       }
       if (jobMatch) {

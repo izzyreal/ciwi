@@ -122,7 +122,7 @@ screen:
                   template: "Created: {{jobDetails.created}}"
                 visible:
                   binding: jobDetails.created
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   tone: muted
@@ -131,7 +131,7 @@ screen:
                   template: "Started: {{jobDetails.started}}"
                 visible:
                   binding: jobDetails.started
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   tone: muted
@@ -140,7 +140,7 @@ screen:
                   template: "Finished: {{jobDetails.finished}} · Duration: {{jobDetails.duration}}"
                 visible:
                   binding: jobDetails.finished
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   tone: muted
@@ -149,7 +149,7 @@ screen:
                   template: "Agent: {{jobDetails.agent}}"
                 visible:
                   binding: jobDetails.agent
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   tone: muted
@@ -158,21 +158,21 @@ screen:
                   template: "Current step: {{jobDetails.current_step}}"
                 visible:
                   binding: jobDetails.current_step
-                  equals: ""
+                  empty: true
                   not: true
               - component: text
                 text:
                   template: "Exit code: {{jobDetails.exit_code}}"
                 visible:
                   binding: jobDetails.exit_code
-                  equals: ""
+                  empty: true
                   not: true
               - component: text
                 text:
                   template: "Error: {{jobDetails.error}}"
                 visible:
                   binding: jobDetails.error
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   tone: danger
@@ -240,7 +240,7 @@ screen:
                   binding: jobDetails.selected_timeline_item.status_label
                 visible:
                   binding: jobDetails.selected_timeline_item.status_label
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   toneBinding: jobDetails.selected_timeline_item.status
@@ -249,7 +249,7 @@ screen:
                   binding: jobDetails.selected_timeline_item.description
                 visible:
                   binding: jobDetails.selected_timeline_item.description
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   tone: muted
@@ -258,7 +258,7 @@ screen:
                   template: "Duration: {{jobDetails.selected_timeline_item.duration}}"
                 visible:
                   binding: jobDetails.selected_timeline_item.duration
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   tone: muted
@@ -267,14 +267,14 @@ screen:
                   template: "Exit code: {{jobDetails.selected_timeline_item.exit_code}}"
                 visible:
                   binding: jobDetails.selected_timeline_item.exit_code
-                  equals: ""
+                  empty: true
                   not: true
               - component: text
                 text:
                   template: "Error: {{jobDetails.selected_timeline_item.error}}"
                 visible:
                   binding: jobDetails.selected_timeline_item.error
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   tone: danger
@@ -364,6 +364,6 @@ screen:
                   literal: No output reported yet.
                 visible:
                   binding: jobDetails.output
-                  equals: ""
+                  empty: true
                 style:
                   tone: muted

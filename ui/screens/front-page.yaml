@@ -121,7 +121,7 @@ screen:
                           grow: true
                         visible:
                           binding: project.repo_url
-                          equals: ""
+                          empty: true
                           not: true
                         style:
                           role: body
@@ -406,7 +406,7 @@ screen:
                                           binding: job.current_step
                                         visible:
                                           binding: job.current_step
-                                          equals: ""
+                                          empty: true
                                           not: true
                                         style:
                                           tone: muted
@@ -574,7 +574,7 @@ screen:
                                           binding: job.current_step
                                         visible:
                                           binding: job.current_step
-                                          equals: ""
+                                          empty: true
                                           not: true
                                         style:
                                           tone: muted

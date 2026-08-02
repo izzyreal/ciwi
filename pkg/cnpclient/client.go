@@ -104,6 +104,52 @@ func (c *Client) GetServerInfo(ctx context.Context) (*cnpv1.ServerInfo, error) {
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) GetServerUpdateStatus(ctx context.Context) (*cnpv1.ServerUpdateStatus, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetServerUpdateStatus{GetServerUpdateStatus: &cnpv1.Empty{}}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetServerUpdateStatus(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) CheckServerUpdates(ctx context.Context) (*cnpv1.ServerUpdateCheckResult, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_CheckServerUpdates{CheckServerUpdates: &cnpv1.Empty{}}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetServerUpdateCheck(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) ListServerUpdateVersions(ctx context.Context) (*cnpv1.ServerUpdateVersions, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_ListServerUpdateVersions{ListServerUpdateVersions: &cnpv1.Empty{}}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetServerUpdateVersions(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) ServerUpdateAction(ctx context.Context, action, targetVersion string) (*cnpv1.ServerUpdateActionResult, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_ServerUpdateAction{ServerUpdateAction: &cnpv1.ServerUpdateActionRequest{
+		Action: action, TargetVersion: targetVersion,
+	}}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetServerUpdateAction(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) ListProjects(ctx context.Context) (*cnpv1.ProjectList, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_ListProjects{ListProjects: &cnpv1.Empty{}}}, "")
 	if err != nil {

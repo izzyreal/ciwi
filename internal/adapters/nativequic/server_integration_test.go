@@ -24,6 +24,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		Server:            serverService{},
 		Projects:          projectService{},
 		ProjectCommands:   projectService{},
+		Updates:           updateService{},
 		FrontPage:         frontPageService{},
 		ProjectDetails:    projectDetailsService{},
 		JobDetails:        jobDetailsService{},
@@ -139,6 +140,22 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil || importResult.ProjectName != "imported" || importResult.Pipelines != 1 {
 		t.Fatalf("project import = %#v, %v", importResult, err)
 	}
+	updateStatus, err := client.GetServerUpdateStatus(ctx)
+	if err != nil || updateStatus.CurrentVersion != "v0.2.0" || !updateStatus.SelfUpdateSupported {
+		t.Fatalf("update status = %#v, %v", updateStatus, err)
+	}
+	updateCheck, err := client.CheckServerUpdates(ctx)
+	if err != nil || len(updateCheck.AvailableVersions) != 1 || updateCheck.AvailableVersions[0] != "v0.2.1" {
+		t.Fatalf("update check = %#v, %v", updateCheck, err)
+	}
+	versions, err := client.ListServerUpdateVersions(ctx)
+	if err != nil || len(versions.Versions) != 1 || versions.Versions[0] != "v0.1.9" {
+		t.Fatalf("update versions = %#v, %v", versions, err)
+	}
+	updateAction, err := client.ServerUpdateAction(ctx, application.ServerUpdateActionRestart, "")
+	if err != nil || !updateAction.Restarting {
+		t.Fatalf("update action = %#v, %v", updateAction, err)
+	}
 	cleared, err := client.ClearExecutionQueue(ctx, "clear-command-key")
 	if err != nil || cleared.Cleared != 2 {
 		t.Fatalf("clear queue = %#v, %v", cleared, err)
@@ -169,7 +186,7 @@ func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
 func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -201,7 +218,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	changes := application.NewChangeHub()
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -229,7 +246,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -309,6 +326,24 @@ func (serverService) GetServerInfo(context.Context) (domain.ServerInfo, error) {
 }
 
 type projectService struct{}
+
+type updateService struct{}
+
+func (updateService) Status(context.Context) (application.ServerUpdateStatus, error) {
+	return application.ServerUpdateStatus{CurrentVersion: "v0.2.0", SelfUpdateSupported: true}, nil
+}
+
+func (updateService) Check(context.Context) (application.ServerUpdateCheckResult, error) {
+	return application.ServerUpdateCheckResult{CurrentVersion: "v0.2.0", LatestVersion: "v0.2.1", AvailableVersions: []string{"v0.2.1"}, UpdateAvailable: true}, nil
+}
+
+func (updateService) Versions(context.Context) (application.ServerUpdateVersions, error) {
+	return application.ServerUpdateVersions{CurrentVersion: "v0.2.0", Versions: []string{"v0.1.9"}}, nil
+}
+
+func (updateService) Execute(_ context.Context, request application.ServerUpdateActionRequest) (application.ServerUpdateActionResult, error) {
+	return application.ServerUpdateActionResult{Restarting: request.Action == application.ServerUpdateActionRestart, Message: "accepted"}, nil
+}
 
 func (projectService) ListProjects(context.Context) ([]domain.Project, error) {
 	return testProjects(), nil

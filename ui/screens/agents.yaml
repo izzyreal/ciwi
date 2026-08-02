@@ -222,7 +222,7 @@ screen:
                   binding: agent.recent_log
                 visible:
                   binding: agent.recent_log
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   role: code

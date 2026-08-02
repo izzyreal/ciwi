@@ -44,7 +44,7 @@ screen:
                   binding: projectDetails.project.repo_url
                 visible:
                   binding: projectDetails.project.repo_url
-                  equals: ""
+                  empty: true
                   not: true
                 style:
                   role: subtitle

@@ -13,6 +13,16 @@ func serverInfoToProto(info domain.ServerInfo) *cnpv1.ServerInfo {
 	}
 }
 
+func serverUpdateStatusToProto(status application.ServerUpdateStatus) *cnpv1.ServerUpdateStatus {
+	return &cnpv1.ServerUpdateStatus{
+		CurrentVersion: status.CurrentVersion, LatestVersion: status.LatestVersion, UpdateAvailable: status.UpdateAvailable,
+		LastCheckedUtc: status.LastCheckedUTC, LastApplyStatus: status.LastApplyStatus, LastApplyUtc: status.LastApplyUTC,
+		Message: status.Message, ServerMode: status.ServerMode, SelfUpdateSupported: status.SelfUpdateSupported,
+		SelfUpdateReason: status.SelfUpdateReason, AgentTargetVersion: status.AgentTargetVersion,
+		BlockedAgentIds: append([]string(nil), status.BlockedAgentIDs...),
+	}
+}
+
 func projectDetailsToProto(view presentation.ProjectDetailsView) *cnpv1.ProjectDetailsView {
 	projects := projectsToProto([]domain.Project{view.Project})
 	var project *cnpv1.ProjectSummary
