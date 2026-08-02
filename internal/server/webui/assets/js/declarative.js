@@ -66,9 +66,9 @@
 
   function semanticTone(value) {
     switch (String(value || '').trim().toLowerCase()) {
-      case 'succeeded': case 'success': case 'passed': case 'complete': case 'completed': return 'success';
-      case 'failed': case 'failure': case 'error': case 'cancelled': case 'canceled': return 'danger';
-      case 'queued': case 'waiting': case 'pending': case 'not reached': return 'warning';
+      case 'succeeded': case 'success': case 'passed': case 'complete': case 'completed': case 'online': return 'success';
+      case 'failed': case 'failure': case 'error': case 'cancelled': case 'canceled': case 'offline': return 'danger';
+      case 'queued': case 'waiting': case 'pending': case 'not reached': case 'stale': return 'warning';
       case 'running': case 'leased': case 'in progress': case 'active': return 'accent';
       default: return 'muted';
     }
@@ -234,6 +234,15 @@
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  element.textContent = 'Queued';
+		}
+		else if (action.command === 'agent-action') {
+		  const response = await fetch('/api/v1/agents/' + encodeURIComponent(args.agentId) + '/actions', {
+		    method: 'POST',
+		    headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+		    body: JSON.stringify({action: args.action}),
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
 		}
 		else if (action.command === 'clear-queue') {
 		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
@@ -471,13 +480,14 @@
       const projectMatch = window.location.pathname.match(/^\/declarative-preview\/projects\/(\d+)\/?$/);
       const jobMatch = window.location.pathname.match(/^\/declarative-preview\/jobs\/([^/]+)\/?$/);
       const settingsMatch = window.location.pathname.match(/^\/declarative-preview\/settings\/?$/);
+	  const agentsMatch = window.location.pathname.match(/^\/declarative-preview\/agents\/?$/);
 	  const runOptionsURL = runOptionsViewURL('', '');
 	  const runOptionsMatch = runOptionsURL !== '';
-	  const screenName = runOptionsMatch ? 'run-options' : (projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : 'front-page')));
+	  const screenName = runOptionsMatch ? 'run-options' : (projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : (agentsMatch ? 'agents' : 'front-page'))));
       const viewURL = projectMatch
         ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1])
-		: (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : (runOptionsMatch ? runOptionsURL : '/api/v1/views/front-page')));
-	  const bindingRoot = runOptionsMatch ? 'runOptions' : (projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : 'frontPage')));
+		: (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : (agentsMatch ? '/api/v1/views/agents' : (runOptionsMatch ? runOptionsURL : '/api/v1/views/front-page'))));
+	  const bindingRoot = runOptionsMatch ? 'runOptions' : (projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : (agentsMatch ? 'agents' : 'frontPage'))));
       const [screenResponse, themeResponse, viewResponse] = await Promise.all([
         fetch('/ui/contracts/screens/' + screenName + '.json'),
         fetch('/ui/contracts/themes.json'),
@@ -487,7 +497,7 @@
       const [documentContract, themes, responseView] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
       applyContractTheme(themes);
       let view = responseView;
-	  if (!projectMatch && !jobMatch && !settingsMatch && !runOptionsMatch) {
+	  if (!projectMatch && !jobMatch && !settingsMatch && !agentsMatch && !runOptionsMatch) {
         decorateExecutionCards(view.queued_executions, true);
         decorateExecutionCards(view.history_executions, false);
       }

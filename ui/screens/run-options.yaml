@@ -8,7 +8,7 @@ screen:
   dataSources:
     - name: runOptions
       query: get-run-options
-      watchTopics: [projects, agents]
+      watchTopics: [projects, agent-eligibility]
   root:
     component: page
     id: run-options

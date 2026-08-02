@@ -11,13 +11,14 @@ import (
 type ChangeTopic string
 
 const (
-	ChangeServer   ChangeTopic = "server"
-	ChangeProjects ChangeTopic = "projects"
-	ChangeAgents   ChangeTopic = "agents"
-	ChangeQueue    ChangeTopic = "queue"
-	ChangeHistory  ChangeTopic = "history"
-	ChangeUpdates  ChangeTopic = "updates"
-	ChangeVault    ChangeTopic = "vault"
+	ChangeServer           ChangeTopic = "server"
+	ChangeProjects         ChangeTopic = "projects"
+	ChangeAgents           ChangeTopic = "agents"
+	ChangeQueue            ChangeTopic = "queue"
+	ChangeHistory          ChangeTopic = "history"
+	ChangeUpdates          ChangeTopic = "updates"
+	ChangeVault            ChangeTopic = "vault"
+	ChangeAgentEligibility ChangeTopic = "agent-eligibility"
 )
 
 type Change struct {

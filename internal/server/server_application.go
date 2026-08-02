@@ -22,6 +22,8 @@ type serverApplication struct {
 	pipelines         *application.PipelineCommands
 	pipelineChains    *application.PipelineChainCommands
 	runOptions        *application.RunOptionsQueries
+	agents            *presentation.AgentsQueries
+	agentCommands     *application.AgentCommands
 	executions        *application.ExecutionQueries
 	executionCommands *application.ExecutionCommands
 	executionControls *application.ExecutionControlCommands
@@ -47,6 +49,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 	serverQueries := application.NewServerQueries(localServerInfoSource{})
 	projectQueries := application.NewProjectQueries(sqliteadapter.NewProjectRepository(s.db))
 	executionQueries := application.NewExecutionQueries(executionviewsadapter.NewRepository(s.db, 40))
+	agentQueries := application.NewAgentQueries(agentRepositoryAdapter{state: s})
 	changes := application.NewChangeHub()
 	receipts := sqliteadapter.NewCommandReceiptRepository(s.db)
 	return &serverApplication{
@@ -59,6 +62,8 @@ func newServerApplication(s *stateStore) *serverApplication {
 		),
 		pipelineChains:    application.NewPipelineChainCommands(pipelineChainRunnerAdapter{state: s}, receipts, changes),
 		runOptions:        application.NewRunOptionsQueries(runOptionsAdapter{state: s}),
+		agents:            presentation.NewAgentsQueries(agentQueries),
+		agentCommands:     application.NewAgentCommands(agentMutatorAdapter{state: s}, receipts, changes),
 		executions:        executionQueries,
 		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
 		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),

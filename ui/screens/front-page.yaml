@@ -56,6 +56,15 @@ screen:
                   tone: muted
           - component: button
             text:
+              literal: Agents
+            icon: server
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /agents
+          - component: button
+            text:
               literal: Global Settings
             icon: settings
             actions:

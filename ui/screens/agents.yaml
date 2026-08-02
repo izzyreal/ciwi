@@ -1,0 +1,194 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: agents
+  title: Agents
+  description: Connected build agents and operational controls
+screen:
+  dataSources:
+    - name: agents
+      query: get-agents-view
+      watchTopics: [agents]
+  root:
+    component: page
+    id: agents
+    layout:
+      direction: vertical
+      gap: large
+      padding: large
+      maxWidth: page
+    children:
+      - component: row
+        id: agents-header
+        layout:
+          direction: horizontal
+          gap: medium
+          align: center
+        children:
+          - component: column
+            layout:
+              direction: vertical
+              gap: small
+              grow: true
+            children:
+              - component: text
+                text:
+                  literal: Agents
+                style:
+                  role: title
+                  emphasis: strong
+              - component: text
+                text:
+                  binding: agents.summary
+                style:
+                  tone: muted
+          - component: button
+            text:
+              literal: Refresh
+            icon: refresh
+            actions:
+              - on: activate
+                command: refresh
+          - component: button
+            text:
+              literal: Back to Main
+            icon: arrow-left
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /
+      - component: list
+        layout:
+          direction: vertical
+          gap: medium
+        repeat:
+          source: agents.agents
+          as: agent
+          key: agent.id
+        children:
+          - component: disclosure
+            text:
+              template: "Agent: {{agent.id}} · {{agent.status_label}}"
+            disclosure:
+              defaultExpanded: true
+              stateKey: "agent:{{agent.id}}"
+            layout:
+              direction: vertical
+              gap: medium
+              padding: medium
+            style:
+              role: body
+              emphasis: strong
+              toneBinding: agent.status
+            children:
+              - component: text
+                text:
+                  template: "{{agent.hostname}} · {{agent.platform}} · {{agent.version}}"
+              - component: text
+                text:
+                  template: "{{agent.authorization}} · {{agent.activation}} · {{agent.run_mode}} · last seen {{agent.last_seen}}"
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  template: "Capabilities: {{agent.capabilities_label}}"
+                style:
+                  tone: muted
+              - component: text
+                text:
+                  binding: agent.update_label
+                style:
+                  tone: muted
+              - component: row
+                layout:
+                  direction: horizontal
+                  gap: small
+                  wrap: true
+                children:
+                  - component: button
+                    text:
+                      literal: Authorize
+                    visible:
+                      binding: agent.authorized
+                      equals: "false"
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: authorize}
+                  - component: button
+                    text:
+                      literal: Unauthorize
+                    visible:
+                      binding: agent.authorized
+                      equals: "true"
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: unauthorize}
+                        confirm:
+                          title: Unauthorize agent?
+                          message: The agent will remain known to ciwi but cannot lease new jobs until it is authorized again. Running work is not interrupted.
+                  - component: button
+                    text:
+                      literal: Activate
+                    visible:
+                      binding: agent.deactivated
+                      equals: "true"
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: activate}
+                  - component: button
+                    text:
+                      literal: Deactivate
+                    visible:
+                      binding: agent.deactivated
+                      equals: "false"
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: deactivate}
+                        confirm:
+                          title: Deactivate agent?
+                          message: The agent will stop receiving work and its active jobs will be cancelled.
+                  - component: button
+                    text:
+                      literal: Refresh Tools
+                    visible:
+                      binding: agent.can_contact
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: refresh-tools}
+                  - component: button
+                    text:
+                      literal: Restart
+                    visible:
+                      binding: agent.can_contact
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: restart}
+                        confirm:
+                          title: Restart agent?
+                          message: Requests an agent process restart. Work already in progress may be interrupted.
+                  - component: button
+                    text:
+                      literal: Update
+                    visible:
+                      binding: agent.can_update
+                    actions:
+                      - on: activate
+                        command: agent-action
+                        arguments: {agentId: "{{agent.id}}", action: update}
+              - component: text
+                text:
+                  binding: agent.recent_log
+                visible:
+                  binding: agent.recent_log
+                  equals: ""
+                  not: true
+                style:
+                  role: code
+                  tone: muted

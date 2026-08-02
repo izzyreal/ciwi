@@ -1458,11 +1458,11 @@ func rendererTheme(document *uidsl.ThemeDocument) (*material.Theme, palette, err
 
 func semanticTone(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "succeeded", "success", "passed", "complete", "completed":
+	case "succeeded", "success", "passed", "complete", "completed", "online":
 		return "success"
-	case "failed", "failure", "error", "cancelled", "canceled":
+	case "failed", "failure", "error", "cancelled", "canceled", "offline":
 		return "danger"
-	case "queued", "waiting", "pending", "not reached":
+	case "queued", "waiting", "pending", "not reached", "stale":
 		return "warning"
 	case "running", "leased", "in progress", "active":
 		return "accent"
@@ -1474,6 +1474,7 @@ func semanticTone(value string) string {
 func materialIcons() (map[string]*widget.Icon, error) {
 	sources := map[string][]byte{
 		"settings": icons.ActionSettings, "arrow-left": icons.NavigationArrowBack,
+		"server":      icons.HardwareComputer,
 		"adjustments": icons.ImageTune,
 		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
 		"chevron-down": icons.NavigationExpandMore, "chevron-up": icons.NavigationExpandLess,

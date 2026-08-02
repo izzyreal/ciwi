@@ -298,6 +298,44 @@ message RunOptionsView {
   string selected_agent_id = 13;
 }
 
+message AgentSummary {
+  string id = 1;
+  string hostname = 2;
+  string platform = 3;
+  string version = 4;
+  string status = 5;
+  string status_label = 6;
+  string authorization = 7;
+  string activation = 8;
+  bool authorized = 9;
+  bool deactivated = 10;
+  bool job_in_progress = 11;
+  string capabilities_label = 12;
+  string run_mode = 13;
+  string last_seen = 14;
+  string recent_log = 15;
+  string update_label = 16;
+  bool can_update = 17;
+  bool can_contact = 18;
+}
+
+message AgentsView {
+  string summary = 1;
+  repeated AgentSummary agents = 2;
+}
+
+message AgentActionRequest {
+  string agent_id = 1;
+  string action = 2;
+}
+
+message AgentActionResult {
+  bool requested = 1;
+  string agent_id = 2;
+  string message = 3;
+  string target = 4;
+}
+
 message ClearExecutionQueueRequest {}
 
 message ClearExecutionQueueResult {
@@ -322,6 +360,7 @@ enum ChangeTopic {
   CHANGE_TOPIC_HISTORY = 5;
   CHANGE_TOPIC_UPDATES = 6;
   CHANGE_TOPIC_VAULT = 7;
+  CHANGE_TOPIC_AGENT_ELIGIBILITY = 8;
 }
 
 message WatchChangesRequest {}
@@ -351,6 +390,8 @@ message Request {
     ControlExecutionRequest rerun_execution = 21;
     RunPipelineChainRequest run_pipeline_chain = 22;
     GetRunOptionsRequest get_run_options = 23;
+    Empty get_agents_view = 24;
+    AgentActionRequest agent_action = 25;
   }
 }
 
@@ -372,6 +413,8 @@ message Response {
     RerunExecutionResult rerun_execution = 22;
     RunPipelineChainResult run_pipeline_chain = 23;
     RunOptionsView run_options = 24;
+    AgentsView agents_view = 25;
+    AgentActionResult agent_action = 26;
   }
 }
 

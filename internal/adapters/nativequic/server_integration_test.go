@@ -29,6 +29,8 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		Pipelines:         pipelines,
 		PipelineChains:    pipelines,
 		RunOptions:        pipelines,
+		Agents:            agentService{},
+		AgentCommands:     agentService{},
 		ExecutionCommands: executions,
 		ExecutionControls: executions,
 		Changes:           changes,
@@ -120,6 +122,14 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil || runOptions.TargetLabel != "build" || len(runOptions.EligibleAgents) != 2 || runOptions.SelectedSourceRef != "refs/heads/main" {
 		t.Fatalf("run options = %#v, %v", runOptions, err)
 	}
+	agents, err := client.GetAgentsView(ctx)
+	if err != nil || agents.Summary != "1/1 online" || len(agents.Agents) != 1 {
+		t.Fatalf("agents = %#v, %v", agents, err)
+	}
+	agentResult, err := client.AgentAction(ctx, &cnpv1.AgentActionRequest{AgentId: "agent-1", Action: "restart"}, "agent-command-key")
+	if err != nil || !agentResult.Requested || agentResult.AgentId != "agent-1" {
+		t.Fatalf("agent action = %#v, %v", agentResult, err)
+	}
 	cleared, err := client.ClearExecutionQueue(ctx, "clear-command-key")
 	if err != nil || cleared.Cleared != 2 {
 		t.Fatalf("clear queue = %#v, %v", cleared, err)
@@ -151,7 +161,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -183,7 +193,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
-		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -211,7 +221,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
+		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -296,6 +306,16 @@ func (projectService) ListProjects(context.Context) ([]domain.Project, error) {
 }
 
 type frontPageService struct{}
+
+type agentService struct{}
+
+func (agentService) GetAgentsView(context.Context) (presentation.AgentsView, error) {
+	return presentation.AgentsView{Summary: "1/1 online", Agents: []presentation.AgentView{{ID: "agent-1", Status: "online", StatusLabel: "Online"}}}, nil
+}
+
+func (agentService) Execute(_ context.Context, request application.AgentActionRequest) (application.AgentActionResult, error) {
+	return application.AgentActionResult{Requested: true, AgentID: request.AgentID, Message: request.Action + " requested"}, nil
+}
 
 func (frontPageService) GetFrontPageView(context.Context) (presentation.FrontPageView, error) {
 	return presentation.FrontPageView{

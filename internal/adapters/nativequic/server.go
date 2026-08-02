@@ -46,6 +46,12 @@ type Services struct {
 	RunOptions interface {
 		GetRunOptions(context.Context, application.RunOptionsRequest) (application.RunOptions, error)
 	}
+	Agents interface {
+		GetAgentsView(context.Context) (presentation.AgentsView, error)
+	}
+	AgentCommands interface {
+		Execute(context.Context, application.AgentActionRequest) (application.AgentActionResult, error)
+	}
 	ExecutionCommands interface {
 		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
 		FlushHistory(context.Context, application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error)
@@ -64,7 +70,7 @@ type Server struct {
 }
 
 func Listen(address string, services Services) (*Server, error) {
-	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native QUIC services are incomplete")
 	}
 	tlsConfig, err := serverTLSConfig()
@@ -132,7 +138,7 @@ func (s *Server) handleConnection(ctx context.Context, connection *quic.Conn) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "execution_housekeeping", "execution_controls", "watch_changes",
+			"server_info", "projects", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_actions", "execution_housekeeping", "execution_controls", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -321,6 +327,23 @@ func (s *Server) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Res
 		result, err = s.services.RunOptions.GetRunOptions(ctx, runOptionsRequestFromProto(operation.GetRunOptions))
 		if err == nil {
 			response.Result = &cnpv1.Response_RunOptions{RunOptions: runOptionsToProto(result)}
+		}
+	case *cnpv1.Request_GetAgentsView:
+		var result presentation.AgentsView
+		result, err = s.services.Agents.GetAgentsView(ctx)
+		if err == nil {
+			response.Result = &cnpv1.Response_AgentsView{AgentsView: agentsViewToProto(result)}
+		}
+	case *cnpv1.Request_AgentAction:
+		var result application.AgentActionResult
+		result, err = s.services.AgentCommands.Execute(ctx, application.AgentActionRequest{
+			AgentID: operation.AgentAction.GetAgentId(), Action: operation.AgentAction.GetAction(),
+			IdempotencyKey: request.Metadata.IdempotencyKey,
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_AgentAction{AgentAction: &cnpv1.AgentActionResult{
+				Requested: result.Requested, AgentId: result.AgentID, Message: result.Message, Target: result.Target,
+			}}
 		}
 	case *cnpv1.Request_ClearExecutionQueue:
 		var result application.ClearExecutionQueueResult

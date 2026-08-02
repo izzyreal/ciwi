@@ -44,7 +44,8 @@ func Dial(ctx context.Context, address, clientName, clientVersion string) (*Clie
 	connection, err := quic.DialAddr(ctx, address, tlsConfig, &quic.Config{
 		Allow0RTT:       false,
 		EnableDatagrams: false,
-		KeepAlivePeriod: 15 * time.Second,
+		KeepAlivePeriod: 3 * time.Second,
+		MaxIdleTimeout:  10 * time.Second,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dial ciwi native endpoint: %w", err)
@@ -144,6 +145,31 @@ func (c *Client) GetRunOptions(ctx context.Context, request *cnpv1.GetRunOptions
 		return nil, err
 	}
 	if result := response.GetRunOptions(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) GetAgentsView(ctx context.Context) (*cnpv1.AgentsView, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetAgentsView{GetAgentsView: &cnpv1.Empty{}}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetAgentsView(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) AgentAction(ctx context.Context, request *cnpv1.AgentActionRequest, idempotencyKey string) (*cnpv1.AgentActionResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_AgentAction{AgentAction: request}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetAgentAction(); result != nil {
 		return result, nil
 	}
 	return nil, unexpectedResult(response)

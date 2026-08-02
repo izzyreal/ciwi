@@ -56,7 +56,60 @@ type jobOutputBuffer struct {
 const (
 	maxNativeOutputBytes = 1024 * 1024
 	nativeNoticeDuration = 6 * time.Second
+	nativeReconnectMax   = 8 * time.Second
 )
+
+type nativeSession struct {
+	client      *cnpclient.Client
+	address     string
+	changes     <-chan *cnpv1.ChangeEvent
+	watchErrors <-chan error
+	cancelWatch context.CancelFunc
+}
+
+func connectNativeSession(ctx context.Context, options Options) (*nativeSession, error) {
+	address, err := nativeAddress(ctx, options.Address)
+	if err != nil {
+		return nil, err
+	}
+	dialCtx, cancelDial := context.WithTimeout(ctx, 8*time.Second)
+	client, err := cnpclient.Dial(dialCtx, address, "ciwi-desktop", options.Version)
+	cancelDial()
+	if err != nil {
+		return nil, err
+	}
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	changes, watchErrors, err := client.WatchChanges(watchCtx)
+	if err != nil {
+		cancelWatch()
+		_ = client.Close()
+		return nil, fmt.Errorf("start live updates: %w", err)
+	}
+	return &nativeSession{client: client, address: address, changes: changes, watchErrors: watchErrors, cancelWatch: cancelWatch}, nil
+}
+
+func (s *nativeSession) close() {
+	if s == nil {
+		return
+	}
+	if s.cancelWatch != nil {
+		s.cancelWatch()
+	}
+	if s.client != nil {
+		_ = s.client.Close()
+	}
+}
+
+func nextReconnectDelay(current time.Duration) time.Duration {
+	if current <= 0 {
+		return time.Second
+	}
+	next := current * 2
+	if next > nativeReconnectMax {
+		return nativeReconnectMax
+	}
+	return next
+}
 
 func (b *jobOutputBuffer) reset(jobID string) {
 	b.jobID = jobID
@@ -101,9 +154,13 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	agentsScreen, err := sharedUI.LoadScreen("agents")
+	if err != nil {
+		return err
+	}
 	screens := map[string]*uidsl.ScreenDocument{
 		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
-		"settings": settingsScreen, "run-options": runOptionsScreen,
+		"settings": settingsScreen, "run-options": runOptionsScreen, "agents": agentsScreen,
 	}
 	preferencesPath, err := nativePreferencesPath()
 	if err != nil {
@@ -170,20 +227,30 @@ func Run(options Options) error {
 }
 
 func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string) {
-	address, err := nativeAddress(ctx, options.Address)
-	if err != nil {
-		renderer.SetStatus(err.Error())
+	var session *nativeSession
+	reconnectDelay := time.Second
+	for session == nil {
+		connected, err := connectNativeSession(ctx, options)
+		if err == nil {
+			session = connected
+			break
+		}
+		renderer.SetStatus("Server unavailable; reconnecting: " + err.Error())
 		window.Invalidate()
-		return
+		timer := time.NewTimer(reconnectDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		reconnectDelay = nextReconnectDelay(reconnectDelay)
 	}
-	dialCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	client, err := cnpclient.Dial(dialCtx, address, "ciwi-desktop", options.Version)
-	cancel()
-	if err != nil {
-		renderer.SetStatus(err.Error())
-		window.Invalidate()
-		return
-	}
+	client := session.client
+	changes := session.changes
+	watchErrors := session.watchErrors
+	address := session.address
+	reconnectDelay = time.Second
 	var outputBatches <-chan *cnpv1.JobOutputBatch
 	var outputErrors <-chan error
 	var outputCancel context.CancelFunc
@@ -200,6 +267,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		stopOutput()
 		outputBuffer.reset(jobID)
 		outputBuffer.apply(renderer)
+		if client == nil {
+			return
+		}
 		streamCtx, cancelStream := context.WithCancel(ctx)
 		batches, errorsOut, streamErr := client.WatchJobOutput(streamCtx, jobID, 0)
 		if streamErr != nil {
@@ -212,7 +282,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		outputErrors = errorsOut
 	}
 	defer stopOutput()
-	defer client.Close()
+	defer func() {
+		if session != nil {
+			session.close()
+		}
+	}()
 	runOptionsLoads := make(chan runOptionsLoadResult, 8)
 	var runOptionsCancel context.CancelFunc
 	var runOptionsGeneration uint64
@@ -224,8 +298,12 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		runOptionsCancel = cancelLoad
 		runOptionsGeneration++
 		generation := runOptionsGeneration
+		activeClient := client
 		go func() {
-			data, loadErr := loadRunOptions(loadCtx, client, target)
+			if activeClient == nil {
+				return
+			}
+			data, loadErr := loadRunOptions(loadCtx, activeClient, target)
 			select {
 			case runOptionsLoads <- runOptionsLoadResult{navigation: target, generation: generation, data: data, err: loadErr}:
 			case <-ctx.Done():
@@ -279,15 +357,46 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		}
 	}()
 
-	watchCtx, watchCancel := context.WithCancel(ctx)
-	defer watchCancel()
-	changes, watchErrors, err := client.WatchChanges(watchCtx)
-	if err != nil {
-		renderer.SetStatus("Live updates unavailable: " + err.Error())
-		window.Invalidate()
+	var reconnectTimer *time.Timer
+	var reconnect <-chan time.Time
+	scheduleReconnect := func(reason string) {
+		if session != nil {
+			session.close()
+			session = nil
+		}
+		client = nil
 		changes = nil
 		watchErrors = nil
+		stopOutput()
+		if runOptionsCancel != nil {
+			runOptionsCancel()
+			runOptionsCancel = nil
+			runOptionsGeneration++
+		}
+		if reason != "" {
+			renderer.SetStatus("Connection lost; reconnecting: " + reason)
+		} else {
+			renderer.SetStatus("Connection lost; reconnecting…")
+		}
+		if reconnectTimer == nil {
+			reconnectTimer = time.NewTimer(reconnectDelay)
+		} else {
+			if !reconnectTimer.Stop() {
+				select {
+				case <-reconnectTimer.C:
+				default:
+				}
+			}
+			reconnectTimer.Reset(reconnectDelay)
+		}
+		reconnect = reconnectTimer.C
+		window.Invalidate()
 	}
+	defer func() {
+		if reconnectTimer != nil {
+			reconnectTimer.Stop()
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -297,9 +406,33 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				window.Invalidate()
 			}
 			statusExpiry = nil
+		case <-reconnect:
+			reconnect = nil
+			connected, connectErr := connectNativeSession(ctx, options)
+			if connectErr != nil {
+				reconnectDelay = nextReconnectDelay(reconnectDelay)
+				scheduleReconnect(connectErr.Error())
+				continue
+			}
+			session = connected
+			client = connected.client
+			changes = connected.changes
+			watchErrors = connected.watchErrors
+			address = connected.address
+			reconnectDelay = time.Second
+			if refreshErr := refreshScreen(ctx, client, renderer, screens, navigation); refreshErr != nil {
+				scheduleReconnect("resynchronize: " + refreshErr.Error())
+				continue
+			}
+			if navigation.screen == "job-details" {
+				startOutput(navigation.jobID)
+			}
+			renderer.SetTransientStatus("Reconnected to "+address, nativeNoticeDuration)
+			scheduleStatusExpiry()
+			window.Invalidate()
 		case change, ok := <-changes:
 			if !ok {
-				changes = nil
+				scheduleReconnect("")
 				continue
 			}
 			if change.ResyncRequired || relevantScreenChange(navigation, change) {
@@ -318,11 +451,13 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				window.Invalidate()
 			}
 		case watchErr, ok := <-watchErrors:
-			if ok && watchErr != nil {
-				renderer.SetStatus("Live updates stopped: " + watchErr.Error())
-				window.Invalidate()
+			if !ok {
+				scheduleReconnect("")
+				continue
 			}
-			watchErrors = nil
+			if watchErr != nil {
+				scheduleReconnect(watchErr.Error())
+			}
 		case batch, ok := <-outputBatches:
 			if !ok {
 				outputBatches = nil
@@ -353,6 +488,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			window.Invalidate()
 		case command := <-commands:
+			if client == nil && command.action.Command != "change-theme" {
+				renderer.SetStatus("Server is offline; reconnecting…")
+				window.Invalidate()
+				continue
+			}
 			if command.action.Command == "navigate" {
 				next, parseErr := navigationForRoute(command.arguments["route"])
 				if parseErr != nil {
@@ -561,6 +701,36 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetTransientStatus("Queued rerun "+result.JobExecutionId, nativeNoticeDuration)
+	case "agent-action":
+		agentID := strings.TrimSpace(command.arguments["agentId"])
+		action := strings.TrimSpace(command.arguments["action"])
+		if agentID == "" || action == "" {
+			renderer.SetStatus("Agent action is incomplete")
+			return
+		}
+		renderer.SetStatus("Sending agent request…")
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := client.AgentAction(commandCtx, &cnpv1.AgentActionRequest{AgentId: agentID, Action: action}, "")
+		cancel()
+		if err != nil {
+			renderer.SetStatus("Agent action failed: " + err.Error())
+			return
+		}
+		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
+			renderer.SetStatus("Agent action accepted, but refresh failed: " + err.Error())
+			return
+		}
+		message := strings.TrimSpace(result.Message)
+		if message == "" {
+			message = "Agent request accepted"
+		}
+		renderer.SetTransientStatus(message, nativeNoticeDuration)
+	case "refresh":
+		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
+			renderer.SetStatus("Refresh failed: " + err.Error())
+			return
+		}
+		renderer.SetTransientStatus("Refreshed", nativeNoticeDuration)
 	case "navigate":
 		if err := navigate(ctx, client, renderer, screens, navigation, command.arguments["route"]); err != nil {
 			renderer.SetStatus("Navigation failed: " + err.Error())
@@ -644,6 +814,8 @@ func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer,
 		renderer.SetStatus("Global settings")
 	} else if next.screen == "run-options" {
 		renderer.SetStatus("Run options")
+	} else if next.screen == "agents" {
+		renderer.SetStatus("Agents")
 	} else {
 		renderer.SetStatus("Job details")
 	}
@@ -697,6 +869,8 @@ func navigationForRoute(route string) (navigationState, error) {
 		next = navigationState{screen: "run-options", projectID: projectID, chainID: parts[2]}
 	case route == "/settings":
 		next.screen = "settings"
+	case route == "/agents":
+		next.screen = "agents"
 	default:
 		return navigationState{}, fmt.Errorf("unsupported route %q", route)
 	}
@@ -719,9 +893,26 @@ func refreshScreen(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		return refreshSettings(ctx, client, renderer, screen)
 	case "run-options":
 		return refreshRunOptions(ctx, client, renderer, screen, navigation)
+	case "agents":
+		return refreshAgents(ctx, client, renderer, screen)
 	default:
 		return fmt.Errorf("screen %q is unsupported", navigation.screen)
 	}
+}
+
+func refreshAgents(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument) error {
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	view, err := client.GetAgentsView(requestCtx)
+	if err != nil {
+		return err
+	}
+	data, err := protobufBindingData("agents", "agents", view)
+	if err != nil {
+		return err
+	}
+	renderer.SetScreenAndData(screen, data)
+	return nil
 }
 
 func refreshRunOptions(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, navigation navigationState) error {
@@ -978,7 +1169,10 @@ func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent)
 		if navigation.screen == "settings" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_SERVER {
 			return true
 		}
-		if navigation.screen == "run-options" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS) {
+		if navigation.screen == "run-options" && (topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY) {
+			return true
+		}
+		if navigation.screen == "agents" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS {
 			return true
 		}
 		if navigation.screen == "front-page" {

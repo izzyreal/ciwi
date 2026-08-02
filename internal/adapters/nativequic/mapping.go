@@ -222,6 +222,21 @@ func runOptionListToProto(options []application.RunOption) []*cnpv1.RunOption {
 	return result
 }
 
+func agentsViewToProto(view presentation.AgentsView) *cnpv1.AgentsView {
+	agents := make([]*cnpv1.AgentSummary, 0, len(view.Agents))
+	for _, agent := range view.Agents {
+		agents = append(agents, &cnpv1.AgentSummary{
+			Id: agent.ID, Hostname: agent.Hostname, Platform: agent.Platform, Version: agent.Version,
+			Status: agent.Status, StatusLabel: agent.StatusLabel, Authorization: agent.Authorization,
+			Activation: agent.Activation, Authorized: agent.Authorized, Deactivated: agent.Deactivated,
+			JobInProgress: agent.JobInProgress, CapabilitiesLabel: agent.CapabilitiesLabel,
+			RunMode: agent.RunMode, LastSeen: agent.LastSeen, RecentLog: agent.RecentLog,
+			UpdateLabel: agent.UpdateLabel, CanUpdate: agent.CanUpdate, CanContact: agent.CanContact,
+		})
+	}
+	return &cnpv1.AgentsView{Summary: view.Summary, Agents: agents}
+}
+
 func changeToProto(change application.Change) *cnpv1.ChangeEvent {
 	topics := make([]cnpv1.ChangeTopic, 0, len(change.Topics))
 	for _, topic := range change.Topics {
@@ -249,6 +264,8 @@ func changeTopicToProto(topic application.ChangeTopic) cnpv1.ChangeTopic {
 		return cnpv1.ChangeTopic_CHANGE_TOPIC_UPDATES
 	case application.ChangeVault:
 		return cnpv1.ChangeTopic_CHANGE_TOPIC_VAULT
+	case application.ChangeAgentEligibility:
+		return cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY
 	default:
 		return cnpv1.ChangeTopic_CHANGE_TOPIC_UNSPECIFIED
 	}

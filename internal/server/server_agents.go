@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 )
@@ -269,9 +271,15 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		state.RecentLog = appendAgentLog(state.RecentLog, fmt.Sprintf("server requested update to %s (attempt=%d)", target, state.UpdateAttempts))
 	}
 	s.agents[hb.AgentID] = state
+	eligibilityChanged := !hadPrev || agentEligibilityChanged(prev, state)
 	s.mu.Unlock()
 	if err := s.persistAgentSnapshot(hb.AgentID, state); err != nil {
 		slog.Warn("persist agent snapshot failed", "agent_id", hb.AgentID, "error", err)
+	}
+	if eligibilityChanged {
+		s.app().changes.Publish(application.ChangeAgents, application.ChangeAgentEligibility)
+	} else {
+		s.app().changes.Publish(application.ChangeAgents)
 	}
 
 	resp := protocol.HeartbeatResponse{
@@ -297,6 +305,11 @@ func (s *stateStore) heartbeatHandler(w http.ResponseWriter, r *http.Request) {
 		resp.Message = "server requested agent update"
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func agentEligibilityChanged(previous, current agentState) bool {
+	return previous.OS != current.OS || previous.Arch != current.Arch || previous.Authorized != current.Authorized ||
+		previous.Deactivated != current.Deactivated || !maps.Equal(previous.Capabilities, current.Capabilities)
 }
 
 func summarizeUpdateFailure(raw string) string {

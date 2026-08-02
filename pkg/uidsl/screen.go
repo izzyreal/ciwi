@@ -169,6 +169,7 @@ var commands = map[string]bool{
 	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
 	"set-disclosures": true,
 	"set-run-option":  true,
+	"agent-action":    true,
 }
 
 func ParseScreen(payload []byte) (*ScreenDocument, error) {
@@ -203,7 +204,7 @@ func (d *ScreenDocument) Validate() error {
 		if source.Query == "" {
 			return fmt.Errorf("dataSources[%d].query is required", i)
 		}
-		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" && source.Query != "get-run-options" {
+		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" && source.Query != "get-run-options" && source.Query != "get-agents-view" {
 			return fmt.Errorf("dataSources[%d].query %q is not supported", i, source.Query)
 		}
 		for _, topic := range source.WatchTopics {
@@ -242,6 +243,7 @@ func (d *ScreenDocument) Validate() error {
 var changeTopics = map[string]bool{
 	"server": true, "projects": true, "agents": true, "queue": true,
 	"history": true, "updates": true, "vault": true,
+	"agent-eligibility": true,
 }
 
 func validateNode(node Node, path string, ids map[string]struct{}, inheritedScope map[string]struct{}) error {
