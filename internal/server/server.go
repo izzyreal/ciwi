@@ -11,7 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/adapters/nativecnp"
 	"github.com/izzyreal/ciwi/internal/adapters/nativequic"
+	"github.com/izzyreal/ciwi/internal/adapters/nativetcp"
 	"github.com/izzyreal/ciwi/internal/server/jobprogress"
 	servervault "github.com/izzyreal/ciwi/internal/server/vault"
 	"github.com/izzyreal/ciwi/internal/store"
@@ -127,11 +129,12 @@ func Run(ctx context.Context) error {
 	stopMDNS := startMDNSAdvertiser(addr)
 	defer stopMDNS()
 
-	var nativeServer *nativequic.Server
-	nativeAddr := nativeListenAddr()
-	if nativeAddr != "" {
+	var nativeQUICServer *nativequic.Server
+	var nativeTCPServer *nativetcp.Server
+	nativeAddresses := nativeListenAddresses()
+	if nativeAddresses.QUIC != "" || nativeAddresses.TCP != "" {
 		app := s.app()
-		nativeServer, err = nativequic.Listen(nativeAddr, nativequic.Services{
+		handler, handlerErr := nativecnp.NewHandler(nativecnp.Services{
 			Server: app.server, Projects: app.projects, ProjectCommands: app.projectCommands, Updates: app.updates, FrontPage: app.frontPage,
 			ProjectDetails: app.projectDetails,
 			JobDetails:     app.jobDetails,
@@ -142,15 +145,37 @@ func Run(ctx context.Context) error {
 			ExecutionCommands: app.executionCommands, ExecutionControls: app.executionControls,
 			Changes: app.changes, Version: currentVersion(),
 		})
-		if err != nil {
-			return err
+		if handlerErr != nil {
+			return handlerErr
 		}
-		defer nativeServer.Close()
-		stopNativeMDNS := startNativeMDNSAdvertiser(nativeServer.Addr())
-		defer stopNativeMDNS()
+		tlsConfig, tlsErr := nativecnp.ServerTLSConfig()
+		if tlsErr != nil {
+			return fmt.Errorf("create native TLS configuration: %w", tlsErr)
+		}
+		if nativeAddresses.QUIC != "" {
+			nativeQUICServer, err = nativequic.ListenWithHandler(nativeAddresses.QUIC, handler, tlsConfig)
+			if err != nil {
+				return err
+			}
+			defer nativeQUICServer.Close()
+			stopNativeQUICMDNS := startNativeMDNSAdvertiser(nativeQUICServer.Addr(), "quic")
+			defer stopNativeQUICMDNS()
+		}
+		if nativeAddresses.TCP != "" {
+			nativeTCPServer, err = nativetcp.ListenWithHandler(nativeAddresses.TCP, handler, tlsConfig)
+			if err != nil {
+				if nativeQUICServer != nil {
+					_ = nativeQUICServer.Close()
+				}
+				return err
+			}
+			defer nativeTCPServer.Close()
+			stopNativeTCPMDNS := startNativeMDNSAdvertiser(nativeTCPServer.Addr(), "tcp")
+			defer stopNativeTCPMDNS()
+		}
 	}
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go func() {
 		slog.Info("ciwi server started", "addr", addr)
 		err := srv.ListenAndServe()
@@ -160,10 +185,16 @@ func Run(ctx context.Context) error {
 		}
 		errCh <- nil
 	}()
-	if nativeServer != nil {
+	if nativeQUICServer != nil {
 		go func() {
-			slog.Info("ciwi native server started", "addr", nativeServer.Addr(), "protocol", nativequic.ALPN)
-			errCh <- nativeServer.Serve(ctx)
+			slog.Info("ciwi native server started", "addr", nativeQUICServer.Addr(), "transport", "quic", "protocol", nativequic.ALPN)
+			errCh <- nativeQUICServer.Serve(ctx)
+		}()
+	}
+	if nativeTCPServer != nil {
+		go func() {
+			slog.Info("ciwi native server started", "addr", nativeTCPServer.Addr(), "transport", "tcp", "protocol", nativetcp.ALPN)
+			errCh <- nativeTCPServer.Serve(ctx)
 		}()
 	}
 
@@ -174,8 +205,11 @@ func Run(ctx context.Context) error {
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown server: %w", err)
 		}
-		if nativeServer != nil {
-			_ = nativeServer.Close()
+		if nativeQUICServer != nil {
+			_ = nativeQUICServer.Close()
+		}
+		if nativeTCPServer != nil {
+			_ = nativeTCPServer.Close()
 		}
 		slog.Info("ciwi server stopped")
 		return nil
@@ -191,8 +225,33 @@ func Run(ctx context.Context) error {
 func nativeListenAddr() string {
 	value, configured := os.LookupEnv("CIWI_NATIVE_ADDR")
 	if !configured {
-		return ":8113"
+		value = ":8113"
 	}
+	return normalizedNativeListenAddr(value)
+}
+
+type nativeAddresses struct {
+	QUIC string
+	TCP  string
+}
+
+func nativeListenAddresses() nativeAddresses {
+	common := nativeListenAddr()
+	return nativeAddresses{
+		QUIC: nativeTransportListenAddr("CIWI_NATIVE_QUIC_ADDR", common),
+		TCP:  nativeTransportListenAddr("CIWI_NATIVE_TCP_ADDR", common),
+	}
+}
+
+func nativeTransportListenAddr(key, fallback string) string {
+	value, configured := os.LookupEnv(key)
+	if !configured {
+		return fallback
+	}
+	return normalizedNativeListenAddr(value)
+}
+
+func normalizedNativeListenAddr(value string) string {
 	value = strings.TrimSpace(value)
 	switch strings.ToLower(value) {
 	case "", "off", "disabled", "false", "none":

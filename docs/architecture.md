@@ -16,8 +16,11 @@ flowchart LR
   WEB[Browser renderer] --> HTTP[HTTP adapter]
   GIO[Gio renderer] --> CNPCLIENT[CNP public client]
   HTTP --> APP[Application services]
-  CNP[CNP QUIC adapter] --> APP
-  CNPCLIENT --> CNP
+  CNP[CNP transport-neutral handler] --> APP
+  QUIC[QUIC adapter] --> CNP
+  TCP[TLS/TCP + Yamux adapter] --> CNP
+  CNPCLIENT --> QUIC
+  CNPCLIENT --> TCP
   APP --> DOMAIN[Domain types]
   PRES[Presentation queries] --> APP
   HTTP --> PRES
@@ -35,11 +38,13 @@ The dependency direction is deliberate:
 - `internal/application` owns use cases, command semantics, ports, typed
   errors, idempotency, and change invalidations.
 - `internal/presentation` composes renderer-facing view models.
-- `internal/adapters` maps SQLite, the existing execution engine, QUIC, and Gio
-  to those inner contracts.
+- `internal/adapters` maps SQLite, the existing execution engine, native CNP
+  sessions (QUIC or multiplexed TLS/TCP), and Gio to those inner contracts.
 - `internal/server` is the composition root and HTTP adapter. Existing server
   behavior moves inward by vertical slice rather than by a flag-day rewrite.
 - `pkg/cnp`, `pkg/cnp/v1`, and `pkg/cnpclient` are the public native protocol.
+- `internal/cnptransport/tcpmux` contains the Yamux-specific stream adapter;
+  Yamux is not part of CNP's public contract or application services.
 - `pkg/uidsl` and `ui` are independent of HTTP, CNP, SQLite, and renderer APIs.
 
 Architecture tests enforce the most important import boundaries. Interfaces
@@ -57,7 +62,9 @@ flowchart LR
 
   subgraph ServerHost[ciwi Server]
     API[HTTP adapter]
-    NATIVE[CNP v1 / QUIC adapter]
+    NATIVE[CNP v1 transport-neutral handler]
+    QUIC[QUIC listener]
+    TCP[TLS/TCP + Yamux listener]
     APP[Application + presentation services]
     SCHED[Queue + lease coordination]
     UPDATE[Server update controller]
@@ -80,7 +87,10 @@ flowchart LR
   VAULT[(Vault AppRole)]
 
   FE -->|REST/SSE| API
-  DESKTOP -->|CNP v1 / QUIC| NATIVE
+  DESKTOP -->|CNP v1 / QUIC| QUIC
+  DESKTOP -->|CNP v1 / TCP| TCP
+  QUIC --> NATIVE
+  TCP --> NATIVE
   API --> APP
   NATIVE --> APP
   API <--> DB
@@ -223,5 +233,5 @@ Primary persisted entities:
 
 - Intended for private networks/homelab-style deployments.
 - No claim of hard multi-tenant isolation/security hardening.
-- CNP v1 encrypts with QUIC TLS 1.3 but does not authenticate endpoint identity.
+- CNP v1 encrypts QUIC and TCP sessions with TLS 1.3 but does not authenticate endpoint identity.
 - Credentials/secrets expected to be managed through Vault mappings or host environment discipline.

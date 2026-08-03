@@ -41,6 +41,15 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if runOptionsScreen.Metadata.Name != "run-options" {
 		t.Fatalf("run options screen name = %q", runOptionsScreen.Metadata.Name)
 	}
+	for _, name := range []string{"agents", "connection"} {
+		screen, err := LoadScreen(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if screen.Metadata.Name != name {
+			t.Fatalf("%s screen name = %q", name, screen.Metadata.Name)
+		}
+	}
 	themes, err := LoadThemes()
 	if err != nil {
 		t.Fatal(err)

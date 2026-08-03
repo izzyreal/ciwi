@@ -195,6 +195,62 @@ func TestNativeListenAddrDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+func TestNativeListenAddressesDefaultBothTransportsToSamePort(t *testing.T) {
+	clearNativeAddressEnvironment(t)
+	got := nativeListenAddresses()
+	if got.QUIC != ":8113" || got.TCP != ":8113" {
+		t.Fatalf("native addresses = %+v", got)
+	}
+}
+
+func TestNativeListenAddressesSupportCommonAndPerTransportOverrides(t *testing.T) {
+	clearNativeAddressEnvironment(t)
+	t.Setenv("CIWI_NATIVE_ADDR", "127.0.0.1:9000")
+	t.Setenv("CIWI_NATIVE_QUIC_ADDR", "off")
+	t.Setenv("CIWI_NATIVE_TCP_ADDR", " 127.0.0.1:9001 ")
+	got := nativeListenAddresses()
+	if got.QUIC != "" || got.TCP != "127.0.0.1:9001" {
+		t.Fatalf("native addresses = %+v", got)
+	}
+}
+
+func TestNativeListenAddressesCanEnableOneTransportWhenCommonListenerIsDisabled(t *testing.T) {
+	clearNativeAddressEnvironment(t)
+	t.Setenv("CIWI_NATIVE_ADDR", "off")
+	t.Setenv("CIWI_NATIVE_TCP_ADDR", ":8113")
+	got := nativeListenAddresses()
+	if got.QUIC != "" || got.TCP != ":8113" {
+		t.Fatalf("native addresses = %+v", got)
+	}
+}
+
+func TestNativeMDNSServiceNamesMatchTransportDiscovery(t *testing.T) {
+	if got := nativeMDNSServiceName("quic"); got != "_ciwi-native._udp" {
+		t.Fatalf("QUIC service = %q", got)
+	}
+	if got := nativeMDNSServiceName("tcp"); got != "_ciwi-native._tcp" {
+		t.Fatalf("TCP service = %q", got)
+	}
+	if got := nativeMDNSServiceName("unknown"); got != "" {
+		t.Fatalf("unknown service = %q", got)
+	}
+}
+
+func clearNativeAddressEnvironment(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"CIWI_NATIVE_ADDR", "CIWI_NATIVE_QUIC_ADDR", "CIWI_NATIVE_TCP_ADDR"} {
+		value, configured := os.LookupEnv(key)
+		t.Cleanup(func() {
+			if configured {
+				_ = os.Setenv(key, value)
+			} else {
+				_ = os.Unsetenv(key)
+			}
+		})
+		_ = os.Unsetenv(key)
+	}
+}
+
 func TestRunCmd(t *testing.T) {
 	ctx := context.Background()
 	if runtime.GOOS == "windows" {

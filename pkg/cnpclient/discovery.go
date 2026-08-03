@@ -12,15 +12,34 @@ import (
 	"github.com/hashicorp/mdns"
 )
 
-const DiscoveryService = "_ciwi-native._udp"
+const (
+	DiscoveryQUICService = "_ciwi-native._udp"
+	DiscoveryTCPService  = "_ciwi-native._tcp"
+)
+
+type Transport string
+
+const (
+	TransportQUIC Transport = "quic"
+	TransportTCP  Transport = "tcp"
+)
 
 type Endpoint struct {
 	Name       string
 	Address    string
+	Transport  Transport
 	Host       string
 	Port       int
 	Version    string
 	APIVersion string
+}
+
+func (e Endpoint) Target() Target {
+	transport := e.Transport
+	if transport == "" {
+		transport = TransportQUIC
+	}
+	return Target{Transport: transport, Address: e.Address}
 }
 
 // Discover finds CNP endpoints advertised on the local network. Callers can
@@ -29,13 +48,45 @@ func Discover(ctx context.Context, timeout time.Duration) ([]Endpoint, error) {
 	if timeout <= 0 {
 		timeout = time.Second
 	}
+	type result struct {
+		endpoints []Endpoint
+		err       error
+	}
+	results := make(chan result, 2)
+	for _, service := range []string{DiscoveryQUICService, DiscoveryTCPService} {
+		service := service
+		go func() {
+			endpoints, err := discoverService(ctx, service, timeout)
+			results <- result{endpoints: endpoints, err: err}
+		}()
+	}
+	var endpoints []Endpoint
+	var firstError error
+	for range 2 {
+		result := <-results
+		endpoints = append(endpoints, result.endpoints...)
+		if firstError == nil && result.err != nil {
+			firstError = result.err
+		}
+	}
+	if len(endpoints) == 0 && firstError != nil && ctx.Err() == nil {
+		return nil, firstError
+	}
+	return uniqueEndpoints(endpoints), ctx.Err()
+}
+
+func discoverService(ctx context.Context, service string, timeout time.Duration) ([]Endpoint, error) {
 	entries := make(chan *mdns.ServiceEntry, 64)
-	params := newDiscoveryParams(timeout, entries)
+	params := newDiscoveryParamsForService(service, timeout, entries)
+	transport := TransportQUIC
+	if service == DiscoveryTCPService {
+		transport = TransportTCP
+	}
 	collected := make(chan []Endpoint, 1)
 	go func() {
 		var endpoints []Endpoint
 		for entry := range entries {
-			if endpoint, ok := endpointFromEntry(entry); ok {
+			if endpoint, ok := endpointFromEntry(entry, transport); ok {
 				endpoints = append(endpoints, endpoint)
 			}
 		}
@@ -47,11 +98,15 @@ func Discover(ctx context.Context, timeout time.Duration) ([]Endpoint, error) {
 	if err != nil && ctx.Err() == nil {
 		return nil, fmt.Errorf("discover ciwi native endpoints: %w", err)
 	}
-	return uniqueEndpoints(endpoints), ctx.Err()
+	return endpoints, ctx.Err()
 }
 
 func newDiscoveryParams(timeout time.Duration, entries chan<- *mdns.ServiceEntry) *mdns.QueryParam {
-	params := mdns.DefaultParams(DiscoveryService)
+	return newDiscoveryParamsForService(DiscoveryQUICService, timeout, entries)
+}
+
+func newDiscoveryParamsForService(service string, timeout time.Duration, entries chan<- *mdns.ServiceEntry) *mdns.QueryParam {
+	params := mdns.DefaultParams(service)
 	params.Timeout = timeout
 	params.Entries = entries
 	// Some otherwise healthy macOS/network configurations have no IPv6
@@ -62,7 +117,7 @@ func newDiscoveryParams(timeout time.Duration, entries chan<- *mdns.ServiceEntry
 	return params
 }
 
-func endpointFromEntry(entry *mdns.ServiceEntry) (Endpoint, bool) {
+func endpointFromEntry(entry *mdns.ServiceEntry, transport Transport) (Endpoint, bool) {
 	if entry == nil || entry.Port <= 0 {
 		return Endpoint{}, false
 	}
@@ -86,8 +141,11 @@ func endpointFromEntry(entry *mdns.ServiceEntry) (Endpoint, bool) {
 			metadata[key] = value
 		}
 	}
+	if transport != TransportTCP {
+		transport = TransportQUIC
+	}
 	return Endpoint{
-		Name: strings.TrimSuffix(entry.Name, "."), Address: net.JoinHostPort(host, strconv.Itoa(entry.Port)),
+		Name: strings.TrimSuffix(entry.Name, "."), Address: net.JoinHostPort(host, strconv.Itoa(entry.Port)), Transport: transport,
 		Host: host, Port: entry.Port, Version: metadata["version"], APIVersion: metadata["api_version"],
 	}, true
 }
@@ -96,13 +154,20 @@ func uniqueEndpoints(input []Endpoint) []Endpoint {
 	seen := map[string]struct{}{}
 	out := make([]Endpoint, 0, len(input))
 	for _, endpoint := range input {
-		if _, exists := seen[endpoint.Address]; exists {
+		if endpoint.Transport == "" {
+			endpoint.Transport = TransportQUIC
+		}
+		key := string(endpoint.Transport) + "://" + endpoint.Address
+		if _, exists := seen[key]; exists {
 			continue
 		}
-		seen[endpoint.Address] = struct{}{}
+		seen[key] = struct{}{}
 		out = append(out, endpoint)
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].Transport != out[j].Transport {
+			return out[i].Transport == TransportQUIC
+		}
 		if out[i].Name != out[j].Name {
 			return out[i].Name < out[j].Name
 		}

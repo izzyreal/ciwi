@@ -4,7 +4,9 @@
 
 Common variables:
 - `CIWI_SERVER_ADDR`: server bind address (default `:8112`)
-- `CIWI_NATIVE_ADDR`: CNP v1 QUIC bind address (default `:8113`); set to `off` to disable
+- `CIWI_NATIVE_ADDR`: common CNP v1 QUIC/UDP and TCP bind address (default `:8113`); set to `off` to disable both
+- `CIWI_NATIVE_QUIC_ADDR`: optional QUIC-specific bind override; set to `off` to disable QUIC only
+- `CIWI_NATIVE_TCP_ADDR`: optional TCP-specific bind override; set to `off` to disable TCP only
 - `CIWI_MDNS_ENABLE`: advertise HTTP and enabled native endpoints over mDNS (default `true`)
 - `CIWI_MDNS_INSTANCE`: override the advertised mDNS instance name
 - `CIWI_DB_PATH`: sqlite path (default `ciwi.db`)
@@ -26,7 +28,7 @@ Common variables:
 
 Native desktop client variables:
 
-- `CIWI_NATIVE_SERVER`: explicit CNP server address, equivalent to `ciwi-desktop -addr`
+- `CIWI_NATIVE_SERVER`: explicit CNP endpoint, equivalent to `ciwi-desktop -addr`; accepts `quic://host:port`, `tcp://host:port`, or scheme-less QUIC `host:port`
 - `CIWI_NATIVE_THEME`: shared theme name, equivalent to `ciwi-desktop -theme`
 
 Build-time version embedding:

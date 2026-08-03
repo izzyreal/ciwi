@@ -1,4 +1,4 @@
-package nativequic
+package nativecnp
 
 import (
 	"testing"
@@ -24,7 +24,7 @@ func TestSchedulingDiagnosisMappings(t *testing.T) {
 	job := jobDetailsToProto(presentation.JobDetailsView{
 		ID: "job-1", SchedulingState: domain.SchedulingWaiting, SchedulingSummary: "Matching agent is busy",
 		SchedulingRequirements: "windows · wix >=6.0.0",
-		SchedulingAgents: []presentation.SchedulingAgentView{{AgentID: "windows", Status: "Unavailable", Details: "busy", Tone: "warning"}},
+		SchedulingAgents:       []presentation.SchedulingAgentView{{AgentID: "windows", Status: "Unavailable", Details: "busy", Tone: "warning"}},
 	})
 	if job.SchedulingDiagnosis == nil || job.SchedulingDiagnosis.RequirementsLabel == "" || job.SchedulingDiagnosis.Agents[0].Details != "busy" {
 		t.Fatalf("job diagnosis = %+v", job.SchedulingDiagnosis)

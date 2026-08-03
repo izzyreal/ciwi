@@ -89,6 +89,26 @@ func TestAgentsDeclarativeScreenAndPreviewRoutes(t *testing.T) {
 	}
 }
 
+func TestConnectionDeclarativeScreenAndPreviewRoutes(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/connection.json", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("contract status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var screen uidsl.ScreenDocument
+	if err := json.Unmarshal(recorder.Body.Bytes(), &screen); err != nil {
+		t.Fatal(err)
+	}
+	if screen.Metadata.Name != "connection" {
+		t.Fatalf("screen = %#v", screen)
+	}
+	recorder = httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/connection", nil))
+	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
+		t.Fatalf("preview status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestDeclarativePreviewUsesSharedContractRenderer(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview", nil))

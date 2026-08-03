@@ -68,6 +68,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		serveScreenContract(w, "agents")
 		return
 	}
+	if r.URL.Path == "/ui/contracts/screens/connection.json" {
+		serveScreenContract(w, "connection")
+		return
+	}
 	if r.URL.Path == "/ui/contracts/themes.json" {
 		serveThemeContracts(w)
 		return
@@ -92,6 +96,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/declarative-preview/settings" || r.URL.Path == "/declarative-preview/settings/":
 		page = "declarative"
 	case r.URL.Path == "/declarative-preview/agents" || r.URL.Path == "/declarative-preview/agents/":
+		page = "declarative"
+	case r.URL.Path == "/declarative-preview/connection" || r.URL.Path == "/declarative-preview/connection/":
 		page = "declarative"
 	case r.URL.Path == "/settings":
 		page = "settings"

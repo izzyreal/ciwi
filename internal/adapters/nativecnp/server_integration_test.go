@@ -1,14 +1,17 @@
-package nativequic_test
+package nativecnp_test
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/adapters/nativecnp"
 	"github.com/izzyreal/ciwi/internal/adapters/nativequic"
+	"github.com/izzyreal/ciwi/internal/adapters/nativetcp"
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
@@ -177,6 +180,121 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	}
 }
 
+func TestTCPClientMultiplexesCallsAndWatches(t *testing.T) {
+	changes := application.NewChangeHub()
+	services := completeTestServices(changes)
+	server := startTCPServer(t, services)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := cnpclient.Dial(ctx, "tcp://"+server.Addr(), "ciwi-test", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	events, watchErrors, err := client.WatchChanges(watchCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := receiveEvent(t, events, watchErrors)
+	if !initial.ResyncRequired {
+		t.Fatalf("initial TCP change = %#v", initial)
+	}
+
+	const calls = 24
+	errorsOut := make(chan error, calls)
+	var callsDone sync.WaitGroup
+	for range calls {
+		callsDone.Add(1)
+		go func() {
+			defer callsDone.Done()
+			info, callErr := client.GetServerInfo(ctx)
+			if callErr == nil && info.Hostname != "buildbox" {
+				callErr = fmt.Errorf("hostname = %q", info.Hostname)
+			}
+			errorsOut <- callErr
+		}()
+	}
+	callsDone.Wait()
+	close(errorsOut)
+	for callErr := range errorsOut {
+		if callErr != nil {
+			t.Fatal(callErr)
+		}
+	}
+
+	changes.Publish(application.ChangeProjects)
+	change := receiveEvent(t, events, watchErrors)
+	if len(change.Topics) != 1 || change.Topics[0] != cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS {
+		t.Fatalf("TCP change topics = %v", change.Topics)
+	}
+	cancelWatch()
+	select {
+	case <-events:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled TCP watch did not close")
+	}
+	if _, err := client.GetServerInfo(ctx); err != nil {
+		t.Fatalf("TCP session was lost after cancelling one stream: %v", err)
+	}
+}
+
+func TestTCPAndQUICListenersShareOneNumericPort(t *testing.T) {
+	services := completeTestServices(application.NewChangeHub())
+	handler, err := nativecnp.NewHandler(services)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlsConfig, err := nativecnp.ServerTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tcpServer, err := nativetcp.ListenWithHandler("127.0.0.1:0", handler, tlsConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quicServer, err := nativequic.ListenWithHandler(tcpServer.Addr(), handler, tlsConfig)
+	if err != nil {
+		_ = tcpServer.Close()
+		t.Fatalf("QUIC could not share TCP numeric port %s: %v", tcpServer.Addr(), err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	tcpDone := make(chan error, 1)
+	quicDone := make(chan error, 1)
+	go func() { tcpDone <- tcpServer.Serve(ctx) }()
+	go func() { quicDone <- quicServer.Serve(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = tcpServer.Close()
+		_ = quicServer.Close()
+		for name, done := range map[string]<-chan error{"TCP": tcpDone, "QUIC": quicDone} {
+			select {
+			case serveErr := <-done:
+				if serveErr != nil {
+					t.Errorf("%s Serve() error = %v", name, serveErr)
+				}
+			case <-time.After(2 * time.Second):
+				t.Errorf("%s server did not stop", name)
+			}
+		}
+	})
+
+	dialCtx, cancelDial := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelDial()
+	for _, target := range []string{"quic://" + quicServer.Addr(), "tcp://" + tcpServer.Addr()} {
+		client, dialErr := cnpclient.Dial(dialCtx, target, "ciwi-test", "test")
+		if dialErr != nil {
+			t.Fatalf("dial %s: %v", target, dialErr)
+		}
+		info, infoErr := client.GetServerInfo(dialCtx)
+		_ = client.Close()
+		if infoErr != nil || info.Hostname != "buildbox" {
+			t.Fatalf("server info through %s = %#v, %v", target, info, infoErr)
+		}
+	}
+}
+
 func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
 	if _, err := nativequic.Listen("127.0.0.1:0", nativequic.Services{}); err == nil {
 		t.Fatal("Listen() accepted an incomplete service set")
@@ -285,6 +403,50 @@ func startServer(t *testing.T, services nativequic.Services) *nativequic.Server 
 		}
 	})
 	return server
+}
+
+func startTCPServer(t *testing.T, services nativecnp.Services) *nativetcp.Server {
+	t.Helper()
+	handler, err := nativecnp.NewHandler(services)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlsConfig, err := nativecnp.ServerTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := nativetcp.ListenWithHandler("127.0.0.1:0", handler, tlsConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = server.Close()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Serve() error = %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("native TCP server did not stop")
+		}
+	})
+	return server
+}
+
+func completeTestServices(changes *application.ChangeHub) nativecnp.Services {
+	pipelines := &pipelineService{}
+	executions := &executionCommandService{}
+	return nativecnp.Services{
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{},
+		FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Pipelines: pipelines, PipelineChains: pipelines, RunOptions: pipelines,
+		Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: executions,
+		ExecutionControls: executions, Changes: changes, Version: "v0.2.0",
+	}
 }
 
 func receiveEvent(t *testing.T, events <-chan *cnpv1.ChangeEvent, errorsOut <-chan error) *cnpv1.ChangeEvent {

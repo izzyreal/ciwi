@@ -2,7 +2,6 @@ package cnpclient
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -11,10 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/izzyreal/ciwi/pkg/cnp"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
-	"github.com/quic-go/quic-go"
 )
 
-const ALPN = "ciwi-native/1"
+const ALPN = cnp.ALPN
 
 type Error struct {
 	Code    cnpv1.StatusCode
@@ -29,30 +27,30 @@ func (e *Error) Error() string {
 }
 
 type Client struct {
-	connection *quic.Conn
-	welcome    *cnpv1.Welcome
+	session cnp.Session
+	welcome *cnpv1.Welcome
 }
 
 func Dial(ctx context.Context, address, clientName, clientVersion string) (*Client, error) {
-	// CNP v1 intentionally preserves ciwi's trusted-network model. QUIC still
-	// encrypts the connection, but v1 does not authenticate endpoint identity.
-	tlsConfig := &tls.Config{ // #nosec G402 -- documented CNP v1 trust model.
-		MinVersion:         tls.VersionTLS13,
-		NextProtos:         []string{ALPN},
-		InsecureSkipVerify: true,
+	target, err := ParseTarget(address)
+	if err != nil {
+		return nil, err
 	}
-	connection, err := quic.DialAddr(ctx, address, tlsConfig, &quic.Config{
-		Allow0RTT:       false,
-		EnableDatagrams: false,
-		KeepAlivePeriod: 3 * time.Second,
-		MaxIdleTimeout:  10 * time.Second,
-	})
+	var session cnp.Session
+	switch target.Transport {
+	case TransportQUIC:
+		session, err = dialQUIC(ctx, target.Address)
+	case TransportTCP:
+		session, err = dialTCP(ctx, target.Address)
+	default:
+		err = fmt.Errorf("unsupported native transport %q", target.Transport)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("dial ciwi native endpoint: %w", err)
 	}
-	client := &Client{connection: connection}
+	client := &Client{session: session}
 	if err := client.hello(ctx, clientName, clientVersion); err != nil {
-		_ = connection.CloseWithError(0x100, "hello failed")
+		_ = session.CloseWithError(fmt.Errorf("hello failed: %w", err))
 		return nil, err
 	}
 	return client, nil
@@ -61,23 +59,24 @@ func Dial(ctx context.Context, address, clientName, clientVersion string) (*Clie
 func (c *Client) Welcome() *cnpv1.Welcome { return c.welcome }
 
 func (c *Client) Close() error {
-	if c == nil || c.connection == nil {
+	if c == nil || c.session == nil {
 		return nil
 	}
-	return c.connection.CloseWithError(0, "client closed")
+	return c.session.CloseWithError(nil)
 }
 
 func (c *Client) hello(ctx context.Context, clientName, clientVersion string) error {
-	stream, err := c.connection.OpenStreamSync(ctx)
+	stream, err := c.session.OpenStream(ctx)
 	if err != nil {
 		return fmt.Errorf("open hello stream: %w", err)
 	}
+	defer stream.Close()
 	message := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Hello{Hello: &cnpv1.Hello{
 		ClientName: clientName, ClientVersion: clientVersion,
 		Capabilities: []string{"protobuf", "invalidation_stream", "job_output_stream"},
 	}}}
 	if err := cnp.Write(stream, message); err != nil {
-		stream.CancelRead(0x101)
+		stream.CancelRead()
 		return fmt.Errorf("write hello: %w", err)
 	}
 	_ = stream.Close()
@@ -357,7 +356,7 @@ func (c *Client) RerunExecution(ctx context.Context, jobExecutionID, idempotency
 }
 
 func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <-chan error, error) {
-	stream, err := c.connection.OpenStreamSync(ctx)
+	stream, err := c.session.OpenStream(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open watch stream: %w", err)
 	}
@@ -367,16 +366,20 @@ func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <
 		Operation: &cnpv1.Request_WatchChanges{WatchChanges: &cnpv1.WatchChangesRequest{}},
 	}}}
 	if err := cnp.Write(stream, request); err != nil {
-		stream.CancelRead(0x101)
+		_ = stream.Close()
+		stream.CancelRead()
 		return nil, nil, fmt.Errorf("write watch request: %w", err)
 	}
-	_ = stream.Close()
 	events := make(chan *cnpv1.ChangeEvent, 1)
 	errorsOut := make(chan error, 1)
 	go func() {
 		defer close(events)
 		defer close(errorsOut)
-		stopCancellation := context.AfterFunc(ctx, func() { stream.CancelRead(0) })
+		defer stream.Close()
+		stopCancellation := context.AfterFunc(ctx, func() {
+			_ = stream.Close()
+			stream.CancelRead()
+		})
 		defer stopCancellation()
 		reader := cnp.NewReader(stream)
 		for {
@@ -404,7 +407,8 @@ func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <
 			select {
 			case events <- change:
 			case <-ctx.Done():
-				stream.CancelRead(0)
+				_ = stream.Close()
+				stream.CancelRead()
 				return
 			}
 		}
@@ -413,7 +417,7 @@ func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <
 }
 
 func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afterEventID int64) (<-chan *cnpv1.JobOutputBatch, <-chan error, error) {
-	stream, err := c.connection.OpenStreamSync(ctx)
+	stream, err := c.session.OpenStream(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open job output stream: %w", err)
 	}
@@ -425,16 +429,20 @@ func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afte
 		}},
 	}}}
 	if err := cnp.Write(stream, request); err != nil {
-		stream.CancelRead(0x101)
+		_ = stream.Close()
+		stream.CancelRead()
 		return nil, nil, fmt.Errorf("write job output request: %w", err)
 	}
-	_ = stream.Close()
 	batches := make(chan *cnpv1.JobOutputBatch, 1)
 	errorsOut := make(chan error, 1)
 	go func() {
 		defer close(batches)
 		defer close(errorsOut)
-		stopCancellation := context.AfterFunc(ctx, func() { stream.CancelRead(0) })
+		defer stream.Close()
+		stopCancellation := context.AfterFunc(ctx, func() {
+			_ = stream.Close()
+			stream.CancelRead()
+		})
 		defer stopCancellation()
 		reader := cnp.NewReader(stream)
 		for {
@@ -462,7 +470,8 @@ func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afte
 			select {
 			case batches <- batch:
 			case <-ctx.Done():
-				stream.CancelRead(0)
+				_ = stream.Close()
+				stream.CancelRead()
 				return
 			}
 		}
@@ -471,10 +480,11 @@ func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afte
 }
 
 func (c *Client) call(ctx context.Context, request *cnpv1.Request, idempotencyKey string) (*cnpv1.Response, error) {
-	stream, err := c.connection.OpenStreamSync(ctx)
+	stream, err := c.session.OpenStream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("open native request stream: %w", err)
 	}
+	defer stream.Close()
 	requestID := uuid.NewString()
 	metadata := &cnpv1.RequestMetadata{RequestId: requestID, IdempotencyKey: idempotencyKey}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -486,7 +496,7 @@ func (c *Client) call(ctx context.Context, request *cnpv1.Request, idempotencyKe
 	request.Metadata = metadata
 	message := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Request{Request: request}}
 	if err := cnp.Write(stream, message); err != nil {
-		stream.CancelRead(0x101)
+		stream.CancelRead()
 		return nil, fmt.Errorf("write native request: %w", err)
 	}
 	_ = stream.Close()

@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	address := flag.String("addr", strings.TrimSpace(os.Getenv("CIWI_NATIVE_SERVER")), "ciwi CNP address (host:port); discovers with mDNS when omitted")
+	address := flag.String("addr", strings.TrimSpace(os.Getenv("CIWI_NATIVE_SERVER")), "ciwi CNP endpoint ([quic|tcp]://host:port); discovers with mDNS when omitted")
 	theme := flag.String("theme", envOrDefault("CIWI_NATIVE_THEME", ""), "native UI theme (defaults to the saved preference)")
 	flag.Parse()
 	done := make(chan error, 1)

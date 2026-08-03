@@ -262,6 +262,31 @@
 		  if (!binding) throw new Error('Unknown project import field');
 		  settings[binding] = args.value || '';
 		}
+		else if (action.command === 'set-connection-field') {
+		  const connection = (currentData && currentData.connection) || (currentData && currentData.settings);
+		  if (!connection) throw new Error('Connection settings are unavailable');
+		  if (args.field === 'mode') {
+		    const mode = args.value === 'explicit' ? 'explicit' : 'discover';
+		    if (currentData.connection) {
+		      connection.mode = mode;
+		      connection.explicit = mode === 'explicit';
+		    } else {
+		      connection.connection_mode = mode;
+		      connection.connection_explicit = mode === 'explicit';
+		    }
+		  } else if (args.field === 'endpoint') {
+		    if (currentData.connection) connection.endpoint = args.value || '';
+		    else connection.connection_endpoint = args.value || '';
+		  } else throw new Error('Unknown connection field');
+		  renderCurrent();
+		}
+		else if (action.command === 'save-connection' || action.command === 'retry-connection') {
+		  if (currentData && currentData.connection) {
+		    currentData.connection.status = 'Native connection changes are demonstrated by the desktop client.';
+		    currentData.connection.status_tone = 'muted';
+		    renderCurrent();
+		  }
+		}
 		else if (action.command === 'import-project') {
 		  const response = await fetch('/api/v1/projects/import', {
 		    method: 'POST',
@@ -671,13 +696,14 @@
       const jobMatch = window.location.pathname.match(/^\/declarative-preview\/jobs\/([^/]+)\/?$/);
       const settingsMatch = window.location.pathname.match(/^\/declarative-preview\/settings\/?$/);
 	  const agentsMatch = window.location.pathname.match(/^\/declarative-preview\/agents\/?$/);
+	  const connectionMatch = window.location.pathname.match(/^\/declarative-preview\/connection\/?$/);
 	  const runOptionsURL = runOptionsViewURL('', '');
 	  const runOptionsMatch = runOptionsURL !== '';
-	  const screenName = runOptionsMatch ? 'run-options' : (projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : (agentsMatch ? 'agents' : 'front-page'))));
+	  const screenName = connectionMatch ? 'connection' : (runOptionsMatch ? 'run-options' : (projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : (agentsMatch ? 'agents' : 'front-page')))));
       const viewURL = projectMatch
         ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1])
 		: (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : (agentsMatch ? '/api/v1/views/agents' : (runOptionsMatch ? runOptionsURL : '/api/v1/views/front-page'))));
-	  const bindingRoot = runOptionsMatch ? 'runOptions' : (projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : (agentsMatch ? 'agents' : 'frontPage'))));
+	  const bindingRoot = connectionMatch ? 'connection' : (runOptionsMatch ? 'runOptions' : (projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : (agentsMatch ? 'agents' : 'frontPage')))));
       const [screenResponse, themeResponse, viewResponse] = await Promise.all([
         fetch('/ui/contracts/screens/' + screenName + '.json'),
         fetch('/ui/contracts/themes.json'),
@@ -687,7 +713,7 @@
       const [documentContract, themes, responseView] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
       applyContractTheme(themes);
       let view = responseView;
-	  if (!projectMatch && !jobMatch && !settingsMatch && !agentsMatch && !runOptionsMatch) {
+	  if (!projectMatch && !jobMatch && !settingsMatch && !agentsMatch && !connectionMatch && !runOptionsMatch) {
         decorateExecutionCards(view.queued_executions, true);
         decorateExecutionCards(view.history_executions, false);
       }
@@ -726,8 +752,17 @@
 		  update_versions: declarativeVersionOptions([], 'Check for updates'), selected_update_version: '',
 		  rollback_versions: declarativeVersionOptions([], 'Refresh versions'), selected_rollback_version: '',
 		  update_result: '', update_result_tone: 'muted', rollback_result: '', rollback_result_tone: 'muted',
+		  connection_mode: 'discover', connection_endpoint: '', connection_explicit: false,
+		  connection_modes: [{value: 'discover', label: 'Automatic discovery'}, {value: 'explicit', label: 'Explicit endpoint'}],
 		};
       }
+	  if (connectionMatch) {
+		view = {
+		  mode: 'discover', endpoint: '', explicit: false, can_back: true,
+		  status: 'Native connection state is local to the desktop client.', status_tone: 'muted',
+		  modes: [{value: 'discover', label: 'Automatic discovery'}, {value: 'explicit', label: 'Explicit endpoint'}],
+		};
+	  }
       if (jobMatch) {
         initializeJobOutputView(view);
         view.output_search = '';

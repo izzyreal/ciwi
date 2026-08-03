@@ -1,9 +1,10 @@
 # Backend API
 
-ciwi has two first-class client transports. The browser uses the HTTP API
-described below. Native clients use CNP v1 (Protocol Buffers over QUIC),
-described in [`native-client.md`](native-client.md). Both adapters call the same
-application and presentation services; CNP is not an HTTP wrapper.
+ciwi has two first-class client protocol families. The browser uses the HTTP API
+described below. Native clients use CNP v1 over QUIC or multiplexed TLS/TCP,
+described in [`native-client.md`](native-client.md). All adapters call the same
+application and presentation services; CNP is not an HTTP wrapper, and its
+transport adapters do not contain application behavior.
 
 ## Shared across consumers
 

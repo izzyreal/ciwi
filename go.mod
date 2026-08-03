@@ -8,6 +8,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/mdns v1.0.6
+	github.com/hashicorp/yamux v0.1.2
 	github.com/quic-go/quic-go v0.59.1
 	golang.org/x/exp/shiny v0.0.0-20250408133849-7e4ce0ab07d0
 	golang.org/x/mod v0.33.0

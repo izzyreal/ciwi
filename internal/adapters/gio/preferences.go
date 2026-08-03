@@ -8,12 +8,47 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
 type nativePreferences struct {
-	Theme       string          `json:"theme"`
-	Disclosures map[string]bool `json:"disclosures,omitempty"`
+	Theme          string          `json:"theme"`
+	Disclosures    map[string]bool `json:"disclosures,omitempty"`
+	ConnectionMode string          `json:"connection_mode,omitempty"`
+	ServerEndpoint string          `json:"server_endpoint,omitempty"`
+}
+
+const (
+	connectionModeDiscover = "discover"
+	connectionModeExplicit = "explicit"
+)
+
+func (p nativePreferences) normalizedConnection() (string, string) {
+	mode := p.ConnectionMode
+	if mode != connectionModeExplicit {
+		mode = connectionModeDiscover
+	}
+	return mode, p.ServerEndpoint
+}
+
+type nativeConnectionSettings struct {
+	Mode     string
+	Endpoint string
+	Address  string
+}
+
+func nativeConnectionSettingsForLaunch(preferences nativePreferences, addressOverride string) nativeConnectionSettings {
+	mode, endpoint := preferences.normalizedConnection()
+	settings := nativeConnectionSettings{Mode: mode, Endpoint: endpoint}
+	if addressOverride = strings.TrimSpace(addressOverride); addressOverride != "" {
+		settings.Mode = connectionModeExplicit
+		settings.Endpoint = addressOverride
+		settings.Address = addressOverride
+	} else if mode == connectionModeExplicit {
+		settings.Address = strings.TrimSpace(endpoint)
+	}
+	return settings
 }
 
 var nativePreferencesMu sync.Mutex

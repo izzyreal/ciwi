@@ -368,6 +368,27 @@ func TestRendererChangesThemeFromSharedSettingsSelect(t *testing.T) {
 	}
 }
 
+func TestRendererLaysOutNativeConnectionScreen(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("connection")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(connectionBindingData(connectionModeExplicit, "tcp://127.0.0.1:8113", "Not connected", false))
+	var operations op.Ops
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(900, 700))})
+	if got := bindingString(renderer.data, "connection.endpoint"); got != "tcp://127.0.0.1:8113" {
+		t.Fatalf("connection endpoint = %q", got)
+	}
+}
+
 func TestSettingsBindingDataUsesSelectedThemeDescription(t *testing.T) {
 	themes, err := sharedUI.LoadThemes()
 	if err != nil {
@@ -834,16 +855,6 @@ func TestTransientStatusExpiresWithoutClearingPersistentErrors(t *testing.T) {
 	renderer.SetStatus("Run failed")
 	if !renderer.StatusExpiry().IsZero() || renderer.ClearExpiredStatus(time.Now().Add(2*time.Hour)) || renderer.status != "Run failed" {
 		t.Fatalf("persistent status unexpectedly expired: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
-	}
-}
-
-func TestNativeAddressNormalizesListenStyleAddress(t *testing.T) {
-	address, err := nativeAddress(t.Context(), ":8113")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if address != "127.0.0.1:8113" {
-		t.Fatalf("address = %q", address)
 	}
 }
 

@@ -15,8 +15,23 @@ func startMDNSAdvertiser(serverAddr string) func() {
 	return startMDNSService(serverAddr, "_ciwi._tcp")
 }
 
-func startNativeMDNSAdvertiser(serverAddr string) func() {
-	return startMDNSService(serverAddr, "_ciwi-native._udp")
+func startNativeMDNSAdvertiser(serverAddr, transport string) func() {
+	service := nativeMDNSServiceName(transport)
+	if service == "" {
+		return func() {}
+	}
+	return startMDNSService(serverAddr, service)
+}
+
+func nativeMDNSServiceName(transport string) string {
+	switch strings.ToLower(strings.TrimSpace(transport)) {
+	case "quic":
+		return "_ciwi-native._udp"
+	case "tcp":
+		return "_ciwi-native._tcp"
+	default:
+		return ""
+	}
 }
 
 func startMDNSService(serverAddr, serviceName string) func() {

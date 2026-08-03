@@ -113,6 +113,64 @@ screen:
                 style:
                   tone: muted
       - component: section
+        id: native-connection
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Native Connection
+            style:
+              role: heading
+              emphasis: strong
+          - component: card
+            layout:
+              direction: vertical
+              gap: medium
+              padding: medium
+            children:
+              - component: text
+                text:
+                  literal: Choose how this native client locates its ciwi server.
+              - component: select
+                select:
+                  value: settings.connection_mode
+                  options: settings.connection_modes
+                  as: modeOption
+                  optionValue: modeOption.value
+                  optionLabel: modeOption.label
+                actions:
+                  - on: change
+                    command: set-connection-field
+                    arguments: {field: mode, value: "{{selection.value}}"}
+              - component: input
+                visible:
+                  binding: settings.connection_explicit
+                input:
+                  value: settings.connection_endpoint
+                  placeholder: tcp://127.0.0.1:8113
+                actions:
+                  - on: change
+                    command: set-connection-field
+                    arguments: {field: endpoint, value: "{{input.value}}"}
+              - component: text
+                visible:
+                  binding: settings.connection_explicit
+                text:
+                  literal: Use tcp:// for an SSH local forward, or quic:// for a directly reachable native endpoint.
+                style:
+                  tone: muted
+              - component: button
+                text:
+                  literal: Save and Reconnect
+                actions:
+                  - on: activate
+                    command: save-connection
+                    arguments:
+                      mode: "{{settings.connection_mode}}"
+                      endpoint: "{{settings.connection_endpoint}}"
+      - component: section
         id: projects
         layout:
           direction: vertical

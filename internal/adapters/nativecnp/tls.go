@@ -1,4 +1,4 @@
-package nativequic
+package nativecnp
 
 import (
 	"crypto/ecdsa"
@@ -9,11 +9,13 @@ import (
 	"crypto/x509/pkix"
 	"math/big"
 	"time"
+
+	"github.com/izzyreal/ciwi/pkg/cnp"
 )
 
-const ALPN = "ciwi-native/1"
+const ALPN = cnp.ALPN
 
-func serverTLSConfig() (*tls.Config, error) {
+func ServerTLSConfig() (*tls.Config, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err

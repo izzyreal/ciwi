@@ -14,8 +14,10 @@ Every client embeds the same versioned bundle. A native server cannot send
 HTML, CSS, JavaScript, or replacement UI code to the desktop executable.
 
 The shared bundle currently contains front-page, project-details, job-details,
-and settings screens. All four render from the same presentation contracts in
-the browser preview and the Gio desktop client.
+run-options, agents, settings, and native-connection screens. Server-backed
+screens render from the same presentation contracts in the browser preview and
+the Gio desktop client; local connection preferences remain renderer-owned
+bindings rather than server state.
 
 ## Design boundaries
 

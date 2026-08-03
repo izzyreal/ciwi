@@ -1,0 +1,124 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: connection
+  title: Connect to ciwi
+  description: Native client server connection
+screen:
+  dataSources:
+    - name: connection
+      query: get-native-connection
+  root:
+    component: page
+    id: connection
+    layout:
+      direction: vertical
+      gap: large
+      padding: large
+      maxWidth: page
+    children:
+      - component: row
+        layout:
+          direction: horizontal
+          gap: large
+          align: center
+        style:
+          role: hero
+        children:
+          - component: image
+            image:
+              asset: ciwi-logo
+              description: ciwi CI/CD server
+          - component: column
+            layout:
+              direction: vertical
+              gap: small
+              grow: true
+            children:
+              - component: text
+                text:
+                  literal: Connect to ciwi
+                style:
+                  role: title
+                  emphasis: strong
+              - component: text
+                text:
+                  literal: Choose automatic discovery or a saved CNP endpoint.
+                style:
+                  role: subtitle
+                  tone: muted
+          - component: button
+            text:
+              literal: Back
+            icon: arrow-left
+            visible:
+              binding: connection.can_back
+            actions:
+              - on: activate
+                command: navigate
+                arguments: {route: /}
+      - component: section
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: card
+            layout:
+              direction: vertical
+              gap: medium
+              padding: large
+            children:
+              - component: select
+                select:
+                  value: connection.mode
+                  options: connection.modes
+                  as: modeOption
+                  optionValue: modeOption.value
+                  optionLabel: modeOption.label
+                actions:
+                  - on: change
+                    command: set-connection-field
+                    arguments: {field: mode, value: "{{selection.value}}"}
+              - component: input
+                visible:
+                  binding: connection.explicit
+                input:
+                  value: connection.endpoint
+                  placeholder: tcp://127.0.0.1:8113
+                actions:
+                  - on: change
+                    command: set-connection-field
+                    arguments: {field: endpoint, value: "{{input.value}}"}
+              - component: text
+                visible:
+                  binding: connection.explicit
+                text:
+                  literal: Use tcp:// for an SSH local forward, or quic:// for a directly reachable native endpoint.
+                style:
+                  tone: muted
+              - component: row
+                layout:
+                  direction: horizontal
+                  gap: small
+                children:
+                  - component: button
+                    text:
+                      literal: Save and Connect
+                    actions:
+                      - on: activate
+                        command: save-connection
+                        arguments:
+                          mode: "{{connection.mode}}"
+                          endpoint: "{{connection.endpoint}}"
+                  - component: button
+                    text:
+                      literal: Retry
+                    icon: refresh
+                    actions:
+                      - on: activate
+                        command: retry-connection
+              - component: text
+                text:
+                  binding: connection.status
+                style:
+                  toneBinding: connection.status_tone

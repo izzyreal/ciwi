@@ -6,28 +6,45 @@ or an embedded web view.
 
 ## Starting the endpoint and client
 
-The native listener starts on UDP port 8113 by default, and the server
-advertises it over mDNS. A normal server start is therefore enough for local
-native clients to discover it:
+The native listeners start on UDP and TCP port 8113 by default, and the server
+advertises both over mDNS. A normal server start is therefore enough for local
+native clients to discover them:
 
 ```bash
 ciwi server
 ```
 
-Set `CIWI_NATIVE_ADDR` to another bind address to override the port, or to
-`off` to disable the native listener.
+Set `CIWI_NATIVE_ADDR` to another bind address to override both transports, or
+to `off` to disable both. `CIWI_NATIVE_QUIC_ADDR` and
+`CIWI_NATIVE_TCP_ADDR` can independently override or disable one transport.
 
 Build and run the desktop client on macOS, Windows, or Linux:
 
 ```bash
 go build -o ciwi-desktop ./cmd/ciwi-desktop
-./ciwi-desktop -addr 127.0.0.1:8113
+./ciwi-desktop -addr tcp://127.0.0.1:8113
 ```
 
-When `-addr` is omitted, the client discovers `_ciwi-native._udp` services over
-mDNS and selects the first deterministic result. `CIWI_NATIVE_SERVER` supplies
-the same explicit address as `-addr`. `-theme` or `CIWI_NATIVE_THEME` selects
-one of the shared theme names.
+When `-addr` is omitted, the client discovers `_ciwi-native._udp` and
+`_ciwi-native._tcp` services over mDNS, preferring QUIC when both describe the
+same server and falling back to another discovered endpoint when the preferred
+route cannot be reached. `CIWI_NATIVE_SERVER` supplies the same explicit endpoint as
+`-addr`. A bare `host:port` remains a QUIC endpoint for compatibility;
+`quic://host:port` and `tcp://host:port` are unambiguous. The connection screen
+and Global Settings can persist either automatic discovery or an explicit
+endpoint in the native client's local preferences. Command-line and environment
+addresses take precedence at startup. `-theme` or `CIWI_NATIVE_THEME`
+selects one of the shared theme names.
+
+TCP makes an ordinary OpenSSH local forward sufficient for remote access:
+
+```bash
+ssh -N -L 8113:10.77.77.2:8113 user@jumphost
+ciwi-desktop -addr tcp://127.0.0.1:8113
+```
+
+The server-side TCP listener must be reachable from the SSH host. No UDP tunnel,
+TUN interface, HTTP fallback, or client-machine routing setup is required.
 
 The browser proof of the same declarative screen is available at
 `/declarative-preview`; project navigation continues under
@@ -55,16 +72,24 @@ names.
 
 - Public schema: [`api/ciwi/native/v1/ciwi.proto`](../api/ciwi/native/v1/ciwi.proto)
 - Public Go client: [`pkg/cnpclient`](../pkg/cnpclient)
-- Transport: QUIC over UDP
+- Transports: QUIC over UDP, or TLS over TCP with Yamux streams
 - ALPN: `ciwi-native/1`
 - Encoding: Protocol Buffers
 - Framing: unsigned-varint byte length followed by one protobuf message
 - Maximum control frame: 8 MiB
 - Negotiation: the first bidirectional stream is `Hello` / `Welcome`
-- Requests: one independent bidirectional stream per request
+- Requests: one independent bidirectional stream per request; QUIC supplies
+  streams directly and Yamux supplies the same abstraction over TCP
 - Live state: a long-lived `WatchChanges` stream of coalescible invalidations
 - Live output: a cursor-based `WatchJobOutput` stream of bounded event pages
 - 0-RTT and QUIC datagrams: disabled in v1
+
+The transport-neutral CNP handler owns the hello exchange, framing, request
+dispatch, live watches, and application/presentation mappings. QUIC and TCP
+adapters only establish sessions and expose logical streams. Yamux is confined
+to the internal TCP stream adapter and is not part of CNP's public API. Adding
+another multiplexed transport therefore does not duplicate CNP operations or
+leak transport choices into application services.
 
 The server exposes typed status codes rather than HTTP status codes. Mutating
 commands carry an idempotency key. The server stores command receipts in SQLite
@@ -79,11 +104,13 @@ go run github.com/bufbuild/buf/cmd/buf@v1.57.2 generate
 
 ## Security boundary
 
-CNP v1 intentionally retains ciwi's private-network/homelab trust model. QUIC
-requires TLS 1.3, so traffic is encrypted, but v1 uses an ephemeral server
-certificate and the client does not verify endpoint identity. There is no user
-authentication or authorization boundary. Do not expose the endpoint to an
-untrusted network.
+CNP v1 intentionally retains ciwi's private-network/homelab trust model. Both
+QUIC and TCP require TLS 1.3, so traffic is encrypted, but v1 uses an ephemeral
+server certificate and the client does not verify endpoint identity. There is
+no user authentication or authorization boundary. Do not expose either
+endpoint directly to an untrusted network. An SSH local forward protects and
+authenticates the outer route, but the client still does not independently
+verify that the CNP process behind the forwarded port is ciwi.
 
 This limitation is explicit in the public client and can later be replaced by
 certificate pinning or a pairing flow without changing application services.

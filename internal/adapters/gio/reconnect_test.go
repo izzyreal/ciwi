@@ -3,6 +3,7 @@
 package gio
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -23,6 +24,16 @@ func TestNextReconnectDelayBacksOffAndCaps(t *testing.T) {
 		if got := nextReconnectDelay(test.current); got != test.want {
 			t.Errorf("nextReconnectDelay(%s) = %s, want %s", test.current, got, test.want)
 		}
+	}
+}
+
+func TestNativeTargetsNormalizeExplicitEndpoint(t *testing.T) {
+	targets, err := nativeTargets(context.Background(), ":8113")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 || targets[0] != "quic://127.0.0.1:8113" {
+		t.Fatalf("targets = %v", targets)
 	}
 }
 

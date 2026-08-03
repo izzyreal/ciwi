@@ -176,6 +176,7 @@ var commands = map[string]bool{
 	"set-project-import-field": true, "import-project": true,
 	"set-server-update-option": true, "check-server-updates": true,
 	"refresh-rollback-versions": true, "server-update-action": true,
+	"set-connection-field": true, "save-connection": true, "retry-connection": true,
 }
 
 func ParseScreen(payload []byte) (*ScreenDocument, error) {
@@ -210,7 +211,7 @@ func (d *ScreenDocument) Validate() error {
 		if source.Query == "" {
 			return fmt.Errorf("dataSources[%d].query is required", i)
 		}
-		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" && source.Query != "get-run-options" && source.Query != "get-agents-view" {
+		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" && source.Query != "get-run-options" && source.Query != "get-agents-view" && source.Query != "get-native-connection" {
 			return fmt.Errorf("dataSources[%d].query %q is not supported", i, source.Query)
 		}
 		for _, topic := range source.WatchTopics {

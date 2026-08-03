@@ -1,4 +1,4 @@
-package nativequic
+package nativecnp
 
 import (
 	"strings"
