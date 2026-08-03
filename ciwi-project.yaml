@@ -220,6 +220,16 @@ pipelines:
         artifact_sources:
           - pipeline: build
             job: build-cross-platform
+            matrix:
+              name: linux-amd64
+          - pipeline: build
+            job: build-cross-platform
+            matrix:
+              name: windows-amd64
+          - pipeline: build
+            job: build-cross-platform
+            matrix:
+              name: windows-arm64
           - pipeline: package-windows
             job: windows-installer
           - pipeline: package-linux
@@ -287,8 +297,6 @@ pipelines:
             run: |
               VERSION="${CIWI_PIPELINE_VERSION#v}"
               test -f dist/ciwi-linux-amd64
-              test -f dist/ciwi-darwin-amd64
-              test -f dist/ciwi-darwin-arm64
               test -f dist/codesigned-macos/ciwi-darwin-amd64.zip
               test -f dist/codesigned-macos/ciwi-darwin-arm64.zip
               test -f dist/ciwi-windows-amd64.exe
@@ -298,8 +306,6 @@ pipelines:
               test -f "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip"
               for f in \
                 dist/ciwi-linux-amd64 \
-                dist/ciwi-darwin-amd64 \
-                dist/ciwi-darwin-arm64 \
                 dist/codesigned-macos/ciwi-darwin-amd64.zip \
                 dist/codesigned-macos/ciwi-darwin-arm64.zip \
                 dist/ciwi-windows-amd64.exe \
@@ -328,8 +334,6 @@ pipelines:
 
               set -- \
                 dist/ciwi-linux-amd64 \
-                dist/ciwi-darwin-amd64 \
-                dist/ciwi-darwin-arm64 \
                 dist/codesigned-macos/ciwi-darwin-amd64.zip \
                 dist/codesigned-macos/ciwi-darwin-arm64.zip \
                 dist/ciwi-windows-amd64.exe \
