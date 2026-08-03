@@ -37,7 +37,7 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 
 	windowsPackage := pipelineByID("package-windows")
 	windowsInstaller := jobByID(windowsPackage, "windows-installer")
-	if !slices.Contains(windowsPackage.DependsOn, "build") || len(windowsInstaller.ArtifactSources) != 1 || windowsInstaller.ArtifactSources[0].Job != "desktop-windows-amd64" {
+	if !slices.Contains(windowsPackage.DependsOn, "build-desktop") || len(windowsInstaller.ArtifactSources) != 1 || windowsInstaller.ArtifactSources[0].Pipeline != "build-desktop" || windowsInstaller.ArtifactSources[0].Job != "windows-amd64" {
 		t.Fatalf("unexpected Windows packaging graph: %+v %+v", windowsPackage.DependsOn, windowsInstaller.ArtifactSources)
 	}
 	if _, hasGo := windowsInstaller.Requires.Tools["go"]; hasGo || windowsInstaller.GoCache != nil {
@@ -46,7 +46,30 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 
 	linuxPackage := pipelineByID("package-linux")
 	linuxArchive := jobByID(linuxPackage, "linux-archive")
-	if !slices.Contains(linuxPackage.DependsOn, "build") || len(linuxArchive.ArtifactSources) != 1 || linuxArchive.ArtifactSources[0].Job != "desktop-linux-amd64" {
+	if !slices.Contains(linuxPackage.DependsOn, "build-desktop") || len(linuxArchive.ArtifactSources) != 1 || linuxArchive.ArtifactSources[0].Pipeline != "build-desktop" || linuxArchive.ArtifactSources[0].Job != "linux-amd64" {
 		t.Fatalf("unexpected Linux packaging graph: %+v %+v", linuxPackage.DependsOn, linuxArchive.ArtifactSources)
+	}
+
+	desktopBuild := pipelineByID("build-desktop")
+	jobByID(desktopBuild, "macos-unsigned")
+	jobByID(desktopBuild, "windows-amd64")
+	jobByID(desktopBuild, "linux-amd64")
+	desktopSign := pipelineByID("codesign-desktop-macos")
+	if !slices.Contains(desktopSign.DependsOn, "build-desktop") {
+		t.Fatalf("unexpected macOS desktop signing dependencies: %+v", desktopSign.DependsOn)
+	}
+
+	wantDesktopChain := []string{"build-desktop", "codesign-desktop-macos", "package-macos", "package-windows", "package-linux"}
+	foundDesktopChain := false
+	for _, chain := range configuration.PipelineChains {
+		if chain.Name == "Build desktop clients" {
+			foundDesktopChain = true
+			if !slices.Equal(chain.Pipelines, wantDesktopChain) {
+				t.Fatalf("desktop chain = %+v, want %+v", chain.Pipelines, wantDesktopChain)
+			}
+		}
+	}
+	if !foundDesktopChain {
+		t.Fatal("Build desktop clients chain not found")
 	}
 }

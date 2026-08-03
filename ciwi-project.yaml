@@ -71,9 +71,15 @@ pipelines:
             run: mkdir -p dist
           - name: Build ciwi binary
             run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi
-      - id: desktop-macos-unsigned
-        needs:
-          - unit-tests
+  - id: build-desktop
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    versioning:
+      file: VERSION
+      tag_prefix: v
+    jobs:
+      - id: macos-unsigned
         runs_on:
           executor: script
           shell: posix
@@ -94,9 +100,7 @@ pipelines:
             run: rm -rf dist/desktop-macos-unsigned && mkdir -p dist/desktop-macos-unsigned
           - name: Build universal macOS desktop app
             run: sh packaging/build-macos-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-macos-unsigned
-      - id: desktop-windows-amd64
-        needs:
-          - unit-tests
+      - id: windows-amd64
         runs_on:
           executor: script
           shell: posix
@@ -113,9 +117,7 @@ pipelines:
             run: rm -rf dist/desktop-windows-amd64 && mkdir -p dist/desktop-windows-amd64
           - name: Build Windows desktop application
             run: sh packaging/build-windows-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-windows-amd64/Ciwi.exe
-      - id: desktop-linux-amd64
-        needs:
-          - unit-tests
+      - id: linux-amd64
         runs_on:
           executor: script
           shell: posix
@@ -137,14 +139,14 @@ pipelines:
   - id: package-windows
     trigger: manual
     depends_on:
-      - build
+      - build-desktop
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: windows-installer
         artifact_sources:
-          - pipeline: build
-            job: desktop-windows-amd64
+          - pipeline: build-desktop
+            job: windows-amd64
         runs_on:
           executor: script
           shell: powershell
@@ -165,14 +167,14 @@ pipelines:
   - id: package-linux
     trigger: manual
     depends_on:
-      - build
+      - build-desktop
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: linux-archive
         artifact_sources:
-          - pipeline: build
-            job: desktop-linux-amd64
+          - pipeline: build-desktop
+            job: linux-amd64
         runs_on:
           executor: script
           shell: posix
@@ -194,7 +196,7 @@ pipelines:
     trigger: manual
     depends_on:
       - build
-      - codesign-macos
+      - codesign-macos-agents
       - package-macos
       - package-windows
       - package-linux
@@ -222,8 +224,8 @@ pipelines:
             job: windows-installer
           - pipeline: package-linux
             job: linux-archive
-          - pipeline: codesign-macos
-            job: macos-codesign
+          - pipeline: codesign-macos-agents
+            job: macos-agents
           - pipeline: package-macos
             job: macos-dmg
         runs_on:
@@ -359,14 +361,14 @@ pipelines:
             env:
               GITHUB_TOKEN: "{{ secret.github-secret }}"
 
-  - id: codesign-macos
+  - id: codesign-macos-agents
     trigger: manual
     depends_on:
       - build
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
-      - id: macos-codesign
+      - id: macos-agents
         artifact_sources:
           - pipeline: build
             job: build-cross-platform
@@ -376,8 +378,6 @@ pipelines:
             job: build-cross-platform
             matrix:
               name: darwin-arm64
-          - pipeline: build
-            job: desktop-macos-unsigned
         runs_on:
           executor: script
           shell: posix
@@ -417,8 +417,8 @@ pipelines:
               NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
-          - name: Verify macOS binaries
-            run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64 && test -d dist/desktop-macos-unsigned/Ciwi.app
+          - name: Verify macOS agent binaries
+            run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
           - name: Prepare macOS bundle output
             run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
             skip_dry_run: true
@@ -476,8 +476,32 @@ pipelines:
               NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
-          - name: Sign macOS desktop app
-            run: codesign --force --deep --strict --options=runtime --entitlements packaging/macos-entitlements.plist --timestamp --sign "$DEV_IDENTITY_APP" dist/desktop-macos-unsigned/Ciwi.app
+
+  - id: codesign-desktop-macos
+    trigger: manual
+    depends_on:
+      - build-desktop
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: macos-app
+        artifact_sources:
+          - pipeline: build-desktop
+            job: macos-unsigned
+        runs_on:
+          executor: script
+          shell: posix
+          os: darwin
+          arch: arm64
+        requires:
+          tools:
+            codesign: "*"
+        timeout_seconds: 1200
+        artifacts:
+          - dist/codesigned-macos/Ciwi.app/**
+        steps:
+          - name: Check Apple signing credentials
+            run: test -n "$DEV_IDENTITY_APP"
             skip_dry_run: true
             vault:
               connection: home-vault
@@ -488,8 +512,31 @@ pipelines:
                   key: dev-identity-app
             env:
               DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
-          - name: Verify macOS desktop signature
-            run: codesign --verify --deep --strict -v dist/desktop-macos-unsigned/Ciwi.app
+          - name: Verify unsigned macOS desktop app
+            run: test -d dist/desktop-macos-unsigned/Ciwi.app
+          - name: Prepare signed macOS desktop output
+            run: rm -rf dist/codesigned-macos/Ciwi.app && mkdir -p dist/codesigned-macos
+            skip_dry_run: true
+          - name: Sign macOS desktop app
+            run: codesign --force --deep --strict --options=runtime --runtime-version 11.0 --entitlements packaging/macos-entitlements.plist --timestamp --sign "$DEV_IDENTITY_APP" dist/desktop-macos-unsigned/Ciwi.app
+            skip_dry_run: true
+            vault:
+              connection: home-vault
+              secrets:
+                - name: dev-identity-app
+                  mount: kv
+                  path: apple-id
+                  key: dev-identity-app
+            env:
+              DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+          - name: Verify macOS desktop signature and compatibility
+            run: |
+              codesign --verify --deep --strict -v dist/desktop-macos-unsigned/Ciwi.app
+              RUNTIME_VERSION="$(codesign -dv --verbose=4 dist/desktop-macos-unsigned/Ciwi.app 2>&1 | sed -n 's/^Runtime Version=//p')"
+              if [ "$RUNTIME_VERSION" != "11.0.0" ]; then
+                echo "unexpected hardened runtime version: ${RUNTIME_VERSION:-missing} (expected 11.0.0)" >&2
+                exit 1
+              fi
             skip_dry_run: true
           - name: Publish signed macOS desktop app
             run: cp -R dist/desktop-macos-unsigned/Ciwi.app dist/codesigned-macos/Ciwi.app
@@ -498,14 +545,14 @@ pipelines:
   - id: package-macos
     trigger: manual
     depends_on:
-      - codesign-macos
+      - codesign-desktop-macos
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: macos-dmg
         artifact_sources:
-          - pipeline: codesign-macos
-            job: macos-codesign
+          - pipeline: codesign-desktop-macos
+            job: macos-app
         runs_on:
           executor: script
           shell: posix
@@ -578,8 +625,17 @@ pipeline_chains:
   - name: Build and release
     pipelines:
       - build
-      - codesign-macos
+      - build-desktop
+      - codesign-macos-agents
+      - codesign-desktop-macos
       - package-macos
       - package-windows
       - package-linux
       - release
+  - name: Build desktop clients
+    pipelines:
+      - build-desktop
+      - codesign-desktop-macos
+      - package-macos
+      - package-windows
+      - package-linux

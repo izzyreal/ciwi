@@ -122,7 +122,14 @@ cat >"${LAUNCH_AGENTS_DIR}/nl.izmar.ciwi.agent.plist" <<EOF
 </plist>
 EOF
 
-codesign --force --deep --strict --options=runtime --timestamp --sign "$DEV_IDENTITY_APP" -v "$APP_PATH"
+MINIMUM_MACOS_VERSION=${CIWI_MACOS_MINIMUM_VERSION:-11.0}
+codesign --force --deep --strict --options=runtime --runtime-version "$MINIMUM_MACOS_VERSION" --timestamp --sign "$DEV_IDENTITY_APP" -v "$APP_PATH"
+
+RUNTIME_VERSION=$(codesign -dv --verbose=4 "$APP_PATH" 2>&1 | sed -n 's/^Runtime Version=//p')
+if [ "$RUNTIME_VERSION" != "${MINIMUM_MACOS_VERSION}.0" ]; then
+  echo "unexpected hardened runtime version: ${RUNTIME_VERSION:-missing} (expected ${MINIMUM_MACOS_VERSION}.0)" >&2
+  exit 1
+fi
 
 NOTARY_ZIP="${WORK_DIR}/notary-${APP_NAME}.zip"
 (
