@@ -170,3 +170,32 @@ func TestRepositoryAddsSchedulingDiagnosisToQueuedViewsAndDetails(t *testing.T) 
 		t.Fatalf("details diagnosis = %+v", details.SchedulingDiagnosis)
 	}
 }
+
+func TestRepositoryPrefersRuntimeSchedulingBlocker(t *testing.T) {
+	store := executionStoreStub{jobs: []protocol.JobExecution{{
+		ID: "vault-job", Status: protocol.JobExecutionStatusQueued,
+		RequiredCapabilities: map[string]string{"os": "darwin"},
+		Metadata: map[string]string{
+			protocol.JobSchedulingBlockedMetadataKey:       "1",
+			protocol.JobSchedulingBlockedReasonMetadataKey: "Waiting for Vault connection home-vault: Vault is sealed",
+		},
+	}}}
+	repository := NewRepository(store, 40, schedulingSourceStub{agents: []requirements.AgentSnapshot{{
+		ID: "mac", OS: "darwin", Freshness: "online", Authorized: true,
+	}}})
+	queued, _, err := repository.ListFrontPageExecutionCards(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnosis := queued[0].Sections[0].Jobs[0].SchedulingDiagnosis
+	if diagnosis == nil || diagnosis.State != requirements.DiagnosisWaiting || !strings.Contains(diagnosis.Summary, "Vault is sealed") {
+		t.Fatalf("runtime scheduling diagnosis = %+v", diagnosis)
+	}
+	details, err := repository.GetJobExecutionDetails(t.Context(), "vault-job")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.SchedulingDiagnosis == nil || !strings.Contains(details.SchedulingDiagnosis.Summary, "Vault is sealed") {
+		t.Fatalf("runtime job details diagnosis = %+v", details.SchedulingDiagnosis)
+	}
+}

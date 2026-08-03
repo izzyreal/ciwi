@@ -51,11 +51,7 @@ func (s *stateStore) attachJobExecutionTestSummary(job *protocol.JobExecution) {
 func (s *stateStore) attachJobExecutionSchedulingDiagnoses(jobs []protocol.JobExecution) {
 	agents := s.schedulingAgentSnapshots(time.Now().UTC())
 	for i := range jobs {
-		if !protocol.IsQueuedJobExecutionStatus(jobs[i].Status) || protocol.IsJobWaitingForPrerequisites(jobs[i]) {
-			continue
-		}
-		diagnosis := requirements.DiagnoseScheduling(jobs[i].RequiredCapabilities, agents)
-		jobs[i].SchedulingDiagnosis = &diagnosis
+		jobs[i].SchedulingDiagnosis = requirements.DiagnoseQueuedJob(jobs[i], agents)
 	}
 }
 
@@ -63,9 +59,5 @@ func (s *stateStore) attachJobExecutionSchedulingDiagnosis(job *protocol.JobExec
 	if job == nil {
 		return
 	}
-	if !protocol.IsQueuedJobExecutionStatus(job.Status) || protocol.IsJobWaitingForPrerequisites(*job) {
-		return
-	}
-	diagnosis := requirements.DiagnoseScheduling(job.RequiredCapabilities, s.schedulingAgentSnapshots(time.Now().UTC()))
-	job.SchedulingDiagnosis = &diagnosis
+	job.SchedulingDiagnosis = requirements.DiagnoseQueuedJob(*job, s.schedulingAgentSnapshots(time.Now().UTC()))
 }

@@ -309,11 +309,7 @@ func (r *Repository) attachSchedulingDiagnoses(ctx context.Context, jobs []proto
 		return err
 	}
 	for i := range jobs {
-		if !protocol.IsQueuedJobExecutionStatus(jobs[i].Status) || protocol.IsJobWaitingForPrerequisites(jobs[i]) {
-			continue
-		}
-		diagnosis := requirements.DiagnoseScheduling(jobs[i].RequiredCapabilities, agents)
-		jobs[i].SchedulingDiagnosis = &diagnosis
+		jobs[i].SchedulingDiagnosis = requirements.DiagnoseQueuedJob(jobs[i], agents)
 	}
 	return nil
 }

@@ -460,6 +460,21 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("job leased to agent", "job_execution_id", job.ID, "agent_id", req.AgentID)
 	if err := s.resolveJobSecrets(r.Context(), job); err != nil {
+		if reason, retryable := transientVaultSchedulingReason(err); retryable {
+			retryUTC := time.Now().UTC().Add(5 * time.Second).Format(time.RFC3339Nano)
+			_, requeueErr := s.agentJobExecutionStore().RequeueLeasedJobExecution(job.ID, req.AgentID, map[string]string{
+				protocol.JobSchedulingBlockedMetadataKey:       "1",
+				protocol.JobSchedulingBlockedReasonMetadataKey: reason,
+				protocol.JobSchedulingRetryUTCMetadataKey:      retryUTC,
+			})
+			if requeueErr != nil {
+				http.Error(w, fmt.Sprintf("record temporary secret-resolution blocker: %v", requeueErr), http.StatusInternalServerError)
+				return
+			}
+			slog.Warn("job waiting for Vault before execution", "job_execution_id", job.ID, "reason", reason, "retry_utc", retryUTC)
+			writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{Assigned: false, Message: reason})
+			return
+		}
 		failMsg := fmt.Sprintf("secret resolution failed before execution: %v", err)
 		_, _ = s.agentJobExecutionStore().UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID: req.AgentID,
@@ -468,6 +483,19 @@ func (s *stateStore) leaseJobHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{Assigned: false, Message: failMsg})
 		return
+	}
+	if protocol.JobSchedulingBlockedReason(*job) != "" {
+		if _, err := s.agentJobExecutionStore().MergeJobExecutionMetadata(job.ID, map[string]string{
+			protocol.JobSchedulingBlockedMetadataKey:       "",
+			protocol.JobSchedulingBlockedReasonMetadataKey: "",
+			protocol.JobSchedulingRetryUTCMetadataKey:      "",
+		}); err != nil {
+			http.Error(w, fmt.Sprintf("clear secret-resolution blocker: %v", err), http.StatusInternalServerError)
+			return
+		}
+		delete(job.Metadata, protocol.JobSchedulingBlockedMetadataKey)
+		delete(job.Metadata, protocol.JobSchedulingBlockedReasonMetadataKey)
+		delete(job.Metadata, protocol.JobSchedulingRetryUTCMetadataKey)
 	}
 	jobResponse := jobexecution.ViewFromProtocol(*job)
 	writeJSON(w, http.StatusOK, jobexecution.LeaseViewResponse{Assigned: true, JobExecution: &jobResponse})

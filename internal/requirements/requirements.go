@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	"golang.org/x/mod/semver"
 )
 
@@ -34,6 +35,23 @@ type SchedulingDiagnosis = domain.SchedulingDiagnosis
 type MatchResult struct {
 	Matches bool
 	Issues  []MatchIssue
+}
+
+func DiagnoseQueuedJob(job protocol.JobExecution, agents []AgentSnapshot) *SchedulingDiagnosis {
+	if reason := protocol.JobSchedulingBlockedReason(job); reason != "" {
+		if protocol.IsPendingJobExecutionStatus(job.Status) {
+			return &SchedulingDiagnosis{State: DiagnosisWaiting, Summary: reason}
+		}
+		return nil
+	}
+	if !protocol.IsQueuedJobExecutionStatus(job.Status) {
+		return nil
+	}
+	if protocol.IsJobWaitingForPrerequisites(job) {
+		return nil
+	}
+	diagnosis := DiagnoseScheduling(job.RequiredCapabilities, agents)
+	return &diagnosis
 }
 
 // MatchAgent is the canonical scheduler capability matcher. All requirements

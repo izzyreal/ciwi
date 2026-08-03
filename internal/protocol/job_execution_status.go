@@ -8,7 +8,18 @@ const (
 	JobExecutionStatusRunning   = "running"
 	JobExecutionStatusSucceeded = "succeeded"
 	JobExecutionStatusFailed    = "failed"
+
+	JobSchedulingBlockedMetadataKey       = "scheduling_blocked"
+	JobSchedulingBlockedReasonMetadataKey = "scheduling_blocked_reason"
+	JobSchedulingRetryUTCMetadataKey      = "scheduling_retry_utc"
 )
+
+func JobSchedulingBlockedReason(job JobExecution) string {
+	if strings.TrimSpace(job.Metadata[JobSchedulingBlockedMetadataKey]) != "1" {
+		return ""
+	}
+	return strings.TrimSpace(job.Metadata[JobSchedulingBlockedReasonMetadataKey])
+}
 
 func NormalizeJobExecutionStatus(status string) string {
 	return strings.ToLower(strings.TrimSpace(status))

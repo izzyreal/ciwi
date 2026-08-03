@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -86,6 +89,119 @@ func TestResolveJobSecretsAndVaultRuntime(t *testing.T) {
 
 	if _, err := s.getVaultToken(context.Background(), conn, ""); err != nil {
 		t.Fatalf("getVaultToken: %v", err)
+	}
+}
+
+func TestSealedVaultKeepsSecretJobQueuedWithSchedulingReason(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	var sealed atomic.Bool
+	sealed.Store(true)
+	vaultAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sealed.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"errors":["Vault is sealed"]}`))
+			return
+		}
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/auth/approle/login"):
+			_, _ = w.Write([]byte(`{"auth":{"client_token":"token-123","lease_duration":3600}}`))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/kv/data/ciwi"):
+			_, _ = w.Write([]byte(`{"data":{"data":{"identity":"Developer ID Application"}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer vaultAPI.Close()
+
+	t.Setenv("CIWI_VAULT_SECRET_ID", "sid-1")
+	conn, err := s.db.UpsertVaultConnection(protocol.UpsertVaultConnectionRequest{
+		Name: "home-vault", URL: vaultAPI.URL, AuthMethod: "approle", AppRoleMount: "approle",
+		RoleID: "role-1", SecretIDEnv: "CIWI_VAULT_SECRET_ID", KVDefaultMount: "kv", KVDefaultVer: 2,
+	})
+	if err != nil {
+		t.Fatalf("upsert vault connection: %v", err)
+	}
+	job, err := s.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:               "test -n \"$DEV_IDENTITY_APP\"",
+		RequiredCapabilities: map[string]string{"os": "darwin", "arch": "arm64", "shell": "posix"},
+		StepPlan: []protocol.JobStepPlanItem{{
+			Name: "Check credentials", Script: "test -n \"$DEV_IDENTITY_APP\"", VaultConnection: conn.Name,
+			VaultSecrets: []protocol.ProjectSecretSpec{{Name: "dev-identity-app", Path: "ciwi", Key: "identity"}},
+			Env:          map[string]string{"DEV_IDENTITY_APP": "{{ secret.dev-identity-app }}"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	s.mu.Lock()
+	s.agents["agent-mac"] = agentState{
+		Hostname: "mac", OS: "darwin", Arch: "arm64", Version: currentVersion(), Authorized: true,
+		Capabilities: map[string]string{"executor": "script", "shells": "posix", "os": "darwin", "arch": "arm64"},
+		LastSeenUTC:  time.Now().UTC(),
+	}
+	s.mu.Unlock()
+
+	lease := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-mac", "capabilities": map[string]string{"executor": "script", "shells": "posix", "os": "darwin", "arch": "arm64"},
+	})
+	if lease.StatusCode != http.StatusOK {
+		t.Fatalf("lease status=%d body=%s", lease.StatusCode, readBody(t, lease))
+	}
+	var leasePayload struct {
+		Assigned bool   `json:"assigned"`
+		Message  string `json:"message"`
+	}
+	decodeJSONBody(t, lease, &leasePayload)
+	if leasePayload.Assigned || !strings.Contains(leasePayload.Message, "Vault is sealed") {
+		t.Fatalf("sealed Vault lease response = %+v", leasePayload)
+	}
+
+	jobResponse := mustJSONRequest(t, ts.Client(), http.MethodGet, ts.URL+"/api/v1/jobs/"+job.ID, nil)
+	if jobResponse.StatusCode != http.StatusOK {
+		t.Fatalf("job status=%d body=%s", jobResponse.StatusCode, readBody(t, jobResponse))
+	}
+	var jobPayload struct {
+		Job struct {
+			Status              string                      `json:"status"`
+			LeasedByAgentID     string                      `json:"leased_by_agent_id"`
+			SchedulingDiagnosis *domain.SchedulingDiagnosis `json:"scheduling_diagnosis"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, jobResponse, &jobPayload)
+	if jobPayload.Job.Status != protocol.JobExecutionStatusQueued || jobPayload.Job.LeasedByAgentID != "" {
+		t.Fatalf("blocked job lifecycle = %+v", jobPayload.Job)
+	}
+	if jobPayload.Job.SchedulingDiagnosis == nil || !strings.Contains(jobPayload.Job.SchedulingDiagnosis.Summary, "Vault is sealed") {
+		t.Fatalf("scheduling diagnosis = %+v", jobPayload.Job.SchedulingDiagnosis)
+	}
+
+	sealed.Store(false)
+	if _, err := s.db.MergeJobExecutionMetadata(job.ID, map[string]string{
+		protocol.JobSchedulingRetryUTCMetadataKey: time.Now().UTC().Add(-time.Second).Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatalf("expire retry blocker: %v", err)
+	}
+	retry := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{
+		"agent_id": "agent-mac", "capabilities": map[string]string{"executor": "script", "shells": "posix", "os": "darwin", "arch": "arm64"},
+	})
+	if retry.StatusCode != http.StatusOK {
+		t.Fatalf("retry lease status=%d body=%s", retry.StatusCode, readBody(t, retry))
+	}
+	var retryPayload struct {
+		Assigned bool `json:"assigned"`
+		Job      struct {
+			ID       string            `json:"id"`
+			Metadata map[string]string `json:"metadata"`
+		} `json:"job_execution"`
+	}
+	decodeJSONBody(t, retry, &retryPayload)
+	if !retryPayload.Assigned || retryPayload.Job.ID != job.ID {
+		t.Fatalf("unsealed Vault retry response = %+v", retryPayload)
+	}
+	if retryPayload.Job.Metadata[protocol.JobSchedulingBlockedMetadataKey] != "" {
+		t.Fatalf("scheduling blocker was not cleared: %+v", retryPayload.Job.Metadata)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,63 @@ import (
 )
 
 var secretPlaceholderRE = regexp.MustCompile(`\{\{\s*secret\.([a-zA-Z0-9_\-]+)\s*\}\}`)
+
+type jobSecretResolutionError struct {
+	Connection string
+	Cause      error
+}
+
+func (e *jobSecretResolutionError) Error() string {
+	if e == nil || e.Cause == nil {
+		return "secret resolution failed"
+	}
+	if strings.TrimSpace(e.Connection) == "" {
+		return e.Cause.Error()
+	}
+	return fmt.Sprintf("Vault connection %q: %v", e.Connection, e.Cause)
+}
+
+func (e *jobSecretResolutionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+func wrapJobSecretResolutionError(connection string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &jobSecretResolutionError{Connection: strings.TrimSpace(connection), Cause: err}
+}
+
+func transientVaultSchedulingReason(err error) (string, bool) {
+	var resolutionErr *jobSecretResolutionError
+	if !errors.As(err, &resolutionErr) || resolutionErr == nil || resolutionErr.Cause == nil {
+		return "", false
+	}
+	message := strings.ToLower(resolutionErr.Cause.Error())
+	detail := ""
+	switch {
+	case strings.Contains(message, "vault is sealed") || strings.Contains(message, "sealed"):
+		detail = "Vault is sealed"
+	case strings.Contains(message, "send vault request"),
+		strings.Contains(message, "status=429"),
+		strings.Contains(message, "status=500"),
+		strings.Contains(message, "status=502"),
+		strings.Contains(message, "status=503"),
+		strings.Contains(message, "status=504"),
+		strings.Contains(message, "context deadline exceeded"):
+		detail = "Vault is temporarily unavailable"
+	default:
+		return "", false
+	}
+	connection := strings.TrimSpace(resolutionErr.Connection)
+	if connection == "" {
+		return "Waiting for Vault: " + detail, true
+	}
+	return fmt.Sprintf("Waiting for Vault connection %s: %s", connection, detail), true
+}
 
 func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExecution) error {
 	if job == nil {
@@ -59,7 +117,7 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 			var err error
 			conn, err = s.vaultStore().GetVaultConnectionByName(connName)
 			if err != nil {
-				return fmt.Errorf("resolve vault connection %q: %w", connName, err)
+				return wrapJobSecretResolutionError(connName, fmt.Errorf("resolve vault connection: %w", err))
 			}
 			connectionByName[connName] = conn
 		}
@@ -85,7 +143,7 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 				}
 				secretValue, getErr := s.readVaultSecret(ctx, conn, spec)
 				if getErr != nil {
-					return fmt.Errorf("resolve step %d secret %q: %w", i+1, secretName, getErr)
+					return wrapJobSecretResolutionError(connName, fmt.Errorf("resolve step %d secret %q: %w", i+1, secretName, getErr))
 				}
 				out = strings.ReplaceAll(out, m[0], secretValue)
 				sensitive = append(sensitive, secretValue)

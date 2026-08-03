@@ -423,6 +423,57 @@ func TestStoreRequeueStaleLeasedJobExecutions(t *testing.T) {
 	}
 }
 
+func TestStoreRequeueLeasedJobExecutionWithSchedulingBlocker(t *testing.T) {
+	s := openTestStore(t)
+
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:               "echo hi",
+		RequiredCapabilities: map[string]string{"os": "darwin"},
+		TimeoutSeconds:       30,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	leased, err := s.LeaseJobExecution("agent-a", map[string]string{"os": "darwin"})
+	if err != nil || leased == nil || leased.ID != job.ID {
+		t.Fatalf("lease job: job=%+v err=%v", leased, err)
+	}
+
+	retryUTC := time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano)
+	requeued, err := s.RequeueLeasedJobExecution(job.ID, "agent-a", map[string]string{
+		protocol.JobSchedulingBlockedMetadataKey:       "1",
+		protocol.JobSchedulingBlockedReasonMetadataKey: "Waiting for Vault connection home-vault: Vault is sealed",
+		protocol.JobSchedulingRetryUTCMetadataKey:      retryUTC,
+	})
+	if err != nil {
+		t.Fatalf("requeue leased job: %v", err)
+	}
+	if requeued.Status != protocol.JobExecutionStatusQueued || requeued.LeasedByAgentID != "" {
+		t.Fatalf("requeued job = %+v", requeued)
+	}
+	if got := protocol.JobSchedulingBlockedReason(requeued); !strings.Contains(got, "Vault is sealed") {
+		t.Fatalf("scheduling blocker = %q", got)
+	}
+
+	blocked, err := s.LeaseJobExecution("agent-a", map[string]string{"os": "darwin"})
+	if err != nil {
+		t.Fatalf("lease blocked job: %v", err)
+	}
+	if blocked != nil {
+		t.Fatalf("blocked job leased before retry: %+v", blocked)
+	}
+
+	if _, err := s.MergeJobExecutionMetadata(job.ID, map[string]string{
+		protocol.JobSchedulingRetryUTCMetadataKey: time.Now().UTC().Add(-time.Second).Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatalf("expire retry blocker: %v", err)
+	}
+	retried, err := s.LeaseJobExecution("agent-a", map[string]string{"os": "darwin"})
+	if err != nil || retried == nil || retried.ID != job.ID {
+		t.Fatalf("lease after retry: job=%+v err=%v", retried, err)
+	}
+}
+
 func TestStoreFailTimedOutRunningJobExecutions(t *testing.T) {
 	s := openTestStore(t)
 

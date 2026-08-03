@@ -196,6 +196,75 @@ func (s *Store) MergeJobExecutionMetadata(jobID string, patch map[string]string)
 	})
 }
 
+func (s *Store) RequeueLeasedJobExecution(jobID, agentID string, metadataPatch map[string]string) (protocol.JobExecution, error) {
+	jobID = strings.TrimSpace(jobID)
+	agentID = strings.TrimSpace(agentID)
+	if jobID == "" {
+		return protocol.JobExecution{}, fmt.Errorf("job id is required")
+	}
+	if agentID == "" {
+		return protocol.JobExecution{}, fmt.Errorf("agent id is required")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return protocol.JobExecution{}, fmt.Errorf("begin requeue tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var metadataJSON, status, leasedBy string
+	if err := tx.QueryRow(`
+		SELECT metadata_json, status, leased_by_agent_id
+		FROM job_executions
+		WHERE id = ?
+	`, jobID).Scan(&metadataJSON, &status, &leasedBy); err != nil {
+		if err == sql.ErrNoRows {
+			return protocol.JobExecution{}, fmt.Errorf("job not found")
+		}
+		return protocol.JobExecution{}, fmt.Errorf("read leased job: %w", err)
+	}
+	if protocol.NormalizeJobExecutionStatus(status) != protocol.JobExecutionStatusLeased {
+		return protocol.JobExecution{}, fmt.Errorf("job is not leased")
+	}
+	if strings.TrimSpace(leasedBy) != agentID {
+		return protocol.JobExecution{}, fmt.Errorf("job is leased by another agent")
+	}
+
+	metadata := map[string]string{}
+	_ = json.Unmarshal([]byte(metadataJSON), &metadata)
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	for key, value := range metadataPatch {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if strings.TrimSpace(value) == "" {
+			delete(metadata, key)
+		} else {
+			metadata[key] = value
+		}
+	}
+	updatedMetadata, _ := json.Marshal(metadata)
+	result, err := tx.Exec(`
+		UPDATE job_executions
+		SET status = ?, leased_by_agent_id = '', leased_utc = NULL,
+		    current_step_text = '', metadata_json = ?
+		WHERE id = ? AND status = ? AND leased_by_agent_id = ?
+	`, protocol.JobExecutionStatusQueued, string(updatedMetadata), jobID, protocol.JobExecutionStatusLeased, agentID)
+	if err != nil {
+		return protocol.JobExecution{}, fmt.Errorf("requeue leased job: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected != 1 {
+		return protocol.JobExecution{}, fmt.Errorf("leased job changed while requeueing")
+	}
+	if err := tx.Commit(); err != nil {
+		return protocol.JobExecution{}, fmt.Errorf("commit requeue tx: %w", err)
+	}
+	return s.GetJobExecution(jobID)
+}
+
 func (s *Store) mergeJobExecutionStringMap(jobID string, patch map[string]string, column string, updateErrPrefix string, currentMap func(protocol.JobExecution) map[string]string) (map[string]string, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return nil, fmt.Errorf("job id is required")
