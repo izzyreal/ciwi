@@ -165,6 +165,36 @@ func TestServerEnvOrDefault(t *testing.T) {
 	}
 }
 
+func TestNativeListenAddrDefaultsAndOverrides(t *testing.T) {
+	previous, hadPrevious := os.LookupEnv("CIWI_NATIVE_ADDR")
+	t.Cleanup(func() {
+		if hadPrevious {
+			_ = os.Setenv("CIWI_NATIVE_ADDR", previous)
+		} else {
+			_ = os.Unsetenv("CIWI_NATIVE_ADDR")
+		}
+	})
+
+	_ = os.Unsetenv("CIWI_NATIVE_ADDR")
+	if got := nativeListenAddr(); got != ":8113" {
+		t.Fatalf("default native address = %q", got)
+	}
+	for _, disabled := range []string{"", "off", "disabled", "false", "none"} {
+		if err := os.Setenv("CIWI_NATIVE_ADDR", disabled); err != nil {
+			t.Fatal(err)
+		}
+		if got := nativeListenAddr(); got != "" {
+			t.Fatalf("native address for %q = %q, want disabled", disabled, got)
+		}
+	}
+	if err := os.Setenv("CIWI_NATIVE_ADDR", " 127.0.0.1:9123 "); err != nil {
+		t.Fatal(err)
+	}
+	if got := nativeListenAddr(); got != "127.0.0.1:9123" {
+		t.Fatalf("overridden native address = %q", got)
+	}
+}
+
 func TestRunCmd(t *testing.T) {
 	ctx := context.Background()
 	if runtime.GOOS == "windows" {

@@ -4,7 +4,7 @@
 
 Common variables:
 - `CIWI_SERVER_ADDR`: server bind address (default `:8112`)
-- `CIWI_NATIVE_ADDR`: optional CNP v1 QUIC bind address; unset disables the native listener (example `:8113`)
+- `CIWI_NATIVE_ADDR`: CNP v1 QUIC bind address (default `:8113`); set to `off` to disable
 - `CIWI_MDNS_ENABLE`: advertise HTTP and enabled native endpoints over mDNS (default `true`)
 - `CIWI_MDNS_INSTANCE`: override the advertised mDNS instance name
 - `CIWI_DB_PATH`: sqlite path (default `ciwi.db`)

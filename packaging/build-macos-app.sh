@@ -10,7 +10,14 @@ VERSION=${1#v}
 VERSION=${VERSION#V}
 OUTPUT_DIRECTORY=$2
 GOGIO_VERSION=${GOGIO_VERSION:-v0.10.0}
+MINIMUM_MACOS_VERSION=11.0
 WORK_DIRECTORY=$(mktemp -d "${TMPDIR:-/tmp}/ciwi-macos-app.XXXXXX")
+
+# Keep the universal bundle compatible with the first macOS release that
+# supports Apple Silicon. Without this, cgo inherits the build machine's SDK
+# version and the resulting app may require that newer macOS release.
+MACOSX_DEPLOYMENT_TARGET=$MINIMUM_MACOS_VERSION
+export MACOSX_DEPLOYMENT_TARGET
 
 cleanup() {
     rm -rf "$WORK_DIRECTORY"
@@ -48,4 +55,14 @@ chmod +x "$FINAL_APP/Contents/MacOS/Ciwi"
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$FINAL_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${VERSION}" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$FINAL_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string ${MINIMUM_MACOS_VERSION}" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion ${MINIMUM_MACOS_VERSION}" "$FINAL_APP/Contents/Info.plist"
 lipo "$FINAL_APP/Contents/MacOS/Ciwi" -verify_arch arm64 x86_64
+
+for ARCH in arm64 x86_64; do
+    ACTUAL_MINIMUM=$(vtool -show-build -arch "$ARCH" "$FINAL_APP/Contents/MacOS/Ciwi" | awk '$1 == "minos" { print $2; exit }')
+    if [ "$ACTUAL_MINIMUM" != "$MINIMUM_MACOS_VERSION" ]; then
+        echo "unexpected macOS deployment target for ${ARCH}: ${ACTUAL_MINIMUM:-missing} (expected ${MINIMUM_MACOS_VERSION})" >&2
+        exit 1
+    fi
+done

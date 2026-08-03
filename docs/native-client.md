@@ -6,12 +6,16 @@ or an embedded web view.
 
 ## Starting the endpoint and client
 
-The native listener is opt-in so existing installations do not unexpectedly
-open another port:
+The native listener starts on UDP port 8113 by default, and the server
+advertises it over mDNS. A normal server start is therefore enough for local
+native clients to discover it:
 
 ```bash
-CIWI_NATIVE_ADDR=:8113 ciwi server
+ciwi server
 ```
+
+Set `CIWI_NATIVE_ADDR` to another bind address to override the port, or to
+`off` to disable the native listener.
 
 Build and run the desktop client on macOS, Windows, or Linux:
 

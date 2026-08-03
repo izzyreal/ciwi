@@ -128,7 +128,7 @@ func Run(ctx context.Context) error {
 	defer stopMDNS()
 
 	var nativeServer *nativequic.Server
-	nativeAddr := strings.TrimSpace(envOrDefault("CIWI_NATIVE_ADDR", ""))
+	nativeAddr := nativeListenAddr()
 	if nativeAddr != "" {
 		app := s.app()
 		nativeServer, err = nativequic.Listen(nativeAddr, nativequic.Services{
@@ -185,5 +185,19 @@ func Run(ctx context.Context) error {
 		}
 		slog.Info("ciwi server stopped")
 		return nil
+	}
+}
+
+func nativeListenAddr() string {
+	value, configured := os.LookupEnv("CIWI_NATIVE_ADDR")
+	if !configured {
+		return ":8113"
+	}
+	value = strings.TrimSpace(value)
+	switch strings.ToLower(value) {
+	case "", "off", "disabled", "false", "none":
+		return ""
+	default:
+		return value
 	}
 }
