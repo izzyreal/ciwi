@@ -28,6 +28,7 @@ const (
 type collectedArtifact struct {
 	Path    string
 	Content []byte
+	Mode    os.FileMode
 }
 
 func collectAndUploadArtifacts(ctx context.Context, client *http.Client, serverURL, agentID, jobID, execDir string, globs []string, progress func(string)) (string, error) {
@@ -61,7 +62,9 @@ func uploadArtifactsZIP(ctx context.Context, client *http.Client, serverURL, age
 		if rel == "" || rel == "." || strings.HasPrefix(rel, "/") || rel == ".." || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
 			continue
 		}
-		entry, err := zw.Create(rel)
+		header := &zip.FileHeader{Name: rel, Method: zip.Deflate}
+		header.SetMode(portableArtifactMode(a.Mode))
+		entry, err := zw.CreateHeader(header)
 		if err != nil {
 			_ = zw.Close()
 			return fmt.Errorf("create zip entry %q: %w", rel, err)
@@ -184,7 +187,7 @@ func collectArtifactsWithProgress(execDir string, globs []string, progress func(
 			fmt.Fprintf(&summary, "[artifacts] skip=%s err=%v\n", rel, err)
 			continue
 		}
-		uploads = append(uploads, collectedArtifact{Path: rel, Content: content})
+		uploads = append(uploads, collectedArtifact{Path: rel, Content: content, Mode: portableArtifactMode(info.Mode())})
 		totalBytes += int64(len(content))
 		if progress != nil && scanned%250 == 0 {
 			progress(fmt.Sprintf("[artifacts] collecting scanned=%d included=%d bytes=%d", scanned, len(uploads), totalBytes))
@@ -210,6 +213,14 @@ func collectArtifactsWithProgress(execDir string, globs []string, progress func(
 		fmt.Fprintf(&summary, "[artifacts] included=%d bytes=%d skipped=%d\n", len(uploads), totalBytes, skipped)
 	}
 	return uploads, summary.String(), nil
+}
+
+func portableArtifactMode(mode os.FileMode) os.FileMode {
+	mode &= os.ModePerm
+	if mode == 0 {
+		return 0o644
+	}
+	return mode
 }
 
 func artifactLogConfigFromEnv() (level string, includeLineLimit int) {

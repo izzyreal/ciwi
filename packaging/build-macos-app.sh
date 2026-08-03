@@ -51,12 +51,16 @@ mv "$FINAL_APP/Contents/MacOS/Ciwi.universal" "$FINAL_APP/Contents/MacOS/Ciwi"
 chmod +x "$FINAL_APP/Contents/MacOS/Ciwi"
 /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Ciwi" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Ciwi" "$FINAL_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleName string Ciwi" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :CFBundleName Ciwi" "$FINAL_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundlePackageType APPL" "$FINAL_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string ${VERSION}" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$FINAL_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${VERSION}" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$FINAL_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string ${MINIMUM_MACOS_VERSION}" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion ${MINIMUM_MACOS_VERSION}" "$FINAL_APP/Contents/Info.plist"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$FINAL_APP/Contents/Info.plist")" = "APPL"
 lipo "$FINAL_APP/Contents/MacOS/Ciwi" -verify_arch arm64 x86_64
 
 for ARCH in arm64 x86_64; do

@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -278,6 +280,11 @@ func TestCollectArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "dist", "nested", "b.txt"), []byte("B"), 0o644); err != nil {
 		t.Fatalf("write b: %v", err)
 	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(filepath.Join(root, "dist", "nested", "b.txt"), 0o755); err != nil {
+			t.Fatalf("chmod b: %v", err)
+		}
+	}
 
 	uploads, summary, err := collectArtifacts(root, []string{"dist/**/*.txt"})
 	if err != nil {
@@ -293,6 +300,9 @@ func TestCollectArtifacts(t *testing.T) {
 	b := uploads[1].Content
 	if string(a) != "A" || string(b) != "B" {
 		t.Fatalf("unexpected decoded artifact content")
+	}
+	if runtime.GOOS != "windows" && uploads[1].Mode.Perm() != 0o755 {
+		t.Fatalf("executable artifact mode = %o, want 755", uploads[1].Mode.Perm())
 	}
 	if strings.Contains(summary, "[artifacts] include=") {
 		t.Fatalf("default summary should not include per-file include lines, got: %s", summary)
@@ -358,7 +368,7 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "dist", "ciwi.bin"), []byte("ciwi"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "dist", "ciwi.bin"), []byte("ciwi"), 0o755); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -375,6 +385,17 @@ func TestCollectAndUploadArtifacts(t *testing.T) {
 				}
 				if ct := r.Header.Get("Content-Type"); ct != "application/zip" {
 					t.Fatalf("unexpected content type: %q", ct)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatalf("read upload zip: %v", err)
+				}
+				zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+				if err != nil || len(zr.File) != 1 {
+					t.Fatalf("read uploaded artifact zip: files=%d err=%v", len(zr.File), err)
+				}
+				if runtime.GOOS != "windows" && zr.File[0].Mode().Perm() != 0o755 {
+					t.Fatalf("uploaded artifact mode = %o, want 755", zr.File[0].Mode().Perm())
 				}
 				return &http.Response{
 					StatusCode: http.StatusOK,

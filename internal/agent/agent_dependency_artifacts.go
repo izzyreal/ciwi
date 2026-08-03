@@ -107,7 +107,7 @@ func downloadDependencyArtifacts(ctx context.Context, client *http.Client, serve
 			return summary.String(), fmt.Errorf("read artifact %q: %w", a.Path, readErr)
 		}
 		logDependencyArtifactCollision(&summary, restoredBy, rel, jobID)
-		if err := writeDependencyArtifact(execDir, rel, content); err != nil {
+		if err := writeDependencyArtifact(execDir, rel, content, 0o644); err != nil {
 			return summary.String(), fmt.Errorf("write artifact %q: %w", a.Path, err)
 		}
 		recordDependencyArtifactOwner(restoredBy, rel, jobID)
@@ -190,7 +190,7 @@ func downloadDependencyArtifactsZIP(ctx context.Context, client *http.Client, se
 			return summary.String(), fmt.Errorf("close zip entry %q: %w", zf.Name, closeErr)
 		}
 		logDependencyArtifactCollision(&summary, restoredBy, rel, jobID)
-		if err := writeDependencyArtifact(execDir, rel, content); err != nil {
+		if err := writeDependencyArtifact(execDir, rel, content, dependencyArtifactZIPMode(zf)); err != nil {
 			return summary.String(), fmt.Errorf("write artifact %q: %w", zf.Name, err)
 		}
 		recordDependencyArtifactOwner(restoredBy, rel, jobID)
@@ -271,12 +271,23 @@ func dependencyArtifactJobIDs(values []string) []string {
 	return ids
 }
 
-func writeDependencyArtifact(execDir, rel string, content []byte) error {
+func writeDependencyArtifact(execDir, rel string, content []byte, mode os.FileMode) error {
 	dst := filepath.Join(execDir, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(dst, content, 0o644)
+	mode = portableArtifactMode(mode)
+	if err := os.WriteFile(dst, content, mode); err != nil {
+		return err
+	}
+	return os.Chmod(dst, mode)
+}
+
+func dependencyArtifactZIPMode(file *zip.File) os.FileMode {
+	if file == nil || file.CreatorVersion>>8 != 3 {
+		return 0o644
+	}
+	return portableArtifactMode(file.Mode())
 }
 
 func logDependencyArtifactCollision(summary *strings.Builder, restoredBy map[string]string, rel, jobID string) {

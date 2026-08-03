@@ -54,8 +54,12 @@ func PersistArtifactsZIP(artifactsDir, jobID string, payload []byte) ([]protocol
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return nil, fmt.Errorf("mkdir artifact parent: %w", err)
 		}
-		if err := os.WriteFile(dst, content, 0o644); err != nil {
+		mode := storedArtifactZIPMode(zf)
+		if err := os.WriteFile(dst, content, mode); err != nil {
 			return nil, fmt.Errorf("write artifact %q: %w", zf.Name, err)
+		}
+		if err := os.Chmod(dst, mode); err != nil {
+			return nil, fmt.Errorf("set artifact mode %q: %w", zf.Name, err)
 		}
 		storedRel := filepath.ToSlash(filepath.Join(jobID, filepath.FromSlash(rel)))
 		artifacts = append(artifacts, protocol.JobExecutionArtifact{
@@ -66,6 +70,17 @@ func PersistArtifactsZIP(artifactsDir, jobID string, payload []byte) ([]protocol
 		})
 	}
 	return artifacts, nil
+}
+
+func storedArtifactZIPMode(file *zip.File) os.FileMode {
+	if file == nil || file.CreatorVersion>>8 != 3 {
+		return 0o644
+	}
+	mode := file.Mode() & os.ModePerm
+	if mode == 0 {
+		return 0o644
+	}
+	return mode
 }
 
 func isSafeStoredArtifactPath(rel string) bool {

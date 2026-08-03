@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -36,6 +37,11 @@ func TestWriteArtifactsZIP(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(base, "dist", "b.txt"), []byte("B"), 0o644); err != nil {
 		t.Fatalf("write b.txt: %v", err)
 	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(filepath.Join(base, "dist", "b.txt"), 0o755); err != nil {
+			t.Fatalf("chmod b.txt: %v", err)
+		}
+	}
 
 	rec := httptest.NewRecorder()
 	err := writeArtifactsZIP(rec, artifactsDir, jobID, []protocol.JobExecutionArtifact{
@@ -62,6 +68,9 @@ func TestWriteArtifactsZIP(t *testing.T) {
 	}
 	if len(zr.File) != 2 || zr.File[0].Name != "dist/a.txt" || zr.File[1].Name != "dist/b.txt" {
 		t.Fatalf("unexpected zip entries: %+v", zr.File)
+	}
+	if runtime.GOOS != "windows" && zr.File[1].Mode().Perm() != 0o755 {
+		t.Fatalf("downloaded artifact mode = %o, want 755", zr.File[1].Mode().Perm())
 	}
 
 	rc, err := zr.File[0].Open()

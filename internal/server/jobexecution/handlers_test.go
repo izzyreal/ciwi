@@ -8,6 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -404,7 +407,9 @@ func TestHandleByIDArtifactsUploadZIP(t *testing.T) {
 
 	var payload bytes.Buffer
 	zw := zip.NewWriter(&payload)
-	w, err := zw.Create("dist/app.bin")
+	header := &zip.FileHeader{Name: "dist/app.bin", Method: zip.Deflate}
+	header.SetMode(0o755)
+	w, err := zw.CreateHeader(header)
 	if err != nil {
 		t.Fatalf("create zip entry: %v", err)
 	}
@@ -425,6 +430,15 @@ func TestHandleByIDArtifactsUploadZIP(t *testing.T) {
 	}
 	if !saveCalled {
 		t.Fatalf("expected SaveJobExecutionArtifacts to be called")
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(artifactsDir, "job-1", "dist", "app.bin"))
+		if err != nil {
+			t.Fatalf("stat stored artifact: %v", err)
+		}
+		if info.Mode().Perm() != 0o755 {
+			t.Fatalf("stored artifact mode = %o, want 755", info.Mode().Perm())
+		}
 	}
 }
 

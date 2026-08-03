@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -112,6 +113,44 @@ func TestDownloadDependencyArtifactsPrefersZIP(t *testing.T) {
 	}
 	if string(a) != "AAA" || string(b) != "BBB" {
 		t.Fatalf("unexpected restored content a=%q b=%q", string(a), string(b))
+	}
+}
+
+func TestDownloadDependencyArtifactsZIPPreservesExecutableMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix executable mode bits")
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	header := &zip.FileHeader{Name: "dist/tool", Method: zip.Deflate}
+	header.SetMode(0o755)
+	w, err := zw.CreateHeader(header)
+	if err != nil {
+		t.Fatalf("create zip entry: %v", err)
+	}
+	if _, err := io.WriteString(w, "tool"); err != nil {
+		t.Fatalf("write zip entry: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer srv.Close()
+
+	execDir := t.TempDir()
+	if _, err := downloadDependencyArtifacts(context.Background(), srv.Client(), srv.URL, "job-build-1", execDir, map[string]string{}, false); err != nil {
+		t.Fatalf("download dependency artifacts: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(execDir, "dist", "tool"))
+	if err != nil {
+		t.Fatalf("stat restored executable: %v", err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("restored executable mode = %o, want 755", info.Mode().Perm())
 	}
 }
 
