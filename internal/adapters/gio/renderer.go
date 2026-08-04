@@ -598,7 +598,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	root := applyGioOverride(screen.Screen.Root)
 	children := root.Children
 	body := func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(r.metrics.pageInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Left: r.metrics.pageInset, Right: r.metrics.pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			if pageWidth := gtx.Dp(r.metrics.pageWidth); pageWidth > 0 && gtx.Constraints.Max.X > pageWidth {
 				marginPixels := gtx.Constraints.Max.X - pageWidth
 				margin := unit.Dp(float32(marginPixels) / (2 * gtx.Metric.PxPerDp))
@@ -638,16 +638,27 @@ func (r *Renderer) paintPageBackground(gtx layout.Context) {
 
 func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, screen *uidsl.ScreenDocument, data any, status string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return r.list.Layout(gtx, len(children)+1, func(gtx layout.Context, index int) layout.Dimensions {
+		hasStatus := status != ""
+		itemCount := len(children)
+		if hasStatus {
+			itemCount++
+		}
+		return r.list.Layout(gtx, itemCount, func(gtx layout.Context, index int) layout.Dimensions {
 			if index == len(children) {
-				if status == "" {
-					return layout.Dimensions{}
-				}
-				return layout.Inset{Top: 10, Bottom: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: 10, Bottom: r.metrics.pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return r.layoutStatus(gtx, status)
 				})
 			}
-			return layout.Inset{Bottom: r.spacing(root.Layout.Gap)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			inset := layout.Inset{}
+			if index == 0 {
+				inset.Top = r.metrics.pageInset
+			}
+			if index < len(children)-1 || hasStatus {
+				inset.Bottom = r.spacing(root.Layout.Gap)
+			} else {
+				inset.Bottom = r.metrics.pageInset
+			}
+			return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return r.layoutNode(gtx, children[index], data, fmt.Sprintf("%s/root/%d", screen.Metadata.Name, index))
 			})
 		})
@@ -1030,6 +1041,8 @@ type semanticProgress struct {
 const (
 	progressFrameInterval         = time.Second / 60
 	indeterminateProgressDuration = 4 * time.Second
+	connectionPulseDuration       = 4 * time.Second
+	connectionPulseMinimum        = .58
 )
 
 func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widget) layout.Widget {
@@ -1038,17 +1051,19 @@ func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widg
 		return content
 	}
 	return func(gtx layout.Context) layout.Dimensions {
-		return layout.Stack{}.Layout(gtx,
-			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Min
-				size.X = gtx.Constraints.Max.X
 				if size.X <= 0 || size.Y <= 0 {
 					return layout.Dimensions{Size: size}
 				}
 				r.paintSemanticProgress(gtx, progress, size)
 				return layout.Dimensions{Size: size}
-			}),
-			layout.Stacked(content),
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				return content(gtx)
+			},
 		)
 	}
 }
@@ -1091,6 +1106,12 @@ func (r *Renderer) paintSemanticProgress(gtx layout.Context, progress semanticPr
 func indeterminateProgressPosition(now time.Time) float64 {
 	cycle := float64(now.UnixNano()%int64(indeterminateProgressDuration)) / float64(indeterminateProgressDuration)
 	return .5 - .5*math.Cos(2*math.Pi*cycle)
+}
+
+func connectionPulseOpacity(now time.Time) float32 {
+	cycle := float64(now.UnixNano()%int64(connectionPulseDuration)) / float64(connectionPulseDuration)
+	eased := .5 - .5*math.Cos(2*math.Pi*cycle)
+	return float32(connectionPulseMinimum + (1-connectionPulseMinimum)*eased)
 }
 
 func resolveSemanticProgress(data any, binding *uidsl.Progress) (semanticProgress, bool) {
@@ -1524,6 +1545,13 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 	}
 	if node.Style.Role == "icon-button" && node.Icon != "" {
 		return r.layoutIconButton(gtx, button, node.Icon, label)
+	}
+	if node.Style.Role == "connection-pulse" {
+		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+		opacity := paint.PushOpacity(gtx.Ops, connectionPulseOpacity(gtx.Now))
+		dimensions := r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong")
+		opacity.Pop()
+		return dimensions
 	}
 	return r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong")
 }

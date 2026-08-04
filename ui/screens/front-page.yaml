@@ -95,8 +95,8 @@ screen:
             text:
               literal: Trying to connect…
             icon: network
-            progress:
-              binding: client.progress
+            style:
+              role: connection-pulse
             visible:
               binding: client.connecting
             actions:
@@ -121,65 +121,44 @@ screen:
           direction: vertical
           gap: "12"
         children:
-          - component: card
-            visible:
-              binding: client.connecting
+          - component: row
             layout:
               direction: horizontal
               gap: medium
-              padding: medium
               align: center
-            progress:
-              binding: client.progress
             children:
               - component: text
                 text:
-                  binding: client.status
+                  literal: Projects
                 style:
-                  tone: muted
-                  role: body
+                  role: heading
+                  emphasis: strong
                 layout:
                   grow: true
               - component: button
                 text:
-                  literal: Connection settings
-                icon: settings
+                  literal: Trying to connect…
+                icon: network
+                style:
+                  role: connection-pulse
+                visible:
+                  binding: client.connecting
                 actions:
                   - on: activate
                     command: navigate
                     arguments:
                       route: /settings
-          - component: card
-            visible:
-              binding: client.offline
-            layout:
-              direction: horizontal
-              gap: medium
-              padding: medium
-              align: center
-            children:
-              - component: text
-                text:
-                  literal: Connect to a ciwi server to load projects and executions.
-                style:
-                  tone: muted
-                layout:
-                  grow: true
               - component: button
                 text:
                   literal: Configure server
-                icon: settings
+                icon: server
+                visible:
+                  binding: client.offline
                 actions:
                   - on: activate
                     command: navigate
                     arguments:
                       route: /settings
-          - component: text
-            text:
-              literal: Projects
-            style:
-              role: heading
-              emphasis: strong
           - component: list
             id: project-list
             layout:

@@ -122,7 +122,6 @@ func (s nativeConnectionState) binding() map[string]any {
 		"connected": s.connected, "connecting": s.connecting,
 		"offline": !s.connected && !s.connecting, "address": s.address,
 		"status": s.status, "tone": tone,
-		"progress": map[string]any{"state": map[bool]string{true: "indeterminate", false: "none"}[s.connecting]},
 	}
 }
 

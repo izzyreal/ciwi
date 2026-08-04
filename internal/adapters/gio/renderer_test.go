@@ -1205,6 +1205,22 @@ func TestIndeterminateProgressPositionEasesAcrossRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConnectionPulseOpacityEasesSlowlyWithoutDisappearing(t *testing.T) {
+	start := time.Unix(0, 0)
+	minimum := connectionPulseOpacity(start)
+	middle := connectionPulseOpacity(start.Add(connectionPulseDuration / 2))
+	end := connectionPulseOpacity(start.Add(connectionPulseDuration))
+	if minimum < connectionPulseMinimum-.000001 || minimum > connectionPulseMinimum+.000001 {
+		t.Fatalf("pulse minimum = %g, want %g", minimum, connectionPulseMinimum)
+	}
+	if middle < .999999 || middle > 1.000001 {
+		t.Fatalf("pulse maximum = %g, want 1", middle)
+	}
+	if end < minimum-.000001 || end > minimum+.000001 {
+		t.Fatalf("pulse end = %g, want cycle minimum %g", end, minimum)
+	}
+}
+
 func TestProgressTrackUsesAvailableWidth(t *testing.T) {
 	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Constraints{Min: image.Pt(120, 24), Max: image.Pt(640, 100)}}
 	renderer := &Renderer{palette: palette{success: color.NRGBA{G: 255, A: 255}}}
@@ -1217,6 +1233,30 @@ func TestProgressTrackUsesAvailableWidth(t *testing.T) {
 	)(gtx)
 	if dimensions.Size.X != 640 {
 		t.Fatalf("progress width = %d, want available width 640", dimensions.Size.X)
+	}
+	if dimensions.Size.Y != 24 {
+		t.Fatalf("progress height = %d, want content height 24", dimensions.Size.Y)
+	}
+}
+
+func TestRootPageInsetsScrollWithFirstAndLastContent(t *testing.T) {
+	renderer := &Renderer{
+		list:    layout.List{Axis: layout.Vertical},
+		metrics: visualMetrics{pageInset: 16, spaceMedium: 12},
+	}
+	screen := &uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "inset-test"}}
+	root := uidsl.Node{Layout: uidsl.Layout{Gap: "medium"}}
+	children := []uidsl.Node{
+		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
+		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
+	}
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(400, 120))}
+	dimensions := renderer.layoutRootChildren(children, root, screen, map[string]any{}, "")(gtx)
+	if dimensions.Size != image.Pt(400, 120) {
+		t.Fatalf("viewport dimensions = %v", dimensions.Size)
+	}
+	if renderer.list.Position.Length != 244 {
+		t.Fatalf("scroll content length = %d, want top 16 + children 200 + gap 12 + bottom 16 = 244", renderer.list.Position.Length)
 	}
 }
 
