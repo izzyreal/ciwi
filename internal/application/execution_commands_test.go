@@ -7,17 +7,25 @@ import (
 )
 
 type executionMutatorStub struct {
-	cleared    int64
-	deleted    []string
-	clearCalls int
-	flushCalls int
-	all        bool
-	ids        []string
+	cleared     int64
+	deleted     []string
+	clearCalls  int
+	removeCalls int
+	removedID   string
+	flushCalls  int
+	all         bool
+	ids         []string
 }
 
 func (s *executionMutatorStub) ClearQueuedExecutions(context.Context) (int64, error) {
 	s.clearCalls++
 	return s.cleared, nil
+}
+
+func (s *executionMutatorStub) RemoveQueuedExecution(_ context.Context, jobID string) error {
+	s.removeCalls++
+	s.removedID = jobID
+	return nil
 }
 
 func (s *executionMutatorStub) FlushExecutionHistory(_ context.Context, all bool, ids []string) ([]string, error) {
@@ -44,6 +52,17 @@ func TestExecutionCommandsAreIdempotentAndPublishChanges(t *testing.T) {
 	if first.Cleared != 3 || second != first || mutator.clearCalls != 1 {
 		t.Fatalf("clear results = %#v, %#v; calls = %d", first, second, mutator.clearCalls)
 	}
+	removed, err := commands.RemoveQueued(t.Context(), RemoveQueuedExecutionRequest{JobExecutionID: " job-q ", IdempotencyKey: "remove-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedRemove, err := commands.RemoveQueued(t.Context(), RemoveQueuedExecutionRequest{JobExecutionID: "job-q", IdempotencyKey: "remove-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed.Removed || replayedRemove != removed || mutator.removeCalls != 1 || mutator.removedID != "job-q" {
+		t.Fatalf("remove results = %#v, %#v; calls = %d id = %q", removed, replayedRemove, mutator.removeCalls, mutator.removedID)
+	}
 
 	request := FlushExecutionHistoryRequest{JobExecutionIDs: []string{" job-1 ", "job-1", "job-2"}, IdempotencyKey: "flush-1"}
 	flushed, err := commands.FlushHistory(t.Context(), request)
@@ -60,8 +79,8 @@ func TestExecutionCommandsAreIdempotentAndPublishChanges(t *testing.T) {
 	if mutator.all || !reflect.DeepEqual(mutator.ids, []string{"job-1", "job-2"}) {
 		t.Fatalf("flush request = all %v, ids %v", mutator.all, mutator.ids)
 	}
-	if got := changes.Snapshot().Revision; got != 2 {
-		t.Fatalf("change revision = %d, want 2", got)
+	if got := changes.Snapshot().Revision; got != 3 {
+		t.Fatalf("change revision = %d, want 3", got)
 	}
 }
 

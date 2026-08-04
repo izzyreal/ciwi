@@ -18,6 +18,7 @@ import (
 	"gioui.org/f32"
 	"gioui.org/font"
 	"gioui.org/font/gofont"
+	"gioui.org/font/opentype"
 	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
@@ -951,12 +952,15 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		axis = layout.Horizontal
 	}
 	children := make([]layout.FlexChild, 0, len(node.Children))
+	gridWeights := executionGridWeights(node.Style.Role, len(node.Children))
 	for i := range node.Children {
 		child := node.Children[i]
 		widgetFn := func(gtx layout.Context) layout.Dimensions {
 			return r.layoutNode(gtx, child, data, fmt.Sprintf("%s/%d", path, i))
 		}
-		if child.Layout.Grow {
+		if gridWeights != nil {
+			children = append(children, layout.Flexed(gridWeights[i], widgetFn))
+		} else if child.Layout.Grow {
 			children = append(children, layout.Flexed(1, widgetFn))
 		} else {
 			children = append(children, layout.Rigid(widgetFn))
@@ -967,13 +971,33 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		Bottom: r.spacing(node.Layout.Padding), Left: r.spacing(node.Layout.Padding),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		row := func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: axis, Alignment: layout.Middle, Gap: gtx.Dp(r.spacing(node.Layout.Gap))}.Layout(gtx, children...)
+			alignment := layout.Middle
+			if gridWeights != nil {
+				alignment = layout.Start
+			}
+			return layout.Flex{Axis: axis, Alignment: alignment, Gap: gtx.Dp(r.spacing(node.Layout.Gap))}.Layout(gtx, children...)
 		}
-		if node.Style.Role == "execution-job-row" {
+		if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {
 			return layout.Inset{Top: 7, Bottom: 7}.Layout(gtx, row)
 		}
 		return row(gtx)
 	})
+}
+
+func executionGridWeights(role string, childCount int) []float32 {
+	var weights []float32
+	switch role {
+	case "queued-execution-header", "queued-execution-job-row":
+		weights = []float32{2.0, 1.0, 1.25, 1.1, 1.2, 1.35, 2.25, 0.85}
+	case "history-execution-header", "history-execution-job-row":
+		weights = []float32{2.2, 1.1, 1.3, 1.1, 1.2, 1.45, 1.0}
+	default:
+		return nil
+	}
+	if len(weights) != childCount {
+		return nil
+	}
+	return weights
 }
 
 func (r *Renderer) constrainNode(gtx layout.Context, node uidsl.Node, content layout.Widget) layout.Dimensions {
@@ -1053,7 +1077,7 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 			r.pendingOutputSelection = nil
 		}
 		style := material.Editor(r.theme, editor, "")
-		style.Font.Typeface = font.Typeface("Go Mono")
+		style.Font.Typeface = font.Typeface("Ciwi Mono")
 		if node.Style.Emphasis == "strong" {
 			style.Font.Weight = font.Bold
 		}
@@ -1086,6 +1110,10 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 	case "execution-row":
 		label = material.Body1(r.theme, text)
 		label.TextSize = r.metrics.textControl
+	case "table-header":
+		label = material.Body2(r.theme, text)
+		label.TextSize = r.metrics.textBadge
+		label.Color = r.palette.muted
 	default:
 		label = material.Body1(r.theme, text)
 		label.TextSize = r.metrics.textBody
@@ -1314,26 +1342,62 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 		r.outputScroller = list
 		list.ScrollToEnd = r.outputTailing
 	}
-	return list.Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
-		itemData := mergeData(data, node.Repeat.As, items[index])
-		itemPath := fmt.Sprintf("%s/%d", path, index)
-		if key, resolveErr := uidsl.Resolve(itemData, node.Repeat.Key); resolveErr == nil {
-			itemPath = path + "/" + fmt.Sprint(key)
-		}
-		inset := layout.Inset{Right: r.spacing(node.Layout.Gap)}
-		component := "row"
-		if list.Axis == layout.Vertical {
-			inset = layout.Inset{Bottom: r.spacing(node.Layout.Gap)}
-			component = "column"
-		}
-		return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			container := node
-			container.Component = component
-			container.Repeat = nil
-			container.Actions = nil
-			return r.layoutChildren(gtx, container, itemData, itemPath)
+	content := func(gtx layout.Context) layout.Dimensions {
+		return list.Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
+			itemData := mergeData(data, node.Repeat.As, items[index])
+			itemPath := fmt.Sprintf("%s/%d", path, index)
+			if key, resolveErr := uidsl.Resolve(itemData, node.Repeat.Key); resolveErr == nil {
+				itemPath = path + "/" + fmt.Sprint(key)
+			}
+			inset := layout.Inset{Right: r.spacing(node.Layout.Gap)}
+			component := "row"
+			if list.Axis == layout.Vertical {
+				inset = layout.Inset{Bottom: r.spacing(node.Layout.Gap)}
+				component = "column"
+			}
+			return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				container := node
+				container.Component = component
+				container.Repeat = nil
+				container.Actions = nil
+				return r.layoutChildren(gtx, container, itemData, itemPath)
+			})
 		})
-	})
+	}
+	if node.ID != "job-output-groups" {
+		return content(gtx)
+	}
+	stateKey, expanded := r.visibleOutputGroupState(items, list.Position.First)
+	if !expanded {
+		return content(gtx)
+	}
+	collapse := r.button(path + "/floating-collapse")
+	for collapse.Clicked(gtx) {
+		r.setDisclosureState(stateKey, false, true)
+	}
+	return layout.Stack{Alignment: layout.NE}.Layout(gtx,
+		layout.Stacked(content),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: 8, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return r.layoutControlButton(gtx, collapse, "Collapse", "chevron-up", true, true)
+			})
+		}),
+	)
+}
+
+func (r *Renderer) visibleOutputGroupState(items []any, index int) (string, bool) {
+	if index < 0 || index >= len(items) {
+		return "", false
+	}
+	item, ok := items[index].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	stateKey := strings.TrimSpace(fmt.Sprint(item["state_key"]))
+	if stateKey == "" {
+		return "", false
+	}
+	return stateKey, r.disclosures[stateKey]
 }
 
 func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
@@ -2165,9 +2229,14 @@ func rendererTheme(document *uidsl.ThemeDocument) (*material.Theme, palette, err
 		return nil, palette{}, err
 	}
 	theme := material.NewTheme()
-	// Bundle the Go font family so code and identifier labels render with a
-	// genuine monospace face even when the host has no Go Mono installation.
-	theme.Shaper = giotext.NewShaper(giotext.WithCollection(gofont.Collection()))
+	fonts, err := ciwiFontCollection()
+	if err != nil {
+		return nil, palette{}, err
+	}
+	// Ciwi Mono is an explicit alias backed by the exact same font files served
+	// to browsers. Avoid relying on platform family lookup or parsed font-weight
+	// metadata, both of which can otherwise select a visually different face.
+	theme.Shaper = giotext.NewShaper(giotext.WithCollection(fonts))
 	// Match the browser chrome's body font stack exactly. The shaper resolves
 	// Avenir Next on macOS, Segoe UI on Windows, and the same generic fallback
 	// used by the browser elsewhere.
@@ -2177,6 +2246,34 @@ func rendererTheme(document *uidsl.ThemeDocument) (*material.Theme, palette, err
 	theme.Palette.ContrastBg = colors.accent
 	theme.Palette.ContrastFg = colors.surface
 	return theme, colors, nil
+}
+
+func ciwiFontCollection() ([]font.FontFace, error) {
+	collection := append([]font.FontFace(nil), gofont.Collection()...)
+	for _, source := range []struct {
+		path   string
+		weight font.Weight
+	}{
+		{path: "assets/Go-Mono.ttf", weight: font.Normal},
+		{path: "assets/Go-Mono-Bold.ttf", weight: font.Bold},
+	} {
+		payload, err := sharedUI.Read(source.path)
+		if err != nil {
+			return nil, fmt.Errorf("load native monospace font: %w", err)
+		}
+		faces, err := opentype.ParseCollection(payload)
+		if err != nil {
+			return nil, fmt.Errorf("parse native monospace font %q: %w", source.path, err)
+		}
+		if len(faces) == 0 {
+			return nil, fmt.Errorf("parse native monospace font %q: collection is empty", source.path)
+		}
+		face := faces[0]
+		face.Font.Typeface = font.Typeface("Ciwi Mono")
+		face.Font.Weight = source.weight
+		collection = append(collection, face)
+	}
+	return collection, nil
 }
 
 func semanticTone(value string) string {

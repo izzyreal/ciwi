@@ -156,6 +156,13 @@ func (a executionMutatorAdapter) ClearQueuedExecutions(ctx context.Context) (int
 	return a.state.jobExecutionStore().ClearQueuedJobExecutions()
 }
 
+func (a executionMutatorAdapter) RemoveQueuedExecution(ctx context.Context, jobID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return a.state.jobExecutionStore().DeleteQueuedJobExecution(jobID)
+}
+
 func (a executionMutatorAdapter) FlushExecutionHistory(ctx context.Context, all bool, jobIDs []string) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

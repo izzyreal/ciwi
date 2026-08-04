@@ -59,6 +59,7 @@ type Services struct {
 	}
 	ExecutionCommands interface {
 		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
+		RemoveQueued(context.Context, application.RemoveQueuedExecutionRequest) (application.RemoveQueuedExecutionResult, error)
 		FlushHistory(context.Context, application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error)
 	}
 	ExecutionControls interface {
@@ -387,6 +388,16 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		})
 		if err == nil {
 			response.Result = &cnpv1.Response_FlushExecutionHistory{FlushExecutionHistory: &cnpv1.FlushExecutionHistoryResult{Flushed: result.Flushed}}
+		}
+	case *cnpv1.Request_RemoveQueuedExecution:
+		var result application.RemoveQueuedExecutionResult
+		result, err = s.services.ExecutionCommands.RemoveQueued(ctx, application.RemoveQueuedExecutionRequest{
+			JobExecutionID: operation.RemoveQueuedExecution.GetJobExecutionId(), IdempotencyKey: request.Metadata.IdempotencyKey,
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_RemoveQueuedExecution{RemoveQueuedExecution: &cnpv1.RemoveQueuedExecutionResult{
+				JobExecutionId: result.JobExecutionID, Removed: result.Removed,
+			}}
 		}
 	case *cnpv1.Request_CancelExecution:
 		var result application.CancelExecutionResult

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
@@ -18,6 +19,63 @@ import (
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
 )
+
+func TestCiwiFontCollectionContainsExplicitMonospaceFaces(t *testing.T) {
+	faces, err := ciwiFontCollection()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[font.Weight]bool{font.Normal: false, font.Bold: false}
+	for _, face := range faces {
+		if face.Font.Typeface != font.Typeface("Ciwi Mono") {
+			continue
+		}
+		if _, ok := want[face.Font.Weight]; ok {
+			want[face.Font.Weight] = true
+		}
+	}
+	for weight, found := range want {
+		if !found {
+			t.Errorf("Ciwi Mono weight %v is not embedded in the native font collection", weight)
+		}
+	}
+}
+
+func TestExecutionGridWeightsMatchSharedTableColumns(t *testing.T) {
+	for _, test := range []struct {
+		role     string
+		children int
+	}{
+		{role: "queued-execution-header", children: 8},
+		{role: "queued-execution-job-row", children: 8},
+		{role: "history-execution-header", children: 7},
+		{role: "history-execution-job-row", children: 7},
+	} {
+		if got := executionGridWeights(test.role, test.children); len(got) != test.children {
+			t.Errorf("executionGridWeights(%q, %d) has %d columns", test.role, test.children, len(got))
+		}
+	}
+	if got := executionGridWeights("queued-execution-header", 7); got != nil {
+		t.Fatalf("mismatched table columns = %v, want nil", got)
+	}
+}
+
+func TestVisibleOutputGroupStateTracksFirstVisibleExpandedStep(t *testing.T) {
+	renderer := &Renderer{disclosures: map[string]bool{"step:2": true}}
+	items := []any{
+		map[string]any{"state_key": "step:1"},
+		map[string]any{"state_key": "step:2"},
+	}
+	if key, expanded := renderer.visibleOutputGroupState(items, 1); key != "step:2" || !expanded {
+		t.Fatalf("visible output group = %q, %v", key, expanded)
+	}
+	if key, expanded := renderer.visibleOutputGroupState(items, 0); key != "step:1" || expanded {
+		t.Fatalf("collapsed output group = %q, %v", key, expanded)
+	}
+	if key, expanded := renderer.visibleOutputGroupState(items, 2); key != "" || expanded {
+		t.Fatalf("out-of-range output group = %q, %v", key, expanded)
+	}
+}
 
 func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("front-page")

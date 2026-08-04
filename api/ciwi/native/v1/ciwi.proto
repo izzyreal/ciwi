@@ -275,6 +275,14 @@ message ExecutionCardJob {
   string status = 3;
   string current_step = 4;
   SchedulingDiagnosis scheduling_diagnosis = 5;
+  string pipeline_id = 6;
+  string build_label = 7;
+  string agent_id = 8;
+  string created_utc = 9;
+  string started_utc = 10;
+  string finished_utc = 11;
+  string reason = 12;
+  string action = 13;
 }
 
 message RunPipelineSelection {
@@ -462,6 +470,11 @@ message FlushExecutionHistoryResult {
   int64 flushed = 1;
 }
 
+message RemoveQueuedExecutionResult {
+  string job_execution_id = 1;
+  bool removed = 2;
+}
+
 enum ChangeTopic {
   CHANGE_TOPIC_UNSPECIFIED = 0;
   CHANGE_TOPIC_SERVER = 1;
@@ -509,6 +522,7 @@ message Request {
     Empty check_server_updates = 29;
     Empty list_server_update_versions = 30;
     ServerUpdateActionRequest server_update_action = 31;
+    ControlExecutionRequest remove_queued_execution = 32;
   }
 }
 
@@ -538,6 +552,7 @@ message Response {
     ServerUpdateCheckResult server_update_check = 30;
     ServerUpdateVersions server_update_versions = 31;
     ServerUpdateActionResult server_update_action = 32;
+    RemoveQueuedExecutionResult remove_queued_execution = 33;
   }
 }
 

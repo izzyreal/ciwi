@@ -11,6 +11,7 @@ import (
 const (
 	clearExecutionQueueOperation   = "clear_execution_queue"
 	flushExecutionHistoryOperation = "flush_execution_history"
+	removeQueuedExecutionOperation = "remove_queued_execution"
 )
 
 type ClearExecutionQueueRequest struct {
@@ -31,11 +32,22 @@ type FlushExecutionHistoryResult struct {
 	Flushed int64 `json:"flushed"`
 }
 
+type RemoveQueuedExecutionRequest struct {
+	JobExecutionID string
+	IdempotencyKey string
+}
+
+type RemoveQueuedExecutionResult struct {
+	JobExecutionID string `json:"job_execution_id"`
+	Removed        bool   `json:"removed"`
+}
+
 // ExecutionMutator owns the persistence and artifact-cleanup side of execution
 // housekeeping. The application service deliberately does not know whether
 // those records live in SQLite or where server-side artifacts are stored.
 type ExecutionMutator interface {
 	ClearQueuedExecutions(context.Context) (int64, error)
+	RemoveQueuedExecution(context.Context, string) error
 	FlushExecutionHistory(context.Context, bool, []string) ([]string, error)
 }
 
@@ -43,6 +55,37 @@ type ExecutionCommands struct {
 	mutator  ExecutionMutator
 	receipts CommandReceiptRepository
 	changes  *ChangeHub
+}
+
+func (c *ExecutionCommands) RemoveQueued(ctx context.Context, request RemoveQueuedExecutionRequest) (RemoveQueuedExecutionResult, error) {
+	if c == nil || c.mutator == nil {
+		return RemoveQueuedExecutionResult{}, NewError(ErrorUnavailable, "execution mutator unavailable", nil)
+	}
+	jobID := strings.TrimSpace(request.JobExecutionID)
+	if jobID == "" {
+		return RemoveQueuedExecutionResult{}, NewError(ErrorInvalidArgument, "job execution id is required", nil)
+	}
+	key, err := validateCommandKey(request.IdempotencyKey)
+	if err != nil {
+		return RemoveQueuedExecutionResult{}, err
+	}
+	execute := func() (RemoveQueuedExecutionResult, error) {
+		if err := c.mutator.RemoveQueuedExecution(ctx, jobID); err != nil {
+			message := strings.TrimSpace(err.Error())
+			if strings.Contains(message, "not found") {
+				return RemoveQueuedExecutionResult{}, NewError(ErrorNotFound, message, err)
+			}
+			if strings.Contains(message, "not pending") {
+				return RemoveQueuedExecutionResult{}, NewError(ErrorFailedPrecondition, message, err)
+			}
+			return RemoveQueuedExecutionResult{}, WrapInternal("remove queued execution", err)
+		}
+		if c.changes != nil {
+			c.changes.Publish(ChangeQueue)
+		}
+		return RemoveQueuedExecutionResult{JobExecutionID: jobID, Removed: true}, nil
+	}
+	return executeIdempotentCommand(ctx, c.receipts, key, removeQueuedExecutionOperation, executionControlFingerprint(jobID), execute)
 }
 
 func NewExecutionCommands(mutator ExecutionMutator, receipts CommandReceiptRepository, changes *ChangeHub) *ExecutionCommands {

@@ -545,6 +545,11 @@ screen:
                     text:
                       literal: Collapse
                     icon: arrow-up
+                    style:
+                      role: floating-collapse
+                    overrides:
+                      gio:
+                        hidden: true
                     actions:
                       - on: activate
                         command: set-disclosures

@@ -13,6 +13,7 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/op"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
@@ -915,6 +916,25 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetTransientStatus(fmt.Sprintf("Cleared %d queued execution(s)", result.Cleared), nativeNoticeDuration)
+	case "remove-execution":
+		jobID := strings.TrimSpace(command.arguments["jobExecutionId"])
+		if jobID == "" {
+			renderer.SetStatus("No execution identifier was supplied")
+			return
+		}
+		renderer.SetStatus("Removing queued execution…")
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := client.RemoveQueuedExecution(commandCtx, jobID, "")
+		cancel()
+		if err != nil {
+			renderer.SetStatus("Remove failed: " + err.Error())
+			return
+		}
+		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
+			renderer.SetStatus("Execution removed, but refresh failed: " + err.Error())
+			return
+		}
+		renderer.SetTransientStatus("Removed queued execution "+result.JobExecutionId, nativeNoticeDuration)
 	case "flush-history", "delete-execution":
 		request := &cnpv1.FlushExecutionHistoryRequest{All: command.action.Command == "flush-history"}
 		if !request.All {
@@ -1635,10 +1655,55 @@ func decorateExecutionCards(value any, queued bool) {
 				for _, rawJob := range jobs {
 					job, _ := rawJob.(map[string]any)
 					ensureSchedulingDiagnosisBinding(job)
+					decorateExecutionCardJob(job)
 				}
 			}
 		}
 	}
+}
+
+func decorateExecutionCardJob(job map[string]any) {
+	if job == nil {
+		return
+	}
+	created := parseExecutionCardTime(job["created_utc"])
+	started := parseExecutionCardTime(job["started_utc"])
+	finished := parseExecutionCardTime(job["finished_utc"])
+	job["created_label"] = formatExecutionCardTimestamp(created)
+	job["duration_label"] = formatExecutionCardDuration(started, finished, strings.TrimSpace(fmt.Sprint(job["status"])))
+}
+
+func parseExecutionCardTime(value any) time.Time {
+	parsed, _ := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(value)))
+	return parsed
+}
+
+func formatExecutionCardTimestamp(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Local().Format("Mon 02 Jan, 15:04:05")
+}
+
+func formatExecutionCardDuration(started, finished time.Time, status string) string {
+	if started.IsZero() {
+		return ""
+	}
+	end := finished
+	if end.IsZero() && protocol.NormalizeJobExecutionStatus(status) == protocol.JobExecutionStatusRunning {
+		end = time.Now()
+	}
+	if end.IsZero() || end.Before(started) {
+		return ""
+	}
+	totalSeconds := int(end.Sub(started).Seconds())
+	hours := totalSeconds / 3600
+	minutes := (totalSeconds % 3600) / 60
+	seconds := totalSeconds % 60
+	if hours > 0 {
+		return fmt.Sprintf("%02dh %02dm %02ds", hours, minutes, seconds)
+	}
+	return fmt.Sprintf("%02dm %02ds", minutes, seconds)
 }
 
 func ensureSchedulingDiagnosisBinding(value map[string]any) {

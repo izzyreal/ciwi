@@ -123,7 +123,38 @@
         ? 'failed'
         : (queued ? (Number(summary.in_progress || 0) > 0 ? 'running' : 'waiting') : 'succeeded');
 	  card.job_execution_ids_csv = (Array.isArray(card.job_execution_ids) ? card.job_execution_ids : []).join(',');
+	  (Array.isArray(card.sections) ? card.sections : []).forEach(section => {
+		(Array.isArray(section.jobs) ? section.jobs : []).forEach(job => {
+		  job.created_label = declarativeExecutionTimestamp(job.created_utc);
+		  job.duration_label = declarativeExecutionDuration(job.started_utc, job.finished_utc, job.status);
+		});
+	  });
     });
+  }
+
+  function declarativeExecutionTimestamp(value) {
+	const parsed = new Date(String(value || ''));
+	if (Number.isNaN(parsed.getTime())) return '';
+	return parsed.toLocaleString(undefined, {
+	  weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+	});
+  }
+
+  function declarativeExecutionDuration(startedValue, finishedValue, status) {
+	const started = new Date(String(startedValue || ''));
+	if (Number.isNaN(started.getTime())) return '';
+	let finished = new Date(String(finishedValue || ''));
+	if (Number.isNaN(finished.getTime())) {
+	  if (String(status || '').trim().toLowerCase() !== 'running') return '';
+	  finished = new Date();
+	}
+	const total = Math.max(0, Math.floor((finished.getTime() - started.getTime()) / 1000));
+	const hours = Math.floor(total / 3600);
+	const minutes = Math.floor((total % 3600) / 60);
+	const seconds = total % 60;
+	return hours > 0
+	  ? String(hours).padStart(2, '0') + 'h ' + String(minutes).padStart(2, '0') + 'm ' + String(seconds).padStart(2, '0') + 's'
+	  : String(minutes).padStart(2, '0') + 'm ' + String(seconds).padStart(2, '0') + 's';
   }
 
   function decorateFrontPageProjects(projects) {
@@ -423,6 +454,11 @@
 		}
 		else if (action.command === 'clear-queue') {
 		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
+		}
+		else if (action.command === 'remove-execution') {
+		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId), {method: 'DELETE'});
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
 		}

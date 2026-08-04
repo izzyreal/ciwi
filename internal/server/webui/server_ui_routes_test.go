@@ -83,7 +83,7 @@ func TestPagesKeepBehaviorInRealCSSAndJavaScriptAssets(t *testing.T) {
 			}
 		}
 		for _, ref := range []string{
-			`href="/ui/css/chrome.css"`,
+			`href="/ui/css/chrome.css?v=2"`,
 			`href="/ui/css/` + name + `.css"`,
 			`src="/ui/` + name + `.js"`,
 		} {

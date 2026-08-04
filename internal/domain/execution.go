@@ -26,6 +26,14 @@ type ExecutionCardJob struct {
 	ID                  string
 	Label               string
 	Status              string
+	PipelineID          string
+	BuildLabel          string
+	AgentID             string
+	CreatedUTC          time.Time
+	StartedUTC          time.Time
+	FinishedUTC         time.Time
+	Reason              string
+	Action              string
 	CurrentStep         string
 	SchedulingDiagnosis *SchedulingDiagnosis
 }

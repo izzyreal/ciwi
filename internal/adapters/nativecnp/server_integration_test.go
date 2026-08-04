@@ -167,8 +167,12 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil || flushed.Flushed != 2 {
 		t.Fatalf("flush history = %#v, %v", flushed, err)
 	}
-	if executions.clearRequest.IdempotencyKey != "clear-command-key" || executions.flushRequest.IdempotencyKey != "flush-command-key" || !reflect.DeepEqual(executions.flushRequest.JobExecutionIDs, []string{"job-1", "job-2"}) {
-		t.Fatalf("execution command mapping = clear %#v, flush %#v", executions.clearRequest, executions.flushRequest)
+	removed, err := client.RemoveQueuedExecution(ctx, "job-q", "remove-command-key")
+	if err != nil || !removed.Removed || removed.JobExecutionId != "job-q" {
+		t.Fatalf("remove queued execution = %#v, %v", removed, err)
+	}
+	if executions.clearRequest.IdempotencyKey != "clear-command-key" || executions.flushRequest.IdempotencyKey != "flush-command-key" || executions.removeRequest.IdempotencyKey != "remove-command-key" || !reflect.DeepEqual(executions.flushRequest.JobExecutionIDs, []string{"job-1", "job-2"}) {
+		t.Fatalf("execution command mapping = clear %#v, flush %#v, remove %#v", executions.clearRequest, executions.flushRequest, executions.removeRequest)
 	}
 	cancelled, err := client.CancelExecution(ctx, "job-1", "cancel-command-key")
 	if err != nil || cancelled.Status != "failed" {
@@ -661,13 +665,19 @@ func (failingPipelineService) RunPipeline(context.Context, application.RunPipeli
 }
 
 type executionCommandService struct {
-	clearRequest application.ClearExecutionQueueRequest
-	flushRequest application.FlushExecutionHistoryRequest
+	clearRequest  application.ClearExecutionQueueRequest
+	flushRequest  application.FlushExecutionHistoryRequest
+	removeRequest application.RemoveQueuedExecutionRequest
 }
 
 func (s *executionCommandService) ClearQueue(_ context.Context, request application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error) {
 	s.clearRequest = request
 	return application.ClearExecutionQueueResult{Cleared: 2}, nil
+}
+
+func (s *executionCommandService) RemoveQueued(_ context.Context, request application.RemoveQueuedExecutionRequest) (application.RemoveQueuedExecutionResult, error) {
+	s.removeRequest = request
+	return application.RemoveQueuedExecutionResult{JobExecutionID: request.JobExecutionID, Removed: true}, nil
 }
 
 func (s *executionCommandService) FlushHistory(_ context.Context, request application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error) {

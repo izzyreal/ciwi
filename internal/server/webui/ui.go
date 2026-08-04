@@ -132,6 +132,8 @@ func serveEmbeddedAsset(w http.ResponseWriter, asset embeddedAsset) {
 	w.Header().Set("Content-Type", asset.contentType)
 	if asset.cache {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
+	} else {
+		w.Header().Set("Cache-Control", "no-store")
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)

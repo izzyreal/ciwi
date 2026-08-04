@@ -2,6 +2,7 @@ package nativecnp
 
 import (
 	"strings"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
@@ -157,12 +158,22 @@ func executionCardSectionsToProto(sections []domain.ExecutionCardSection) []*cnp
 		for _, job := range section.Jobs {
 			jobs = append(jobs, &cnpv1.ExecutionCardJob{
 				Id: job.ID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
+				PipelineId: job.PipelineID, BuildLabel: job.BuildLabel, AgentId: job.AgentID,
+				CreatedUtc: formatProtoTime(job.CreatedUTC), StartedUtc: formatProtoTime(job.StartedUTC),
+				FinishedUtc: formatProtoTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,
 				SchedulingDiagnosis: schedulingDiagnosisToProto(job.SchedulingDiagnosis),
 			})
 		}
 		out = append(out, &cnpv1.ExecutionCardSection{Key: section.Key, Label: section.Label, Jobs: jobs})
 	}
 	return out
+}
+
+func formatProtoTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 func presentedSchedulingDiagnosisToProto(view presentation.JobDetailsView) *cnpv1.SchedulingDiagnosis {

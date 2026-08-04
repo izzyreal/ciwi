@@ -323,6 +323,22 @@ func (c *Client) FlushExecutionHistory(ctx context.Context, request *cnpv1.Flush
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) RemoveQueuedExecution(ctx context.Context, jobExecutionID, idempotencyKey string) (*cnpv1.RemoveQueuedExecutionResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_RemoveQueuedExecution{
+		RemoveQueuedExecution: &cnpv1.ControlExecutionRequest{JobExecutionId: jobExecutionID},
+	}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetRemoveQueuedExecution(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) CancelExecution(ctx context.Context, jobExecutionID, idempotencyKey string) (*cnpv1.CancelExecutionResult, error) {
 	if idempotencyKey == "" {
 		idempotencyKey = uuid.NewString()

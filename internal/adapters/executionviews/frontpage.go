@@ -3,6 +3,7 @@ package executionviews
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -288,8 +289,13 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 		if label == "" {
 			label = strings.TrimSpace(item.Job.ID)
 		}
+		status := protocol.NormalizeJobExecutionStatus(item.Job.Status)
 		return []domain.ExecutionCardJob{{
-			ID: item.Job.ID, Label: label, Status: protocol.NormalizeJobExecutionStatus(item.Job.Status),
+			ID: item.Job.ID, Label: label, Status: status,
+			PipelineID: strings.TrimSpace(item.Job.Metadata["pipeline_id"]),
+			BuildLabel: executionBuildLabel(item.Job.Metadata), AgentID: strings.TrimSpace(item.Job.LeasedByAgentID),
+			CreatedUTC: item.Job.CreatedUTC, StartedUTC: timeValue(item.Job.StartedUTC), FinishedUTC: timeValue(item.Job.FinishedUTC),
+			Reason: executionReason(item.Job), Action: executionAction(status),
 			CurrentStep: strings.TrimSpace(item.Job.CurrentStep), SchedulingDiagnosis: item.Job.SchedulingDiagnosis,
 		}}
 	}
@@ -298,6 +304,73 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 		out = append(out, mapCardItemJobs(child)...)
 	}
 	return out
+}
+
+func executionBuildLabel(metadata map[string]string) string {
+	version := strings.TrimSpace(metadata["build_version"])
+	if version == "" {
+		return ""
+	}
+	if target := strings.TrimSpace(metadata["build_target"]); target != "" {
+		return version + " (" + target + ")"
+	}
+	return version
+}
+
+func executionReason(job *jobhistory.JobView) string {
+	parts := make([]string, 0, 2)
+	if status := protocol.NormalizeJobExecutionStatus(job.Status); status == protocol.JobExecutionStatusQueued {
+		metadata := job.Metadata
+		if pipelines := splitMetadataList(metadata["chain_depends_on_pipelines"]); strings.TrimSpace(metadata["chain_blocked"]) == "1" && len(pipelines) > 0 {
+			label := "pipelines "
+			if len(pipelines) == 1 {
+				label = "pipeline "
+			}
+			parts = append(parts, "Waiting for "+label+strings.Join(pipelines, ", "))
+		} else if jobs := splitMetadataList(metadata["needs_job_ids"]); len(jobs) > 0 {
+			label := "jobs "
+			if len(jobs) == 1 {
+				label = "job "
+			}
+			parts = append(parts, "Waiting for "+label+strings.Join(jobs, ", "))
+		} else if strings.TrimSpace(metadata["chain_blocked"]) == "1" || strings.TrimSpace(metadata["needs_blocked"]) == "1" {
+			parts = append(parts, "Waiting for prerequisites")
+		}
+	}
+	if job.SchedulingDiagnosis != nil {
+		if summary := strings.TrimSpace(job.SchedulingDiagnosis.Summary); summary != "" && !slices.Contains(parts, summary) {
+			parts = append(parts, summary)
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
+func splitMetadataList(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func executionAction(status string) string {
+	if protocol.IsPendingJobExecutionStatus(status) {
+		return "remove"
+	}
+	if protocol.NormalizeJobExecutionStatus(status) == protocol.JobExecutionStatusRunning {
+		return "cancel"
+	}
+	return ""
+}
+
+func timeValue(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 func (r *Repository) attachSchedulingDiagnoses(ctx context.Context, jobs []protocol.JobExecution) error {

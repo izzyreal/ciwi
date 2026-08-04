@@ -47,9 +47,11 @@ body { min-height: 100vh; }
 .dsl-execution-row.dsl-danger .dsl-execution-row-status { color:var(--bad); }
 .dsl-execution-row.dsl-warning .dsl-execution-row-status { color:var(--warn); }
 .dsl-execution-row.dsl-accent .dsl-execution-row-status { color:var(--accent); }
-.dsl-execution-job-row { align-items:center; gap:var(--ciwi-space-small, 8px); padding:7px 0; border-top:1px solid var(--line); }
-.dsl-execution-job-row:first-child { border-top:0; }
-.dsl-execution-job-row > .dsl-text:nth-child(2) { min-width:96px; }
+.dsl-queued-execution-header,.dsl-queued-execution-job-row { display:grid; grid-template-columns:2fr 1fr 1.25fr 1.1fr 1.2fr 1.35fr 2.25fr .85fr; gap:var(--ciwi-space-small, 8px); align-items:start; }
+.dsl-history-execution-header,.dsl-history-execution-job-row { display:grid; grid-template-columns:2.2fr 1.1fr 1.3fr 1.1fr 1.2fr 1.45fr 1fr; gap:var(--ciwi-space-small, 8px); align-items:start; }
+.dsl-queued-execution-header,.dsl-history-execution-header { padding:6px 8px; color:var(--muted); font-size:var(--ciwi-text-badge, 12px); }
+.dsl-queued-execution-job-row,.dsl-history-execution-job-row { padding:7px 8px; border-top:1px solid var(--line); }
+.dsl-queued-execution-job-row > *,.dsl-history-execution-job-row > * { min-width:0; }
 .dsl-card { padding: var(--ciwi-card-padding, 16px); }
 .dsl-card[role="link"] { cursor: pointer; }
 .dsl-card[role="link"]:hover { border-color: var(--accent); background: var(--surface-subtle); }
@@ -65,6 +67,7 @@ body { min-height: 100vh; }
 .dsl-output-group { color:var(--console-ink); background:var(--console-surface); border-color:var(--console-line); }
 .dsl-output-group > summary { font-family:"Ciwi Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 .dsl-output-group .dsl-code { background:transparent; }
+.dsl-floating-collapse { position:sticky; top:8px; z-index:3; float:right; margin:2px 0 8px 10px; box-shadow:0 2px 8px var(--shadow); background:var(--console-surface); color:var(--console-ink); border-color:var(--console-line); }
 .dsl-console-text { color:var(--console-ink); }
 .dsl-console-muted { color:var(--console-muted); }
 .dsl-console-accent { color:var(--console-accent); }

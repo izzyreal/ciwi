@@ -394,6 +394,38 @@ screen:
               binding: frontPage.queued_empty
             style:
               tone: muted
+          - component: row
+            layout:
+              direction: horizontal
+              gap: small
+              align: center
+            style:
+              role: queued-execution-header
+            children:
+              - component: text
+                text: {literal: Job}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Status}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Pipeline}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Build}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Agent}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Created}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Reason}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Actions}
+                style: {role: table-header, emphasis: strong}
           - component: list
             layout:
               direction: vertical
@@ -465,15 +497,13 @@ screen:
                                 layout:
                                   direction: horizontal
                                   gap: small
-                                  align: center
+                                  align: start
                                 style:
-                                  role: execution-job-row
+                                  role: queued-execution-job-row
                                 children:
                                   - component: text
                                     text:
                                       binding: job.label
-                                    layout:
-                                      grow: true
                                     style:
                                       role: link
                                       tone: accent
@@ -489,30 +519,46 @@ screen:
                                     style:
                                       toneBinding: job.status
                                       emphasis: strong
-                                  - component: column
+                                  - component: text
+                                    text: {binding: job.pipeline_id}
+                                  - component: text
+                                    text: {binding: job.build_label}
+                                  - component: text
+                                    text: {binding: job.agent_id}
+                                  - component: text
+                                    text: {binding: job.created_label}
+                                  - component: text
+                                    text: {binding: job.reason}
+                                    style: {tone: warning}
+                                  - component: row
                                     layout:
-                                      direction: vertical
+                                      direction: horizontal
                                       gap: small
-                                      grow: true
+                                      align: center
                                     children:
-                                      - component: text
-                                        text:
-                                          binding: job.current_step
+                                      - component: button
+                                        text: {literal: Remove}
                                         visible:
-                                          binding: job.current_step
-                                          empty: true
-                                          not: true
-                                        style:
-                                          tone: muted
-                                      - component: text
-                                        text:
-                                          binding: job.scheduling_diagnosis.summary
+                                          binding: job.action
+                                          equals: remove
+                                        actions:
+                                          - on: activate
+                                            command: remove-execution
+                                            arguments:
+                                              jobExecutionId: "{{job.id}}"
+                                      - component: button
+                                        text: {literal: Cancel}
                                         visible:
-                                          binding: job.scheduling_diagnosis.summary
-                                          empty: true
-                                          not: true
-                                        style:
-                                          tone: warning
+                                          binding: job.action
+                                          equals: cancel
+                                        actions:
+                                          - on: activate
+                                            command: cancel-execution
+                                            arguments:
+                                              jobExecutionId: "{{job.id}}"
+                                            confirm:
+                                              title: Cancel job?
+                                              message: Requests cancellation of this running job. Other queued and running executions are not affected.
       - component: section
         id: execution-history
         layout:
@@ -571,6 +617,35 @@ screen:
               binding: frontPage.history_empty
             style:
               tone: muted
+          - component: row
+            layout:
+              direction: horizontal
+              gap: small
+              align: center
+            style:
+              role: history-execution-header
+            children:
+              - component: text
+                text: {literal: Job}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Status}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Pipeline}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Build}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Agent}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Created}
+                style: {role: table-header, emphasis: strong}
+              - component: text
+                text: {literal: Duration}
+                style: {role: table-header, emphasis: strong}
           - component: list
             layout:
               direction: vertical
@@ -656,15 +731,13 @@ screen:
                                 layout:
                                   direction: horizontal
                                   gap: small
-                                  align: center
+                                  align: start
                                 style:
-                                  role: execution-job-row
+                                  role: history-execution-job-row
                                 children:
                                   - component: text
                                     text:
                                       binding: job.label
-                                    layout:
-                                      grow: true
                                     style:
                                       role: link
                                       tone: accent
@@ -680,27 +753,13 @@ screen:
                                     style:
                                       toneBinding: job.status
                                       emphasis: strong
-                                  - component: column
-                                    layout:
-                                      direction: vertical
-                                      gap: small
-                                      grow: true
-                                    children:
-                                      - component: text
-                                        text:
-                                          binding: job.current_step
-                                        visible:
-                                          binding: job.current_step
-                                          empty: true
-                                          not: true
-                                        style:
-                                          tone: muted
-                                      - component: text
-                                        text:
-                                          binding: job.scheduling_diagnosis.summary
-                                        visible:
-                                          binding: job.scheduling_diagnosis.summary
-                                          empty: true
-                                          not: true
-                                        style:
-                                          tone: warning
+                                  - component: text
+                                    text: {binding: job.pipeline_id}
+                                  - component: text
+                                    text: {binding: job.build_label}
+                                  - component: text
+                                    text: {binding: job.agent_id}
+                                  - component: text
+                                    text: {binding: job.created_label}
+                                  - component: text
+                                    text: {binding: job.duration_label}

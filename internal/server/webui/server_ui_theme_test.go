@@ -1,9 +1,12 @@
 package webui
 
 import (
+	"bytes"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	sharedUI "github.com/izzyreal/ciwi/ui"
 )
 
 func TestUIThemeScriptIsServedAndPersistsBrowserChoice(t *testing.T) {
@@ -41,17 +44,35 @@ func TestUIThemeScriptIsServedAndPersistsBrowserChoice(t *testing.T) {
 }
 
 func TestBrowserUsesTheBundledNativeMonospaceFace(t *testing.T) {
-	for _, path := range []string{"/ui/fonts/go-mono.ttf", "/ui/fonts/go-mono-bold.ttf"} {
+	for path, nativePath := range map[string]string{
+		"/ui/fonts/go-mono.ttf":      "assets/Go-Mono.ttf",
+		"/ui/fonts/go-mono-bold.ttf": "assets/Go-Mono-Bold.ttf",
+	} {
 		recorder := httptest.NewRecorder()
 		Handler(recorder, httptest.NewRequest("GET", path, nil))
 		if recorder.Code != 200 || recorder.Header().Get("Content-Type") != "font/ttf" || recorder.Body.Len() < 1000 {
 			t.Fatalf("GET %s status=%d contentType=%q bytes=%d", path, recorder.Code, recorder.Header().Get("Content-Type"), recorder.Body.Len())
+		}
+		nativeFont, err := sharedUI.Read(nativePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(recorder.Body.Bytes(), nativeFont) {
+			t.Errorf("browser font %s and native font %s differ", path, nativePath)
 		}
 	}
 	for _, stylesheet := range []string{chromeCSS, mustTestAsset("assets/css/declarative.css"), jobExecutionCSS, projectCSS} {
 		if !strings.Contains(stylesheet, `"Ciwi Mono"`) {
 			t.Error("monospace UI surface does not prefer the bundled Ciwi Mono face")
 		}
+	}
+}
+
+func TestMutableBrowserAssetsAreNotCachedAcrossServerUpdates(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/css/chrome.css", nil))
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("mutable UI Cache-Control = %q, want no-store", got)
 	}
 }
 

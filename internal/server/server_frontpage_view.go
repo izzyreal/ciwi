@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
@@ -66,6 +67,14 @@ type executionCardJobResponse struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
 	Status      string `json:"status"`
+	PipelineID  string `json:"pipeline_id"`
+	BuildLabel  string `json:"build_label"`
+	AgentID     string `json:"agent_id"`
+	CreatedUTC  string `json:"created_utc"`
+	StartedUTC  string `json:"started_utc"`
+	FinishedUTC string `json:"finished_utc"`
+	Reason      string `json:"reason"`
+	Action      string `json:"action"`
 	CurrentStep string `json:"current_step"`
 }
 
@@ -150,10 +159,21 @@ func executionCardSectionsToResponse(sections []domain.ExecutionCardSection) []e
 		jobs := make([]executionCardJobResponse, 0, len(section.Jobs))
 		for _, job := range section.Jobs {
 			jobs = append(jobs, executionCardJobResponse{
-				ID: job.ID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
+				ID: job.ID, Label: job.Label, Status: job.Status,
+				PipelineID: job.PipelineID, BuildLabel: job.BuildLabel, AgentID: job.AgentID,
+				CreatedUTC: formatExecutionCardTime(job.CreatedUTC), StartedUTC: formatExecutionCardTime(job.StartedUTC),
+				FinishedUTC: formatExecutionCardTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,
+				CurrentStep: job.CurrentStep,
 			})
 		}
 		out = append(out, executionCardSectionResponse{Key: section.Key, Label: section.Label, Jobs: jobs})
 	}
 	return out
+}
+
+func formatExecutionCardTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }
