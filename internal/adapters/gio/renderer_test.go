@@ -1185,6 +1185,41 @@ func TestEvaluateSemanticProgressAdvancesFromServerSnapshot(t *testing.T) {
 	}
 }
 
+func TestIndeterminateProgressPositionEasesAcrossRoundTrip(t *testing.T) {
+	start := time.Unix(0, 0)
+	tests := []struct {
+		offset time.Duration
+		want   float64
+	}{
+		{offset: 0, want: 0},
+		{offset: indeterminateProgressDuration / 4, want: .5},
+		{offset: indeterminateProgressDuration / 2, want: 1},
+		{offset: 3 * indeterminateProgressDuration / 4, want: .5},
+		{offset: indeterminateProgressDuration, want: 0},
+	}
+	for _, test := range tests {
+		got := indeterminateProgressPosition(start.Add(test.offset))
+		if got < test.want-.000001 || got > test.want+.000001 {
+			t.Errorf("position at %v = %g, want %g", test.offset, got, test.want)
+		}
+	}
+}
+
+func TestFlexAlignmentDefaultsColumnsToStartAndRowsToMiddle(t *testing.T) {
+	if got := flexAlignment(layout.Vertical, "", false); got != layout.Start {
+		t.Fatalf("vertical alignment = %v, want start", got)
+	}
+	if got := flexAlignment(layout.Horizontal, "", false); got != layout.Middle {
+		t.Fatalf("horizontal alignment = %v, want middle", got)
+	}
+	if got := flexAlignment(layout.Vertical, "center", false); got != layout.Middle {
+		t.Fatalf("explicit center alignment = %v, want middle", got)
+	}
+	if got := flexAlignment(layout.Horizontal, "center", true); got != layout.Start {
+		t.Fatalf("execution-grid alignment = %v, want start", got)
+	}
+}
+
 func BenchmarkRendererProjectDetailsCollapsed(b *testing.B) {
 	screen, err := sharedUI.LoadScreen("project-details")
 	if err != nil {

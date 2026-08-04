@@ -26,5 +26,5 @@ test -n "$($PLIST_BUDDY -c 'Print :NSLocalNetworkUsageDescription' "$PLIST")"
 test "$($PLIST_BUDDY -c 'Print :ITSAppUsesNonExemptEncryption' "$PLIST")" = "false"
 test "$($PLIST_BUDDY -c 'Print :UIDeviceFamily:0' "$PLIST")" = "1"
 test "$($PLIST_BUDDY -c 'Print :UIDeviceFamily:1' "$PLIST")" = "2"
-lipo -verify_arch arm64 "$APP/Ciwi"
+lipo "$APP/Ciwi" -verify_arch arm64
 codesign --verify --deep --strict -v "$APP"

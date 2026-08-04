@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -910,16 +911,21 @@ type semanticProgress struct {
 	ratePerMS      float64
 }
 
+const (
+	progressFrameInterval         = time.Second / 60
+	indeterminateProgressDuration = 4 * time.Second
+)
+
 func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widget) layout.Widget {
 	progress, ok := resolveSemanticProgress(data, node.Progress)
 	if !ok || progress.state == "none" || progress.state == "waiting" {
 		return content
 	}
 	return func(gtx layout.Context) layout.Dimensions {
-		now := time.Now()
+		now := gtx.Now
 		state, fraction := evaluateSemanticProgress(progress, now)
 		if state == "determinate" || state == "indeterminate" || state == "overrun" {
-			gtx.Execute(op.InvalidateCmd{At: now.Add(250 * time.Millisecond)})
+			gtx.Execute(op.InvalidateCmd{At: now.Add(progressFrameInterval)})
 		}
 		return layout.Stack{}.Layout(gtx,
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -933,11 +939,7 @@ func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widg
 				switch state {
 				case "indeterminate":
 					width = max(1, int(float64(size.X)*.22))
-					phase := float64(now.UnixMilli()%4000) / 4000
-					if phase > .5 {
-						phase = 1 - phase
-					}
-					left = int(float64(size.X-width) * phase * 2)
+					left = int(float64(size.X-width) * indeterminateProgressPosition(now))
 				case "overrun":
 					width = size.X
 					pulse := float64(now.UnixMilli()%2000) / 2000
@@ -958,6 +960,11 @@ func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widg
 			layout.Stacked(content),
 		)
 	}
+}
+
+func indeterminateProgressPosition(now time.Time) float64 {
+	cycle := float64(now.UnixNano()%int64(indeterminateProgressDuration)) / float64(indeterminateProgressDuration)
+	return .5 - .5*math.Cos(2*math.Pi*cycle)
 }
 
 func resolveSemanticProgress(data any, binding *uidsl.Progress) (semanticProgress, bool) {
@@ -1075,10 +1082,7 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		Bottom: r.spacing(node.Layout.Padding), Left: r.spacing(node.Layout.Padding),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		row := func(gtx layout.Context) layout.Dimensions {
-			alignment := layout.Middle
-			if gridWeights != nil {
-				alignment = layout.Start
-			}
+			alignment := flexAlignment(axis, node.Layout.Align, gridWeights != nil)
 			return layout.Flex{Axis: axis, Alignment: alignment, Gap: gtx.Dp(r.spacing(node.Layout.Gap))}.Layout(gtx, children...)
 		}
 		if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {
@@ -1086,6 +1090,24 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		}
 		return row(gtx)
 	})
+}
+
+func flexAlignment(axis layout.Axis, align string, executionGrid bool) layout.Alignment {
+	if executionGrid {
+		return layout.Start
+	}
+	switch strings.ToLower(strings.TrimSpace(align)) {
+	case "center", "middle":
+		return layout.Middle
+	case "end":
+		return layout.End
+	case "start":
+		return layout.Start
+	}
+	if axis == layout.Horizontal {
+		return layout.Middle
+	}
+	return layout.Start
 }
 
 func executionGridWeights(role string, childCount int) []float32 {
