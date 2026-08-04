@@ -646,8 +646,14 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 		return r.layoutChildren(gtx, node, data, path)
 	}
+	var surfaceProgress *semanticProgress
 	if node.Progress != nil && node.Component != "disclosure" {
-		content = r.progressWidget(node, data, content)
+		progress, active := activeSemanticProgress(data, node.Progress)
+		if active && (node.Style.Role == "hero" || node.Component == "card" && node.Style.Role != "output-system") {
+			surfaceProgress = &progress
+		} else {
+			content = r.progressWidget(node, data, content)
+		}
 	}
 	if node.Component == "card" || node.Component == "disclosure" || node.Component == "section" || node.Component == "graph-view" || node.Style.Role == "hero" {
 		padding := unit.Dp(0)
@@ -685,7 +691,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		} else if node.Component == "card" && node.Style.Role == "output-system" {
 			content = r.surfaceWithBorder(content, padding, r.palette.consoleSurface, r.palette.consoleBorder)
 		} else {
-			content = r.surface(content, padding, node.Style.Role == "hero")
+			content = r.surface(content, padding, node.Style.Role == "hero", surfaceProgress)
 		}
 	}
 	if node.Component == "scroller" && node.ID == "job-output-groups" {
@@ -917,49 +923,59 @@ const (
 )
 
 func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widget) layout.Widget {
-	progress, ok := resolveSemanticProgress(data, node.Progress)
-	if !ok || progress.state == "none" || progress.state == "waiting" {
+	progress, active := activeSemanticProgress(data, node.Progress)
+	if !active {
 		return content
 	}
 	return func(gtx layout.Context) layout.Dimensions {
-		now := gtx.Now
-		state, fraction := evaluateSemanticProgress(progress, now)
-		if state == "determinate" || state == "indeterminate" || state == "overrun" {
-			gtx.Execute(op.InvalidateCmd{At: now.Add(progressFrameInterval)})
-		}
 		return layout.Stack{}.Layout(gtx,
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Min
+				size.X = gtx.Constraints.Max.X
 				if size.X <= 0 || size.Y <= 0 {
 					return layout.Dimensions{Size: size}
 				}
-				left, width := 0, int(float64(size.X)*fraction)
-				fill := r.palette.success
-				fill.A = 0x34
-				switch state {
-				case "indeterminate":
-					width = max(1, int(float64(size.X)*.22))
-					left = int(float64(size.X-width) * indeterminateProgressPosition(now))
-				case "overrun":
-					width = size.X
-					pulse := float64(now.UnixMilli()%2000) / 2000
-					if pulse > .5 {
-						pulse = 1 - pulse
-					}
-					fill.A = uint8(0x28 + int(0x24*pulse*2))
-				case "complete":
-					width = size.X
-				}
-				if width <= 0 {
-					return layout.Dimensions{Size: size}
-				}
-				rect := image.Rect(left, 0, min(left+width, size.X), size.Y)
-				paint.FillShape(gtx.Ops, fill, clip.Rect(rect).Op())
+				r.paintSemanticProgress(gtx, progress, size)
 				return layout.Dimensions{Size: size}
 			}),
 			layout.Stacked(content),
 		)
 	}
+}
+
+func activeSemanticProgress(data any, binding *uidsl.Progress) (semanticProgress, bool) {
+	progress, ok := resolveSemanticProgress(data, binding)
+	return progress, ok && progress.state != "none" && progress.state != "waiting"
+}
+
+func (r *Renderer) paintSemanticProgress(gtx layout.Context, progress semanticProgress, size image.Point) {
+	now := gtx.Now
+	state, fraction := evaluateSemanticProgress(progress, now)
+	if state == "determinate" || state == "indeterminate" || state == "overrun" {
+		gtx.Execute(op.InvalidateCmd{At: now.Add(progressFrameInterval)})
+	}
+	left, width := 0, int(float64(size.X)*fraction)
+	fill := r.palette.success
+	fill.A = 0x34
+	switch state {
+	case "indeterminate":
+		width = max(1, int(float64(size.X)*.22))
+		left = int(float64(size.X-width) * indeterminateProgressPosition(now))
+	case "overrun":
+		width = size.X
+		pulse := float64(now.UnixMilli()%2000) / 2000
+		if pulse > .5 {
+			pulse = 1 - pulse
+		}
+		fill.A = uint8(0x28 + int(0x24*pulse*2))
+	case "complete":
+		width = size.X
+	}
+	if width <= 0 {
+		return
+	}
+	rect := image.Rect(left, 0, min(left+width, size.X), size.Y)
+	paint.FillShape(gtx.Ops, fill, clip.Rect(rect).Op())
 }
 
 func indeterminateProgressPosition(now time.Time) float64 {
@@ -1606,7 +1622,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 					}))
 				}
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
-			}, 10, false))
+			}, 10, false, nil))
 		}),
 	)
 }
@@ -1715,7 +1731,7 @@ func (r *Renderer) layoutIconButton(gtx layout.Context, button *widget.Clickable
 	})
 }
 
-func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool) layout.Widget {
+func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool, progress *semanticProgress) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		radius := r.metrics.surfaceRadius
 		return widget.Border{Color: r.palette.border, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1748,6 +1764,11 @@ func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool) la
 					stack.Pop()
 				} else {
 					paint.FillShape(gtx.Ops, r.palette.surface, clip.UniformRRect(rect, gtx.Dp(radius)).Op(gtx.Ops))
+				}
+				if progress != nil {
+					progressClip := clip.UniformRRect(rect, gtx.Dp(radius)).Push(gtx.Ops)
+					r.paintSemanticProgress(gtx, *progress, rect.Size())
+					progressClip.Pop()
 				}
 				return layout.Dimensions{Size: gtx.Constraints.Min}
 			}, func(gtx layout.Context) layout.Dimensions {
@@ -2052,7 +2073,7 @@ func (r *Renderer) layoutConfirmation(gtx layout.Context) layout.Dimensions {
 				}),
 			)
 		})
-	}, 14, false)(gtx)
+	}, 14, false, nil)(gtx)
 }
 
 func (r *Renderer) requestFrame() {

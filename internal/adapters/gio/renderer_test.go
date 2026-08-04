@@ -1205,6 +1205,21 @@ func TestIndeterminateProgressPositionEasesAcrossRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProgressTrackUsesAvailableWidth(t *testing.T) {
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Constraints{Min: image.Pt(120, 24), Max: image.Pt(640, 100)}}
+	renderer := &Renderer{palette: palette{success: color.NRGBA{G: 255, A: 255}}}
+	dimensions := renderer.progressWidget(
+		uidsl.Node{Progress: &uidsl.Progress{Binding: "item.progress"}},
+		map[string]any{"item": map[string]any{"progress": map[string]any{"state": "complete"}}},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: gtx.Constraints.Constrain(image.Pt(120, 24))}
+		},
+	)(gtx)
+	if dimensions.Size.X != 640 {
+		t.Fatalf("progress width = %d, want available width 640", dimensions.Size.X)
+	}
+}
+
 func TestFlexAlignmentDefaultsColumnsToStartAndRowsToMiddle(t *testing.T) {
 	if got := flexAlignment(layout.Vertical, "", false); got != layout.Start {
 		t.Fatalf("vertical alignment = %v, want start", got)
