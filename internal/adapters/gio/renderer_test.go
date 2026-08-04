@@ -1268,13 +1268,115 @@ func TestRootPageInsetsScrollWithFirstAndLastContent(t *testing.T) {
 		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
 		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
 	}
-	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(400, 120))}
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(800, 120))}
 	dimensions := renderer.layoutRootChildren(children, root, screen, map[string]any{}, "")(gtx)
-	if dimensions.Size != image.Pt(400, 120) {
+	if dimensions.Size != image.Pt(800, 120) {
 		t.Fatalf("viewport dimensions = %v", dimensions.Size)
 	}
 	if renderer.list.Position.Length != 244 {
 		t.Fatalf("scroll content length = %d, want top 16 + children 200 + gap 12 + bottom 16 = 244", renderer.list.Position.Length)
+	}
+}
+
+func TestCompactPageInsetUsesPhoneSizedGutter(t *testing.T) {
+	renderer := &Renderer{metrics: visualMetrics{pageInset: 16}}
+	phone := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(375, 667))}
+	if got := renderer.pageInset(phone); got != 3.2 {
+		t.Fatalf("phone page inset = %v, want 3.2", got)
+	}
+	tablet := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(834, 1112))}
+	if got := renderer.pageInset(tablet); got != 16 {
+		t.Fatalf("tablet page inset = %v, want 16", got)
+	}
+}
+
+func TestCompactControlRowDoesNotExplodeVertically(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := uidsl.Node{Component: "row", Layout: uidsl.Layout{Direction: "horizontal", Gap: "small"}, Children: []uidsl.Node{
+		{Component: "text", Text: &uidsl.Text{Literal: "release-ios-gated"}, Layout: uidsl.Layout{Grow: true}},
+		{Component: "button", Text: &uidsl.Text{Literal: "Options"}, Icon: "adjustments"},
+		{Component: "button", Text: &uidsl.Text{Literal: "Run Chain"}, Icon: "player-play"},
+		{Component: "button", Text: &uidsl.Text{Literal: "Dry Run"}, Icon: "player-play"},
+	}}
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Constraints{Max: image.Pt(350, 2000)}}
+	dimensions := renderer.layoutChildren(gtx, node, map[string]any{}, "compact-controls")
+	if dimensions.Size.Y > 240 {
+		t.Fatalf("compact control row height = %d, want <= 240", dimensions.Size.Y)
+	}
+}
+
+func TestCompactExecutionDisclosureKeepsTitleReadable(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := uidsl.Node{
+		Component: "disclosure", Text: &uidsl.Text{Literal: "ciwi Build and release Tue 04 Aug, 23:25:26 v0.2.7"},
+		Disclosure: &uidsl.Disclosure{Summary: []uidsl.Node{
+			{Component: "text", Text: &uidsl.Text{Literal: "17/17 successful"}, Style: uidsl.Style{Emphasis: "strong"}},
+			{Component: "button", Text: &uidsl.Text{Literal: "Delete execution"}, Icon: "trash", Style: uidsl.Style{Role: "icon-button"}},
+		}},
+		Style:  uidsl.Style{Role: "execution-row", Tone: "success", Emphasis: "strong"},
+		Layout: uidsl.Layout{Padding: "small"},
+	}
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Constraints{Max: image.Pt(350, 2000)}}
+	dimensions := renderer.layoutNode(gtx, node, map[string]any{}, "compact-execution")
+	if dimensions.Size.Y > 180 {
+		t.Fatalf("compact execution header height = %d, want <= 180", dimensions.Size.Y)
+	}
+}
+
+func TestCompactFrontPageContentRemainsBounded(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := frontPageBindingData(&cnpv1.FrontPageView{
+		Server: &cnpv1.ServerInfo{Version: "v0.2.7"},
+		Projects: []*cnpv1.ProjectSummary{{
+			Id: 1, Name: "ciwi", RepoUrl: "https://github.com/izzyreal/ciwi", RepoRef: "main", ConfigFile: "ciwi-project.yaml",
+			Pipelines: []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "release-ios-gated", SupportsDryRun: true}},
+		}},
+		HistoryExecutions: []*cnpv1.ExecutionCardSummary{{
+			Key: "chain:release", Title: "ciwi Build and release Tue 04 Aug, 23:25:26 v0.2.7",
+			Summary: &cnpv1.ExecutionSummary{TotalJobs: 17, Succeeded: 17},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(375, 667))}
+	renderer.Layout(gtx)
+	if renderer.list.Position.Length > 2200 {
+		t.Fatalf("compact front page content height = %d, want <= 2200", renderer.list.Position.Length)
 	}
 }
 

@@ -598,7 +598,8 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	root := applyGioOverride(screen.Screen.Root)
 	children := root.Children
 	body := func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Left: r.metrics.pageInset, Right: r.metrics.pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		pageInset := r.pageInset(gtx)
+		return layout.Inset{Left: pageInset, Right: pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			if pageWidth := gtx.Dp(r.metrics.pageWidth); pageWidth > 0 && gtx.Constraints.Max.X > pageWidth {
 				marginPixels := gtx.Constraints.Max.X - pageWidth
 				margin := unit.Dp(float32(marginPixels) / (2 * gtx.Metric.PxPerDp))
@@ -636,8 +637,22 @@ func (r *Renderer) paintPageBackground(gtx layout.Context) {
 	backgroundClip.Pop()
 }
 
+func compactLayout(gtx layout.Context) bool {
+	return gtx.Constraints.Max.X <= gtx.Dp(compactLayoutWidth)
+}
+
+func (r *Renderer) pageInset(gtx layout.Context) unit.Dp {
+	if !compactLayout(gtx) {
+		return r.metrics.pageInset
+	}
+	// Phone screens need the same breathing room as larger screens without
+	// spending a significant fraction of their width on an ornamental gutter.
+	return max(unit.Dp(2), r.metrics.pageInset*.2)
+}
+
 func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, screen *uidsl.ScreenDocument, data any, status string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
+		pageInset := r.pageInset(gtx)
 		hasStatus := status != ""
 		itemCount := len(children)
 		if hasStatus {
@@ -645,18 +660,18 @@ func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, sc
 		}
 		return r.list.Layout(gtx, itemCount, func(gtx layout.Context, index int) layout.Dimensions {
 			if index == len(children) {
-				return layout.Inset{Top: 10, Bottom: r.metrics.pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: 10, Bottom: pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return r.layoutStatus(gtx, status)
 				})
 			}
 			inset := layout.Inset{}
 			if index == 0 {
-				inset.Top = r.metrics.pageInset
+				inset.Top = pageInset
 			}
 			if index < len(children)-1 || hasStatus {
 				inset.Bottom = r.spacing(root.Layout.Gap)
 			} else {
-				inset.Bottom = r.metrics.pageInset
+				inset.Bottom = pageInset
 			}
 			return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return r.layoutNode(gtx, children[index], data, fmt.Sprintf("%s/root/%d", screen.Metadata.Name, index))
@@ -966,6 +981,52 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			}
 			return children
 		}
+		if compactLayout(gtx) && node.Disclosure != nil && len(node.Disclosure.Summary) > 0 {
+			mainChildren := make([]layout.FlexChild, 0, 4)
+			if node.Style.Role == "execution-row" && node.Image != nil {
+				mainChildren = append(mainChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return r.layoutImageSized(gtx, node.Image, 28, 28)
+				}))
+			}
+			if node.Style.Role == "execution-row" {
+				statusIcon := map[string]string{"success": "status-success", "danger": "status-danger", "warning": "status-waiting", "accent": "loader-2"}[node.Style.Tone]
+				if statusIcon != "" {
+					mainChildren = append(mainChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: 9}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							iconTone := node.Style.Tone
+							if statusIcon == "loader-2" {
+								iconTone = "warning"
+							}
+							return r.layoutGlyph(gtx, statusIcon, iconTone, 18)
+						})
+					}))
+				}
+			}
+			mainChildren = append(mainChildren, layout.Flexed(1, labelWidget), layout.Rigid(toggleWidget))
+			main := func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, mainChildren...)
+			}
+			summaries := make([]layout.FlexChild, 0, len(node.Disclosure.Summary))
+			for index := range node.Disclosure.Summary {
+				summaryNode := node.Disclosure.Summary[index]
+				summaries = append(summaries, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return r.layoutNode(gtx, summaryNode, data, fmt.Sprintf("%s/summary/%d", path, index))
+					})
+				}))
+			}
+			description := "Expand " + label
+			if expanded {
+				description = "Collapse " + label
+			}
+			return headerToggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				semantic.DescriptionOp(description).Add(gtx.Ops)
+				defer pointer.PassOp{}.Push(gtx.Ops).Pop()
+				children := []layout.FlexChild{layout.Rigid(main)}
+				children = append(children, summaries...)
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+			})
+		}
 		if node.Style.Role != "execution-row" {
 			labelChild := layout.Flexed(1, labelWidget)
 			if isProjectRow {
@@ -1062,6 +1123,7 @@ const (
 	indeterminateProgressDuration = 4 * time.Second
 	connectionPulseDuration       = 4 * time.Second
 	connectionPulseMinimum        = .58
+	compactLayoutWidth            = unit.Dp(520)
 )
 
 func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widget) layout.Widget {
@@ -1228,8 +1290,22 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 	if node.Component == "row" || node.Layout.Direction == "horizontal" {
 		axis = layout.Horizontal
 	}
+	compact := compactLayout(gtx)
+	if compact && (node.Style.Role == "queued-execution-header" || node.Style.Role == "history-execution-header") {
+		// Desktop column labels become unreadable before the rows themselves do.
+		// Compact execution details are rendered as vertical records instead.
+		return layout.Dimensions{}
+	}
+	stackCompactRow := compact && axis == layout.Horizontal && (node.Style.Role == "hero" || node.Layout.Wrap || compactRowNeedsStack(node.Children) ||
+		node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row")
+	if stackCompactRow {
+		axis = layout.Vertical
+	}
 	children := make([]layout.FlexChild, 0, len(node.Children))
 	gridWeights := executionGridWeights(node.Style.Role, len(node.Children))
+	if stackCompactRow {
+		gridWeights = nil
+	}
 	for i := range node.Children {
 		child := node.Children[i]
 		widgetFn := func(gtx layout.Context) layout.Dimensions {
@@ -1237,7 +1313,7 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		}
 		if gridWeights != nil {
 			children = append(children, layout.Flexed(gridWeights[i], widgetFn))
-		} else if child.Layout.Grow {
+		} else if child.Layout.Grow && !stackCompactRow {
 			children = append(children, layout.Flexed(1, widgetFn))
 		} else {
 			children = append(children, layout.Rigid(widgetFn))
@@ -1256,6 +1332,16 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		}
 		return row(gtx)
 	})
+}
+
+func compactRowNeedsStack(children []uidsl.Node) bool {
+	buttons := 0
+	for _, child := range children {
+		if child.Component == "button" {
+			buttons++
+		}
+	}
+	return buttons >= 2
 }
 
 func flexAlignment(axis layout.Axis, align string, executionGrid bool) layout.Alignment {
@@ -1416,7 +1502,7 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 	if node.Style.Emphasis == "strong" {
 		label.Font.Weight = font.Bold
 	}
-	if node.Style.Truncate {
+	if node.Style.Truncate || node.Style.Role == "badge" || node.Style.Role == "table-header" || node.Style.Role == "execution-row" {
 		label.MaxLines = 1
 	}
 	label.State = r.selectable(path)
@@ -1814,6 +1900,7 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						labelStyle := material.Body1(r.theme, label)
 						labelStyle.TextSize = r.metrics.textControl
+						labelStyle.MaxLines = 1
 						if strong {
 							labelStyle.Font.Weight = font.SemiBold
 						}
