@@ -60,6 +60,12 @@ chmod +x "$FINAL_APP/Contents/MacOS/Ciwi"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$FINAL_APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string ${MINIMUM_MACOS_VERSION}" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion ${MINIMUM_MACOS_VERSION}" "$FINAL_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Delete :NSBonjourServices" "$FINAL_APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :NSBonjourServices array" "$FINAL_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :NSBonjourServices:0 string _ciwi-native._udp" "$FINAL_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :NSBonjourServices:1 string _ciwi-native._tcp" "$FINAL_APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string Ciwi discovers and connects to your Ciwi server on the local network." "$FINAL_APP/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription Ciwi discovers and connects to your Ciwi server on the local network." "$FINAL_APP/Contents/Info.plist"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$FINAL_APP/Contents/Info.plist")" = "APPL"
 lipo "$FINAL_APP/Contents/MacOS/Ciwi" -verify_arch arm64 x86_64
 

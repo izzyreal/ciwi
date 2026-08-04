@@ -80,6 +80,16 @@ func discoverService(ctx context.Context, service string, timeout time.Duration)
 	if service == DiscoveryTCPService {
 		transport = TransportTCP
 	}
+	if entries, handled, err := discoverPlatformService(ctx, service, timeout); handled {
+		endpoints := make([]Endpoint, 0, len(entries))
+		for _, entry := range entries {
+			endpoints = append(endpoints, endpointsFromEntry(entry, transport)...)
+		}
+		if len(endpoints) == 0 && err != nil && ctx.Err() == nil {
+			return nil, err
+		}
+		return endpoints, ctx.Err()
+	}
 	type result struct {
 		entries []*discoveryEntry
 		err     error
