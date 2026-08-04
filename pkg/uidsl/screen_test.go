@@ -152,6 +152,58 @@ func TestParseScreenValidatesDisclosureStateKey(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesDisclosureSummary(t *testing.T) {
+	payload := strings.Replace(validScreen, "          - component: card\n", `          - component: disclosure
+            disclosure:
+              summary:
+                - component: badge
+                  text:
+                    binding: project.pipeline_count_label
+`, 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid disclosure summary: %v", err)
+	}
+	payload = strings.Replace(payload, "project.pipeline_count_label", "missing.pipeline_count_label", 1)
+	_, err := ParseScreen([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid disclosure summary error = %v", err)
+	}
+}
+
+func TestParseScreenValidatesGraphViewBindingsAndNodeActionScope(t *testing.T) {
+	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: graph-view
+        graphView:
+          stateKey: "project-structure:{{frontPage.server.version}}"
+          defaultMode: graph
+          nodes: frontPage.projects
+          as: graphProject
+          nodeKey: graphProject.id
+          nodeLabel:
+            binding: graphProject.name
+          nodeMeta:
+            literal: Project
+          dependencies: graphProject.pipeline_ids
+        actions:
+          - on: activate
+            command: navigate
+            arguments:
+              route: /projects/{{graphProject.id}}
+        children:
+          - component: text
+            text:
+              literal: List fallback
+      - component: list
+`, 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid graph view: %v", err)
+	}
+	payload = strings.Replace(payload, "graphProject.pipeline_ids", "missing.pipeline_ids", 1)
+	_, err := ParseScreen([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid graph dependency error = %v", err)
+	}
+}
+
 func TestRenderTextAndResolve(t *testing.T) {
 	data := map[string]any{
 		"frontPage": map[string]any{

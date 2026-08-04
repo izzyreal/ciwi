@@ -3,19 +3,27 @@ kind: Theme
 metadata: {name: mango-kent, title: Mango Kent, description: Red-green skin and brilliant orange flesh}
 theme:
   colors:
-    background: "#fff1d3"
-    surface: "#fffaf0"
-    surface-subtle: "#ffe5b0"
-    text: "#3d2418"
-    text-muted: "#775949"
-    accent: "#e77924"
-    accent-strong: "#a83f37"
-    border: "#e4b870"
-    success: "#56864a"
-    warning: "#d78918"
-    danger: "#c53e4a"
+    background: "#fff3df"
+    background-start: "#f3b53e"
+    background-end: "#f5d265"
+    background-glow-a: "#ee5d4e"
+    background-glow-b: "#799243"
+    surface: "#fffaf2"
+    surface-raised: "#fffaf2"
+    surface-subtle: "#fff7e9"
+    surface-glow: "#ffd589"
+    text: "#3b241f"
+    text-muted: "#73584a"
+    accent: "#b43b42"
+    accent-strong: "#7d2730"
+    pill-background: "#f9d7bd"
+    pill-text: "#8e3035"
+    border: "#e2b18c"
+    success: "#54782d"
+    warning: "#985b00"
+    danger: "#b73342"
     focus: "#8054b8"
   gradients:
     page: {kind: linear, angle: 135, stops: [{color: "#f7d36d", position: 0}, {color: "#f18732", position: 55}, {color: "#b9494b", position: 100}]}
     hero: {kind: radial, stops: [{color: "#fff8e8", position: 0}, {color: "#f7b548", position: 100}]}
-  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1150", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

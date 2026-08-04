@@ -58,6 +58,7 @@ type Node struct {
 	Select     *Select             `yaml:"select,omitempty" json:"select,omitempty"`
 	Input      *Input              `yaml:"input,omitempty" json:"input,omitempty"`
 	Disclosure *Disclosure         `yaml:"disclosure,omitempty" json:"disclosure,omitempty"`
+	GraphView  *GraphView          `yaml:"graphView,omitempty" json:"graphView,omitempty"`
 	Layout     Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
 	Style      Style               `yaml:"style,omitempty" json:"style,omitempty"`
 	Repeat     *Repeat             `yaml:"repeat,omitempty" json:"repeat,omitempty"`
@@ -95,6 +96,21 @@ type Input struct {
 type Disclosure struct {
 	DefaultExpanded bool   `yaml:"defaultExpanded,omitempty" json:"defaultExpanded,omitempty"`
 	StateKey        string `yaml:"stateKey,omitempty" json:"stateKey,omitempty"`
+	Summary         []Node `yaml:"summary,omitempty" json:"summary,omitempty"`
+}
+
+// GraphView describes one definition graph and uses the node's children as
+// its list representation. Renderers own layout, zoom, scrolling, and local
+// view persistence; the graph's data and actions remain renderer-neutral.
+type GraphView struct {
+	StateKey     string `yaml:"stateKey" json:"stateKey"`
+	DefaultMode  string `yaml:"defaultMode,omitempty" json:"defaultMode,omitempty"`
+	Nodes        string `yaml:"nodes" json:"nodes"`
+	As           string `yaml:"as" json:"as"`
+	NodeKey      string `yaml:"nodeKey" json:"nodeKey"`
+	NodeLabel    Text   `yaml:"nodeLabel" json:"nodeLabel"`
+	NodeMeta     Text   `yaml:"nodeMeta,omitempty" json:"nodeMeta,omitempty"`
+	Dependencies string `yaml:"dependencies" json:"dependencies"`
 }
 
 type Layout struct {
@@ -156,8 +172,8 @@ var templateBindingPattern = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
 var components = map[string]bool{
 	"page": true, "column": true, "row": true, "section": true,
 	"card": true, "text": true, "icon": true, "image": true,
-	"disclosure": true,
-	"button":     true, "select": true, "input": true, "list": true, "scroller": true, "badge": true, "spacer": true,
+	"disclosure": true, "graph-view": true,
+	"button": true, "select": true, "input": true, "list": true, "scroller": true, "badge": true, "spacer": true,
 	"divider": true,
 }
 
@@ -351,6 +367,48 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 				return fmt.Errorf("%s.disclosure.stateKey: %w", path, err)
 			}
 		}
+		for i, summaryNode := range node.Disclosure.Summary {
+			if err := validateNode(summaryNode, fmt.Sprintf("%s.disclosure.summary[%d]", path, i), ids, scope); err != nil {
+				return err
+			}
+		}
+	}
+	if node.GraphView != nil {
+		if node.Component != "graph-view" {
+			return fmt.Errorf("%s.graphView is only valid for the graph-view component", path)
+		}
+		graph := node.GraphView
+		if graph.StateKey == "" || graph.Nodes == "" || graph.NodeKey == "" || !textDefined(graph.NodeLabel) || graph.Dependencies == "" || !identifierPattern.MatchString(graph.As) {
+			return fmt.Errorf("%s.graphView requires stateKey, nodes, a valid as name, nodeKey, nodeLabel, and dependencies", path)
+		}
+		if graph.DefaultMode != "" && graph.DefaultMode != "graph" && graph.DefaultMode != "list" {
+			return fmt.Errorf("%s.graphView.defaultMode must be graph or list", path)
+		}
+		if err := validateTemplate(graph.StateKey, scope); err != nil {
+			return fmt.Errorf("%s.graphView.stateKey: %w", path, err)
+		}
+		if err := validateBinding(graph.Nodes, scope); err != nil {
+			return fmt.Errorf("%s.graphView.nodes: %w", path, err)
+		}
+		graphScope := cloneScope(scope)
+		graphScope[graph.As] = struct{}{}
+		if err := validateBinding(graph.NodeKey, graphScope); err != nil {
+			return fmt.Errorf("%s.graphView.nodeKey: %w", path, err)
+		}
+		if err := validateText(graph.NodeLabel, graphScope); err != nil {
+			return fmt.Errorf("%s.graphView.nodeLabel: %w", path, err)
+		}
+		if graph.NodeMeta != (Text{}) {
+			if err := validateText(graph.NodeMeta, graphScope); err != nil {
+				return fmt.Errorf("%s.graphView.nodeMeta: %w", path, err)
+			}
+		}
+		if err := validateBinding(graph.Dependencies, graphScope); err != nil {
+			return fmt.Errorf("%s.graphView.dependencies: %w", path, err)
+		}
+		actionScope = graphScope
+	} else if node.Component == "graph-view" {
+		return fmt.Errorf("%s.graphView is required for the graph-view component", path)
 	}
 	if node.Visible != nil {
 		if err := validateBinding(node.Visible.Binding, scope); err != nil {
@@ -403,6 +461,29 @@ func validateBinding(binding string, scope map[string]struct{}) error {
 		return fmt.Errorf("binding %q has unknown root %q", binding, BindingRoot(binding))
 	}
 	return nil
+}
+
+func validateText(text Text, scope map[string]struct{}) error {
+	choices := 0
+	for _, value := range []string{text.Literal, text.Binding, text.Template} {
+		if value != "" {
+			choices++
+		}
+	}
+	if choices != 1 {
+		return fmt.Errorf("must set exactly one of literal, binding, or template")
+	}
+	if text.Binding != "" {
+		return validateBinding(text.Binding, scope)
+	}
+	if text.Template != "" {
+		return validateTemplate(text.Template, scope)
+	}
+	return nil
+}
+
+func textDefined(text Text) bool {
+	return text.Literal != "" || text.Binding != "" || text.Template != ""
 }
 
 func validateTemplate(template string, scope map[string]struct{}) error {

@@ -16,10 +16,11 @@ import (
 func main() {
 	address := flag.String("addr", strings.TrimSpace(os.Getenv("CIWI_NATIVE_SERVER")), "ciwi CNP endpoint ([quic|tcp]://host:port); discovers with mDNS when omitted")
 	theme := flag.String("theme", envOrDefault("CIWI_NATIVE_THEME", ""), "native UI theme (defaults to the saved preference)")
+	route := flag.String("route", envOrDefault("CIWI_NATIVE_ROUTE", ""), "initial native UI route, for example /projects/1 or /settings")
 	flag.Parse()
 	done := make(chan error, 1)
 	go func() {
-		done <- gioadapter.Run(gioadapter.Options{Address: *address, Theme: *theme, Version: version.Current()})
+		done <- gioadapter.Run(gioadapter.Options{Address: *address, Theme: *theme, Version: version.Current(), Route: *route})
 	}()
 	app.Main()
 	if err := <-done; err != nil {

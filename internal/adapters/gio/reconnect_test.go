@@ -4,10 +4,13 @@ package gio
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
+	"github.com/izzyreal/ciwi/pkg/cnpclient"
 )
 
 func TestNextReconnectDelayBacksOffAndCaps(t *testing.T) {
@@ -34,6 +37,42 @@ func TestNativeTargetsNormalizeExplicitEndpoint(t *testing.T) {
 	}
 	if len(targets) != 1 || targets[0] != "quic://127.0.0.1:8113" {
 		t.Fatalf("targets = %v", targets)
+	}
+}
+
+func TestDialNativeTargetsUsesFirstReachableCandidate(t *testing.T) {
+	wantClient := &cnpclient.Client{}
+	client, target, err := dialNativeTargetsWith(
+		context.Background(),
+		[]string{"tcp://192.168.56.1:8113", "tcp://192.168.1.235:8113"},
+		"dev",
+		func(ctx context.Context, target, _, _ string) (*cnpclient.Client, error) {
+			if target == "tcp://192.168.1.235:8113" {
+				return wantClient, nil
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client != wantClient || target != "tcp://192.168.1.235:8113" {
+		t.Fatalf("winner = (%p, %q), want (%p, %q)", client, target, wantClient, "tcp://192.168.1.235:8113")
+	}
+}
+
+func TestDialNativeTargetsReportsAllFailures(t *testing.T) {
+	_, _, err := dialNativeTargetsWith(
+		context.Background(),
+		[]string{"tcp://one:8113", "tcp://two:8113"},
+		"dev",
+		func(context.Context, string, string, string) (*cnpclient.Client, error) {
+			return nil, errors.New("unreachable")
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "tcp://one:8113") || !strings.Contains(err.Error(), "tcp://two:8113") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

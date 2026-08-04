@@ -17,6 +17,7 @@ import (
 
 	"gioui.org/f32"
 	"gioui.org/font"
+	"gioui.org/font/gofont"
 	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
@@ -24,6 +25,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	giotext "gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -42,15 +44,21 @@ type Renderer struct {
 	statusExpires          time.Time
 	theme                  *material.Theme
 	palette                palette
+	metrics                visualMetrics
 	themeName              string
 	pendingTheme           *material.Theme
 	pendingPalette         *palette
+	pendingMetrics         *visualMetrics
 	pendingThemeName       string
 	list                   layout.List
 	buttons                map[string]*widget.Clickable
 	disclosures            map[string]bool
 	persistentDisclosures  map[string]bool
 	onDisclosureChange     func(map[string]bool)
+	viewModes              map[string]string
+	persistentViews        map[string]bool
+	graphScales            map[string]float32
+	onViewChange           func(map[string]string)
 	selectables            map[string]*widget.Selectable
 	textEditors            map[string]*widget.Editor
 	inputEditors           map[string]*widget.Editor
@@ -94,8 +102,21 @@ type pendingConfirmation struct {
 }
 
 type palette struct {
-	background, backgroundEnd, heroStart, heroEnd, surface, subtle, text, muted, accent, border, success, warning, danger, focus color.NRGBA
+	background, backgroundStart, backgroundEnd, backgroundGlowA, backgroundGlowB color.NRGBA
+	heroStart, heroEnd, surface, surfaceRaised, surfaceGlow, subtle              color.NRGBA
+	text, muted, accent, accentStrong, pillBackground, pillText                  color.NRGBA
+	border, success, warning, danger, focus                                      color.NRGBA
 }
+
+type visualMetrics struct {
+	spaceSmall, spaceMedium, spaceLarge, pageWidth, pageInset                        unit.Dp
+	sectionPadding, cardPadding, heroPadding, surfaceRadius                          unit.Dp
+	controlRadius, controlPaddingX, controlPaddingY                                  unit.Dp
+	textBody, textControl, textCode, textBadge, textSubtitle, textHeading, textTitle unit.Sp
+	imageBrandWidth, imageBrandHeight                                                unit.Dp
+}
+
+const ciwiBodyTypeface = font.Typeface(`"Avenir Next", "Segoe UI", sans-serif`)
 
 func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAction ActionHandler) (*Renderer, error) {
 	if screen == nil || theme == nil {
@@ -114,10 +135,11 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		return nil, err
 	}
 	renderer := &Renderer{
-		screen: screen, theme: materialTheme, palette: colors, themeName: theme.Metadata.Name, onAction: onAction,
+		screen: screen, theme: materialTheme, palette: colors, metrics: metricsFromTheme(theme.Theme), themeName: theme.Metadata.Name, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
 		persistentDisclosures: map[string]bool{},
-		selectables:           map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
+		viewModes:             map[string]string{}, persistentViews: map[string]bool{}, graphScales: map[string]float32{},
+		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
 		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{}, outputEditors: map[string]*widget.Editor{},
 		icons: iconSet, images: imageSet,
 	}
@@ -343,8 +365,10 @@ func (r *Renderer) SetTheme(theme *uidsl.ThemeDocument) error {
 		return err
 	}
 	r.mu.Lock()
+	metrics := metricsFromTheme(theme.Theme)
 	r.pendingTheme = materialTheme
 	r.pendingPalette = &colors
+	r.pendingMetrics = &metrics
 	r.pendingThemeName = theme.Metadata.Name
 	r.mu.Unlock()
 	return nil
@@ -400,14 +424,28 @@ func (r *Renderer) SetDisclosureChange(handler func(map[string]bool)) {
 	r.onDisclosureChange = handler
 }
 
+func (r *Renderer) SetViewStates(states map[string]string) {
+	for key, mode := range states {
+		if strings.TrimSpace(key) != "" && (mode == "graph" || mode == "list") {
+			r.viewModes[key] = mode
+		}
+	}
+}
+
+func (r *Renderer) SetViewChange(handler func(map[string]string)) {
+	r.onViewChange = handler
+}
+
 func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	r.mu.Lock()
-	if r.pendingTheme != nil && r.pendingPalette != nil {
+	if r.pendingTheme != nil && r.pendingPalette != nil && r.pendingMetrics != nil {
 		r.theme = r.pendingTheme
 		r.palette = *r.pendingPalette
+		r.metrics = *r.pendingMetrics
 		r.themeName = r.pendingThemeName
 		r.pendingTheme = nil
 		r.pendingPalette = nil
+		r.pendingMetrics = nil
 		r.pendingThemeName = ""
 	}
 	screen, data, status, resetScroll := r.screen, r.data, r.status, r.resetScroll
@@ -428,13 +466,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 			r.pendingOutputSelection = nil
 		}
 	}
-	backgroundClip := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-	paint.LinearGradientOp{
-		Stop1: f32.Pt(0, 0), Color1: r.palette.background,
-		Stop2: f32.Pt(float32(gtx.Constraints.Max.X), float32(gtx.Constraints.Max.Y)), Color2: r.palette.backgroundEnd,
-	}.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
-	backgroundClip.Pop()
+	r.paintPageBackground(gtx)
 	if data == nil {
 		if status == "" {
 			status = "Loading…"
@@ -446,26 +478,60 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	root := applyGioOverride(screen.Screen.Root)
 	children := root.Children
 	body := func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Top: 16, Right: 18, Bottom: 16, Left: 18}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return r.list.Layout(gtx, len(children)+1, func(gtx layout.Context, index int) layout.Dimensions {
-				if index == len(children) {
-					if status == "" {
-						return layout.Dimensions{}
-					}
-					return layout.Inset{Top: 10, Bottom: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return r.layoutStatus(gtx, status)
-					})
-				}
-				return layout.Inset{Bottom: spacing(root.Layout.Gap)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return r.layoutNode(gtx, children[index], data, fmt.Sprintf("%s/root/%d", screen.Metadata.Name, index))
-				})
-			})
+		return layout.UniformInset(r.metrics.pageInset).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if pageWidth := gtx.Dp(r.metrics.pageWidth); pageWidth > 0 && gtx.Constraints.Max.X > pageWidth {
+				marginPixels := gtx.Constraints.Max.X - pageWidth
+				margin := unit.Dp(float32(marginPixels) / (2 * gtx.Metric.PxPerDp))
+				return layout.Inset{Left: margin, Right: margin}.Layout(gtx, r.layoutRootChildren(children, root, screen, data, status))
+			}
+			return r.layoutRootChildren(children, root, screen, data, status)(gtx)
 		})
 	}
 	if r.pending == nil {
 		return body(gtx)
 	}
 	return layoutModalOverlay(gtx, body, r.layoutConfirmation)
+}
+
+func (r *Renderer) paintPageBackground(gtx layout.Context) {
+	viewport := gtx.Constraints.Max
+	backgroundClip := clip.Rect{Max: viewport}.Push(gtx.Ops)
+	paint.LinearGradientOp{
+		Stop1: f32.Pt(0, 0), Color1: r.palette.backgroundStart,
+		Stop2: f32.Pt(float32(viewport.X), float32(viewport.Y)), Color2: r.palette.backgroundEnd,
+	}.Add(gtx.Ops)
+	paint.PaintOp{}.Add(gtx.Ops)
+	paintGlow := func(start, end f32.Point, glow color.NRGBA, alpha uint8) {
+		if glow.A == 0 {
+			return
+		}
+		glow.A = alpha
+		transparent := glow
+		transparent.A = 0
+		paint.LinearGradientOp{Stop1: start, Color1: glow, Stop2: end, Color2: transparent}.Add(gtx.Ops)
+		paint.PaintOp{}.Add(gtx.Ops)
+	}
+	paintGlow(f32.Pt(0, 0), f32.Pt(float32(viewport.X)*.45, float32(viewport.Y)*.55), r.palette.backgroundGlowA, 0xb0)
+	paintGlow(f32.Pt(float32(viewport.X), 0), f32.Pt(float32(viewport.X)*.55, float32(viewport.Y)*.5), r.palette.backgroundGlowB, 0xa0)
+	backgroundClip.Pop()
+}
+
+func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, screen *uidsl.ScreenDocument, data any, status string) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		return r.list.Layout(gtx, len(children)+1, func(gtx layout.Context, index int) layout.Dimensions {
+			if index == len(children) {
+				if status == "" {
+					return layout.Dimensions{}
+				}
+				return layout.Inset{Top: 10, Bottom: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return r.layoutStatus(gtx, status)
+				})
+			}
+			return layout.Inset{Bottom: r.spacing(root.Layout.Gap)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return r.layoutNode(gtx, children[index], data, fmt.Sprintf("%s/root/%d", screen.Metadata.Name, index))
+			})
+		})
+	}
 }
 
 func layoutModalOverlay(gtx layout.Context, body, confirmation layout.Widget) layout.Dimensions {
@@ -492,7 +558,7 @@ func (r *Renderer) layoutStatus(gtx layout.Context, status string) layout.Dimens
 		r.shownStatus = status
 	}
 	style := material.Editor(r.theme, &r.statusText, "")
-	style.TextSize = unit.Sp(14)
+	style.TextSize = r.metrics.textBody
 	style.Color = r.palette.muted
 	return style.Layout(gtx)
 }
@@ -532,7 +598,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 				itemPath = path + "/" + fmt.Sprint(key)
 			}
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Bottom: spacing(node.Layout.Gap)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Bottom: r.spacing(node.Layout.Gap)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return r.layoutNode(gtx, clone, itemData, itemPath)
 				})
 			}))
@@ -550,6 +616,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 	content := func(gtx layout.Context) layout.Dimensions {
 		if node.Component == "disclosure" {
 			return r.layoutDisclosure(gtx, node, data, path)
+		}
+		if node.Component == "graph-view" {
+			return r.layoutGraphView(gtx, node, data, path)
 		}
 		if node.Component == "text" {
 			return r.layoutText(gtx, node, data, path)
@@ -571,24 +640,40 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 		return r.layoutChildren(gtx, node, data, path)
 	}
-	if node.Component == "card" || node.Component == "disclosure" || node.Component == "section" || node.Style.Role == "hero" {
+	if node.Component == "card" || node.Component == "disclosure" || node.Component == "section" || node.Component == "graph-view" || node.Style.Role == "hero" {
 		padding := unit.Dp(0)
-		if node.Component == "section" || node.Component == "card" {
-			padding = 14
+		if node.Component == "section" {
+			padding = r.metrics.sectionPadding
+			if node.Layout.Padding != "" {
+				padding = 0
+			}
+		}
+		if node.Component == "graph-view" {
+			padding = r.metrics.sectionPadding
+			if node.Layout.Padding != "" {
+				padding = 0
+			}
+		}
+		if node.Component == "card" {
+			padding = r.metrics.cardPadding
 			if node.Layout.Padding != "" {
 				padding = 0
 			}
 		}
 		if node.Component == "disclosure" {
-			padding = 10
+			padding = r.metrics.sectionPadding
 			if node.Layout.Padding != "" {
-				padding = spacing(node.Layout.Padding)
+				padding = r.spacing(node.Layout.Padding)
 			}
 		}
 		if node.Style.Role == "hero" {
-			padding = 22
+			padding = r.metrics.heroPadding
 		}
-		content = r.surface(content, padding, node.Style.Role == "hero")
+		if node.Component == "disclosure" {
+			content = r.surfaceWithFill(content, padding, r.palette.surfaceRaised)
+		} else {
+			content = r.surface(content, padding, node.Style.Role == "hero")
+		}
 	}
 	widgetFn := content
 	if len(node.Actions) > 0 && !componentHandlesOwnActions(node.Component) {
@@ -605,7 +690,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 
 func componentHandlesOwnActions(component string) bool {
 	switch component {
-	case "button", "select", "input":
+	case "button", "select", "input", "graph-view":
 		return true
 	default:
 		return false
@@ -634,10 +719,21 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	if expanded {
 		iconName = "chevron-down"
 	}
+	isProjectRow := node.Style.Role == "project-row"
 	toggle := r.button(path + "/disclosure-toggle")
-	for toggle.Clicked(gtx) {
-		expanded = !expanded
-		r.setDisclosureState(stateKey, expanded, persistent)
+	headerToggle := r.button(path + "/disclosure-header")
+	if isProjectRow {
+		for headerToggle.Clicked(gtx) {
+			if !r.disclosureHeaderHasSelection(path) {
+				expanded = !expanded
+				r.setDisclosureState(stateKey, expanded, persistent)
+			}
+		}
+	} else {
+		for toggle.Clicked(gtx) {
+			expanded = !expanded
+			r.setDisclosureState(stateKey, expanded, persistent)
+		}
 	}
 	header := func(gtx layout.Context) layout.Dimensions {
 		toggleWidget := func(gtx layout.Context) layout.Dimensions {
@@ -645,19 +741,19 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			if expanded {
 				description = "Collapse " + label
 			}
-			return r.layoutIconButton(gtx, toggle, iconName, description)
+			if isProjectRow {
+				return r.layoutDisclosureIndicator(gtx, iconName)
+			}
+			return r.layoutDisclosureToggle(gtx, toggle, iconName, description)
 		}
 		labelWidget := func(gtx layout.Context) layout.Dimensions {
 			labelPath := path + "/label"
-			labelClick := r.button(path + "/disclosure-label")
-			for labelClick.Clicked(gtx) {
-				if r.selectable(labelPath).SelectionLen() == 0 {
-					expanded = !expanded
-					r.setDisclosureState(stateKey, expanded, persistent)
+			layoutLabel := func(gtx layout.Context) layout.Dimensions {
+				labelInset := unit.Dp(10)
+				if isProjectRow {
+					labelInset = 0
 				}
-			}
-			return labelClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: 10, Right: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: labelInset, Right: labelInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					defer pointer.PassOp{}.Push(gtx.Ops).Pop()
 					textNode := node
 					textNode.Component = "text"
@@ -670,12 +766,68 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 					}
 					return r.layoutText(gtx, textNode, data, labelPath)
 				})
-			})
+			}
+			if isProjectRow {
+				return layoutLabel(gtx)
+			}
+			labelClick := r.button(path + "/disclosure-label")
+			for labelClick.Clicked(gtx) {
+				if r.selectable(labelPath).SelectionLen() == 0 {
+					expanded = !expanded
+					r.setDisclosureState(stateKey, expanded, persistent)
+				}
+			}
+			return labelClick.Layout(gtx, layoutLabel)
+		}
+		summaryChildren := func() []layout.FlexChild {
+			if node.Disclosure == nil {
+				return nil
+			}
+			children := make([]layout.FlexChild, 0, len(node.Disclosure.Summary))
+			for index := range node.Disclosure.Summary {
+				summaryNode := node.Disclosure.Summary[index]
+				widgetFn := func(gtx layout.Context) layout.Dimensions {
+					left := unit.Dp(8)
+					if node.Style.Role == "project-row" && index == 0 {
+						left = 6
+					}
+					return layout.Inset{Left: left}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return r.layoutNode(gtx, summaryNode, data, fmt.Sprintf("%s/summary/%d", path, index))
+					})
+				}
+				if summaryNode.Layout.Grow {
+					children = append(children, layout.Flexed(1, widgetFn))
+				} else {
+					children = append(children, layout.Rigid(widgetFn))
+				}
+			}
+			return children
 		}
 		if node.Style.Role != "execution-row" {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(toggleWidget), layout.Flexed(1, labelWidget),
-			)
+			labelChild := layout.Flexed(1, labelWidget)
+			if isProjectRow {
+				labelChild = layout.Rigid(labelWidget)
+			}
+			children := []layout.FlexChild{labelChild}
+			children = append(children, summaryChildren()...)
+			children = append(children, layout.Rigid(toggleWidget))
+			layoutRow := func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+			}
+			if !isProjectRow {
+				return layoutRow(gtx)
+			}
+			description := "Expand " + label
+			if expanded {
+				description = "Collapse " + label
+			}
+			return headerToggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				semantic.DescriptionOp(description).Add(gtx.Ops)
+				// Project summary text remains selectable while pointer events also
+				// reach the row-sized disclosure control behind it.
+				defer pointer.PassOp{}.Push(gtx.Ops).Pop()
+				return layoutRow(gtx)
+			})
 		}
 		children := make([]layout.FlexChild, 0, 4)
 		if node.Image != nil {
@@ -691,7 +843,9 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				})
 			}))
 		}
-		children = append(children, layout.Flexed(1, labelWidget), layout.Rigid(toggleWidget))
+		children = append(children, layout.Flexed(1, labelWidget))
+		children = append(children, summaryChildren()...)
+		children = append(children, layout.Rigid(toggleWidget))
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 	}
 	if !expanded {
@@ -707,6 +861,18 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			})
 		}),
 	)
+}
+
+func (r *Renderer) disclosureHeaderHasSelection(path string) bool {
+	for key, selectable := range r.selectables {
+		if key != path+"/label" && !strings.HasPrefix(key, path+"/summary/") {
+			continue
+		}
+		if selectable.SelectionLen() != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Renderer) disclosureStateKey(node uidsl.Node, data any, fallback string) (string, bool) {
@@ -758,35 +924,38 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		}
 	}
 	return layout.Inset{
-		Top: spacing(node.Layout.Padding), Right: spacing(node.Layout.Padding),
-		Bottom: spacing(node.Layout.Padding), Left: spacing(node.Layout.Padding),
+		Top: r.spacing(node.Layout.Padding), Right: r.spacing(node.Layout.Padding),
+		Bottom: r.spacing(node.Layout.Padding), Left: r.spacing(node.Layout.Padding),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: axis, Alignment: layout.Middle, Gap: gtx.Dp(spacing(node.Layout.Gap))}.Layout(gtx, children...)
+		return layout.Flex{Axis: axis, Alignment: layout.Middle, Gap: gtx.Dp(r.spacing(node.Layout.Gap))}.Layout(gtx, children...)
 	})
 }
 
 func (r *Renderer) constrainNode(gtx layout.Context, node uidsl.Node, content layout.Widget) layout.Dimensions {
 	constraints := gtx.Constraints
-	if value, ok := layoutDimension(node.Layout.MinWidth, gtx); ok {
+	if value, ok := r.layoutDimension(node.Layout.MinWidth, gtx); ok {
 		constraints.Min.X = min(max(value, constraints.Min.X), constraints.Max.X)
 	}
-	if value, ok := layoutDimension(node.Layout.MaxWidth, gtx); ok {
+	if value, ok := r.layoutDimension(node.Layout.MaxWidth, gtx); ok {
 		constraints.Max.X = max(constraints.Min.X, min(value, constraints.Max.X))
 	}
-	if value, ok := layoutDimension(node.Layout.MinHeight, gtx); ok {
+	if value, ok := r.layoutDimension(node.Layout.MinHeight, gtx); ok {
 		constraints.Min.Y = min(max(value, constraints.Min.Y), constraints.Max.Y)
 	}
-	if value, ok := layoutDimension(node.Layout.MaxHeight, gtx); ok {
+	if value, ok := r.layoutDimension(node.Layout.MaxHeight, gtx); ok {
 		constraints.Max.Y = max(constraints.Min.Y, min(value, constraints.Max.Y))
 	}
 	gtx.Constraints = constraints
 	return content(gtx)
 }
 
-func layoutDimension(value string, gtx layout.Context) (int, bool) {
+func (r *Renderer) layoutDimension(value string, gtx layout.Context) (int, bool) {
 	value = strings.TrimSpace(value)
-	if value == "" || value == "page" {
+	if value == "" {
 		return 0, false
+	}
+	if value == "page" {
+		return gtx.Dp(r.metrics.pageWidth), true
 	}
 	parsed, err := strconv.ParseFloat(value, 32)
 	if err != nil || parsed < 0 {
@@ -804,12 +973,15 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 		}
 		text = resolved
 	}
-	if node.Style.Role == "code" {
+	if node.Style.Role == "code" || node.Style.Role == "code-inline" {
 		editor := r.textEditors[path]
 		if editor == nil {
 			editor = &widget.Editor{ReadOnly: true}
 			r.textEditors[path] = editor
 		}
+		// Compact code labels may still need to wrap, such as a long pipeline
+		// chain. Truncated labels (graph node identifiers) stay on one line.
+		editor.SingleLine = node.Style.Role == "code-inline" && node.Style.Truncate
 		outputChanged := editor.Text() != text
 		if outputChanged {
 			editor.SetText(text)
@@ -837,32 +1009,38 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 		}
 		style := material.Editor(r.theme, editor, "")
 		style.Font.Typeface = font.Typeface("Go Mono")
-		style.TextSize = unit.Sp(13)
+		if node.Style.Emphasis == "strong" {
+			style.Font.Weight = font.Bold
+		}
+		style.TextSize = r.metrics.textCode
 		style.Color = r.palette.text
 		style.SelectionColor = r.palette.focus
 		style.SelectionColor.A = 0xc0
+		if node.Style.Role == "code-inline" {
+			return style.Layout(gtx)
+		}
 		return layout.UniformInset(12).Layout(gtx, style.Layout)
 	}
 	var label material.LabelStyle
 	switch node.Style.Role {
 	case "title":
 		label = material.H4(r.theme, text)
-		label.TextSize = unit.Sp(28)
+		label.TextSize = r.metrics.textTitle
 	case "heading":
 		label = material.H6(r.theme, text)
-		label.TextSize = unit.Sp(18)
+		label.TextSize = r.metrics.textHeading
 	case "subtitle":
 		label = material.Subtitle1(r.theme, text)
-		label.TextSize = unit.Sp(16)
+		label.TextSize = r.metrics.textSubtitle
 	case "badge":
 		label = material.Body2(r.theme, text)
-		label.TextSize = unit.Sp(12)
+		label.TextSize = r.metrics.textBadge
 	case "execution-row":
 		label = material.Body1(r.theme, text)
-		label.TextSize = unit.Sp(14)
+		label.TextSize = r.metrics.textControl
 	default:
 		label = material.Body1(r.theme, text)
-		label.TextSize = unit.Sp(14)
+		label.TextSize = r.metrics.textBody
 	}
 	if tone, ok := r.toneColor(node.Style.Tone); ok {
 		label.Color = tone
@@ -883,17 +1061,28 @@ func (r *Renderer) layoutBadge(gtx layout.Context, node uidsl.Node, data any, pa
 		tone = r.palette.accent
 	}
 	background := tone
-	background.A = 0x24
 	border := tone
-	border.A = 0x90
+	borderWidth := unit.Dp(1)
+	if node.Style.Tone == "muted" {
+		// Browser metadata pills use the theme's colorful secondary accent,
+		// not a translucent version of muted body text. Both are semantic
+		// theme tokens, so this stays consistent across every theme.
+		node.Style.Tone = "pill"
+		background = r.palette.pillBackground
+		border = color.NRGBA{}
+		borderWidth = 0
+	} else {
+		background.A = 0x24
+		border.A = 0x90
+	}
 	const badgeRadius unit.Dp = 12
 	node.Style.Role = "badge"
-	return widget.Border{Color: border, CornerRadius: badgeRadius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return widget.Border{Color: border, CornerRadius: badgeRadius, Width: borderWidth}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(badgeRadius)).Op(gtx.Ops))
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: 4, Right: 9, Bottom: 4, Left: 9}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: 2, Right: 8, Bottom: 2, Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return r.layoutText(gtx, node, data, path+"/text")
 			})
 		})
@@ -906,6 +1095,10 @@ func (r *Renderer) toneColor(tone string) (color.NRGBA, bool) {
 		return r.palette.muted, true
 	case "accent":
 		return r.palette.accent, true
+	case "accent-strong":
+		return r.palette.accentStrong, true
+	case "pill":
+		return r.palette.pillText, true
 	case "success":
 		return r.palette.success, true
 	case "warning":
@@ -923,7 +1116,7 @@ func (r *Renderer) layoutImage(gtx layout.Context, node uidsl.Node) layout.Dimen
 	if node.Image == nil {
 		return r.errorLabel(gtx, fmt.Errorf("image source is missing"))
 	}
-	return r.layoutImageSized(gtx, node.Image, 132, 110)
+	return r.layoutImageSized(gtx, node.Image, r.metrics.imageBrandWidth, r.metrics.imageBrandHeight)
 }
 
 func (r *Renderer) layoutImageSized(gtx layout.Context, description *uidsl.Image, width, height unit.Dp) layout.Dimensions {
@@ -938,6 +1131,31 @@ func (r *Renderer) layoutImageSized(gtx layout.Context, description *uidsl.Image
 	size := gtx.Constraints.Constrain(image.Pt(gtx.Dp(width), gtx.Dp(height)))
 	gtx.Constraints = layout.Exact(size)
 	return widget.Image{Src: source, Fit: widget.Contain, Position: layout.Center, Scale: 1}.Layout(gtx)
+}
+
+func (r *Renderer) layoutDisclosureToggle(gtx layout.Context, button *widget.Clickable, iconName, description string) layout.Dimensions {
+	icon := r.icons[iconName]
+	if icon == nil {
+		return r.errorLabel(gtx, fmt.Errorf("icon %q is unavailable", iconName))
+	}
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		semantic.DescriptionOp(description).Add(gtx.Ops)
+		return layout.UniformInset(3).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(14), gtx.Dp(14)))
+			return icon.Layout(gtx, r.palette.muted)
+		})
+	})
+}
+
+func (r *Renderer) layoutDisclosureIndicator(gtx layout.Context, iconName string) layout.Dimensions {
+	icon := r.icons[iconName]
+	if icon == nil {
+		return r.errorLabel(gtx, fmt.Errorf("icon %q is unavailable", iconName))
+	}
+	return layout.UniformInset(3).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(14), gtx.Dp(14)))
+		return icon.Layout(gtx, r.palette.muted)
+	})
 }
 
 func (r *Renderer) layoutGlyph(gtx layout.Context, iconName, tone string, size unit.Dp) layout.Dimensions {
@@ -967,7 +1185,10 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 			r.dispatchFromLayout(gtx, node.Actions[0], data)
 		}
 	}
-	return r.layoutControlButton(gtx, button, label, node.Icon, enabled)
+	if node.Style.Role == "icon-button" && node.Icon != "" {
+		return r.layoutIconButton(gtx, button, node.Icon, label)
+	}
+	return r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong")
 }
 
 func (r *Renderer) layoutInput(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
@@ -1004,10 +1225,10 @@ func (r *Renderer) layoutInput(gtx layout.Context, node uidsl.Node, data any, pa
 		inputData := mergeData(data, "input", map[string]any{"value": editor.Text()})
 		r.dispatchFromLayout(gtx, node.Actions[0], inputData)
 	}
-	return widget.Border{Color: r.palette.border, CornerRadius: 9, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Top: 8, Right: 11, Bottom: 8, Left: 11}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return widget.Border{Color: r.palette.border, CornerRadius: r.metrics.controlRadius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top: r.metrics.controlPaddingY, Right: r.metrics.controlPaddingX, Bottom: r.metrics.controlPaddingY, Left: r.metrics.controlPaddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			style := material.Editor(r.theme, editor, node.Input.Placeholder)
-			style.TextSize = unit.Sp(14)
+			style.TextSize = r.metrics.textControl
 			style.Color = r.palette.text
 			style.HintColor = r.palette.muted
 			return style.Layout(gtx)
@@ -1042,10 +1263,10 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 		if key, resolveErr := uidsl.Resolve(itemData, node.Repeat.Key); resolveErr == nil {
 			itemPath = path + "/" + fmt.Sprint(key)
 		}
-		inset := layout.Inset{Right: spacing(node.Layout.Gap)}
+		inset := layout.Inset{Right: r.spacing(node.Layout.Gap)}
 		component := "row"
 		if list.Axis == layout.Vertical {
-			inset = layout.Inset{Bottom: spacing(node.Layout.Gap)}
+			inset = layout.Inset{Bottom: r.spacing(node.Layout.Gap)}
 			component = "column"
 		}
 		return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1106,7 +1327,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 		if r.selectOpen[path] {
 			icon = "chevron-up"
 		}
-		return r.layoutControlButton(gtx, toggle, selectedLabel, icon, enabled)
+		return r.layoutControlButton(gtx, toggle, selectedLabel, icon, enabled, false)
 	}
 	if !r.selectOpen[path] {
 		return header(gtx)
@@ -1133,7 +1354,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 							icon = "check"
 						}
 						return layout.Inset{Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return r.layoutControlButton(gtx, choice, entry.label, icon, true)
+							return r.layoutControlButton(gtx, choice, entry.label, icon, true, false)
 						})
 					}))
 				}
@@ -1143,7 +1364,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 	)
 }
 
-func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string, enabled bool) layout.Dimensions {
+func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string, enabled, strong bool) layout.Dimensions {
 	background := r.palette.surface
 	borderColor := r.palette.border
 	if enabled && button.Hovered() {
@@ -1153,38 +1374,40 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 	if enabled && gtx.Focused(button) {
 		borderColor = r.palette.focus
 	}
-	return widget.Border{Color: borderColor, CornerRadius: 9, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	radius := r.metrics.controlRadius
+	return widget.Border{Color: borderColor, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(9)).Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
 			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: 10, Right: 14, Bottom: 10, Left: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: r.metrics.controlPaddingY, Right: r.metrics.controlPaddingX, Bottom: r.metrics.controlPaddingY, Left: r.metrics.controlPaddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					children := make([]layout.FlexChild, 0, 2)
-					icon := r.icons[iconName]
-					if icon != nil {
-						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(19), gtx.Dp(19)))
-							iconColor := r.palette.accent
-							if !enabled {
-								iconColor = r.palette.muted
-							}
-							return icon.Layout(gtx, iconColor)
-						}))
-					}
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						inset := layout.Inset{}
-						if icon != nil {
-							inset.Left = 8
-						}
 						labelStyle := material.Body1(r.theme, label)
-						labelStyle.TextSize = unit.Sp(14)
+						labelStyle.TextSize = r.metrics.textControl
+						if strong {
+							labelStyle.Font.Weight = font.SemiBold
+						}
 						labelStyle.Color = r.palette.accent
 						if !enabled {
 							labelStyle.Color = r.palette.muted
 						}
-						return inset.Layout(gtx, labelStyle.Layout)
+						return labelStyle.Layout(gtx)
 					}))
+					icon := r.icons[iconName]
+					if icon != nil {
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(19), gtx.Dp(19)))
+								iconColor := r.palette.accent
+								if !enabled {
+									iconColor = r.palette.muted
+								}
+								return icon.Layout(gtx, iconColor)
+							})
+						}))
+					}
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 				})
 			})
@@ -1228,9 +1451,10 @@ func (r *Renderer) layoutIconButton(gtx layout.Context, button *widget.Clickable
 	if gtx.Focused(button) {
 		borderColor = r.palette.focus
 	}
-	return widget.Border{Color: borderColor, CornerRadius: 9, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	radius := r.metrics.controlRadius
+	return widget.Border{Color: borderColor, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(9)).Op(gtx.Ops))
+			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
 			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1246,11 +1470,29 @@ func (r *Renderer) layoutIconButton(gtx layout.Context, button *widget.Clickable
 
 func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return widget.Border{Color: r.palette.border, CornerRadius: 12, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		radius := r.metrics.surfaceRadius
+		return widget.Border{Color: r.palette.border, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				rect := image.Rectangle{Max: gtx.Constraints.Min}
-				if hero {
-					stack := clip.UniformRRect(rect, gtx.Dp(12)).Push(gtx.Ops)
+				if r.palette.surfaceGlow.A != 0 {
+					stack := clip.UniformRRect(rect, gtx.Dp(radius)).Push(gtx.Ops)
+					paint.LinearGradientOp{
+						Stop1: f32.Pt(0, float32(rect.Dy())), Color1: r.palette.surface,
+						Stop2: f32.Pt(float32(rect.Dx()), 0), Color2: r.palette.subtle,
+					}.Add(gtx.Ops)
+					paint.PaintOp{}.Add(gtx.Ops)
+					glow := r.palette.surfaceGlow
+					glow.A = 0xa0
+					transparent := glow
+					transparent.A = 0
+					paint.LinearGradientOp{
+						Stop1: f32.Pt(float32(rect.Dx()), 0), Color1: glow,
+						Stop2: f32.Pt(float32(rect.Dx())*.55, float32(rect.Dy())*.55), Color2: transparent,
+					}.Add(gtx.Ops)
+					paint.PaintOp{}.Add(gtx.Ops)
+					stack.Pop()
+				} else if hero {
+					stack := clip.UniformRRect(rect, gtx.Dp(radius)).Push(gtx.Ops)
 					paint.LinearGradientOp{
 						Stop1: f32.Pt(0, 0), Color1: r.palette.heroStart,
 						Stop2: f32.Pt(float32(rect.Dx()), float32(rect.Dy())), Color2: r.palette.heroEnd,
@@ -1258,8 +1500,22 @@ func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool) la
 					paint.PaintOp{}.Add(gtx.Ops)
 					stack.Pop()
 				} else {
-					paint.FillShape(gtx.Ops, r.palette.surface, clip.UniformRRect(rect, gtx.Dp(12)).Op(gtx.Ops))
+					paint.FillShape(gtx.Ops, r.palette.surface, clip.UniformRRect(rect, gtx.Dp(radius)).Op(gtx.Ops))
 				}
+				return layout.Dimensions{Size: gtx.Constraints.Min}
+			}, func(gtx layout.Context) layout.Dimensions {
+				return layout.UniformInset(padding).Layout(gtx, content)
+			})
+		})
+	}
+}
+
+func (r *Renderer) surfaceWithFill(content layout.Widget, padding unit.Dp, fill color.NRGBA) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		radius := r.metrics.surfaceRadius
+		return widget.Border{Color: r.palette.border, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
 				return layout.Dimensions{Size: gtx.Constraints.Min}
 			}, func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(padding).Layout(gtx, content)
@@ -1782,7 +2038,7 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 	var err error
 	for name, target := range map[string]*color.NRGBA{
 		"background": &p.background, "surface": &p.surface, "surface-subtle": &p.subtle,
-		"text": &p.text, "text-muted": &p.muted, "accent": &p.accent,
+		"text": &p.text, "text-muted": &p.muted, "accent": &p.accent, "accent-strong": &p.accentStrong,
 		"border": &p.border, "success": &p.success, "warning": &p.warning,
 		"danger": &p.danger, "focus": &p.focus,
 	} {
@@ -1791,17 +2047,36 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 			return palette{}, fmt.Errorf("theme color %s: %w", name, err)
 		}
 	}
+	p.backgroundStart = p.background
 	p.backgroundEnd = p.background
 	p.heroStart = p.surface
 	p.heroEnd = p.subtle
+	p.surfaceRaised = p.subtle
+	p.pillBackground = p.subtle
+	p.pillText = p.accentStrong
 	if gradient, ok := theme.Gradients["page"]; ok && len(gradient.Stops) >= 2 {
-		p.background, err = parseColor(gradient.Stops[0].Color)
+		p.backgroundStart, err = parseColor(gradient.Stops[0].Color)
 		if err != nil {
 			return palette{}, fmt.Errorf("page gradient start: %w", err)
 		}
 		p.backgroundEnd, err = parseColor(gradient.Stops[len(gradient.Stops)-1].Color)
 		if err != nil {
 			return palette{}, fmt.Errorf("page gradient end: %w", err)
+		}
+	}
+	for name, target := range map[string]*color.NRGBA{
+		"background-start": &p.backgroundStart, "background-end": &p.backgroundEnd,
+		"background-glow-a": &p.backgroundGlowA, "background-glow-b": &p.backgroundGlowB,
+		"surface-raised": &p.surfaceRaised, "surface-glow": &p.surfaceGlow,
+		"pill-background": &p.pillBackground, "pill-text": &p.pillText,
+	} {
+		value := strings.TrimSpace(theme.Colors[name])
+		if value == "" {
+			continue
+		}
+		*target, err = parseColor(value)
+		if err != nil {
+			return palette{}, fmt.Errorf("theme color %s: %w", name, err)
 		}
 	}
 	if gradient, ok := theme.Gradients["hero"]; ok && len(gradient.Stops) >= 2 {
@@ -1826,6 +2101,13 @@ func rendererTheme(document *uidsl.ThemeDocument) (*material.Theme, palette, err
 		return nil, palette{}, err
 	}
 	theme := material.NewTheme()
+	// Bundle the Go font family so code and identifier labels render with a
+	// genuine monospace face even when the host has no Go Mono installation.
+	theme.Shaper = giotext.NewShaper(giotext.WithCollection(gofont.Collection()))
+	// Match the browser chrome's body font stack exactly. The shaper resolves
+	// Avenir Next on macOS, Segoe UI on Windows, and the same generic fallback
+	// used by the browser elsewhere.
+	theme.Face = ciwiBodyTypeface
 	theme.Palette.Fg = colors.text
 	theme.Palette.Bg = colors.background
 	theme.Palette.ContrastBg = colors.accent
@@ -1854,6 +2136,7 @@ func materialIcons() (map[string]*widget.Icon, error) {
 		"server":      icons.HardwareComputer,
 		"adjustments": icons.ImageTune,
 		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
+		"zoom-in": icons.ActionZoomIn, "zoom-out": icons.ActionZoomOut,
 		"chevron-down": icons.NavigationExpandMore, "chevron-up": icons.NavigationExpandLess,
 		"check": icons.NavigationCheck, "copy": icons.ContentContentCopy,
 		"trash": icons.ActionDelete, "refresh": icons.NavigationRefresh, "circle-x": icons.NavigationCancel,
@@ -1881,7 +2164,9 @@ func embeddedImages() (map[string]paint.ImageOp, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode ciwi logo: %w", err)
 	}
-	return map[string]paint.ImageOp{"ciwi-logo": paint.NewImageOp(decoded)}, nil
+	logo := paint.NewImageOp(decoded)
+	logo.Filter = paint.FilterNearest
+	return map[string]paint.ImageOp{"ciwi-logo": logo}, nil
 }
 
 func parseColor(value string) (color.NRGBA, error) {
@@ -1899,14 +2184,57 @@ func parseColor(value string) (color.NRGBA, error) {
 	return color.NRGBA{R: byte(parsed >> 24), G: byte(parsed >> 16), B: byte(parsed >> 8), A: byte(parsed)}, nil
 }
 
-func spacing(value string) unit.Dp {
+func metricsFromTheme(theme uidsl.Theme) visualMetrics {
+	value := func(name string, fallback float32) float32 {
+		raw := strings.TrimSpace(theme.Dimensions[name])
+		if raw == "" {
+			return fallback
+		}
+		parsed, err := strconv.ParseFloat(raw, 32)
+		if err != nil || parsed < 0 {
+			return fallback
+		}
+		return float32(parsed)
+	}
+	// Keep the shared theme as the source of truth. A small adapter calibration
+	// remains for layout spacing, while type sizes use the exact CSS-equivalent
+	// values: once both clients use the same face, scaling type independently
+	// makes the native hierarchy look visibly smaller than the browser's.
+	const density = float32(0.88)
+	dense := func(name string, fallback float32) float32 { return value(name, fallback) * density }
+	return visualMetrics{
+		spaceSmall:       unit.Dp(dense("small", 8)),
+		spaceMedium:      unit.Dp(dense("medium", 16)),
+		spaceLarge:       unit.Dp(dense("large", 24)),
+		pageWidth:        unit.Dp(value("page", 1150)),
+		pageInset:        unit.Dp(value("page-inset", 16)),
+		sectionPadding:   unit.Dp(value("section-padding", 14)),
+		cardPadding:      unit.Dp(value("card-padding", 16)),
+		heroPadding:      unit.Dp(value("hero-padding", 16)),
+		surfaceRadius:    unit.Dp(value("surface-radius", 12)),
+		controlRadius:    unit.Dp(value("control-radius", 8)),
+		controlPaddingX:  unit.Dp(value("control-padding-x", 12)),
+		controlPaddingY:  unit.Dp(value("control-padding-y", 8)),
+		textBody:         unit.Sp(value("text-body", 16)),
+		textControl:      unit.Sp(value("text-control", 14)),
+		textCode:         unit.Sp(value("text-code", 13)),
+		textBadge:        unit.Sp(value("text-badge", 12)),
+		textSubtitle:     unit.Sp(value("text-subtitle", 16)),
+		textHeading:      unit.Sp(value("text-heading", 18)),
+		textTitle:        unit.Sp(value("text-title", 28)),
+		imageBrandWidth:  unit.Dp(value("image-brand-width", 110)),
+		imageBrandHeight: unit.Dp(value("image-brand-height", 91)),
+	}
+}
+
+func (r *Renderer) spacing(value string) unit.Dp {
 	switch value {
 	case "small":
-		return 8
+		return r.metrics.spaceSmall
 	case "medium":
-		return 16
+		return r.metrics.spaceMedium
 	case "large":
-		return 28
+		return r.metrics.spaceLarge
 	}
 	if parsed, err := strconv.ParseFloat(value, 32); err == nil {
 		return unit.Dp(parsed)

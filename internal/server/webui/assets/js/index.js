@@ -96,7 +96,8 @@
         const topInfo = document.createElement('div');
         topInfo.innerHTML = '<strong>Project: <a class="job-link" href="/projects/' + project.id + '">' + escapeHtml(project.name) + '</a></strong> ' + projectSourceMetadataHTML(project);
         const topRight = document.createElement('div');
-        topRight.innerHTML = '<span class="pill">' + String((project.pipelines || []).length) + ' pipeline(s)</span>';
+        const pipelineCount = (project.pipelines || []).length;
+        topRight.innerHTML = '<span class="pill">' + String(pipelineCount) + (pipelineCount === 1 ? ' pipeline' : ' pipelines') + '</span>';
         top.appendChild(topInfo);
         top.appendChild(topRight);
         summary.appendChild(top);

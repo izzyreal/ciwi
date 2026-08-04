@@ -3,19 +3,27 @@ kind: Theme
 metadata: {name: mango-alphonso, title: Mango Alphonso, description: Saffron-orange flesh and warm ochre skin}
 theme:
   colors:
-    background: "#fff0d8"
-    surface: "#fffaf3"
-    surface-subtle: "#ffdfad"
-    text: "#3d2414"
-    text-muted: "#795844"
-    accent: "#e56f16"
-    accent-strong: "#a94b18"
-    border: "#e5ae69"
-    success: "#628b3c"
-    warning: "#cc8412"
-    danger: "#bf4335"
+    background: "#fff1dc"
+    background-start: "#df7728"
+    background-end: "#a94b18"
+    background-glow-a: "#f59a35"
+    background-glow-b: "#b65a1d"
+    surface: "#fff9ef"
+    surface-raised: "#fff9ef"
+    surface-subtle: "#fff5e7"
+    surface-glow: "#ffc471"
+    text: "#3b2115"
+    text-muted: "#74513c"
+    accent: "#b64b16"
+    accent-strong: "#792d0f"
+    pill-background: "#f8d3b5"
+    pill-text: "#8e3715"
+    border: "#dda47c"
+    success: "#65783a"
+    warning: "#925000"
+    danger: "#b73736"
     focus: "#6758ba"
   gradients:
     page: {kind: linear, angle: 135, stops: [{color: "#ffd56f", position: 0}, {color: "#eb741b", position: 100}]}
     hero: {kind: radial, stops: [{color: "#fff7e9", position: 0}, {color: "#f39a36", position: 100}]}
-  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1150", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

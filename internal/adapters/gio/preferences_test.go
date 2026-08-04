@@ -11,7 +11,7 @@ import (
 func TestNativePreferencesRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "native-ui.json")
 	want := nativePreferences{
-		Theme: "space", Disclosures: map[string]bool{"front-project:1": false},
+		Theme: "space", Disclosures: map[string]bool{"front-project:1": false}, Views: map[string]string{"project-structure:1": "list"},
 		ConnectionMode: connectionModeExplicit, ServerEndpoint: "tcp://127.0.0.1:8113",
 	}
 	if err := saveNativePreferences(path, want); err != nil {
@@ -31,7 +31,7 @@ func TestMissingNativePreferencesUseDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Theme != "" || len(got.Disclosures) != 0 {
+	if got.Theme != "" || len(got.Disclosures) != 0 || len(got.Views) != 0 {
 		t.Fatalf("preferences = %+v", got)
 	}
 	mode, endpoint := got.normalizedConnection()
@@ -43,7 +43,7 @@ func TestMissingNativePreferencesUseDefaults(t *testing.T) {
 func TestNativePreferenceUpdatesPreserveOtherSettings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "native-ui.json")
 	if err := saveNativePreferences(path, nativePreferences{
-		Theme: "default", Disclosures: map[string]bool{"front-project:1": false},
+		Theme: "default", Disclosures: map[string]bool{"front-project:1": false}, Views: map[string]string{"project-structure:1": "graph"},
 		ConnectionMode: connectionModeExplicit, ServerEndpoint: "tcp://buildbox:8113",
 	}); err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestNativePreferenceUpdatesPreserveOtherSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	expanded, exists := got.Disclosures["front-project:1"]
-	if got.Theme != "jungle" || !exists || expanded || got.ConnectionMode != connectionModeExplicit || got.ServerEndpoint != "tcp://buildbox:8113" {
+	if got.Theme != "jungle" || !exists || expanded || got.Views["project-structure:1"] != "graph" || got.ConnectionMode != connectionModeExplicit || got.ServerEndpoint != "tcp://buildbox:8113" {
 		t.Fatalf("preferences = %+v", got)
 	}
 }

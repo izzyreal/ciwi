@@ -29,6 +29,8 @@ func TestUIThemeScriptIsServedAndPersistsBrowserChoice(t *testing.T) {
 		"'yellow-dragon-fruit'",
 		"'dragon-fruit'",
 		"localStorage.setItem(ciwiThemeStorageKey",
+		"/ui/contracts/themes.json",
+		"ciwiApplyContractTheme(normalized)",
 		"data-ciwi-theme",
 		"ciwi-theme-change",
 	} {

@@ -3,17 +3,25 @@ kind: Theme
 metadata: {name: default, title: Default, description: Crisp mint with bolder status colors}
 theme:
   colors: &colors
-    background: "#edf7f2"
+    background: "#edf7f1"
+    background-start: "#bce8d0"
+    background-end: "#dff2e8"
+    background-glow-a: "#79d5aa"
+    background-glow-b: "#b8dcf0"
     surface: "#ffffff"
-    surface-subtle: "#f3faf6"
-    text: "#17231d"
-    text-muted: "#5b6e64"
-    accent: "#2d8067"
-    accent-strong: "#175b47"
-    border: "#b7d7c8"
-    success: "#21885b"
-    warning: "#b87817"
-    danger: "#ba4545"
+    surface-raised: "#ffffff"
+    surface-subtle: "#f7fcf9"
+    surface-glow: "#e0f7eb"
+    text: "#17271f"
+    text-muted: "#536b60"
+    accent: "#087d61"
+    accent-strong: "#075f4b"
+    pill-background: "#dff4e9"
+    pill-text: "#176247"
+    border: "#abd4bf"
+    success: "#13834a"
+    warning: "#a76900"
+    danger: "#c03b4d"
     focus: "#2568d8"
   gradients:
     page:
@@ -23,4 +31,4 @@ theme:
     hero:
       kind: radial
       stops: [{color: "#ffffff", position: 0}, {color: "#e6f5ee", position: 100}]
-  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1150", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

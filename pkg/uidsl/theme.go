@@ -3,6 +3,8 @@ package uidsl
 import (
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 )
 
 type ThemeDocument struct {
@@ -66,6 +68,11 @@ func (d *ThemeDocument) Validate() error {
 			return fmt.Errorf("theme color %q must be a six- or eight-digit hex color", token)
 		}
 	}
+	for token, value := range d.Theme.Colors {
+		if !colorPattern.MatchString(value) {
+			return fmt.Errorf("theme color %q must be a six- or eight-digit hex color", token)
+		}
+	}
 	for name, gradient := range d.Theme.Gradients {
 		if gradient.Kind != "linear" && gradient.Kind != "radial" {
 			return fmt.Errorf("gradient %q kind must be linear or radial", name)
@@ -79,6 +86,12 @@ func (d *ThemeDocument) Validate() error {
 				return fmt.Errorf("gradient %q stop %d is invalid", name, i)
 			}
 			previous = stop.Position
+		}
+	}
+	for name, value := range d.Theme.Dimensions {
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 32)
+		if err != nil || parsed < 0 {
+			return fmt.Errorf("theme dimension %q must be a non-negative number", name)
 		}
 	}
 	return nil

@@ -3,19 +3,27 @@ kind: Theme
 metadata: {name: yellow-dragon-fruit, title: Yellow Dragon Fruit, description: "Vivid yellow peel, white flesh and seed-black contrast"}
 theme:
   colors:
-    background: "#fffbd8"
-    surface: "#ffffff"
-    surface-subtle: "#f7f3c5"
-    text: "#25271c"
-    text-muted: "#676b52"
-    accent: "#d6b700"
-    accent-strong: "#6f8c38"
-    border: "#d9cf71"
-    success: "#659443"
-    warning: "#d8930d"
-    danger: "#b94b47"
+    background: "#fffceb"
+    background-start: "#f4d83d"
+    background-end: "#fff29a"
+    background-glow-a: "#ffdf27"
+    background-glow-b: "#9bad48"
+    surface: "#fffef9"
+    surface-raised: "#fffef9"
+    surface-subtle: "#fffceb"
+    surface-glow: "#fff4a8"
+    text: "#292b20"
+    text-muted: "#62644c"
+    accent: "#6c842d"
+    accent-strong: "#465b1c"
+    pill-background: "#e7edbc"
+    pill-text: "#526925"
+    border: "#d8ce73"
+    success: "#557b34"
+    warning: "#8d6500"
+    danger: "#b93d49"
     focus: "#426fc2"
   gradients:
     page: {kind: linear, angle: 150, stops: [{color: "#ffffff", position: 0}, {color: "#f5db24", position: 100}]}
     hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f3e675", position: 100}]}
-  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1150", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

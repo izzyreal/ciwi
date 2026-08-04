@@ -52,3 +52,11 @@ func TestParseThemeRequiresSemanticTokens(t *testing.T) {
 		t.Fatalf("ParseTheme() error = %v", err)
 	}
 }
+
+func TestParseThemeRejectsInvalidDimension(t *testing.T) {
+	payload := strings.Replace(validTheme, "  gradients:\n", "  dimensions: {text-body: nope}\n  gradients:\n", 1)
+	_, err := ParseTheme([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "text-body") {
+		t.Fatalf("ParseTheme() error = %v", err)
+	}
+}

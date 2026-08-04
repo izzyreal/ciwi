@@ -25,6 +25,7 @@ type Options struct {
 	Address string
 	Theme   string
 	Version string
+	Route   string
 }
 
 type commandRequest struct {
@@ -76,26 +77,76 @@ func connectNativeSession(ctx context.Context, address, version string) (*native
 	}
 	connectCtx, cancelConnect := context.WithTimeout(ctx, 8*time.Second)
 	defer cancelConnect()
-	errorsByTarget := make([]error, 0, len(targets))
-	for _, target := range targets {
-		dialCtx, cancelDial := context.WithTimeout(connectCtx, 3*time.Second)
-		client, dialErr := cnpclient.Dial(dialCtx, target, "ciwi-desktop", version)
-		cancelDial()
-		if dialErr != nil {
-			errorsByTarget = append(errorsByTarget, fmt.Errorf("%s: %w", target, dialErr))
-			continue
-		}
-		watchCtx, cancelWatch := context.WithCancel(ctx)
-		changes, watchErrors, watchErr := client.WatchChanges(watchCtx)
-		if watchErr != nil {
-			cancelWatch()
-			_ = client.Close()
-			errorsByTarget = append(errorsByTarget, fmt.Errorf("%s: start live updates: %w", target, watchErr))
-			continue
-		}
-		return &nativeSession{client: client, address: target, changes: changes, watchErrors: watchErrors, cancelWatch: cancelWatch}, nil
+	client, target, err := dialNativeTargets(connectCtx, targets, version)
+	if err != nil {
+		return nil, fmt.Errorf("connect to ciwi native endpoint: %w", err)
 	}
-	return nil, fmt.Errorf("connect to ciwi native endpoint: %w", errors.Join(errorsByTarget...))
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	changes, watchErrors, watchErr := client.WatchChanges(watchCtx)
+	if watchErr != nil {
+		cancelWatch()
+		_ = client.Close()
+		return nil, fmt.Errorf("connect to ciwi native endpoint: %s: start live updates: %w", target, watchErr)
+	}
+	return &nativeSession{client: client, address: target, changes: changes, watchErrors: watchErrors, cancelWatch: cancelWatch}, nil
+}
+
+type nativeDialResult struct {
+	index  int
+	target string
+	client *cnpclient.Client
+	err    error
+}
+
+func dialNativeTargets(ctx context.Context, targets []string, version string) (*cnpclient.Client, string, error) {
+	return dialNativeTargetsWith(ctx, targets, version, cnpclient.Dial)
+}
+
+func dialNativeTargetsWith(
+	ctx context.Context,
+	targets []string,
+	version string,
+	dial func(context.Context, string, string, string) (*cnpclient.Client, error),
+) (*cnpclient.Client, string, error) {
+	if len(targets) == 0 {
+		return nil, "", fmt.Errorf("no native endpoint targets")
+	}
+	raceCtx, cancelRace := context.WithCancel(ctx)
+	defer cancelRace()
+	results := make(chan nativeDialResult, len(targets))
+	for index, target := range targets {
+		go func() {
+			dialCtx, cancelDial := context.WithTimeout(raceCtx, 3*time.Second)
+			defer cancelDial()
+			client, err := dial(dialCtx, target, "ciwi-desktop", version)
+			results <- nativeDialResult{index: index, target: target, client: client, err: err}
+		}()
+	}
+	errorsByTarget := make([]error, len(targets))
+	var winner nativeDialResult
+	for range targets {
+		result := <-results
+		if result.err != nil {
+			errorsByTarget[result.index] = fmt.Errorf("%s: %w", result.target, result.err)
+			continue
+		}
+		if winner.client == nil {
+			winner = result
+			cancelRace()
+			continue
+		}
+		_ = result.client.Close()
+	}
+	if winner.client != nil {
+		return winner.client, winner.target, nil
+	}
+	joined := make([]error, 0, len(errorsByTarget))
+	for _, err := range errorsByTarget {
+		if err != nil {
+			joined = append(joined, err)
+		}
+	}
+	return nil, "", errors.Join(joined...)
 }
 
 func (s *nativeSession) close() {
@@ -190,6 +241,11 @@ func bufferedOutputBytes(events []*cnpv1.JobOutputEvent) int {
 }
 
 func Run(options Options) error {
+	if strings.TrimSpace(options.Route) != "" {
+		if _, err := navigationForRoute(options.Route); err != nil {
+			return fmt.Errorf("initial native route: %w", err)
+		}
+	}
 	frontPageScreen, err := sharedUI.LoadScreen("front-page")
 	if err != nil {
 		return err
@@ -265,6 +321,19 @@ func Run(options Options) error {
 			preferences.Disclosures = states
 		}); err != nil {
 			renderer.SetStatus("Disclosure state could not be saved: " + err.Error())
+		}
+	})
+	renderer.SetViewStates(preferences.Views)
+	renderer.SetViewChange(func(states map[string]string) {
+		if err := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
+			if preferences.Views == nil {
+				preferences.Views = map[string]string{}
+			}
+			for key, mode := range states {
+				preferences.Views[key] = mode
+			}
+		}); err != nil {
+			renderer.SetStatus("View preference could not be saved: " + err.Error())
 		}
 	})
 	renderer.SetInvalidate(window.Invalidate)
@@ -368,6 +437,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		}
 	}()
 	navigation := navigationState{screen: "front-page"}
+	if strings.TrimSpace(options.Route) != "" {
+		navigation, _ = navigationForRoute(options.Route)
+	}
 	resumeNavigation := navigation
 	if initialConnectErr != nil {
 		navigation.screen = "connection"
@@ -1500,9 +1572,33 @@ func frontPageBindingData(view *cnpv1.FrontPageView) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("front-page binding is malformed")
 	}
+	decorateFrontPageProjects(root["projects"])
 	decorateExecutionCards(root["queued_executions"], true)
 	decorateExecutionCards(root["history_executions"], false)
+	queued, _ := root["queued_executions"].([]any)
+	history, _ := root["history_executions"].([]any)
+	root["queued_empty"] = len(queued) == 0
+	root["history_empty"] = len(history) == 0
 	return data, nil
+}
+
+func decorateFrontPageProjects(value any) {
+	projects, ok := value.([]any)
+	if !ok {
+		return
+	}
+	for _, raw := range projects {
+		project, projectOK := raw.(map[string]any)
+		if !projectOK {
+			continue
+		}
+		pipelines, _ := project["pipelines"].([]any)
+		label := "pipelines"
+		if len(pipelines) == 1 {
+			label = "pipeline"
+		}
+		project["pipeline_count_label"] = fmt.Sprintf("%d %s", len(pipelines), label)
+	}
 }
 
 func decorateExecutionCards(value any, queued bool) {
@@ -1564,7 +1660,113 @@ func numberValue(value any) float64 {
 }
 
 func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, error) {
-	return protobufBindingData("projectDetails", "project-details", view)
+	data, err := protobufBindingData("projectDetails", "project-details", view)
+	if err != nil {
+		return nil, err
+	}
+	root, ok := data["projectDetails"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("project-details binding is malformed")
+	}
+	decorateProjectDetails(root)
+	return data, nil
+}
+
+func decorateProjectDetails(root map[string]any) {
+	if project, ok := root["project"].(map[string]any); ok {
+		metadata := make([]string, 0, 2)
+		if repoRef := strings.TrimSpace(fmt.Sprint(project["repo_ref"])); repoRef != "" {
+			metadata = append(metadata, "branch: "+repoRef)
+		}
+		if configFile := strings.TrimSpace(fmt.Sprint(project["config_file"])); configFile != "" {
+			metadata = append(metadata, configFile)
+		}
+		project["source_metadata"] = strings.Join(metadata, " · ")
+		chains, _ := project["pipeline_chains"].([]any)
+		project["has_pipeline_chains"] = len(chains) > 0
+	}
+	pipelines, _ := root["pipelines"].([]any)
+	for _, rawPipeline := range pipelines {
+		pipeline, pipelineOK := rawPipeline.(map[string]any)
+		if !pipelineOK {
+			continue
+		}
+		jobsCount := int(numberValue(pipeline["jobs_count"]))
+		jobNoun := "jobs"
+		if jobsCount == 1 {
+			jobNoun = "job"
+		}
+		dependencies := strings.TrimSpace(fmt.Sprint(pipeline["dependencies"]))
+		if dependencies == "" {
+			dependencies = "none"
+		}
+		pipeline["summary_label"] = fmt.Sprintf("%d %s · depends on: %s", jobsCount, jobNoun, dependencies)
+		dependsOn, _ := pipeline["depends_on"].([]any)
+		dependencyNoun := "dependencies"
+		if len(dependsOn) == 1 {
+			dependencyNoun = "dependency"
+		}
+		pipeline["graph_summary_label"] = fmt.Sprintf("%d %s · %d %s", jobsCount, jobNoun, len(dependsOn), dependencyNoun)
+		jobs, _ := pipeline["jobs"].([]any)
+		for _, rawJob := range jobs {
+			job, jobOK := rawJob.(map[string]any)
+			if !jobOK {
+				continue
+			}
+			stepsCount := int(numberValue(job["steps_count"]))
+			stepNoun := "steps"
+			if stepsCount == 1 {
+				stepNoun = "step"
+			}
+			runsOn := defaultLabel(job["runs_on_label"], "unspecified")
+			job["needs_label"] = defaultLabel(job["needs_label"], "none")
+			job["tools_label"] = defaultLabel(job["tools_label"], "none")
+			job["summary_label"] = fmt.Sprintf("%d %s · runs on: %s", stepsCount, stepNoun, runsOn)
+			job["timeout_label"] = fmt.Sprintf("Timeout: %ds", int(numberValue(job["timeout_seconds"])))
+			matrixCount := int(numberValue(job["matrix_count"]))
+			if matrixCount == 0 {
+				job["matrix_label"] = "Matrix: none"
+			} else {
+				matrixNoun := "executions"
+				if matrixCount == 1 {
+					matrixNoun = "execution"
+				}
+				job["matrix_label"] = fmt.Sprintf("Matrix: %d %s", matrixCount, matrixNoun)
+			}
+			steps, _ := job["steps"].([]any)
+			for _, rawStep := range steps {
+				step, stepOK := rawStep.(map[string]any)
+				if !stepOK {
+					continue
+				}
+				step["environment_label"] = stringListLabel(step["environment"])
+				if strings.TrimSpace(fmt.Sprint(step["command"])) == "" {
+					step["command"] = "(no command)"
+				}
+			}
+		}
+	}
+}
+
+func defaultLabel(value any, fallback string) string {
+	if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
+		return text
+	}
+	return fallback
+}
+
+func stringListLabel(value any) string {
+	items, ok := value.([]any)
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 
 func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {

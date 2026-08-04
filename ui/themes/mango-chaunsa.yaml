@@ -3,19 +3,27 @@ kind: Theme
 metadata: {name: mango-chaunsa, title: Mango Chaunsa, description: "Honey yellow, soft green and sunlit flesh"}
 theme:
   colors:
-    background: "#fff8c9"
-    surface: "#fffdf0"
-    surface-subtle: "#f8ed9d"
-    text: "#393113"
-    text-muted: "#71683d"
-    accent: "#dba918"
-    accent-strong: "#768432"
-    border: "#ddcf73"
-    success: "#6e983d"
-    warning: "#d89011"
-    danger: "#b9553e"
+    background: "#fff8d9"
+    background-start: "#f4c63e"
+    background-end: "#ef9b2f"
+    background-glow-a: "#ffe260"
+    background-glow-b: "#e78a24"
+    surface: "#fffdf2"
+    surface-raised: "#fffdf2"
+    surface-subtle: "#fff9df"
+    surface-glow: "#ffe59a"
+    text: "#392a18"
+    text-muted: "#745d39"
+    accent: "#a96006"
+    accent-strong: "#704004"
+    pill-background: "#f9df9a"
+    pill-text: "#7f4c09"
+    border: "#dfbd70"
+    success: "#5b7d35"
+    warning: "#8c5000"
+    danger: "#ba3f3f"
     focus: "#397ca5"
   gradients:
     page: {kind: linear, angle: 140, stops: [{color: "#fffce5", position: 0}, {color: "#f1cb3f", position: 100}]}
     hero: {kind: radial, stops: [{color: "#fffde7", position: 0}, {color: "#f5dd64", position: 100}]}
-  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1150", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

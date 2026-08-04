@@ -12,6 +12,7 @@ import (
 
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/paint"
 	"gioui.org/widget"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
@@ -30,6 +31,32 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	renderer, err := NewRenderer(screen, theme, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if logo, ok := renderer.images["ciwi-logo"]; !ok || logo.Filter != paint.FilterNearest {
+		t.Fatal("ciwi logo must use nearest-neighbor filtering")
+	}
+	if renderer.theme.Face != ciwiBodyTypeface {
+		t.Fatalf("native body typeface = %q, want browser stack %q", renderer.theme.Face, ciwiBodyTypeface)
+	}
+	wantAccentStrong, err := parseColor(theme.Theme.Colors["accent-strong"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renderer.palette.accentStrong != wantAccentStrong {
+		t.Fatalf("native strong accent = %v, want shared theme token %v", renderer.palette.accentStrong, wantAccentStrong)
+	}
+	wantPill, err := parseColor(theme.Theme.Colors["pill-background"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renderer.palette.pillBackground != wantPill {
+		t.Fatalf("native pill background = %v, want shared theme token %v", renderer.palette.pillBackground, wantPill)
+	}
+	if renderer.metrics.textBody != 16 || renderer.metrics.textControl != 14 || renderer.metrics.textHeading != 18 || renderer.metrics.textTitle != 28 {
+		t.Fatalf("native type scale = body %v control %v heading %v title %v, want browser 16/14/18/28", renderer.metrics.textBody, renderer.metrics.textControl, renderer.metrics.textHeading, renderer.metrics.textTitle)
+	}
+	if renderer.metrics.heroPadding != 16 || renderer.metrics.imageBrandWidth != 110 || renderer.metrics.imageBrandHeight != 91 {
+		t.Fatalf("native masthead metrics = padding %v image %vx%v, want browser 16 and 110x91", renderer.metrics.heroPadding, renderer.metrics.imageBrandWidth, renderer.metrics.imageBrandHeight)
 	}
 	if !renderer.statusText.ReadOnly {
 		t.Fatal("status text must remain selectable but read-only")
@@ -53,19 +80,47 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	}
 	var foundTitle bool
 	var foundChain bool
+	var foundPipelineCount bool
+	var foundQueuedEmpty bool
+	var foundHistoryEmpty bool
 	for _, selectable := range renderer.selectables {
-		if selectable.Text() == "ciwi v0.2.0" {
+		if selectable.Text() == "ciwi" {
 			foundTitle = true
 		}
 		if selectable.Text() == "Chain: Build and release" {
 			foundChain = true
 		}
+		if selectable.Text() == "1 pipeline" {
+			foundPipelineCount = true
+		}
+		if selectable.Text() == "No queued jobs." {
+			foundQueuedEmpty = true
+		}
+		if selectable.Text() == "No execution history." {
+			foundHistoryEmpty = true
+		}
 	}
 	if !foundTitle {
 		t.Fatal("front-page title is not rendered as selectable text")
 	}
+	var foundVersion bool
+	for _, selectable := range renderer.selectables {
+		if selectable.Text() == "v0.2.0" {
+			foundVersion = true
+			break
+		}
+	}
+	if !foundVersion {
+		t.Fatal("front-page version is not rendered as a compact badge")
+	}
 	if !foundChain {
 		t.Fatal("front-page pipeline chain is not rendered")
+	}
+	if !foundPipelineCount {
+		t.Fatal("front-page project summary does not show its compact pipeline count")
+	}
+	if !foundQueuedEmpty || !foundHistoryEmpty {
+		t.Fatalf("front-page empty states = queued %v history %v, want both visible", foundQueuedEmpty, foundHistoryEmpty)
 	}
 	buttonsWithDryRun := len(renderer.buttons)
 	view := &cnpv1.FrontPageView{
@@ -93,12 +148,7 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if _, ok := renderer.images["ciwi-logo"]; !ok {
 		t.Fatal("embedded ciwi logo is unavailable to the native renderer")
 	}
-	for _, selectable := range renderer.selectables {
-		if selectable.Text() == "ciwi" {
-			t.Fatal("image was rendered as placeholder text")
-		}
-	}
-	if renderer.icons["settings"] == nil || renderer.icons["player-play"] == nil || renderer.icons["arrow-left"] == nil || renderer.icons["trash"] == nil {
+	if renderer.icons["settings"] == nil || renderer.icons["player-play"] == nil || renderer.icons["arrow-left"] == nil || renderer.icons["trash"] == nil || renderer.icons["zoom-in"] == nil || renderer.icons["zoom-out"] == nil {
 		t.Fatal("declared screen icons are unavailable to the native renderer")
 	}
 }
@@ -158,6 +208,20 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 	if historyDisclosure == "" {
 		t.Fatal("history execution is not rendered as a disclosure")
 	}
+	if summary := renderer.selectable(historyDisclosure + "/summary/0"); summary.Text() != "1/1 successful" {
+		t.Fatalf("history summary = %q", summary.Text())
+	}
+	deleteButton := renderer.buttons[historyDisclosure+"/summary/1"]
+	if deleteButton == nil {
+		t.Fatal("collapsed history execution does not expose its delete action")
+	}
+	deleteButton.Click()
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if renderer.pending == nil || renderer.pending.action.Command != "delete-execution" {
+		t.Fatal("history header delete action did not request confirmation")
+	}
+	renderer.pending = nil
 	label := renderer.selectable(historyDisclosure + "/label")
 	label.SetCaret(0, 2)
 	renderer.button(historyDisclosure + "/disclosure-label").Click()
@@ -204,7 +268,8 @@ func TestRendererPersistsProjectDisclosureAndBulkExecutionState(t *testing.T) {
 	data, err := frontPageBindingData(&cnpv1.FrontPageView{
 		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
 		Projects: []*cnpv1.ProjectSummary{{
-			Id: 1, Name: "ciwi", Pipelines: []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build"}},
+			Id: 1, Name: "ciwi", RepoUrl: "https://github.com/izzyreal/ciwi", RepoRef: "main", ConfigFile: "ciwi-project.yaml",
+			Pipelines: []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build"}},
 		}},
 		HistoryExecutions: []*cnpv1.ExecutionCardSummary{{
 			Key: "pipeline:build", Title: "ciwi build", Summary: &cnpv1.ExecutionSummary{TotalJobs: 1, Succeeded: 1},
@@ -222,7 +287,7 @@ func TestRendererPersistsProjectDisclosureAndBulkExecutionState(t *testing.T) {
 	}
 	var projectPath string
 	for path, selectable := range renderer.selectables {
-		if selectable.Text() == "Project: ciwi" && strings.HasSuffix(path, "/label") {
+		if selectable.Text() == "Project:" && strings.HasSuffix(path, "/label") {
 			projectPath = strings.TrimSuffix(path, "/label")
 			break
 		}
@@ -230,12 +295,36 @@ func TestRendererPersistsProjectDisclosureAndBulkExecutionState(t *testing.T) {
 	if projectPath == "" {
 		t.Fatal("project disclosure label was not rendered")
 	}
-	renderer.button(projectPath + "/disclosure-toggle").Click()
+	summaryLabels := map[string]bool{}
+	for _, selectable := range renderer.selectables {
+		summaryLabels[selectable.Text()] = true
+	}
+	for _, expected := range []string{"ciwi", "https://github.com/izzyreal/ciwi", "branch:main", "ciwi-project.yaml", "1 pipeline"} {
+		if !summaryLabels[expected] {
+			t.Errorf("collapsed project summary is missing %q", expected)
+		}
+	}
+	renderer.button(projectPath + "/disclosure-header").Click()
 	operations.Reset()
 	renderer.Layout(gtx)
 	if renderer.disclosures["front-project:1"] || persisted["front-project:1"] {
 		t.Fatalf("collapsed project state was not persisted: state=%v persisted=%v", renderer.disclosures, persisted)
 	}
+	renderer.button(projectPath + "/disclosure-header").Click()
+	operations.Reset()
+	renderer.Layout(gtx)
+	if !renderer.disclosures["front-project:1"] || !persisted["front-project:1"] {
+		t.Fatalf("clicking the project row did not expand it: state=%v persisted=%v", renderer.disclosures, persisted)
+	}
+	projectName := renderer.selectable(projectPath + "/summary/0")
+	projectName.SetCaret(0, 2)
+	renderer.button(projectPath + "/disclosure-header").Click()
+	operations.Reset()
+	renderer.Layout(gtx)
+	if !renderer.disclosures["front-project:1"] {
+		t.Fatal("selecting project-row text unexpectedly collapsed the project")
+	}
+	projectName.ClearSelection()
 	renderer.dispatchFromLayout(gtx, uidsl.Action{
 		Command: "set-disclosures", Arguments: map[string]string{"prefix": "front-history:", "expanded": "true"},
 	}, data)
@@ -264,8 +353,8 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 		Pipelines: []*cnpv1.ProjectPipelineDetails{{
 			Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 1, SupportsDryRun: true,
 			Jobs: []*cnpv1.ProjectJobDetails{{
-				Id: "compile", StepsCount: 1, SupportsDryRun: true,
-				Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Compile", Type: "run"}},
+				Id: "compile", StepsCount: 1, SupportsDryRun: true, RunsOnLabel: "darwin/arm64", ToolsLabel: "go=1.25", TimeoutSeconds: 600, MatrixCount: 1,
+				Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Compile", Type: "run", Command: "go build ./...", Environment: []string{"CGO_ENABLED=1"}, SkipDryRun: true}},
 			}},
 		}},
 	})
@@ -273,6 +362,7 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	renderer.SetData(data)
+	renderer.SetViewStates(map[string]string{"project-structure:1": "list"})
 	var operations op.Ops
 	dimensions := renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if dimensions.Size != image.Pt(1100, 760) {
@@ -281,7 +371,7 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	if got := len(renderer.buttons); got < 8 {
 		t.Fatalf("project details did not expose chain, pipeline, dry-run, and job controls: %d widgets", got)
 	}
-	var foundJob, foundChain bool
+	var foundJob, foundChain, foundChainSequence, foundPipelineSummary, foundJobSummary bool
 	for _, selectable := range renderer.selectables {
 		if selectable.Text() == "Job: compile" {
 			foundJob = true
@@ -289,12 +379,132 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 		if selectable.Text() == "Chain: Build and release" {
 			foundChain = true
 		}
+		if selectable.Text() == "1 job · depends on: none" {
+			foundPipelineSummary = true
+		}
+		if selectable.Text() == "1 step · runs on: darwin/arm64" {
+			foundJobSummary = true
+		}
+	}
+	for _, editor := range renderer.textEditors {
+		if editor.Text() == "build → release" {
+			foundChainSequence = true
+			if editor.SingleLine {
+				t.Fatal("long monospace chain labels must remain wrap-capable")
+			}
+		}
 	}
 	if !foundJob {
 		t.Fatal("pipeline did not default to expanded")
 	}
 	if !foundChain {
 		t.Fatal("project pipeline chain was not rendered")
+	}
+	if !foundChainSequence {
+		t.Fatal("project pipeline sequence was not rendered through the monospace text path")
+	}
+	if !foundPipelineSummary || !foundJobSummary {
+		t.Fatalf("project summaries missing: pipeline=%v job=%v", foundPipelineSummary, foundJobSummary)
+	}
+	if !renderer.disclosures["project-pipeline:1:7"] {
+		t.Fatal("pipeline disclosure did not use its stable expanded state")
+	}
+	renderer.disclosures["project-job:1:7:compile"] = true
+	renderer.disclosures["project-step:1:7:compile:0"] = true
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	var foundCommand, foundEnvironment, foundDryRunNotice bool
+	for _, selectable := range renderer.selectables {
+		switch selectable.Text() {
+		case "go build ./...":
+			foundCommand = true
+		case "Environment: CGO_ENABLED=1":
+			foundEnvironment = true
+		case "Skipped during dry runs":
+			foundDryRunNotice = true
+		}
+	}
+	for _, editor := range renderer.textEditors {
+		if editor.Text() == "go build ./..." {
+			foundCommand = true
+		}
+	}
+	if !foundCommand || !foundEnvironment || !foundDryRunNotice {
+		t.Fatalf("configured step details missing: command=%v environment=%v dry-run=%v", foundCommand, foundEnvironment, foundDryRunNotice)
+	}
+}
+
+func TestRendererLaysOutPersistentProjectPipelineGraph(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("project-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
+		Project: &cnpv1.ProjectSummary{Id: 41, Name: "ciwi"},
+		Pipelines: []*cnpv1.ProjectPipelineDetails{
+			{Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 2},
+			{Id: 8, PipelineId: "release", DependsOn: []string{"build"}, Dependencies: "build", JobsCount: 1},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	var operations op.Ops
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	if mode := renderer.viewModes["project-structure:41"]; mode != "graph" {
+		t.Fatalf("default graph mode = %q", mode)
+	}
+	var foundBuild, foundRelease, foundBuildMeta bool
+	for _, selectable := range renderer.selectables {
+		switch selectable.Text() {
+		case "build":
+			foundBuild = true
+		case "release":
+			foundRelease = true
+		case "2 jobs · 0 dependencies":
+			foundBuildMeta = true
+		}
+	}
+	for _, editor := range renderer.textEditors {
+		switch editor.Text() {
+		case "build":
+			foundBuild = true
+		case "release":
+			foundRelease = true
+		}
+	}
+	if !foundBuild || !foundRelease || !foundBuildMeta {
+		t.Fatalf("graph copy missing: build=%v release=%v meta=%v", foundBuild, foundRelease, foundBuildMeta)
+	}
+	var buildRun, releaseRun bool
+	for path := range renderer.buttons {
+		buildRun = buildRun || strings.HasSuffix(path, "/graph/node/build/run")
+		releaseRun = releaseRun || strings.HasSuffix(path, "/graph/node/release/run")
+	}
+	if !buildRun || !releaseRun {
+		t.Fatal("pipeline graph did not expose per-node run controls")
+	}
+
+	nodes := []*definitionGraphNode{
+		{id: "build"},
+		{id: "sign", dependencies: []string{"build"}},
+		{id: "release", dependencies: []string{"sign"}},
+	}
+	width, height := layoutDefinitionGraph(nodes, 210, 76, 58, 24, 16)
+	if nodes[0].level != 0 || nodes[1].level != 1 || nodes[2].level != 2 {
+		t.Fatalf("dependency levels = %d, %d, %d", nodes[0].level, nodes[1].level, nodes[2].level)
+	}
+	if width <= 3*210 || height < 76 {
+		t.Fatalf("graph dimensions = %dx%d", width, height)
 	}
 }
 

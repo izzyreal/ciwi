@@ -19,7 +19,7 @@ screen:
     id: front-page
     layout:
       direction: vertical
-      gap: large
+      gap: "16"
       padding: large
       maxWidth: page
     children:
@@ -27,7 +27,7 @@ screen:
         id: masthead
         layout:
           direction: horizontal
-          gap: large
+          gap: "12"
           align: center
         style:
           role: hero
@@ -42,12 +42,23 @@ screen:
               gap: small
               grow: true
             children:
-              - component: text
-                text:
-                  template: "ciwi {{frontPage.server.version}}"
-                style:
-                  role: title
-                  emphasis: strong
+              - component: row
+                layout:
+                  direction: horizontal
+                  gap: small
+                  align: center
+                children:
+                  - component: text
+                    text:
+                      literal: ciwi
+                    style:
+                      role: title
+                      emphasis: strong
+                  - component: badge
+                    text:
+                      binding: frontPage.server.version
+                    style:
+                      tone: muted
               - component: text
                 text:
                   literal: Projects, pipelines and job executions
@@ -58,6 +69,8 @@ screen:
             text:
               literal: Agents
             icon: server
+            style:
+              emphasis: strong
             actions:
               - on: activate
                 command: navigate
@@ -67,6 +80,8 @@ screen:
             text:
               literal: Global Settings
             icon: settings
+            style:
+              emphasis: strong
             actions:
               - on: activate
                 command: navigate
@@ -76,7 +91,7 @@ screen:
         id: projects
         layout:
           direction: vertical
-          gap: medium
+          gap: "12"
         children:
           - component: text
             text:
@@ -88,7 +103,7 @@ screen:
             id: project-list
             layout:
               direction: vertical
-              gap: medium
+              gap: "10"
             repeat:
               source: frontPage.projects
               as: project
@@ -96,16 +111,58 @@ screen:
             children:
               - component: disclosure
                 text:
-                  template: "Project: {{project.name}}"
+                  literal: "Project:"
                 disclosure:
                   defaultExpanded: true
                   stateKey: "front-project:{{project.id}}"
+                  summary:
+                    - component: text
+                      text:
+                        binding: project.name
+                      style:
+                        tone: accent
+                        emphasis: strong
+                    - component: badge
+                      text:
+                        binding: project.repo_url
+                      visible:
+                        binding: project.repo_url
+                        empty: true
+                        not: true
+                      style:
+                        tone: muted
+                    - component: badge
+                      text:
+                        template: "branch:{{project.repo_ref}}"
+                      visible:
+                        binding: project.repo_ref
+                        empty: true
+                        not: true
+                      style:
+                        tone: muted
+                    - component: badge
+                      text:
+                        binding: project.config_file
+                      visible:
+                        binding: project.config_file
+                        empty: true
+                        not: true
+                      style:
+                        tone: muted
+                    - component: spacer
+                      layout:
+                        grow: true
+                    - component: badge
+                      text:
+                        binding: project.pipeline_count_label
+                      style:
+                        tone: muted
                 layout:
                   direction: vertical
                   gap: small
-                  padding: medium
+                  padding: "10"
                 style:
-                  role: body
+                  role: project-row
                   emphasis: strong
                 children:
                   - component: row
@@ -276,24 +333,21 @@ screen:
           direction: vertical
           gap: medium
         children:
+          - component: text
+            text:
+              literal: Queued and In Progress Job Executions
+            style:
+              role: heading
+              emphasis: strong
           - component: row
             layout:
               direction: horizontal
               gap: small
               align: center
             children:
-              - component: text
-                text:
-                  literal: Queued and In Progress Job Executions
-                layout:
-                  grow: true
-                style:
-                  role: heading
-                  emphasis: strong
               - component: button
                 text:
                   literal: Clear Queue
-                icon: trash
                 actions:
                   - on: activate
                     command: clear-queue
@@ -304,6 +358,8 @@ screen:
                 text:
                   literal: Collapse All
                 icon: chevrons-up
+                style:
+                  role: icon-button
                 actions:
                   - on: activate
                     command: set-disclosures
@@ -314,12 +370,21 @@ screen:
                 text:
                   literal: Expand All
                 icon: chevrons-down
+                style:
+                  role: icon-button
                 actions:
                   - on: activate
                     command: set-disclosures
                     arguments:
                       prefix: "front-queued:"
                       expanded: "true"
+          - component: text
+            text:
+              literal: No queued jobs.
+            visible:
+              binding: frontPage.queued_empty
+            style:
+              tone: muted
           - component: list
             layout:
               direction: vertical
@@ -332,12 +397,19 @@ screen:
               - component: disclosure
                 disclosure:
                   stateKey: "front-queued:{{execution.key}}"
+                  summary:
+                    - component: text
+                      text:
+                        template: "{{execution.summary.in_progress}} active · {{execution.summary.waiting}} waiting"
+                      style:
+                        toneBinding: execution.status
+                        emphasis: strong
                 layout:
                   direction: vertical
                   gap: small
                   padding: small
                 text:
-                  template: "{{execution.title}} · {{execution.summary.in_progress}} active · {{execution.summary.waiting}} waiting"
+                  binding: execution.title
                 image:
                   asset: ciwi-logo
                   description: ciwi execution
@@ -433,24 +505,21 @@ screen:
           direction: vertical
           gap: medium
         children:
+          - component: text
+            text:
+              literal: Job Execution History
+            style:
+              role: heading
+              emphasis: strong
           - component: row
             layout:
               direction: horizontal
               gap: small
               align: center
             children:
-              - component: text
-                text:
-                  literal: Job Execution History
-                layout:
-                  grow: true
-                style:
-                  role: heading
-                  emphasis: strong
               - component: button
                 text:
                   literal: Flush History
-                icon: trash
                 actions:
                   - on: activate
                     command: flush-history
@@ -461,6 +530,8 @@ screen:
                 text:
                   literal: Collapse All
                 icon: chevrons-up
+                style:
+                  role: icon-button
                 actions:
                   - on: activate
                     command: set-disclosures
@@ -471,12 +542,21 @@ screen:
                 text:
                   literal: Expand All
                 icon: chevrons-down
+                style:
+                  role: icon-button
                 actions:
                   - on: activate
                     command: set-disclosures
                     arguments:
                       prefix: "front-history:"
                       expanded: "true"
+          - component: text
+            text:
+              literal: No execution history.
+            visible:
+              binding: frontPage.history_empty
+            style:
+              tone: muted
           - component: list
             layout:
               direction: vertical
@@ -489,12 +569,33 @@ screen:
               - component: disclosure
                 disclosure:
                   stateKey: "front-history:{{execution.key}}"
+                  summary:
+                    - component: text
+                      text:
+                        template: "{{execution.summary.succeeded}}/{{execution.summary.total_jobs}} successful"
+                      style:
+                        toneBinding: execution.status
+                        emphasis: strong
+                    - component: button
+                      text:
+                        literal: Delete execution
+                      icon: trash
+                      style:
+                        role: icon-button
+                      actions:
+                        - on: activate
+                          command: delete-execution
+                          arguments:
+                            jobExecutionIds: "{{execution.job_execution_ids_csv}}"
+                          confirm:
+                            title: Delete this execution?
+                            message: Removes this execution's terminal job records and server-side artifacts. It does not clear caches or workspaces on agents, and it does not affect queued or running jobs.
                 layout:
                   direction: vertical
                   gap: small
                   padding: small
                 text:
-                  template: "{{execution.title}} · {{execution.summary.succeeded}}/{{execution.summary.total_jobs}} successful"
+                  binding: execution.title
                 image:
                   asset: ciwi-logo
                   description: ciwi execution
@@ -503,26 +604,6 @@ screen:
                   emphasis: strong
                   toneBinding: execution.status
                 children:
-                  - component: row
-                    layout:
-                      direction: horizontal
-                      align: center
-                    children:
-                      - component: spacer
-                        layout:
-                          grow: true
-                      - component: button
-                        text:
-                          literal: Delete execution
-                        icon: trash
-                        actions:
-                          - on: activate
-                            command: delete-execution
-                            arguments:
-                              jobExecutionIds: "{{execution.job_execution_ids_csv}}"
-                            confirm:
-                              title: Delete this execution?
-                              message: Removes this execution's terminal job records and server-side artifacts. It does not clear caches or workspaces on agents, and it does not affect queued or running jobs.
                   - component: text
                     text:
                       template: "{{execution.summary.succeeded}} succeeded · {{execution.summary.failed}} failed · {{execution.summary.total_jobs}} total"

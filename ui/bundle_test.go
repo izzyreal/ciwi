@@ -57,6 +57,26 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if len(themes) != 9 {
 		t.Fatalf("theme count = %d, want 9", len(themes))
 	}
+	for _, theme := range themes {
+		for _, token := range []string{
+			"background-start", "background-end", "background-glow-a", "background-glow-b",
+			"surface-raised", "surface-glow", "pill-background", "pill-text",
+		} {
+			if theme.Theme.Colors[token] == "" {
+				t.Errorf("theme %q is missing shared visual color %q", theme.Metadata.Name, token)
+			}
+		}
+		for _, token := range []string{
+			"small", "medium", "large", "page", "page-inset", "section-padding", "card-padding", "hero-padding",
+			"surface-radius", "control-radius", "control-padding-x", "control-padding-y",
+			"text-body", "text-control", "text-code", "text-badge", "text-subtitle", "text-heading", "text-title",
+			"image-brand-width", "image-brand-height",
+		} {
+			if theme.Theme.Dimensions[token] == "" {
+				t.Errorf("theme %q is missing shared visual metric %q", theme.Metadata.Name, token)
+			}
+		}
+	}
 	logo, err := Read("assets/ciwi-logo.png")
 	if err != nil {
 		t.Fatal(err)

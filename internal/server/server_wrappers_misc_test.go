@@ -26,6 +26,19 @@ func TestListenPortFromAddr(t *testing.T) {
 	}
 }
 
+func TestMDNSLocalHostname(t *testing.T) {
+	for input, want := range map[string]string{
+		"bhakti":        "bhakti.local.",
+		"bhakti.local.": "bhakti.local.",
+		"ciwi.example":  "ciwi.example.",
+		"":              "ciwi.local.",
+	} {
+		if got := mdnsLocalHostname(input); got != want {
+			t.Errorf("mdnsLocalHostname(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestFilterAdvertiseIPs(t *testing.T) {
 	v4LAN := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(24, 32)}
 	v4Loop := &net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)}

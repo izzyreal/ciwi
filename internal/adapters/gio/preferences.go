@@ -13,10 +13,11 @@ import (
 )
 
 type nativePreferences struct {
-	Theme          string          `json:"theme"`
-	Disclosures    map[string]bool `json:"disclosures,omitempty"`
-	ConnectionMode string          `json:"connection_mode,omitempty"`
-	ServerEndpoint string          `json:"server_endpoint,omitempty"`
+	Theme          string            `json:"theme"`
+	Disclosures    map[string]bool   `json:"disclosures,omitempty"`
+	Views          map[string]string `json:"views,omitempty"`
+	ConnectionMode string            `json:"connection_mode,omitempty"`
+	ServerEndpoint string            `json:"server_endpoint,omitempty"`
 }
 
 const (

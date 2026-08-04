@@ -4,19 +4,27 @@ metadata: {name: space, title: Space, description: "Deep indigo, starlight and e
 theme:
   dark: true
   colors:
-    background: "#110b2f"
-    surface: "#131b38"
-    surface-subtle: "#1b2347"
-    text: "#f3f3ff"
-    text-muted: "#b9c0df"
-    accent: "#8f78ff"
-    accent-strong: "#65c9ff"
-    border: "#41527b"
-    success: "#59d7a2"
-    warning: "#f0bd62"
-    danger: "#f06c8e"
+    background: "#080d21"
+    background-start: "#2b1855"
+    background-end: "#101c3d"
+    background-glow-a: "#6137a3"
+    background-glow-b: "#167eaa"
+    surface: "#121a35"
+    surface-raised: "#17203e"
+    surface-subtle: "#141d39"
+    surface-glow: "#242052"
+    text: "#f0f3ff"
+    text-muted: "#aab4d5"
+    accent: "#65d5ff"
+    accent-strong: "#a8e9ff"
+    pill-background: "#26365d"
+    pill-text: "#84e3ff"
+    border: "#39466f"
+    success: "#52e2a2"
+    warning: "#ffd166"
+    danger: "#ff6f91"
     focus: "#a98eff"
   gradients:
     page: {kind: linear, angle: 135, stops: [{color: "#24134e", position: 0}, {color: "#07152f", position: 100}]}
     hero: {kind: radial, stops: [{color: "#292f63", position: 0}, {color: "#111a36", position: 100}]}
-  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1150", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

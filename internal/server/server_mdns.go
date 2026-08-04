@@ -63,7 +63,7 @@ func startMDNSService(serverAddr, serviceName string) func() {
 		"version=" + currentVersion(),
 	}
 	ips := discoverAdvertiseIPs()
-	service, err := mdns.NewMDNSService(instance, serviceName, "", "", portNum, ips, meta)
+	service, err := mdns.NewMDNSService(instance, serviceName, "", mdnsLocalHostname(host), portNum, ips, meta)
 	if err != nil {
 		slog.Error("mdns advertise service setup failed", "error", err)
 		return func() {}
@@ -78,6 +78,17 @@ func startMDNSService(serverAddr, serviceName string) func() {
 	return func() {
 		server.Shutdown()
 	}
+}
+
+func mdnsLocalHostname(host string) string {
+	host = strings.Trim(strings.TrimSpace(host), ".")
+	if host == "" {
+		host = "ciwi"
+	}
+	if !strings.Contains(host, ".") {
+		host += ".local"
+	}
+	return host + "."
 }
 
 func discoverAdvertiseIPs() []net.IP {

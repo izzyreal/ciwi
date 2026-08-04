@@ -3,19 +3,27 @@ kind: Theme
 metadata: {name: pina-colada, title: Piña Colada, description: "Pineapple gold, coconut cream and sandy shore"}
 theme:
   colors:
-    background: "#fff7dc"
-    surface: "#fffdf5"
-    surface-subtle: "#f7edc9"
-    text: "#393019"
-    text-muted: "#756949"
-    accent: "#b99612"
-    accent-strong: "#627b29"
-    border: "#dbc982"
-    success: "#668f3b"
-    warning: "#d59415"
-    danger: "#bc5443"
+    background: "#fff8e8"
+    background-start: "#ead29c"
+    background-end: "#f5e497"
+    background-glow-a: "#ffd34f"
+    background-glow-b: "#71bca4"
+    surface: "#fffdf7"
+    surface-raised: "#fffdf7"
+    surface-subtle: "#fffaf0"
+    surface-glow: "#fff0b8"
+    text: "#3c3422"
+    text-muted: "#71664d"
+    accent: "#4f7e49"
+    accent-strong: "#315d38"
+    pill-background: "#e4efd2"
+    pill-text: "#42683d"
+    border: "#dcc99e"
+    success: "#397949"
+    warning: "#996407"
+    danger: "#b9404c"
     focus: "#258aa0"
   gradients:
     page: {kind: linear, angle: 145, stops: [{color: "#fffdf5", position: 0}, {color: "#f2d983", position: 100}]}
     hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f8e6aa", position: 100}]}
-  dimensions: {small: "8", medium: "16", large: "28", page: "1600"}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1150", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

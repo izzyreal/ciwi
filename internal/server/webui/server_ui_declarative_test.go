@@ -37,6 +37,16 @@ func TestProjectDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if screen.Metadata.Name != "project-details" {
 		t.Fatalf("screen = %#v", screen)
 	}
+	if len(screen.Screen.Root.Children) < 2 {
+		t.Fatalf("project screen children = %d", len(screen.Screen.Root.Children))
+	}
+	structure := screen.Screen.Root.Children[1]
+	if structure.Component != "graph-view" || structure.GraphView == nil || structure.GraphView.DefaultMode != "graph" {
+		t.Fatalf("project structure = %#v", structure)
+	}
+	if structure.GraphView.Nodes != "projectDetails.pipelines" || structure.GraphView.Dependencies != "pipeline.depends_on" {
+		t.Fatalf("project graph binding = %#v", structure.GraphView)
+	}
 }
 
 func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
@@ -179,6 +189,49 @@ func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
 	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg#icon-", "node.component === 'select'", "change-theme", "runSelectionFromArguments"} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
+		}
+	}
+}
+
+func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *testing.T) {
+	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stylePayload, err := uiAssets.ReadFile("assets/css/declarative.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptPayload)
+	style := string(stylePayload)
+	for _, expected := range []string{
+		"dimensionVariables", "--ciwi-page-max", "node.disclosure.summary", "dsl-icon-button",
+		"element.append(declarativeIcon(node.icon))", ".dsl-disclosure > summary::after", ".dsl-code-inline",
+		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted",
+	} {
+		if !strings.Contains(script+style, expected) {
+			t.Errorf("declarative renderer does not contain %q", expected)
+		}
+	}
+}
+
+func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *testing.T) {
+	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stylePayload, err := uiAssets.ReadFile("assets/css/declarative.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	implementation := string(scriptPayload) + string(stylePayload)
+	for _, expected := range []string{
+		"ciwi.declarative.views.v1", "renderGraphView", "layoutDefinitionGraph", "renderDefinitionGraph",
+		"requestAnimationFrame(fit)", "bindActions(play, node.actions, graphNode.data)",
+		"dsl-definition-graph-viewport", "dsl-definition-graph-node-play",
+	} {
+		if !strings.Contains(implementation, expected) {
+			t.Errorf("declarative graph renderer does not contain %q", expected)
 		}
 	}
 }

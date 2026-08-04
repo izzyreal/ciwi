@@ -12,6 +12,35 @@ const ciwiThemeNames = new Set([
   'dragon-fruit',
 ]);
 const ciwiDarkThemeNames = new Set(['jungle', 'space']);
+let ciwiThemeContractsPromise;
+
+function ciwiApplyContractTheme(name) {
+  if (!ciwiThemeContractsPromise) {
+    ciwiThemeContractsPromise = fetch('/ui/contracts/themes.json', {cache: 'force-cache'})
+      .then(response => response.ok ? response.json() : Promise.reject(new Error('theme contracts unavailable')))
+      .catch(() => []);
+  }
+  ciwiThemeContractsPromise.then(documents => {
+    if (document.documentElement.getAttribute('data-ciwi-theme') !== name) return;
+    const documentTheme = documents.find(item => item && item.metadata && item.metadata.name === name)
+      || documents.find(item => item && item.metadata && item.metadata.name === 'default');
+    const colors = documentTheme && documentTheme.theme && documentTheme.theme.colors;
+    if (!colors) return;
+    const mapping = {
+      background: '--bg', 'background-start': '--bg2', 'background-end': '--bg3',
+      'background-glow-a': '--bg-glow-a', 'background-glow-b': '--bg-glow-b',
+      surface: '--card', 'surface-raised': '--surface', 'surface-subtle': '--surface-subtle',
+      'surface-glow': '--card-glow', text: '--ink', 'text-muted': '--muted',
+      accent: '--accent', 'accent-strong': '--accent-strong', border: '--line',
+      success: '--ok', warning: '--warn', danger: '--bad',
+      'pill-background': '--pill-bg', 'pill-text': '--pill-ink',
+    };
+    const style = document.documentElement.style;
+    Object.entries(mapping).forEach(([token, variable]) => {
+      if (colors[token]) style.setProperty(variable, colors[token]);
+    });
+  });
+}
 
 function ciwiNormalizeTheme(theme) {
   const normalized = String(theme || '').trim().toLowerCase();
@@ -29,6 +58,7 @@ function ciwiApplyTheme(theme, persist) {
   if (persist !== false) {
     try { localStorage.setItem(ciwiThemeStorageKey, normalized); } catch (_) {}
   }
+  ciwiApplyContractTheme(normalized);
   window.dispatchEvent(new CustomEvent('ciwi-theme-change', { detail: { theme: normalized } }));
   return normalized;
 }

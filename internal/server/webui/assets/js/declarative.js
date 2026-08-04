@@ -8,6 +8,22 @@
   let currentData = null;
   const disclosureStorageKey = 'ciwi.declarative.disclosures.v1';
   const disclosureStates = loadDisclosureStates();
+  const viewStorageKey = 'ciwi.declarative.views.v1';
+  const viewStates = loadViewStates();
+
+  const dimensionVariables = {
+    small: '--ciwi-space-small', medium: '--ciwi-space-medium', large: '--ciwi-space-large',
+    page: '--ciwi-page-max', 'page-inset': '--ciwi-page-inset',
+    'section-padding': '--ciwi-section-padding', 'card-padding': '--ciwi-card-padding',
+    'hero-padding': '--ciwi-hero-padding', 'surface-radius': '--ciwi-surface-radius',
+    'control-radius': '--ciwi-control-radius', 'control-padding-x': '--ciwi-control-padding-x',
+    'control-padding-y': '--ciwi-control-padding-y', 'text-body': '--ciwi-text-body',
+    'text-control': '--ciwi-text-control',
+    'text-code': '--ciwi-text-code', 'text-badge': '--ciwi-text-badge',
+    'text-subtitle': '--ciwi-text-subtitle', 'text-heading': '--ciwi-text-heading',
+    'text-title': '--ciwi-text-title', 'image-brand-width': '--ciwi-image-brand-width',
+    'image-brand-height': '--ciwi-image-brand-height',
+  };
 
   function loadDisclosureStates() {
     try {
@@ -18,6 +34,17 @@
 
   function saveDisclosureStates() {
     try { localStorage.setItem(disclosureStorageKey, JSON.stringify(disclosureStates)); } catch (_) {}
+  }
+
+  function loadViewStates() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(viewStorageKey) || '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) { return {}; }
+  }
+
+  function saveViewStates() {
+    try { localStorage.setItem(viewStorageKey, JSON.stringify(viewStates)); } catch (_) {}
   }
 
   function gradientCSS(gradient) {
@@ -35,17 +62,32 @@
     if (!documentTheme) return;
     const theme = documentTheme.theme || {};
     const colors = theme.colors || {};
+	const dimensions = theme.dimensions || {};
     const style = document.documentElement.style;
     const mapping = {
       background: '--bg', surface: '--surface', 'surface-subtle': '--surface-subtle',
+      'surface-raised': '--surface-raised', 'surface-glow': '--card-glow',
+      'background-start': '--bg2', 'background-end': '--bg3',
+      'background-glow-a': '--bg-glow-a', 'background-glow-b': '--bg-glow-b',
+      'pill-background': '--pill-bg', 'pill-text': '--pill-ink',
       text: '--ink', 'text-muted': '--muted', accent: '--accent', 'accent-strong': '--accent-strong',
       border: '--line', success: '--ok', warning: '--warn', danger: '--bad', focus: '--focus-ring',
     };
     Object.entries(mapping).forEach(([token, variable]) => { if (colors[token]) style.setProperty(variable, colors[token]); });
+	Object.entries(dimensionVariables).forEach(([token, variable]) => {
+	  if (dimensions[token] !== undefined) style.setProperty(variable, String(dimensions[token]) + 'px');
+	});
     const page = gradientCSS(theme.gradients && theme.gradients.page);
     const hero = gradientCSS(theme.gradients && theme.gradients.hero);
     if (page) style.setProperty('--page-background', page);
     if (hero) style.setProperty('--chrome-card-bg', hero);
+    if (colors['background-start'] && colors['background-end'] && colors['background-glow-a'] && colors['background-glow-b']) {
+      style.setProperty('--page-background', 'radial-gradient(circle at 12% -10%, color-mix(in srgb, var(--bg-glow-a) 86%, transparent) 0%, transparent 38%), radial-gradient(circle at 90% 8%, color-mix(in srgb, var(--bg-glow-b) 82%, transparent) 0%, transparent 34%), linear-gradient(145deg, var(--bg2) 0%, var(--bg) 48%, var(--bg3) 100%)');
+    }
+    if (colors['surface-glow']) {
+      style.setProperty('--ciwi-card-background', 'radial-gradient(circle at 100% 0%, var(--card-glow) 0%, transparent 38%), linear-gradient(145deg, var(--surface) 0%, var(--surface-subtle) 100%)');
+      style.setProperty('--chrome-card-bg', 'var(--ciwi-card-background)');
+    }
   }
 
   function resolve(data, path) {
@@ -84,6 +126,43 @@
     });
   }
 
+  function decorateFrontPageProjects(projects) {
+	(Array.isArray(projects) ? projects : []).forEach(project => {
+	  const count = Array.isArray(project.pipelines) ? project.pipelines.length : 0;
+	  project.pipeline_count_label = String(count) + (count === 1 ? ' pipeline' : ' pipelines');
+	});
+  }
+
+  function decorateProjectDetails(view) {
+	const project = (view && view.project) || {};
+	const sourceMetadata = [];
+	if (String(project.repo_ref || '').trim()) sourceMetadata.push('branch: ' + String(project.repo_ref).trim());
+	if (String(project.config_file || '').trim()) sourceMetadata.push(String(project.config_file).trim());
+	project.source_metadata = sourceMetadata.join(' · ');
+	project.has_pipeline_chains = Array.isArray(project.pipeline_chains) && project.pipeline_chains.length > 0;
+	(Array.isArray(view && view.pipelines) ? view.pipelines : []).forEach(pipeline => {
+	  const jobsCount = Number(pipeline.jobs_count || 0);
+	  const dependencies = String(pipeline.dependencies || '').trim() || 'none';
+	  pipeline.summary_label = String(jobsCount) + (jobsCount === 1 ? ' job' : ' jobs') + ' · depends on: ' + dependencies;
+	  const dependencyCount = Array.isArray(pipeline.depends_on) ? pipeline.depends_on.length : 0;
+	  pipeline.graph_summary_label = String(jobsCount) + (jobsCount === 1 ? ' job' : ' jobs') + ' · ' + String(dependencyCount) + (dependencyCount === 1 ? ' dependency' : ' dependencies');
+	  (Array.isArray(pipeline.jobs) ? pipeline.jobs : []).forEach(job => {
+		const stepsCount = Number(job.steps_count || 0);
+		job.runs_on_label = String(job.runs_on_label || '').trim() || 'unspecified';
+		job.needs_label = String(job.needs_label || '').trim() || 'none';
+		job.tools_label = String(job.tools_label || '').trim() || 'none';
+		job.summary_label = String(stepsCount) + (stepsCount === 1 ? ' step' : ' steps') + ' · runs on: ' + job.runs_on_label;
+		job.timeout_label = 'Timeout: ' + String(Number(job.timeout_seconds || 0)) + 's';
+		const matrixCount = Number(job.matrix_count || 0);
+		job.matrix_label = matrixCount === 0 ? 'Matrix: none' : ('Matrix: ' + String(matrixCount) + (matrixCount === 1 ? ' execution' : ' executions'));
+		(Array.isArray(job.steps) ? job.steps : []).forEach(step => {
+		  step.environment_label = (Array.isArray(step.environment) ? step.environment : []).map(String).filter(Boolean).join(' · ');
+		  if (!String(step.command || '').trim()) step.command = '(no command)';
+		});
+	  });
+	});
+  }
+
   function withWebOverride(node) {
     const override = node.overrides && node.overrides.web;
     if (!override) return node;
@@ -96,7 +175,7 @@
 
   function applyLayout(element, layout) {
     if (!layout) return;
-    const sizes = { small: '8px', medium: '16px', large: '28px' };
+    const sizes = { small: 'var(--ciwi-space-small)', medium: 'var(--ciwi-space-medium)', large: 'var(--ciwi-space-large)' };
     if (layout.direction === 'horizontal') element.style.flexDirection = 'row';
     if (layout.direction === 'vertical') element.style.flexDirection = 'column';
     if (layout.gap) element.style.gap = sizes[layout.gap] || layout.gap;
@@ -395,6 +474,223 @@
     });
   }
 
+  function declarativeIcon(name) {
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.classList.add('dsl-icon');
+    icon.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '/ui/icons.svg#icon-' + name);
+    icon.appendChild(use);
+    return icon;
+  }
+
+  function definitionGraphNodes(graph, data) {
+    const values = resolve(data, graph.nodes);
+    return (Array.isArray(values) ? values : []).map(value => {
+      const nodeData = Object.assign({}, data, {[graph.as]: value});
+      const dependencies = resolve(nodeData, graph.dependencies);
+      return {
+        id: String(resolve(nodeData, graph.nodeKey)),
+        label: renderText(graph.nodeLabel, nodeData),
+        meta: renderText(graph.nodeMeta, nodeData),
+        dependencies: (Array.isArray(dependencies) ? dependencies : []).map(String),
+        data: nodeData,
+        level: 0,
+      };
+    });
+  }
+
+  function layoutDefinitionGraph(nodes) {
+    const nodeWidth = 210;
+    const nodeHeight = 76;
+    const gapX = 58;
+    const gapY = 24;
+    const padding = 16;
+    const byID = new Map(nodes.map(node => [node.id, node]));
+    const states = new Map();
+    const level = node => {
+      if (states.get(node.id) === 2) return node.level;
+      if (states.get(node.id) === 1) return 0;
+      states.set(node.id, 1);
+      node.dependencies.forEach(dependency => {
+        const parent = byID.get(dependency);
+        if (parent) node.level = Math.max(node.level, level(parent) + 1);
+      });
+      states.set(node.id, 2);
+      return node.level;
+    };
+    const columns = new Map();
+    let maxLevel = 0;
+    nodes.forEach(node => {
+      maxLevel = Math.max(maxLevel, level(node));
+      if (!columns.has(node.level)) columns.set(node.level, []);
+      columns.get(node.level).push(node);
+    });
+    const maxRows = Math.max(1, ...Array.from(columns.values(), values => values.length));
+    columns.forEach((values, column) => {
+      values.sort((left, right) => left.id.localeCompare(right.id));
+      const topRows = Math.floor((maxRows - values.length) / 2);
+      values.forEach((node, row) => {
+        node.x = padding + column * (nodeWidth + gapX);
+        node.y = padding + (topRows + row) * (nodeHeight + gapY);
+      });
+    });
+    return {
+      byID, nodeWidth, nodeHeight,
+      width: 2 * padding + (maxLevel + 1) * nodeWidth + maxLevel * gapX,
+      height: 2 * padding + maxRows * nodeHeight + (maxRows - 1) * gapY,
+    };
+  }
+
+  function renderDefinitionGraph(node, data) {
+    const graphNodes = definitionGraphNodes(node.graphView, data);
+    if (!graphNodes.length) {
+      const empty = document.createElement('div');
+      empty.className = 'dsl-definition-graph-empty';
+      empty.textContent = 'No pipelines configured.';
+      return empty;
+    }
+    const layout = layoutDefinitionGraph(graphNodes);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'dsl-definition-graph';
+    const toolbar = document.createElement('div');
+    toolbar.className = 'dsl-definition-graph-toolbar';
+    const viewport = document.createElement('div');
+    viewport.className = 'dsl-definition-graph-viewport';
+    const scaler = document.createElement('div');
+    scaler.className = 'dsl-definition-graph-scaler';
+    const stage = document.createElement('div');
+    stage.className = 'dsl-definition-graph-stage';
+    stage.style.width = layout.width + 'px';
+    stage.style.height = layout.height + 'px';
+    const edges = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    edges.classList.add('dsl-definition-graph-edges');
+    edges.setAttribute('viewBox', '0 0 ' + layout.width + ' ' + layout.height);
+    graphNodes.forEach(graphNode => {
+      graphNode.dependencies.forEach(dependency => {
+        const parent = layout.byID.get(dependency);
+        if (!parent) return;
+        const startX = parent.x + layout.nodeWidth;
+        const startY = parent.y + layout.nodeHeight / 2;
+        const endX = graphNode.x;
+        const endY = graphNode.y + layout.nodeHeight / 2;
+        const middle = (startX + endX) / 2;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M ' + startX + ' ' + startY + ' C ' + middle + ' ' + startY + ', ' + middle + ' ' + endY + ', ' + endX + ' ' + endY);
+        edges.appendChild(path);
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', endX + ',' + endY + ' ' + (endX - 8) + ',' + (endY - 5) + ' ' + (endX - 8) + ',' + (endY + 5));
+        edges.appendChild(arrow);
+      });
+    });
+    stage.appendChild(edges);
+    graphNodes.forEach(graphNode => {
+      const card = document.createElement('div');
+      card.className = 'dsl-definition-graph-node';
+      card.style.left = graphNode.x + 'px';
+      card.style.top = graphNode.y + 'px';
+      card.style.width = layout.nodeWidth + 'px';
+      card.style.height = layout.nodeHeight + 'px';
+      const copy = document.createElement('div');
+      copy.className = 'dsl-definition-graph-node-copy';
+      const title = document.createElement('div');
+      title.className = 'dsl-definition-graph-node-title';
+      title.textContent = graphNode.label;
+      title.title = graphNode.label;
+      const meta = document.createElement('div');
+      meta.className = 'dsl-definition-graph-node-meta';
+      meta.textContent = graphNode.meta;
+      meta.title = graphNode.meta;
+      copy.append(title, meta);
+      card.appendChild(copy);
+      if ((node.actions || []).length) {
+        const play = document.createElement('button');
+        play.className = 'dsl-button dsl-icon-button dsl-definition-graph-node-play';
+        const runHelp = 'Run ' + graphNode.label + ' as a new execution. Existing queued and running work is not interrupted.';
+        play.setAttribute('aria-label', runHelp);
+        play.title = runHelp;
+        play.appendChild(declarativeIcon('player-play'));
+        bindActions(play, node.actions, graphNode.data);
+        card.appendChild(play);
+      }
+      stage.appendChild(card);
+    });
+    scaler.appendChild(stage);
+    viewport.appendChild(scaler);
+    let scale = 1;
+    const clamp = value => Math.min(1.5, Math.max(0.45, value));
+    const scaleLabel = document.createElement('span');
+    scaleLabel.className = 'dsl-definition-graph-scale';
+    const applyScale = next => {
+      scale = clamp(next);
+      scaler.style.width = Math.round(layout.width * scale) + 'px';
+      scaler.style.height = Math.round(layout.height * scale) + 'px';
+      stage.style.transform = 'scale(' + scale + ')';
+      scaleLabel.textContent = Math.round(scale * 100) + '%';
+    };
+    const control = (label, icon, action) => {
+      const button = document.createElement('button');
+      button.className = 'dsl-button' + (icon ? ' dsl-icon-button' : '');
+      button.setAttribute('aria-label', label);
+      button.title = label;
+      if (icon) button.appendChild(declarativeIcon(icon));
+      else button.textContent = label;
+      button.addEventListener('click', action);
+      return button;
+    };
+    const fit = () => applyScale(Math.min(
+      (Math.max(1, viewport.clientWidth) - 32) / layout.width,
+      388 / layout.height,
+    ));
+    toolbar.append(
+      control('Fit', '', fit),
+      control('Reset', '', () => applyScale(1)),
+      control('Zoom out', 'zoom-out', () => applyScale(scale - 0.1)),
+      scaleLabel,
+      control('Zoom in', 'zoom-in', () => applyScale(scale + 0.1)),
+    );
+    wrapper.append(toolbar, viewport);
+    requestAnimationFrame(fit);
+    return wrapper;
+  }
+
+  function renderGraphView(element, node, data) {
+    const stateKey = renderText({template: node.graphView.stateKey}, data);
+    let mode = viewStates[stateKey];
+    if (mode !== 'graph' && mode !== 'list') mode = node.graphView.defaultMode === 'list' ? 'list' : 'graph';
+    const header = document.createElement('div');
+    header.className = 'dsl-graph-view-header';
+    const heading = document.createElement('div');
+    heading.className = 'dsl-heading';
+    heading.textContent = renderText(node.text, data) || 'Structure';
+    const modes = document.createElement('div');
+    modes.className = 'dsl-graph-view-modes';
+    const body = document.createElement('div');
+    body.className = 'dsl-graph-view-body';
+    const renderBody = () => {
+      body.replaceChildren();
+      if (mode === 'graph') body.appendChild(renderDefinitionGraph(node, data));
+      else (node.children || []).forEach(child => body.appendChild(renderNode(child, data)));
+      Array.from(modes.children).forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === mode)));
+    };
+    ['graph', 'list'].forEach(value => {
+      const button = document.createElement('button');
+      button.className = 'dsl-button dsl-graph-view-mode';
+      button.dataset.mode = value;
+      button.textContent = value === 'graph' ? 'Graph' : 'List';
+      button.addEventListener('click', () => {
+        mode = value;
+        viewStates[stateKey] = value;
+        saveViewStates();
+        renderBody();
+      });
+      modes.appendChild(button);
+    });
+    header.append(heading, modes);
+    element.append(header, body);
+    renderBody();
+  }
+
   function renderNode(rawNode, data) {
     const node = withWebOverride(rawNode);
     if (node.hidden) return document.createDocumentFragment();
@@ -424,6 +720,10 @@
     if (style.emphasis) element.classList.add('dsl-' + style.emphasis);
     if (style.truncate) element.classList.add('dsl-truncate');
     applyLayout(element, node.layout);
+	if (node.component === 'graph-view' && node.graphView) {
+	  renderGraphView(element, node, data);
+	  return element;
+	}
 	if (node.enabled) {
 	  const equal = node.enabled.empty
 	    ? String(resolve(data, node.enabled.binding)) === ''
@@ -463,6 +763,7 @@
         } else {
           element.open = !!node.disclosure.defaultExpanded;
         }
+		(node.disclosure.summary || []).forEach(summaryNode => summary.appendChild(renderNode(summaryNode, data)));
       }
     } else if (node.component === 'image' && node.image) {
       element.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
@@ -485,14 +786,12 @@
     } else if (node.text) {
       element.textContent = renderText(node.text, data);
     }
+	if (node.component === 'button' && style.role === 'icon-button') {
+	  element.setAttribute('aria-label', element.textContent || 'Action');
+	  element.title = element.textContent || '';
+	}
     if (node.component === 'button' && node.icon) {
-      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      icon.classList.add('dsl-icon');
-      icon.setAttribute('aria-hidden', 'true');
-      const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-      use.setAttribute('href', '/ui/icons.svg#icon-' + node.icon);
-      icon.appendChild(use);
-      element.prepend(icon);
+      element.append(declarativeIcon(node.icon));
     }
     bindActions(element, node.actions, data);
     if (node.component === 'scroller' && node.repeat) {
@@ -713,7 +1012,9 @@
       const [documentContract, themes, responseView] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
       applyContractTheme(themes);
       let view = responseView;
+	  if (projectMatch) decorateProjectDetails(view);
 	  if (!projectMatch && !jobMatch && !settingsMatch && !agentsMatch && !connectionMatch && !runOptionsMatch) {
+		decorateFrontPageProjects(view.projects);
         decorateExecutionCards(view.queued_executions, true);
         decorateExecutionCards(view.history_executions, false);
       }
