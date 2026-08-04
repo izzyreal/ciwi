@@ -236,6 +236,19 @@ func (c *Client) GetAgentsView(ctx context.Context) (*cnpv1.AgentsView, error) {
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) GetAgentDetails(ctx context.Context, agentID string) (*cnpv1.AgentDetailsView, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetAgentDetails{
+		GetAgentDetails: &cnpv1.GetAgentDetailsRequest{AgentId: agentID},
+	}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetAgentDetails(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) AgentAction(ctx context.Context, request *cnpv1.AgentActionRequest, idempotencyKey string) (*cnpv1.AgentActionResult, error) {
 	if idempotencyKey == "" {
 		idempotencyKey = uuid.NewString()

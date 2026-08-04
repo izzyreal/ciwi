@@ -1235,6 +1235,29 @@ func TestFlexAlignmentDefaultsColumnsToStartAndRowsToMiddle(t *testing.T) {
 	}
 }
 
+func TestProjectStructureFilterIncludesChainsAndSurvivesRefresh(t *testing.T) {
+	renderer := &Renderer{}
+	data := map[string]any{"projectDetails": map[string]any{
+		"project": map[string]any{"pipeline_chains": []any{map[string]any{"id": "release", "pipelines": []any{"build", "release"}}}},
+		"pipelines": []any{
+			map[string]any{"pipeline_id": "build"}, map[string]any{"pipeline_id": "lint"}, map[string]any{"pipeline_id": "release"},
+		},
+	}}
+	renderer.SetData(data)
+	if !renderer.SetProjectStructureFilter("chain:release") {
+		t.Fatal("chain filter was rejected")
+	}
+	root := renderer.data.(map[string]any)["projectDetails"].(map[string]any)
+	if visible := root["visible_pipelines"].([]any); len(visible) != 2 {
+		t.Fatalf("visible pipelines = %#v", visible)
+	}
+	renderer.SetScreenAndData(&uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "project-details"}}, data)
+	root = renderer.data.(map[string]any)["projectDetails"].(map[string]any)
+	if root["structure_filter"] != "chain:release" || len(root["visible_pipelines"].([]any)) != 2 {
+		t.Fatalf("refreshed filter state = %#v", root)
+	}
+}
+
 func BenchmarkRendererProjectDetailsCollapsed(b *testing.B) {
 	screen, err := sharedUI.LoadScreen("project-details")
 	if err != nil {

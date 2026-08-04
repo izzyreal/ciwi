@@ -390,6 +390,14 @@ message AgentsView {
   repeated AgentSummary agents = 2;
 }
 
+message GetAgentDetailsRequest {
+  string agent_id = 1;
+}
+
+message AgentDetailsView {
+  AgentSummary agent = 1;
+}
+
 message AgentActionRequest {
   string agent_id = 1;
   string action = 2;
@@ -538,6 +546,7 @@ message Request {
     Empty list_server_update_versions = 30;
     ServerUpdateActionRequest server_update_action = 31;
     ControlExecutionRequest remove_queued_execution = 32;
+    GetAgentDetailsRequest get_agent_details = 33;
   }
 }
 
@@ -568,6 +577,7 @@ message Response {
     ServerUpdateVersions server_update_versions = 31;
     ServerUpdateActionResult server_update_action = 32;
     RemoveQueuedExecutionResult remove_queued_execution = 33;
+    AgentDetailsView agent_details = 34;
   }
 }
 

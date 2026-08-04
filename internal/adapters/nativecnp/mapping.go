@@ -318,16 +318,24 @@ func runOptionListToProto(options []application.RunOption) []*cnpv1.RunOption {
 func agentsViewToProto(view presentation.AgentsView) *cnpv1.AgentsView {
 	agents := make([]*cnpv1.AgentSummary, 0, len(view.Agents))
 	for _, agent := range view.Agents {
-		agents = append(agents, &cnpv1.AgentSummary{
-			Id: agent.ID, Hostname: agent.Hostname, Platform: agent.Platform, Version: agent.Version,
-			Status: agent.Status, StatusLabel: agent.StatusLabel, Authorization: agent.Authorization,
-			Activation: agent.Activation, Authorized: agent.Authorized, Deactivated: agent.Deactivated,
-			JobInProgress: agent.JobInProgress, CapabilitiesLabel: agent.CapabilitiesLabel,
-			RunMode: agent.RunMode, LastSeen: agent.LastSeen, RecentLog: agent.RecentLog,
-			UpdateLabel: agent.UpdateLabel, CanUpdate: agent.CanUpdate, CanContact: agent.CanContact,
-		})
+		agents = append(agents, agentSummaryToProto(agent))
 	}
 	return &cnpv1.AgentsView{Summary: view.Summary, Agents: agents}
+}
+
+func agentSummaryToProto(agent presentation.AgentView) *cnpv1.AgentSummary {
+	return &cnpv1.AgentSummary{
+		Id: agent.ID, Hostname: agent.Hostname, Platform: agent.Platform, Version: agent.Version,
+		Status: agent.Status, StatusLabel: agent.StatusLabel, Authorization: agent.Authorization,
+		Activation: agent.Activation, Authorized: agent.Authorized, Deactivated: agent.Deactivated,
+		JobInProgress: agent.JobInProgress, CapabilitiesLabel: agent.CapabilitiesLabel,
+		RunMode: agent.RunMode, LastSeen: agent.LastSeen, RecentLog: agent.RecentLog,
+		UpdateLabel: agent.UpdateLabel, CanUpdate: agent.CanUpdate, CanContact: agent.CanContact,
+	}
+}
+
+func agentDetailsToProto(view presentation.AgentDetailsView) *cnpv1.AgentDetailsView {
+	return &cnpv1.AgentDetailsView{Agent: agentSummaryToProto(view.Agent)}
 }
 
 func changeToProto(change application.Change) *cnpv1.ChangeEvent {

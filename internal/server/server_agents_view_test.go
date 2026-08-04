@@ -31,3 +31,23 @@ func TestAgentsViewUsesSharedPresentationContract(t *testing.T) {
 		t.Fatalf("status = %d, view = %+v", response.StatusCode, view)
 	}
 }
+
+func TestAgentDetailsViewUsesSharedPresentationContract(t *testing.T) {
+	server, state := newTestHTTPServerWithState(t)
+	defer server.Close()
+	state.mu.Lock()
+	state.agents["agent-1"] = agentState{Hostname: "builder", OS: "linux", Arch: "amd64", Authorized: true, LastSeenUTC: time.Now().UTC()}
+	state.mu.Unlock()
+	response, err := http.Get(server.URL + "/api/v1/views/agents/agent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var view presentation.AgentDetailsView
+	if err := json.NewDecoder(response.Body).Decode(&view); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || view.Agent.ID != "agent-1" || view.Agent.Platform != "linux/amd64" {
+		t.Fatalf("status = %d, view = %+v", response.StatusCode, view)
+	}
+}

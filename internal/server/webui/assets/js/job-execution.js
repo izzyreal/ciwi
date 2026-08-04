@@ -4,7 +4,7 @@
     const projectGraphMaxScale = 1.75;
     const projectGraphState = {
       project: null,
-      chainID: 'all',
+      chainID: 'all-pipelines',
       pipelineID: '',
       jobID: '',
       stepIndex: 0,
@@ -316,8 +316,10 @@
       projectGraphState.scale = 1;
       projectGraphState.fitOnRender = true;
       const chains = Array.isArray(project.pipeline_chains) ? project.pipeline_chains : [];
-      const storedChain = readProjectGraphStorage(projectGraphChainStorageKey(project.id), 'all');
-      projectGraphState.chainID = chains.some(chain => String(chain.id) === storedChain) ? storedChain : 'all';
+      let storedChain = readProjectGraphStorage(projectGraphChainStorageKey(project.id), 'all-pipelines');
+      if (storedChain === 'all') storedChain = 'all-pipelines';
+      projectGraphState.chainID = storedChain === 'all-pipelines' || storedChain === 'all-chains' || chains.some(chain => String(chain.id) === storedChain)
+        ? storedChain : 'all-pipelines';
       projectGraphState.pipelineID = '';
       projectGraphState.jobID = '';
       projectGraphState.stepIndex = 0;
@@ -333,8 +335,12 @@
 
     function filteredProjectGraphPipelines(project) {
       const pipelines = Array.isArray(project.pipelines) ? project.pipelines : [];
-      if (projectGraphState.chainID === 'all') return pipelines;
+      if (projectGraphState.chainID === 'all-pipelines') return pipelines;
       const chains = Array.isArray(project.pipeline_chains) ? project.pipeline_chains : [];
+      if (projectGraphState.chainID === 'all-chains') {
+        const included = new Set(chains.flatMap(chain => Array.isArray(chain.pipelines) ? chain.pipelines : []));
+        return pipelines.filter(pipeline => included.has(pipeline.pipeline_id));
+      }
       const chain = chains.find(item => String(item.id) === projectGraphState.chainID);
       if (!chain) return pipelines;
       const included = new Set(Array.isArray(chain.pipelines) ? chain.pipelines : []);
@@ -372,18 +378,22 @@
       select.id = 'projectGraphChainSelect';
       select.className = 'ciwi-select project-graph-select';
       const allOption = document.createElement('option');
-      allOption.value = 'all';
+      allOption.value = 'all-pipelines';
       allOption.textContent = 'All Pipelines';
       select.appendChild(allOption);
+      const allChainsOption = document.createElement('option');
+      allChainsOption.value = 'all-chains';
+      allChainsOption.textContent = 'All chains';
+      select.appendChild(allChainsOption);
       (project.pipeline_chains || []).forEach(chain => {
         const option = document.createElement('option');
         option.value = String(chain.id || '');
-        option.textContent = pipelineChainDisplayName(chain);
+        option.textContent = pipelineChainDisplayName(chain) + ' (chain)';
         select.appendChild(option);
       });
       select.value = projectGraphState.chainID;
       select.onchange = () => {
-        projectGraphState.chainID = String(select.value || 'all');
+        projectGraphState.chainID = String(select.value || 'all-pipelines');
         projectGraphState.pipelineID = '';
         projectGraphState.jobID = '';
         projectGraphState.stepIndex = 0;

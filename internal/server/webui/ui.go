@@ -16,32 +16,32 @@ type embeddedAsset struct {
 }
 
 var staticRoutes = map[string]embeddedAsset{
-	"/favicon.ico":               {"assets/ciwi-favicon.png", "image/png", true},
-	"/ciwi-favicon.png":          {"assets/ciwi-favicon.png", "image/png", true},
-	"/ciwi-logo.png":             {"assets/ciwi-logo.png", "image/png", true},
+	"/favicon.ico":                    {"assets/ciwi-favicon.png", "image/png", true},
+	"/ciwi-favicon.png":               {"assets/ciwi-favicon.png", "image/png", true},
+	"/ciwi-logo.png":                  {"assets/ciwi-logo.png", "image/png", true},
 	"/ui/fonts/ciwi-mono-regular.ttf": {"assets/fonts/GeistMono-Regular.ttf", "font/ttf", true},
 	"/ui/fonts/ciwi-mono-bold.ttf":    {"assets/fonts/GeistMono-Bold.ttf", "font/ttf", true},
-	"/ui/icons.svg":              {"assets/tabler-icons.svg", "image/svg+xml", true},
-	"/ui/theme.js":               {"assets/js/theme.js", "application/javascript; charset=utf-8", true},
-	"/ui/shared.js":              {"assets/js/shared.js", "application/javascript; charset=utf-8", false},
-	"/ui/pages.js":               {"assets/js/pages.js", "application/javascript; charset=utf-8", false},
-	"/ui/index.js":               {"assets/js/index.js", "application/javascript; charset=utf-8", false},
-	"/ui/settings.js":            {"assets/js/settings.js", "application/javascript; charset=utf-8", false},
-	"/ui/project.js":             {"assets/js/project.js", "application/javascript; charset=utf-8", false},
-	"/ui/vault.js":               {"assets/js/vault.js", "application/javascript; charset=utf-8", false},
-	"/ui/agents.js":              {"assets/js/agents.js", "application/javascript; charset=utf-8", false},
-	"/ui/agent.js":               {"assets/js/agent.js", "application/javascript; charset=utf-8", false},
-	"/ui/job-execution.js":       {"assets/js/job-execution.js", "application/javascript; charset=utf-8", false},
-	"/ui/declarative.js":         {"assets/js/declarative.js", "application/javascript; charset=utf-8", false},
-	"/ui/css/chrome.css":         {"assets/css/chrome.css", "text/css; charset=utf-8", false},
-	"/ui/css/index.css":          {"assets/css/index.css", "text/css; charset=utf-8", false},
-	"/ui/css/settings.css":       {"assets/css/settings.css", "text/css; charset=utf-8", false},
-	"/ui/css/project.css":        {"assets/css/project.css", "text/css; charset=utf-8", false},
-	"/ui/css/vault.css":          {"assets/css/vault.css", "text/css; charset=utf-8", false},
-	"/ui/css/agents.css":         {"assets/css/agents.css", "text/css; charset=utf-8", false},
-	"/ui/css/agent.css":          {"assets/css/agent.css", "text/css; charset=utf-8", false},
-	"/ui/css/job-execution.css":  {"assets/css/job-execution.css", "text/css; charset=utf-8", false},
-	"/ui/css/declarative.css":    {"assets/css/declarative.css", "text/css; charset=utf-8", false},
+	"/ui/icons.svg":                   {"assets/tabler-icons.svg", "image/svg+xml", true},
+	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", true},
+	"/ui/shared.js":                   {"assets/js/shared.js", "application/javascript; charset=utf-8", false},
+	"/ui/pages.js":                    {"assets/js/pages.js", "application/javascript; charset=utf-8", false},
+	"/ui/index.js":                    {"assets/js/index.js", "application/javascript; charset=utf-8", false},
+	"/ui/settings.js":                 {"assets/js/settings.js", "application/javascript; charset=utf-8", false},
+	"/ui/project.js":                  {"assets/js/project.js", "application/javascript; charset=utf-8", false},
+	"/ui/vault.js":                    {"assets/js/vault.js", "application/javascript; charset=utf-8", false},
+	"/ui/agents.js":                   {"assets/js/agents.js", "application/javascript; charset=utf-8", false},
+	"/ui/agent.js":                    {"assets/js/agent.js", "application/javascript; charset=utf-8", false},
+	"/ui/job-execution.js":            {"assets/js/job-execution.js", "application/javascript; charset=utf-8", false},
+	"/ui/declarative.js":              {"assets/js/declarative.js", "application/javascript; charset=utf-8", false},
+	"/ui/css/chrome.css":              {"assets/css/chrome.css", "text/css; charset=utf-8", false},
+	"/ui/css/index.css":               {"assets/css/index.css", "text/css; charset=utf-8", false},
+	"/ui/css/settings.css":            {"assets/css/settings.css", "text/css; charset=utf-8", false},
+	"/ui/css/project.css":             {"assets/css/project.css", "text/css; charset=utf-8", false},
+	"/ui/css/vault.css":               {"assets/css/vault.css", "text/css; charset=utf-8", false},
+	"/ui/css/agents.css":              {"assets/css/agents.css", "text/css; charset=utf-8", false},
+	"/ui/css/agent.css":               {"assets/css/agent.css", "text/css; charset=utf-8", false},
+	"/ui/css/job-execution.css":       {"assets/css/job-execution.css", "text/css; charset=utf-8", false},
+	"/ui/css/declarative.css":         {"assets/css/declarative.css", "text/css; charset=utf-8", false},
 }
 
 // Handler serves ciwi's browser pages and embedded static assets.
@@ -68,6 +68,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/ui/contracts/screens/agents.json" {
 		serveScreenContract(w, "agents")
+		return
+	}
+	if r.URL.Path == "/ui/contracts/screens/agent-details.json" {
+		serveScreenContract(w, "agent-details")
 		return
 	}
 	if r.URL.Path == "/ui/contracts/screens/connection.json" {
@@ -98,6 +102,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/declarative-preview/settings" || r.URL.Path == "/declarative-preview/settings/":
 		page = "declarative"
 	case r.URL.Path == "/declarative-preview/agents" || r.URL.Path == "/declarative-preview/agents/":
+		page = "declarative"
+	case strings.HasPrefix(r.URL.Path, "/declarative-preview/agents/"):
 		page = "declarative"
 	case r.URL.Path == "/declarative-preview/connection" || r.URL.Path == "/declarative-preview/connection/":
 		page = "declarative"

@@ -13,11 +13,12 @@ import (
 )
 
 type nativePreferences struct {
-	Theme          string            `json:"theme"`
-	Disclosures    map[string]bool   `json:"disclosures,omitempty"`
-	Views          map[string]string `json:"views,omitempty"`
-	ConnectionMode string            `json:"connection_mode,omitempty"`
-	ServerEndpoint string            `json:"server_endpoint,omitempty"`
+	Theme                  string            `json:"theme"`
+	Disclosures            map[string]bool   `json:"disclosures,omitempty"`
+	Views                  map[string]string `json:"views,omitempty"`
+	ConnectionMode         string            `json:"connection_mode,omitempty"`
+	ServerEndpoint         string            `json:"server_endpoint,omitempty"`
+	LastSuccessfulEndpoint string            `json:"last_successful_endpoint,omitempty"`
 }
 
 const (
@@ -34,9 +35,10 @@ func (p nativePreferences) normalizedConnection() (string, string) {
 }
 
 type nativeConnectionSettings struct {
-	Mode     string
-	Endpoint string
-	Address  string
+	Mode             string
+	Endpoint         string
+	PreferredAddress string
+	DiscoverFallback bool
 }
 
 func nativeConnectionSettingsForLaunch(preferences nativePreferences, addressOverride string) nativeConnectionSettings {
@@ -45,9 +47,12 @@ func nativeConnectionSettingsForLaunch(preferences nativePreferences, addressOve
 	if addressOverride = strings.TrimSpace(addressOverride); addressOverride != "" {
 		settings.Mode = connectionModeExplicit
 		settings.Endpoint = addressOverride
-		settings.Address = addressOverride
+		settings.PreferredAddress = addressOverride
 	} else if mode == connectionModeExplicit {
-		settings.Address = strings.TrimSpace(endpoint)
+		settings.PreferredAddress = strings.TrimSpace(endpoint)
+	} else {
+		settings.PreferredAddress = strings.TrimSpace(preferences.LastSuccessfulEndpoint)
+		settings.DiscoverFallback = true
 	}
 	return settings
 }

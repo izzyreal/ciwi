@@ -37,14 +37,14 @@ func TestProjectDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if screen.Metadata.Name != "project-details" {
 		t.Fatalf("screen = %#v", screen)
 	}
-	if len(screen.Screen.Root.Children) < 2 {
+	if len(screen.Screen.Root.Children) < 3 {
 		t.Fatalf("project screen children = %d", len(screen.Screen.Root.Children))
 	}
-	structure := screen.Screen.Root.Children[1]
+	structure := screen.Screen.Root.Children[2]
 	if structure.Component != "graph-view" || structure.GraphView == nil || structure.GraphView.DefaultMode != "graph" {
 		t.Fatalf("project structure = %#v", structure)
 	}
-	if structure.GraphView.Nodes != "projectDetails.pipelines" || structure.GraphView.Dependencies != "pipeline.depends_on" {
+	if structure.GraphView.Nodes != "projectDetails.visible_pipelines" || structure.GraphView.Dependencies != "pipeline.depends_on" {
 		t.Fatalf("project graph binding = %#v", structure.GraphView)
 	}
 	if len(structure.GraphView.Details) < 2 || structure.GraphView.Details[1].GraphView == nil {
@@ -81,6 +81,21 @@ func TestSettingsDeclarativeScreenContractRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	if screen.Metadata.Name != "settings" {
+		t.Fatalf("screen = %#v", screen)
+	}
+}
+
+func TestAgentDetailsDeclarativeScreenContractRoute(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/agent-details.json", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var screen uidsl.ScreenDocument
+	if err := json.Unmarshal(recorder.Body.Bytes(), &screen); err != nil {
+		t.Fatal(err)
+	}
+	if screen.Metadata.Name != "agent-details" {
 		t.Fatalf("screen = %#v", screen)
 	}
 }

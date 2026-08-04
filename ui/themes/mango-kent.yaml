@@ -32,4 +32,4 @@ theme:
   gradients:
     page: {kind: linear, angle: 135, stops: [{color: "#f7d36d", position: 0}, {color: "#f18732", position: 55}, {color: "#b9494b", position: 100}]}
     hero: {kind: radial, stops: [{color: "#fff8e8", position: 0}, {color: "#f7b548", position: 100}]}
-  dimensions: {small: "8", medium: "16", large: "24", page: "1150", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

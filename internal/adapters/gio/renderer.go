@@ -34,7 +34,6 @@ import (
 	"gioui.org/widget/material"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
-	"golang.org/x/exp/shiny/materialdesign/icons"
 )
 
 type ActionHandler func(uidsl.Action, map[string]string)
@@ -62,13 +61,14 @@ type Renderer struct {
 	persistentViews        map[string]bool
 	graphScales            map[string]float32
 	graphSelections        map[string]string
+	projectStructureFilter string
 	onViewChange           func(map[string]string)
 	selectables            map[string]*widget.Selectable
 	textEditors            map[string]*widget.Editor
 	inputEditors           map[string]*widget.Editor
 	selectOpen             map[string]bool
 	scrollers              map[string]*layout.List
-	icons                  map[string]*widget.Icon
+	icons                  map[string]nativeIcon
 	images                 map[string]paint.ImageOp
 	statusText             widget.Editor
 	shownStatus            string
@@ -132,10 +132,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	if err != nil {
 		return nil, err
 	}
-	iconSet, err := materialIcons()
-	if err != nil {
-		return nil, err
-	}
+	iconSet := tablerIcons()
 	imageSet, err := embeddedImages()
 	if err != nil {
 		return nil, err
@@ -161,6 +158,7 @@ func (r *Renderer) SetData(data any) {
 
 func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 	r.mu.Lock()
+	preserveTopLevelBinding(r.data, data, "client")
 	if screen != nil && screen.Metadata.Name == "job-details" {
 		preserveJobUIState(r.data, data)
 	}
@@ -172,7 +170,29 @@ func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 	}
 	r.screen = screen
 	r.data = data
+	if screen != nil && screen.Metadata.Name == "project-details" && r.projectStructureFilter != "" {
+		r.setProjectStructureFilterLocked(r.projectStructureFilter)
+		if current, ok := r.data.(map[string]any); ok {
+			if root, ok := current["projectDetails"].(map[string]any); ok {
+				r.projectStructureFilter = fmt.Sprint(root["structure_filter"])
+			}
+		}
+	}
 	r.mu.Unlock()
+}
+
+func preserveTopLevelBinding(previous, next any, key string) {
+	previousData, previousOK := previous.(map[string]any)
+	nextData, nextOK := next.(map[string]any)
+	if !previousOK || !nextOK {
+		return
+	}
+	if _, exists := nextData[key]; exists {
+		return
+	}
+	if value, exists := previousData[key]; exists {
+		nextData[key] = value
+	}
 }
 
 func (r *Renderer) SetRepeatedItemBinding(root, collection, keyField, keyValue, field string, value any) bool {
@@ -410,6 +430,100 @@ func (r *Renderer) SetRootBinding(root, key string, value any) bool {
 		nextData[existingKey] = existingValue
 	}
 	nextData[root] = nextRoot
+	r.data = nextData
+	return true
+}
+
+// SetDataBinding replaces or adds one top-level binding without disturbing the
+// current screen data. Client-local state such as connectivity deliberately
+// lives beside server-provided view models so every screen can consume it.
+func (r *Renderer) SetDataBinding(key string, value any) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, ok := r.data.(map[string]any)
+	if !ok {
+		return false
+	}
+	next := make(map[string]any, len(data)+1)
+	for existingKey, existingValue := range data {
+		next[existingKey] = existingValue
+	}
+	next[key] = value
+	r.data = next
+	return true
+}
+
+func (r *Renderer) SetProjectStructureFilter(filter string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.setProjectStructureFilterLocked(filter) {
+		return false
+	}
+	if data, ok := r.data.(map[string]any); ok {
+		if root, ok := data["projectDetails"].(map[string]any); ok {
+			r.projectStructureFilter = fmt.Sprint(root["structure_filter"])
+		}
+	}
+	return true
+}
+
+func (r *Renderer) setProjectStructureFilterLocked(filter string) bool {
+	data, ok := r.data.(map[string]any)
+	if !ok {
+		return false
+	}
+	root, ok := data["projectDetails"].(map[string]any)
+	if !ok {
+		return false
+	}
+	pipelines, _ := root["pipelines"].([]any)
+	visible := append([]any(nil), pipelines...)
+	if filter == "all-chains" || strings.HasPrefix(filter, "chain:") {
+		project, _ := root["project"].(map[string]any)
+		chains, _ := project["pipeline_chains"].([]any)
+		included := map[string]bool{}
+		matchedChain := false
+		for _, raw := range chains {
+			chain, chainOK := raw.(map[string]any)
+			if !chainOK {
+				continue
+			}
+			if strings.HasPrefix(filter, "chain:") && "chain:"+fmt.Sprint(chain["id"]) != filter {
+				continue
+			}
+			matchedChain = true
+			for _, pipelineID := range stringSlice(chain["pipelines"]) {
+				included[pipelineID] = true
+			}
+		}
+		if strings.HasPrefix(filter, "chain:") && !matchedChain {
+			filter = "all-pipelines"
+			visible = append([]any(nil), pipelines...)
+			included = nil
+		}
+		visible = visible[:0]
+		if included == nil {
+			visible = append(visible, pipelines...)
+		} else {
+			for _, raw := range pipelines {
+				pipeline, pipelineOK := raw.(map[string]any)
+				if pipelineOK && included[fmt.Sprint(pipeline["pipeline_id"])] {
+					visible = append(visible, raw)
+				}
+			}
+		}
+	}
+	nextRoot := make(map[string]any, len(root)+2)
+	for key, value := range root {
+		nextRoot[key] = value
+	}
+	nextRoot["structure_filter"] = filter
+	nextRoot["visible_pipelines"] = visible
+	nextData := make(map[string]any, len(data))
+	for key, value := range data {
+		nextData[key] = value
+	}
+	nextData["projectDetails"] = nextRoot
 	r.data = nextData
 	return true
 }
@@ -744,9 +858,21 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		iconName = "chevron-down"
 	}
 	isProjectRow := node.Style.Role == "project-row"
-	toggle := r.button(path + "/disclosure-toggle")
-	headerToggle := r.button(path + "/disclosure-header")
+	headerToggleKey := path + "/disclosure-toggle"
+	if isProjectRow {
+		headerToggleKey = path + "/disclosure-header"
+	}
+	headerToggle := r.button(headerToggleKey)
+	labelToggle := r.button(path + "/disclosure-label")
 	summaryActionActivated := false
+	labelToggleActivated := false
+	for labelToggle.Clicked(gtx) {
+		labelToggleActivated = true
+		if r.selectable(path+"/label").SelectionLen() == 0 {
+			expanded = !expanded
+			r.setDisclosureState(stateKey, expanded, persistent)
+		}
+	}
 	if node.Disclosure != nil {
 		for index, summaryNode := range node.Disclosure.Summary {
 			if len(summaryNode.Actions) == 0 || componentHandlesOwnActions(summaryNode.Component) {
@@ -762,29 +888,15 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			}
 		}
 	}
-	if isProjectRow {
-		for headerToggle.Clicked(gtx) {
-			if !summaryActionActivated && !r.disclosureHeaderHasSelection(path) {
-				expanded = !expanded
-				r.setDisclosureState(stateKey, expanded, persistent)
-			}
-		}
-	} else {
-		for toggle.Clicked(gtx) {
+	for headerToggle.Clicked(gtx) {
+		if !summaryActionActivated && !labelToggleActivated && !r.disclosureHeaderHasSelection(path) {
 			expanded = !expanded
 			r.setDisclosureState(stateKey, expanded, persistent)
 		}
 	}
 	header := func(gtx layout.Context) layout.Dimensions {
 		toggleWidget := func(gtx layout.Context) layout.Dimensions {
-			description := "Expand " + label
-			if expanded {
-				description = "Collapse " + label
-			}
-			if isProjectRow {
-				return r.layoutDisclosureIndicator(gtx, iconName)
-			}
-			return r.layoutDisclosureToggle(gtx, toggle, iconName, description)
+			return r.layoutDisclosureIndicator(gtx, iconName)
 		}
 		labelWidget := func(gtx layout.Context) layout.Dimensions {
 			labelPath := path + "/label"
@@ -810,17 +922,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 					return r.layoutText(gtx, textNode, data, labelPath)
 				})
 			}
-			if isProjectRow {
-				return layoutLabel(gtx)
-			}
-			labelClick := r.button(path + "/disclosure-label")
-			for labelClick.Clicked(gtx) {
-				if r.selectable(labelPath).SelectionLen() == 0 {
-					expanded = !expanded
-					r.setDisclosureState(stateKey, expanded, persistent)
-				}
-			}
-			return labelClick.Layout(gtx, layoutLabel)
+			return layoutLabel(gtx)
 		}
 		summaryChildren := func() []layout.FlexChild {
 			if node.Disclosure == nil {
@@ -857,9 +959,6 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			layoutRow := func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 			}
-			if !isProjectRow {
-				return layoutRow(gtx)
-			}
 			description := "Expand " + label
 			if expanded {
 				description = "Collapse " + label
@@ -889,7 +988,18 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		children = append(children, layout.Flexed(1, labelWidget))
 		children = append(children, summaryChildren()...)
 		children = append(children, layout.Rigid(toggleWidget))
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+		layoutRow := func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+		}
+		description := "Expand " + label
+		if expanded {
+			description = "Collapse " + label
+		}
+		return headerToggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			semantic.DescriptionOp(description).Add(gtx.Ops)
+			defer pointer.PassOp{}.Push(gtx.Ops).Pop()
+			return layoutRow(gtx)
+		})
 	}
 	headerWidget := layout.Widget(header)
 	if node.Progress != nil {
@@ -2436,31 +2546,6 @@ func semanticTone(value string) string {
 	default:
 		return "muted"
 	}
-}
-
-func materialIcons() (map[string]*widget.Icon, error) {
-	sources := map[string][]byte{
-		"settings": icons.ActionSettings, "arrow-left": icons.NavigationArrowBack,
-		"server":      icons.HardwareComputer,
-		"adjustments": icons.ImageTune,
-		"player-play": icons.AVPlayArrow, "chevron-right": icons.NavigationChevronRight,
-		"zoom-in": icons.ActionZoomIn, "zoom-out": icons.ActionZoomOut,
-		"chevron-down": icons.NavigationExpandMore, "chevron-up": icons.NavigationExpandLess,
-		"check": icons.NavigationCheck, "copy": icons.ContentContentCopy,
-		"trash": icons.ActionDelete, "refresh": icons.NavigationRefresh, "circle-x": icons.NavigationCancel,
-		"chevrons-up": icons.NavigationUnfoldLess, "chevrons-down": icons.NavigationUnfoldMore,
-		"status-success": icons.ActionCheckCircle, "status-danger": icons.AlertErrorOutline,
-		"status-waiting": icons.ActionHourglassEmpty, "status-running": icons.AVPlayCircleOutline,
-	}
-	out := make(map[string]*widget.Icon, len(sources))
-	for name, source := range sources {
-		icon, err := widget.NewIcon(source)
-		if err != nil {
-			return nil, fmt.Errorf("load icon %q: %w", name, err)
-		}
-		out[name] = icon
-	}
-	return out, nil
 }
 
 func embeddedImages() (map[string]paint.ImageOp, error) {

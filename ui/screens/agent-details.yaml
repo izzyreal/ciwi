@@ -1,0 +1,136 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: agent-details
+  title: Agent Detail
+screen:
+  dataSources:
+    - name: agentDetails
+      query: get-agent-details
+      watchTopics: [agents]
+  root:
+    component: page
+    id: agent-details
+    layout: {direction: vertical, gap: large, padding: large, maxWidth: page}
+    children:
+      - component: card
+        layout: {direction: horizontal, gap: medium, padding: large, align: center, wrap: true}
+        children:
+          - component: column
+            layout: {direction: vertical, gap: small, grow: true}
+            children:
+              - component: text
+                text: {literal: Agent Detail}
+                style: {role: title, emphasis: strong}
+              - component: text
+                text: {binding: agentDetails.agent.id}
+                style: {role: code, tone: muted}
+          - component: button
+            text: {literal: Refresh}
+            icon: refresh
+            actions: [{on: activate, command: refresh}]
+          - component: button
+            text: {literal: Back to Agents}
+            icon: arrow-left
+            actions: [{on: activate, command: navigate, arguments: {route: /agents}}]
+      - component: card
+        layout: {direction: vertical, gap: medium, padding: large}
+        children:
+          - component: row
+            layout: {direction: horizontal, gap: medium, align: center, wrap: true}
+            children:
+              - component: text
+                text: {template: "{{agentDetails.agent.hostname}} · {{agentDetails.agent.platform}} · {{agentDetails.agent.version}}"}
+                layout: {grow: true}
+                style: {role: heading, emphasis: strong}
+              - component: badge
+                text: {binding: agentDetails.agent.status_label}
+                style: {toneBinding: agentDetails.agent.status}
+          - component: text
+            text: {template: "{{agentDetails.agent.authorization}} · {{agentDetails.agent.activation}} · {{agentDetails.agent.run_mode}} · last seen {{agentDetails.agent.last_seen}}"}
+            style: {tone: muted}
+          - component: text
+            text: {template: "Capabilities: {{agentDetails.agent.capabilities_label}}"}
+            style: {tone: muted}
+          - component: text
+            text: {binding: agentDetails.agent.update_label}
+            style: {tone: muted}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Authorize}
+                visible: {binding: agentDetails.agent.authorized, equals: "false"}
+                actions: [{on: activate, command: agent-action, arguments: {agentId: "{{agentDetails.agent.id}}", action: authorize}}]
+              - component: button
+                text: {literal: Unauthorize}
+                visible: {binding: agentDetails.agent.authorized, equals: "true"}
+                actions:
+                  - on: activate
+                    command: agent-action
+                    arguments: {agentId: "{{agentDetails.agent.id}}", action: unauthorize}
+                    confirm: {title: "Unauthorize agent?", message: "The agent remains known to ciwi but cannot lease new jobs until authorized again. Running work is not interrupted."}
+              - component: button
+                text: {literal: Activate}
+                visible: {binding: agentDetails.agent.deactivated, equals: "true"}
+                actions: [{on: activate, command: agent-action, arguments: {agentId: "{{agentDetails.agent.id}}", action: activate}}]
+              - component: button
+                text: {literal: Deactivate}
+                visible: {binding: agentDetails.agent.deactivated, equals: "false"}
+                actions:
+                  - on: activate
+                    command: agent-action
+                    arguments: {agentId: "{{agentDetails.agent.id}}", action: deactivate}
+                    confirm: {title: "Deactivate agent?", message: "The agent stops receiving work and its active jobs are cancelled."}
+              - component: button
+                text: {literal: Refresh Tools}
+                icon: refresh
+                visible: {binding: agentDetails.agent.can_contact}
+                actions: [{on: activate, command: agent-action, arguments: {agentId: "{{agentDetails.agent.id}}", action: refresh-tools}}]
+              - component: button
+                text: {literal: Restart}
+                icon: refresh
+                visible: {binding: agentDetails.agent.can_contact}
+                actions:
+                  - on: activate
+                    command: agent-action
+                    arguments: {agentId: "{{agentDetails.agent.id}}", action: restart}
+                    confirm: {title: "Restart agent?", message: "Requests an agent process restart. Work in progress may be interrupted."}
+              - component: button
+                text: {literal: Update}
+                visible: {binding: agentDetails.agent.can_update}
+                actions: [{on: activate, command: agent-action, arguments: {agentId: "{{agentDetails.agent.id}}", action: update}}]
+              - component: button
+                text: {literal: Wipe Cache}
+                icon: trash
+                visible: {binding: agentDetails.agent.can_contact}
+                actions:
+                  - on: activate
+                    command: agent-action
+                    arguments: {agentId: "{{agentDetails.agent.id}}", action: wipe-cache}
+                    confirm: {title: "Wipe agent cache?", message: "Removes local dependency and build caches. Server history and artifacts remain."}
+              - component: button
+                text: {literal: Flush Job History}
+                icon: trash
+                actions:
+                  - on: activate
+                    command: agent-action
+                    arguments: {agentId: "{{agentDetails.agent.id}}", action: flush-job-history}
+                    confirm: {title: "Flush this agent's job history?", message: "Removes finished execution records and artifacts for this agent. Build caches remain."}
+              - component: button
+                text: {literal: Delete Agent}
+                icon: trash
+                actions:
+                  - on: activate
+                    command: agent-action
+                    arguments: {agentId: "{{agentDetails.agent.id}}", action: delete}
+                    confirm: {title: "Delete agent record?", message: "Removes the stored record. It does not uninstall or stop the agent."}
+      - component: section
+        layout: {direction: vertical, gap: medium, padding: medium}
+        children:
+          - component: text
+            text: {literal: Recent Agent Log}
+            style: {role: heading, emphasis: strong}
+          - component: text
+            text: {binding: agentDetails.agent.recent_log}
+            style: {role: code}

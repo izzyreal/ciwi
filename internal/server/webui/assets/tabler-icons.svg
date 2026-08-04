@@ -12,6 +12,9 @@
   <symbol id="icon-clock" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 7v5l3 3"/></symbol>
   <symbol id="icon-device-desktop" viewBox="0 0 24 24"><path d="M3 5a1 1 0 0 1 1 -1h16a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1v-10"/><path d="M7 20h10"/><path d="M9 16v4"/><path d="M15 16v4"/></symbol>
   <symbol id="icon-info-circle" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 9h.01"/><path d="M11 12h1v4h1"/></symbol>
+  <symbol id="icon-network" viewBox="0 0 24 24"><path d="M10 5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M3 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M17 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M12 7v4l-7 5"/><path d="M12 11l7 5"/></symbol>
+  <symbol id="icon-adjustments" viewBox="0 0 24 24"><path d="M4 6h6m4 0h6"/><path d="M10 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 12h2m4 0h10"/><path d="M6 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 18h10m4 0h2"/><path d="M14 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/></symbol>
+  <symbol id="icon-copy" viewBox="0 0 24 24"><path d="M8 8h12v12h-12z"/><path d="M16 8v-4h-12v12h4"/></symbol>
   <symbol id="icon-loader-2" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/></symbol>
   <symbol id="icon-player-play" viewBox="0 0 24 24"><path d="M7 4v16l13 -8l-13 -8"/></symbol>
   <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></symbol>

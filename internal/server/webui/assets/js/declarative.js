@@ -311,6 +311,7 @@
             : args.route;
           window.location.assign(destination);
         }
+        else if (action.command === 'open-url' && args.url) window.open(args.url, '_blank', 'noopener,noreferrer');
         else if (action.command === 'refresh') refresh();
         else if (action.command === 'change-theme') {
           ciwiApplyTheme(args.theme);
@@ -1110,15 +1111,16 @@
       const projectMatch = window.location.pathname.match(/^\/declarative-preview\/projects\/(\d+)\/?$/);
       const jobMatch = window.location.pathname.match(/^\/declarative-preview\/jobs\/([^/]+)\/?$/);
       const settingsMatch = window.location.pathname.match(/^\/declarative-preview\/settings\/?$/);
+	  const agentDetailsMatch = window.location.pathname.match(/^\/declarative-preview\/agents\/([^/]+)\/?$/);
 	  const agentsMatch = window.location.pathname.match(/^\/declarative-preview\/agents\/?$/);
 	  const connectionMatch = window.location.pathname.match(/^\/declarative-preview\/connection\/?$/);
 	  const runOptionsURL = runOptionsViewURL('', '');
 	  const runOptionsMatch = runOptionsURL !== '';
-	  const screenName = connectionMatch ? 'connection' : (runOptionsMatch ? 'run-options' : (projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : (agentsMatch ? 'agents' : 'front-page')))));
+	  const screenName = connectionMatch ? 'connection' : (runOptionsMatch ? 'run-options' : (projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : (agentDetailsMatch ? 'agent-details' : (agentsMatch ? 'agents' : 'front-page'))))));
       const viewURL = projectMatch
         ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1])
-		: (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : (agentsMatch ? '/api/v1/views/agents' : (runOptionsMatch ? runOptionsURL : '/api/v1/views/front-page'))));
-	  const bindingRoot = connectionMatch ? 'connection' : (runOptionsMatch ? 'runOptions' : (projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : (agentsMatch ? 'agents' : 'frontPage')))));
+		: (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : (agentDetailsMatch ? '/api/v1/views/agents/' + encodeURIComponent(agentDetailsMatch[1]) : (agentsMatch ? '/api/v1/views/agents' : (runOptionsMatch ? runOptionsURL : '/api/v1/views/front-page')))));
+	  const bindingRoot = connectionMatch ? 'connection' : (runOptionsMatch ? 'runOptions' : (projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : (agentDetailsMatch ? 'agentDetails' : (agentsMatch ? 'agents' : 'frontPage'))))));
       const [screenResponse, themeResponse, viewResponse] = await Promise.all([
         fetch('/ui/contracts/screens/' + screenName + '.json'),
         fetch('/ui/contracts/themes.json'),
@@ -1129,7 +1131,7 @@
       applyContractTheme(themes);
       let view = responseView;
 	  if (projectMatch) decorateProjectDetails(view);
-	  if (!projectMatch && !jobMatch && !settingsMatch && !agentsMatch && !connectionMatch && !runOptionsMatch) {
+	  if (!projectMatch && !jobMatch && !settingsMatch && !agentDetailsMatch && !agentsMatch && !connectionMatch && !runOptionsMatch) {
 		decorateFrontPageProjects(view.projects);
         decorateExecutionCards(view.queued_executions, true);
         decorateExecutionCards(view.history_executions, false);
@@ -1154,12 +1156,20 @@
 		  project.can_reload = String(project.source_kind || '') !== 'managed_yaml';
 		  project.action_status = '';
 		  project.action_tone = 'muted';
+		  const loadedCommit = String(project.loaded_commit || '').trim();
+		  const repository = String(project.repo_url || '').trim().replace(/\.git$/, '').replace(/\/$/, '');
+		  project.loaded_commit_short = loadedCommit.slice(0, 8);
+		  project.loaded_commit_url = loadedCommit && /^https?:\/\//.test(repository) ? repository + '/commit/' + loadedCommit : '';
+		  project.has_loaded_commit = loadedCommit !== '';
+		  const updatedMilliseconds = Number(project.updated_unix_ms || 0);
+		  project.updated_label = updatedMilliseconds > 0 ? declarativeExecutionTimestamp(new Date(updatedMilliseconds).toISOString()) : 'Unknown';
 		  project.source_label = project.can_reload
 		    ? [project.repo_url || '', project.repo_ref || ''].filter(Boolean).join(' · ')
 		    : 'Managed YAML stored in ciwi';
 		});
 		view = {
 		  server: responseView, themes: themeOptions, projects,
+		  client_version: String(responseView.version || ''), server_version: String(responseView.version || ''), server_connected: true,
 		  selected_theme: selectedTheme, selected_theme_description: selected ? selected.description : '',
 		  import_repo_url: '', import_repo_ref: '', import_config_file: 'ciwi-project.yaml',
 		  update_supported: String(updateStatus.update_server_self_update_supported || '') === '1',
@@ -1192,7 +1202,11 @@
           : {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
       }
       currentDocument = documentContract;
-      currentData = { [bindingRoot]: view };
+	  const browserClientState = {
+		connected: true, connecting: false, offline: false, address: window.location.host,
+		status: 'Connected through the browser', tone: 'success', progress: {state: 'none'},
+	  };
+	  currentData = { [bindingRoot]: view, client: browserClientState };
       renderCurrent();
       if (jobMatch) {
         watchJobOutput(jobMatch[1], generation).catch(error => {

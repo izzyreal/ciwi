@@ -9,6 +9,8 @@ screen:
     - name: frontPage
       query: get-front-page-view
       watchTopics: [server, projects, agents, agent-eligibility, queue, history]
+    - name: client
+      query: get-native-client-state
   persistence:
     - name: projectsExpanded
       storageKey: ciwi.front-page.projects-expanded.v1
@@ -69,6 +71,8 @@ screen:
             text:
               literal: Agents
             icon: server
+            enabled:
+              binding: client.connected
             style:
               emphasis: strong
             actions:
@@ -87,12 +91,89 @@ screen:
                 command: navigate
                 arguments:
                   route: /settings
+          - component: button
+            text:
+              literal: Trying to connect…
+            icon: network
+            progress:
+              binding: client.progress
+            visible:
+              binding: client.connecting
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /settings
+          - component: button
+            text:
+              literal: Configure server
+            icon: server
+            visible:
+              binding: client.offline
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /settings
       - component: section
         id: projects
         layout:
           direction: vertical
           gap: "12"
         children:
+          - component: card
+            visible:
+              binding: client.connecting
+            layout:
+              direction: horizontal
+              gap: medium
+              padding: medium
+              align: center
+            progress:
+              binding: client.progress
+            children:
+              - component: text
+                text:
+                  binding: client.status
+                style:
+                  tone: muted
+                  role: body
+                layout:
+                  grow: true
+              - component: button
+                text:
+                  literal: Connection settings
+                icon: settings
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /settings
+          - component: card
+            visible:
+              binding: client.offline
+            layout:
+              direction: horizontal
+              gap: medium
+              padding: medium
+              align: center
+            children:
+              - component: text
+                text:
+                  literal: Connect to a ciwi server to load projects and executions.
+                style:
+                  tone: muted
+                layout:
+                  grow: true
+              - component: button
+                text:
+                  literal: Configure server
+                icon: settings
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /settings
           - component: text
             text:
               literal: Projects

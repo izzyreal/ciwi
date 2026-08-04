@@ -53,6 +53,7 @@ type Services struct {
 	}
 	Agents interface {
 		GetAgentsView(context.Context) (presentation.AgentsView, error)
+		GetAgentDetailsView(context.Context, string) (presentation.AgentDetailsView, error)
 	}
 	AgentCommands interface {
 		Execute(context.Context, application.AgentActionRequest) (application.AgentActionResult, error)
@@ -99,7 +100,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerVersion:    s.services.Version,
 		ServerInstanceId: snapshot.InstanceID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_actions", "execution_housekeeping", "execution_controls", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "execution_housekeeping", "execution_controls", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -303,6 +304,12 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		result, err = s.services.Agents.GetAgentsView(ctx)
 		if err == nil {
 			response.Result = &cnpv1.Response_AgentsView{AgentsView: agentsViewToProto(result)}
+		}
+	case *cnpv1.Request_GetAgentDetails:
+		var result presentation.AgentDetailsView
+		result, err = s.services.Agents.GetAgentDetailsView(ctx, operation.GetAgentDetails.GetAgentId())
+		if err == nil {
+			response.Result = &cnpv1.Response_AgentDetails{AgentDetails: agentDetailsToProto(result)}
 		}
 	case *cnpv1.Request_AgentAction:
 		var result application.AgentActionResult

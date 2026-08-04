@@ -37,6 +37,10 @@ type AgentsView struct {
 	Agents  []AgentView `json:"agents"`
 }
 
+type AgentDetailsView struct {
+	Agent AgentView `json:"agent"`
+}
+
 type AgentsQueries struct {
 	agents *application.AgentQueries
 	now    func() time.Time
@@ -63,6 +67,23 @@ func (q *AgentsQueries) GetAgentsView(ctx context.Context) (AgentsView, error) {
 		views = append(views, view)
 	}
 	return AgentsView{Summary: agentSummary(online, len(views)), Agents: views}, nil
+}
+
+func (q *AgentsQueries) GetAgentDetailsView(ctx context.Context, agentID string) (AgentDetailsView, error) {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return AgentDetailsView{}, application.NewError(application.ErrorInvalidArgument, "agent id is required", nil)
+	}
+	agents, err := q.agents.ListAgents(ctx)
+	if err != nil {
+		return AgentDetailsView{}, err
+	}
+	for _, agent := range agents {
+		if agent.ID == agentID {
+			return AgentDetailsView{Agent: agentToView(agent, q.now())}, nil
+		}
+	}
+	return AgentDetailsView{}, application.NewError(application.ErrorNotFound, "agent not found", nil)
 }
 
 func agentToView(agent domain.Agent, now time.Time) AgentView {

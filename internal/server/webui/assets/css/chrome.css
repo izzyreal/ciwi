@@ -672,7 +672,7 @@
       color: var(--muted);
       background-color: var(--surface-soft);
     }
-    main { max-width: 1150px; margin: 24px auto; padding: 0 16px; }
+    main { max-width: 1600px; margin: 24px auto; padding: 0 16px; }
     .card {
       background: var(--card-background);
       border: 1px solid var(--line);

@@ -201,7 +201,7 @@ func TestUpdateRestartWatcherRecognizesRequestedVersion(t *testing.T) {
 }
 
 func TestAllPagesUseProjectPageWidthFromSharedChrome(t *testing.T) {
-	if !strings.Contains(chromeCSS, `main { max-width: 1150px;`) {
+	if !strings.Contains(chromeCSS, `main { max-width: 1600px;`) {
 		t.Fatal("shared page width no longer matches the project details page")
 	}
 	if strings.Contains(projectCSS, `main { max-width:`) {

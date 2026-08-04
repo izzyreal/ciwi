@@ -68,6 +68,35 @@ screen:
                 command: navigate
                 arguments:
                   route: /
+      - component: row
+        id: project-structure-filter
+        overrides:
+          web:
+            hidden: true
+        layout:
+          direction: horizontal
+          gap: small
+          align: center
+        children:
+          - component: text
+            text:
+              literal: "Show:"
+            style:
+              tone: muted
+          - component: select
+            layout:
+              minWidth: "220"
+            select:
+              value: projectDetails.structure_filter
+              options: projectDetails.structure_filters
+              as: structureOption
+              optionValue: structureOption.value
+              optionLabel: structureOption.label
+            actions:
+              - on: change
+                command: set-project-structure-filter
+                arguments:
+                  value: "{{selection.value}}"
       - component: graph-view
         id: project-structure
         text:
@@ -75,7 +104,7 @@ screen:
         graphView:
           stateKey: "project-structure:{{projectDetails.project.id}}"
           defaultMode: graph
-          nodes: projectDetails.pipelines
+          nodes: projectDetails.visible_pipelines
           as: pipeline
           nodeKey: pipeline.pipeline_id
           nodeLabel:
@@ -442,7 +471,7 @@ screen:
               direction: vertical
               gap: medium
             repeat:
-              source: projectDetails.pipelines
+              source: projectDetails.visible_pipelines
               as: pipeline
               key: pipeline.id
             children:

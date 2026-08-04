@@ -3,7 +3,6 @@ kind: Screen
 metadata:
   name: agents
   title: Agents
-  description: Connected build agents and operational controls
 screen:
   dataSources:
     - name: agents
@@ -12,218 +11,95 @@ screen:
   root:
     component: page
     id: agents
-    layout:
-      direction: vertical
-      gap: large
-      padding: large
-      maxWidth: page
+    layout: {direction: vertical, gap: large, padding: large, maxWidth: page}
     children:
       - component: row
-        id: agents-header
-        layout:
-          direction: horizontal
-          gap: medium
-          align: center
+        layout: {direction: horizontal, gap: medium, align: center}
         children:
           - component: column
-            layout:
-              direction: vertical
-              gap: small
-              grow: true
+            layout: {direction: vertical, gap: small, grow: true}
             children:
               - component: text
-                text:
-                  literal: Agents
-                style:
-                  role: title
-                  emphasis: strong
+                text: {literal: Agents}
+                style: {role: title, emphasis: strong}
               - component: text
-                text:
-                  binding: agents.summary
-                style:
-                  tone: muted
+                text: {binding: agents.summary}
+                style: {tone: muted}
           - component: button
-            text:
-              literal: Refresh
+            text: {literal: Refresh}
             icon: refresh
-            actions:
-              - on: activate
-                command: refresh
+            actions: [{on: activate, command: refresh}]
           - component: button
-            text:
-              literal: Back to Main
+            text: {literal: Back to Main}
             icon: arrow-left
-            actions:
-              - on: activate
-                command: navigate
-                arguments:
-                  route: /
-      - component: list
-        layout:
-          direction: vertical
-          gap: medium
-        repeat:
-          source: agents.agents
-          as: agent
-          key: agent.id
+            actions: [{on: activate, command: navigate, arguments: {route: /}}]
+      - component: card
+        layout: {direction: vertical, gap: medium, padding: medium}
         children:
-          - component: disclosure
-            text:
-              template: "Agent: {{agent.id}} · {{agent.status_label}}"
-            disclosure:
-              defaultExpanded: true
-              stateKey: "agent:{{agent.id}}"
-            layout:
-              direction: vertical
-              gap: medium
-              padding: medium
-            style:
-              role: body
-              emphasis: strong
-              toneBinding: agent.status
+          - component: row
+            layout: {direction: horizontal, gap: medium, wrap: true}
+            style: {emphasis: strong, tone: muted}
             children:
               - component: text
-                text:
-                  template: "{{agent.hostname}} · {{agent.platform}} · {{agent.version}}"
+                text: {literal: Agent ID}
+                layout: {grow: true}
               - component: text
-                text:
-                  template: "{{agent.authorization}} · {{agent.activation}} · {{agent.run_mode}} · last seen {{agent.last_seen}}"
-                style:
-                  tone: muted
+                text: {literal: Host}
+                layout: {grow: true}
               - component: text
-                text:
-                  template: "Capabilities: {{agent.capabilities_label}}"
-                style:
-                  tone: muted
+                text: {literal: Platform}
+                layout: {grow: true}
               - component: text
-                text:
-                  binding: agent.update_label
-                style:
-                  tone: muted
-              - component: row
-                layout:
-                  direction: horizontal
-                  gap: small
-                  wrap: true
+                text: {literal: Version}
+                layout: {grow: true}
+              - component: text
+                text: {literal: Heartbeat}
+                layout: {grow: true}
+              - component: text
+                text: {literal: Health}
+                layout: {grow: true}
+              - component: text
+                text: {literal: Run mode}
+                layout: {grow: true}
+          - component: divider
+          - component: list
+            layout: {direction: vertical, gap: small}
+            repeat: {source: agents.agents, as: agent, key: agent.id}
+            children:
+              - component: card
+                layout: {direction: vertical, gap: small, padding: small}
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments: {route: "/agents/{{agent.id}}"}
                 children:
-                  - component: button
-                    text:
-                      literal: Authorize
-                    visible:
-                      binding: agent.authorized
-                      equals: "false"
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: authorize}
-                  - component: button
-                    text:
-                      literal: Unauthorize
-                    visible:
-                      binding: agent.authorized
-                      equals: "true"
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: unauthorize}
-                        confirm:
-                          title: Unauthorize agent?
-                          message: The agent will remain known to ciwi but cannot lease new jobs until it is authorized again. Running work is not interrupted.
-                  - component: button
-                    text:
-                      literal: Activate
-                    visible:
-                      binding: agent.deactivated
-                      equals: "true"
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: activate}
-                  - component: button
-                    text:
-                      literal: Deactivate
-                    visible:
-                      binding: agent.deactivated
-                      equals: "false"
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: deactivate}
-                        confirm:
-                          title: Deactivate agent?
-                          message: The agent will stop receiving work and its active jobs will be cancelled.
-                  - component: button
-                    text:
-                      literal: Refresh Tools
-                    visible:
-                      binding: agent.can_contact
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: refresh-tools}
-                  - component: button
-                    text:
-                      literal: Restart
-                    visible:
-                      binding: agent.can_contact
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: restart}
-                        confirm:
-                          title: Restart agent?
-                          message: Requests an agent process restart. Work already in progress may be interrupted.
-                  - component: button
-                    text:
-                      literal: Update
-                    visible:
-                      binding: agent.can_update
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: update}
-                  - component: button
-                    text:
-                      literal: Wipe Cache
-                    icon: trash
-                    visible:
-                      binding: agent.can_contact
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: wipe-cache}
-                        confirm:
-                          title: Wipe agent cache?
-                          message: Requests removal of the agent's local dependency and build caches. Server history and artifacts are not removed. Running work may lose cached data.
-                  - component: button
-                    text:
-                      literal: Flush Job History
-                    icon: trash
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: flush-job-history}
-                        confirm:
-                          title: Flush this agent's job history?
-                          message: Removes finished execution records and artifacts associated with this agent and asks it to clear its local job history. Dependency and build caches are not cleared.
-                  - component: button
-                    text:
-                      literal: Delete Agent
-                    icon: trash
-                    actions:
-                      - on: activate
-                        command: agent-action
-                        arguments: {agentId: "{{agent.id}}", action: delete}
-                        confirm:
-                          title: Delete agent record?
-                          message: Removes the server's stored record for this agent. It does not uninstall or stop the agent; a running agent may register again on its next heartbeat.
-              - component: text
-                text:
-                  binding: agent.recent_log
-                visible:
-                  binding: agent.recent_log
-                  empty: true
-                  not: true
-                style:
-                  role: code
-                  tone: muted
+                  - component: row
+                    layout: {direction: horizontal, gap: medium, align: center, wrap: true}
+                    children:
+                      - component: text
+                        text: {binding: agent.id}
+                        layout: {grow: true}
+                        style: {role: link, emphasis: strong}
+                      - component: text
+                        text: {binding: agent.hostname}
+                        layout: {grow: true}
+                      - component: text
+                        text: {binding: agent.platform}
+                        layout: {grow: true}
+                        style: {role: code}
+                      - component: text
+                        text: {binding: agent.version}
+                        layout: {grow: true}
+                      - component: text
+                        text: {binding: agent.last_seen}
+                        layout: {grow: true}
+                        style: {tone: muted}
+                      - component: badge
+                        text: {binding: agent.status_label}
+                        layout: {grow: true}
+                        style: {toneBinding: agent.status}
+                      - component: text
+                        text: {binding: agent.run_mode}
+                        layout: {grow: true}
+                      - component: icon
+                        icon: chevron-right

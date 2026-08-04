@@ -32,3 +32,21 @@ func TestAgentsViewDecoratesAndSortsAgentState(t *testing.T) {
 		t.Fatalf("view = %+v", view)
 	}
 }
+
+func TestAgentDetailsViewUsesTheSharedAgentPresentation(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	queries := NewAgentsQueries(application.NewAgentQueries(presentationAgentRepository{agents: []domain.Agent{
+		{ID: "agent-1", Hostname: "builder", OS: "linux", Arch: "amd64", Authorized: true, LastSeenUTC: now.Add(-time.Second)},
+	}}))
+	queries.now = func() time.Time { return now }
+	view, err := queries.GetAgentDetailsView(t.Context(), "agent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Agent.ID != "agent-1" || view.Agent.Platform != "linux/amd64" || view.Agent.Status != "online" {
+		t.Fatalf("agent details = %+v", view)
+	}
+	if _, err := queries.GetAgentDetailsView(t.Context(), "missing"); application.ErrorKindOf(err) != application.ErrorNotFound {
+		t.Fatalf("missing agent error = %v", err)
+	}
+}

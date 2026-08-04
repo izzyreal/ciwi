@@ -92,6 +92,7 @@ func newTestHTTPServerWithState(t *testing.T) (*httptest.Server, *stateStore) {
 	mux.HandleFunc("/api/v1/views/jobs/", s.jobDetailsViewHandler)
 	mux.HandleFunc("/api/v1/views/run-options/", s.runOptionsViewHandler)
 	mux.HandleFunc("/api/v1/views/agents", s.agentsViewHandler)
+	mux.HandleFunc("/api/v1/views/agents/", s.agentDetailsViewHandler)
 	mux.HandleFunc("/api/v1/heartbeat", s.heartbeatHandler)
 	mux.HandleFunc("/api/v1/agents", s.listAgentsHandler)
 	mux.HandleFunc("/api/v1/agents/", s.agentByIDHandler)

@@ -9,6 +9,8 @@ screen:
     - name: settings
       query: get-settings-view
       watchTopics: [server, projects, updates]
+    - name: client
+      query: get-native-client-state
   persistence:
     - name: selectedTheme
       storageKey: ciwi.ui.theme.v1
@@ -44,10 +46,27 @@ screen:
             children:
               - component: text
                 text:
-                  template: "ciwi {{settings.server.version}} global settings"
+                  literal: ciwi global settings
                 style:
                   role: title
                   emphasis: strong
+              - component: row
+                layout:
+                  direction: horizontal
+                  gap: small
+                  align: center
+                  wrap: true
+                children:
+                  - component: badge
+                    text:
+                      template: "Client: {{settings.client_version}}"
+                    style:
+                      tone: accent
+                  - component: badge
+                    text:
+                      template: "Server: {{settings.server_version}}"
+                    style:
+                      toneBinding: client.tone
               - component: text
                 text:
                   literal: Native client appearance and connection
@@ -58,6 +77,8 @@ screen:
             text:
               literal: Restart Server
             icon: refresh
+            enabled:
+              binding: client.connected
             actions:
               - on: activate
                 command: server-update-action
@@ -133,6 +154,11 @@ screen:
               - component: text
                 text:
                   literal: Choose how this native client locates its ciwi server.
+              - component: text
+                text:
+                  binding: client.status
+                style:
+                  toneBinding: client.tone
               - component: select
                 select:
                   value: settings.connection_mode
@@ -268,6 +294,35 @@ screen:
                           binding: project.source_label
                         style:
                           tone: muted
+                      - component: row
+                        visible:
+                          binding: project.has_loaded_commit
+                        layout:
+                          direction: horizontal
+                          gap: small
+                          align: center
+                          wrap: true
+                        children:
+                          - component: text
+                            text:
+                              literal: "Loaded commit:"
+                            style:
+                              tone: muted
+                          - component: text
+                            text:
+                              binding: project.loaded_commit_short
+                            style:
+                              role: code-inline
+                              tone: accent
+                            actions:
+                              - on: activate
+                                command: open-url
+                                arguments: {url: "{{project.loaded_commit_url}}"}
+                          - component: text
+                            text:
+                              template: "| Last update time: {{project.updated_label}}"
+                            style:
+                              tone: muted
                   - component: button
                     text:
                       literal: View

@@ -131,6 +131,10 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if err != nil || agents.Summary != "1/1 online" || len(agents.Agents) != 1 {
 		t.Fatalf("agents = %#v, %v", agents, err)
 	}
+	agentDetails, err := client.GetAgentDetails(ctx, "agent-1")
+	if err != nil || agentDetails.Agent == nil || agentDetails.Agent.Id != "agent-1" {
+		t.Fatalf("agent details = %#v, %v", agentDetails, err)
+	}
 	agentResult, err := client.AgentAction(ctx, &cnpv1.AgentActionRequest{AgentId: "agent-1", Action: "restart"}, "agent-command-key")
 	if err != nil || !agentResult.Requested || agentResult.AgentId != "agent-1" {
 		t.Fatalf("agent action = %#v, %v", agentResult, err)
@@ -529,6 +533,10 @@ type agentService struct{}
 
 func (agentService) GetAgentsView(context.Context) (presentation.AgentsView, error) {
 	return presentation.AgentsView{Summary: "1/1 online", Agents: []presentation.AgentView{{ID: "agent-1", Status: "online", StatusLabel: "Online"}}}, nil
+}
+
+func (agentService) GetAgentDetailsView(_ context.Context, agentID string) (presentation.AgentDetailsView, error) {
+	return presentation.AgentDetailsView{Agent: presentation.AgentView{ID: agentID, Status: "online", StatusLabel: "Online"}}, nil
 }
 
 func (agentService) Execute(_ context.Context, request application.AgentActionRequest) (application.AgentActionResult, error) {

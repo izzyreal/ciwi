@@ -12,7 +12,7 @@ func TestNativePreferencesRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "native-ui.json")
 	want := nativePreferences{
 		Theme: "space", Disclosures: map[string]bool{"front-project:1": false}, Views: map[string]string{"project-structure:1": "list"},
-		ConnectionMode: connectionModeExplicit, ServerEndpoint: "tcp://127.0.0.1:8113",
+		ConnectionMode: connectionModeExplicit, ServerEndpoint: "tcp://127.0.0.1:8113", LastSuccessfulEndpoint: "tcp://buildbox:8113",
 	}
 	if err := saveNativePreferences(path, want); err != nil {
 		t.Fatal(err)
@@ -73,15 +73,19 @@ func TestNativePreferencesNormalizeUnknownConnectionModeToDiscovery(t *testing.T
 func TestNativeConnectionSettingsForLaunch(t *testing.T) {
 	preferences := nativePreferences{ConnectionMode: connectionModeExplicit, ServerEndpoint: "tcp://saved:8113"}
 	saved := nativeConnectionSettingsForLaunch(preferences, "")
-	if saved.Mode != connectionModeExplicit || saved.Endpoint != "tcp://saved:8113" || saved.Address != "tcp://saved:8113" {
+	if saved.Mode != connectionModeExplicit || saved.Endpoint != "tcp://saved:8113" || saved.PreferredAddress != "tcp://saved:8113" || saved.DiscoverFallback {
 		t.Fatalf("saved settings = %+v", saved)
 	}
 	overridden := nativeConnectionSettingsForLaunch(preferences, " quic://override:8113 ")
-	if overridden.Mode != connectionModeExplicit || overridden.Endpoint != "quic://override:8113" || overridden.Address != "quic://override:8113" {
+	if overridden.Mode != connectionModeExplicit || overridden.Endpoint != "quic://override:8113" || overridden.PreferredAddress != "quic://override:8113" || overridden.DiscoverFallback {
 		t.Fatalf("overridden settings = %+v", overridden)
 	}
 	discovered := nativeConnectionSettingsForLaunch(nativePreferences{}, "")
-	if discovered.Mode != connectionModeDiscover || discovered.Endpoint != "" || discovered.Address != "" {
+	if discovered.Mode != connectionModeDiscover || discovered.Endpoint != "" || discovered.PreferredAddress != "" || !discovered.DiscoverFallback {
 		t.Fatalf("discovery settings = %+v", discovered)
+	}
+	remembered := nativeConnectionSettingsForLaunch(nativePreferences{LastSuccessfulEndpoint: "tcp://remembered:8113"}, "")
+	if remembered.Mode != connectionModeDiscover || remembered.PreferredAddress != "tcp://remembered:8113" || !remembered.DiscoverFallback {
+		t.Fatalf("remembered discovery settings = %+v", remembered)
 	}
 }

@@ -1,7 +1,7 @@
 body { min-height: 100vh; }
 #declarativeRoot { min-height: 100vh; }
 .dsl-page {
-  width: min(var(--ciwi-page-max, 1150px), calc(100% - var(--ciwi-page-inset, 16px) - var(--ciwi-page-inset, 16px)));
+  width: min(var(--ciwi-page-max, 1600px), calc(100% - var(--ciwi-page-inset, 16px) - var(--ciwi-page-inset, 16px)));
   margin: var(--ciwi-page-inset, 16px) auto;
   display: flex;
   flex-direction: column;

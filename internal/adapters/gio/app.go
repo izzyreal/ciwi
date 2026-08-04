@@ -35,13 +35,14 @@ type commandRequest struct {
 }
 
 type navigationState struct {
-	screen       string
-	projectID    int64
-	pipelineDBID int64
-	chainID      string
-	jobID        string
-	sourceRef    string
-	agentID      string
+	screen         string
+	projectID      int64
+	pipelineDBID   int64
+	chainID        string
+	jobID          string
+	sourceRef      string
+	agentID        string
+	agentDetailsID string
 }
 
 type runOptionsLoadResult struct {
@@ -71,6 +72,13 @@ type nativeSession struct {
 	cancelWatch context.CancelFunc
 }
 
+type nativeConnectionState struct {
+	connected  bool
+	connecting bool
+	address    string
+	status     string
+}
+
 func connectNativeSession(ctx context.Context, address, version string) (*nativeSession, error) {
 	targets, err := nativeTargets(ctx, address)
 	if err != nil {
@@ -90,6 +98,36 @@ func connectNativeSession(ctx context.Context, address, version string) (*native
 		return nil, fmt.Errorf("connect to ciwi native endpoint: %s: start live updates: %w", target, watchErr)
 	}
 	return &nativeSession{client: client, address: target, changes: changes, watchErrors: watchErrors, cancelWatch: cancelWatch}, nil
+}
+
+func connectConfiguredNativeSession(ctx context.Context, settings nativeConnectionSettings, version string) (*nativeSession, error) {
+	preferred := strings.TrimSpace(settings.PreferredAddress)
+	if preferred != "" {
+		connected, err := connectNativeSession(ctx, preferred, version)
+		if err == nil || !settings.DiscoverFallback {
+			return connected, err
+		}
+	}
+	return connectNativeSession(ctx, "", version)
+}
+
+func (s nativeConnectionState) binding() map[string]any {
+	tone := "danger"
+	if s.connected {
+		tone = "success"
+	} else if s.connecting {
+		tone = "warning"
+	}
+	return map[string]any{
+		"connected": s.connected, "connecting": s.connecting,
+		"offline": !s.connected && !s.connecting, "address": s.address,
+		"status": s.status, "tone": tone,
+		"progress": map[string]any{"state": map[bool]string{true: "indeterminate", false: "none"}[s.connecting]},
+	}
+}
+
+func applyNativeConnectionState(renderer *Renderer, state nativeConnectionState) {
+	renderer.SetDataBinding("client", state.binding())
 }
 
 type nativeDialResult struct {
@@ -271,13 +309,13 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
-	connectionScreen, err := sharedUI.LoadScreen("connection")
+	agentDetailsScreen, err := sharedUI.LoadScreen("agent-details")
 	if err != nil {
 		return err
 	}
 	screens := map[string]*uidsl.ScreenDocument{
 		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
-		"settings": settingsScreen, "run-options": runOptionsScreen, "agents": agentsScreen, "connection": connectionScreen,
+		"settings": settingsScreen, "run-options": runOptionsScreen, "agents": agentsScreen, "agent-details": agentDetailsScreen,
 	}
 	preferencesPath, err := nativePreferencesPath()
 	if err != nil {
@@ -316,6 +354,12 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	initialData, err := offlineFrontPageBindingData(options.Version)
+	if err != nil {
+		return err
+	}
+	renderer.SetScreenAndData(frontPageScreen, initialData)
+	applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: "Trying to connect…"})
 	renderer.SetDisclosureStates(preferences.Disclosures)
 	renderer.SetDisclosureChange(func(states map[string]bool) {
 		if err := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
@@ -338,7 +382,7 @@ func Run(options Options) error {
 		}
 	})
 	renderer.SetInvalidate(window.Invalidate)
-	renderer.SetStatus("Connecting to ciwi…")
+	renderer.SetStatus("")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go runController(ctx, window, renderer, commands, screens, options, preferencesPath, preferences)
@@ -358,14 +402,14 @@ func Run(options Options) error {
 
 func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string, preferences nativePreferences) {
 	connectionSettings := nativeConnectionSettingsForLaunch(preferences, options.Address)
-	mode, endpoint, connectionAddress := connectionSettings.Mode, connectionSettings.Endpoint, connectionSettings.Address
+	mode, endpoint := connectionSettings.Mode, connectionSettings.Endpoint
 	var session *nativeSession
 	var client *cnpclient.Client
 	var changes <-chan *cnpv1.ChangeEvent
 	var watchErrors <-chan error
 	address := ""
 	reconnectDelay := time.Second
-	connected, initialConnectErr := connectNativeSession(ctx, connectionAddress, options.Version)
+	connected, initialConnectErr := connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
 	if initialConnectErr == nil {
 		session = connected
 		client = connected.client
@@ -441,14 +485,43 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	if strings.TrimSpace(options.Route) != "" {
 		navigation, _ = navigationForRoute(options.Route)
 	}
-	resumeNavigation := navigation
+	if initialConnectErr == nil {
+		if refreshErr := refreshScreen(ctx, client, renderer, screens, navigation); refreshErr != nil {
+			// A remembered deep route can disappear between sessions. Keep a
+			// healthy connection and recover to the main screen in that case.
+			navigation = navigationState{screen: "front-page"}
+			if fallbackErr := refreshScreen(ctx, client, renderer, screens, navigation); fallbackErr != nil {
+				initialConnectErr = fmt.Errorf("resynchronize: %w", fallbackErr)
+				if session != nil {
+					session.close()
+					session = nil
+				}
+				client = nil
+				changes = nil
+				watchErrors = nil
+			}
+		}
+	}
 	if initialConnectErr != nil {
-		navigation.screen = "connection"
-		renderer.SetScreenAndData(screens["connection"], connectionBindingData(mode, endpoint, "Server unavailable: "+initialConnectErr.Error(), false))
-		renderer.SetStatus("Server unavailable; reconnecting…")
-	} else if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
-		renderer.SetStatus(err.Error())
+		if navigation.screen != "front-page" && navigation.screen != "settings" {
+			navigation = navigationState{screen: "front-page"}
+		}
+		if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint); err != nil {
+			renderer.SetStatus(err.Error())
+		}
+		applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: "Server unavailable; reconnecting…"})
 	} else {
+		rememberSuccessfulEndpoint(preferencesPath, address)
+		preferences.LastSuccessfulEndpoint = address
+		if mode == connectionModeDiscover {
+			connectionSettings.PreferredAddress = address
+			connectionSettings.DiscoverFallback = true
+		}
+		applyNativeConnectionState(renderer, nativeConnectionState{connected: true, address: address, status: "Connected to " + address})
+		if navigation.screen == "settings" {
+			applyConnectionBindings(renderer, "settings", mode, endpoint)
+			renderer.SetRootBinding("settings", "client_version", options.Version)
+		}
 		renderer.SetTransientStatus("Connected to "+address, nativeNoticeDuration)
 	}
 	window.Invalidate()
@@ -503,18 +576,8 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			runOptionsCancel = nil
 			runOptionsGeneration++
 		}
-		alreadyShowingConnection := navigation.screen == "connection"
-		if !alreadyShowingConnection {
-			resumeNavigation = navigation
-		}
-		navigation.screen = "connection"
-		if alreadyShowingConnection {
-			renderer.SetRootBinding("connection", "status", status)
-			renderer.SetRootBinding("connection", "status_tone", connectionStatusTone(status))
-		} else {
-			renderer.SetScreenAndData(screens["connection"], connectionBindingData(mode, endpoint, status, false))
-		}
-		renderer.SetStatus(status)
+		applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: status})
+		renderer.SetStatus("")
 		if reconnectTimer == nil {
 			reconnectTimer = time.NewTimer(delay)
 		} else {
@@ -531,12 +594,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	}
 	scheduleReconnect := func(reason string) {
 		status := "Connection lost; reconnecting…"
-		if navigation.screen == "connection" {
-			status = "Server unavailable; reconnecting…"
-			if reason != "" {
-				status = "Server unavailable: " + reason
-			}
-		} else if reason != "" {
+		if reason != "" {
 			status = "Connection lost: " + reason
 		}
 		scheduleReconnectAfter(status, reconnectDelay)
@@ -560,7 +618,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			statusExpiry = nil
 		case <-reconnect:
 			reconnect = nil
-			connected, connectErr := connectNativeSession(ctx, connectionAddress, options.Version)
+			connected, connectErr := connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
 			if connectErr != nil {
 				reconnectDelay = nextReconnectDelay(reconnectDelay)
 				scheduleReconnect(connectErr.Error())
@@ -572,18 +630,25 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			watchErrors = connected.watchErrors
 			address = connected.address
 			reconnectDelay = time.Second
-			if navigation.screen == "connection" {
-				navigation = resumeNavigation
-				if navigation.screen == "" || navigation.screen == "connection" {
-					navigation = navigationState{screen: "front-page"}
+			if refreshErr := refreshScreen(ctx, client, renderer, screens, navigation); refreshErr != nil {
+				// A stale deep link should not make a healthy native connection look
+				// broken. Fall back to the main screen and keep the session.
+				navigation = navigationState{screen: "front-page"}
+				if fallbackErr := refreshScreen(ctx, client, renderer, screens, navigation); fallbackErr != nil {
+					scheduleReconnect("resynchronize: " + fallbackErr.Error())
+					continue
 				}
 			}
-			if refreshErr := refreshScreen(ctx, client, renderer, screens, navigation); refreshErr != nil {
-				scheduleReconnect("resynchronize: " + refreshErr.Error())
-				continue
+			rememberSuccessfulEndpoint(preferencesPath, address)
+			preferences.LastSuccessfulEndpoint = address
+			if mode == connectionModeDiscover {
+				connectionSettings.PreferredAddress = address
+				connectionSettings.DiscoverFallback = true
 			}
+			applyNativeConnectionState(renderer, nativeConnectionState{connected: true, address: address, status: "Connected to " + address})
 			if navigation.screen == "settings" {
 				applyConnectionBindings(renderer, "settings", mode, endpoint)
+				renderer.SetRootBinding("settings", "client_version", options.Version)
 			}
 			if navigation.screen == "job-details" {
 				startOutput(navigation.jobID)
@@ -608,6 +673,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 				if navigation.screen == "settings" {
 					applyConnectionBindings(renderer, "settings", mode, endpoint)
+					renderer.SetRootBinding("settings", "client_version", options.Version)
 				}
 				if navigation.screen == "job-details" {
 					outputBuffer.apply(renderer)
@@ -648,7 +714,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				renderer.SetStatus("Run options failed: " + result.err.Error())
 			} else {
 				renderer.SetScreenAndData(screens["run-options"], result.data)
-				renderer.SetStatus("Run options")
+				renderer.SetStatus("")
 			}
 			window.Invalidate()
 		case command := <-commands:
@@ -678,7 +744,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					window.Invalidate()
 					continue
 				}
-				connectionAddress = ""
+				connectionSettings = nativeConnectionSettings{Mode: mode, Endpoint: endpoint}
 				if mode == connectionModeExplicit {
 					target, parseErr := cnpclient.ParseTarget(endpoint)
 					if parseErr != nil {
@@ -692,7 +758,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 						continue
 					}
 					endpoint = target.String()
-					connectionAddress = endpoint
+					connectionSettings.Endpoint = endpoint
+					connectionSettings.PreferredAddress = endpoint
+				} else {
+					connectionSettings.PreferredAddress = strings.TrimSpace(preferences.LastSuccessfulEndpoint)
+					connectionSettings.DiscoverFallback = true
 				}
 				if saveErr := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
 					preferences.ConnectionMode = mode
@@ -702,6 +772,8 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					window.Invalidate()
 					continue
 				}
+				preferences.ConnectionMode = mode
+				preferences.ServerEndpoint = endpoint
 				reconnectDelay = time.Second
 				scheduleReconnectAfter("Connection settings saved; reconnecting…", 0)
 				continue
@@ -710,8 +782,10 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				scheduleReconnectAfter("Retrying connection…", 0)
 				continue
 			}
-			if client == nil && command.action.Command != "change-theme" && command.action.Command != "set-project-import-field" {
-				renderer.SetStatus("Server is offline; reconnecting…")
+			if command.action.Command == "open-url" {
+				if openErr := openExternalURL(command.arguments["url"]); openErr != nil {
+					renderer.SetStatus("Could not open link: " + openErr.Error())
+				}
 				window.Invalidate()
 				continue
 			}
@@ -723,11 +797,20 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					continue
 				}
 				if next.screen == "connection" {
-					resumeNavigation = navigation
+					next = navigationState{screen: "settings"}
+				}
+				if client == nil {
+					if next.screen != "front-page" && next.screen != "settings" {
+						renderer.SetStatus("This screen needs a server connection")
+						window.Invalidate()
+						continue
+					}
 					navigation = next
 					stopOutput()
-					renderer.SetScreenAndData(screens["connection"], connectionBindingData(mode, endpoint, connectionStatus(client, address), client != nil))
-					renderer.SetStatus("Connection settings")
+					if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint); err != nil {
+						renderer.SetStatus(err.Error())
+					}
+					applyNativeConnectionState(renderer, nativeConnectionState{connecting: reconnect != nil, status: "Server unavailable; reconnecting…"})
 					window.Invalidate()
 					continue
 				}
@@ -745,6 +828,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					runOptionsCancel = nil
 					runOptionsGeneration++
 				}
+			}
+			if client == nil && command.action.Command != "change-theme" && command.action.Command != "set-project-import-field" {
+				renderer.SetStatus("Server is offline; reconnecting…")
+				window.Invalidate()
+				continue
 			}
 			if command.action.Command == "set-run-option" && navigation.screen == "run-options" {
 				field := strings.TrimSpace(command.arguments["field"])
@@ -769,6 +857,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			handleCommand(ctx, client, renderer, screens, &navigation, command, preferencesPath)
 			if navigation.screen == "settings" {
 				applyConnectionBindings(renderer, "settings", mode, endpoint)
+				renderer.SetRootBinding("settings", "client_version", options.Version)
 			}
 			if navigation != previous {
 				if navigation.screen == "job-details" {
@@ -781,6 +870,10 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			window.Invalidate()
 		}
 	}
+}
+
+func openExternalURL(raw string) error {
+	return openPlatformURL(raw)
 }
 
 func connectionBindingData(mode, endpoint, status string, canBack bool) map[string]any {
@@ -826,6 +919,13 @@ func applyConnectionBindings(renderer *Renderer, screen, mode, endpoint string) 
 
 func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, command commandRequest, preferencesPath string) {
 	switch command.action.Command {
+	case "set-project-structure-filter":
+		filter := strings.TrimSpace(command.arguments["value"])
+		if filter == "" || !renderer.SetProjectStructureFilter(filter) {
+			renderer.SetStatus("Project structure filter is unavailable")
+			return
+		}
+		renderer.SetStatus("")
 	case "run-pipeline":
 		pipelineID, err := strconv.ParseInt(command.arguments["pipelineDbId"], 10, 64)
 		if err != nil || pipelineID <= 0 {
@@ -1263,19 +1363,7 @@ func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer,
 		return err
 	}
 	*navigation = next
-	if next.screen == "front-page" {
-		renderer.SetStatus("Projects")
-	} else if next.screen == "project-details" {
-		renderer.SetStatus("Project details")
-	} else if next.screen == "settings" {
-		renderer.SetStatus("Global settings")
-	} else if next.screen == "run-options" {
-		renderer.SetStatus("Run options")
-	} else if next.screen == "agents" {
-		renderer.SetStatus("Agents")
-	} else {
-		renderer.SetStatus("Job details")
-	}
+	renderer.SetStatus("")
 	return nil
 }
 
@@ -1328,6 +1416,12 @@ func navigationForRoute(route string) (navigationState, error) {
 		next.screen = "settings"
 	case route == "/agents":
 		next.screen = "agents"
+	case strings.HasPrefix(route, "/agents/"):
+		agentID := strings.Trim(strings.TrimPrefix(route, "/agents/"), "/")
+		if agentID == "" || strings.Contains(agentID, "/") {
+			return navigationState{}, fmt.Errorf("invalid agent route %q", route)
+		}
+		next = navigationState{screen: "agent-details", agentDetailsID: agentID}
 	case route == "/connection":
 		next.screen = "connection"
 	default:
@@ -1354,6 +1448,8 @@ func refreshScreen(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		return refreshRunOptions(ctx, client, renderer, screen, navigation)
 	case "agents":
 		return refreshAgents(ctx, client, renderer, screen)
+	case "agent-details":
+		return refreshAgentDetails(ctx, client, renderer, screen, navigation.agentDetailsID)
 	case "connection":
 		return nil
 	default:
@@ -1369,6 +1465,21 @@ func refreshAgents(ctx context.Context, client *cnpclient.Client, renderer *Rend
 		return err
 	}
 	data, err := protobufBindingData("agents", "agents", view)
+	if err != nil {
+		return err
+	}
+	renderer.SetScreenAndData(screen, data)
+	return nil
+}
+
+func refreshAgentDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, agentID string) error {
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	view, err := client.GetAgentDetails(requestCtx, agentID)
+	if err != nil {
+		return err
+	}
+	data, err := protobufBindingData("agentDetails", "agent details", view)
 	if err != nil {
 		return err
 	}
@@ -1526,6 +1637,15 @@ func decorateSettingsProjects(projects []any) {
 		project["can_reload"] = sourceKind != "managed_yaml"
 		project["action_status"] = ""
 		project["action_tone"] = "muted"
+		commit := strings.TrimSpace(fmt.Sprint(project["loaded_commit"]))
+		shortCommit := commit
+		if len(shortCommit) > 8 {
+			shortCommit = shortCommit[:8]
+		}
+		project["loaded_commit_short"] = shortCommit
+		project["loaded_commit_url"] = loadedCommitURL(strings.TrimSpace(fmt.Sprint(project["repo_url"])), commit)
+		project["updated_label"] = formatLoadedProjectTime(project["updated_unix_ms"])
+		project["has_loaded_commit"] = commit != ""
 		if sourceKind == "managed_yaml" {
 			project["source_label"] = "Managed YAML stored in ciwi"
 			continue
@@ -1536,6 +1656,37 @@ func decorateSettingsProjects(projects []any) {
 		}
 		project["source_label"] = label
 	}
+}
+
+func loadedCommitURL(repoURL, commit string) string {
+	if repoURL == "" || commit == "" {
+		return ""
+	}
+	repoURL = strings.TrimSuffix(repoURL, ".git")
+	if strings.HasPrefix(repoURL, "https://") || strings.HasPrefix(repoURL, "http://") {
+		return strings.TrimRight(repoURL, "/") + "/commit/" + commit
+	}
+	return ""
+}
+
+func formatLoadedProjectTime(value any) string {
+	var milliseconds int64
+	switch typed := value.(type) {
+	case float64:
+		milliseconds = int64(typed)
+	case float32:
+		milliseconds = int64(typed)
+	case int64:
+		milliseconds = typed
+	case int:
+		milliseconds = int64(typed)
+	default:
+		milliseconds, _ = strconv.ParseInt(strings.TrimSpace(fmt.Sprint(value)), 10, 64)
+	}
+	if milliseconds <= 0 {
+		return "Unknown"
+	}
+	return time.UnixMilli(milliseconds).Local().Format("Mon 02 Jan, 15:04:05")
 }
 
 func refreshJobDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, jobID string) error {
@@ -1754,6 +1905,9 @@ func decorateProjectDetails(root map[string]any) {
 		project["has_pipeline_chains"] = len(chains) > 0
 	}
 	pipelines, _ := root["pipelines"].([]any)
+	root["structure_filter"] = "all-pipelines"
+	root["structure_filters"] = projectStructureFilterOptions(root, pipelines)
+	root["visible_pipelines"] = append([]any(nil), pipelines...)
 	for _, rawPipeline := range pipelines {
 		pipeline, pipelineOK := rawPipeline.(map[string]any)
 		if !pipelineOK {
@@ -1814,6 +1968,31 @@ func decorateProjectDetails(root map[string]any) {
 			}
 		}
 	}
+}
+
+func projectStructureFilterOptions(root map[string]any, pipelines []any) []any {
+	options := []any{
+		map[string]any{"value": "all-pipelines", "label": "All Pipelines"},
+		map[string]any{"value": "all-chains", "label": "All chains"},
+	}
+	project, _ := root["project"].(map[string]any)
+	chains, _ := project["pipeline_chains"].([]any)
+	for _, raw := range chains {
+		chain, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := strings.TrimSpace(fmt.Sprint(chain["id"]))
+		if id == "" {
+			continue
+		}
+		name := strings.TrimSpace(fmt.Sprint(chain["name"]))
+		if name == "" {
+			name = strings.TrimSpace(fmt.Sprint(chain["sequence_label"]))
+		}
+		options = append(options, map[string]any{"value": "chain:" + id, "label": name + " (chain)"})
+	}
+	return options
 }
 
 func defaultLabel(value any, fallback string) string {
@@ -1913,6 +2092,7 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 	}
 	return map[string]any{"settings": map[string]any{
 		"server": serverBinding, "themes": themeBindings,
+		"client_version": "", "server_version": server.GetVersion(), "server_connected": strings.TrimSpace(server.GetVersion()) != "",
 		"selected_theme": selectedTheme, "selected_theme_description": selectedDescription, "projects": []any{},
 		"connection_mode": connectionModeDiscover, "connection_endpoint": "", "connection_explicit": false,
 		"connection_modes": []any{
@@ -1926,6 +2106,62 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 		"rollback_versions": versionOptions(nil, "Refresh versions"), "selected_rollback_version": "",
 		"update_result": "", "update_result_tone": "muted", "rollback_result": "", "rollback_result_tone": "muted",
 	}}, nil
+}
+
+func offlineFrontPageBindingData(clientVersion string) (map[string]any, error) {
+	return frontPageBindingData(&cnpv1.FrontPageView{
+		Server: &cnpv1.ServerInfo{Version: strings.TrimSpace(clientVersion)},
+	})
+}
+
+func offlineSettingsBindingData(clientVersion, selectedTheme, mode, endpoint string) (map[string]any, error) {
+	themes, err := sharedUI.LoadThemes()
+	if err != nil {
+		return nil, err
+	}
+	data, err := settingsBindingData(&cnpv1.ServerInfo{}, themes, selectedTheme)
+	if err != nil {
+		return nil, err
+	}
+	settings := data["settings"].(map[string]any)
+	settings["client_version"] = strings.TrimSpace(clientVersion)
+	settings["server_version"] = "Unavailable"
+	settings["server_connected"] = false
+	settings["connection_mode"] = mode
+	settings["connection_endpoint"] = endpoint
+	settings["connection_explicit"] = mode == connectionModeExplicit
+	settings["update_capability_notice"] = "Connect to a server to manage projects and server updates."
+	return data, nil
+}
+
+func refreshOfflineScreen(renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState, clientVersion, mode, endpoint string) error {
+	switch navigation.screen {
+	case "front-page":
+		data, err := offlineFrontPageBindingData(clientVersion)
+		if err != nil {
+			return err
+		}
+		renderer.SetScreenAndData(screens["front-page"], data)
+	case "settings":
+		data, err := offlineSettingsBindingData(clientVersion, renderer.ThemeName(), mode, endpoint)
+		if err != nil {
+			return err
+		}
+		renderer.SetScreenAndData(screens["settings"], data)
+	default:
+		return fmt.Errorf("screen %q needs a server connection", navigation.screen)
+	}
+	return nil
+}
+
+func rememberSuccessfulEndpoint(preferencesPath, address string) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return
+	}
+	_ = updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
+		preferences.LastSuccessfulEndpoint = address
+	})
 }
 
 func protobufBindingData(root, description string, message proto.Message) (map[string]any, error) {
@@ -1980,6 +2216,9 @@ func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent)
 			return true
 		}
 		if navigation.screen == "agents" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS {
+			return true
+		}
+		if navigation.screen == "agent-details" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS {
 			return true
 		}
 		if navigation.screen == "front-page" {
