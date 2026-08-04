@@ -103,7 +103,9 @@ Completed jobs use their full weight. Running jobs use their elapsed fraction. E
 
 - The agent records actual timestamps and emits structured lifecycle events for Ciwi phases and YAML-defined job steps.
 - The server stores those measurements and calculates historical job, phase, and YAML-step estimates.
-- The browser converts estimates and current execution state into determinate, indeterminate, waiting, complete, or overrun visuals.
+- The shared presentation layer converts estimates and execution state into a transport-neutral progress snapshot: semantic state, snapshot fraction, snapshot time, and advancement rate.
+- HTTP and CNP carry that same snapshot. The declarative `progress` binding opts a screen surface into progress without embedding estimation or aggregation rules in the screen.
+- Browser and native renderers interpolate the supplied snapshot and paint determinate, indeterminate, waiting, complete, or overrun visuals. They do not independently decide how jobs are weighted.
 
 Progress calculation never parses human-readable log output.
 

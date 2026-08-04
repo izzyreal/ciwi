@@ -43,3 +43,27 @@ func TestExecutionCardMappingCarriesTableMetadata(t *testing.T) {
 		t.Fatalf("execution card job = %+v", job)
 	}
 }
+
+func TestProgressMappingsPreserveSharedSemanticSnapshot(t *testing.T) {
+	progress := domain.Progress{
+		State: domain.ProgressDeterminate, Fraction: .42, SnapshotUnixMS: 1234, RatePerMS: .0002,
+	}
+	cards := executionCardsToProto([]domain.ExecutionCard{{
+		Progress: progress,
+		Sections: []domain.ExecutionCardSection{{Progress: progress, Jobs: []domain.ExecutionCardJob{{Progress: progress}}}},
+	}})
+	if got := cards[0].Progress; got == nil || got.State != domain.ProgressDeterminate || got.Fraction != .42 || got.SnapshotUnixMs != 1234 || got.RatePerMs != .0002 {
+		t.Fatalf("card progress = %+v", got)
+	}
+	if cards[0].Sections[0].Progress == nil || cards[0].Sections[0].Jobs[0].Progress == nil {
+		t.Fatalf("nested progress was not mapped: %+v", cards[0])
+	}
+	job := jobDetailsToProto(presentation.JobDetailsView{
+		Progress:     progress,
+		Timeline:     []presentation.JobTimelineView{{Progress: progress}},
+		OutputGroups: []presentation.JobOutputGroupView{{Progress: progress}},
+	})
+	if job.Progress == nil || job.Timeline[0].Progress == nil || job.OutputGroups[0].Progress == nil {
+		t.Fatalf("job progress was not mapped: %+v", job)
+	}
+}

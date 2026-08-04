@@ -66,7 +66,7 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 		timeline = append(timeline, &cnpv1.JobTimelineItem{
 			Id: item.ID, Kind: item.Kind, Title: item.Title, Description: item.Description,
 			Status: item.Status, StatusLabel: item.StatusLabel, Duration: item.Duration,
-			ExitCode: item.ExitCode, Error: item.Error,
+			ExitCode: item.ExitCode, Error: item.Error, Progress: progressToProto(item.Progress),
 		})
 	}
 	outputGroups := make([]*cnpv1.JobOutputGroup, 0, len(view.OutputGroups))
@@ -77,6 +77,7 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 			Reached: group.Reached, Started: group.Started, Duration: group.Duration,
 			ExitCode: group.ExitCode, Error: group.Error, Details: group.Details,
 			YamlLiteral: group.YAMLLiteral, ExpandedCommand: group.ExpandedCommand,
+			Progress: progressToProto(group.Progress),
 		})
 	}
 	return &cnpv1.JobDetailsView{
@@ -85,6 +86,7 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, Timeline: timeline, CanCancel: view.CanCancel, CanRerun: view.CanRerun,
 		OutputGroups: outputGroups, SchedulingDiagnosis: presentedSchedulingDiagnosisToProto(view),
+		Progress: progressToProto(view.Progress),
 	}
 }
 
@@ -145,7 +147,7 @@ func executionCardsToProto(cards []domain.ExecutionCard) []*cnpv1.ExecutionCardS
 				Failed: uint32(card.Summary.Failed), InProgress: uint32(card.Summary.InProgress),
 				Waiting: uint32(card.Summary.Waiting),
 			},
-			Sections: executionCardSectionsToProto(card.Sections),
+			Sections: executionCardSectionsToProto(card.Sections), Progress: progressToProto(card.Progress),
 		})
 	}
 	return out
@@ -161,12 +163,21 @@ func executionCardSectionsToProto(sections []domain.ExecutionCardSection) []*cnp
 				PipelineId: job.PipelineID, BuildLabel: job.BuildLabel, AgentId: job.AgentID,
 				CreatedUtc: formatProtoTime(job.CreatedUTC), StartedUtc: formatProtoTime(job.StartedUTC),
 				FinishedUtc: formatProtoTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,
-				SchedulingDiagnosis: schedulingDiagnosisToProto(job.SchedulingDiagnosis),
+				SchedulingDiagnosis: schedulingDiagnosisToProto(job.SchedulingDiagnosis), Progress: progressToProto(job.Progress),
 			})
 		}
-		out = append(out, &cnpv1.ExecutionCardSection{Key: section.Key, Label: section.Label, Jobs: jobs})
+		out = append(out, &cnpv1.ExecutionCardSection{
+			Key: section.Key, Label: section.Label, Jobs: jobs, Progress: progressToProto(section.Progress),
+		})
 	}
 	return out
+}
+
+func progressToProto(progress domain.Progress) *cnpv1.Progress {
+	return &cnpv1.Progress{
+		State: progress.State, Fraction: progress.Fraction, SnapshotUnixMs: progress.SnapshotUnixMS,
+		RatePerMs: progress.RatePerMS,
+	}
 }
 
 func formatProtoTime(value time.Time) string {

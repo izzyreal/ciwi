@@ -20,6 +20,8 @@ screen:
     children:
       - component: row
         id: job-header
+        progress:
+          binding: jobDetails.progress
         layout:
           direction: horizontal
           gap: medium
@@ -342,6 +344,8 @@ screen:
                   key: item.id
                 children:
                   - component: card
+                    progress:
+                      binding: item.progress
                     layout:
                       direction: vertical
                       gap: small
@@ -404,6 +408,8 @@ screen:
               key: outputGroup.id
             children:
               - component: disclosure
+                progress:
+                  binding: outputGroup.progress
                 text:
                   binding: outputGroup.title
                 disclosure:

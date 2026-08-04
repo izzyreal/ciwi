@@ -38,6 +38,9 @@ func TestFrontPageViewIncludesExecutionCardSummaries(t *testing.T) {
 	if len(response.QueuedExecutions[0].Sections) != 1 || response.QueuedExecutions[0].Sections[0].Jobs[0].Label != "linux" {
 		t.Fatalf("queued execution sections = %+v", response.QueuedExecutions[0].Sections)
 	}
+	if response.QueuedExecutions[0].Progress.State != domain.ProgressIndeterminate {
+		t.Fatalf("queued execution progress = %+v", response.QueuedExecutions[0].Progress)
+	}
 }
 
 func TestFrontPageProjectResponseKeepsEmptyContractFields(t *testing.T) {

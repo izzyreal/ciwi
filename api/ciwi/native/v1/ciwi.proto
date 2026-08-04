@@ -159,6 +159,7 @@ message JobDetailsView {
   bool can_rerun = 17;
   repeated JobOutputGroup output_groups = 18;
   SchedulingDiagnosis scheduling_diagnosis = 19;
+  Progress progress = 20;
 }
 
 message SchedulingDiagnosis {
@@ -204,6 +205,7 @@ message JobTimelineItem {
   string duration = 7;
   string exit_code = 8;
   string error = 9;
+  Progress progress = 10;
 }
 
 message JobOutputGroup {
@@ -222,6 +224,7 @@ message JobOutputGroup {
   string details = 13;
   string yaml_literal = 14;
   string expanded_command = 15;
+  Progress progress = 16;
 }
 
 message WatchJobOutputRequest {
@@ -261,12 +264,14 @@ message ExecutionCardSummary {
   repeated string job_execution_ids = 4;
   ExecutionSummary summary = 5;
   repeated ExecutionCardSection sections = 6;
+  Progress progress = 7;
 }
 
 message ExecutionCardSection {
   string key = 1;
   string label = 2;
   repeated ExecutionCardJob jobs = 3;
+  Progress progress = 4;
 }
 
 message ExecutionCardJob {
@@ -283,6 +288,14 @@ message ExecutionCardJob {
   string finished_utc = 11;
   string reason = 12;
   string action = 13;
+  Progress progress = 14;
+}
+
+message Progress {
+  string state = 1;
+  double fraction = 2;
+  int64 snapshot_unix_ms = 3;
+  double rate_per_ms = 4;
 }
 
 message RunPipelineSelection {

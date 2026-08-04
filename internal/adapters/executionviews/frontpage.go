@@ -24,6 +24,11 @@ type SchedulingAgentSource interface {
 	ListSchedulingAgents(context.Context) ([]requirements.AgentSnapshot, error)
 }
 
+type ProgressEstimator interface {
+	AttachJobEstimates([]protocol.JobExecution)
+	AttachDetailEstimate(*protocol.JobExecution) error
+}
+
 const (
 	outputPageSize  = 128
 	outputPageBytes = 512 * 1024
@@ -107,6 +112,11 @@ func (r *Repository) GetJobExecutionDetails(ctx context.Context, jobID string) (
 		}
 		return domain.JobExecutionDetails{}, err
 	}
+	if r.progress != nil {
+		if err := r.progress.AttachDetailEstimate(&job); err != nil {
+			return domain.JobExecutionDetails{}, err
+		}
+	}
 	jobs := []protocol.JobExecution{job}
 	if err := r.attachSchedulingDiagnoses(ctx, jobs); err != nil {
 		return domain.JobExecutionDetails{}, err
@@ -130,7 +140,9 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 		CurrentStep: strings.TrimSpace(job.CurrentStep), AgentID: strings.TrimSpace(job.LeasedByAgentID),
 		DryRun: protocol.JobMetadataValue(job, protocol.JobMetadataDryRun) == "1", CreatedUTC: job.CreatedUTC,
 		StartedUTC: job.StartedUTC, FinishedUTC: job.FinishedUTC, ExitCode: copyInt(job.ExitCode), Error: strings.TrimSpace(job.Error),
-		SchedulingDiagnosis: job.SchedulingDiagnosis,
+		SchedulingDiagnosis: job.SchedulingDiagnosis, ExpectedDurationMS: job.ExpectedDurationMS,
+		Waiting: protocol.NormalizeJobExecutionStatus(job.Status) == protocol.JobExecutionStatusQueued &&
+			(strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" || strings.TrimSpace(job.Metadata["needs_blocked"]) == "1"),
 	}
 	states := timelineStates(events)
 	stepsByIndex := make(map[int]protocol.JobStepPlanItem, len(job.StepPlan))
@@ -150,9 +162,16 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 				status = "pending"
 			}
 		}
+		expectedDurationMS := int64(0)
+		if item.Kind == "phase" {
+			expectedDurationMS = job.PhaseExpectedDuration[item.ID]
+		} else {
+			expectedDurationMS = job.StepExpectedDuration[item.StepIndex]
+		}
 		timelineItem := domain.JobTimelineItem{
 			ID: item.ID, Kind: item.Kind, Name: item.Name, Description: item.Description,
 			Index: item.Index, Total: item.Total, Reached: state.reached, Status: status, StartedUTC: state.startedUTC, DurationMS: state.durationMS,
+			FinishedUTC: state.finishedUTC, ExpectedDurationMS: expectedDurationMS,
 			ExitCode: copyInt(state.exitCode), Error: state.error,
 		}
 		if item.Kind == "step" {
@@ -167,12 +186,13 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 }
 
 type timelineState struct {
-	reached    bool
-	startedUTC time.Time
-	status     string
-	durationMS int64
-	exitCode   *int
-	error      string
+	reached     bool
+	startedUTC  time.Time
+	finishedUTC time.Time
+	status      string
+	durationMS  int64
+	exitCode    *int
+	error       string
 }
 
 func timelineStates(events []protocol.JobExecutionEvent) map[string]timelineState {
@@ -199,6 +219,7 @@ func timelineStates(events []protocol.JobExecutionEvent) map[string]timelineStat
 				state.status = "failed"
 			}
 			state.durationMS = event.DurationMS
+			state.finishedUTC = event.TimestampUTC
 			state.exitCode = copyInt(event.ExitCode)
 			state.error = strings.TrimSpace(event.Error)
 		}
@@ -219,6 +240,13 @@ type Repository struct {
 	store      Store
 	limit      int
 	scheduling SchedulingAgentSource
+	progress   ProgressEstimator
+}
+
+func NewRepositoryWithProgress(store Store, limit int, scheduling SchedulingAgentSource, progress ProgressEstimator) *Repository {
+	repository := NewRepository(store, limit, scheduling)
+	repository.progress = progress
+	return repository
 }
 
 func NewRepository(store Store, limit int, scheduling ...SchedulingAgentSource) *Repository {
@@ -239,6 +267,9 @@ func (r *Repository) ListFrontPageExecutionCards(ctx context.Context) ([]domain.
 	jobs, err := r.store.ListJobExecutions()
 	if err != nil {
 		return nil, nil, err
+	}
+	if r.progress != nil {
+		r.progress.AttachJobEstimates(jobs)
 	}
 	if err := r.attachSchedulingDiagnoses(ctx, jobs); err != nil {
 		return nil, nil, err
@@ -297,6 +328,9 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 			CreatedUTC: item.Job.CreatedUTC, StartedUTC: timeValue(item.Job.StartedUTC), FinishedUTC: timeValue(item.Job.FinishedUTC),
 			Reason: executionReason(item.Job), Action: executionAction(status),
 			CurrentStep: strings.TrimSpace(item.Job.CurrentStep), SchedulingDiagnosis: item.Job.SchedulingDiagnosis,
+			ExpectedDurationMS: item.Job.ExpectedDurationMS,
+			Waiting: status == protocol.JobExecutionStatusQueued &&
+				(strings.TrimSpace(item.Job.Metadata["chain_blocked"]) == "1" || strings.TrimSpace(item.Job.Metadata["needs_blocked"]) == "1"),
 		}}
 	}
 	out := make([]domain.ExecutionCardJob, 0, len(item.Items))

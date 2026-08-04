@@ -55,27 +55,30 @@ type executionCardResponse struct {
 	JobExecutionIDs []string                       `json:"job_execution_ids"`
 	Summary         executionSummaryResponse       `json:"summary"`
 	Sections        []executionCardSectionResponse `json:"sections"`
+	Progress        domain.Progress                `json:"progress"`
 }
 
 type executionCardSectionResponse struct {
-	Key   string                     `json:"key"`
-	Label string                     `json:"label"`
-	Jobs  []executionCardJobResponse `json:"jobs"`
+	Key      string                     `json:"key"`
+	Label    string                     `json:"label"`
+	Jobs     []executionCardJobResponse `json:"jobs"`
+	Progress domain.Progress            `json:"progress"`
 }
 
 type executionCardJobResponse struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Status      string `json:"status"`
-	PipelineID  string `json:"pipeline_id"`
-	BuildLabel  string `json:"build_label"`
-	AgentID     string `json:"agent_id"`
-	CreatedUTC  string `json:"created_utc"`
-	StartedUTC  string `json:"started_utc"`
-	FinishedUTC string `json:"finished_utc"`
-	Reason      string `json:"reason"`
-	Action      string `json:"action"`
-	CurrentStep string `json:"current_step"`
+	ID          string          `json:"id"`
+	Label       string          `json:"label"`
+	Status      string          `json:"status"`
+	PipelineID  string          `json:"pipeline_id"`
+	BuildLabel  string          `json:"build_label"`
+	AgentID     string          `json:"agent_id"`
+	CreatedUTC  string          `json:"created_utc"`
+	StartedUTC  string          `json:"started_utc"`
+	FinishedUTC string          `json:"finished_utc"`
+	Reason      string          `json:"reason"`
+	Action      string          `json:"action"`
+	CurrentStep string          `json:"current_step"`
+	Progress    domain.Progress `json:"progress"`
 }
 
 type executionSummaryResponse struct {
@@ -147,7 +150,7 @@ func executionCardsToResponse(cards []domain.ExecutionCard) []executionCardRespo
 				TotalJobs: card.Summary.TotalJobs, Succeeded: card.Summary.Succeeded,
 				Failed: card.Summary.Failed, InProgress: card.Summary.InProgress, Waiting: card.Summary.Waiting,
 			},
-			Sections: executionCardSectionsToResponse(card.Sections),
+			Sections: executionCardSectionsToResponse(card.Sections), Progress: card.Progress,
 		})
 	}
 	return out
@@ -163,10 +166,12 @@ func executionCardSectionsToResponse(sections []domain.ExecutionCardSection) []e
 				PipelineID: job.PipelineID, BuildLabel: job.BuildLabel, AgentID: job.AgentID,
 				CreatedUTC: formatExecutionCardTime(job.CreatedUTC), StartedUTC: formatExecutionCardTime(job.StartedUTC),
 				FinishedUTC: formatExecutionCardTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,
-				CurrentStep: job.CurrentStep,
+				CurrentStep: job.CurrentStep, Progress: job.Progress,
 			})
 		}
-		out = append(out, executionCardSectionResponse{Key: section.Key, Label: section.Label, Jobs: jobs})
+		out = append(out, executionCardSectionResponse{
+			Key: section.Key, Label: section.Label, Jobs: jobs, Progress: section.Progress,
+		})
 	}
 	return out
 }

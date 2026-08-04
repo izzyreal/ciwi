@@ -436,6 +436,8 @@ screen:
               key: execution.key
             children:
               - component: disclosure
+                progress:
+                  binding: execution.progress
                 disclosure:
                   stateKey: "front-queued:{{execution.key}}"
                   summary:
@@ -479,6 +481,8 @@ screen:
                           gap: small
                         children:
                           - component: text
+                            progress:
+                              binding: section.progress
                             text:
                               template: "pipeline: {{section.label}}"
                             style:

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
 )
 
@@ -29,6 +30,7 @@ type jobDetailsViewResponse struct {
 	Timeline            []jobTimelineViewResponse       `json:"timeline"`
 	OutputGroups        []jobOutputGroupViewResponse    `json:"output_groups"`
 	SchedulingDiagnosis *jobSchedulingDiagnosisResponse `json:"scheduling_diagnosis,omitempty"`
+	Progress            domain.Progress                 `json:"progress"`
 }
 
 type jobSchedulingDiagnosisResponse struct {
@@ -47,33 +49,35 @@ type jobSchedulingAgentResponse struct {
 }
 
 type jobTimelineViewResponse struct {
-	ID          string `json:"id"`
-	Kind        string `json:"kind"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	StatusLabel string `json:"status_label"`
-	Duration    string `json:"duration"`
-	ExitCode    string `json:"exit_code"`
-	Error       string `json:"error"`
+	ID          string          `json:"id"`
+	Kind        string          `json:"kind"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Status      string          `json:"status"`
+	StatusLabel string          `json:"status_label"`
+	Duration    string          `json:"duration"`
+	ExitCode    string          `json:"exit_code"`
+	Error       string          `json:"error"`
+	Progress    domain.Progress `json:"progress"`
 }
 
 type jobOutputGroupViewResponse struct {
-	ID              string `json:"id"`
-	StateKey        string `json:"state_key"`
-	Kind            string `json:"kind"`
-	Title           string `json:"title"`
-	CommandSummary  string `json:"command_summary"`
-	Status          string `json:"status"`
-	StatusLabel     string `json:"status_label"`
-	Reached         bool   `json:"reached"`
-	Started         string `json:"started"`
-	Duration        string `json:"duration"`
-	ExitCode        string `json:"exit_code"`
-	Error           string `json:"error"`
-	Details         string `json:"details"`
-	YAMLLiteral     string `json:"yaml_literal"`
-	ExpandedCommand string `json:"expanded_command"`
+	ID              string          `json:"id"`
+	StateKey        string          `json:"state_key"`
+	Kind            string          `json:"kind"`
+	Title           string          `json:"title"`
+	CommandSummary  string          `json:"command_summary"`
+	Status          string          `json:"status"`
+	StatusLabel     string          `json:"status_label"`
+	Reached         bool            `json:"reached"`
+	Started         string          `json:"started"`
+	Duration        string          `json:"duration"`
+	ExitCode        string          `json:"exit_code"`
+	Error           string          `json:"error"`
+	Details         string          `json:"details"`
+	YAMLLiteral     string          `json:"yaml_literal"`
+	ExpandedCommand string          `json:"expanded_command"`
+	Progress        domain.Progress `json:"progress"`
 }
 
 type jobOutputViewResponse struct {
@@ -151,7 +155,7 @@ func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewRespon
 		timeline = append(timeline, jobTimelineViewResponse{
 			ID: item.ID, Kind: item.Kind, Title: item.Title, Description: item.Description,
 			Status: item.Status, StatusLabel: item.StatusLabel, Duration: item.Duration,
-			ExitCode: item.ExitCode, Error: item.Error,
+			ExitCode: item.ExitCode, Error: item.Error, Progress: item.Progress,
 		})
 	}
 	outputGroups := make([]jobOutputGroupViewResponse, 0, len(view.OutputGroups))
@@ -161,6 +165,7 @@ func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewRespon
 			CommandSummary: group.CommandSummary, Status: group.Status, StatusLabel: group.StatusLabel,
 			Reached: group.Reached, Started: group.Started, Duration: group.Duration, ExitCode: group.ExitCode,
 			Error: group.Error, Details: group.Details, YAMLLiteral: group.YAMLLiteral, ExpandedCommand: group.ExpandedCommand,
+			Progress: group.Progress,
 		})
 	}
 	response := jobDetailsViewResponse{
@@ -168,6 +173,7 @@ func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewRespon
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun, Timeline: timeline, OutputGroups: outputGroups,
+		Progress: view.Progress,
 	}
 	if view.SchedulingSummary != "" {
 		agents := make([]jobSchedulingAgentResponse, 0, len(view.SchedulingAgents))

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -16,7 +17,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 			"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "unit-tests",
 		},
 		RequiredCapabilities: map[string]string{"os": "windows", "requires.tool.wix": ">=6.0.0"},
-		StepPlan: []protocol.JobStepPlanItem{{Index: 1, Total: 1, Name: "Run tests", YAMLLiteral: "run: go test ./...", Script: "go test ./..."}},
+		StepPlan:             []protocol.JobStepPlanItem{{Index: 1, Total: 1, Name: "Run tests", YAMLLiteral: "run: go test ./...", Script: "go test ./..."}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +42,9 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	}
 	if len(view.OutputGroups) != len(view.Timeline) || view.OutputGroups[2].YAMLLiteral == "" || view.OutputGroups[2].ExpandedCommand != "go test ./..." {
 		t.Fatalf("output groups = %+v", view.OutputGroups)
+	}
+	if view.Progress.State != domain.ProgressIndeterminate {
+		t.Fatalf("job progress = %+v", view.Progress)
 	}
 	if err := state.db.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
 		Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "Run tests"}, Output: "\x1b[32mok\x1b[0m\n",

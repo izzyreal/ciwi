@@ -59,6 +59,7 @@ type Node struct {
 	Input      *Input              `yaml:"input,omitempty" json:"input,omitempty"`
 	Disclosure *Disclosure         `yaml:"disclosure,omitempty" json:"disclosure,omitempty"`
 	GraphView  *GraphView          `yaml:"graphView,omitempty" json:"graphView,omitempty"`
+	Progress   *Progress           `yaml:"progress,omitempty" json:"progress,omitempty"`
 	Layout     Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
 	Style      Style               `yaml:"style,omitempty" json:"style,omitempty"`
 	Repeat     *Repeat             `yaml:"repeat,omitempty" json:"repeat,omitempty"`
@@ -91,6 +92,12 @@ type Select struct {
 type Input struct {
 	Value       string `yaml:"value" json:"value"`
 	Placeholder string `yaml:"placeholder,omitempty" json:"placeholder,omitempty"`
+}
+
+// Progress binds a semantic progress snapshot supplied by the presentation
+// layer. It is intentionally visual-policy free.
+type Progress struct {
+	Binding string `yaml:"binding" json:"binding"`
 }
 
 type Disclosure struct {
@@ -418,6 +425,11 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 	if node.Style.ToneBinding != "" {
 		if err := validateBinding(node.Style.ToneBinding, scope); err != nil {
 			return fmt.Errorf("%s.style.toneBinding: %w", path, err)
+		}
+	}
+	if node.Progress != nil {
+		if err := validateBinding(node.Progress.Binding, scope); err != nil {
+			return fmt.Errorf("%s.progress.binding: %w", path, err)
 		}
 	}
 	for i, action := range node.Actions {

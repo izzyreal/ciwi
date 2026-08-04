@@ -1141,6 +1141,22 @@ func TestTransientStatusExpiresWithoutClearingPersistentErrors(t *testing.T) {
 	}
 }
 
+func TestEvaluateSemanticProgressAdvancesFromServerSnapshot(t *testing.T) {
+	snapshot := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	state, fraction := evaluateSemanticProgress(semanticProgress{
+		state: "determinate", fraction: .2, snapshotUnixMS: snapshot.UnixMilli(), ratePerMS: .0001,
+	}, snapshot.Add(3*time.Second))
+	if state != "determinate" || fraction < .4999 || fraction > .5001 {
+		t.Fatalf("state=%q fraction=%g", state, fraction)
+	}
+	state, fraction = evaluateSemanticProgress(semanticProgress{
+		state: "determinate", fraction: .9, snapshotUnixMS: snapshot.UnixMilli(), ratePerMS: .0001,
+	}, snapshot.Add(3*time.Second))
+	if state != "overrun" || fraction != 1 {
+		t.Fatalf("state=%q fraction=%g", state, fraction)
+	}
+}
+
 func BenchmarkRendererProjectDetailsCollapsed(b *testing.B) {
 	screen, err := sharedUI.LoadScreen("project-details")
 	if err != nil {

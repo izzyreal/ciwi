@@ -14,12 +14,14 @@ type ExecutionCard struct {
 	JobExecutionIDs []string
 	Summary         ExecutionSummary
 	Sections        []ExecutionCardSection
+	Progress        Progress
 }
 
 type ExecutionCardSection struct {
-	Key   string
-	Label string
-	Jobs  []ExecutionCardJob
+	Key      string
+	Label    string
+	Jobs     []ExecutionCardJob
+	Progress Progress
 }
 
 type ExecutionCardJob struct {
@@ -35,6 +37,9 @@ type ExecutionCardJob struct {
 	Reason              string
 	Action              string
 	CurrentStep         string
+	ExpectedDurationMS  int64
+	Waiting             bool
+	Progress            Progress
 	SchedulingDiagnosis *SchedulingDiagnosis
 }
 
@@ -64,6 +69,9 @@ type JobExecutionDetails struct {
 	FinishedUTC         time.Time
 	ExitCode            *int
 	Error               string
+	ExpectedDurationMS  int64
+	Waiting             bool
+	Progress            Progress
 	SchedulingDiagnosis *SchedulingDiagnosis
 	Timeline            []JobTimelineItem
 }
@@ -98,21 +106,43 @@ type SchedulingDiagnosis struct {
 }
 
 type JobTimelineItem struct {
-	ID          string
-	Kind        string
-	Name        string
-	Description string
-	Index       int
-	Total       int
-	Reached     bool
-	Status      string
-	StartedUTC  time.Time
-	DurationMS  int64
-	ExitCode    *int
-	Error       string
-	YAMLLiteral string
-	Command     string
+	ID                 string
+	Kind               string
+	Name               string
+	Description        string
+	Index              int
+	Total              int
+	Reached            bool
+	Status             string
+	StartedUTC         time.Time
+	DurationMS         int64
+	FinishedUTC        time.Time
+	ExpectedDurationMS int64
+	Progress           Progress
+	ExitCode           *int
+	Error              string
+	YAMLLiteral        string
+	Command            string
 }
+
+// Progress is a renderer-neutral snapshot. Fraction is the completed share at
+// SnapshotUnixMS; active determinate progress advances at RatePerMS until the
+// next server snapshot. Renderers decide only how to paint these semantics.
+type Progress struct {
+	State          string  `json:"state"`
+	Fraction       float64 `json:"fraction"`
+	SnapshotUnixMS int64   `json:"snapshot_unix_ms"`
+	RatePerMS      float64 `json:"rate_per_ms"`
+}
+
+const (
+	ProgressNone          = "none"
+	ProgressWaiting       = "waiting"
+	ProgressDeterminate   = "determinate"
+	ProgressIndeterminate = "indeterminate"
+	ProgressComplete      = "complete"
+	ProgressOverrun       = "overrun"
+)
 
 type JobOutputBatch struct {
 	JobExecutionID string

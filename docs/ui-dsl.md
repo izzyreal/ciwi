@@ -80,6 +80,11 @@ flowchart LR
 ```
 
 Bindings consume presentation view models, not storage rows or transport DTOs.
+
+Time-based execution progress uses a narrow `progress.binding` node property.
+The binding resolves to the shared semantic progress snapshot produced by the
+presentation layer; renderers own animation and paint only. This keeps duration
+estimation and aggregate weighting out of YAML, JavaScript, and Gio widgets.
 Actions are resolved by each transport adapter into the same application
 command. This keeps cosmetic parity practical without requiring the native
 client to parse HTML/CSS or run JavaScript.

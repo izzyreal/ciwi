@@ -33,6 +33,7 @@ type JobDetailsView struct {
 	SchedulingRequirements string
 	SchedulingAgents       []SchedulingAgentView
 	SchedulingAdditional   string
+	Progress               domain.Progress
 	Timeline               []JobTimelineView
 	OutputGroups           []JobOutputGroupView
 }
@@ -54,6 +55,7 @@ type JobTimelineView struct {
 	Duration    string
 	ExitCode    string
 	Error       string
+	Progress    domain.Progress
 }
 
 type JobOutputGroupView struct {
@@ -72,6 +74,7 @@ type JobOutputGroupView struct {
 	Details         string
 	YAMLLiteral     string
 	ExpandedCommand string
+	Progress        domain.Progress
 }
 
 type JobOutputView struct {
@@ -136,6 +139,7 @@ func (q *JobDetailsQueries) GetJobDetailsView(ctx context.Context, jobID string)
 }
 
 func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
+	now := time.Now().UTC()
 	titleTarget := firstNonEmpty(details.PipelineJobID, details.PipelineID, details.ID)
 	view := JobDetailsView{
 		ID: details.ID, Title: "Job: " + titleTarget, Context: jobContext(details),
@@ -143,6 +147,11 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 		Agent: details.AgentID, Created: formatTimestamp(details.CreatedUTC), Started: formatTimestamp(details.StartedUTC),
 		Finished: formatTimestamp(details.FinishedUTC), ExitCode: formatExitCode(details.ExitCode), Error: details.Error,
 		CanCancel: canCancelJob(details), CanRerun: canRerunJob(details),
+		Progress: progressForInput(progressInput{
+			status: details.Status, waiting: details.Waiting,
+			started: details.StartedUTC, finished: details.FinishedUTC,
+			expectedDurationMS: details.ExpectedDurationMS,
+		}, now),
 	}
 	if details.DryRun {
 		view.Mode = "Dry run"
@@ -180,10 +189,14 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 			title += ": " + name
 		}
 		reached := item.Reached || (item.Status != "" && item.Status != "pending" && item.Status != "not reached")
+		itemProgress := progressForInput(progressInput{
+			status: item.Status, started: item.StartedUTC, finished: item.FinishedUTC,
+			expectedDurationMS: item.ExpectedDurationMS,
+		}, now)
 		view.Timeline = append(view.Timeline, JobTimelineView{
 			ID: item.ID, Kind: item.Kind, Title: title, Description: item.Description,
 			Status: item.Status, StatusLabel: humanStatus(item.Status), Duration: formatDurationMS(item.DurationMS),
-			ExitCode: formatExitCode(item.ExitCode), Error: item.Error,
+			ExitCode: formatExitCode(item.ExitCode), Error: item.Error, Progress: itemProgress,
 		})
 		view.OutputGroups = append(view.OutputGroups, JobOutputGroupView{
 			ID: item.ID, StateKey: "job-output:" + details.ID + ":" + item.ID, Kind: item.Kind, Title: title,
@@ -191,6 +204,7 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 			StatusLabel: humanStatus(item.Status), Reached: reached, Started: formatTimestamp(item.StartedUTC),
 			Duration: formatDurationMS(item.DurationMS), ExitCode: formatExitCode(item.ExitCode), Error: item.Error,
 			Details: item.Description, YAMLLiteral: item.YAMLLiteral, ExpandedCommand: item.Command,
+			Progress: itemProgress,
 		})
 	}
 	return view

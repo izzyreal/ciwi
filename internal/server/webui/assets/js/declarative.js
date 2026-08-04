@@ -11,6 +11,43 @@
   const viewStorageKey = 'ciwi.declarative.views.v1';
   const viewStates = loadViewStates();
 
+  function semanticProgressAt(progress, nowMs) {
+    const model = progress && typeof progress === 'object' ? progress : {};
+    let state = String(model.state || 'none');
+    let fraction = Math.max(0, Math.min(1, Number(model.fraction || 0)));
+    if (state === 'determinate') {
+      const elapsed = Math.max(0, Number(nowMs || Date.now()) - Number(model.snapshot_unix_ms || 0));
+      fraction = Math.max(0, Math.min(1, fraction + elapsed * Math.max(0, Number(model.rate_per_ms || 0))));
+      if (fraction >= .999999 && Number(model.rate_per_ms || 0) > 0) state = 'overrun';
+    }
+    return {state, fraction};
+  }
+
+  function updateSemanticProgress(element, nowMs) {
+    const model = semanticProgressAt(element.__ciwiSemanticProgress, nowMs);
+    element.classList.remove('ciwi-progress-indeterminate', 'ciwi-progress-overrun', 'ciwi-progress-complete');
+    if (model.state === 'indeterminate') element.classList.add('ciwi-progress-indeterminate');
+    if (model.state === 'overrun') element.classList.add('ciwi-progress-overrun');
+    if (model.state === 'complete') element.classList.add('ciwi-progress-complete');
+    if (model.state !== 'indeterminate') {
+      const visible = model.state !== 'none' && model.state !== 'waiting';
+      element.style.setProperty('--ciwi-progress-width', visible ? String(model.fraction * 100) + '%' : '0%');
+    }
+  }
+
+  function bindSemanticProgress(element, progress) {
+    if (!element || !progress || typeof progress !== 'object') return;
+    element.classList.add('ciwi-progress-surface');
+    element.__ciwiSemanticProgress = progress;
+    updateSemanticProgress(element, Date.now());
+  }
+
+  window.setInterval(() => {
+    document.querySelectorAll('.ciwi-progress-surface').forEach(element => {
+      if (element.__ciwiSemanticProgress) updateSemanticProgress(element, Date.now());
+    });
+  }, 250);
+
   const dimensionVariables = {
     small: '--ciwi-space-small', medium: '--ciwi-space-medium', large: '--ciwi-space-large',
     page: '--ciwi-page-max', 'page-inset': '--ciwi-page-inset',
@@ -838,6 +875,10 @@
       });
     } else {
       (node.children || []).forEach(child => element.appendChild(renderNode(child, data)));
+    }
+    if (node.progress && node.progress.binding) {
+      const target = node.component === 'disclosure' ? element.querySelector(':scope > summary') : element;
+      bindSemanticProgress(target || element, resolve(data, node.progress.binding));
     }
     return element;
   }

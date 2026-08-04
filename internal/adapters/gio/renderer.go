@@ -24,6 +24,7 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	giotext "gioui.org/text"
@@ -643,6 +644,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 		return r.layoutChildren(gtx, node, data, path)
 	}
+	if node.Progress != nil && node.Component != "disclosure" {
+		content = r.progressWidget(node, data, content)
+	}
 	if node.Component == "card" || node.Component == "disclosure" || node.Component == "section" || node.Component == "graph-view" || node.Style.Role == "hero" {
 		padding := unit.Dp(0)
 		if node.Component == "section" {
@@ -879,11 +883,15 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		children = append(children, layout.Rigid(toggleWidget))
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 	}
+	headerWidget := layout.Widget(header)
+	if node.Progress != nil {
+		headerWidget = r.progressWidget(node, data, headerWidget)
+	}
 	if !expanded {
-		return header(gtx)
+		return headerWidget(gtx)
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(header),
+		layout.Rigid(headerWidget),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				contentNode := node
@@ -892,6 +900,101 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			})
 		}),
 	)
+}
+
+type semanticProgress struct {
+	state          string
+	fraction       float64
+	snapshotUnixMS int64
+	ratePerMS      float64
+}
+
+func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widget) layout.Widget {
+	progress, ok := resolveSemanticProgress(data, node.Progress)
+	if !ok || progress.state == "none" || progress.state == "waiting" {
+		return content
+	}
+	return func(gtx layout.Context) layout.Dimensions {
+		now := time.Now()
+		state, fraction := evaluateSemanticProgress(progress, now)
+		if state == "determinate" || state == "indeterminate" || state == "overrun" {
+			gtx.Execute(op.InvalidateCmd{At: now.Add(250 * time.Millisecond)})
+		}
+		return layout.Stack{}.Layout(gtx,
+			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+				size := gtx.Constraints.Min
+				if size.X <= 0 || size.Y <= 0 {
+					return layout.Dimensions{Size: size}
+				}
+				left, width := 0, int(float64(size.X)*fraction)
+				fill := r.palette.success
+				fill.A = 0x34
+				switch state {
+				case "indeterminate":
+					width = max(1, int(float64(size.X)*.22))
+					phase := float64(now.UnixMilli()%4000) / 4000
+					if phase > .5 {
+						phase = 1 - phase
+					}
+					left = int(float64(size.X-width) * phase * 2)
+				case "overrun":
+					width = size.X
+					pulse := float64(now.UnixMilli()%2000) / 2000
+					if pulse > .5 {
+						pulse = 1 - pulse
+					}
+					fill.A = uint8(0x28 + int(0x24*pulse*2))
+				case "complete":
+					width = size.X
+				}
+				if width <= 0 {
+					return layout.Dimensions{Size: size}
+				}
+				rect := image.Rect(left, 0, min(left+width, size.X), size.Y)
+				paint.FillShape(gtx.Ops, fill, clip.Rect(rect).Op())
+				return layout.Dimensions{Size: size}
+			}),
+			layout.Stacked(content),
+		)
+	}
+}
+
+func resolveSemanticProgress(data any, binding *uidsl.Progress) (semanticProgress, bool) {
+	if binding == nil || strings.TrimSpace(binding.Binding) == "" {
+		return semanticProgress{}, false
+	}
+	resolve := func(suffix string) (any, bool) {
+		value, err := uidsl.Resolve(data, binding.Binding+"."+suffix)
+		return value, err == nil
+	}
+	stateValue, ok := resolve("state")
+	if !ok {
+		return semanticProgress{}, false
+	}
+	progress := semanticProgress{state: strings.ToLower(strings.TrimSpace(fmt.Sprint(stateValue)))}
+	if value, ok := resolve("fraction"); ok {
+		progress.fraction, _ = strconv.ParseFloat(fmt.Sprint(value), 64)
+	}
+	if value, ok := resolve("snapshot_unix_ms"); ok {
+		progress.snapshotUnixMS, _ = strconv.ParseInt(fmt.Sprint(value), 10, 64)
+	}
+	if value, ok := resolve("rate_per_ms"); ok {
+		progress.ratePerMS, _ = strconv.ParseFloat(fmt.Sprint(value), 64)
+	}
+	return progress, progress.state != ""
+}
+
+func evaluateSemanticProgress(progress semanticProgress, now time.Time) (string, float64) {
+	state := progress.state
+	fraction := max(0, min(progress.fraction, 1))
+	if state == "determinate" && progress.ratePerMS > 0 {
+		elapsed := max(int64(0), now.UnixMilli()-progress.snapshotUnixMS)
+		fraction = max(0, min(1, fraction+float64(elapsed)*progress.ratePerMS))
+		if fraction >= .999999 {
+			state = "overrun"
+		}
+	}
+	return state, fraction
 }
 
 func (r *Renderer) disclosureHeaderHasSelection(path string) bool {

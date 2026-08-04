@@ -2,6 +2,7 @@ package presentation
 
 import (
 	"context"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/domain"
 )
@@ -52,5 +53,8 @@ func (q *FrontPageQueries) GetFrontPageView(ctx context.Context) (FrontPageView,
 	if err != nil {
 		return FrontPageView{}, err
 	}
+	now := time.Now().UTC()
+	presentFrontPageProgress(queued, now)
+	presentFrontPageProgress(history, now)
 	return FrontPageView{Server: server, Projects: projects, QueuedExecutions: queued, HistoryExecutions: history}, nil
 }
