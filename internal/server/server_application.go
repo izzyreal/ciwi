@@ -78,7 +78,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
 		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),
 		frontPage:         presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
-		projectDetails:    presentation.NewProjectDetailsQueries(projectQueries),
+		projectDetails:    presentation.NewProjectDetailsQueries(projectQueries, executionQueries),
 		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),
 		changes:           changes,
 	}

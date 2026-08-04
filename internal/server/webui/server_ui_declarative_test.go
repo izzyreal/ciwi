@@ -47,6 +47,12 @@ func TestProjectDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if structure.GraphView.Nodes != "projectDetails.pipelines" || structure.GraphView.Dependencies != "pipeline.depends_on" {
 		t.Fatalf("project graph binding = %#v", structure.GraphView)
 	}
+	if len(structure.GraphView.Details) < 2 || structure.GraphView.Details[1].GraphView == nil {
+		t.Fatalf("project graph selected-pipeline details = %#v", structure.GraphView.Details)
+	}
+	if nested := structure.GraphView.Details[1].GraphView; nested.Nodes != "pipeline.jobs" || len(nested.Details) == 0 {
+		t.Fatalf("project job graph = %#v", nested)
+	}
 }
 
 func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
@@ -228,7 +234,8 @@ func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *tes
 	for _, expected := range []string{
 		"ciwi.declarative.views.v1", "renderGraphView", "layoutDefinitionGraph", "renderDefinitionGraph",
 		"requestAnimationFrame(fit)", "bindActions(play, node.actions, graphNode.data)",
-		"dsl-definition-graph-viewport", "dsl-definition-graph-node-play",
+		"node.graphView.details", "selection.onChange(graphNode.id)", "dsl-definition-graph-viewport",
+		"dsl-definition-graph-node-play", "dsl-definition-graph-details", ".dsl-definition-graph-node.selectable:hover",
 	} {
 		if !strings.Contains(implementation, expected) {
 			t.Errorf("declarative graph renderer does not contain %q", expected)

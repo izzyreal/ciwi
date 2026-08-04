@@ -5,6 +5,7 @@ package gio
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"sort"
 	"strings"
 
@@ -135,6 +136,13 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 			return r.layoutText(gtx, textNode, data, path+"/empty")
 		})
 	}
+	selectedID := r.graphSelections[stateKey]
+	selectedNode := definitionGraphNodeByID(nodes, selectedID)
+	if len(node.GraphView.Details) > 0 && selectedNode == nil {
+		selectedNode = defaultDefinitionGraphNode(nodes)
+		selectedID = selectedNode.id
+		r.graphSelections[stateKey] = selectedID
+	}
 	nodeWidth, nodeHeight := gtx.Dp(210), gtx.Dp(76)
 	gapX, gapY, padding := gtx.Dp(58), gtx.Dp(24), gtx.Dp(16)
 	contentWidth, contentHeight := layoutDefinitionGraph(nodes, nodeWidth, nodeHeight, gapX, gapY, padding)
@@ -232,19 +240,62 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 							return layout.Dimensions{Size: image.Pt(itemWidth, itemHeight)}
 						}),
 						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-							return r.layoutScaledDefinitionGraph(gtx, node, nodes, data, path, contentWidth, contentHeight, actualScale, nodeWidth, nodeHeight)
+							return r.layoutScaledDefinitionGraph(gtx, node, nodes, data, path, stateKey, selectedID, contentWidth, contentHeight, actualScale, nodeWidth, nodeHeight)
 						}),
 					)
 				})
 			})
 		})
 	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+	children := []layout.FlexChild{
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart}.Layout(gtx, layout.Rigid(controls))
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: r.metrics.spaceSmall}.Layout(gtx, viewport)
+		}),
+	}
+	if selectedNode != nil && len(node.GraphView.Details) > 0 {
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: r.metrics.spaceMedium}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return r.layoutGraphDetails(gtx, node.GraphView.Details, selectedNode.data, path+"/details/"+selectedNode.id)
+			})
+		}))
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
+func definitionGraphNodeByID(nodes []*definitionGraphNode, id string) *definitionGraphNode {
+	for _, node := range nodes {
+		if node.id == id {
+			return node
+		}
+	}
+	return nil
+}
+
+func defaultDefinitionGraphNode(nodes []*definitionGraphNode) *definitionGraphNode {
+	for _, node := range nodes {
+		if len(node.dependencies) == 0 {
+			return node
+		}
+	}
+	return nodes[0]
+}
+
+func (r *Renderer) layoutGraphDetails(gtx layout.Context, details []uidsl.Node, data any, path string) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			height := max(1, gtx.Dp(1))
+			size := image.Pt(gtx.Constraints.Max.X, height)
+			paint.FillShape(gtx.Ops, r.palette.border, clip.Rect{Max: size}.Op())
+			return layout.Dimensions{Size: size}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: r.metrics.spaceMedium}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				container := uidsl.Node{Component: "column", Layout: uidsl.Layout{Direction: "vertical", Gap: "medium"}, Children: details}
+				return r.layoutChildren(gtx, container, data, path)
+			})
 		}),
 	)
 }
@@ -357,6 +408,7 @@ func (r *Renderer) layoutScaledDefinitionGraph(
 	nodes []*definitionGraphNode,
 	data any,
 	path string,
+	stateKey, selectedID string,
 	contentWidth, contentHeight int,
 	scale float32,
 	nodeWidth, nodeHeight int,
@@ -364,7 +416,7 @@ func (r *Renderer) layoutScaledDefinitionGraph(
 	macro := op.Record(gtx.Ops)
 	raw := gtx
 	raw.Constraints = layout.Exact(image.Pt(contentWidth, contentHeight))
-	r.drawDefinitionGraph(raw, owner, nodes, data, path, nodeWidth, nodeHeight)
+	r.drawDefinitionGraph(raw, owner, nodes, data, path, stateKey, selectedID, nodeWidth, nodeHeight)
 	call := macro.Stop()
 	transform := op.Affine(f32.AffineId().Scale(f32.Point{}, f32.Pt(scale, scale))).Push(gtx.Ops)
 	call.Add(gtx.Ops)
@@ -372,7 +424,7 @@ func (r *Renderer) layoutScaledDefinitionGraph(
 	return layout.Dimensions{Size: image.Pt(int(float32(contentWidth)*scale+0.5), int(float32(contentHeight)*scale+0.5))}
 }
 
-func (r *Renderer) drawDefinitionGraph(gtx layout.Context, owner uidsl.Node, nodes []*definitionGraphNode, data any, path string, nodeWidth, nodeHeight int) {
+func (r *Renderer) drawDefinitionGraph(gtx layout.Context, owner uidsl.Node, nodes []*definitionGraphNode, data any, path, stateKey, selectedID string, nodeWidth, nodeHeight int) {
 	byID := make(map[string]*definitionGraphNode, len(nodes))
 	for _, node := range nodes {
 		byID[node.id] = node
@@ -404,47 +456,87 @@ func (r *Renderer) drawDefinitionGraph(gtx layout.Context, owner uidsl.Node, nod
 		offset := op.Offset(image.Pt(graphNode.x, graphNode.y)).Push(gtx.Ops)
 		nodeContext := gtx
 		nodeContext.Constraints = layout.Exact(image.Pt(nodeWidth, nodeHeight))
-		r.layoutDefinitionGraphNode(nodeContext, owner, graphNode, data, path+"/node/"+graphNode.id)
+		r.layoutDefinitionGraphNode(nodeContext, owner, graphNode, data, path+"/node/"+graphNode.id, stateKey, graphNode.id == selectedID)
 		offset.Pop()
 	}
 }
 
-func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Node, graphNode *definitionGraphNode, data any, path string) layout.Dimensions {
-	return widget.Border{Color: r.palette.border, CornerRadius: r.metrics.controlRadius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, r.palette.surface, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(r.metrics.controlRadius)).Op(gtx.Ops))
-			return layout.Dimensions{Size: gtx.Constraints.Min}
-		}, func(gtx layout.Context) layout.Dimensions {
-			return layout.UniformInset(10).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				children := []layout.FlexChild{layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							title := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: graphNode.label}, Style: uidsl.Style{Role: "code-inline", Emphasis: "strong", Truncate: true}}
-							return r.layoutText(gtx, title, graphNode.data, path+"/title")
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Top: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								meta := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: graphNode.meta}, Style: uidsl.Style{Role: "badge", Tone: "muted", Truncate: true}}
-								return r.layoutText(gtx, meta, graphNode.data, path+"/meta")
+func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Node, graphNode *definitionGraphNode, data any, path, stateKey string, selected bool) layout.Dimensions {
+	selectable := len(owner.GraphView.Details) > 0
+	selector := r.button(path + "/select")
+	if selectable {
+		for selector.Clicked(gtx) {
+			r.graphSelections[stateKey] = graphNode.id
+			r.requestFrame()
+		}
+	}
+	borderColor := r.palette.border
+	background := r.palette.surface
+	if selectable && selector.Hovered() {
+		borderColor = r.palette.accent
+		background = graphNodeHoverFill(r.palette.surface, r.palette.accent)
+	}
+	if selected {
+		borderColor = r.palette.accentStrong
+	}
+	content := func(gtx layout.Context) layout.Dimensions {
+		return widget.Border{Color: borderColor, CornerRadius: r.metrics.controlRadius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(r.metrics.controlRadius)).Op(gtx.Ops))
+				return layout.Dimensions{Size: gtx.Constraints.Min}
+			}, func(gtx layout.Context) layout.Dimensions {
+				return layout.UniformInset(10).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					children := []layout.FlexChild{layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								title := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: graphNode.label}, Style: uidsl.Style{Role: "code-inline", Emphasis: "strong", Truncate: true}}
+								return r.layoutText(gtx, title, graphNode.data, path+"/title")
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Top: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									meta := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: graphNode.meta}, Style: uidsl.Style{Role: "badge", Tone: "muted", Truncate: true}}
+									return r.layoutText(gtx, meta, graphNode.data, path+"/meta")
+								})
+							}),
+						)
+					})}
+					if len(owner.Actions) > 0 {
+						play := r.button(path + "/run")
+						for play.Clicked(gtx) {
+							r.dispatch(owner.Actions[0], graphNode.data)
+						}
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return r.layoutGraphPlayButton(gtx, play, "Run "+graphNode.label+" as a new execution. Existing queued and running work is not interrupted.")
 							})
-						}),
-					)
-				})}
-				if len(owner.Actions) > 0 {
-					play := r.button(path + "/run")
-					for play.Clicked(gtx) {
-						r.dispatch(owner.Actions[0], graphNode.data)
+						}))
 					}
-					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return r.layoutGraphPlayButton(gtx, play, "Run "+graphNode.label+" as a new execution. Existing queued and running work is not interrupted.")
-						})
-					}))
-				}
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+				})
 			})
 		})
+	}
+	if !selectable {
+		return content(gtx)
+	}
+	return selector.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		semantic.DescriptionOp("Select " + graphNode.label).Add(gtx.Ops)
+		return content(gtx)
 	})
+}
+
+func graphNodeHoverFill(surface, accent color.NRGBA) color.NRGBA {
+	const accentWeight = uint32(30)
+	const surfaceWeight = uint32(255) - accentWeight
+	mix := func(base, tint uint8) uint8 {
+		return uint8((uint32(base)*surfaceWeight + uint32(tint)*accentWeight + 127) / 255)
+	}
+	return color.NRGBA{
+		R: mix(surface.R, accent.R),
+		G: mix(surface.G, accent.G),
+		B: mix(surface.B, accent.B),
+		A: surface.A,
+	}
 }
 
 func (r *Renderer) layoutGraphPlayButton(gtx layout.Context, button *widget.Clickable, description string) layout.Dimensions {

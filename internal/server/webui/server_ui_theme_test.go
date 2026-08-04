@@ -45,8 +45,8 @@ func TestUIThemeScriptIsServedAndPersistsBrowserChoice(t *testing.T) {
 
 func TestBrowserUsesTheBundledNativeMonospaceFace(t *testing.T) {
 	for path, nativePath := range map[string]string{
-		"/ui/fonts/go-mono.ttf":      "assets/Go-Mono.ttf",
-		"/ui/fonts/go-mono-bold.ttf": "assets/Go-Mono-Bold.ttf",
+		"/ui/fonts/ciwi-mono-regular.ttf": "assets/GeistMono-Regular.ttf",
+		"/ui/fonts/ciwi-mono-bold.ttf":    "assets/GeistMono-Bold.ttf",
 	} {
 		recorder := httptest.NewRecorder()
 		Handler(recorder, httptest.NewRequest("GET", path, nil))

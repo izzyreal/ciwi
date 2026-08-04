@@ -10,8 +10,9 @@ import (
 )
 
 type projectDetailsViewResponse struct {
-	Project   frontPageProjectResponse         `json:"project"`
-	Pipelines []projectPipelineDetailsResponse `json:"pipelines"`
+	Project           frontPageProjectResponse         `json:"project"`
+	Pipelines         []projectPipelineDetailsResponse `json:"pipelines"`
+	HistoryExecutions []executionCardResponse          `json:"history_executions"`
 }
 
 type projectPipelineDetailsResponse struct {
@@ -94,5 +95,5 @@ func projectDetailsToResponse(view presentation.ProjectDetailsView) projectDetai
 			JobsCount: pipeline.JobsCount, SupportsDryRun: pipeline.SupportsDryRun, Jobs: jobs,
 		})
 	}
-	return projectDetailsViewResponse{Project: project, Pipelines: pipelines}
+	return projectDetailsViewResponse{Project: project, Pipelines: pipelines, HistoryExecutions: executionCardsToResponse(view.HistoryExecutions)}
 }

@@ -57,7 +57,7 @@ func projectDetailsToProto(view presentation.ProjectDetailsView) *cnpv1.ProjectD
 			JobsCount: uint32(max(pipeline.JobsCount, 0)), SupportsDryRun: pipeline.SupportsDryRun, Jobs: jobs,
 		})
 	}
-	return &cnpv1.ProjectDetailsView{Project: project, Pipelines: pipelines}
+	return &cnpv1.ProjectDetailsView{Project: project, Pipelines: pipelines, HistoryExecutions: executionCardsToProto(view.HistoryExecutions)}
 }
 
 func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
@@ -159,7 +159,7 @@ func executionCardSectionsToProto(sections []domain.ExecutionCardSection) []*cnp
 		jobs := make([]*cnpv1.ExecutionCardJob, 0, len(section.Jobs))
 		for _, job := range section.Jobs {
 			jobs = append(jobs, &cnpv1.ExecutionCardJob{
-				Id: job.ID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
+				Id: job.ID, ProjectId: job.ProjectID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
 				PipelineId: job.PipelineID, BuildLabel: job.BuildLabel, AgentId: job.AgentID,
 				CreatedUtc: formatProtoTime(job.CreatedUTC), StartedUtc: formatProtoTime(job.StartedUTC),
 				FinishedUtc: formatProtoTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,

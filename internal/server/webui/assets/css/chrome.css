@@ -831,14 +831,14 @@
     }
     @font-face {
       font-family: "Ciwi Mono";
-      src: url("/ui/fonts/go-mono.ttf?v=1") format("truetype");
+      src: url("/ui/fonts/ciwi-mono-regular.ttf?v=2") format("truetype");
       font-style: normal;
       font-weight: 400;
       font-display: swap;
     }
     @font-face {
       font-family: "Ciwi Mono";
-      src: url("/ui/fonts/go-mono-bold.ttf?v=1") format("truetype");
+      src: url("/ui/fonts/ciwi-mono-bold.ttf?v=2") format("truetype");
       font-style: normal;
       font-weight: 700;
       font-display: swap;

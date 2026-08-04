@@ -26,6 +26,7 @@ type ExecutionCardSection struct {
 
 type ExecutionCardJob struct {
 	ID                  string
+	ProjectID           int64
 	Label               string
 	Status              string
 	PipelineID          string

@@ -5,6 +5,7 @@ package gio
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -523,8 +524,11 @@ func TestRendererLaysOutPersistentProjectPipelineGraph(t *testing.T) {
 	data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
 		Project: &cnpv1.ProjectSummary{Id: 41, Name: "ciwi"},
 		Pipelines: []*cnpv1.ProjectPipelineDetails{
-			{Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 2},
-			{Id: 8, PipelineId: "release", DependsOn: []string{"build"}, Dependencies: "build", JobsCount: 1},
+			{Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 2, Jobs: []*cnpv1.ProjectJobDetails{
+				{Id: "unit-tests", StepsCount: 1, Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Test", Type: "run", Command: "go test ./..."}}},
+				{Id: "package", Needs: []string{"unit-tests"}, StepsCount: 1, Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Package", Type: "run", Command: "go build ./..."}}},
+			}},
+			{Id: 8, PipelineId: "release", DependsOn: []string{"build"}, Dependencies: "build", JobsCount: 1, Jobs: []*cnpv1.ProjectJobDetails{{Id: "publish", StepsCount: 1}}},
 		},
 	})
 	if err != nil {
@@ -566,6 +570,21 @@ func TestRendererLaysOutPersistentProjectPipelineGraph(t *testing.T) {
 	if !buildRun || !releaseRun {
 		t.Fatal("pipeline graph did not expose per-node run controls")
 	}
+	if selected := renderer.graphSelections["project-structure:41"]; selected != "build" {
+		t.Fatalf("default selected pipeline = %q, want build", selected)
+	}
+	var buildSelect, releaseSelect, unitSelect bool
+	for path := range renderer.buttons {
+		buildSelect = buildSelect || strings.HasSuffix(path, "/graph/node/build/select")
+		releaseSelect = releaseSelect || strings.HasSuffix(path, "/graph/node/release/select")
+		unitSelect = unitSelect || strings.HasSuffix(path, "/details/build/1/graph/node/unit-tests/select")
+	}
+	if !buildSelect || !releaseSelect || !unitSelect {
+		t.Fatalf("selectable graph nodes missing: build=%v release=%v unit=%v", buildSelect, releaseSelect, unitSelect)
+	}
+	if selected := renderer.graphSelections["project-jobs:41:7"]; selected != "unit-tests" {
+		t.Fatalf("default selected job = %q, want unit-tests", selected)
+	}
 
 	nodes := []*definitionGraphNode{
 		{id: "build"},
@@ -578,6 +597,15 @@ func TestRendererLaysOutPersistentProjectPipelineGraph(t *testing.T) {
 	}
 	if width <= 3*210 || height < 76 {
 		t.Fatalf("graph dimensions = %dx%d", width, height)
+	}
+}
+
+func TestGraphNodeHoverFillIsVisiblyAccentTinted(t *testing.T) {
+	surface := color.NRGBA{R: 18, G: 56, B: 36, A: 255}
+	accent := color.NRGBA{R: 174, G: 235, B: 66, A: 255}
+	hover := graphNodeHoverFill(surface, accent)
+	if hover == surface || hover.A != surface.A || hover.G <= surface.G {
+		t.Fatalf("hover fill = %#v, surface = %#v", hover, surface)
 	}
 }
 

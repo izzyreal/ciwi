@@ -95,6 +95,7 @@ message FrontPageView {
 message ProjectDetailsView {
   ProjectSummary project = 1;
   repeated ProjectPipelineDetails pipelines = 2;
+  repeated ExecutionCardSummary history_executions = 3;
 }
 
 message ProjectPipelineDetails {
@@ -289,6 +290,7 @@ message ExecutionCardJob {
   string reason = 12;
   string action = 13;
   Progress progress = 14;
+  int64 project_id = 15;
 }
 
 message Progress {

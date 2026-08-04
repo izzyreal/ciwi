@@ -119,13 +119,13 @@ func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 	now := time.Now().UTC()
 	repository := NewRepository(executionStoreStub{jobs: []protocol.JobExecution{
 		{ID: "running", Status: "running", CurrentStep: "Compile", CreatedUTC: now, LeasedByAgentID: "agent-linux", Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "linux", "pipeline_run_id": "run-build", "build_version": "v1", "build_target": "linux-amd64",
+			"project": "ciwi", "project_id": "41", "pipeline_id": "build", "pipeline_job_id": "linux", "pipeline_run_id": "run-build", "build_version": "v1", "build_target": "linux-amd64",
 		}},
 		{ID: "queued", Status: "queued", CreatedUTC: now.Add(-time.Second), Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "build", "pipeline_run_id": "run-build", "chain_blocked": "1", "chain_depends_on_pipelines": "package",
+			"project": "ciwi", "project_id": "41", "pipeline_id": "build", "pipeline_run_id": "run-build", "chain_blocked": "1", "chain_depends_on_pipelines": "package",
 		}},
 		{ID: "finished", Status: "succeeded", CreatedUTC: now.Add(-2 * time.Second), Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "test", "pipeline_run_id": "run-test",
+			"project": "ciwi", "project_id": "41", "pipeline_id": "test", "pipeline_run_id": "run-test",
 		}},
 	}}, 40)
 	queued, history, err := repository.ListFrontPageExecutionCards(context.Background())
@@ -138,7 +138,7 @@ func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 	if len(queued[0].Sections) != 1 || len(queued[0].Sections[0].Jobs) != 2 {
 		t.Fatalf("queued card sections = %+v", queued[0].Sections)
 	}
-	if got := queued[0].Sections[0].Jobs[0]; got.ID != "running" || got.Label != "linux" || got.CurrentStep != "Compile" || got.PipelineID != "build" || got.BuildLabel != "v1 (linux-amd64)" || got.AgentID != "agent-linux" || got.Action != "cancel" {
+	if got := queued[0].Sections[0].Jobs[0]; got.ID != "running" || got.ProjectID != 41 || got.Label != "linux" || got.CurrentStep != "Compile" || got.PipelineID != "build" || got.BuildLabel != "v1 (linux-amd64)" || got.AgentID != "agent-linux" || got.Action != "cancel" {
 		t.Fatalf("queued job = %+v", got)
 	}
 	if got := queued[0].Sections[0].Jobs[1]; got.Action != "remove" || got.Reason != "Waiting for pipeline package" {

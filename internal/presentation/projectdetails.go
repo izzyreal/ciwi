@@ -10,8 +10,9 @@ import (
 )
 
 type ProjectDetailsView struct {
-	Project   domain.Project
-	Pipelines []ProjectPipelineView
+	Project           domain.Project
+	Pipelines         []ProjectPipelineView
+	HistoryExecutions []domain.ExecutionCard
 }
 
 type ProjectPipelineView struct {
@@ -52,12 +53,21 @@ type ProjectDetailsQueries struct {
 	projects interface {
 		GetProjectDetails(context.Context, int64) (domain.ProjectDetails, error)
 	}
+	executions interface {
+		ListFrontPageExecutionCards(context.Context) ([]domain.ExecutionCard, []domain.ExecutionCard, error)
+	}
 }
 
 func NewProjectDetailsQueries(projects interface {
 	GetProjectDetails(context.Context, int64) (domain.ProjectDetails, error)
+}, executions ...interface {
+	ListFrontPageExecutionCards(context.Context) ([]domain.ExecutionCard, []domain.ExecutionCard, error)
 }) *ProjectDetailsQueries {
-	return &ProjectDetailsQueries{projects: projects}
+	queries := &ProjectDetailsQueries{projects: projects}
+	if len(executions) > 0 {
+		queries.executions = executions[0]
+	}
+	return queries
 }
 
 func (q *ProjectDetailsQueries) GetProjectDetailsView(ctx context.Context, projectID int64) (ProjectDetailsView, error) {
@@ -107,7 +117,37 @@ func (q *ProjectDetailsQueries) GetProjectDetailsView(ctx context.Context, proje
 			JobsCount: len(jobs), SupportsDryRun: pipelineSupport[pipeline.PipelineID], Jobs: jobs,
 		})
 	}
-	return ProjectDetailsView{Project: details.Project, Pipelines: pipelines}, nil
+	history := []domain.ExecutionCard{}
+	if q.executions != nil {
+		_, allHistory, err := q.executions.ListFrontPageExecutionCards(ctx)
+		if err != nil {
+			return ProjectDetailsView{}, err
+		}
+		history = projectExecutionCards(allHistory, projectID)
+	}
+	return ProjectDetailsView{Project: details.Project, Pipelines: pipelines, HistoryExecutions: history}, nil
+}
+
+func projectExecutionCards(cards []domain.ExecutionCard, projectID int64) []domain.ExecutionCard {
+	filtered := make([]domain.ExecutionCard, 0, len(cards))
+	for _, card := range cards {
+		matched := false
+		for _, section := range card.Sections {
+			for _, job := range section.Jobs {
+				if job.ProjectID == projectID {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+		if matched {
+			filtered = append(filtered, card)
+		}
+	}
+	return filtered
 }
 
 func keyValueLabel(values map[string]string) string {

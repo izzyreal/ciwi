@@ -85,7 +85,7 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if !bytes.HasPrefix(logo, []byte("\x89PNG\r\n\x1a\n")) {
 		t.Fatal("embedded ciwi logo is not a PNG")
 	}
-	for _, name := range []string{"Go-Mono.ttf", "Go-Mono-Bold.ttf"} {
+	for _, name := range []string{"GeistMono-Regular.ttf", "GeistMono-Bold.ttf"} {
 		fontData, err := Read("assets/" + name)
 		if err != nil {
 			t.Fatal(err)

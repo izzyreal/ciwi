@@ -909,11 +909,12 @@ func (x *FrontPageView) GetHistoryExecutions() []*ExecutionCardSummary {
 }
 
 type ProjectDetailsView struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Project       *ProjectSummary           `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
-	Pipelines     []*ProjectPipelineDetails `protobuf:"bytes,2,rep,name=pipelines,proto3" json:"pipelines,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState    `protogen:"open.v1"`
+	Project           *ProjectSummary           `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Pipelines         []*ProjectPipelineDetails `protobuf:"bytes,2,rep,name=pipelines,proto3" json:"pipelines,omitempty"`
+	HistoryExecutions []*ExecutionCardSummary   `protobuf:"bytes,3,rep,name=history_executions,json=historyExecutions,proto3" json:"history_executions,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ProjectDetailsView) Reset() {
@@ -956,6 +957,13 @@ func (x *ProjectDetailsView) GetProject() *ProjectSummary {
 func (x *ProjectDetailsView) GetPipelines() []*ProjectPipelineDetails {
 	if x != nil {
 		return x.Pipelines
+	}
+	return nil
+}
+
+func (x *ProjectDetailsView) GetHistoryExecutions() []*ExecutionCardSummary {
+	if x != nil {
+		return x.HistoryExecutions
 	}
 	return nil
 }
@@ -2620,6 +2628,7 @@ type ExecutionCardJob struct {
 	Reason              string                 `protobuf:"bytes,12,opt,name=reason,proto3" json:"reason,omitempty"`
 	Action              string                 `protobuf:"bytes,13,opt,name=action,proto3" json:"action,omitempty"`
 	Progress            *Progress              `protobuf:"bytes,14,opt,name=progress,proto3" json:"progress,omitempty"`
+	ProjectId           int64                  `protobuf:"varint,15,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -2750,6 +2759,13 @@ func (x *ExecutionCardJob) GetProgress() *Progress {
 		return x.Progress
 	}
 	return nil
+}
+
+func (x *ExecutionCardJob) GetProjectId() int64 {
+	if x != nil {
+		return x.ProjectId
+	}
+	return 0
 }
 
 type Progress struct {
@@ -5878,10 +5894,11 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x06server\x18\x01 \x01(\v2\x1a.ciwi.native.v1.ServerInfoR\x06server\x12:\n" +
 	"\bprojects\x18\x02 \x03(\v2\x1e.ciwi.native.v1.ProjectSummaryR\bprojects\x12Q\n" +
 	"\x11queued_executions\x18\x03 \x03(\v2$.ciwi.native.v1.ExecutionCardSummaryR\x10queuedExecutions\x12S\n" +
-	"\x12history_executions\x18\x04 \x03(\v2$.ciwi.native.v1.ExecutionCardSummaryR\x11historyExecutions\"\x94\x01\n" +
+	"\x12history_executions\x18\x04 \x03(\v2$.ciwi.native.v1.ExecutionCardSummaryR\x11historyExecutions\"\xe9\x01\n" +
 	"\x12ProjectDetailsView\x128\n" +
 	"\aproject\x18\x01 \x01(\v2\x1e.ciwi.native.v1.ProjectSummaryR\aproject\x12D\n" +
-	"\tpipelines\x18\x02 \x03(\v2&.ciwi.native.v1.ProjectPipelineDetailsR\tpipelines\"\xa6\x02\n" +
+	"\tpipelines\x18\x02 \x03(\v2&.ciwi.native.v1.ProjectPipelineDetailsR\tpipelines\x12S\n" +
+	"\x12history_executions\x18\x03 \x03(\v2$.ciwi.native.v1.ExecutionCardSummaryR\x11historyExecutions\"\xa6\x02\n" +
 	"\x16ProjectPipelineDetails\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\vpipeline_id\x18\x02 \x01(\tR\n" +
@@ -6035,7 +6052,7 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x124\n" +
 	"\x04jobs\x18\x03 \x03(\v2 .ciwi.native.v1.ExecutionCardJobR\x04jobs\x124\n" +
-	"\bprogress\x18\x04 \x01(\v2\x18.ciwi.native.v1.ProgressR\bprogress\"\xf3\x03\n" +
+	"\bprogress\x18\x04 \x01(\v2\x18.ciwi.native.v1.ProgressR\bprogress\"\x92\x04\n" +
 	"\x10ExecutionCardJob\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x16\n" +
@@ -6055,7 +6072,9 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\ffinished_utc\x18\v \x01(\tR\vfinishedUtc\x12\x16\n" +
 	"\x06reason\x18\f \x01(\tR\x06reason\x12\x16\n" +
 	"\x06action\x18\r \x01(\tR\x06action\x124\n" +
-	"\bprogress\x18\x0e \x01(\v2\x18.ciwi.native.v1.ProgressR\bprogress\"\x86\x01\n" +
+	"\bprogress\x18\x0e \x01(\v2\x18.ciwi.native.v1.ProgressR\bprogress\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x0f \x01(\x03R\tprojectId\"\x86\x01\n" +
 	"\bProgress\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1a\n" +
 	"\bfraction\x18\x02 \x01(\x01R\bfraction\x12(\n" +
@@ -6422,87 +6441,88 @@ var file_ciwi_native_v1_ciwi_proto_depIdxs = []int32{
 	31, // 7: ciwi.native.v1.FrontPageView.history_executions:type_name -> ciwi.native.v1.ExecutionCardSummary
 	10, // 8: ciwi.native.v1.ProjectDetailsView.project:type_name -> ciwi.native.v1.ProjectSummary
 	14, // 9: ciwi.native.v1.ProjectDetailsView.pipelines:type_name -> ciwi.native.v1.ProjectPipelineDetails
-	15, // 10: ciwi.native.v1.ProjectPipelineDetails.jobs:type_name -> ciwi.native.v1.ProjectJobDetails
-	16, // 11: ciwi.native.v1.ProjectJobDetails.steps:type_name -> ciwi.native.v1.ProjectStepDetails
-	25, // 12: ciwi.native.v1.JobDetailsView.timeline:type_name -> ciwi.native.v1.JobTimelineItem
-	26, // 13: ciwi.native.v1.JobDetailsView.output_groups:type_name -> ciwi.native.v1.JobOutputGroup
-	20, // 14: ciwi.native.v1.JobDetailsView.scheduling_diagnosis:type_name -> ciwi.native.v1.SchedulingDiagnosis
-	34, // 15: ciwi.native.v1.JobDetailsView.progress:type_name -> ciwi.native.v1.Progress
-	21, // 16: ciwi.native.v1.SchedulingDiagnosis.agents:type_name -> ciwi.native.v1.SchedulingAgentAssessment
-	34, // 17: ciwi.native.v1.JobTimelineItem.progress:type_name -> ciwi.native.v1.Progress
-	34, // 18: ciwi.native.v1.JobOutputGroup.progress:type_name -> ciwi.native.v1.Progress
-	29, // 19: ciwi.native.v1.JobOutputBatch.events:type_name -> ciwi.native.v1.JobOutputEvent
-	30, // 20: ciwi.native.v1.ExecutionCardSummary.summary:type_name -> ciwi.native.v1.ExecutionSummary
-	32, // 21: ciwi.native.v1.ExecutionCardSummary.sections:type_name -> ciwi.native.v1.ExecutionCardSection
-	34, // 22: ciwi.native.v1.ExecutionCardSummary.progress:type_name -> ciwi.native.v1.Progress
-	33, // 23: ciwi.native.v1.ExecutionCardSection.jobs:type_name -> ciwi.native.v1.ExecutionCardJob
-	34, // 24: ciwi.native.v1.ExecutionCardSection.progress:type_name -> ciwi.native.v1.Progress
-	20, // 25: ciwi.native.v1.ExecutionCardJob.scheduling_diagnosis:type_name -> ciwi.native.v1.SchedulingDiagnosis
-	34, // 26: ciwi.native.v1.ExecutionCardJob.progress:type_name -> ciwi.native.v1.Progress
-	35, // 27: ciwi.native.v1.RunPipelineRequest.selection:type_name -> ciwi.native.v1.RunPipelineSelection
-	35, // 28: ciwi.native.v1.RunPipelineChainRequest.selection:type_name -> ciwi.native.v1.RunPipelineSelection
-	35, // 29: ciwi.native.v1.GetRunOptionsRequest.selection:type_name -> ciwi.native.v1.RunPipelineSelection
-	41, // 30: ciwi.native.v1.RunOptionsView.source_refs:type_name -> ciwi.native.v1.RunOption
-	41, // 31: ciwi.native.v1.RunOptionsView.eligible_agents:type_name -> ciwi.native.v1.RunOption
-	43, // 32: ciwi.native.v1.AgentsView.agents:type_name -> ciwi.native.v1.AgentSummary
-	1,  // 33: ciwi.native.v1.ChangeEvent.topics:type_name -> ciwi.native.v1.ChangeTopic
-	5,  // 34: ciwi.native.v1.Request.metadata:type_name -> ciwi.native.v1.RequestMetadata
-	2,  // 35: ciwi.native.v1.Request.get_server_info:type_name -> ciwi.native.v1.Empty
-	2,  // 36: ciwi.native.v1.Request.list_projects:type_name -> ciwi.native.v1.Empty
-	2,  // 37: ciwi.native.v1.Request.get_front_page_view:type_name -> ciwi.native.v1.Empty
-	36, // 38: ciwi.native.v1.Request.run_pipeline:type_name -> ciwi.native.v1.RunPipelineRequest
-	61, // 39: ciwi.native.v1.Request.watch_changes:type_name -> ciwi.native.v1.WatchChangesRequest
-	17, // 40: ciwi.native.v1.Request.get_project_details:type_name -> ciwi.native.v1.GetProjectDetailsRequest
-	18, // 41: ciwi.native.v1.Request.get_job_details:type_name -> ciwi.native.v1.GetJobDetailsRequest
-	27, // 42: ciwi.native.v1.Request.watch_job_output:type_name -> ciwi.native.v1.WatchJobOutputRequest
-	56, // 43: ciwi.native.v1.Request.clear_execution_queue:type_name -> ciwi.native.v1.ClearExecutionQueueRequest
-	58, // 44: ciwi.native.v1.Request.flush_execution_history:type_name -> ciwi.native.v1.FlushExecutionHistoryRequest
-	22, // 45: ciwi.native.v1.Request.cancel_execution:type_name -> ciwi.native.v1.ControlExecutionRequest
-	22, // 46: ciwi.native.v1.Request.rerun_execution:type_name -> ciwi.native.v1.ControlExecutionRequest
-	38, // 47: ciwi.native.v1.Request.run_pipeline_chain:type_name -> ciwi.native.v1.RunPipelineChainRequest
-	40, // 48: ciwi.native.v1.Request.get_run_options:type_name -> ciwi.native.v1.GetRunOptionsRequest
-	2,  // 49: ciwi.native.v1.Request.get_agents_view:type_name -> ciwi.native.v1.Empty
-	45, // 50: ciwi.native.v1.Request.agent_action:type_name -> ciwi.native.v1.AgentActionRequest
-	47, // 51: ciwi.native.v1.Request.project_action:type_name -> ciwi.native.v1.ProjectActionRequest
-	49, // 52: ciwi.native.v1.Request.import_project:type_name -> ciwi.native.v1.ImportProjectRequest
-	2,  // 53: ciwi.native.v1.Request.get_server_update_status:type_name -> ciwi.native.v1.Empty
-	2,  // 54: ciwi.native.v1.Request.check_server_updates:type_name -> ciwi.native.v1.Empty
-	2,  // 55: ciwi.native.v1.Request.list_server_update_versions:type_name -> ciwi.native.v1.Empty
-	54, // 56: ciwi.native.v1.Request.server_update_action:type_name -> ciwi.native.v1.ServerUpdateActionRequest
-	22, // 57: ciwi.native.v1.Request.remove_queued_execution:type_name -> ciwi.native.v1.ControlExecutionRequest
-	7,  // 58: ciwi.native.v1.Response.server_info:type_name -> ciwi.native.v1.ServerInfo
-	11, // 59: ciwi.native.v1.Response.project_list:type_name -> ciwi.native.v1.ProjectList
-	12, // 60: ciwi.native.v1.Response.front_page_view:type_name -> ciwi.native.v1.FrontPageView
-	37, // 61: ciwi.native.v1.Response.run_pipeline:type_name -> ciwi.native.v1.RunPipelineResult
-	62, // 62: ciwi.native.v1.Response.change:type_name -> ciwi.native.v1.ChangeEvent
-	6,  // 63: ciwi.native.v1.Response.error:type_name -> ciwi.native.v1.ErrorStatus
-	13, // 64: ciwi.native.v1.Response.project_details:type_name -> ciwi.native.v1.ProjectDetailsView
-	19, // 65: ciwi.native.v1.Response.job_details:type_name -> ciwi.native.v1.JobDetailsView
-	28, // 66: ciwi.native.v1.Response.job_output:type_name -> ciwi.native.v1.JobOutputBatch
-	57, // 67: ciwi.native.v1.Response.clear_execution_queue:type_name -> ciwi.native.v1.ClearExecutionQueueResult
-	59, // 68: ciwi.native.v1.Response.flush_execution_history:type_name -> ciwi.native.v1.FlushExecutionHistoryResult
-	23, // 69: ciwi.native.v1.Response.cancel_execution:type_name -> ciwi.native.v1.CancelExecutionResult
-	24, // 70: ciwi.native.v1.Response.rerun_execution:type_name -> ciwi.native.v1.RerunExecutionResult
-	39, // 71: ciwi.native.v1.Response.run_pipeline_chain:type_name -> ciwi.native.v1.RunPipelineChainResult
-	42, // 72: ciwi.native.v1.Response.run_options:type_name -> ciwi.native.v1.RunOptionsView
-	44, // 73: ciwi.native.v1.Response.agents_view:type_name -> ciwi.native.v1.AgentsView
-	46, // 74: ciwi.native.v1.Response.agent_action:type_name -> ciwi.native.v1.AgentActionResult
-	48, // 75: ciwi.native.v1.Response.project_action:type_name -> ciwi.native.v1.ProjectActionResult
-	50, // 76: ciwi.native.v1.Response.import_project:type_name -> ciwi.native.v1.ImportProjectResult
-	51, // 77: ciwi.native.v1.Response.server_update_status:type_name -> ciwi.native.v1.ServerUpdateStatus
-	52, // 78: ciwi.native.v1.Response.server_update_check:type_name -> ciwi.native.v1.ServerUpdateCheckResult
-	53, // 79: ciwi.native.v1.Response.server_update_versions:type_name -> ciwi.native.v1.ServerUpdateVersions
-	55, // 80: ciwi.native.v1.Response.server_update_action:type_name -> ciwi.native.v1.ServerUpdateActionResult
-	60, // 81: ciwi.native.v1.Response.remove_queued_execution:type_name -> ciwi.native.v1.RemoveQueuedExecutionResult
-	3,  // 82: ciwi.native.v1.ClientMessage.hello:type_name -> ciwi.native.v1.Hello
-	63, // 83: ciwi.native.v1.ClientMessage.request:type_name -> ciwi.native.v1.Request
-	4,  // 84: ciwi.native.v1.ServerMessage.welcome:type_name -> ciwi.native.v1.Welcome
-	64, // 85: ciwi.native.v1.ServerMessage.response:type_name -> ciwi.native.v1.Response
-	86, // [86:86] is the sub-list for method output_type
-	86, // [86:86] is the sub-list for method input_type
-	86, // [86:86] is the sub-list for extension type_name
-	86, // [86:86] is the sub-list for extension extendee
-	0,  // [0:86] is the sub-list for field type_name
+	31, // 10: ciwi.native.v1.ProjectDetailsView.history_executions:type_name -> ciwi.native.v1.ExecutionCardSummary
+	15, // 11: ciwi.native.v1.ProjectPipelineDetails.jobs:type_name -> ciwi.native.v1.ProjectJobDetails
+	16, // 12: ciwi.native.v1.ProjectJobDetails.steps:type_name -> ciwi.native.v1.ProjectStepDetails
+	25, // 13: ciwi.native.v1.JobDetailsView.timeline:type_name -> ciwi.native.v1.JobTimelineItem
+	26, // 14: ciwi.native.v1.JobDetailsView.output_groups:type_name -> ciwi.native.v1.JobOutputGroup
+	20, // 15: ciwi.native.v1.JobDetailsView.scheduling_diagnosis:type_name -> ciwi.native.v1.SchedulingDiagnosis
+	34, // 16: ciwi.native.v1.JobDetailsView.progress:type_name -> ciwi.native.v1.Progress
+	21, // 17: ciwi.native.v1.SchedulingDiagnosis.agents:type_name -> ciwi.native.v1.SchedulingAgentAssessment
+	34, // 18: ciwi.native.v1.JobTimelineItem.progress:type_name -> ciwi.native.v1.Progress
+	34, // 19: ciwi.native.v1.JobOutputGroup.progress:type_name -> ciwi.native.v1.Progress
+	29, // 20: ciwi.native.v1.JobOutputBatch.events:type_name -> ciwi.native.v1.JobOutputEvent
+	30, // 21: ciwi.native.v1.ExecutionCardSummary.summary:type_name -> ciwi.native.v1.ExecutionSummary
+	32, // 22: ciwi.native.v1.ExecutionCardSummary.sections:type_name -> ciwi.native.v1.ExecutionCardSection
+	34, // 23: ciwi.native.v1.ExecutionCardSummary.progress:type_name -> ciwi.native.v1.Progress
+	33, // 24: ciwi.native.v1.ExecutionCardSection.jobs:type_name -> ciwi.native.v1.ExecutionCardJob
+	34, // 25: ciwi.native.v1.ExecutionCardSection.progress:type_name -> ciwi.native.v1.Progress
+	20, // 26: ciwi.native.v1.ExecutionCardJob.scheduling_diagnosis:type_name -> ciwi.native.v1.SchedulingDiagnosis
+	34, // 27: ciwi.native.v1.ExecutionCardJob.progress:type_name -> ciwi.native.v1.Progress
+	35, // 28: ciwi.native.v1.RunPipelineRequest.selection:type_name -> ciwi.native.v1.RunPipelineSelection
+	35, // 29: ciwi.native.v1.RunPipelineChainRequest.selection:type_name -> ciwi.native.v1.RunPipelineSelection
+	35, // 30: ciwi.native.v1.GetRunOptionsRequest.selection:type_name -> ciwi.native.v1.RunPipelineSelection
+	41, // 31: ciwi.native.v1.RunOptionsView.source_refs:type_name -> ciwi.native.v1.RunOption
+	41, // 32: ciwi.native.v1.RunOptionsView.eligible_agents:type_name -> ciwi.native.v1.RunOption
+	43, // 33: ciwi.native.v1.AgentsView.agents:type_name -> ciwi.native.v1.AgentSummary
+	1,  // 34: ciwi.native.v1.ChangeEvent.topics:type_name -> ciwi.native.v1.ChangeTopic
+	5,  // 35: ciwi.native.v1.Request.metadata:type_name -> ciwi.native.v1.RequestMetadata
+	2,  // 36: ciwi.native.v1.Request.get_server_info:type_name -> ciwi.native.v1.Empty
+	2,  // 37: ciwi.native.v1.Request.list_projects:type_name -> ciwi.native.v1.Empty
+	2,  // 38: ciwi.native.v1.Request.get_front_page_view:type_name -> ciwi.native.v1.Empty
+	36, // 39: ciwi.native.v1.Request.run_pipeline:type_name -> ciwi.native.v1.RunPipelineRequest
+	61, // 40: ciwi.native.v1.Request.watch_changes:type_name -> ciwi.native.v1.WatchChangesRequest
+	17, // 41: ciwi.native.v1.Request.get_project_details:type_name -> ciwi.native.v1.GetProjectDetailsRequest
+	18, // 42: ciwi.native.v1.Request.get_job_details:type_name -> ciwi.native.v1.GetJobDetailsRequest
+	27, // 43: ciwi.native.v1.Request.watch_job_output:type_name -> ciwi.native.v1.WatchJobOutputRequest
+	56, // 44: ciwi.native.v1.Request.clear_execution_queue:type_name -> ciwi.native.v1.ClearExecutionQueueRequest
+	58, // 45: ciwi.native.v1.Request.flush_execution_history:type_name -> ciwi.native.v1.FlushExecutionHistoryRequest
+	22, // 46: ciwi.native.v1.Request.cancel_execution:type_name -> ciwi.native.v1.ControlExecutionRequest
+	22, // 47: ciwi.native.v1.Request.rerun_execution:type_name -> ciwi.native.v1.ControlExecutionRequest
+	38, // 48: ciwi.native.v1.Request.run_pipeline_chain:type_name -> ciwi.native.v1.RunPipelineChainRequest
+	40, // 49: ciwi.native.v1.Request.get_run_options:type_name -> ciwi.native.v1.GetRunOptionsRequest
+	2,  // 50: ciwi.native.v1.Request.get_agents_view:type_name -> ciwi.native.v1.Empty
+	45, // 51: ciwi.native.v1.Request.agent_action:type_name -> ciwi.native.v1.AgentActionRequest
+	47, // 52: ciwi.native.v1.Request.project_action:type_name -> ciwi.native.v1.ProjectActionRequest
+	49, // 53: ciwi.native.v1.Request.import_project:type_name -> ciwi.native.v1.ImportProjectRequest
+	2,  // 54: ciwi.native.v1.Request.get_server_update_status:type_name -> ciwi.native.v1.Empty
+	2,  // 55: ciwi.native.v1.Request.check_server_updates:type_name -> ciwi.native.v1.Empty
+	2,  // 56: ciwi.native.v1.Request.list_server_update_versions:type_name -> ciwi.native.v1.Empty
+	54, // 57: ciwi.native.v1.Request.server_update_action:type_name -> ciwi.native.v1.ServerUpdateActionRequest
+	22, // 58: ciwi.native.v1.Request.remove_queued_execution:type_name -> ciwi.native.v1.ControlExecutionRequest
+	7,  // 59: ciwi.native.v1.Response.server_info:type_name -> ciwi.native.v1.ServerInfo
+	11, // 60: ciwi.native.v1.Response.project_list:type_name -> ciwi.native.v1.ProjectList
+	12, // 61: ciwi.native.v1.Response.front_page_view:type_name -> ciwi.native.v1.FrontPageView
+	37, // 62: ciwi.native.v1.Response.run_pipeline:type_name -> ciwi.native.v1.RunPipelineResult
+	62, // 63: ciwi.native.v1.Response.change:type_name -> ciwi.native.v1.ChangeEvent
+	6,  // 64: ciwi.native.v1.Response.error:type_name -> ciwi.native.v1.ErrorStatus
+	13, // 65: ciwi.native.v1.Response.project_details:type_name -> ciwi.native.v1.ProjectDetailsView
+	19, // 66: ciwi.native.v1.Response.job_details:type_name -> ciwi.native.v1.JobDetailsView
+	28, // 67: ciwi.native.v1.Response.job_output:type_name -> ciwi.native.v1.JobOutputBatch
+	57, // 68: ciwi.native.v1.Response.clear_execution_queue:type_name -> ciwi.native.v1.ClearExecutionQueueResult
+	59, // 69: ciwi.native.v1.Response.flush_execution_history:type_name -> ciwi.native.v1.FlushExecutionHistoryResult
+	23, // 70: ciwi.native.v1.Response.cancel_execution:type_name -> ciwi.native.v1.CancelExecutionResult
+	24, // 71: ciwi.native.v1.Response.rerun_execution:type_name -> ciwi.native.v1.RerunExecutionResult
+	39, // 72: ciwi.native.v1.Response.run_pipeline_chain:type_name -> ciwi.native.v1.RunPipelineChainResult
+	42, // 73: ciwi.native.v1.Response.run_options:type_name -> ciwi.native.v1.RunOptionsView
+	44, // 74: ciwi.native.v1.Response.agents_view:type_name -> ciwi.native.v1.AgentsView
+	46, // 75: ciwi.native.v1.Response.agent_action:type_name -> ciwi.native.v1.AgentActionResult
+	48, // 76: ciwi.native.v1.Response.project_action:type_name -> ciwi.native.v1.ProjectActionResult
+	50, // 77: ciwi.native.v1.Response.import_project:type_name -> ciwi.native.v1.ImportProjectResult
+	51, // 78: ciwi.native.v1.Response.server_update_status:type_name -> ciwi.native.v1.ServerUpdateStatus
+	52, // 79: ciwi.native.v1.Response.server_update_check:type_name -> ciwi.native.v1.ServerUpdateCheckResult
+	53, // 80: ciwi.native.v1.Response.server_update_versions:type_name -> ciwi.native.v1.ServerUpdateVersions
+	55, // 81: ciwi.native.v1.Response.server_update_action:type_name -> ciwi.native.v1.ServerUpdateActionResult
+	60, // 82: ciwi.native.v1.Response.remove_queued_execution:type_name -> ciwi.native.v1.RemoveQueuedExecutionResult
+	3,  // 83: ciwi.native.v1.ClientMessage.hello:type_name -> ciwi.native.v1.Hello
+	63, // 84: ciwi.native.v1.ClientMessage.request:type_name -> ciwi.native.v1.Request
+	4,  // 85: ciwi.native.v1.ServerMessage.welcome:type_name -> ciwi.native.v1.Welcome
+	64, // 86: ciwi.native.v1.ServerMessage.response:type_name -> ciwi.native.v1.Response
+	87, // [87:87] is the sub-list for method output_type
+	87, // [87:87] is the sub-list for method input_type
+	87, // [87:87] is the sub-list for extension type_name
+	87, // [87:87] is the sub-list for extension extendee
+	0,  // [0:87] is the sub-list for field type_name
 }
 
 func init() { file_ciwi_native_v1_ciwi_proto_init() }

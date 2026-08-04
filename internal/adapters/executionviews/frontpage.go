@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -322,7 +323,7 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 		}
 		status := protocol.NormalizeJobExecutionStatus(item.Job.Status)
 		return []domain.ExecutionCardJob{{
-			ID: item.Job.ID, Label: label, Status: status,
+			ID: item.Job.ID, ProjectID: metadataInt64(item.Job.Metadata, "project_id"), Label: label, Status: status,
 			PipelineID: strings.TrimSpace(item.Job.Metadata["pipeline_id"]),
 			BuildLabel: executionBuildLabel(item.Job.Metadata), AgentID: strings.TrimSpace(item.Job.LeasedByAgentID),
 			CreatedUTC: item.Job.CreatedUTC, StartedUTC: timeValue(item.Job.StartedUTC), FinishedUTC: timeValue(item.Job.FinishedUTC),
@@ -338,6 +339,11 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 		out = append(out, mapCardItemJobs(child)...)
 	}
 	return out
+}
+
+func metadataInt64(metadata map[string]string, key string) int64 {
+	value, _ := strconv.ParseInt(strings.TrimSpace(metadata[key]), 10, 64)
+	return value
 }
 
 func executionBuildLabel(metadata map[string]string) string {

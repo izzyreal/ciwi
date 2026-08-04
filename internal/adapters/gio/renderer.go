@@ -60,6 +60,7 @@ type Renderer struct {
 	viewModes              map[string]string
 	persistentViews        map[string]bool
 	graphScales            map[string]float32
+	graphSelections        map[string]string
 	onViewChange           func(map[string]string)
 	selectables            map[string]*widget.Selectable
 	textEditors            map[string]*widget.Editor
@@ -142,7 +143,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		screen: screen, theme: materialTheme, palette: colors, metrics: metricsFromTheme(theme.Theme), themeName: theme.Metadata.Name, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
 		persistentDisclosures: map[string]bool{},
-		viewModes:             map[string]string{}, persistentViews: map[string]bool{}, graphScales: map[string]float32{},
+		viewModes:             map[string]string{}, persistentViews: map[string]bool{}, graphScales: map[string]float32{}, graphSelections: map[string]string{},
 		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
 		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{}, outputEditors: map[string]*widget.Editor{},
 		icons: iconSet, images: imageSet,
@@ -2357,8 +2358,8 @@ func ciwiFontCollection() ([]font.FontFace, error) {
 		path   string
 		weight font.Weight
 	}{
-		{path: "assets/Go-Mono.ttf", weight: font.Normal},
-		{path: "assets/Go-Mono-Bold.ttf", weight: font.Bold},
+		{path: "assets/GeistMono-Regular.ttf", weight: font.Normal},
+		{path: "assets/GeistMono-Bold.ttf", weight: font.Bold},
 	} {
 		payload, err := sharedUI.Read(source.path)
 		if err != nil {

@@ -106,9 +106,10 @@ type Disclosure struct {
 	Summary         []Node `yaml:"summary,omitempty" json:"summary,omitempty"`
 }
 
-// GraphView describes one definition graph and uses the node's children as
-// its list representation. Renderers own layout, zoom, scrolling, and local
-// view persistence; the graph's data and actions remain renderer-neutral.
+// GraphView describes one definition graph. The node's children are its list
+// representation; Details is rendered for the selected graph node. Renderers
+// own layout, selection, zoom, scrolling, and local view persistence while the
+// graph's data and actions remain renderer-neutral.
 type GraphView struct {
 	StateKey     string `yaml:"stateKey" json:"stateKey"`
 	DefaultMode  string `yaml:"defaultMode,omitempty" json:"defaultMode,omitempty"`
@@ -118,6 +119,7 @@ type GraphView struct {
 	NodeLabel    Text   `yaml:"nodeLabel" json:"nodeLabel"`
 	NodeMeta     Text   `yaml:"nodeMeta,omitempty" json:"nodeMeta,omitempty"`
 	Dependencies string `yaml:"dependencies" json:"dependencies"`
+	Details      []Node `yaml:"details,omitempty" json:"details,omitempty"`
 }
 
 type Layout struct {
@@ -412,6 +414,11 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		}
 		if err := validateBinding(graph.Dependencies, graphScope); err != nil {
 			return fmt.Errorf("%s.graphView.dependencies: %w", path, err)
+		}
+		for i, detailNode := range graph.Details {
+			if err := validateNode(detailNode, fmt.Sprintf("%s.graphView.details[%d]", path, i), ids, graphScope); err != nil {
+				return err
+			}
 		}
 		actionScope = graphScope
 	} else if node.Component == "graph-view" {

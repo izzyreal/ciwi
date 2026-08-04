@@ -37,6 +37,17 @@ func TestProjectDetailsViewDerivesStableLabels(t *testing.T) {
 	}
 }
 
+func TestProjectExecutionCardsFiltersByStableProjectID(t *testing.T) {
+	cards := []domain.ExecutionCard{
+		{Key: "ciwi", Sections: []domain.ExecutionCardSection{{Jobs: []domain.ExecutionCardJob{{ProjectID: 41}}}}},
+		{Key: "other", Sections: []domain.ExecutionCardSection{{Jobs: []domain.ExecutionCardJob{{ProjectID: 7}}}}},
+	}
+	filtered := projectExecutionCards(cards, 41)
+	if len(filtered) != 1 || filtered[0].Key != "ciwi" {
+		t.Fatalf("filtered project history = %#v", filtered)
+	}
+}
+
 func TestPipelineChainSequenceLabel(t *testing.T) {
 	if got := PipelineChainSequenceLabel([]string{"build", "codesign-macos", "release"}); got != "build → codesign-macos → release" {
 		t.Fatalf("sequence label = %q", got)

@@ -183,6 +183,10 @@ func TestParseScreenValidatesGraphViewBindingsAndNodeActionScope(t *testing.T) {
           nodeMeta:
             literal: Project
           dependencies: graphProject.pipeline_ids
+          details:
+            - component: text
+              text:
+                template: "Selected: {{graphProject.name}}"
         actions:
           - on: activate
             command: navigate
@@ -201,6 +205,12 @@ func TestParseScreenValidatesGraphViewBindingsAndNodeActionScope(t *testing.T) {
 	_, err := ParseScreen([]byte(payload))
 	if err == nil || !strings.Contains(err.Error(), "unknown root") {
 		t.Fatalf("invalid graph dependency error = %v", err)
+	}
+	payload = strings.Replace(payload, "missing.pipeline_ids", "graphProject.pipeline_ids", 1)
+	payload = strings.Replace(payload, "Selected: {{graphProject.name}}", "Selected: {{missing.name}}", 1)
+	_, err = ParseScreen([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid graph detail error = %v", err)
 	}
 }
 

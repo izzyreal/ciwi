@@ -28,11 +28,16 @@ body { min-height: 100vh; }
 .dsl-definition-graph-edges path { fill:none; stroke:var(--line); stroke-width:2; }
 .dsl-definition-graph-edges polygon { fill:var(--line); }
 .dsl-definition-graph-node { position:absolute; display:flex; align-items:center; box-sizing:border-box; padding:10px; border:1px solid var(--line); border-radius:var(--ciwi-control-radius, 8px); background:var(--surface); box-shadow:0 2px 5px color-mix(in srgb, var(--ink) 9%, transparent); }
+.dsl-definition-graph-node.selectable { cursor:pointer; }
+.dsl-definition-graph-node.selectable:hover { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.dsl-definition-graph-node.selected { border-color:var(--focus-ring, var(--accent-strong)); box-shadow:0 2px 5px color-mix(in srgb, var(--ink) 9%, transparent), inset 0 0 0 1px var(--focus-ring, var(--accent-strong)); }
+.dsl-definition-graph-node:focus-visible { outline:3px solid var(--focus-ring, var(--accent-strong)); outline-offset:2px; }
 .dsl-definition-graph-node-copy { min-width:0; flex:1; }
 .dsl-definition-graph-node-title, .dsl-definition-graph-node-meta { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .dsl-definition-graph-node-title { color:var(--ink); font-family:"Ciwi Mono",ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:700; }
 .dsl-definition-graph-node-meta { margin-top:6px; color:var(--muted); font-size:calc(var(--ciwi-text-body, 14px) - 1px); }
 .dsl-definition-graph-node-play { margin-left:8px; }
+.dsl-definition-graph-details { display:flex; flex-direction:column; gap:var(--ciwi-space-medium, 14px); margin-top:var(--ciwi-space-medium, 14px); padding-top:var(--ciwi-space-medium, 14px); border-top:1px solid var(--line); }
 .dsl-definition-graph-empty { padding:var(--ciwi-space-large, 24px); color:var(--muted); border:1px solid var(--line); border-radius:var(--ciwi-control-radius, 8px); }
 .dsl-disclosure { border: 1px solid var(--line); border-radius: var(--ciwi-surface-radius, 12px); background: var(--surface-raised, var(--surface)); padding: var(--ciwi-section-padding, 14px); }
 .dsl-disclosure > summary { display: flex; align-items: center; gap: 8px; color: var(--accent); cursor: pointer; font-weight: 750; list-style: none; }

@@ -1734,6 +1734,9 @@ func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, 
 		return nil, fmt.Errorf("project-details binding is malformed")
 	}
 	decorateProjectDetails(root)
+	decorateExecutionCards(root["history_executions"], false)
+	history, _ := root["history_executions"].([]any)
+	root["history_empty"] = len(history) == 0
 	return data, nil
 }
 

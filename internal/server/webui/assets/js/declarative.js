@@ -615,7 +615,7 @@
     };
   }
 
-  function renderDefinitionGraph(node, data) {
+  function renderDefinitionGraph(node, data, selection) {
     const graphNodes = definitionGraphNodes(node.graphView, data);
     if (!graphNodes.length) {
       const empty = document.createElement('div');
@@ -623,6 +623,10 @@
       empty.textContent = 'No pipelines configured.';
       return empty;
     }
+	const details = Array.isArray(node.graphView.details) ? node.graphView.details : [];
+	if (details.length && !graphNodes.some(graphNode => graphNode.id === selection.value)) {
+		selection.value = (graphNodes.find(graphNode => !graphNode.dependencies.length) || graphNodes[0]).id;
+	}
     const layout = layoutDefinitionGraph(graphNodes);
     const wrapper = document.createElement('div');
     wrapper.className = 'dsl-definition-graph';
@@ -659,11 +663,29 @@
     stage.appendChild(edges);
     graphNodes.forEach(graphNode => {
       const card = document.createElement('div');
-      card.className = 'dsl-definition-graph-node';
+      card.className = 'dsl-definition-graph-node' + (graphNode.id === selection.value ? ' selected' : '');
       card.style.left = graphNode.x + 'px';
       card.style.top = graphNode.y + 'px';
       card.style.width = layout.nodeWidth + 'px';
       card.style.height = layout.nodeHeight + 'px';
+	  if (details.length) {
+		card.classList.add('selectable');
+		card.tabIndex = 0;
+		card.setAttribute('role', 'button');
+		card.setAttribute('aria-label', 'Select ' + graphNode.label);
+		const select = () => {
+			if (selection.value === graphNode.id) return;
+			selection.value = graphNode.id;
+			selection.onChange(graphNode.id);
+		};
+		card.addEventListener('click', select);
+		card.addEventListener('keydown', event => {
+			if (event.key === 'Enter' || event.key === ' ') {
+				event.preventDefault();
+				select();
+			}
+		});
+	  }
       const copy = document.createElement('div');
       copy.className = 'dsl-definition-graph-node-copy';
       const title = document.createElement('div');
@@ -683,6 +705,7 @@
         play.setAttribute('aria-label', runHelp);
         play.title = runHelp;
         play.appendChild(declarativeIcon('player-play'));
+		play.addEventListener('click', event => event.stopPropagation());
         bindActions(play, node.actions, graphNode.data);
         card.appendChild(play);
       }
@@ -722,7 +745,16 @@
       scaleLabel,
       control('Zoom in', 'zoom-in', () => applyScale(scale + 0.1)),
     );
-    wrapper.append(toolbar, viewport);
+	wrapper.append(toolbar, viewport);
+	if (details.length) {
+		const selected = graphNodes.find(graphNode => graphNode.id === selection.value);
+		if (selected) {
+			const detail = document.createElement('div');
+			detail.className = 'dsl-definition-graph-details';
+			details.forEach(child => detail.appendChild(renderNode(child, selected.data)));
+			wrapper.appendChild(detail);
+		}
+	}
     requestAnimationFrame(fit);
     return wrapper;
   }
@@ -740,9 +772,16 @@
     modes.className = 'dsl-graph-view-modes';
     const body = document.createElement('div');
     body.className = 'dsl-graph-view-body';
+	let selectedID = '';
     const renderBody = () => {
       body.replaceChildren();
-      if (mode === 'graph') body.appendChild(renderDefinitionGraph(node, data));
+	  if (mode === 'graph') body.appendChild(renderDefinitionGraph(node, data, {
+		value: selectedID,
+		onChange: id => {
+			selectedID = id;
+			renderBody();
+		},
+	  }));
       else (node.children || []).forEach(child => body.appendChild(renderNode(child, data)));
       Array.from(modes.children).forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === mode)));
     };
