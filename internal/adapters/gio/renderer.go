@@ -2046,6 +2046,10 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 		}
 		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(fmt.Sprint(output)))})
 		r.SetStatus("Output copied")
+	case "copy-text":
+		text := arguments["text"]
+		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
+		r.SetStatus("Copied")
 	case "toggle-output-tailing":
 		r.outputTailing = !r.outputTailing
 		label := "Tailing: Off"

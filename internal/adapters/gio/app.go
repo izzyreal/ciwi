@@ -90,17 +90,38 @@ func connectNativeSession(ctx context.Context, address, version string) (*native
 	if err != nil {
 		return nil, fmt.Errorf("connect to ciwi native endpoint: %w", err)
 	}
+	return watchNativeSession(ctx, client, target)
+}
+
+func connectSSHNativeSession(ctx context.Context, settings sshConnectionSettings, version string) (*nativeSession, error) {
+	connectCtx, cancelConnect := context.WithTimeout(ctx, 15*time.Second)
+	defer cancelConnect()
+	client, err := cnpclient.DialSSH(connectCtx, cnpclient.SSHConfig{
+		JumpAddress: settings.JumpAddress, Username: settings.Username, Destination: settings.Destination,
+		PrivateKeyPEM: settings.PrivateKey, HostKeyFingerprint: settings.HostKeyFingerprint,
+	}, "ciwi-desktop", version)
+	if err != nil {
+		return nil, fmt.Errorf("connect through remote server: %w", err)
+	}
+	address := fmt.Sprintf("SSH %s@%s → %s", strings.TrimSpace(settings.Username), strings.TrimSpace(settings.JumpAddress), strings.TrimSpace(settings.Destination))
+	return watchNativeSession(ctx, client, address)
+}
+
+func watchNativeSession(ctx context.Context, client *cnpclient.Client, address string) (*nativeSession, error) {
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	changes, watchErrors, watchErr := client.WatchChanges(watchCtx)
 	if watchErr != nil {
 		cancelWatch()
 		_ = client.Close()
-		return nil, fmt.Errorf("connect to ciwi native endpoint: %s: start live updates: %w", target, watchErr)
+		return nil, fmt.Errorf("connect to ciwi native endpoint: %s: start live updates: %w", address, watchErr)
 	}
-	return &nativeSession{client: client, address: target, changes: changes, watchErrors: watchErrors, cancelWatch: cancelWatch}, nil
+	return &nativeSession{client: client, address: address, changes: changes, watchErrors: watchErrors, cancelWatch: cancelWatch}, nil
 }
 
 func connectConfiguredNativeSession(ctx context.Context, settings nativeConnectionSettings, version string) (*nativeSession, error) {
+	if settings.Mode == connectionModeSSH {
+		return connectSSHNativeSession(ctx, settings.SSH, version)
+	}
 	preferred := strings.TrimSpace(settings.PreferredAddress)
 	if preferred != "" {
 		connected, err := connectNativeSession(ctx, preferred, version)
@@ -402,13 +423,28 @@ func Run(options Options) error {
 func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string, preferences nativePreferences) {
 	connectionSettings := nativeConnectionSettingsForLaunch(preferences, options.Address)
 	mode, endpoint := connectionSettings.Mode, connectionSettings.Endpoint
+	sshSettings := connectionSettings.SSH
+	privateKey, privateKeyErr := loadSSHDevicePrivateKey(preferencesPath)
+	if privateKeyErr == nil {
+		sshSettings.PrivateKey = privateKey
+		connectionSettings.SSH.PrivateKey = privateKey
+	}
 	var session *nativeSession
 	var client *cnpclient.Client
 	var changes <-chan *cnpv1.ChangeEvent
 	var watchErrors <-chan error
 	address := ""
 	reconnectDelay := time.Second
-	connected, initialConnectErr := connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
+	var connected *nativeSession
+	var initialConnectErr error
+	if mode == connectionModeSSH {
+		initialConnectErr = privateKeyErr
+	}
+	if initialConnectErr == nil {
+		connected, initialConnectErr = connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
+	}
+	captureSSHHostKeyError(&sshSettings, initialConnectErr)
+	connectionSettings.SSH = sshSettings
 	if initialConnectErr == nil {
 		session = connected
 		client = connected.client
@@ -505,20 +541,22 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		if navigation.screen != "front-page" && navigation.screen != "settings" {
 			navigation = navigationState{screen: "front-page"}
 		}
-		if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint); err != nil {
+		if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint, sshSettings); err != nil {
 			renderer.SetStatus(err.Error())
 		}
 		applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: "Server unavailable; reconnecting…"})
 	} else {
-		rememberSuccessfulEndpoint(preferencesPath, address)
-		preferences.LastSuccessfulEndpoint = address
+		if mode != connectionModeSSH {
+			rememberSuccessfulEndpoint(preferencesPath, address)
+			preferences.LastSuccessfulEndpoint = address
+		}
 		if mode == connectionModeDiscover {
 			connectionSettings.PreferredAddress = address
 			connectionSettings.DiscoverFallback = true
 		}
 		applyNativeConnectionState(renderer, nativeConnectionState{connected: true, address: address, status: "Connected to " + address})
 		if navigation.screen == "settings" {
-			applyConnectionBindings(renderer, "settings", mode, endpoint)
+			applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 			renderer.SetRootBinding("settings", "client_version", options.Version)
 		}
 		renderer.SetTransientStatus("Connected to "+address, nativeNoticeDuration)
@@ -619,6 +657,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			reconnect = nil
 			connected, connectErr := connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
 			if connectErr != nil {
+				captureSSHHostKeyError(&sshSettings, connectErr)
+				connectionSettings.SSH = sshSettings
+				if navigation.screen == "settings" {
+					applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
+				}
 				reconnectDelay = nextReconnectDelay(reconnectDelay)
 				scheduleReconnect(connectErr.Error())
 				continue
@@ -638,15 +681,17 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					continue
 				}
 			}
-			rememberSuccessfulEndpoint(preferencesPath, address)
-			preferences.LastSuccessfulEndpoint = address
+			if mode != connectionModeSSH {
+				rememberSuccessfulEndpoint(preferencesPath, address)
+				preferences.LastSuccessfulEndpoint = address
+			}
 			if mode == connectionModeDiscover {
 				connectionSettings.PreferredAddress = address
 				connectionSettings.DiscoverFallback = true
 			}
 			applyNativeConnectionState(renderer, nativeConnectionState{connected: true, address: address, status: "Connected to " + address})
 			if navigation.screen == "settings" {
-				applyConnectionBindings(renderer, "settings", mode, endpoint)
+				applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 				renderer.SetRootBinding("settings", "client_version", options.Version)
 			}
 			if navigation.screen == "job-details" {
@@ -671,7 +716,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					renderer.SetStatus("Refresh failed: " + err.Error())
 				}
 				if navigation.screen == "settings" {
-					applyConnectionBindings(renderer, "settings", mode, endpoint)
+					applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 					renderer.SetRootBinding("settings", "client_version", options.Version)
 				}
 				if navigation.screen == "job-details" {
@@ -722,19 +767,72 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				switch strings.TrimSpace(command.arguments["field"]) {
 				case "mode":
 					candidate := strings.TrimSpace(command.arguments["value"])
-					if candidate == connectionModeDiscover || candidate == connectionModeExplicit {
+					if candidate == connectionModeDiscover || candidate == connectionModeExplicit || candidate == connectionModeSSH {
 						mode = candidate
 					}
 				case "endpoint":
 					endpoint = command.arguments["value"]
+				case "ssh-jump-address":
+					sshSettings.JumpAddress = command.arguments["value"]
+				case "ssh-username":
+					sshSettings.Username = command.arguments["value"]
+				case "ssh-destination":
+					sshSettings.Destination = command.arguments["value"]
 				}
-				applyConnectionBindings(renderer, navigation.screen, mode, endpoint)
+				applyConnectionBindings(renderer, navigation.screen, mode, endpoint, sshSettings)
 				window.Invalidate()
+				continue
+			case "generate-ssh-device-key":
+				privateKey, publicKey, generateErr := cnpclient.GenerateSSHDeviceKey("ciwi-native-device")
+				if generateErr == nil {
+					generateErr = saveSSHDevicePrivateKey(preferencesPath, privateKey)
+				}
+				if generateErr != nil {
+					renderer.SetStatus("SSH device key could not be generated: " + generateErr.Error())
+					window.Invalidate()
+					continue
+				}
+				sshSettings.PrivateKey = privateKey
+				sshSettings.PublicKey = publicKey
+				connectionSettings.SSH = sshSettings
+				if saveErr := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
+					preferences.SSH.PublicKey = publicKey
+				}); saveErr != nil {
+					renderer.SetStatus("SSH public key preference could not be saved: " + saveErr.Error())
+					window.Invalidate()
+					continue
+				}
+				preferences.SSH.PublicKey = publicKey
+				applyConnectionBindings(renderer, navigation.screen, mode, endpoint, sshSettings)
+				renderer.SetStatus("Generated a device-specific SSH key. Add the restricted public key to the jump host.")
+				window.Invalidate()
+				continue
+			case "trust-ssh-host-key":
+				fingerprint := strings.TrimSpace(sshSettings.PendingFingerprint)
+				if fingerprint == "" {
+					renderer.SetStatus("Connect once to inspect the SSH host key")
+					window.Invalidate()
+					continue
+				}
+				sshSettings.HostKeyFingerprint = fingerprint
+				sshSettings.PendingFingerprint = ""
+				connectionSettings.SSH = sshSettings
+				if saveErr := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
+					preferences.SSH.HostKeyFingerprint = fingerprint
+				}); saveErr != nil {
+					renderer.SetStatus("SSH host key trust could not be saved: " + saveErr.Error())
+					window.Invalidate()
+					continue
+				}
+				preferences.SSH.HostKeyFingerprint = fingerprint
+				applyConnectionBindings(renderer, navigation.screen, mode, endpoint, sshSettings)
+				reconnectDelay = time.Second
+				scheduleReconnectAfter("SSH host key trusted; reconnecting…", 0)
 				continue
 			case "save-connection":
 				mode = strings.TrimSpace(command.arguments["mode"])
 				endpoint = strings.TrimSpace(command.arguments["endpoint"])
-				if mode != connectionModeDiscover && mode != connectionModeExplicit {
+				if mode != connectionModeDiscover && mode != connectionModeExplicit && mode != connectionModeSSH {
 					renderer.SetStatus("Select a connection mode")
 					if navigation.screen == "connection" {
 						renderer.SetRootBinding("connection", "status", "Select a connection mode")
@@ -743,7 +841,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					window.Invalidate()
 					continue
 				}
-				connectionSettings = nativeConnectionSettings{Mode: mode, Endpoint: endpoint}
+				connectionSettings = nativeConnectionSettings{Mode: mode, Endpoint: endpoint, SSH: sshSettings}
 				if mode == connectionModeExplicit {
 					target, parseErr := cnpclient.ParseTarget(endpoint)
 					if parseErr != nil {
@@ -759,13 +857,29 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					endpoint = target.String()
 					connectionSettings.Endpoint = endpoint
 					connectionSettings.PreferredAddress = endpoint
-				} else {
+				} else if mode == connectionModeDiscover {
 					connectionSettings.PreferredAddress = strings.TrimSpace(preferences.LastSuccessfulEndpoint)
 					connectionSettings.DiscoverFallback = true
+				} else {
+					if strings.TrimSpace(sshSettings.JumpAddress) == "" || strings.TrimSpace(sshSettings.Username) == "" || strings.TrimSpace(sshSettings.Destination) == "" {
+						renderer.SetStatus("Jump host, username, and destination are required for a remote server")
+						window.Invalidate()
+						continue
+					}
+					if len(sshSettings.PrivateKey) == 0 {
+						renderer.SetStatus("Generate this device's SSH key before connecting")
+						window.Invalidate()
+						continue
+					}
 				}
 				if saveErr := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
 					preferences.ConnectionMode = mode
 					preferences.ServerEndpoint = endpoint
+					preferences.SSH = sshPreferences{
+						JumpAddress: strings.TrimSpace(sshSettings.JumpAddress), Username: strings.TrimSpace(sshSettings.Username),
+						Destination: strings.TrimSpace(sshSettings.Destination), PublicKey: sshSettings.PublicKey,
+						HostKeyFingerprint: sshSettings.HostKeyFingerprint,
+					}
 				}); saveErr != nil {
 					renderer.SetStatus("Connection preference could not be saved: " + saveErr.Error())
 					window.Invalidate()
@@ -773,6 +887,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 				preferences.ConnectionMode = mode
 				preferences.ServerEndpoint = endpoint
+				preferences.SSH = sshPreferences{
+					JumpAddress: strings.TrimSpace(sshSettings.JumpAddress), Username: strings.TrimSpace(sshSettings.Username),
+					Destination: strings.TrimSpace(sshSettings.Destination), PublicKey: sshSettings.PublicKey,
+					HostKeyFingerprint: sshSettings.HostKeyFingerprint,
+				}
 				reconnectDelay = time.Second
 				scheduleReconnectAfter("Connection settings saved; reconnecting…", 0)
 				continue
@@ -806,7 +925,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					}
 					navigation = next
 					stopOutput()
-					if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint); err != nil {
+					if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint, sshSettings); err != nil {
 						renderer.SetStatus(err.Error())
 					}
 					applyNativeConnectionState(renderer, nativeConnectionState{connecting: reconnect != nil, status: "Server unavailable; reconnecting…"})
@@ -855,7 +974,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			previous := navigation
 			handleCommand(ctx, client, renderer, screens, &navigation, command, preferencesPath)
 			if navigation.screen == "settings" {
-				applyConnectionBindings(renderer, "settings", mode, endpoint)
+				applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 				renderer.SetRootBinding("settings", "client_version", options.Version)
 			}
 			if navigation != previous {
@@ -876,15 +995,17 @@ func openExternalURL(raw string) error {
 }
 
 func connectionBindingData(mode, endpoint, status string, canBack bool) map[string]any {
-	if mode != connectionModeExplicit {
+	if mode != connectionModeExplicit && mode != connectionModeSSH {
 		mode = connectionModeDiscover
 	}
 	return map[string]any{"connection": map[string]any{
 		"mode": mode, "endpoint": endpoint, "explicit": mode == connectionModeExplicit,
+		"ssh":    mode == connectionModeSSH,
 		"status": status, "status_tone": connectionStatusTone(status), "can_back": canBack,
 		"modes": []any{
 			map[string]any{"value": connectionModeDiscover, "label": "Automatic discovery"},
 			map[string]any{"value": connectionModeExplicit, "label": "Explicit endpoint"},
+			map[string]any{"value": connectionModeSSH, "label": "Remote server (SSH)"},
 		},
 	}}
 }
@@ -903,17 +1024,43 @@ func connectionStatusTone(status string) string {
 	return "danger"
 }
 
-func applyConnectionBindings(renderer *Renderer, screen, mode, endpoint string) {
+func applyConnectionBindings(renderer *Renderer, screen, mode, endpoint string, sshSettings sshConnectionSettings) {
 	explicit := mode == connectionModeExplicit
+	remote := mode == connectionModeSSH
+	values := map[string]any{
+		"ssh": remote, "ssh_jump_address": sshSettings.JumpAddress, "ssh_username": sshSettings.Username,
+		"ssh_destination": sshSettings.Destination, "ssh_public_key": sshSettings.PublicKey,
+		"ssh_has_key":                 strings.TrimSpace(sshSettings.PublicKey) != "",
+		"ssh_authorized_key":          cnpclient.RestrictedAuthorizedKey(sshSettings.PublicKey, sshSettings.Destination),
+		"ssh_host_fingerprint":        sshSettings.HostKeyFingerprint,
+		"ssh_has_trusted_fingerprint": strings.TrimSpace(sshSettings.HostKeyFingerprint) != "",
+		"ssh_pending_fingerprint":     sshSettings.PendingFingerprint,
+		"ssh_has_pending_fingerprint": strings.TrimSpace(sshSettings.PendingFingerprint) != "",
+	}
 	if screen == "settings" {
 		renderer.SetRootBinding("settings", "connection_mode", mode)
 		renderer.SetRootBinding("settings", "connection_endpoint", endpoint)
 		renderer.SetRootBinding("settings", "connection_explicit", explicit)
+		for key, value := range values {
+			renderer.SetRootBinding("settings", key, value)
+		}
 		return
 	}
 	renderer.SetRootBinding("connection", "mode", mode)
 	renderer.SetRootBinding("connection", "endpoint", endpoint)
 	renderer.SetRootBinding("connection", "explicit", explicit)
+	for key, value := range values {
+		renderer.SetRootBinding("connection", key, value)
+	}
+}
+
+func captureSSHHostKeyError(settings *sshConnectionSettings, err error) bool {
+	var hostKeyErr *cnpclient.SSHHostKeyError
+	if settings == nil || !errors.As(err, &hostKeyErr) {
+		return false
+	}
+	settings.PendingFingerprint = hostKeyErr.Fingerprint
+	return true
 }
 
 func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, command commandRequest, preferencesPath string) {
@@ -2118,8 +2265,13 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 		"connection_modes": []any{
 			map[string]any{"value": connectionModeDiscover, "label": "Automatic discovery"},
 			map[string]any{"value": connectionModeExplicit, "label": "Explicit endpoint"},
+			map[string]any{"value": connectionModeSSH, "label": "Remote server (SSH)"},
 		},
-		"import_repo_url": "", "import_repo_ref": "", "import_config_file": "ciwi-project.yaml",
+		"ssh": false, "ssh_jump_address": "", "ssh_username": "", "ssh_destination": "",
+		"ssh_public_key": "", "ssh_has_key": false, "ssh_authorized_key": "",
+		"ssh_host_fingerprint": "", "ssh_pending_fingerprint": "", "ssh_has_pending_fingerprint": false,
+		"ssh_has_trusted_fingerprint": false,
+		"import_repo_url":             "", "import_repo_ref": "", "import_config_file": "ciwi-project.yaml",
 		"update_supported": false, "update_capability_notice": "Update status unavailable", "update_status_label": "", "blocked_agent_notice": "",
 		"update_current_version": "", "update_last_apply_status": "",
 		"update_versions": versionOptions(nil, "Check for updates"), "selected_update_version": "",
@@ -2134,7 +2286,7 @@ func offlineFrontPageBindingData(clientVersion string) (map[string]any, error) {
 	})
 }
 
-func offlineSettingsBindingData(clientVersion, selectedTheme, mode, endpoint string) (map[string]any, error) {
+func offlineSettingsBindingData(clientVersion, selectedTheme, mode, endpoint string, sshSettings sshConnectionSettings) (map[string]any, error) {
 	themes, err := sharedUI.LoadThemes()
 	if err != nil {
 		return nil, err
@@ -2150,11 +2302,22 @@ func offlineSettingsBindingData(clientVersion, selectedTheme, mode, endpoint str
 	settings["connection_mode"] = mode
 	settings["connection_endpoint"] = endpoint
 	settings["connection_explicit"] = mode == connectionModeExplicit
+	settings["ssh"] = mode == connectionModeSSH
+	settings["ssh_jump_address"] = sshSettings.JumpAddress
+	settings["ssh_username"] = sshSettings.Username
+	settings["ssh_destination"] = sshSettings.Destination
+	settings["ssh_public_key"] = sshSettings.PublicKey
+	settings["ssh_has_key"] = strings.TrimSpace(sshSettings.PublicKey) != ""
+	settings["ssh_authorized_key"] = cnpclient.RestrictedAuthorizedKey(sshSettings.PublicKey, sshSettings.Destination)
+	settings["ssh_host_fingerprint"] = sshSettings.HostKeyFingerprint
+	settings["ssh_has_trusted_fingerprint"] = strings.TrimSpace(sshSettings.HostKeyFingerprint) != ""
+	settings["ssh_pending_fingerprint"] = sshSettings.PendingFingerprint
+	settings["ssh_has_pending_fingerprint"] = strings.TrimSpace(sshSettings.PendingFingerprint) != ""
 	settings["update_capability_notice"] = "Connect to a server to manage projects and server updates."
 	return data, nil
 }
 
-func refreshOfflineScreen(renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState, clientVersion, mode, endpoint string) error {
+func refreshOfflineScreen(renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState, clientVersion, mode, endpoint string, sshSettings sshConnectionSettings) error {
 	switch navigation.screen {
 	case "front-page":
 		data, err := offlineFrontPageBindingData(clientVersion)
@@ -2163,7 +2326,7 @@ func refreshOfflineScreen(renderer *Renderer, screens map[string]*uidsl.ScreenDo
 		}
 		renderer.SetScreenAndData(screens["front-page"], data)
 	case "settings":
-		data, err := offlineSettingsBindingData(clientVersion, renderer.ThemeName(), mode, endpoint)
+		data, err := offlineSettingsBindingData(clientVersion, renderer.ThemeName(), mode, endpoint, sshSettings)
 		if err != nil {
 			return err
 		}

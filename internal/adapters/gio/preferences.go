@@ -19,16 +19,26 @@ type nativePreferences struct {
 	ConnectionMode         string            `json:"connection_mode,omitempty"`
 	ServerEndpoint         string            `json:"server_endpoint,omitempty"`
 	LastSuccessfulEndpoint string            `json:"last_successful_endpoint,omitempty"`
+	SSH                    sshPreferences    `json:"ssh,omitempty"`
+}
+
+type sshPreferences struct {
+	JumpAddress        string `json:"jump_address,omitempty"`
+	Username           string `json:"username,omitempty"`
+	Destination        string `json:"destination,omitempty"`
+	PublicKey          string `json:"public_key,omitempty"`
+	HostKeyFingerprint string `json:"host_key_fingerprint,omitempty"`
 }
 
 const (
 	connectionModeDiscover = "discover"
 	connectionModeExplicit = "explicit"
+	connectionModeSSH      = "ssh"
 )
 
 func (p nativePreferences) normalizedConnection() (string, string) {
 	mode := p.ConnectionMode
-	if mode != connectionModeExplicit {
+	if mode != connectionModeExplicit && mode != connectionModeSSH {
 		mode = connectionModeDiscover
 	}
 	return mode, p.ServerEndpoint
@@ -39,17 +49,34 @@ type nativeConnectionSettings struct {
 	Endpoint         string
 	PreferredAddress string
 	DiscoverFallback bool
+	SSH              sshConnectionSettings
+}
+
+type sshConnectionSettings struct {
+	JumpAddress        string
+	Username           string
+	Destination        string
+	PublicKey          string
+	PrivateKey         []byte
+	HostKeyFingerprint string
+	PendingFingerprint string
 }
 
 func nativeConnectionSettingsForLaunch(preferences nativePreferences, addressOverride string) nativeConnectionSettings {
 	mode, endpoint := preferences.normalizedConnection()
-	settings := nativeConnectionSettings{Mode: mode, Endpoint: endpoint}
+	settings := nativeConnectionSettings{Mode: mode, Endpoint: endpoint, SSH: sshConnectionSettings{
+		JumpAddress: preferences.SSH.JumpAddress, Username: preferences.SSH.Username,
+		Destination: preferences.SSH.Destination, PublicKey: preferences.SSH.PublicKey,
+		HostKeyFingerprint: preferences.SSH.HostKeyFingerprint,
+	}}
 	if addressOverride = strings.TrimSpace(addressOverride); addressOverride != "" {
 		settings.Mode = connectionModeExplicit
 		settings.Endpoint = addressOverride
 		settings.PreferredAddress = addressOverride
 	} else if mode == connectionModeExplicit {
 		settings.PreferredAddress = strings.TrimSpace(endpoint)
+	} else if mode == connectionModeSSH {
+		settings.PreferredAddress = ""
 	} else {
 		settings.PreferredAddress = strings.TrimSpace(preferences.LastSuccessfulEndpoint)
 		settings.DiscoverFallback = true

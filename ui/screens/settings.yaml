@@ -184,9 +184,117 @@ screen:
                 visible:
                   binding: settings.connection_explicit
                 text:
-                  literal: Use tcp:// for an SSH local forward, or quic:// for a directly reachable native endpoint.
+                  literal: Use tcp:// or quic:// for a directly reachable native endpoint.
                 style:
                   tone: muted
+              - component: column
+                visible:
+                  binding: settings.ssh
+                layout:
+                  direction: vertical
+                  gap: medium
+                children:
+                  - component: text
+                    text:
+                      literal: Ciwi can reach a private server through an SSH jump host without opening a localhost listener. The SSH stream carries the normal encrypted CNP connection.
+                    style:
+                      tone: muted
+                  - component: input
+                    input:
+                      value: settings.ssh_jump_address
+                      placeholder: 192.0.2.1:22
+                    actions:
+                      - on: change
+                        command: set-connection-field
+                        arguments: {field: ssh-jump-address, value: "{{input.value}}"}
+                  - component: input
+                    input:
+                      value: settings.ssh_username
+                      placeholder: SSH username
+                    actions:
+                      - on: change
+                        command: set-connection-field
+                        arguments: {field: ssh-username, value: "{{input.value}}"}
+                  - component: input
+                    input:
+                      value: settings.ssh_destination
+                      placeholder: 10.77.77.2:8113
+                    actions:
+                      - on: change
+                        command: set-connection-field
+                        arguments: {field: ssh-destination, value: "{{input.value}}"}
+                  - component: text
+                    text:
+                      literal: Device SSH identity
+                    style:
+                      emphasis: strong
+                  - component: row
+                    layout:
+                      direction: horizontal
+                      gap: small
+                      wrap: true
+                    children:
+                      - component: button
+                        text:
+                          literal: Generate Device Key
+                        actions:
+                          - on: activate
+                            command: generate-ssh-device-key
+                            confirm:
+                              title: Generate SSH Device Key
+                              message: Generate a new device-specific SSH identity? If a key already exists, replace its restricted public key on the jump host after continuing.
+                      - component: button
+                        visible:
+                          binding: settings.ssh_has_key
+                        text:
+                          literal: Copy Restricted Public Key
+                        icon: copy
+                        actions:
+                          - on: activate
+                            command: copy-text
+                            arguments:
+                              text: "{{settings.ssh_authorized_key}}"
+                  - component: text
+                    visible:
+                      binding: settings.ssh_has_key
+                    text:
+                      binding: settings.ssh_authorized_key
+                    style:
+                      role: code-inline
+                      tone: muted
+                  - component: text
+                    visible:
+                      binding: settings.ssh_has_key
+                    text:
+                      literal: Add this restricted line to the SSH user's ~/.ssh/authorized_keys on the jump host. The private key remains in this device's secure store.
+                    style:
+                      tone: muted
+                  - component: text
+                    visible:
+                      binding: settings.ssh_has_pending_fingerprint
+                    text:
+                      template: "Untrusted SSH host key: {{settings.ssh_pending_fingerprint}}"
+                    style:
+                      tone: warning
+                      emphasis: strong
+                  - component: button
+                    visible:
+                      binding: settings.ssh_has_pending_fingerprint
+                    text:
+                      literal: Trust This Host Key
+                    actions:
+                      - on: activate
+                        command: trust-ssh-host-key
+                        confirm:
+                          title: Trust SSH Host Key
+                          message: Trust this SSH host key only after verifying its fingerprint through an independent trusted channel.
+                  - component: text
+                    visible:
+                      binding: settings.ssh_has_trusted_fingerprint
+                    text:
+                      template: "Trusted host key: {{settings.ssh_host_fingerprint}}"
+                    style:
+                      tone: muted
               - component: button
                 text:
                   literal: Save and Reconnect

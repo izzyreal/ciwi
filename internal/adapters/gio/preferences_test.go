@@ -89,3 +89,21 @@ func TestNativeConnectionSettingsForLaunch(t *testing.T) {
 		t.Fatalf("remembered discovery settings = %+v", remembered)
 	}
 }
+
+func TestNativeConnectionSettingsForSSH(t *testing.T) {
+	preferences := nativePreferences{
+		ConnectionMode: connectionModeSSH,
+		SSH: sshPreferences{
+			JumpAddress: "192.0.2.1:22", Username: "ciwi", Destination: "10.77.77.2:8113",
+			PublicKey: "ssh-ed25519 AAAA", HostKeyFingerprint: "SHA256:host",
+		},
+		LastSuccessfulEndpoint: "tcp://old-server:8113",
+	}
+	settings := nativeConnectionSettingsForLaunch(preferences, "")
+	if settings.Mode != connectionModeSSH || settings.PreferredAddress != "" || settings.DiscoverFallback {
+		t.Fatalf("SSH launch settings = %+v", settings)
+	}
+	if settings.SSH.JumpAddress != preferences.SSH.JumpAddress || settings.SSH.Username != "ciwi" || settings.SSH.Destination != "10.77.77.2:8113" || settings.SSH.PublicKey != preferences.SSH.PublicKey || settings.SSH.HostKeyFingerprint != preferences.SSH.HostKeyFingerprint {
+		t.Fatalf("SSH launch settings = %+v", settings.SSH)
+	}
+}

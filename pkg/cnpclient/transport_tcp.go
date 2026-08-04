@@ -17,6 +17,10 @@ func dialTCP(ctx context.Context, address string) (cnp.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	return tcpSession(ctx, connection)
+}
+
+func tcpSession(ctx context.Context, connection net.Conn) (cnp.Session, error) {
 	tlsConnection := tls.Client(connection, &tls.Config{ // #nosec G402 -- documented CNP v1 trust model.
 		MinVersion: tls.VersionTLS13, NextProtos: []string{ALPN}, InsecureSkipVerify: true,
 	})
@@ -34,6 +38,17 @@ func dialTCP(ctx context.Context, address string) (cnp.Session, error) {
 		return nil, err
 	}
 	return session, nil
+}
+
+// DialTCPConn starts a CNP client over an already-connected stream. It is used
+// by connection adapters such as SSH direct-tcpip without opening a local TCP
+// listener or changing the CNP application protocol.
+func DialTCPConn(ctx context.Context, connection net.Conn, clientName, clientVersion string) (*Client, error) {
+	session, err := tcpSession(ctx, connection)
+	if err != nil {
+		return nil, fmt.Errorf("dial ciwi native endpoint: %w", err)
+	}
+	return newClient(ctx, session, clientName, clientVersion)
 }
 
 type clientYamuxLogger struct{}

@@ -48,6 +48,10 @@ func Dial(ctx context.Context, address, clientName, clientVersion string) (*Clie
 	if err != nil {
 		return nil, fmt.Errorf("dial ciwi native endpoint: %w", err)
 	}
+	return newClient(ctx, session, clientName, clientVersion)
+}
+
+func newClient(ctx context.Context, session cnp.Session, clientName, clientVersion string) (*Client, error) {
 	client := &Client{session: session}
 	if err := client.hello(ctx, clientName, clientVersion); err != nil {
 		_ = session.CloseWithError(fmt.Errorf("hello failed: %w", err))

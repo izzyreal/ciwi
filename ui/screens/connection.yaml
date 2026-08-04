@@ -93,7 +93,7 @@ screen:
                 visible:
                   binding: connection.explicit
                 text:
-                  literal: Use tcp:// for an SSH local forward, or quic:// for a directly reachable native endpoint.
+                  literal: Use tcp:// or quic:// for a directly reachable native endpoint. Remote SSH setup is available in Global Settings.
                 style:
                   tone: muted
               - component: row
