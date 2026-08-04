@@ -1,0 +1,260 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		010000000000000000000001 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000001 /* AppDelegate.m */; };
+		010000000000000000000002 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000002 /* main.m */; };
+		010000000000000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000004 /* Assets.xcassets */; };
+		010000000000000000000004 /* Ciwi.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000006 /* Ciwi.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		020000000000000000000001 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
+		020000000000000000000002 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		020000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		020000000000000000000004 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		020000000000000000000005 /* Ciwi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ciwi.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		020000000000000000000006 /* Ciwi.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Ciwi.framework; path = Generated/Ciwi.framework; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		030000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				010000000000000000000004 /* Ciwi.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		040000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				040000000000000000000002 /* Ciwi */,
+				040000000000000000000003 /* Frameworks */,
+				040000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		040000000000000000000002 /* Ciwi */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000001 /* AppDelegate.m */,
+				020000000000000000000002 /* main.m */,
+				020000000000000000000003 /* Info.plist */,
+				020000000000000000000004 /* Assets.xcassets */,
+			);
+			path = Ciwi;
+			sourceTree = "<group>";
+		};
+		040000000000000000000003 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000006 /* Ciwi.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		040000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000005 /* Ciwi.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		050000000000000000000001 /* Ciwi */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 090000000000000000000002 /* Build configuration list for PBXNativeTarget "Ciwi" */;
+			buildPhases = (
+				070000000000000000000001 /* Sources */,
+				030000000000000000000001 /* Frameworks */,
+				080000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Ciwi;
+			productName = Ciwi;
+			productReference = 020000000000000000000005 /* Ciwi.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		060000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					050000000000000000000001 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+				};
+			};
+			buildConfigurationList = 090000000000000000000001 /* Build configuration list for PBXProject "Ciwi" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 040000000000000000000001;
+			productRefGroup = 040000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				050000000000000000000001 /* Ciwi */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		080000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				010000000000000000000003 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		070000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				010000000000000000000001 /* AppDelegate.m in Sources */,
+				010000000000000000000002 /* main.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0A0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		0A0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+		0A0000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KFBA7Q5H76;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Generated",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Ciwi/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.0.0;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-all_load",
+					"-lresolv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = nl.izmar.ciwi;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0A0000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KFBA7Q5H76;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Generated",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Ciwi/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.0.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-all_load",
+					"-lresolv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = nl.izmar.ciwi;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		090000000000000000000001 /* Build configuration list for PBXProject "Ciwi" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A0000000000000000000001 /* Debug */,
+				0A0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		090000000000000000000002 /* Build configuration list for PBXNativeTarget "Ciwi" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A0000000000000000000003 /* Debug */,
+				0A0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 060000000000000000000001 /* Project object */;
+}

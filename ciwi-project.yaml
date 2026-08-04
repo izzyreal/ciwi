@@ -136,6 +136,74 @@ pipelines:
             run: rm -rf dist/desktop-linux-amd64 && mkdir -p dist/desktop-linux-amd64
           - name: Build Linux desktop application
             run: sh packaging/build-linux-container.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-linux-amd64/ciwi
+  - id: ios
+    trigger: manual
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    versioning:
+      file: VERSION
+      tag_prefix: v
+    jobs:
+      - id: ios-archive
+        runs_on:
+          executor: script
+          shell: posix
+          os: darwin
+          arch: arm64
+        go_cache: {}
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
+            xcodebuild: "*"
+            plistbuddy: "*"
+            codesign: "*"
+        timeout_seconds: 2700
+        artifacts:
+          - dist/ios/Ciwi.xcarchive/**
+          - dist/ios/ExportOptions.plist
+        steps:
+          - name: Prepare iOS output
+            run: rm -rf dist/ios dist/ios-build dist/ios-check && mkdir -p dist/ios dist/ios-build dist/ios-check
+          - name: Build iOS Gio framework
+            run: sh packaging/build-ios-framework.sh "${CIWI_PIPELINE_VERSION}" dist/ios-build/Ciwi.framework
+          - name: Verify unsigned iPhoneOS application
+            run: sh packaging/build-ios-host.sh check "${CIWI_PIPELINE_VERSION}" dist/ios-build/Ciwi.framework dist/ios-check/Ciwi.app
+          - name: Build signed iOS archive
+            run: sh packaging/build-ios-host.sh archive "${CIWI_PIPELINE_VERSION}" dist/ios-build/Ciwi.framework dist/ios/Ciwi.xcarchive
+            skip_dry_run: true
+          - name: Validate signed iOS archive
+            run: sh packaging/validate-ios-archive.sh "${CIWI_PIPELINE_VERSION}" dist/ios/Ciwi.xcarchive
+            skip_dry_run: true
+          - name: Stage App Store export options
+            run: cp packaging/ios/ExportOptions.plist dist/ios/ExportOptions.plist
+  - id: release-ios
+    trigger: manual
+    depends_on:
+      - ios
+    vcs_source:
+      repo: https://github.com/izzyreal/ciwi.git
+    jobs:
+      - id: testflight
+        artifact_sources:
+          - pipeline: ios
+            job: ios-archive
+        runs_on:
+          executor: script
+          shell: posix
+          os: darwin
+          arch: arm64
+        requires:
+          tools:
+            xcodebuild: "*"
+        timeout_seconds: 2700
+        steps:
+          - name: Verify iOS release inputs
+            run: test -d dist/ios/Ciwi.xcarchive && test -f dist/ios/ExportOptions.plist
+            skip_dry_run: true
+          - name: Upload iOS build to TestFlight
+            run: rm -rf dist/ios-upload && mkdir -p dist/ios-upload && xcodebuild -exportArchive -archivePath dist/ios/Ciwi.xcarchive -exportOptionsPlist dist/ios/ExportOptions.plist -exportPath dist/ios-upload -allowProvisioningUpdates
+            skip_dry_run: true
   - id: package-windows
     trigger: manual
     depends_on:
@@ -200,6 +268,7 @@ pipelines:
       - package-macos
       - package-windows
       - package-linux
+      - release-ios
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     versioning:
@@ -632,11 +701,13 @@ pipeline_chains:
     pipelines:
       - build
       - build-desktop
+      - ios
       - codesign-macos-agents
       - codesign-desktop-macos
       - package-macos
       - package-windows
       - package-linux
+      - release-ios
       - release
   - name: Build desktop clients
     pipelines:
@@ -645,3 +716,7 @@ pipeline_chains:
       - package-macos
       - package-windows
       - package-linux
+  - name: Build and publish iOS client
+    pipelines:
+      - ios
+      - release-ios

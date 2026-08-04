@@ -52,21 +52,37 @@ The browser proof of the same declarative screen is available at
 `/declarative-preview/jobs/{jobExecutionId}`. These routes are intentionally
 separate from the established pages until behavioral parity is complete.
 
-## Desktop packages
+## Native client packages
 
 The `Build and release` chain publishes three native-client packages in
-addition to the established server and agent binaries:
+addition to the established server and agent binaries, and uploads the iOS
+client to TestFlight:
 
 - a signed, notarized universal macOS DMG (`arm64` and `x86_64`);
 - a Windows x64 WiX installer;
 - a Linux amd64 ZIP with the executable, pixel-art icon, desktop entry, and
-  installation notes.
+  installation notes;
+- a signed iPhone and iPad archive submitted to App Store Connect.
 
-All three derive their application icon from ciwi's pixel-art favicon. The
+All clients derive their application icon from ciwi's pixel-art favicon. The
 Linux build currently targets Gio's X11/OpenGL backend and deliberately omits
 the optional Wayland and Vulkan backends to keep this first archive's native
 dependency surface small. See the README inside the ZIP for runtime library
 names.
+
+The focused `Build and publish iOS client` chain builds the existing Gio
+client as an arm64 static framework, links it into the minimal UIKit host in
+`packaging/ios`, archives the app with automatic Xcode signing, validates the
+archive, and uploads it to TestFlight. It currently presents the desktop layout
+unchanged; mobile-specific layout and interaction work is deliberately a later
+slice.
+
+The macOS build agent must have Xcode signed into the Apple developer account
+for team `KFBA7Q5H76`, automatic signing access, and permission to upload the
+`nl.izmar.ciwi` application. The App Store Connect application record is a
+one-time manual prerequisite. A successful chain means App Store Connect
+accepted the upload; processing completion and tester assignment remain in App
+Store Connect.
 
 ## Wire contract
 
@@ -145,5 +161,5 @@ directory as `ciwi/native-ui.json`, alongside keyed disclosure state; an explici
 The Gio adapter resolves the same bundled logo, semantic icon names, theme
 gradients, status tones, and badge roles used by the declarative browser proof;
 these are renderer primitives rather than per-screen native drawings.
-The desktop client deliberately has no HTTP fallback: missing CNP capabilities
+The native client deliberately has no HTTP fallback: missing CNP capabilities
 fail visibly instead of silently coupling the native UI to browser endpoints.

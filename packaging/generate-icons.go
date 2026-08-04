@@ -10,8 +10,10 @@ import (
 	"flag"
 	"fmt"
 	"image"
+	"image/color"
 	"image/png"
 	"os"
+	"path/filepath"
 
 	"golang.org/x/image/draw"
 )
@@ -20,6 +22,7 @@ func main() {
 	sourcePath := flag.String("source", "internal/server/webui/assets/ciwi-favicon.png", "source PNG")
 	pngPath := flag.String("png", "packaging/icons/ciwi.png", "output square PNG")
 	icoPath := flag.String("ico", "packaging/icons/ciwi.ico", "output Windows ICO")
+	iosPath := flag.String("ios-png", "packaging/ios/Ciwi/Assets.xcassets/AppIcon.appiconset/AppIcon.png", "output opaque iOS App Store PNG")
 	flag.Parse()
 
 	sourceFile, err := os.Open(*sourcePath)
@@ -31,6 +34,8 @@ func main() {
 	check(os.MkdirAll("packaging/icons", 0o755))
 	check(writePNG(*pngPath, squareIcon(source, 1024)))
 	check(writeICO(*icoPath, source, []int{16, 24, 32, 48, 64, 128, 256}))
+	check(os.MkdirAll(filepath.Dir(*iosPath), 0o755))
+	check(writePNG(*iosPath, iosIcon(source, 1024)))
 }
 
 func squareIcon(source image.Image, size int) *image.NRGBA {
@@ -46,6 +51,24 @@ func squareIcon(source image.Image, size int) *image.NRGBA {
 	x := (size - scaledWidth) / 2
 	y := (size - scaledHeight) / 2
 	draw.NearestNeighbor.Scale(destination, image.Rect(x, y, x+scaledWidth, y+scaledHeight), source, bounds, draw.Src, nil)
+	return destination
+}
+
+func iosIcon(source image.Image, size int) *image.NRGBA {
+	destination := image.NewNRGBA(image.Rect(0, 0, size, size))
+	draw.Draw(destination, destination.Bounds(), &image.Uniform{C: color.NRGBA{R: 14, G: 42, B: 29, A: 255}}, image.Point{}, draw.Src)
+	bounds := source.Bounds()
+	maximum := size * 4 / 5
+	width, height := bounds.Dx(), bounds.Dy()
+	scaledWidth, scaledHeight := maximum, maximum
+	if width > height {
+		scaledHeight = height * maximum / width
+	} else {
+		scaledWidth = width * maximum / height
+	}
+	x := (size - scaledWidth) / 2
+	y := (size - scaledHeight) / 2
+	draw.NearestNeighbor.Scale(destination, image.Rect(x, y, x+scaledWidth, y+scaledHeight), source, bounds, draw.Over, nil)
 	return destination
 }
 

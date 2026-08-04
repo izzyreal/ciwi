@@ -26,10 +26,12 @@ Common variables:
 - `CIWI_UPDATE_API_BASE`: update API base (default `https://api.github.com`)
 - `CIWI_LOG_LEVEL`: `debug|info|warn|error` (default `info`)
 
-Native desktop client variables:
+Native client variables:
 
 - `CIWI_NATIVE_SERVER`: explicit CNP endpoint, equivalent to `ciwi-desktop -addr`; accepts `quic://host:port`, `tcp://host:port`, or scheme-less QUIC `host:port`
 - `CIWI_NATIVE_THEME`: shared theme name, equivalent to `ciwi-desktop -theme`
+- `CIWI_IOS_BUILD_NUMBER`: optional positive integer used as the iOS
+  `CFBundleVersion` during local or CI archive builds (default `1`)
 
 Build-time version embedding:
 - `-X github.com/izzyreal/ciwi/internal/version.Version=<value>`

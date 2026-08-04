@@ -59,6 +59,21 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 		t.Fatalf("unexpected macOS desktop signing dependencies: %+v", desktopSign.DependsOn)
 	}
 
+	iosBuild := pipelineByID("ios")
+	iosArchive := jobByID(iosBuild, "ios-archive")
+	if iosArchive.RunsOn["os"] != "darwin" || iosArchive.RunsOn["arch"] != "arm64" || iosArchive.GoCache == nil {
+		t.Fatalf("unexpected iOS archive runtime: %+v", iosArchive)
+	}
+	iosRelease := pipelineByID("release-ios")
+	testFlight := jobByID(iosRelease, "testflight")
+	if !slices.Contains(iosRelease.DependsOn, "ios") || len(testFlight.ArtifactSources) != 1 || testFlight.ArtifactSources[0].Pipeline != "ios" || testFlight.ArtifactSources[0].Job != "ios-archive" {
+		t.Fatalf("unexpected TestFlight publishing graph: %+v %+v", iosRelease.DependsOn, testFlight.ArtifactSources)
+	}
+	githubRelease := pipelineByID("release")
+	if !slices.Contains(githubRelease.DependsOn, "release-ios") {
+		t.Fatalf("GitHub release must wait for TestFlight upload: %+v", githubRelease.DependsOn)
+	}
+
 	wantDesktopChain := []string{"build-desktop", "codesign-desktop-macos", "package-macos", "package-windows", "package-linux"}
 	foundDesktopChain := false
 	for _, chain := range configuration.PipelineChains {
@@ -71,5 +86,27 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	}
 	if !foundDesktopChain {
 		t.Fatal("Build desktop clients chain not found")
+	}
+
+	wantIOSChain := []string{"ios", "release-ios"}
+	foundIOSChain := false
+	wantFullReleasePipelines := []string{"ios", "release-ios"}
+	for _, chain := range configuration.PipelineChains {
+		switch chain.Name {
+		case "Build and publish iOS client":
+			foundIOSChain = true
+			if !slices.Equal(chain.Pipelines, wantIOSChain) {
+				t.Fatalf("iOS chain = %+v, want %+v", chain.Pipelines, wantIOSChain)
+			}
+		case "Build and release":
+			for _, pipelineID := range wantFullReleasePipelines {
+				if !slices.Contains(chain.Pipelines, pipelineID) {
+					t.Fatalf("full release chain does not include %q: %+v", pipelineID, chain.Pipelines)
+				}
+			}
+		}
+	}
+	if !foundIOSChain {
+		t.Fatal("Build and publish iOS client chain not found")
 	}
 }
