@@ -24,14 +24,14 @@
       border: 1px solid var(--line);
       border-radius: 6px;
       background: var(--surface-subtle);
-      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-family: "Ciwi Mono", ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
       font-size: 12px;
       line-height: 1.4;
     }
     .logbox {
       margin:0;
       white-space:pre-wrap;
-      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-family:"Ciwi Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
       font-size:12px;
       line-height:1.4;
       min-height:220px;
@@ -91,7 +91,7 @@
       outline: none;
       resize: none;
       padding: 10px;
-      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-family: "Ciwi Mono", ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
       font-size: 12px;
       line-height: 1.45;
     }
@@ -100,7 +100,7 @@
       padding: 10px;
       overflow: auto;
       white-space: pre-wrap;
-      font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      font-family: "Ciwi Mono", ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
       font-size: 12px;
       line-height: 1.45;
       background: var(--surface-subtle);

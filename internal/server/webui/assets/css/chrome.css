@@ -829,3 +829,17 @@
       font-size: 1.15em;
       line-height: 1;
     }
+    @font-face {
+      font-family: "Ciwi Mono";
+      src: url("/ui/fonts/go-mono.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Ciwi Mono";
+      src: url("/ui/fonts/go-mono-bold.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+    }

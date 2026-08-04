@@ -34,6 +34,9 @@ function ciwiApplyContractTheme(name) {
       accent: '--accent', 'accent-strong': '--accent-strong', border: '--line',
       success: '--ok', warning: '--warn', danger: '--bad',
       'pill-background': '--pill-bg', 'pill-text': '--pill-ink',
+      'console-background': '--console-bg', 'console-surface': '--console-surface',
+      'console-border': '--console-line', 'console-text': '--console-ink',
+      'console-muted': '--console-muted', 'console-accent': '--console-accent',
     };
     const style = document.documentElement.style;
     Object.entries(mapping).forEach(([token, variable]) => {

@@ -50,3 +50,14 @@ persistent Graph/List switch, fit/reset/zoom controls, two-dimensional overflow,
 selectable node copy, dependency edges, and per-pipeline run actions. The List
 mode remains the complete pipeline/job/step hierarchy while graph drill-down to
 jobs and steps is developed as a later parity slice.
+
+The front-page contract now uses the same link and disclosure semantics in both
+renderers: project names and execution job names navigate directly, surrounding
+summary rows disclose their content, and selecting text does neither. Queue and
+history details use compact horizontal job rows rather than renderer-specific
+cards. Browser and native code/identifier text share the bundled Go Mono face.
+
+Job output uses theme-owned console tokens in both renderers. Its controls,
+execution path, system messages, and grouped phase/step output now live in one
+`Output / Error` section; selecting a path item reveals its corresponding output
+instead of maintaining a second selected-item details card.

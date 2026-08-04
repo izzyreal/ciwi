@@ -325,6 +325,21 @@ func TestRendererPersistsProjectDisclosureAndBulkExecutionState(t *testing.T) {
 		t.Fatal("selecting project-row text unexpectedly collapsed the project")
 	}
 	projectName.ClearSelection()
+	var navigatedRoute string
+	renderer.onAction = func(action uidsl.Action, arguments map[string]string) {
+		if action.Command == "navigate" {
+			navigatedRoute = arguments["route"]
+		}
+	}
+	renderer.button(projectPath + "/summary/0").Click()
+	operations.Reset()
+	renderer.Layout(gtx)
+	if navigatedRoute != "/projects/1" {
+		t.Fatalf("project-name link route = %q, want /projects/1", navigatedRoute)
+	}
+	if !renderer.disclosures["front-project:1"] {
+		t.Fatal("clicking the project-name link unexpectedly toggled the project row")
+	}
 	renderer.dispatchFromLayout(gtx, uidsl.Action{
 		Command: "set-disclosures", Arguments: map[string]string{"prefix": "front-history:", "expanded": "true"},
 	}, data)

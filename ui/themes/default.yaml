@@ -23,6 +23,12 @@ theme:
     warning: "#a76900"
     danger: "#c03b4d"
     focus: "#2568d8"
+    console-background: "#0e1713"
+    console-surface: "#17261f"
+    console-border: "#294238"
+    console-text: "#d5eee2"
+    console-muted: "#98b4a7"
+    console-accent: "#a8d7c1"
   gradients:
     page:
       kind: linear

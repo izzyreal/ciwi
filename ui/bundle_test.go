@@ -61,6 +61,7 @@ func TestEmbeddedUIBundle(t *testing.T) {
 		for _, token := range []string{
 			"background-start", "background-end", "background-glow-a", "background-glow-b",
 			"surface-raised", "surface-glow", "pill-background", "pill-text",
+			"console-background", "console-surface", "console-border", "console-text", "console-muted", "console-accent",
 		} {
 			if theme.Theme.Colors[token] == "" {
 				t.Errorf("theme %q is missing shared visual color %q", theme.Metadata.Name, token)

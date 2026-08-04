@@ -248,108 +248,6 @@ screen:
                     style:
                       tone: muted
       - component: section
-        id: execution-path
-        layout:
-          direction: vertical
-          gap: medium
-        children:
-          - component: text
-            text:
-              literal: Execution path
-            style:
-              role: heading
-              emphasis: strong
-          - component: scroller
-            layout:
-              direction: horizontal
-              gap: small
-              maxHeight: "118"
-            repeat:
-              source: jobDetails.timeline
-              as: item
-              key: item.id
-            children:
-              - component: card
-                layout:
-                  direction: vertical
-                  gap: small
-                  padding: small
-                  minWidth: "235"
-                  maxWidth: "300"
-                  minHeight: "86"
-                actions:
-                  - on: activate
-                    command: select-timeline-item
-                    arguments:
-                      id: "{{item.id}}"
-                children:
-                  - component: text
-                    text:
-                      binding: item.title
-                    style:
-                      emphasis: strong
-                      truncate: true
-                  - component: badge
-                    text:
-                      binding: item.status_label
-                    style:
-                      toneBinding: item.status
-          - component: card
-            id: selected-execution-step
-            layout:
-              direction: vertical
-              gap: small
-              padding: medium
-            children:
-              - component: text
-                text:
-                  binding: jobDetails.selected_timeline_item.title
-                style:
-                  emphasis: strong
-              - component: badge
-                text:
-                  binding: jobDetails.selected_timeline_item.status_label
-                visible:
-                  binding: jobDetails.selected_timeline_item.status_label
-                  empty: true
-                  not: true
-                style:
-                  toneBinding: jobDetails.selected_timeline_item.status
-              - component: text
-                text:
-                  binding: jobDetails.selected_timeline_item.description
-                visible:
-                  binding: jobDetails.selected_timeline_item.description
-                  empty: true
-                  not: true
-                style:
-                  tone: muted
-              - component: text
-                text:
-                  template: "Duration: {{jobDetails.selected_timeline_item.duration}}"
-                visible:
-                  binding: jobDetails.selected_timeline_item.duration
-                  empty: true
-                  not: true
-                style:
-                  tone: muted
-              - component: text
-                text:
-                  template: "Exit code: {{jobDetails.selected_timeline_item.exit_code}}"
-                visible:
-                  binding: jobDetails.selected_timeline_item.exit_code
-                  empty: true
-                  not: true
-              - component: text
-                text:
-                  template: "Error: {{jobDetails.selected_timeline_item.error}}"
-                visible:
-                  binding: jobDetails.selected_timeline_item.error
-                  empty: true
-                  not: true
-                style:
-                  tone: danger
-      - component: section
         id: execution-output
         layout:
           direction: vertical
@@ -396,6 +294,8 @@ screen:
                 text:
                   literal: Previous
                 icon: chevron-up
+                style:
+                  role: icon-button
                 actions:
                   - on: activate
                     command: find-output
@@ -406,6 +306,8 @@ screen:
                 text:
                   literal: Next
                 icon: chevron-down
+                style:
+                  role: icon-button
                 actions:
                   - on: activate
                     command: find-output
@@ -417,8 +319,57 @@ screen:
                   binding: jobDetails.output_search_count
                 style:
                   tone: muted
+          - component: column
+            id: execution-path
+            layout:
+              direction: vertical
+              gap: small
+            children:
+              - component: text
+                text:
+                  literal: Execution path
+                style:
+                  emphasis: strong
+                  tone: muted
+              - component: scroller
+                layout:
+                  direction: horizontal
+                  gap: small
+                  maxHeight: "118"
+                repeat:
+                  source: jobDetails.timeline
+                  as: item
+                  key: item.id
+                children:
+                  - component: card
+                    layout:
+                      direction: vertical
+                      gap: small
+                      padding: small
+                      minWidth: "235"
+                      maxWidth: "300"
+                      minHeight: "86"
+                    actions:
+                      - on: activate
+                        command: select-timeline-item
+                        arguments:
+                          id: "{{item.id}}"
+                    children:
+                      - component: text
+                        text:
+                          binding: item.title
+                        style:
+                          emphasis: strong
+                          truncate: true
+                      - component: badge
+                        text:
+                          binding: item.status_label
+                        style:
+                          toneBinding: item.status
           - component: card
             id: job-output-system
+            style:
+              role: output-system
             layout:
               direction: vertical
               gap: small
@@ -433,12 +384,14 @@ screen:
                   literal: System messages
                 style:
                   emphasis: strong
+                  tone: console-accent
               - component: text
                 id: job-output-system-text
                 text:
                   binding: jobDetails.system_output
                 style:
                   role: code
+                  tone: console-text
           - component: scroller
             id: job-output-groups
             layout:
@@ -461,6 +414,7 @@ screen:
                   gap: small
                   padding: medium
                 style:
+                  role: output-group
                   toneBinding: outputGroup.status
                 children:
                   - component: text
@@ -472,7 +426,7 @@ screen:
                       not: true
                     style:
                       role: code
-                      tone: muted
+                      tone: console-muted
                       truncate: true
                   - component: badge
                     text:
@@ -487,7 +441,7 @@ screen:
                       empty: true
                       not: true
                     style:
-                      tone: muted
+                      tone: console-muted
                   - component: text
                     text:
                       template: "Duration: {{outputGroup.duration}}"
@@ -496,7 +450,7 @@ screen:
                       empty: true
                       not: true
                     style:
-                      tone: muted
+                      tone: console-muted
                   - component: text
                     text:
                       template: "Exit code: {{outputGroup.exit_code}}"
@@ -520,6 +474,7 @@ screen:
                       binding: outputGroup.is_phase
                     style:
                       emphasis: strong
+                      tone: console-accent
                   - component: text
                     text:
                       binding: outputGroup.details
@@ -527,6 +482,7 @@ screen:
                       binding: outputGroup.is_phase
                     style:
                       role: code
+                      tone: console-text
                   - component: text
                     text:
                       literal: YAML literal
@@ -534,6 +490,7 @@ screen:
                       binding: outputGroup.is_step
                     style:
                       emphasis: strong
+                      tone: console-accent
                   - component: text
                     text:
                       binding: outputGroup.yaml_literal
@@ -541,6 +498,7 @@ screen:
                       binding: outputGroup.is_step
                     style:
                       role: code
+                      tone: console-text
                   - component: text
                     text:
                       literal: Expanded command
@@ -548,6 +506,7 @@ screen:
                       binding: outputGroup.is_step
                     style:
                       emphasis: strong
+                      tone: console-accent
                   - component: text
                     text:
                       binding: outputGroup.expanded_command
@@ -555,11 +514,13 @@ screen:
                       binding: outputGroup.is_step
                     style:
                       role: code
+                      tone: console-text
                   - component: text
                     text:
                       literal: Output
                     style:
                       emphasis: strong
+                      tone: console-accent
                   - component: text
                     id: job-output-group-text
                     text:
@@ -570,6 +531,7 @@ screen:
                       not: true
                     style:
                       role: code
+                      tone: console-text
                   - component: text
                     text:
                       binding: outputGroup.empty_output_label
@@ -578,7 +540,7 @@ screen:
                       empty: true
                     style:
                       role: code
-                      tone: muted
+                      tone: console-muted
                   - component: button
                     text:
                       literal: Collapse

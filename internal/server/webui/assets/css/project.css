@@ -27,7 +27,7 @@
     .inspect-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
     .inspect-select { font-size:13px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:var(--input-bg); color:var(--ink); }
     .inspect-checkbox { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--ink); user-select:none; }
-    .inspect-content { margin:0; background:var(--console-background); color:var(--console-ink); border-radius:8px; border:1px solid var(--console-line); padding:12px; width:100%; height:100%; overflow:auto; font-size:12px; line-height:1.35; white-space:pre; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .inspect-content { margin:0; background:var(--console-background); color:var(--console-ink); border-radius:8px; border:1px solid var(--console-line); padding:12px; width:100%; height:100%; overflow:auto; font-size:12px; line-height:1.35; white-space:pre; font-family:"Ciwi Mono",ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .project-header-icon {
       width: 100px;
       height: 100px;
@@ -62,7 +62,7 @@
     .project-graph-node-play { position:absolute; z-index:2; right:8px; top:50%; transform:translateY(-50%); width:31px; height:31px; padding:0; display:flex; align-items:center; justify-content:center; border:1px solid var(--graph-node-border); border-radius:999px; background:var(--surface-soft); color:var(--accent-strong); font-size:15px; line-height:1; cursor:pointer; }
     .project-graph-node-play:hover { background:var(--surface-hover); border-color:var(--accent); }
     .project-graph-node-play:disabled { opacity:.55; cursor:wait; }
-    .project-graph-node-title { display:block; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:14px; font-weight:700; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .project-graph-node-title { display:block; font-family:"Ciwi Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:14px; font-weight:700; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .project-graph-node-meta { display:block; margin-top:7px; color:var(--muted); font-size:12px; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .project-graph-warning { margin:0 0 8px; padding:7px 9px; border:1px solid var(--warn-line); border-radius:7px; background:var(--warn-bg); color:var(--warn); font-size:12px; }
     .project-graph-empty { display:flex; align-items:center; justify-content:center; min-height:220px; color:var(--muted); }

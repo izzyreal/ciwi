@@ -106,6 +106,8 @@ type palette struct {
 	heroStart, heroEnd, surface, surfaceRaised, surfaceGlow, subtle              color.NRGBA
 	text, muted, accent, accentStrong, pillBackground, pillText                  color.NRGBA
 	border, success, warning, danger, focus                                      color.NRGBA
+	consoleBackground, consoleSurface, consoleBorder                             color.NRGBA
+	consoleText, consoleMuted, consoleAccent                                     color.NRGBA
 }
 
 type visualMetrics struct {
@@ -669,17 +671,26 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		if node.Style.Role == "hero" {
 			padding = r.metrics.heroPadding
 		}
-		if node.Component == "disclosure" {
+		if node.Component == "disclosure" && node.Style.Role == "output-group" {
+			content = r.surfaceWithBorder(content, padding, r.palette.consoleSurface, r.palette.consoleBorder)
+		} else if node.Component == "disclosure" {
 			content = r.surfaceWithFill(content, padding, r.palette.surfaceRaised)
+		} else if node.Component == "card" && node.Style.Role == "output-system" {
+			content = r.surfaceWithBorder(content, padding, r.palette.consoleSurface, r.palette.consoleBorder)
 		} else {
 			content = r.surface(content, padding, node.Style.Role == "hero")
 		}
+	}
+	if node.Component == "scroller" && node.ID == "job-output-groups" {
+		content = r.surfaceWithBorder(content, r.metrics.spaceSmall, r.palette.consoleBackground, r.palette.consoleBorder)
 	}
 	widgetFn := content
 	if len(node.Actions) > 0 && !componentHandlesOwnActions(node.Component) {
 		button := r.button(path)
 		for button.Clicked(gtx) {
-			r.dispatchFromLayout(gtx, node.Actions[0], data)
+			if !r.nodeHasSelection(path) {
+				r.dispatchFromLayout(gtx, node.Actions[0], data)
+			}
 		}
 		widgetFn = func(gtx layout.Context) layout.Dimensions {
 			return button.Layout(gtx, content)
@@ -722,9 +733,25 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	isProjectRow := node.Style.Role == "project-row"
 	toggle := r.button(path + "/disclosure-toggle")
 	headerToggle := r.button(path + "/disclosure-header")
+	summaryActionActivated := false
+	if node.Disclosure != nil {
+		for index, summaryNode := range node.Disclosure.Summary {
+			if len(summaryNode.Actions) == 0 || componentHandlesOwnActions(summaryNode.Component) {
+				continue
+			}
+			summaryPath := fmt.Sprintf("%s/summary/%d", path, index)
+			actionButton := r.button(summaryPath)
+			for actionButton.Clicked(gtx) {
+				summaryActionActivated = true
+				if !r.nodeHasSelection(summaryPath) {
+					r.dispatchFromLayout(gtx, summaryNode.Actions[0], data)
+				}
+			}
+		}
+	}
 	if isProjectRow {
 		for headerToggle.Clicked(gtx) {
-			if !r.disclosureHeaderHasSelection(path) {
+			if !summaryActionActivated && !r.disclosureHeaderHasSelection(path) {
 				expanded = !expanded
 				r.setDisclosureState(stateKey, expanded, persistent)
 			}
@@ -763,6 +790,9 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 					}
 					if textNode.Style.Role == "execution-row" {
 						textNode.Style.Tone = ""
+					}
+					if textNode.Style.Role == "output-group" {
+						textNode.Style.Role = "code-inline"
 					}
 					return r.layoutText(gtx, textNode, data, labelPath)
 				})
@@ -875,6 +905,15 @@ func (r *Renderer) disclosureHeaderHasSelection(path string) bool {
 	return false
 }
 
+func (r *Renderer) nodeHasSelection(path string) bool {
+	for key, selectable := range r.selectables {
+		if (key == path || strings.HasPrefix(key, path+"/")) && selectable.SelectionLen() != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Renderer) disclosureStateKey(node uidsl.Node, data any, fallback string) (string, bool) {
 	if node.Disclosure == nil || strings.TrimSpace(node.Disclosure.StateKey) == "" {
 		return fallback, false
@@ -927,7 +966,13 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		Top: r.spacing(node.Layout.Padding), Right: r.spacing(node.Layout.Padding),
 		Bottom: r.spacing(node.Layout.Padding), Left: r.spacing(node.Layout.Padding),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: axis, Alignment: layout.Middle, Gap: gtx.Dp(r.spacing(node.Layout.Gap))}.Layout(gtx, children...)
+		row := func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: axis, Alignment: layout.Middle, Gap: gtx.Dp(r.spacing(node.Layout.Gap))}.Layout(gtx, children...)
+		}
+		if node.Style.Role == "execution-job-row" {
+			return layout.Inset{Top: 7, Bottom: 7}.Layout(gtx, row)
+		}
+		return row(gtx)
 	})
 }
 
@@ -1014,6 +1059,9 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 		}
 		style.TextSize = r.metrics.textCode
 		style.Color = r.palette.text
+		if tone, ok := r.toneColor(node.Style.Tone); ok {
+			style.Color = tone
+		}
 		style.SelectionColor = r.palette.focus
 		style.SelectionColor.A = 0xc0
 		if node.Style.Role == "code-inline" {
@@ -1056,6 +1104,9 @@ func (r *Renderer) layoutText(gtx layout.Context, node uidsl.Node, data any, pat
 }
 
 func (r *Renderer) layoutBadge(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	// Badges are intrinsically sized pills even when their parent is a flexed
+	// column with an exact cross-axis constraint.
+	gtx.Constraints.Min.X = 0
 	tone, ok := r.toneColor(node.Style.Tone)
 	if !ok {
 		tone = r.palette.accent
@@ -1107,6 +1158,12 @@ func (r *Renderer) toneColor(tone string) (color.NRGBA, bool) {
 		return r.palette.danger, true
 	case "focus":
 		return r.palette.focus, true
+	case "console-text":
+		return r.palette.consoleText, true
+	case "console-muted":
+		return r.palette.consoleMuted, true
+	case "console-accent":
+		return r.palette.consoleAccent, true
 	default:
 		return color.NRGBA{}, false
 	}
@@ -1511,9 +1568,13 @@ func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool) la
 }
 
 func (r *Renderer) surfaceWithFill(content layout.Widget, padding unit.Dp, fill color.NRGBA) layout.Widget {
+	return r.surfaceWithBorder(content, padding, fill, r.palette.border)
+}
+
+func (r *Renderer) surfaceWithBorder(content layout.Widget, padding unit.Dp, fill, border color.NRGBA) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		radius := r.metrics.surfaceRadius
-		return widget.Border{Color: r.palette.border, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return widget.Border{Color: border, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
 				return layout.Dimensions{Size: gtx.Constraints.Min}
@@ -2069,6 +2130,9 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 		"background-glow-a": &p.backgroundGlowA, "background-glow-b": &p.backgroundGlowB,
 		"surface-raised": &p.surfaceRaised, "surface-glow": &p.surfaceGlow,
 		"pill-background": &p.pillBackground, "pill-text": &p.pillText,
+		"console-background": &p.consoleBackground, "console-surface": &p.consoleSurface,
+		"console-border": &p.consoleBorder, "console-text": &p.consoleText,
+		"console-muted": &p.consoleMuted, "console-accent": &p.consoleAccent,
 	} {
 		value := strings.TrimSpace(theme.Colors[name])
 		if value == "" {

@@ -456,7 +456,7 @@
         element.tabIndex = element.tabIndex >= 0 ? element.tabIndex : 0;
         element.setAttribute('role', element.tagName === 'BUTTON' ? 'button' : 'link');
         element.addEventListener('click', event => {
-          if (element.tagName === 'BUTTON') event.stopPropagation();
+          if (element.tagName === 'BUTTON' || element.closest('summary')) event.stopPropagation();
           invoke(data).catch(error => window.alert(error.message || String(error)));
         });
         element.addEventListener('keydown', event => {

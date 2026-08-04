@@ -122,6 +122,12 @@ screen:
                       style:
                         tone: accent
                         emphasis: strong
+                        role: link
+                      actions:
+                        - on: activate
+                          command: navigate
+                          arguments:
+                            route: /projects/{{project.id}}
                     - component: badge
                       text:
                         binding: project.repo_url
@@ -187,6 +193,9 @@ screen:
                       - component: button
                         text:
                           literal: View details
+                        overrides:
+                          gio:
+                            hidden: true
                         actions:
                           - on: activate
                             command: navigate
@@ -439,9 +448,10 @@ screen:
                         children:
                           - component: text
                             text:
-                              template: "Pipeline: {{section.label}}"
+                              template: "pipeline: {{section.label}}"
                             style:
                               emphasis: strong
+                              tone: muted
                           - component: list
                             layout:
                               direction: vertical
@@ -454,25 +464,37 @@ screen:
                               - component: row
                                 layout:
                                   direction: horizontal
-                                  gap: medium
+                                  gap: small
                                   align: center
+                                style:
+                                  role: execution-job-row
                                 children:
+                                  - component: text
+                                    text:
+                                      binding: job.label
+                                    layout:
+                                      grow: true
+                                    style:
+                                      role: link
+                                      tone: accent
+                                      emphasis: strong
+                                    actions:
+                                      - on: activate
+                                        command: navigate
+                                        arguments:
+                                          route: /jobs/{{job.id}}
+                                  - component: text
+                                    text:
+                                      binding: job.status
+                                    style:
+                                      toneBinding: job.status
+                                      emphasis: strong
                                   - component: column
                                     layout:
                                       direction: vertical
                                       gap: small
                                       grow: true
                                     children:
-                                      - component: text
-                                        text:
-                                          binding: job.label
-                                        style:
-                                          emphasis: strong
-                                      - component: badge
-                                        text:
-                                          binding: job.status
-                                        style:
-                                          toneBinding: job.status
                                       - component: text
                                         text:
                                           binding: job.current_step
@@ -491,14 +513,6 @@ screen:
                                           not: true
                                         style:
                                           tone: warning
-                                  - component: button
-                                    text:
-                                      literal: Open details
-                                    actions:
-                                      - on: activate
-                                        command: navigate
-                                        arguments:
-                                          route: /jobs/{{job.id}}
       - component: section
         id: execution-history
         layout:
@@ -625,9 +639,10 @@ screen:
                         children:
                           - component: text
                             text:
-                              template: "Pipeline: {{section.label}}"
+                              template: "pipeline: {{section.label}}"
                             style:
                               emphasis: strong
+                              tone: muted
                           - component: list
                             layout:
                               direction: vertical
@@ -640,25 +655,37 @@ screen:
                               - component: row
                                 layout:
                                   direction: horizontal
-                                  gap: medium
+                                  gap: small
                                   align: center
+                                style:
+                                  role: execution-job-row
                                 children:
+                                  - component: text
+                                    text:
+                                      binding: job.label
+                                    layout:
+                                      grow: true
+                                    style:
+                                      role: link
+                                      tone: accent
+                                      emphasis: strong
+                                    actions:
+                                      - on: activate
+                                        command: navigate
+                                        arguments:
+                                          route: /jobs/{{job.id}}
+                                  - component: text
+                                    text:
+                                      binding: job.status
+                                    style:
+                                      toneBinding: job.status
+                                      emphasis: strong
                                   - component: column
                                     layout:
                                       direction: vertical
                                       gap: small
                                       grow: true
                                     children:
-                                      - component: text
-                                        text:
-                                          binding: job.label
-                                        style:
-                                          emphasis: strong
-                                      - component: badge
-                                        text:
-                                          binding: job.status
-                                        style:
-                                          toneBinding: job.status
                                       - component: text
                                         text:
                                           binding: job.current_step
@@ -677,11 +704,3 @@ screen:
                                           not: true
                                         style:
                                           tone: warning
-                                  - component: button
-                                    text:
-                                      literal: Open details
-                                    actions:
-                                      - on: activate
-                                        command: navigate
-                                        arguments:
-                                          route: /jobs/{{job.id}}

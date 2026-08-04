@@ -23,6 +23,12 @@ theme:
     warning: "#9a6100"
     danger: "#c12e5d"
     focus: "#6258c8"
+    console-background: "#1c0d14"
+    console-surface: "#351421"
+    console-border: "#673247"
+    console-text: "#ffe9f0"
+    console-muted: "#c69aaa"
+    console-accent: "#ff82aa"
   gradients:
     page: {kind: linear, angle: 140, stops: [{color: "#fffafd", position: 0}, {color: "#e63d82", position: 100}]}
     hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f1b0cc", position: 100}]}
