@@ -174,6 +174,31 @@ func TestRepositoryAddsSchedulingDiagnosisToQueuedViewsAndDetails(t *testing.T) 
 	}
 }
 
+func TestRepositoryCarriesCompletedJobsForActiveCardProgress(t *testing.T) {
+	now := time.Now().UTC()
+	metadata := map[string]string{
+		"project": "ciwi", "pipeline_id": "build", "pipeline_run_id": "run-build",
+	}
+	repository := NewRepository(executionStoreStub{jobs: []protocol.JobExecution{
+		{ID: "done", Status: "succeeded", CreatedUTC: now.Add(-3 * time.Second), StartedUTC: now.Add(-3 * time.Second), FinishedUTC: now.Add(-2 * time.Second), ExpectedDurationMS: 1_000, Metadata: metadata},
+		{ID: "active", Status: "running", CreatedUTC: now.Add(-2 * time.Second), StartedUTC: now.Add(-time.Second), ExpectedDurationMS: 4_000, Metadata: metadata},
+		{ID: "blocked", Status: "queued", CreatedUTC: now.Add(-time.Second), ExpectedDurationMS: 2_000, Metadata: map[string]string{
+			"project": "ciwi", "pipeline_id": "build", "pipeline_run_id": "run-build", "chain_blocked": "1",
+		}},
+	}}, 40)
+
+	queued, _, err := repository.ListFrontPageExecutionCards(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 1 || len(queued[0].ProgressJobs) != 3 {
+		t.Fatalf("queued progress jobs = %+v", queued)
+	}
+	if len(queued[0].Sections) != 1 || len(queued[0].Sections[0].Jobs) != 2 || len(queued[0].Sections[0].ProgressJobs) != 3 {
+		t.Fatalf("queued section = %+v", queued[0].Sections)
+	}
+}
+
 func TestRepositoryPrefersRuntimeSchedulingBlocker(t *testing.T) {
 	store := executionStoreStub{jobs: []protocol.JobExecution{{
 		ID: "vault-job", Status: protocol.JobExecutionStatusQueued,

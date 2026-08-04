@@ -1783,14 +1783,20 @@ func decorateExecutionCards(value any, queued bool) {
 			continue
 		}
 		status := "succeeded"
+		summaryTone := "success"
 		if numberValue(summary["failed"]) > 0 {
 			status = "failed"
+			summaryTone = "danger"
 		} else if queued && numberValue(summary["in_progress"]) > 0 {
 			status = "running"
+			summaryTone = "warning"
 		} else if queued {
 			status = "waiting"
+			summaryTone = "muted"
 		}
 		entry["status"] = status
+		entry["summary_tone"] = summaryTone
+		entry["summary_label"] = executionCardSummaryLabel(summary)
 		if ids, ok := entry["job_execution_ids"].([]any); ok {
 			parts := make([]string, 0, len(ids))
 			for _, id := range ids {
@@ -1810,6 +1816,21 @@ func decorateExecutionCards(value any, queued bool) {
 			}
 		}
 	}
+}
+
+func executionCardSummaryLabel(summary map[string]any) string {
+	total := max(0, int(numberValue(summary["total_jobs"])))
+	parts := []string{fmt.Sprintf("%d/%d successful", max(0, int(numberValue(summary["succeeded"]))), total)}
+	if failed := max(0, int(numberValue(summary["failed"]))); failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", failed))
+	}
+	if inProgress := max(0, int(numberValue(summary["in_progress"]))); inProgress > 0 {
+		parts = append(parts, fmt.Sprintf("%d in progress", inProgress))
+	}
+	if waiting := max(0, int(numberValue(summary["waiting"]))); waiting > 0 {
+		parts = append(parts, fmt.Sprintf("%d waiting", waiting))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func decorateExecutionCardJob(job map[string]any) {

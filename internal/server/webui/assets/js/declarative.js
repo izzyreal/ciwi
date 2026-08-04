@@ -147,8 +147,9 @@
     switch (String(value || '').trim().toLowerCase()) {
       case 'succeeded': case 'success': case 'passed': case 'complete': case 'completed': case 'online': return 'success';
       case 'failed': case 'failure': case 'error': case 'cancelled': case 'canceled': case 'offline': return 'danger';
-      case 'queued': case 'waiting': case 'pending': case 'not reached': case 'stale': return 'warning';
-      case 'running': case 'leased': case 'in progress': case 'active': return 'accent';
+      case 'warning': case 'queued': case 'waiting': case 'pending': case 'not reached': case 'stale': return 'warning';
+      case 'accent': case 'running': case 'leased': case 'in progress': case 'active': return 'accent';
+      case 'muted': return 'muted';
       default: return 'muted';
     }
   }
@@ -159,6 +160,14 @@
       card.status = Number(summary.failed || 0) > 0
         ? 'failed'
         : (queued ? (Number(summary.in_progress || 0) > 0 ? 'running' : 'waiting') : 'succeeded');
+	  card.summary_tone = Number(summary.failed || 0) > 0
+		? 'danger'
+		: (queued && Number(summary.in_progress || 0) > 0 ? 'warning' : (queued ? 'muted' : 'success'));
+	  const summaryParts = [Math.max(0, Number(summary.succeeded || 0)) + '/' + Math.max(0, Number(summary.total_jobs || 0)) + ' successful'];
+	  if (Number(summary.failed || 0) > 0) summaryParts.push(Number(summary.failed) + ' failed');
+	  if (Number(summary.in_progress || 0) > 0) summaryParts.push(Number(summary.in_progress) + ' in progress');
+	  if (Number(summary.waiting || 0) > 0) summaryParts.push(Number(summary.waiting) + ' waiting');
+	  card.summary_label = summaryParts.join(', ');
 	  card.job_execution_ids_csv = (Array.isArray(card.job_execution_ids) ? card.job_execution_ids : []).join(',');
 	  (Array.isArray(card.sections) ? card.sections : []).forEach(section => {
 		(Array.isArray(section.jobs) ? section.jobs : []).forEach(job => {

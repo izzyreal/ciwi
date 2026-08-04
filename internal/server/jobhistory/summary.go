@@ -17,7 +17,9 @@ func SummaryCards(jobs []protocol.JobExecution, active bool, limit int) []CardVi
 	}
 	out := make([]CardView, 0, len(cards))
 	for _, card := range cards {
-		out = append(out, cardView(jobs, card, true, false))
+		// Active cards render only their currently active rows, but their
+		// progress model must include the latest completed attempts as well.
+		out = append(out, cardView(jobs, card, true, true))
 	}
 	return out
 }

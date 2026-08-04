@@ -14,14 +14,19 @@ type ExecutionCard struct {
 	JobExecutionIDs []string
 	Summary         ExecutionSummary
 	Sections        []ExecutionCardSection
-	Progress        Progress
+	// ProgressJobs contains the latest attempt for every job represented by
+	// the card, including completed jobs that are omitted from an active-only
+	// section view. It keeps aggregate progress stable across job boundaries.
+	ProgressJobs []ExecutionCardJob
+	Progress     Progress
 }
 
 type ExecutionCardSection struct {
-	Key      string
-	Label    string
-	Jobs     []ExecutionCardJob
-	Progress Progress
+	Key          string
+	Label        string
+	Jobs         []ExecutionCardJob
+	ProgressJobs []ExecutionCardJob
+	Progress     Progress
 }
 
 type ExecutionCardJob struct {

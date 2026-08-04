@@ -503,9 +503,9 @@ screen:
                   summary:
                     - component: text
                       text:
-                        template: "{{execution.summary.in_progress}} active · {{execution.summary.waiting}} waiting"
+                        binding: execution.summary_label
                       style:
-                        toneBinding: execution.status
+                        toneBinding: execution.summary_tone
                         emphasis: strong
                 layout:
                   direction: vertical

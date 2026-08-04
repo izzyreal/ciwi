@@ -290,7 +290,7 @@ func mapCards(cards []jobhistory.CardView) []domain.ExecutionCard {
 				TotalJobs: card.Summary.TotalJobs, Succeeded: card.Summary.Succeeded,
 				Failed: card.Summary.Failed, InProgress: card.Summary.InProgress, Waiting: card.Summary.Waiting,
 			},
-			Sections: mapCardSections(card.Sections),
+			Sections: mapCardSections(card.Sections), ProgressJobs: mapProgressJobs(card.ProgressJobs),
 		})
 	}
 	return out
@@ -303,11 +303,29 @@ func mapCardSections(sections []jobhistory.SectionView) []domain.ExecutionCardSe
 		if label == "" {
 			label = "Execution"
 		}
-		mapped := domain.ExecutionCardSection{Key: section.Key, Label: label}
+		mapped := domain.ExecutionCardSection{Key: section.Key, Label: label, ProgressJobs: mapProgressJobs(section.ProgressJobs)}
 		for _, item := range section.Items {
 			mapped.Jobs = append(mapped.Jobs, mapCardItemJobs(item)...)
 		}
 		out = append(out, mapped)
+	}
+	return out
+}
+
+func mapProgressJobs(jobs []jobhistory.ProgressJobView) []domain.ExecutionCardJob {
+	out := make([]domain.ExecutionCardJob, 0, len(jobs))
+	for _, job := range jobs {
+		started, finished := time.Time{}, time.Time{}
+		if job.StartedUTC != nil {
+			started = *job.StartedUTC
+		}
+		if job.FinishedUTC != nil {
+			finished = *job.FinishedUTC
+		}
+		out = append(out, domain.ExecutionCardJob{
+			Status: job.Status, Waiting: job.Waiting, StartedUTC: started,
+			FinishedUTC: finished, ExpectedDurationMS: job.ExpectedDurationMS,
+		})
 	}
 	return out
 }

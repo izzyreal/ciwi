@@ -207,8 +207,25 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if _, ok := renderer.images["ciwi-logo"]; !ok {
 		t.Fatal("embedded ciwi logo is unavailable to the native renderer")
 	}
-	if renderer.icons["settings"] == nil || renderer.icons["player-play"] == nil || renderer.icons["arrow-left"] == nil || renderer.icons["trash"] == nil || renderer.icons["zoom-in"] == nil || renderer.icons["zoom-out"] == nil {
+	if renderer.icons["settings"] == nil || renderer.icons["player-play"] == nil || renderer.icons["loader-2"] == nil || renderer.icons["arrow-left"] == nil || renderer.icons["trash"] == nil || renderer.icons["zoom-in"] == nil || renderer.icons["zoom-out"] == nil {
 		t.Fatal("declared screen icons are unavailable to the native renderer")
+	}
+}
+
+func TestExecutionCardDecorationMatchesWebSummary(t *testing.T) {
+	cards := []any{map[string]any{
+		"summary": map[string]any{
+			"total_jobs": float64(17), "succeeded": float64(12),
+			"failed": float64(0), "in_progress": float64(3), "waiting": float64(2),
+		},
+	}}
+	decorateExecutionCards(cards, true)
+	card := cards[0].(map[string]any)
+	if got := card["summary_label"]; got != "12/17 successful, 3 in progress, 2 waiting" {
+		t.Fatalf("summary label = %q", got)
+	}
+	if card["status"] != "running" || card["summary_tone"] != "warning" {
+		t.Fatalf("status decoration = %#v", card)
 	}
 }
 
@@ -925,7 +942,8 @@ func TestNativeJobOutputBufferKeepsBoundedTail(t *testing.T) {
 func TestSemanticToneUsesSharedStatusCategories(t *testing.T) {
 	tests := map[string]string{
 		"succeeded": "success", "failed": "danger", "queued": "warning",
-		"in progress": "accent", "unknown": "muted",
+		"in progress": "accent", "warning": "warning", "accent": "accent",
+		"muted": "muted", "unknown": "muted",
 	}
 	for status, want := range tests {
 		if got := semanticTone(status); got != want {

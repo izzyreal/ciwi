@@ -124,10 +124,18 @@ func presentFrontPageProgress(cards []domain.ExecutionCard, now time.Time) {
 					finished: job.FinishedUTC, expectedDurationMS: job.ExpectedDurationMS,
 				}, now)
 			}
-			section.Progress = aggregateCardProgress(section.Jobs, now)
+			progressJobs := section.ProgressJobs
+			if len(progressJobs) == 0 {
+				progressJobs = section.Jobs
+			}
+			section.Progress = aggregateCardProgress(progressJobs, now)
 			allJobs = append(allJobs, section.Jobs...)
 		}
-		cards[cardIndex].Progress = aggregateCardProgress(allJobs, now)
+		progressJobs := cards[cardIndex].ProgressJobs
+		if len(progressJobs) == 0 {
+			progressJobs = allJobs
+		}
+		cards[cardIndex].Progress = aggregateCardProgress(progressJobs, now)
 	}
 }
 

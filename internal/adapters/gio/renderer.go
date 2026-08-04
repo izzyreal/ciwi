@@ -772,12 +772,19 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		return r.layoutChildren(gtx, node, data, path)
 	}
 	var surfaceProgress *semanticProgress
-	if node.Progress != nil && node.Component != "disclosure" {
+	if node.Progress != nil {
 		progress, active := activeSemanticProgress(data, node.Progress)
-		if active && (node.Style.Role == "hero" || node.Component == "card" && node.Style.Role != "output-system") {
+		useSurfaceProgress := node.Style.Role == "hero" ||
+			node.Component == "card" && node.Style.Role != "output-system" ||
+			node.Component == "disclosure" && node.Style.Role == "execution-row" && !r.disclosureExpanded(node, data, path)
+		if active && useSurfaceProgress {
 			surfaceProgress = &progress
 		} else {
-			content = r.progressWidget(node, data, content)
+			// Expanded execution disclosures place progress on their header in
+			// layoutDisclosure; wrapping here would paint over all child rows.
+			if node.Component != "disclosure" || node.Style.Role != "execution-row" {
+				content = r.progressWidget(node, data, content)
+			}
 		}
 	}
 	if node.Component == "card" || node.Component == "disclosure" || node.Component == "section" || node.Component == "graph-view" || node.Style.Role == "hero" {
@@ -812,7 +819,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		if node.Component == "disclosure" && node.Style.Role == "output-group" {
 			content = r.surfaceWithBorder(content, padding, r.palette.consoleSurface, r.palette.consoleBorder)
 		} else if node.Component == "disclosure" {
-			content = r.surfaceWithFill(content, padding, r.palette.surfaceRaised)
+			content = r.surfaceWithFillProgress(content, padding, r.palette.surfaceRaised, surfaceProgress)
 		} else if node.Component == "card" && node.Style.Role == "output-system" {
 			content = r.surfaceWithBorder(content, padding, r.palette.consoleSurface, r.palette.consoleBorder)
 		} else {
@@ -988,11 +995,15 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				return r.layoutImageSized(gtx, node.Image, 28, 28)
 			}))
 		}
-		statusIcon := map[string]string{"success": "status-success", "danger": "status-danger", "warning": "status-waiting", "accent": "status-running"}[node.Style.Tone]
+		statusIcon := map[string]string{"success": "status-success", "danger": "status-danger", "warning": "status-waiting", "accent": "loader-2"}[node.Style.Tone]
 		if statusIcon != "" {
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: 9}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return r.layoutGlyph(gtx, statusIcon, node.Style.Tone, 18)
+					iconTone := node.Style.Tone
+					if statusIcon == "loader-2" {
+						iconTone = "warning"
+					}
+					return r.layoutGlyph(gtx, statusIcon, iconTone, 18)
 				})
 			}))
 		}
@@ -1013,7 +1024,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		})
 	}
 	headerWidget := layout.Widget(header)
-	if node.Progress != nil {
+	if node.Progress != nil && expanded {
 		headerWidget = r.progressWidget(node, data, headerWidget)
 	}
 	if !expanded {
@@ -1029,6 +1040,14 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			})
 		}),
 	)
+}
+
+func (r *Renderer) disclosureExpanded(node uidsl.Node, data any, path string) bool {
+	stateKey, _ := r.disclosureStateKey(node, data, path)
+	if expanded, exists := r.disclosures[stateKey]; exists {
+		return expanded
+	}
+	return node.Disclosure != nil && node.Disclosure.DefaultExpanded
 }
 
 type semanticProgress struct {
@@ -1526,6 +1545,14 @@ func (r *Renderer) layoutGlyph(gtx layout.Context, iconName, tone string, size u
 		iconColor = r.palette.accent
 	}
 	gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(size), gtx.Dp(size)))
+	if iconName == "loader-2" {
+		now := gtx.Now
+		gtx.Execute(op.InvalidateCmd{At: now.Add(progressFrameInterval)})
+		center := float32(gtx.Dp(size)) / 2
+		angle := float32(float64(now.UnixNano()%int64(time.Second)) / float64(time.Second) * 2 * math.Pi)
+		transform := op.Affine(f32.Affine2D{}.Rotate(f32.Pt(center, center), angle)).Push(gtx.Ops)
+		defer transform.Pop()
+	}
 	return icon.Layout(gtx, iconColor)
 }
 
@@ -1917,16 +1944,31 @@ func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool, pr
 }
 
 func (r *Renderer) surfaceWithFill(content layout.Widget, padding unit.Dp, fill color.NRGBA) layout.Widget {
-	return r.surfaceWithBorder(content, padding, fill, r.palette.border)
+	return r.surfaceWithFillProgress(content, padding, fill, nil)
+}
+
+func (r *Renderer) surfaceWithFillProgress(content layout.Widget, padding unit.Dp, fill color.NRGBA, progress *semanticProgress) layout.Widget {
+	return r.surfaceWithBorderProgress(content, padding, fill, r.palette.border, progress)
 }
 
 func (r *Renderer) surfaceWithBorder(content layout.Widget, padding unit.Dp, fill, border color.NRGBA) layout.Widget {
+	return r.surfaceWithBorderProgress(content, padding, fill, border, nil)
+}
+
+func (r *Renderer) surfaceWithBorderProgress(content layout.Widget, padding unit.Dp, fill, border color.NRGBA, progress *semanticProgress) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		radius := r.metrics.surfaceRadius
 		return widget.Border{Color: border, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
-				return layout.Dimensions{Size: gtx.Constraints.Min}
+				size := gtx.Constraints.Min
+				bounds := clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(radius))
+				stack := bounds.Push(gtx.Ops)
+				paint.Fill(gtx.Ops, fill)
+				if progress != nil {
+					r.paintSemanticProgress(gtx, *progress, size)
+				}
+				stack.Pop()
+				return layout.Dimensions{Size: size}
 			}, func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(padding).Layout(gtx, content)
 			})
@@ -2567,10 +2609,12 @@ func semanticTone(value string) string {
 		return "success"
 	case "failed", "failure", "error", "cancelled", "canceled", "offline":
 		return "danger"
-	case "queued", "waiting", "pending", "not reached", "stale":
+	case "warning", "queued", "waiting", "pending", "not reached", "stale":
 		return "warning"
-	case "running", "leased", "in progress", "active":
+	case "accent", "running", "leased", "in progress", "active":
 		return "accent"
+	case "muted":
+		return "muted"
 	default:
 		return "muted"
 	}

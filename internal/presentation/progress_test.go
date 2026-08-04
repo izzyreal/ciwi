@@ -50,3 +50,23 @@ func TestWaitingOnlyExecutionDoesNotPretendToAdvance(t *testing.T) {
 		t.Fatalf("progress = %+v", progress)
 	}
 }
+
+func TestFrontPageCardProgressIncludesCompletedJobsOutsideActiveSections(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	cards := []domain.ExecutionCard{{
+		Sections: []domain.ExecutionCardSection{{
+			// Active views intentionally contain only the rows currently shown.
+			Jobs: []domain.ExecutionCardJob{{Status: "running", StartedUTC: now.Add(-time.Second), ExpectedDurationMS: 4_000}},
+		}},
+		ProgressJobs: []domain.ExecutionCardJob{
+			{Status: "succeeded", StartedUTC: now.Add(-2 * time.Second), FinishedUTC: now, ExpectedDurationMS: 2_000},
+			{Status: "running", StartedUTC: now.Add(-time.Second), ExpectedDurationMS: 4_000},
+			{Status: "queued", Waiting: true, ExpectedDurationMS: 2_000},
+		},
+	}}
+
+	presentFrontPageProgress(cards, now)
+	if cards[0].Progress.State != domain.ProgressDeterminate || math.Abs(cards[0].Progress.Fraction-.375) > .0001 {
+		t.Fatalf("card progress = %+v", cards[0].Progress)
+	}
+}
