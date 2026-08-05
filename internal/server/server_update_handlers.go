@@ -193,7 +193,9 @@ func (s *stateStore) applyUpdateTargetHandler(w http.ResponseWriter, r *http.Req
 	if rollback {
 		action = application.ServerUpdateActionRollback
 	}
-	result, err := s.app().updates.Execute(r.Context(), application.ServerUpdateActionRequest{Action: action, TargetVersion: targetVersion})
+	result, err := s.app().updates.Execute(r.Context(), application.ServerUpdateActionRequest{
+		Action: action, TargetVersion: targetVersion, IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+	})
 	if err != nil {
 		writeApplicationHTTPError(w, err)
 		return

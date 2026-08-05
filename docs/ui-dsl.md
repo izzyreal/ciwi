@@ -7,6 +7,7 @@ language. It is a ciwi UI schema, not a general browser implementation.
 - Shared embedded bundle: [`ui`](../ui)
 - Screen definitions: [`ui/screens`](../ui/screens)
 - Theme definitions: [`ui/themes`](../ui/themes)
+- Shared action semantics: [`ui/actions.yaml`](../ui/actions.yaml)
 - Gio adapter: [`internal/adapters/gio`](../internal/adapters/gio)
 - Browser proof adapter: [`internal/server/webui/assets/js/declarative.js`](../internal/server/webui/assets/js/declarative.js)
 
@@ -92,6 +93,22 @@ estimation and aggregate weighting out of YAML, JavaScript, and Gio widgets.
 Actions are resolved by each transport adapter into the same application
 command. This keeps cosmetic parity practical without requiring the native
 client to parse HTML/CSS or run JavaScript.
+
+`ui/actions.yaml` is the renderer-neutral action catalog. It classifies each
+named command as local, query, or mutation and defines its conflict scope,
+pending label, navigation behavior, and recovery policy. Renderers do not
+invent these semantics independently. The browser action runner and native
+operation coordinator both use the catalog to coalesce exact duplicate input,
+supersede stale queries, reject conflicting mutations, expose immediate busy
+state, and attach one stable idempotency key to each mutation.
+
+The catalog deliberately does not describe HTTP routes, CNP messages, widgets,
+timeouts, or animation. Those remain adapter policy. Mutation recovery is
+similarly conservative: the native journal binds operations to a stable server
+installation identity and only replays catalogued safe operations after it has
+checked the server's command receipt. Receipt-only operations retain enough
+identity to diagnose an unknown outcome but never persist sensitive or unsafe
+arguments for automatic replay.
 
 ## Compatibility policy
 

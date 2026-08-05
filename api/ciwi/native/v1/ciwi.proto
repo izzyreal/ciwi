@@ -17,6 +17,7 @@ message Welcome {
   string server_version = 2;
   string server_instance_id = 3;
   repeated string capabilities = 4;
+  string server_installation_id = 5;
 }
 
 message RequestMetadata {
@@ -46,6 +47,7 @@ message ServerInfo {
   uint32 api_version = 2;
   string version = 3;
   string hostname = 4;
+  string installation_id = 5;
 }
 
 message PipelineSummary {
@@ -507,6 +509,19 @@ message RemoveQueuedExecutionResult {
   bool removed = 2;
 }
 
+message CommandReceiptStatusRequest {
+  string key = 1;
+}
+
+message CommandReceiptStatus {
+  bool found = 1;
+  string key = 2;
+  string operation = 3;
+  string fingerprint = 4;
+  string status = 5;
+  bytes result_json = 6;
+}
+
 enum ChangeTopic {
   CHANGE_TOPIC_UNSPECIFIED = 0;
   CHANGE_TOPIC_SERVER = 1;
@@ -556,6 +571,7 @@ message Request {
     ServerUpdateActionRequest server_update_action = 31;
     ControlExecutionRequest remove_queued_execution = 32;
     GetAgentDetailsRequest get_agent_details = 33;
+    CommandReceiptStatusRequest get_command_receipt_status = 34;
   }
 }
 
@@ -587,6 +603,7 @@ message Response {
     ServerUpdateActionResult server_update_action = 32;
     RemoveQueuedExecutionResult remove_queued_execution = 33;
     AgentDetailsView agent_details = 34;
+    CommandReceiptStatus command_receipt_status = 35;
   }
 }
 

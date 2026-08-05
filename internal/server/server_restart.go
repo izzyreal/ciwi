@@ -23,7 +23,9 @@ func (s *stateStore) serverRestartHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	result, err := s.app().updates.Execute(r.Context(), application.ServerUpdateActionRequest{Action: application.ServerUpdateActionRestart})
+	result, err := s.app().updates.Execute(r.Context(), application.ServerUpdateActionRequest{
+		Action: application.ServerUpdateActionRestart, IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+	})
 	if err != nil {
 		writeApplicationHTTPError(w, err)
 		return

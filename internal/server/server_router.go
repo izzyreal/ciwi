@@ -29,7 +29,8 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 
 	// Health/info
 	r.Get("/healthz", healthzHandler)
-	r.Get("/api/v1/server-info", serverInfoHandler)
+	r.Get("/api/v1/server-info", s.serverInfoHandler)
+	r.Get("/api/v1/command-receipts/{key}", s.commandReceiptStatusHandler)
 	r.Get("/api/v1/runtime-state", s.runtimeStateHandler)
 	r.Get("/api/v1/views/front-page", s.frontPageViewHandler)
 	r.Get("/api/v1/views/projects/*", s.projectDetailsViewHandler)

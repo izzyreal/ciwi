@@ -24,6 +24,35 @@ func TestDeclarativeScreenContractRoute(t *testing.T) {
 	}
 }
 
+func TestActionCatalogContractAndBrowserRunnerRoutes(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/actions.json", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("contract status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var catalog uidsl.ActionCatalogDocument
+	if err := json.Unmarshal(recorder.Body.Bytes(), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if spec, ok := catalog.Spec("run-pipeline"); !ok || spec.Class != uidsl.ActionClassMutation || spec.Scope == "" {
+		t.Fatalf("run-pipeline action = %#v, %v", spec, ok)
+	}
+
+	recorder = httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/actions.js", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("runner status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	for _, expected := range []string{"ciwiRunAction", "Idempotency-Key", "activeByFingerprint", "activeByScope"} {
+		if !strings.Contains(recorder.Body.String(), expected) {
+			t.Errorf("browser action runner does not contain %q", expected)
+		}
+	}
+}
+
 func TestProjectDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/project-details.json", nil))

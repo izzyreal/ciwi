@@ -15,6 +15,7 @@ client.
 flowchart LR
   WEB[Browser renderer] --> HTTP[HTTP adapter]
   GIO[Gio renderer] --> CNPCLIENT[CNP public client]
+  GIO --> OPS[Presentation operation coordinator]
   HTTP --> APP[Application services]
   CNP[CNP transport-neutral handler] --> APP
   QUIC[QUIC adapter] --> CNP
@@ -38,6 +39,9 @@ The dependency direction is deliberate:
 - `internal/application` owns use cases, command semantics, ports, typed
   errors, idempotency, and change invalidations.
 - `internal/presentation` composes renderer-facing view models.
+- `internal/presentation/operations` coordinates asynchronous user intent,
+  duplicate coalescing, mutation scopes, cancellation, and durable operation
+  identity without importing a renderer or transport.
 - `internal/adapters` maps SQLite, the existing execution engine, native CNP
   sessions (QUIC or multiplexed TLS/TCP), and Gio to those inner contracts.
 - `internal/server` is the composition root and HTTP adapter. Existing server
@@ -202,8 +206,15 @@ Primary persisted entities:
   protobuf messages, SQLite rows, HTML, and Gio widgets.
 - Browser and native renderers share semantic screen/theme definitions while
   retaining platform-specific rendering and accessibility behavior.
+- Browser and native renderers share the action catalog for pending labels,
+  query supersession, mutation conflict scopes, and recovery policy; adapters
+  only map a named action onto HTTP or CNP.
 - Mutating commands are idempotent at the application boundary when a caller
   supplies a command key.
+- A stable, database-backed server installation ID prevents a native journal
+  from replaying an operation against the wrong server. Persisted command
+  receipts let reconnecting clients distinguish completed, failed, pending,
+  and restart-interrupted outcomes.
 - Live clients receive invalidations and re-query authoritative views; event
   payloads are not a second state store.
 

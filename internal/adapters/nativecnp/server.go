@@ -70,6 +70,9 @@ type Services struct {
 		Cancel(context.Context, application.ExecutionControlRequest) (application.CancelExecutionResult, error)
 		Rerun(context.Context, application.ExecutionControlRequest) (application.RerunExecutionResult, error)
 	}
+	CommandReceipts interface {
+		Get(context.Context, string) (application.CommandReceiptStatus, error)
+	}
 	Changes *application.ChangeHub
 	Version string
 }
@@ -98,12 +101,14 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		return
 	}
 	snapshot := s.services.Changes.Snapshot()
+	serverInfo, _ := s.services.Server.GetServerInfo(ctx)
 	welcome := &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Welcome{Welcome: &cnpv1.Welcome{
-		ServerName:       "ciwi",
-		ServerVersion:    s.services.Version,
-		ServerInstanceId: snapshot.InstanceID,
+		ServerName:           "ciwi",
+		ServerVersion:        s.services.Version,
+		ServerInstanceId:     snapshot.InstanceID,
+		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "execution_housekeeping", "execution_controls", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -397,6 +402,7 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		var result application.ServerUpdateActionResult
 		result, err = s.services.Updates.Execute(ctx, application.ServerUpdateActionRequest{
 			Action: operation.ServerUpdateAction.GetAction(), TargetVersion: operation.ServerUpdateAction.GetTargetVersion(),
+			IdempotencyKey: request.Metadata.IdempotencyKey,
 		})
 		if err == nil {
 			response.Result = &cnpv1.Response_ServerUpdateAction{ServerUpdateAction: &cnpv1.ServerUpdateActionResult{
@@ -446,6 +452,19 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		if err == nil {
 			response.Result = &cnpv1.Response_RerunExecution{RerunExecution: &cnpv1.RerunExecutionResult{
 				OriginalJobExecutionId: result.OriginalJobExecutionID, JobExecutionId: result.JobExecutionID, Status: result.Status,
+			}}
+		}
+	case *cnpv1.Request_GetCommandReceiptStatus:
+		if s.services.CommandReceipts == nil {
+			err = application.NewError(application.ErrorUnavailable, "command receipts unavailable", nil)
+			break
+		}
+		var status application.CommandReceiptStatus
+		status, err = s.services.CommandReceipts.Get(ctx, operation.GetCommandReceiptStatus.GetKey())
+		if err == nil {
+			response.Result = &cnpv1.Response_CommandReceiptStatus{CommandReceiptStatus: &cnpv1.CommandReceiptStatus{
+				Found: status.Found, Key: status.Key, Operation: status.Operation,
+				Fingerprint: status.Fingerprint, Status: status.Status, ResultJson: append([]byte(nil), status.Result...),
 			}}
 		}
 	default:

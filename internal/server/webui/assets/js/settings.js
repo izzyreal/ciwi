@@ -118,7 +118,8 @@
             reloadStatus.style.color = 'var(--muted)';
             definitionBtn.disabled = true;
             try {
-              await apiJSON('/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
+              await apiActionJSON('project-action', { projectId: project.id, action: 'reload' }, definitionBtn,
+                '/api/v1/projects/' + project.id + '/reload', { method: 'POST', body: '{}' });
               await refreshSettingsProjects();
               setProjectReloadState(project.id, 'Reloaded successfully', 'var(--ok)');
               reloadStatus.textContent = 'Reloaded successfully';
@@ -153,7 +154,8 @@
           definitionBtn.disabled = true;
           deleteBtn.disabled = true;
           try {
-            await apiJSON('/api/v1/projects/' + project.id, { method: 'DELETE' });
+            await apiActionJSON('project-action', { projectId: project.id, action: 'delete' }, deleteBtn,
+              '/api/v1/projects/' + project.id, { method: 'DELETE' });
             setProjectReloadState(project.id, 'Deleted', 'var(--ok)');
             await refreshSettingsProjects();
           } catch (e) {
@@ -174,7 +176,7 @@
       });
     }
 
-    document.getElementById('importProjectBtn').onclick = async () => {
+    document.getElementById('importProjectBtn').onclick = async (event) => {
       const repoUrl = (document.getElementById('repoUrl').value || '').trim();
       const repoRef = (document.getElementById('repoRef').value || '').trim();
       const configFile = (document.getElementById('configFile').value || 'ciwi-project.yaml').trim();
@@ -185,10 +187,11 @@
       }
       result.textContent = 'Importing...';
       try {
-        await apiJSON('/api/v1/projects/import', {
+        await apiActionJSON('import-project', { repoUrl, repoRef, configFile }, event.currentTarget,
+          '/api/v1/projects/import', {
           method: 'POST',
           body: JSON.stringify({ repo_url: repoUrl, repo_ref: repoRef, config_file: configFile }),
-        });
+          });
         result.textContent = 'Imported';
         await refreshSettingsProjects();
       } catch (e) {
@@ -522,11 +525,12 @@
       select.disabled = false;
     }
 
-    document.getElementById('checkUpdatesBtn').onclick = async () => {
+    document.getElementById('checkUpdatesBtn').onclick = async (event) => {
       const result = document.getElementById('updateResult');
       result.textContent = 'Checking...';
       try {
-        const r = await apiJSON('/api/v1/update/check', { method: 'POST', body: '{}' });
+        const r = await apiActionJSON('check-server-updates', {}, event.currentTarget,
+          '/api/v1/update/check', { method: 'POST', body: '{}' });
         const latest = r.latest_version || '';
         const current = r.current_version || '';
         setAvailableUpdateVersions(r.available_versions, latest);
@@ -562,7 +566,8 @@
       }
       const prev = select.value;
       try {
-        const r = await apiJSON('/api/v1/update/tags');
+        const r = await apiActionJSON('refresh-rollback-versions', {}, document.getElementById('refreshRollbackTagsBtn'),
+          '/api/v1/update/tags');
         const tags = Array.isArray(r.tags) ? r.tags : [];
         const current = String(r.current_version || '').trim();
         select.innerHTML = '';
@@ -600,24 +605,29 @@
       }
     }
 
-    async function postJSONWithTimeout(path, body, timeoutMs) {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      try {
-        const res = await fetch(path, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: body,
-          signal: ctrl.signal,
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || ('HTTP ' + res.status));
+    async function postActionJSONWithTimeout(command, argumentsValue, element, path, body, timeoutMs) {
+      return window.ciwiRunAction(command, argumentsValue, element, async runtime => {
+        const ctrl = new AbortController();
+        const abort = () => ctrl.abort();
+        if (runtime.signal) runtime.signal.addEventListener('abort', abort, { once: true });
+        const timer = setTimeout(abort, timeoutMs);
+        try {
+          const res = await fetch(path, {
+            method: 'POST',
+            headers: ciwiActionHeaders(runtime, { 'Content-Type': 'application/json' }),
+            body: body,
+            signal: ctrl.signal,
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || ('HTTP ' + res.status));
+          }
+          return await res.json();
+        } finally {
+          clearTimeout(timer);
+          if (runtime.signal) runtime.signal.removeEventListener('abort', abort);
         }
-        return await res.json();
-      } finally {
-        clearTimeout(timer);
-      }
+      });
     }
 
     async function monitorApplyProgressAfterTimeout(expectedVersion) {
@@ -669,7 +679,8 @@
       result.textContent = 'Starting update...';
       try {
         const body = JSON.stringify({ target_version: target });
-        const r = await postJSONWithTimeout('/api/v1/update/apply', body, 30000);
+        const r = await postActionJSONWithTimeout('server-update-action', { action: 'apply', targetVersion: target },
+          document.getElementById('applyUpdateBtn'), '/api/v1/update/apply', body, 30000);
         result.textContent = (r.message || 'Update started. Refresh in a moment.');
         if (r.updated) {
           waitForServerRestartAndReload(target);
@@ -696,7 +707,8 @@
       if (!confirmed) return;
       result.textContent = 'Restart requested...';
       try {
-        const r = await postJSONWithTimeout('/api/v1/server/restart', '{}', 10000);
+        const r = await postActionJSONWithTimeout('server-update-action', { action: 'restart' },
+          document.getElementById('restartServerBtn'), '/api/v1/server/restart', '{}', 10000);
         result.textContent = r.message || 'Server restarting...';
         waitForServerRestartAndReload();
       } catch (e) {
@@ -730,7 +742,8 @@
       result.textContent = 'Starting rollback to ' + target + '...';
       try {
         const body = JSON.stringify({ target_version: target });
-        const r = await postJSONWithTimeout('/api/v1/update/rollback', body, 30000);
+        const r = await postActionJSONWithTimeout('server-update-action', { action: 'rollback', targetVersion: target },
+          document.getElementById('rollbackUpdateBtn'), '/api/v1/update/rollback', body, 30000);
         result.textContent = (r.message || ('Rollback to ' + target + ' started.'));
         if (r.updated) {
           waitForServerRestartAndReload(target);

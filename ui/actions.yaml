@@ -1,0 +1,39 @@
+apiVersion: ciwi.ui/v1
+kind: ActionCatalog
+actions:
+  - { command: navigate, class: local }
+  - { command: toggle, class: local }
+  - { command: change-theme, class: local }
+  - { command: select-timeline-item, class: local }
+  - { command: change-output-search, class: local }
+  - { command: find-output, class: local }
+  - { command: copy-output, class: local }
+  - { command: toggle-output-tailing, class: local }
+  - { command: set-disclosures, class: local }
+  - { command: set-run-option, class: local }
+  - { command: set-project-structure-filter, class: local }
+  - { command: set-project-import-field, class: local }
+  - { command: set-server-update-option, class: local }
+  - { command: set-connection-field, class: local }
+  - { command: generate-ssh-device-key, class: local }
+  - { command: trust-ssh-host-key, class: local }
+  - { command: reject-ssh-host-key, class: local }
+  - { command: copy-text, class: local }
+  - { command: open-url, class: local }
+  - { command: refresh, class: query, scope: "screen:active", pending: "Refreshing…" }
+  - { command: check-server-updates, class: query, scope: "server:updates", pending: "Checking for updates…" }
+  - { command: refresh-rollback-versions, class: query, scope: "server:rollback-versions", pending: "Refreshing versions…" }
+  - { command: retry-connection, class: local }
+  - { command: save-connection, class: local }
+  - { command: run-pipeline, class: mutation, scope: "pipeline:{{pipelineDbId}}", pending: "Queuing pipeline…" }
+  - { command: run-chain, class: mutation, scope: "chain:{{projectId}}:{{chainId}}", pending: "Queuing chain…" }
+  - { command: clear-queue, class: mutation, scope: "execution-queue", pending: "Clearing queue…" }
+  - { command: flush-history, class: mutation, scope: "execution-history", pending: "Flushing history…" }
+  - { command: delete-execution, class: mutation, scope: "execution:{{jobExecutionIds}}", pending: "Deleting execution…" }
+  - { command: remove-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Removing execution…" }
+  - { command: cancel-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Cancelling execution…" }
+  - { command: rerun-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Queuing rerun…" }
+  - { command: agent-action, class: mutation, scope: "agent:{{agentId}}", pending: "Updating agent…" }
+  - { command: project-action, class: mutation, scope: "project:{{projectId}}", pending: "Updating project…" }
+  - { command: import-project, class: mutation, scope: "projects", pending: "Importing project…" }
+  - { command: server-update-action, class: mutation, scope: "server:update", pending: "Updating server…", persistence: receipt-only }

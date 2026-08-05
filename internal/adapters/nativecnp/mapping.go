@@ -13,6 +13,7 @@ import (
 func serverInfoToProto(info domain.ServerInfo) *cnpv1.ServerInfo {
 	return &cnpv1.ServerInfo{
 		Name: info.Name, ApiVersion: uint32(info.APIVersion), Version: info.Version, Hostname: info.Hostname,
+		InstallationId: info.InstallationID,
 	}
 }
 

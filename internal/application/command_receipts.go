@@ -20,6 +20,46 @@ type CommandReceiptRepository interface {
 	Fail(context.Context, string, []byte) error
 }
 
+type CommandReceiptSource interface {
+	Get(context.Context, string) (CommandReceipt, bool, error)
+}
+
+type CommandReceiptStatus struct {
+	Found       bool
+	Key         string
+	Operation   string
+	Fingerprint string
+	Status      string
+	Result      []byte
+}
+
+type CommandReceiptQueries struct{ source CommandReceiptSource }
+
+func NewCommandReceiptQueries(source CommandReceiptSource) *CommandReceiptQueries {
+	return &CommandReceiptQueries{source: source}
+}
+
+func (q *CommandReceiptQueries) Get(ctx context.Context, key string) (CommandReceiptStatus, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return CommandReceiptStatus{}, NewError(ErrorInvalidArgument, "command receipt key is required", nil)
+	}
+	if q == nil || q.source == nil {
+		return CommandReceiptStatus{}, NewError(ErrorUnavailable, "command receipts unavailable", nil)
+	}
+	receipt, found, err := q.source.Get(ctx, key)
+	if err != nil {
+		return CommandReceiptStatus{}, WrapInternal("get command receipt", err)
+	}
+	if !found {
+		return CommandReceiptStatus{Found: false, Key: key}, nil
+	}
+	return CommandReceiptStatus{
+		Found: true, Key: receipt.Key, Operation: receipt.Operation, Fingerprint: receipt.Fingerprint,
+		Status: receipt.Status, Result: append([]byte(nil), receipt.Result...),
+	}, nil
+}
+
 type commandErrorReceipt struct {
 	Kind    ErrorKind `json:"kind"`
 	Message string    `json:"message"`
@@ -53,6 +93,9 @@ func executeIdempotentCommand[T any](ctx context.Context, receipts CommandReceip
 					return zero, WrapInternal("decode failed command receipt", err)
 				}
 				return zero, NewError(failed.Kind, failed.Message, nil)
+			}
+			if receipt.Status == "outcome_unknown" {
+				return zero, NewError(ErrorFailedPrecondition, "the server restarted before the command outcome was recorded", nil)
 			}
 			return zero, NewError(ErrorUnavailable, "the original command is still pending or its outcome is unknown", nil)
 		}

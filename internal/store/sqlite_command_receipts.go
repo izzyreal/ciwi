@@ -36,18 +36,29 @@ func (s *Store) ClaimCommandReceipt(key, operation, fingerprint string) (Command
 }
 
 func (s *Store) GetCommandReceipt(key string) (CommandReceipt, error) {
+	receipt, found, err := s.FindCommandReceipt(key)
+	if err != nil {
+		return CommandReceipt{}, err
+	}
+	if !found {
+		return CommandReceipt{}, fmt.Errorf("command receipt not found")
+	}
+	return receipt, nil
+}
+
+func (s *Store) FindCommandReceipt(key string) (CommandReceipt, bool, error) {
 	var receipt CommandReceipt
 	err := s.db.QueryRow(`
 		SELECT command_key, operation, request_fingerprint, status, result_json
 		FROM command_receipts WHERE command_key = ?
 	`, key).Scan(&receipt.Key, &receipt.Operation, &receipt.Fingerprint, &receipt.Status, &receipt.ResultJSON)
 	if err == sql.ErrNoRows {
-		return CommandReceipt{}, fmt.Errorf("command receipt not found")
+		return CommandReceipt{}, false, nil
 	}
 	if err != nil {
-		return CommandReceipt{}, fmt.Errorf("get command receipt: %w", err)
+		return CommandReceipt{}, false, fmt.Errorf("get command receipt: %w", err)
 	}
-	return receipt, nil
+	return receipt, true, nil
 }
 
 func (s *Store) CompleteCommandReceipt(key, resultJSON string) error {
@@ -80,6 +91,18 @@ func (s *Store) finishCommandReceipt(key, status, resultJSON string) error {
 func (s *Store) AbandonCommandReceipt(key string) error {
 	if _, err := s.db.Exec(`DELETE FROM command_receipts WHERE command_key = ? AND status = 'pending'`, key); err != nil {
 		return fmt.Errorf("abandon command receipt: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) MarkPendingCommandReceiptsUnknown() error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	result := `{"kind":"failed_precondition","message":"the server restarted before the command outcome was recorded"}`
+	if _, err := s.db.Exec(`
+		UPDATE command_receipts SET status = 'outcome_unknown', result_json = ?, updated_utc = ?
+		WHERE status = 'pending'
+	`, result, now); err != nil {
+		return fmt.Errorf("mark pending command receipts unknown: %w", err)
 	}
 	return nil
 }

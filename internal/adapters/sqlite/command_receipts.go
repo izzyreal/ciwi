@@ -42,3 +42,17 @@ func (r *CommandReceiptRepository) Fail(ctx context.Context, key string, result 
 	}
 	return r.store.FailCommandReceipt(key, string(result))
 }
+
+func (r *CommandReceiptRepository) Get(ctx context.Context, key string) (application.CommandReceipt, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return application.CommandReceipt{}, false, err
+	}
+	receipt, found, err := r.store.FindCommandReceipt(key)
+	if err != nil || !found {
+		return application.CommandReceipt{}, found, err
+	}
+	return application.CommandReceipt{
+		Key: receipt.Key, Operation: receipt.Operation, Fingerprint: receipt.Fingerprint,
+		Status: receipt.Status, Result: []byte(receipt.ResultJSON),
+	}, true, nil
+}

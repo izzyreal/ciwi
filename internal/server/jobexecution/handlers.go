@@ -41,6 +41,11 @@ type HandlerDeps struct {
 	ExecutionCommands interface {
 		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
 		FlushHistory(context.Context, application.FlushExecutionHistoryRequest) (application.FlushExecutionHistoryResult, error)
+		RemoveQueued(context.Context, application.RemoveQueuedExecutionRequest) (application.RemoveQueuedExecutionResult, error)
+	}
+	ExecutionControls interface {
+		Cancel(context.Context, application.ExecutionControlRequest) (application.CancelExecutionResult, error)
+		Rerun(context.Context, application.ExecutionControlRequest) (application.RerunExecutionResult, error)
 	}
 	ArtifactsDir              string
 	AttachTestSummaries       func([]protocol.JobExecution)
@@ -137,6 +142,17 @@ func HandleByID(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {
 			}
 			httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
 		case http.MethodDelete:
+			if deps.ExecutionCommands != nil {
+				result, err := deps.ExecutionCommands.RemoveQueued(r.Context(), application.RemoveQueuedExecutionRequest{
+					JobExecutionID: jobID, IdempotencyKey: r.Header.Get("Idempotency-Key"),
+				})
+				if err != nil {
+					writeApplicationError(w, err)
+					return
+				}
+				httpx.WriteJSON(w, http.StatusOK, DeleteViewResponse{Deleted: result.Removed, JobExecutionID: result.JobExecutionID})
+				return
+			}
 			if err := deps.Store.DeleteQueuedJobExecution(jobID); err != nil {
 				if strings.Contains(err.Error(), "not found") {
 					http.Error(w, err.Error(), http.StatusNotFound)

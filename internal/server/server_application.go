@@ -29,26 +29,28 @@ type serverApplication struct {
 	executions        *application.ExecutionQueries
 	executionCommands *application.ExecutionCommands
 	executionControls *application.ExecutionControlCommands
+	commandReceipts   *application.CommandReceiptQueries
 	frontPage         *presentation.FrontPageQueries
 	projectDetails    *presentation.ProjectDetailsQueries
 	jobDetails        *presentation.JobDetailsQueries
 	changes           *application.ChangeHub
 }
 
-type localServerInfoSource struct{}
+type localServerInfoSource struct{ installationID string }
 
-func (localServerInfoSource) ServerInfo(context.Context) (domain.ServerInfo, error) {
+func (s localServerInfoSource) ServerInfo(context.Context) (domain.ServerInfo, error) {
 	host, _ := os.Hostname()
 	return domain.ServerInfo{
-		Name:       "ciwi",
-		APIVersion: 1,
-		Version:    currentVersion(),
-		Hostname:   strings.TrimSpace(host),
+		Name:           "ciwi",
+		APIVersion:     1,
+		Version:        currentVersion(),
+		Hostname:       strings.TrimSpace(host),
+		InstallationID: strings.TrimSpace(s.installationID),
 	}, nil
 }
 
 func newServerApplication(s *stateStore) *serverApplication {
-	serverQueries := application.NewServerQueries(localServerInfoSource{})
+	serverQueries := application.NewServerQueries(localServerInfoSource{installationID: s.installationID})
 	projectQueries := application.NewProjectQueries(sqliteadapter.NewProjectRepository(s.db))
 	executionRepository := executionviewsadapter.NewRepository(s.db, 40, schedulingAgentSourceAdapter{state: s})
 	if s.jobProgress != nil {
@@ -64,7 +66,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 		server:          serverQueries,
 		projects:        projectQueries,
 		projectCommands: application.NewProjectCommands(projectMutatorAdapter{state: s}, receipts, changes),
-		updates:         application.NewServerUpdateOperations(serverUpdateAdapter{state: s}, changes),
+		updates:         application.NewServerUpdateOperations(serverUpdateAdapter{state: s}, changes, receipts),
 		pipelines: application.NewPipelineCommands(
 			pipelineRunnerAdapter{state: s},
 			receipts,
@@ -77,6 +79,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 		executions:        executionQueries,
 		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
 		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),
+		commandReceipts:   application.NewCommandReceiptQueries(receipts),
 		frontPage:         presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
 		projectDetails:    presentation.NewProjectDetailsQueries(projectQueries, executionQueries),
 		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),

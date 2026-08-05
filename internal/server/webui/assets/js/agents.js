@@ -134,8 +134,16 @@
             }
             btn.disabled = true;
             try {
-              const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/actions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action }) });
-              if (!res.ok) throw new Error(await res.text());
+              await window.ciwiRunAction('agent-action', { agentId: id, action: action }, btn, async runtime => {
+                const res = await fetch('/api/v1/agents/' + encodeURIComponent(id) + '/actions', {
+                  method: 'POST',
+                  headers: ciwiActionHeaders(runtime, { 'Content-Type': 'application/json' }),
+                  body: JSON.stringify({ action: action }),
+                  signal: runtime.signal,
+                });
+                if (!res.ok) throw new Error(await res.text());
+                return await res.json();
+              });
               await refreshAgents();
             } catch (e) {
               await showAlertDialog({ title: 'Request failed', message: 'Request failed: ' + e.message });

@@ -25,6 +25,15 @@ func serveThemeContracts(w http.ResponseWriter) {
 	serveJSON(w, themes)
 }
 
+func serveActionContract(w http.ResponseWriter) {
+	catalog, err := sharedUI.LoadActionCatalog()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	serveJSON(w, catalog)
+}
+
 func serveJSON(w http.ResponseWriter, value any) {
 	payload, err := json.Marshal(value)
 	if err != nil {

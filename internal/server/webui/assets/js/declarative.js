@@ -314,6 +314,7 @@
       const invoke = async actionData => {
         const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, actionData)]));
         if (action.confirm && !window.confirm(action.confirm.message || action.confirm.title || 'Continue?')) return;
+        const execute = async runtime => {
         if (action.command === 'navigate' && args.route) {
           const inPreview = window.location.pathname.startsWith('/declarative-preview');
           const destination = inPreview
@@ -371,7 +372,7 @@
 		  } else {
 		    throw new Error('Unsupported run option');
 		  }
-		  const response = await fetch(runOptionsViewURL(options.selected_source_ref, options.selected_agent_id));
+		  const response = await fetch(runOptionsViewURL(options.selected_source_ref, options.selected_agent_id), {signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
 		  currentData = {runOptions: await response.json()};
 		  renderCurrent();
@@ -379,8 +380,9 @@
         else if (action.command === 'run-pipeline') {
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+            headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
             body: JSON.stringify(runSelectionFromArguments(args)),
+            signal: runtime.signal,
           });
           if (!response.ok) throw new Error(await response.text());
           element.textContent = 'Queued';
@@ -388,8 +390,9 @@
 		else if (action.command === 'run-chain') {
 		  const path = '/api/v1/projects/' + encodeURIComponent(args.projectId) + '/pipeline-chains/' + encodeURIComponent(args.chainId) + '/run';
 		  const response = await fetch(path, {
-		    method: 'POST', headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+		    method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
 		    body: JSON.stringify(runSelectionFromArguments(args)),
+		    signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  element.textContent = 'Queued';
@@ -397,8 +400,9 @@
 		else if (action.command === 'agent-action') {
 		  const response = await fetch('/api/v1/agents/' + encodeURIComponent(args.agentId) + '/actions', {
 		    method: 'POST',
-		    headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+		    headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
 		    body: JSON.stringify({action: args.action}),
+		    signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
@@ -407,8 +411,9 @@
 		  const path = '/api/v1/projects/' + encodeURIComponent(args.projectId) + (args.action === 'reload' ? '/reload' : '');
 		  const response = await fetch(path, {
 		    method: args.action === 'delete' ? 'DELETE' : 'POST',
-		    headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+		    headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
 		    body: args.action === 'delete' ? undefined : '{}',
+		    signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
@@ -448,8 +453,9 @@
 		else if (action.command === 'import-project') {
 		  const response = await fetch('/api/v1/projects/import', {
 		    method: 'POST',
-		    headers: {'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID()},
+		    headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
 		    body: JSON.stringify({repo_url: args.repoUrl, repo_ref: args.repoRef, config_file: args.configFile}),
+		    signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
@@ -461,7 +467,7 @@
 		  settings[binding] = args.value || '';
 		}
 		else if (action.command === 'check-server-updates') {
-		  const response = await fetch('/api/v1/update/check', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+		  const response = await fetch('/api/v1/update/check', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}', signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
 		  const settings = currentData.settings;
@@ -475,7 +481,7 @@
 		  renderCurrent();
 		}
 		else if (action.command === 'refresh-rollback-versions') {
-		  const response = await fetch('/api/v1/update/tags');
+		  const response = await fetch('/api/v1/update/tags', {signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
 		  const versions = (Array.isArray(result.tags) ? result.tags : []).filter(version => isDeclarativeLowerVersion(version, result.current_version));
@@ -489,8 +495,9 @@
 		else if (action.command === 'server-update-action') {
 		  const path = args.action === 'restart' ? '/api/v1/server/restart' : (args.action === 'rollback' ? '/api/v1/update/rollback' : '/api/v1/update/apply');
 		  const response = await fetch(path, {
-		    method: 'POST', headers: {'Content-Type': 'application/json'},
+		    method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
 		    body: JSON.stringify(args.action === 'restart' ? {} : {target_version: args.targetVersion || ''}),
+		    signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
@@ -501,12 +508,12 @@
 		  renderCurrent();
 		}
 		else if (action.command === 'clear-queue') {
-		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}), body: '{}', signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
 		}
 		else if (action.command === 'remove-execution') {
-		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId), {method: 'DELETE'});
+		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId), {method: 'DELETE', headers: ciwiActionHeaders(runtime), signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
 		}
@@ -516,18 +523,18 @@
 		    : null;
 		  const body = ids === null ? {} : {job_execution_ids: ids};
 		  const response = await fetch('/api/v1/jobs/flush-history', {
-		    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+		    method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}), body: JSON.stringify(body), signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
 		}
 		else if (action.command === 'cancel-execution') {
-		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId) + '/cancel', {method: 'POST'});
+		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId) + '/cancel', {method: 'POST', headers: ciwiActionHeaders(runtime), signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
 		  await refresh();
 		}
 		else if (action.command === 'rerun-execution') {
-		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId) + '/rerun', {method: 'POST'});
+		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId) + '/rerun', {method: 'POST', headers: ciwiActionHeaders(runtime), signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
 		  const rerunID = result && result.job_execution && result.job_execution.id;
@@ -535,6 +542,10 @@
 		  window.location.assign('/declarative-preview/jobs/' + encodeURIComponent(rerunID));
 		}
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
+        };
+        if (typeof window.ciwiRunAction === 'function') return window.ciwiRunAction(action.command, args, element, execute);
+        const idempotencyKey = typeof window.ciwiActionID === 'function' ? window.ciwiActionID() : '';
+        return execute({signal: undefined, idempotencyKey});
       };
       if (action.on === 'activate') {
         element.tabIndex = element.tabIndex >= 0 ? element.tabIndex : 0;

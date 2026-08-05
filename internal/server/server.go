@@ -66,6 +66,7 @@ type stateStore struct {
 	jobProgress       *jobprogress.Estimator
 	update            updateState
 	restartServerFn   func()
+	installationID    string
 }
 
 type projectIconState struct {
@@ -83,6 +84,13 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("open db: %w", err)
 	}
 	defer db.Close()
+	installationID, err := ensureServerInstallationID(db)
+	if err != nil {
+		return err
+	}
+	if err := db.MarkPendingCommandReceiptsUnknown(); err != nil {
+		return fmt.Errorf("recover command receipts: %w", err)
+	}
 
 	if err := os.MkdirAll(artifactsDir, 0o755); err != nil {
 		return fmt.Errorf("create artifacts dir: %w", err)
@@ -107,6 +115,7 @@ func Run(ctx context.Context) error {
 		restartServerFn: func() {
 			os.Exit(0)
 		},
+		installationID: installationID,
 	}
 	if target, ok, err := db.GetAppState("agent_update_target"); err == nil && ok {
 		s.update.mu.Lock()
@@ -144,7 +153,8 @@ func Run(ctx context.Context) error {
 			Agents:            app.agents,
 			AgentCommands:     app.agentCommands,
 			ExecutionCommands: app.executionCommands, ExecutionControls: app.executionControls,
-			Changes: app.changes, Version: currentVersion(),
+			CommandReceipts: app.commandReceipts,
+			Changes:         app.changes, Version: currentVersion(),
 		})
 		if handlerErr != nil {
 			return handlerErr

@@ -1841,13 +1841,11 @@
       if (!id) return false;
       if (button) button.disabled = true;
       try {
-        const response = await fetch('/api/v1/jobs/' + encodeURIComponent(id) + '/rerun', {
+        const data = await apiActionJSON('rerun-execution', { jobExecutionId: id }, button,
+          '/api/v1/jobs/' + encodeURIComponent(id) + '/rerun', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: '{}',
         });
-        if (!response.ok) throw new Error(await response.text() || ('HTTP ' + response.status));
-        const data = await response.json();
         const queuedID = String((((data || {}).job_execution || {}).id) || '').trim();
         showJobStartedSnackbar('Job rerun started', queuedID);
         jobExecutionGraphState.terminalLoaded = false;
@@ -2710,14 +2708,11 @@
           if (!confirmed) return;
           forceBtn.disabled = true;
           try {
-            const fres = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/cancel', {
+            await apiActionJSON('cancel-execution', { jobExecutionId: jobId }, forceBtn,
+              '/api/v1/jobs/' + encodeURIComponent(jobId) + '/cancel', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
               body: '{}'
             });
-            if (!fres.ok) {
-              throw new Error(await fres.text() || ('HTTP ' + fres.status));
-            }
             await loadJobExecution(true);
           } catch (e) {
             await showAlertDialog({ title: 'Cancel failed', message: 'Cancel failed: ' + e.message });
@@ -2786,15 +2781,11 @@
         const old = rerunBtn.textContent;
         rerunBtn.textContent = 'Queueing...';
         try {
-          const res = await fetch('/api/v1/jobs/' + encodeURIComponent(jobId) + '/rerun', {
+          const data = await apiActionJSON('rerun-execution', { jobExecutionId: jobId }, rerunBtn,
+            '/api/v1/jobs/' + encodeURIComponent(jobId) + '/rerun', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: '{}',
           });
-          if (!res.ok) {
-            throw new Error(await res.text() || ('HTTP ' + res.status));
-          }
-          const data = await res.json();
           const enqueuedID = String((((data || {}).job_execution || {}).id) || '').trim();
           const metaSource = job.metadata || {};
           const projectName = String(metaSource.project || '').trim() || 'Project';

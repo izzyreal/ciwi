@@ -229,13 +229,7 @@
       adhocEvents = [];
       adhocLastEventID = 0;
       try {
-        const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID) + '/actions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'run-script', shell: shell, script: script, timeout_seconds: 600 }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
+        const data = await postAction('run-script', adhocRunBtn, { shell: shell, script: script, timeout_seconds: 600 });
         const jobID = String(data.job_execution_id || '').trim();
         if (!jobID) throw new Error('server response missing job_execution_id');
         adhocActiveJobID = jobID;
@@ -251,13 +245,18 @@
       }
     }
 
-    async function postAction(action) {
-      const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID) + '/actions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: action }),
+    async function postAction(action, element, extraPayload) {
+      const payload = { action: action, ...(extraPayload || {}) };
+      return window.ciwiRunAction('agent-action', { agentId: agentID, action: action }, element || null, async runtime => {
+        const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID) + '/actions', {
+          method: 'POST',
+          headers: ciwiActionHeaders(runtime, { 'Content-Type': 'application/json' }),
+          body: JSON.stringify(payload),
+          signal: runtime.signal,
+        });
+        if (!res.ok) throw new Error(await res.text());
+        return await res.json();
       });
-      if (!res.ok) throw new Error(await res.text());
     }
 
 
@@ -357,7 +356,7 @@
     }
 
     document.getElementById('refreshBtn').onclick = () => refreshAgent(true);
-    document.getElementById('activationBtn').onclick = async () => {
+    document.getElementById('activationBtn').onclick = async (event) => {
       try {
         const res = await fetch('/api/v1/agents/' + encodeURIComponent(agentID));
         if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -372,21 +371,21 @@
           });
           if (!confirmed) return;
         }
-        await postAction(isDeactivated ? 'activate' : 'deactivate');
+        await postAction(isDeactivated ? 'activate' : 'deactivate', event.currentTarget);
         await refreshAgent(true);
       } catch (e) {
         await showAlertDialog({ title: 'Activation change failed', message: 'Activation change failed: ' + e.message });
       }
     };
-    document.getElementById('updateBtn').onclick = async () => {
+    document.getElementById('updateBtn').onclick = async (event) => {
       try {
-        await postAction('update');
+        await postAction('update', event.currentTarget);
         await refreshAgent(true);
       } catch (e) {
         await showAlertDialog({ title: 'Update request failed', message: 'Update request failed: ' + e.message });
       }
     };
-    document.getElementById('restartBtn').onclick = async () => {
+    document.getElementById('restartBtn').onclick = async (event) => {
       const confirmed = await showConfirmDialog({
         title: 'Restart Agent',
         message: 'Request restart for this agent?',
@@ -394,13 +393,13 @@
       });
       if (!confirmed) return;
       try {
-        await postAction('restart');
+        await postAction('restart', event.currentTarget);
         await refreshAgent(true);
       } catch (e) {
         await showAlertDialog({ title: 'Restart request failed', message: 'Restart request failed: ' + e.message });
       }
     };
-    document.getElementById('wipeCacheBtn').onclick = async () => {
+    document.getElementById('wipeCacheBtn').onclick = async (event) => {
       const confirmed = await showConfirmDialog({
         title: 'Wipe Cache',
         message: 'Wipe this agent cache now? This removes all cached dependency sources on that agent.',
@@ -408,13 +407,13 @@
       });
       if (!confirmed) return;
       try {
-        await postAction('wipe-cache');
+        await postAction('wipe-cache', event.currentTarget);
         await refreshAgent(true);
       } catch (e) {
         await showAlertDialog({ title: 'Cache wipe failed', message: 'Cache wipe request failed: ' + e.message });
       }
     };
-    document.getElementById('flushAgentHistoryBtn').onclick = async () => {
+    document.getElementById('flushAgentHistoryBtn').onclick = async (event) => {
       const confirmed = await showConfirmDialog({
         title: 'Flush Agent Job History',
         message: 'Flush job history for this agent? This deletes historical job records and artifact files for this agent.',
@@ -422,15 +421,15 @@
       });
       if (!confirmed) return;
       try {
-        await postAction('flush-job-history');
+        await postAction('flush-job-history', event.currentTarget);
         await refreshAgent(true);
       } catch (e) {
         await showAlertDialog({ title: 'Flush failed', message: 'Agent job history flush failed: ' + e.message });
       }
     };
-    document.getElementById('refreshToolsBtn').onclick = async () => {
+    document.getElementById('refreshToolsBtn').onclick = async (event) => {
       try {
-        await postAction('refresh-tools');
+        await postAction('refresh-tools', event.currentTarget);
         await refreshAgent(true);
       } catch (e) {
         await showAlertDialog({ title: 'Refresh tools failed', message: 'Refresh tools request failed: ' + e.message });

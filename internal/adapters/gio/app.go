@@ -13,6 +13,7 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/op"
+	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
@@ -361,9 +362,47 @@ func Run(options Options) error {
 	}
 	window := new(app.Window)
 	window.Option(app.Title("ciwi native"), app.Size(1180, 780))
+	actionCatalog, err := sharedUI.LoadActionCatalog()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	clientBroker := newNativeClientBroker()
+	operationJournal := newNativeOperationJournal(preferencesPath, clientBroker.ServerInstallationID)
+	coordinator := operations.New(ctx, 4, nativeOperationExecutor{clients: clientBroker}, operationJournal)
+	defer coordinator.Close()
 	commands := make(chan commandRequest, 16)
 	var renderer *Renderer
 	renderer, err = NewRenderer(frontPageScreen, theme, func(action uidsl.Action, arguments map[string]string) {
+		spec, ok := actionCatalog.Spec(action.Command)
+		if ok && spec.Class != uidsl.ActionClassLocal {
+			submission, submitErr := coordinator.Submit(operations.Request{
+				Definition: operations.Definition{
+					Command: action.Command, Class: operations.Class(spec.Class), Scope: spec.ResolveScope(arguments),
+					Pending: spec.Pending, Persistence: spec.Persistence,
+				},
+				Arguments: arguments,
+			})
+			if submitErr != nil {
+				renderer.SetStatus("Action could not be started: " + submitErr.Error())
+				window.Invalidate()
+				return
+			}
+			switch submission.Disposition {
+			case operations.DispositionDuplicate:
+				renderer.SetStatus("That action is already in progress")
+			case operations.DispositionConflict:
+				message := "A conflicting action is already in progress"
+				if submission.Conflict != nil && strings.TrimSpace(submission.Conflict.PendingLabel) != "" {
+					message = submission.Conflict.PendingLabel
+				}
+				renderer.SetStatus(message)
+			}
+			renderer.SetOperations(coordinator.Snapshot())
+			window.Invalidate()
+			return
+		}
 		select {
 		case commands <- commandRequest{action: action, arguments: arguments}:
 		default:
@@ -403,9 +442,7 @@ func Run(options Options) error {
 	})
 	renderer.SetInvalidate(window.Invalidate)
 	renderer.SetStatus("")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go runController(ctx, window, renderer, commands, screens, options, preferencesPath, preferences)
+	go runController(ctx, window, renderer, commands, screens, options, preferencesPath, preferences, coordinator, clientBroker, operationJournal)
 
 	var operations op.Ops
 	for {
@@ -420,7 +457,7 @@ func Run(options Options) error {
 	}
 }
 
-func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string, preferences nativePreferences) {
+func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal) {
 	connectionSettings := nativeConnectionSettingsForLaunch(preferences, options.Address)
 	mode, endpoint := connectionSettings.Mode, connectionSettings.Endpoint
 	sshSettings := connectionSettings.SSH
@@ -448,6 +485,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	if initialConnectErr == nil {
 		session = connected
 		client = connected.client
+		clientBroker.Set(client)
 		changes = connected.changes
 		watchErrors = connected.watchErrors
 		address = connected.address
@@ -600,6 +638,24 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			statusTimer.Stop()
 		}
 	}()
+	reconcileOperations := func() {
+		if client == nil || operationJournal == nil {
+			return
+		}
+		resumed, message, reconcileErr := operationJournal.reconcile(ctx, client, coordinator)
+		if reconcileErr != nil {
+			renderer.SetStatus("Could not reconcile earlier actions: " + reconcileErr.Error())
+			return
+		}
+		if resumed > 0 {
+			renderer.SetTransientStatus(fmt.Sprintf("Resumed %d interrupted action(s)", resumed), nativeNoticeDuration)
+		} else if message != "" {
+			renderer.SetStatus(message)
+		}
+	}
+	if initialConnectErr == nil {
+		reconcileOperations()
+	}
 
 	var reconnectTimer *time.Timer
 	var reconnect <-chan time.Time
@@ -609,6 +665,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			session = nil
 		}
 		client = nil
+		clientBroker.Set(nil)
 		changes = nil
 		watchErrors = nil
 		stopOutput()
@@ -670,6 +727,88 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			reconnectTimer.Stop()
 		}
 	}()
+	applyOperationOutcome := func(operation operations.Operation) {
+		if operation.State != operations.StateSucceeded {
+			message := strings.TrimSpace(operation.Message)
+			if message == "" {
+				message = "The action did not complete"
+			}
+			renderer.SetStatus(message)
+			return
+		}
+		effect, ok := operation.Value.(nativeOperationEffect)
+		if !ok {
+			if operation.Message != "" {
+				renderer.SetTransientStatus(operation.Message, nativeNoticeDuration)
+			}
+			return
+		}
+		switch result := effect.Value.(type) {
+		case *cnpv1.ServerUpdateCheckResult:
+			renderer.SetRootBinding("settings", "update_versions", versionOptions(result.AvailableVersions, "No newer versions available"))
+			selected := ""
+			if len(result.AvailableVersions) > 0 {
+				selected = result.AvailableVersions[0]
+			}
+			renderer.SetRootBinding("settings", "selected_update_version", selected)
+			message := strings.TrimSpace(result.Message)
+			if result.UpdateAvailable {
+				message = "Update available: " + result.CurrentVersion + " → " + result.LatestVersion
+				if result.AssetName != "" {
+					message += " (" + result.AssetName + ")"
+				}
+			} else if message == "" {
+				message = "Up to date (" + result.CurrentVersion + ")"
+			}
+			renderer.SetRootBinding("settings", "update_result", message)
+			renderer.SetRootBinding("settings", "update_result_tone", "success")
+		case *cnpv1.ServerUpdateVersions:
+			renderer.SetRootBinding("settings", "rollback_versions", versionOptions(result.Versions, "No lower versions available"))
+			selected := ""
+			if len(result.Versions) > 0 {
+				selected = result.Versions[0]
+			}
+			renderer.SetRootBinding("settings", "selected_rollback_version", selected)
+			renderer.SetRootBinding("settings", "rollback_result", fmt.Sprintf("Found %d rollback version(s)", len(result.Versions)))
+			renderer.SetRootBinding("settings", "rollback_result_tone", "success")
+		case *cnpv1.ServerUpdateActionResult:
+			field := "update_result"
+			if operation.Arguments["action"] == "rollback" {
+				field = "rollback_result"
+			}
+			renderer.SetRootBinding("settings", field, effect.Message)
+			renderer.SetRootBinding("settings", field+"_tone", "success")
+		}
+		if effect.NavigateRoute != "" && client != nil {
+			previous := navigation
+			if err := navigate(ctx, client, renderer, screens, &navigation, effect.NavigateRoute); err != nil {
+				renderer.SetStatus(effect.Message + ", but navigation failed: " + err.Error())
+				return
+			}
+			if navigation != previous {
+				if navigation.screen == "job-details" {
+					startOutput(navigation.jobID)
+				} else {
+					stopOutput()
+				}
+			}
+		} else if effect.Refresh && client != nil {
+			if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
+				renderer.SetStatus(effect.Message + ", but refresh failed: " + err.Error())
+				return
+			}
+			if navigation.screen == "settings" {
+				applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
+				renderer.SetRootBinding("settings", "client_version", options.Version)
+			}
+			if navigation.screen == "job-details" {
+				outputBuffer.apply(renderer)
+			}
+		}
+		if effect.Message != "" {
+			renderer.SetTransientStatus(effect.Message, nativeNoticeDuration)
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -698,6 +837,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			session = connected
 			client = connected.client
+			clientBroker.Set(client)
 			changes = connected.changes
 			watchErrors = connected.watchErrors
 			address = connected.address
@@ -727,6 +867,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			if navigation.screen == "job-details" {
 				startOutput(navigation.jobID)
 			}
+			reconcileOperations()
 			renderer.SetTransientStatus("Reconnected to "+address, nativeNoticeDuration)
 			scheduleStatusExpiry()
 			window.Invalidate()
@@ -790,6 +931,19 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				renderer.SetScreenAndData(screens["run-options"], result.data)
 				renderer.SetStatus("")
 			}
+			window.Invalidate()
+		case <-coordinator.Changed():
+			snapshot := coordinator.Snapshot()
+			renderer.SetOperations(snapshot)
+			for _, operation := range snapshot {
+				if !operation.State.Terminal() {
+					continue
+				}
+				applyOperationOutcome(operation)
+				coordinator.Forget(operation.ID)
+			}
+			renderer.SetOperations(coordinator.Snapshot())
+			scheduleStatusExpiry()
 			window.Invalidate()
 		case command := <-commands:
 			switch command.action.Command {
@@ -1113,69 +1267,6 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetStatus("")
-	case "run-pipeline":
-		pipelineID, err := strconv.ParseInt(command.arguments["pipelineDbId"], 10, 64)
-		if err != nil || pipelineID <= 0 {
-			renderer.SetStatus("Invalid pipeline identifier")
-			return
-		}
-		dryRun := command.arguments["dryRun"] == "true"
-		if dryRun {
-			renderer.SetStatus("Queuing pipeline dry run…")
-		} else {
-			renderer.SetStatus("Queuing pipeline…")
-		}
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.RunPipeline(commandCtx, &cnpv1.RunPipelineRequest{
-			PipelineDbId: pipelineID,
-			Selection:    pipelineRunSelection(command.arguments),
-		}, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Run failed: " + err.Error())
-			return
-		}
-		target := strings.TrimSpace(result.PipelineId)
-		if jobID := strings.TrimSpace(command.arguments["pipelineJobId"]); jobID != "" {
-			target += " / " + jobID
-		}
-		if dryRun {
-			renderer.SetTransientStatus(fmt.Sprintf("Queued %d dry-run execution(s) for %s", result.Enqueued, target), nativeNoticeDuration)
-		} else {
-			renderer.SetTransientStatus(fmt.Sprintf("Queued %d execution(s) for %s", result.Enqueued, target), nativeNoticeDuration)
-		}
-	case "run-chain":
-		projectID, err := strconv.ParseInt(command.arguments["projectId"], 10, 64)
-		chainID := strings.TrimSpace(command.arguments["chainId"])
-		if err != nil || projectID <= 0 || chainID == "" {
-			renderer.SetStatus("Invalid pipeline chain identifier")
-			return
-		}
-		dryRun := command.arguments["dryRun"] == "true"
-		if dryRun {
-			renderer.SetStatus("Queuing pipeline chain dry run…")
-		} else {
-			renderer.SetStatus("Queuing pipeline chain…")
-		}
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.RunPipelineChain(commandCtx, &cnpv1.RunPipelineChainRequest{
-			ProjectId: projectID, ChainId: chainID,
-			Selection: pipelineRunSelection(command.arguments),
-		}, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Run chain failed: " + err.Error())
-			return
-		}
-		chainLabel := strings.TrimSpace(result.ChainName)
-		if chainLabel == "" {
-			chainLabel = strings.TrimSpace(result.ChainId)
-		}
-		if dryRun {
-			renderer.SetTransientStatus(fmt.Sprintf("Queued %d dry-run execution(s) for chain %s", result.Enqueued, chainLabel), nativeNoticeDuration)
-		} else {
-			renderer.SetTransientStatus(fmt.Sprintf("Queued %d execution(s) for chain %s", result.Enqueued, chainLabel), nativeNoticeDuration)
-		}
 	case "set-run-option":
 		field := strings.TrimSpace(command.arguments["field"])
 		value := strings.TrimSpace(command.arguments["value"])
@@ -1189,161 +1280,6 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 				renderer.SetStatus("Run options refresh failed: " + err.Error())
 			}
 		}
-	case "clear-queue":
-		renderer.SetStatus("Clearing queued executions…")
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.ClearExecutionQueue(commandCtx, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Clear queue failed: " + err.Error())
-			return
-		}
-		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
-			renderer.SetStatus("Queue cleared, but refresh failed: " + err.Error())
-			return
-		}
-		renderer.SetTransientStatus(fmt.Sprintf("Cleared %d queued execution(s)", result.Cleared), nativeNoticeDuration)
-	case "remove-execution":
-		jobID := strings.TrimSpace(command.arguments["jobExecutionId"])
-		if jobID == "" {
-			renderer.SetStatus("No execution identifier was supplied")
-			return
-		}
-		renderer.SetStatus("Removing queued execution…")
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.RemoveQueuedExecution(commandCtx, jobID, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Remove failed: " + err.Error())
-			return
-		}
-		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
-			renderer.SetStatus("Execution removed, but refresh failed: " + err.Error())
-			return
-		}
-		renderer.SetTransientStatus("Removed queued execution "+result.JobExecutionId, nativeNoticeDuration)
-	case "flush-history", "delete-execution":
-		request := &cnpv1.FlushExecutionHistoryRequest{All: command.action.Command == "flush-history"}
-		if !request.All {
-			request.JobExecutionIds = splitExecutionIDs(command.arguments["jobExecutionIds"])
-			if len(request.JobExecutionIds) == 0 {
-				renderer.SetStatus("No execution identifiers were supplied")
-				return
-			}
-		}
-		renderer.SetStatus("Removing execution history…")
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.FlushExecutionHistory(commandCtx, request, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Flush history failed: " + err.Error())
-			return
-		}
-		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
-			renderer.SetStatus("History removed, but refresh failed: " + err.Error())
-			return
-		}
-		renderer.SetTransientStatus(fmt.Sprintf("Removed %d execution(s) from history", result.Flushed), nativeNoticeDuration)
-	case "cancel-execution":
-		jobID := strings.TrimSpace(command.arguments["jobExecutionId"])
-		if jobID == "" {
-			renderer.SetStatus("No execution identifier was supplied")
-			return
-		}
-		renderer.SetStatus("Cancelling execution…")
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.CancelExecution(commandCtx, jobID, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Cancel failed: " + err.Error())
-			return
-		}
-		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
-			renderer.SetStatus("Execution cancelled, but refresh failed: " + err.Error())
-			return
-		}
-		renderer.SetTransientStatus("Execution "+result.JobExecutionId+" marked failed", nativeNoticeDuration)
-	case "rerun-execution":
-		jobID := strings.TrimSpace(command.arguments["jobExecutionId"])
-		if jobID == "" {
-			renderer.SetStatus("No execution identifier was supplied")
-			return
-		}
-		renderer.SetStatus("Queueing independent rerun…")
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.RerunExecution(commandCtx, jobID, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Rerun failed: " + err.Error())
-			return
-		}
-		if err := navigate(ctx, client, renderer, screens, navigation, "/jobs/"+result.JobExecutionId); err != nil {
-			renderer.SetStatus("Rerun queued, but navigation failed: " + err.Error())
-			return
-		}
-		renderer.SetTransientStatus("Queued rerun "+result.JobExecutionId, nativeNoticeDuration)
-	case "agent-action":
-		agentID := strings.TrimSpace(command.arguments["agentId"])
-		action := strings.TrimSpace(command.arguments["action"])
-		if agentID == "" || action == "" {
-			renderer.SetStatus("Agent action is incomplete")
-			return
-		}
-		renderer.SetStatus("Sending agent request…")
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := client.AgentAction(commandCtx, &cnpv1.AgentActionRequest{AgentId: agentID, Action: action}, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Agent action failed: " + err.Error())
-			return
-		}
-		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
-			renderer.SetStatus("Agent action accepted, but refresh failed: " + err.Error())
-			return
-		}
-		message := strings.TrimSpace(result.Message)
-		if message == "" {
-			message = "Agent request accepted"
-		}
-		renderer.SetTransientStatus(message, nativeNoticeDuration)
-	case "project-action":
-		projectID, err := strconv.ParseInt(strings.TrimSpace(command.arguments["projectId"]), 10, 64)
-		action := strings.TrimSpace(command.arguments["action"])
-		if err != nil || projectID <= 0 || action == "" {
-			renderer.SetStatus("Project action is incomplete")
-			return
-		}
-		projectKey := strconv.FormatInt(projectID, 10)
-		progress := "Updating…"
-		if action == "reload" {
-			progress = "Reloading…"
-		} else if action == "delete" {
-			progress = "Deleting…"
-		}
-		renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_status", progress)
-		renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_tone", "muted")
-		commandCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-		result, err := client.ProjectAction(commandCtx, projectID, action, "")
-		cancel()
-		if err != nil {
-			failure := "Action failed: " + err.Error()
-			if action == "reload" {
-				failure = "Reload failed: " + err.Error()
-			}
-			renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_status", failure)
-			renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_tone", "danger")
-			return
-		}
-		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
-			renderer.SetStatus("Project updated, but refresh failed: " + err.Error())
-			return
-		}
-		if action == "reload" {
-			renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_status", "Reloaded successfully")
-			renderer.SetRepeatedItemBinding("settings", "projects", "id", projectKey, "action_tone", "success")
-		} else {
-			renderer.SetTransientStatus(result.Message, nativeNoticeDuration)
-		}
 	case "set-project-import-field":
 		binding := map[string]string{"repoUrl": "import_repo_url", "repoRef": "import_repo_ref", "configFile": "import_config_file"}[strings.TrimSpace(command.arguments["field"])]
 		if binding == "" {
@@ -1351,28 +1287,6 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetRootBinding("settings", binding, command.arguments["value"])
-	case "import-project":
-		repoURL := strings.TrimSpace(command.arguments["repoUrl"])
-		if repoURL == "" {
-			renderer.SetStatus("Repository URL is required")
-			return
-		}
-		renderer.SetStatus("Importing project…")
-		commandCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-		result, err := client.ImportProject(commandCtx, &cnpv1.ImportProjectRequest{
-			RepoUrl: repoURL, RepoRef: strings.TrimSpace(command.arguments["repoRef"]),
-			ConfigFile: strings.TrimSpace(command.arguments["configFile"]),
-		}, "")
-		cancel()
-		if err != nil {
-			renderer.SetStatus("Project import failed: " + err.Error())
-			return
-		}
-		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
-			renderer.SetStatus("Project imported, but refresh failed: " + err.Error())
-			return
-		}
-		renderer.SetTransientStatus("Imported "+result.ProjectName, nativeNoticeDuration)
 	case "set-server-update-option":
 		binding := map[string]string{
 			"update": "selected_update_version", "rollback": "selected_rollback_version",
@@ -1382,99 +1296,6 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetRootBinding("settings", binding, strings.TrimSpace(command.arguments["value"]))
-	case "check-server-updates":
-		renderer.SetRootBinding("settings", "update_result", "Checking for updates…")
-		renderer.SetRootBinding("settings", "update_result_tone", "muted")
-		commandCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-		result, err := client.CheckServerUpdates(commandCtx)
-		cancel()
-		if err != nil {
-			renderer.SetRootBinding("settings", "update_versions", versionOptions(nil, "Update check failed"))
-			renderer.SetRootBinding("settings", "selected_update_version", "")
-			renderer.SetRootBinding("settings", "update_result", "Update check failed: "+err.Error())
-			renderer.SetRootBinding("settings", "update_result_tone", "danger")
-			return
-		}
-		renderer.SetRootBinding("settings", "update_versions", versionOptions(result.AvailableVersions, "No newer versions available"))
-		selected := ""
-		if len(result.AvailableVersions) > 0 {
-			selected = result.AvailableVersions[0]
-		}
-		renderer.SetRootBinding("settings", "selected_update_version", selected)
-		message := strings.TrimSpace(result.Message)
-		if result.UpdateAvailable {
-			message = "Update available: " + result.CurrentVersion + " → " + result.LatestVersion
-			if result.AssetName != "" {
-				message += " (" + result.AssetName + ")"
-			}
-		} else if message == "" {
-			message = "Up to date (" + result.CurrentVersion + ")"
-		}
-		renderer.SetRootBinding("settings", "update_result", message)
-		renderer.SetRootBinding("settings", "update_result_tone", "success")
-	case "refresh-rollback-versions":
-		renderer.SetRootBinding("settings", "rollback_result", "Refreshing versions…")
-		renderer.SetRootBinding("settings", "rollback_result_tone", "muted")
-		commandCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-		result, err := client.ListServerUpdateVersions(commandCtx)
-		cancel()
-		if err != nil {
-			renderer.SetRootBinding("settings", "rollback_versions", versionOptions(nil, "Version load failed"))
-			renderer.SetRootBinding("settings", "selected_rollback_version", "")
-			renderer.SetRootBinding("settings", "rollback_result", "Version load failed: "+err.Error())
-			renderer.SetRootBinding("settings", "rollback_result_tone", "danger")
-			return
-		}
-		renderer.SetRootBinding("settings", "rollback_versions", versionOptions(result.Versions, "No lower versions available"))
-		selected := ""
-		if len(result.Versions) > 0 {
-			selected = result.Versions[0]
-		}
-		renderer.SetRootBinding("settings", "selected_rollback_version", selected)
-		renderer.SetRootBinding("settings", "rollback_result", fmt.Sprintf("Found %d rollback version(s)", len(result.Versions)))
-		renderer.SetRootBinding("settings", "rollback_result_tone", "success")
-	case "server-update-action":
-		action := strings.TrimSpace(command.arguments["action"])
-		target := strings.TrimSpace(command.arguments["targetVersion"])
-		resultField := "update_result"
-		if action == "rollback" {
-			resultField = "rollback_result"
-		}
-		if (action == "apply" || action == "rollback") && target == "" {
-			renderer.SetRootBinding("settings", resultField, "Select a version first")
-			renderer.SetRootBinding("settings", resultField+"_tone", "danger")
-			return
-		}
-		progress := "Starting " + action + "…"
-		if action == "restart" {
-			progress = "Requesting server restart…"
-		}
-		renderer.SetRootBinding("settings", resultField, progress)
-		renderer.SetRootBinding("settings", resultField+"_tone", "muted")
-		commandCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
-		result, err := client.ServerUpdateAction(commandCtx, action, target)
-		cancel()
-		if err != nil {
-			label := map[string]string{"apply": "Update", "rollback": "Rollback", "restart": "Restart"}[action]
-			if label == "" {
-				label = "Request"
-			}
-			renderer.SetRootBinding("settings", resultField, label+" failed: "+err.Error())
-			renderer.SetRootBinding("settings", resultField+"_tone", "danger")
-			return
-		}
-		message := strings.TrimSpace(result.Message)
-		if message == "" {
-			message = "Request accepted"
-		}
-		renderer.SetRootBinding("settings", resultField, message)
-		renderer.SetRootBinding("settings", resultField+"_tone", "success")
-	case "refresh":
-		if err := refreshScreen(ctx, client, renderer, screens, *navigation); err != nil {
-			renderer.SetStatus("Refresh failed: " + err.Error())
-			return
-		}
-		renderer.SetTransientStatus("Refreshed", nativeNoticeDuration)
 	case "navigate":
 		if err := navigate(ctx, client, renderer, screens, navigation, command.arguments["route"]); err != nil {
 			renderer.SetStatus("Navigation failed: " + err.Error())

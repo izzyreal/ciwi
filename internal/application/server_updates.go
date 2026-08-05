@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 )
 
@@ -42,8 +44,9 @@ type ServerUpdateVersions struct {
 }
 
 type ServerUpdateActionRequest struct {
-	Action        string
-	TargetVersion string
+	Action         string
+	TargetVersion  string
+	IdempotencyKey string
 }
 
 type ServerUpdateActionResult struct {
@@ -63,12 +66,17 @@ type ServerUpdateBackend interface {
 }
 
 type ServerUpdateOperations struct {
-	backend ServerUpdateBackend
-	changes *ChangeHub
+	backend  ServerUpdateBackend
+	changes  *ChangeHub
+	receipts CommandReceiptRepository
 }
 
-func NewServerUpdateOperations(backend ServerUpdateBackend, changes *ChangeHub) *ServerUpdateOperations {
-	return &ServerUpdateOperations{backend: backend, changes: changes}
+func NewServerUpdateOperations(backend ServerUpdateBackend, changes *ChangeHub, receipts ...CommandReceiptRepository) *ServerUpdateOperations {
+	var receiptRepository CommandReceiptRepository
+	if len(receipts) > 0 {
+		receiptRepository = receipts[0]
+	}
+	return &ServerUpdateOperations{backend: backend, changes: changes, receipts: receiptRepository}
 }
 
 func (o *ServerUpdateOperations) Status(ctx context.Context) (ServerUpdateStatus, error) {
@@ -108,7 +116,14 @@ func (o *ServerUpdateOperations) Execute(ctx context.Context, request ServerUpda
 	if o == nil || o.backend == nil {
 		return ServerUpdateActionResult{}, NewError(ErrorUnavailable, "server update service unavailable", nil)
 	}
-	result, err := o.backend.ExecuteServerUpdateAction(ctx, request)
+	key, err := validateCommandKey(request.IdempotencyKey)
+	if err != nil {
+		return ServerUpdateActionResult{}, err
+	}
+	sum := sha256.Sum256([]byte(request.Action + "\x00" + request.TargetVersion))
+	result, err := executeIdempotentCommand(ctx, o.receipts, key, "server_update_action", hex.EncodeToString(sum[:]), func() (ServerUpdateActionResult, error) {
+		return o.backend.ExecuteServerUpdateAction(ctx, request)
+	})
 	if err == nil && o.changes != nil {
 		o.changes.Publish(ChangeUpdates, ChangeAgents)
 	}

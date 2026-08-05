@@ -24,6 +24,7 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ui/icons.svg":                   {"assets/tabler-icons.svg", "image/svg+xml", true},
 	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", true},
 	"/ui/shared.js":                   {"assets/js/shared.js", "application/javascript; charset=utf-8", false},
+	"/ui/actions.js":                  {"assets/js/actions.js", "application/javascript; charset=utf-8", false},
 	"/ui/pages.js":                    {"assets/js/pages.js", "application/javascript; charset=utf-8", false},
 	"/ui/index.js":                    {"assets/js/index.js", "application/javascript; charset=utf-8", false},
 	"/ui/settings.js":                 {"assets/js/settings.js", "application/javascript; charset=utf-8", false},
@@ -46,6 +47,10 @@ var staticRoutes = map[string]embeddedAsset{
 
 // Handler serves ciwi's browser pages and embedded static assets.
 func Handler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/ui/contracts/actions.json" {
+		serveActionContract(w)
+		return
+	}
 	if r.URL.Path == "/ui/contracts/screens/front-page.json" {
 		serveScreenContract(w, "front-page")
 		return

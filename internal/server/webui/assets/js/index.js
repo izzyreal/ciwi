@@ -1166,7 +1166,7 @@
       const deletionAnchor = captureHistoryDeletionAnchor(button);
       if (button) button.disabled = true;
       try {
-        await apiJSON('/api/v1/jobs/flush-history', {
+        await apiActionJSON('delete-execution', {jobExecutionIds: jobExecutionIDs.join(',')}, button, '/api/v1/jobs/flush-history', {
           method: 'POST',
           body: JSON.stringify({ job_execution_ids: jobExecutionIDs }),
         });
@@ -1198,7 +1198,7 @@
         projectIconURL: projectIconURLForJob,
         onRemove: async (j) => {
           try {
-            await apiJSON('/api/v1/jobs/' + j.id, { method: 'DELETE' });
+            await apiActionJSON('remove-execution', {jobExecutionId: j.id}, null, '/api/v1/jobs/' + j.id, { method: 'DELETE' });
             await refreshJobs();
           } catch (e) {
             await showAlertDialog({ title: 'Remove failed', message: 'Remove failed: ' + e.message });
@@ -1214,7 +1214,7 @@
             return;
           }
           try {
-            await apiJSON('/api/v1/jobs/' + j.id + '/cancel', { method: 'POST', body: '{}' });
+            await apiActionJSON('cancel-execution', {jobExecutionId: j.id}, null, '/api/v1/jobs/' + j.id + '/cancel', { method: 'POST', body: '{}' });
             await refreshJobs();
           } catch (e) {
             await showAlertDialog({ title: 'Cancel failed', message: 'Cancel failed: ' + e.message });
@@ -1268,7 +1268,7 @@
         return;
       }
       try {
-        await apiJSON('/api/v1/jobs/clear-queue', { method: 'POST', body: '{}' });
+        await apiActionJSON('clear-queue', {}, clearQueueBtn, '/api/v1/jobs/clear-queue', { method: 'POST', body: '{}' });
         await refreshJobs();
       } catch (e) {
         await showAlertDialog({ title: 'Clear queue failed', message: 'Clear queue failed: ' + e.message });
@@ -1285,7 +1285,7 @@
         return;
       }
       try {
-        await apiJSON('/api/v1/jobs/flush-history', { method: 'POST', body: '{}' });
+        await apiActionJSON('flush-history', {}, flushHistoryBtn, '/api/v1/jobs/flush-history', { method: 'POST', body: '{}' });
         await refreshJobs();
       } catch (e) {
         await showAlertDialog({ title: 'Flush history failed', message: 'Flush history failed: ' + e.message });

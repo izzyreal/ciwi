@@ -35,6 +35,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
 	_ "golang.org/x/image/bmp"
@@ -89,6 +90,7 @@ type Renderer struct {
 	outputScroller         *layout.List
 	pendingOutputSelection *outputSelection
 	renderedJobID          string
+	activeOperations       map[string]operations.Operation
 }
 
 type outputSelection struct {
@@ -165,9 +167,25 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
 		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{}, outputEditors: map[string]*widget.Editor{},
 		icons: iconSet, images: imageSet, dynamicImages: map[string]dynamicImage{},
+		activeOperations: map[string]operations.Operation{},
 	}
 	renderer.statusText.ReadOnly = true
 	return renderer, nil
+}
+
+// SetOperations replaces the renderer's view of in-flight work. The
+// coordinator snapshot is the source of truth; widgets only derive their
+// disabled/pending presentation from it.
+func (r *Renderer) SetOperations(snapshot []operations.Operation) {
+	active := make(map[string]operations.Operation, len(snapshot))
+	for _, operation := range snapshot {
+		if !operation.State.Terminal() {
+			active[operation.Fingerprint] = operation
+		}
+	}
+	r.mu.Lock()
+	r.activeOperations = active
+	r.mu.Unlock()
 }
 
 func (r *Renderer) SetData(data any) {
@@ -1983,6 +2001,23 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 		}
 	}
 	enabled := conditionEnabled(node.Enabled, data)
+	pending := operations.Operation{}
+	if len(node.Actions) > 0 {
+		if arguments, err := actionArguments(node.Actions[0], data); err == nil {
+			if fingerprint, err := operations.Fingerprint(node.Actions[0].Command, arguments); err == nil {
+				r.mu.RLock()
+				pending = r.activeOperations[fingerprint]
+				r.mu.RUnlock()
+			}
+		}
+	}
+	if pending.ID != "" {
+		enabled = false
+		if strings.TrimSpace(pending.PendingLabel) != "" {
+			label = pending.PendingLabel
+		}
+		node.Icon = "loader-2"
+	}
 	button := r.button(path)
 	for button.Clicked(gtx) {
 		if enabled && len(node.Actions) > 0 {
@@ -2227,6 +2262,9 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
+			if iconName == "loader-2" {
+				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+			}
 			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: r.metrics.controlPaddingY, Right: r.metrics.controlPaddingX, Bottom: r.metrics.controlPaddingY, Left: r.metrics.controlPaddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					children := make([]layout.FlexChild, 0, 2)
@@ -2255,6 +2293,13 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 							if !enabled {
 								iconColor = r.palette.muted
 							}
+							if iconName != "loader-2" {
+								return icon.Layout(gtx, iconColor)
+							}
+							center := float32(gtx.Dp(19)) / 2
+							angle := float32(float64(gtx.Now.UnixNano()%int64(time.Second)) / float64(time.Second) * 2 * math.Pi)
+							transform := op.Affine(f32.Affine2D{}.Rotate(f32.Pt(center, center), angle)).Push(gtx.Ops)
+							defer transform.Pop()
 							return icon.Layout(gtx, iconColor)
 						})
 					})

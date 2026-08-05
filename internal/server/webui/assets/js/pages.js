@@ -16,6 +16,19 @@ function apiJSON(path, opts = {}) {
     });
 }
 
+function apiActionJSON(command, argumentsValue, element, path, opts = {}) {
+  const execute = runtime => apiJSON(path, {
+    ...opts,
+    signal: runtime.signal,
+    headers: ciwiActionHeaders(runtime, opts.headers || {}),
+  });
+  if (typeof window.ciwiRunAction !== 'function') {
+    const idempotencyKey = typeof window.ciwiActionID === 'function' ? window.ciwiActionID() : '';
+    return execute({signal: undefined, idempotencyKey});
+  }
+  return window.ciwiRunAction(command, argumentsValue || {}, element || null, execute);
+}
+
 function isManagedYAMLProject(project) {
   return String((project && project.source_kind) || 'vcs') === 'managed_yaml';
 }
@@ -577,6 +590,7 @@ function openSourceRefRunDialog(opts) {
 
 async function runWithOptionalSourceRef(event, opts) {
   const options = opts || {};
+  const actionElement = event && event.currentTarget;
   const runPath = String(options.runPath || '').trim();
   if (!runPath) throw new Error('runPath is required');
   const payload = { ...(options.payload || {}) };
@@ -598,7 +612,17 @@ async function runWithOptionalSourceRef(event, opts) {
     if (selectedSourceRef) payload.source_ref = selectedSourceRef;
     if (selectedAgentID) payload.agent_id = selectedAgentID;
   }
-  const resp = await apiJSON(runPath, { method: 'POST', body: JSON.stringify(payload) });
+  const actionCommand = String(options.actionCommand || (runPath.includes('/pipeline-chains/') ? 'run-chain' : 'run-pipeline'));
+  const actionArguments = {
+    ...(options.actionArguments || {}),
+    pipelineDbId: String((options.actionArguments && options.actionArguments.pipelineDbId) || runPath),
+    projectId: String((options.actionArguments && options.actionArguments.projectId) || runPath),
+    chainId: String((options.actionArguments && options.actionArguments.chainId) || runPath),
+    dryRun: String(!!payload.dry_run), sourceRef: String(payload.source_ref || ''), agentId: String(payload.agent_id || ''),
+  };
+  const resp = await apiActionJSON(actionCommand, actionArguments, actionElement, runPath, {
+    method: 'POST', body: JSON.stringify(payload),
+  });
   return { cancelled: false, response: resp, sourceRef: selectedSourceRef };
 }
 

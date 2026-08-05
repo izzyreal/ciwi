@@ -42,3 +42,24 @@ func TestFailedCommandReceiptLifecycle(t *testing.T) {
 		t.Fatalf("receipt=%+v claimed=%v err=%v", receipt, claimed, err)
 	}
 }
+
+func TestMarkPendingCommandReceiptsUnknown(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "ciwi.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, _, err := db.ClaimCommandReceipt("pending-key", "run_pipeline", "hash"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.MarkPendingCommandReceiptsUnknown(); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := db.GetCommandReceipt("pending-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Status != "outcome_unknown" {
+		t.Fatalf("status = %q", receipt.Status)
+	}
+}

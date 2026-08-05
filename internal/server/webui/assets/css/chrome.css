@@ -789,6 +789,22 @@
       opacity: 0.65;
       cursor: default;
     }
+    .ciwi-action-pending {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+    .ciwi-action-pending::after {
+      content: "";
+      width: 0.8em;
+      height: 0.8em;
+      flex: 0 0 auto;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: ciwi-icon-spin 0.9s linear infinite;
+    }
     .ciwi-icon {
       display: inline-block;
       width: 1.15em;
@@ -810,7 +826,8 @@
     .ciwi-icon-spin { animation: ciwi-icon-spin 1.1s linear infinite; }
     @keyframes ciwi-icon-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) {
-      .ciwi-icon-spin { animation: none; }
+      .ciwi-icon-spin,
+      .ciwi-action-pending::after { animation: none; }
     }
     button.secondary {
       background: var(--input-bg);

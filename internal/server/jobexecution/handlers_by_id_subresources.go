@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/httpx"
 )
@@ -17,6 +18,22 @@ import (
 func handleJobCancel(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobID string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if deps.ExecutionControls != nil {
+		result, err := deps.ExecutionControls.Cancel(r.Context(), application.ExecutionControlRequest{
+			JobExecutionID: jobID, IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		})
+		if err != nil {
+			writeApplicationError(w, err)
+			return
+		}
+		updated, err := deps.Store.GetJobExecution(result.JobExecutionID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(updated)})
 		return
 	}
 	updated, err := CancelJobExecution(deps.Store, jobID, nowUTC(deps))
@@ -38,6 +55,22 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if deps.ExecutionControls != nil {
+		result, err := deps.ExecutionControls.Rerun(r.Context(), application.ExecutionControlRequest{
+			JobExecutionID: jobID, IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		})
+		if err != nil {
+			writeApplicationError(w, err)
+			return
+		}
+		clone, err := deps.Store.GetJobExecution(result.JobExecutionID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(clone)})
+		return
+	}
 	clone, err := RerunJobExecution(deps.Store, jobID, deps.PrepareRerun)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -50,6 +83,25 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(clone)})
+}
+
+func writeApplicationError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	switch application.ErrorKindOf(err) {
+	case application.ErrorInvalidArgument:
+		status = http.StatusBadRequest
+	case application.ErrorNotFound:
+		status = http.StatusNotFound
+	case application.ErrorConflict:
+		status = http.StatusConflict
+	case application.ErrorFailedPrecondition:
+		status = http.StatusPreconditionFailed
+	case application.ErrorUnavailable:
+		status = http.StatusServiceUnavailable
+	case application.ErrorUnsupported:
+		status = http.StatusNotImplemented
+	}
+	http.Error(w, err.Error(), status)
 }
 
 func CancelJobExecution(store Store, jobID string, now time.Time) (protocol.JobExecution, error) {
