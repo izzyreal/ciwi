@@ -23,6 +23,39 @@ func TestParseGoCoverprofileCoverage(t *testing.T) {
 	}
 }
 
+func TestParseGoCoverprofileCoverageExcludesGeneratedProtobuf(t *testing.T) {
+	report, err := parseGoCoverprofileCoverage([]string{
+		"mode: atomic",
+		"github.com/izzyreal/ciwi/pkg/cnp/v1/ciwi.pb.go:10.1,20.2 100 0",
+		"github.com/izzyreal/ciwi/pkg/cnpclient/client.go:10.1,20.2 8 1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.TotalStatements != 8 || report.CoveredStatements != 8 || len(report.Files) != 1 {
+		t.Fatalf("report = %#v", report)
+	}
+	if got := report.Files[0].Path; got != "github.com/izzyreal/ciwi/pkg/cnpclient/client.go" {
+		t.Fatalf("reported path = %q", got)
+	}
+}
+
+func TestParseGoCoverprofileCoverageMergesCoverpkgBlocksAcrossTestBinaries(t *testing.T) {
+	report, err := parseGoCoverprofileCoverage([]string{
+		"mode: set",
+		"pkg/a.go:1.1,2.2 2 0",
+		"pkg/a.go:1.1,2.2 2 1",
+		"pkg/a.go:3.1,4.2 3 0",
+		"pkg/a.go:3.1,4.2 3 0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.TotalStatements != 5 || report.CoveredStatements != 2 || len(report.Files) != 1 {
+		t.Fatalf("merged report = %#v", report)
+	}
+}
+
 func TestParseLCOVCoverage(t *testing.T) {
 	report, err := parseLCOVCoverage([]string{
 		"TN:",

@@ -112,18 +112,21 @@
       command: command, arguments: args, scope: scope, spec: spec, controller: controller,
       idempotencyKey: newActionID(), startedAt: Date.now(), promise: null,
     };
-    operation.promise = Promise.resolve().then(() => {
-      updateElement(element, operation, true);
-      activeByFingerprint.set(key, operation);
-      activeByScope.set(scope, operation);
-      notify();
-      return execute({ signal: controller.signal, idempotencyKey: operation.idempotencyKey });
-    }).finally(() => {
-      if (activeByFingerprint.get(key) === operation) activeByFingerprint.delete(key);
-      if (activeByScope.get(scope) === operation) activeByScope.delete(scope);
-      updateElement(element, operation, false);
-      notify();
-    });
+    // Claim the fingerprint and scope synchronously once the catalog lookup
+    // completes. Deferring this registration until the execution microtask
+    // lets two same-tick clicks both pass the duplicate check.
+    updateElement(element, operation, true);
+    activeByFingerprint.set(key, operation);
+    activeByScope.set(scope, operation);
+    notify();
+    operation.promise = Promise.resolve()
+      .then(() => execute({ signal: controller.signal, idempotencyKey: operation.idempotencyKey }))
+      .finally(() => {
+        if (activeByFingerprint.get(key) === operation) activeByFingerprint.delete(key);
+        if (activeByScope.get(scope) === operation) activeByScope.delete(scope);
+        updateElement(element, operation, false);
+        notify();
+      });
     return operation.promise;
   }
 

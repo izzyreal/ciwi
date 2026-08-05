@@ -44,11 +44,15 @@ func parseStepCoverageFromFile(execDir string, meta stepMarkerMeta) (*protocol.C
 }
 
 func parseGoCoverprofileCoverage(lines []string) (*protocol.CoverageReport, error) {
+	type blockStat struct {
+		numStmts int
+		covered  bool
+	}
 	type fileStat struct {
 		total   int
 		covered int
 	}
-	files := map[string]fileStat{}
+	blocks := map[string]map[string]blockStat{}
 	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if line == "" {
@@ -62,10 +66,14 @@ func parseGoCoverprofileCoverage(lines []string) (*protocol.CoverageReport, erro
 			return nil, fmt.Errorf("invalid coverprofile line %d", i+1)
 		}
 		path := strings.TrimSpace(line[:colon])
+		if excludedGoCoveragePath(path) {
+			continue
+		}
 		fields := strings.Fields(strings.TrimSpace(line[colon+1:]))
 		if len(fields) != 3 {
 			return nil, fmt.Errorf("invalid coverprofile payload line %d", i+1)
 		}
+		blockRange := fields[0]
 		numStmts, err := strconv.Atoi(fields[1])
 		if err != nil {
 			return nil, fmt.Errorf("invalid statement count line %d: %w", i+1, err)
@@ -74,25 +82,37 @@ func parseGoCoverprofileCoverage(lines []string) (*protocol.CoverageReport, erro
 		if err != nil {
 			return nil, fmt.Errorf("invalid hit count line %d: %w", i+1, err)
 		}
-		st := files[path]
-		st.total += numStmts
-		if count > 0 {
-			st.covered += numStmts
+		pathBlocks := blocks[path]
+		if pathBlocks == nil {
+			pathBlocks = map[string]blockStat{}
+			blocks[path] = pathBlocks
 		}
-		files[path] = st
+		block, exists := pathBlocks[blockRange]
+		if exists && block.numStmts != numStmts {
+			return nil, fmt.Errorf("inconsistent statement count line %d", i+1)
+		}
+		block.numStmts = numStmts
+		block.covered = block.covered || count > 0
+		pathBlocks[blockRange] = block
 	}
 
 	report := &protocol.CoverageReport{Format: "go-coverprofile"}
-	if len(files) == 0 {
+	if len(blocks) == 0 {
 		return report, nil
 	}
-	paths := make([]string, 0, len(files))
-	for path := range files {
+	paths := make([]string, 0, len(blocks))
+	for path := range blocks {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
-		st := files[path]
+		st := fileStat{}
+		for _, block := range blocks[path] {
+			st.total += block.numStmts
+			if block.covered {
+				st.covered += block.numStmts
+			}
+		}
 		f := protocol.CoverageFileReport{
 			Path:              path,
 			TotalStatements:   st.total,
@@ -109,6 +129,14 @@ func parseGoCoverprofileCoverage(lines []string) (*protocol.CoverageReport, erro
 		report.Percent = 100.0 * float64(report.CoveredStatements) / float64(report.TotalStatements)
 	}
 	return report, nil
+}
+
+func excludedGoCoveragePath(path string) bool {
+	// Generated protobuf implementations are exercised as part of the CNP
+	// vertical slices, but their generated branches are not an actionable
+	// measure of Ciwi's test quality. Keep them out of both the aggregate and
+	// per-file report so a protobuf regeneration cannot move the baseline.
+	return strings.HasSuffix(filepath.ToSlash(strings.TrimSpace(path)), ".pb.go")
 }
 
 func parseLCOVCoverage(lines []string) (*protocol.CoverageReport, error) {

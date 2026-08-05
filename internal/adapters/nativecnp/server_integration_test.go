@@ -40,6 +40,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		AgentCommands:     agentService{},
 		ExecutionCommands: executions,
 		ExecutionControls: executions,
+		CommandReceipts:   commandReceiptService{},
 		Changes:           changes,
 		Version:           "v0.2.0",
 	})
@@ -61,6 +62,13 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	}
 	if info.Name != "ciwi" || info.ApiVersion != 1 || info.Hostname != "buildbox" {
 		t.Fatalf("server info = %#v", info)
+	}
+	receipt, err := client.GetCommandReceiptStatus(ctx, "command-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !receipt.Found || receipt.Key != "command-1" || receipt.Status != "completed" {
+		t.Fatalf("command receipt = %#v", receipt)
 	}
 	projects, err := client.ListProjects(ctx)
 	if err != nil {
@@ -479,7 +487,14 @@ func completeTestServices(changes *application.ChangeHub) nativecnp.Services {
 		Pipelines: pipelines, PipelineChains: pipelines, RunOptions: pipelines,
 		Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: executions,
 		ExecutionControls: executions, Changes: changes, Version: "v0.2.0",
+		CommandReceipts: commandReceiptService{},
 	}
+}
+
+type commandReceiptService struct{}
+
+func (commandReceiptService) Get(_ context.Context, key string) (application.CommandReceiptStatus, error) {
+	return application.CommandReceiptStatus{Found: true, Key: key, Status: "completed", Operation: "test"}, nil
 }
 
 func receiveEvent(t *testing.T, events <-chan *cnpv1.ChangeEvent, errorsOut <-chan error) *cnpv1.ChangeEvent {

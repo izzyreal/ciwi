@@ -14,9 +14,14 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
-	"github.com/izzyreal/ciwi/pkg/cnpclient"
+	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
+
+type journalReceiptClient interface {
+	Welcome() *cnpv1.Welcome
+	GetCommandReceiptStatus(context.Context, string) (*cnpv1.CommandReceiptStatus, error)
+}
 
 type nativeJournalEntry struct {
 	ServerInstallationID string               `json:"serverInstallationId,omitempty"`
@@ -26,7 +31,7 @@ type nativeJournalEntry struct {
 // reconcile verifies journaled mutations against the connected server before
 // resuming anything. A safe mutation is only replayed when the stable server
 // identity matches and that server has no receipt for its idempotency key.
-func (j *nativeOperationJournal) reconcile(ctx context.Context, client *cnpclient.Client, coordinator *operations.Coordinator) (int, string, error) {
+func (j *nativeOperationJournal) reconcile(ctx context.Context, client journalReceiptClient, coordinator *operations.Coordinator) (int, string, error) {
 	serverID := ""
 	if client != nil && client.Welcome() != nil {
 		serverID = client.Welcome().ServerInstallationId

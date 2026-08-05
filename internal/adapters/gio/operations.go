@@ -72,6 +72,25 @@ type nativeOperationEffect struct {
 	Value         any
 }
 
+// nativeActionClient is the narrow command surface used by the presentation
+// operation adapter. Keeping it separate from the concrete CNP client makes
+// command mapping and failure semantics testable without a live transport.
+type nativeActionClient interface {
+	RunPipeline(context.Context, *cnpv1.RunPipelineRequest, string) (*cnpv1.RunPipelineResult, error)
+	RunPipelineChain(context.Context, *cnpv1.RunPipelineChainRequest, string) (*cnpv1.RunPipelineChainResult, error)
+	ClearExecutionQueue(context.Context, string) (*cnpv1.ClearExecutionQueueResult, error)
+	RemoveQueuedExecution(context.Context, string, string) (*cnpv1.RemoveQueuedExecutionResult, error)
+	FlushExecutionHistory(context.Context, *cnpv1.FlushExecutionHistoryRequest, string) (*cnpv1.FlushExecutionHistoryResult, error)
+	CancelExecution(context.Context, string, string) (*cnpv1.CancelExecutionResult, error)
+	RerunExecution(context.Context, string, string) (*cnpv1.RerunExecutionResult, error)
+	AgentAction(context.Context, *cnpv1.AgentActionRequest, string) (*cnpv1.AgentActionResult, error)
+	ProjectAction(context.Context, int64, string, string) (*cnpv1.ProjectActionResult, error)
+	ImportProject(context.Context, *cnpv1.ImportProjectRequest, string) (*cnpv1.ImportProjectResult, error)
+	CheckServerUpdates(context.Context) (*cnpv1.ServerUpdateCheckResult, error)
+	ListServerUpdateVersions(context.Context) (*cnpv1.ServerUpdateVersions, error)
+	ServerUpdateActionWithKey(context.Context, string, string, string) (*cnpv1.ServerUpdateActionResult, error)
+}
+
 type nativeOperationExecutor struct{ clients *nativeClientBroker }
 
 func (e nativeOperationExecutor) Execute(ctx context.Context, operation operations.Operation) operations.Result {
@@ -151,7 +170,7 @@ func validateNativeOperation(operation operations.Operation) error {
 	return nil
 }
 
-func executeNativeOperation(ctx context.Context, client *cnpclient.Client, operation operations.Operation) (nativeOperationEffect, error) {
+func executeNativeOperation(ctx context.Context, client nativeActionClient, operation operations.Operation) (nativeOperationEffect, error) {
 	arguments := operation.Arguments
 	key := operation.IdempotencyKey
 	switch operation.Command {
