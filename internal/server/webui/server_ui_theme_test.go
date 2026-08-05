@@ -22,6 +22,7 @@ func TestUIThemeScriptIsServedAndPersistsBrowserChoice(t *testing.T) {
 	}
 	for _, want := range []string{
 		"ciwi.ui.theme.v1",
+		"cache: 'no-store'",
 		"'default'",
 		"'jungle'",
 		"'space'",
@@ -34,6 +35,7 @@ func TestUIThemeScriptIsServedAndPersistsBrowserChoice(t *testing.T) {
 		"localStorage.setItem(ciwiThemeStorageKey",
 		"/ui/contracts/themes.json",
 		"ciwiApplyContractTheme(normalized)",
+		"'console-success': '--console-green'",
 		"data-ciwi-theme",
 		"ciwi-theme-change",
 	} {
@@ -46,6 +48,7 @@ func TestUIThemeScriptIsServedAndPersistsBrowserChoice(t *testing.T) {
 func TestBrowserUsesTheBundledNativeMonospaceFace(t *testing.T) {
 	for path, nativePath := range map[string]string{
 		"/ui/fonts/ciwi-mono-regular.ttf": "assets/GeistMono-Regular.ttf",
+		"/ui/fonts/ciwi-mono-medium.ttf":  "assets/GeistMono-Medium.ttf",
 		"/ui/fonts/ciwi-mono-bold.ttf":    "assets/GeistMono-Bold.ttf",
 	} {
 		recorder := httptest.NewRecorder()
@@ -61,18 +64,57 @@ func TestBrowserUsesTheBundledNativeMonospaceFace(t *testing.T) {
 			t.Errorf("browser font %s and native font %s differ", path, nativePath)
 		}
 	}
-	for _, stylesheet := range []string{chromeCSS, mustTestAsset("assets/css/declarative.css"), jobExecutionCSS, projectCSS} {
-		if !strings.Contains(stylesheet, `"Ciwi Mono"`) {
-			t.Error("monospace UI surface does not prefer the bundled Ciwi Mono face")
+	if !strings.Contains(chromeCSS, `@import url("/ui/css/typography.css")`) {
+		t.Error("shared browser chrome no longer loads the typography contract stylesheet")
+	}
+	for _, stylesheet := range []string{mustTestAsset("assets/css/declarative.css"), jobExecutionCSS, projectCSS} {
+		if !strings.Contains(stylesheet, `var(--ciwi-font-mono)`) && !strings.Contains(stylesheet, `"Ciwi Mono"`) {
+			t.Error("monospace UI surface does not consume the shared monospace family")
+		}
+	}
+}
+
+func TestTypographyContractAndStylesheetAreServed(t *testing.T) {
+	contract := httptest.NewRecorder()
+	Handler(contract, httptest.NewRequest("GET", "/ui/contracts/typography.json", nil))
+	if contract.Code != 200 || contract.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatalf("typography contract status=%d contentType=%q", contract.Code, contract.Header().Get("Content-Type"))
+	}
+	for _, want := range []string{`"native":450`, `"output-meta"`, `"output-label"`, `"output-code"`} {
+		if !strings.Contains(contract.Body.String(), want) {
+			t.Errorf("typography contract no longer contains %q", want)
+		}
+	}
+
+	stylesheet := httptest.NewRecorder()
+	Handler(stylesheet, httptest.NewRequest("GET", "/ui/css/typography.css", nil))
+	if stylesheet.Code != 200 || stylesheet.Header().Get("Content-Type") != "text/css; charset=utf-8" {
+		t.Fatalf("typography stylesheet status=%d contentType=%q", stylesheet.Code, stylesheet.Header().Get("Content-Type"))
+	}
+	for _, want := range []string{
+		`ciwi-mono-medium.ttf`,
+		`--ciwi-font-body:`,
+		`--ciwi-type-output-meta-family:var(--ciwi-font-mono)`,
+		`--ciwi-type-output-code-size:12px`,
+	} {
+		if !strings.Contains(stylesheet.Body.String(), want) {
+			t.Errorf("typography stylesheet no longer contains %q", want)
 		}
 	}
 }
 
 func TestMutableBrowserAssetsAreNotCachedAcrossServerUpdates(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	Handler(recorder, httptest.NewRequest("GET", "/ui/css/chrome.css", nil))
-	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("mutable UI Cache-Control = %q, want no-store", got)
+	for _, path := range []string{
+		"/ui/css/chrome.css",
+		"/ui/theme.js",
+		"/ui/contracts/themes.json",
+		"/ui/contracts/typography.json",
+	} {
+		recorder := httptest.NewRecorder()
+		Handler(recorder, httptest.NewRequest("GET", path, nil))
+		if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("GET %s Cache-Control = %q, want no-store", path, got)
+		}
 	}
 }
 
@@ -87,7 +129,7 @@ func TestEveryUIPageLoadsThemeBeforeStyles(t *testing.T) {
 		"vault":         vaultHTML,
 	}
 	for name, page := range pages {
-		themeIndex := strings.Index(page, `<script src="/ui/theme.js"></script>`)
+		themeIndex := strings.Index(page, `<script src="/ui/theme.js?v=2"></script>`)
 		styleIndex := strings.Index(page, `<link rel="stylesheet"`)
 		if themeIndex < 0 || styleIndex < 0 || themeIndex > styleIndex {
 			t.Errorf("%s page does not load theme script before styles", name)
@@ -115,6 +157,21 @@ func TestGlobalSettingsOffersAllThemes(t *testing.T) {
 		if !strings.Contains(settingsHTML+settingsJS, want) {
 			t.Errorf("settings theme selector no longer contains %q", want)
 		}
+	}
+}
+
+func TestGlobalSettingsReadsDescriptionsFromThemeContracts(t *testing.T) {
+	for _, want := range []string{
+		`ciwiThemeContracts()`,
+		`metadata.description || ''`,
+		`descriptions[select.value] || ''`,
+	} {
+		if !strings.Contains(themeJS+settingsJS, want) {
+			t.Errorf("settings theme descriptions no longer use the shared contract: missing %q", want)
+		}
+	}
+	if strings.Contains(settingsJS, `space: 'Midnight blue`) {
+		t.Fatal("settings must not duplicate theme descriptions in JavaScript")
 	}
 }
 

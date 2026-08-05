@@ -134,16 +134,26 @@ func (r *Repository) GetJobExecutionDetails(ctx context.Context, jobID string) (
 }
 
 func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExecutionEvent) domain.JobExecutionDetails {
+	projectID, _ := strconv.ParseInt(protocol.JobMetadataValue(job, protocol.JobMetadataProjectID), 10, 64)
 	details := domain.JobExecutionDetails{
-		ID: job.ID, ProjectName: protocol.JobMetadataValue(job, protocol.JobMetadataProject),
+		ID: job.ID, ProjectID: projectID, ProjectName: protocol.JobMetadataValue(job, protocol.JobMetadataProject),
 		PipelineID: protocol.JobMetadataValue(job, protocol.JobMetadataPipelineID), PipelineJobID: protocol.JobMetadataValue(job, protocol.JobMetadataPipelineJobID),
 		MatrixName: protocol.JobMetadataValue(job, protocol.JobMetadataMatrixName), Status: protocol.NormalizeJobExecutionStatus(job.Status),
 		CurrentStep: strings.TrimSpace(job.CurrentStep), AgentID: strings.TrimSpace(job.LeasedByAgentID),
 		DryRun: protocol.JobMetadataValue(job, protocol.JobMetadataDryRun) == "1", CreatedUTC: job.CreatedUTC,
 		StartedUTC: job.StartedUTC, FinishedUTC: job.FinishedUTC, ExitCode: copyInt(job.ExitCode), Error: strings.TrimSpace(job.Error),
 		SchedulingDiagnosis: job.SchedulingDiagnosis, ExpectedDurationMS: job.ExpectedDurationMS,
+		Metadata: copyStringMap(job.Metadata), RequiredCapabilities: copyStringMap(job.RequiredCapabilities),
+		RuntimeCapabilities: copyStringMap(job.RuntimeCapabilities),
 		Waiting: protocol.NormalizeJobExecutionStatus(job.Status) == protocol.JobExecutionStatusQueued &&
 			(strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" || strings.TrimSpace(job.Metadata["needs_blocked"]) == "1"),
+	}
+	for _, stats := range job.CacheStats {
+		details.CacheStats = append(details.CacheStats, domain.JobCacheStatistics{
+			ID: stats.ID, Environment: stats.Env, Type: stats.Type, Path: stats.Path, Source: stats.Source,
+			SizeBytes: stats.SizeBytes, Files: stats.Files, Directories: stats.Directories,
+			ToolMetrics: copyStringMap(stats.ToolMetrics), Error: strings.TrimSpace(stats.Error),
+		})
 	}
 	states := timelineStates(events)
 	stepsByIndex := make(map[int]protocol.JobStepPlanItem, len(job.StepPlan))
@@ -184,6 +194,17 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 		details.Timeline = append(details.Timeline, timelineItem)
 	}
 	return details
+}
+
+func copyStringMap(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 type timelineState struct {

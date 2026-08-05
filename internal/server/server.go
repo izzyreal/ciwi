@@ -144,10 +144,11 @@ func Run(ctx context.Context) error {
 	if nativeAddresses.QUIC != "" || nativeAddresses.TCP != "" {
 		app := s.app()
 		handler, handlerErr := nativecnp.NewHandler(nativecnp.Services{
-			Server: app.server, Projects: app.projects, ProjectCommands: app.projectCommands, Updates: app.updates, FrontPage: app.frontPage,
+			Server: app.server, Projects: app.projects, ProjectCommands: app.projectCommands, ManagedYAML: s, Updates: app.updates, FrontPage: app.frontPage,
 			ProjectDetails: app.projectDetails,
 			ProjectIcons:   s,
 			JobDetails:     app.jobDetails,
+			JobContexts:    s,
 			Pipelines:      app.pipelines, PipelineChains: app.pipelineChains,
 			RunOptions:        app.runOptions,
 			Agents:            app.agents,

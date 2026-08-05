@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strconv"
@@ -19,10 +20,32 @@ func (s *stateStore) jobExecutionGraphContextHandler(w http.ResponseWriter, r *h
 		http.Error(w, "job not found", http.StatusNotFound)
 		return
 	}
-	jobs, err := s.jobExecutionStore().ListJobExecutions()
+	graphContext, err := s.jobExecutionGraphContextForTarget(r.Context(), target)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	writeJSON(w, http.StatusOK, graphContext)
+}
+
+func (s *stateStore) GetJobExecutionGraphContext(ctx context.Context, jobID string) (protocol.JobExecutionGraphContext, error) {
+	if err := ctx.Err(); err != nil {
+		return protocol.JobExecutionGraphContext{}, err
+	}
+	target, err := s.jobExecutionStore().GetJobExecution(jobID)
+	if err != nil {
+		return protocol.JobExecutionGraphContext{}, err
+	}
+	return s.jobExecutionGraphContextForTarget(ctx, target)
+}
+
+func (s *stateStore) jobExecutionGraphContextForTarget(ctx context.Context, target protocol.JobExecution) (protocol.JobExecutionGraphContext, error) {
+	if err := ctx.Err(); err != nil {
+		return protocol.JobExecutionGraphContext{}, err
+	}
+	jobs, err := s.jobExecutionStore().ListJobExecutions()
+	if err != nil {
+		return protocol.JobExecutionGraphContext{}, err
 	}
 	pipelineDBIDs := map[string]int64{}
 	if projectID, parseErr := strconv.ParseInt(strings.TrimSpace(target.Metadata["project_id"]), 10, 64); parseErr == nil && projectID > 0 {
@@ -32,7 +55,7 @@ func (s *stateStore) jobExecutionGraphContextHandler(w http.ResponseWriter, r *h
 			}
 		}
 	}
-	writeJSON(w, http.StatusOK, buildJobExecutionGraphContext(target, jobs, pipelineDBIDs))
+	return buildJobExecutionGraphContext(target, jobs, pipelineDBIDs), nil
 }
 
 func buildJobExecutionGraphContext(target protocol.JobExecution, jobs []protocol.JobExecution, pipelineDBIDs map[string]int64) protocol.JobExecutionGraphContext {

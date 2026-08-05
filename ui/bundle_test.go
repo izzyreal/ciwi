@@ -2,7 +2,10 @@ package ui
 
 import (
 	"bytes"
+	"strings"
 	"testing"
+
+	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
 func TestEmbeddedUIBundle(t *testing.T) {
@@ -54,6 +57,22 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	typography, err := LoadTypography()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := typography.Typography.Weights["regular"].Native; got != 450 {
+		t.Fatalf("native regular typography weight = %d, want 450", got)
+	}
+	if got := typography.Typography.Roles["output-meta"].Family; got != "mono" {
+		t.Fatalf("output metadata family = %q, want mono", got)
+	}
+	if got := typography.Typography.Roles["badge"].Weight; got != "regular" {
+		t.Fatalf("default badge weight = %q, want regular", got)
+	}
+	if got := typography.Typography.Roles["empty-state"].Size; got != 13 {
+		t.Fatalf("empty-state size = %v, want browser size 13", got)
+	}
 	if len(themes) != 9 {
 		t.Fatalf("theme count = %d, want 9", len(themes))
 	}
@@ -61,7 +80,7 @@ func TestEmbeddedUIBundle(t *testing.T) {
 		for _, token := range []string{
 			"background-start", "background-end", "background-glow-a", "background-glow-b",
 			"surface-raised", "surface-glow", "pill-background", "pill-text",
-			"console-background", "console-surface", "console-border", "console-text", "console-muted", "console-accent",
+			"console-background", "console-surface", "console-border", "console-text", "console-muted", "console-accent", "console-success",
 		} {
 			if theme.Theme.Colors[token] == "" {
 				t.Errorf("theme %q is missing shared visual color %q", theme.Metadata.Name, token)
@@ -85,13 +104,255 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if !bytes.HasPrefix(logo, []byte("\x89PNG\r\n\x1a\n")) {
 		t.Fatal("embedded ciwi logo is not a PNG")
 	}
-	for _, name := range []string{"GeistMono-Regular.ttf", "GeistMono-Bold.ttf"} {
+	for _, name := range []string{"GeistMono-Regular.ttf", "GeistMono-Medium.ttf", "GeistMono-Bold.ttf"} {
 		fontData, err := Read("assets/" + name)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(fontData) < 4 || string(fontData[:4]) != "\x00\x01\x00\x00" {
 			t.Fatalf("embedded %s is not a TrueType font", name)
+		}
+	}
+}
+
+func TestSettingsHeaderMatchesAuthoritativeNavigation(t *testing.T) {
+	screen, err := LoadScreen("settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.ID == "settings-header" {
+			header = node
+		}
+	})
+	if header == nil {
+		t.Fatal("settings header is missing")
+	}
+	var labels []string
+	for index := range header.Children {
+		child := &header.Children[index]
+		if child.Component == "button" && child.Text != nil {
+			labels = append(labels, child.Text.Literal)
+		}
+	}
+	if got, want := strings.Join(labels, ","), "Back to Main,Agents,Restart Server"; got != want {
+		t.Fatalf("settings header buttons = %q, want %q", got, want)
+	}
+	walkNodes(*header, func(node *uidsl.Node) {
+		if node.Text != nil && node.Text.Literal == "Native client appearance and connection" {
+			t.Fatal("settings header still contains the native-only subtitle")
+		}
+	})
+}
+
+func TestSettingsAppearanceMatchesAuthoritativeStructure(t *testing.T) {
+	screen, err := LoadScreen("settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var appearance *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.ID == "appearance" {
+			appearance = node
+		}
+	})
+	if appearance == nil {
+		t.Fatal("settings appearance section is missing")
+	}
+	if len(appearance.Children) != 3 {
+		t.Fatalf("appearance children = %d, want heading, description, and controls row", len(appearance.Children))
+	}
+	if appearance.Children[1].Component != "text" || appearance.Children[2].Component != "row" {
+		t.Fatalf("appearance structure = %q, %q, want text followed by row", appearance.Children[1].Component, appearance.Children[2].Component)
+	}
+	controls := appearance.Children[2]
+	if !controls.Layout.Wrap || len(controls.Children) != 3 {
+		t.Fatalf("appearance controls must be a wrapping Theme/select/description row: %#v", controls.Layout)
+	}
+	if controls.Children[0].Text == nil || controls.Children[0].Text.Literal != "Theme" || controls.Children[1].Component != "select" {
+		t.Fatal("appearance controls no longer start with the Theme label and selector")
+	}
+}
+
+func TestSettingsProjectsMatchesAuthoritativeStructure(t *testing.T) {
+	screen, err := LoadScreen("settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projects *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.ID == "projects" {
+			projects = node
+		}
+	})
+	if projects == nil || len(projects.Children) < 4 {
+		t.Fatal("settings Projects section is missing")
+	}
+	if projects.Children[2].Component != "row" {
+		t.Fatalf("project import controls use %q, want the web-style unboxed row", projects.Children[2].Component)
+	}
+	labels := map[string]bool{}
+	var projectRowFound bool
+	walkNodes(*projects, func(node *uidsl.Node) {
+		if node.Component == "button" && node.Text != nil {
+			labels[node.Text.Literal] = true
+		}
+		if node.Style.Role == "settings-project-row" {
+			projectRowFound = true
+		}
+	})
+	for _, label := range []string{"Add Repository Project", "Add Managed YAML", "Reload project definition from VCS", "Edit YAML", "Delete Project"} {
+		if !labels[label] {
+			t.Errorf("settings Projects section is missing %q", label)
+		}
+	}
+	if !projectRowFound || labels["View"] || labels["Reload from VCS"] || labels["Delete"] {
+		t.Fatal("settings Projects rows no longer match the authoritative action set")
+	}
+	if _, err := LoadScreen("managed-yaml"); err != nil {
+		t.Fatalf("managed YAML editor screen is unavailable: %v", err)
+	}
+}
+
+func TestOnlyVersionBadgesUseStrongWeight(t *testing.T) {
+	for _, screenName := range []string{"front-page", "settings", "project-details", "job-details", "agents", "agent-details"} {
+		screen, err := LoadScreen(screenName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+			if node.Component != "badge" || node.Text == nil {
+				return
+			}
+			versionBadge := node.Text.Binding == "frontPage.server.version" || node.Text.Binding == "settings.server_version"
+			if versionBadge != (node.Style.Emphasis == "strong") {
+				t.Errorf("%s badge %#v emphasis = %q, version badge = %v", screenName, *node.Text, node.Style.Emphasis, versionBadge)
+			}
+		})
+	}
+}
+
+func TestThemeDescriptionsMatchAuthoritativeWebCopy(t *testing.T) {
+	themes, err := LoadThemes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"default": "Bright mint with stronger color and contrast.",
+		"jungle":  "Deep forest greens with vivid tropical accents.",
+		"space":   "Midnight blue with cyan and violet highlights.",
+	}
+	for _, theme := range themes {
+		if description, ok := want[theme.Metadata.Name]; ok && theme.Metadata.Description != description {
+			t.Errorf("%s description = %q, want %q", theme.Metadata.Name, theme.Metadata.Description, description)
+		}
+	}
+}
+
+func TestJobOutputGroupsUseAuthoritativeStepContentTypography(t *testing.T) {
+	screen, err := LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var outputGroup *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.Component == "disclosure" && node.Style.Role == "output-group" {
+			outputGroup = node
+		}
+	})
+	if outputGroup == nil {
+		t.Fatal("job details screen has no output-group disclosure")
+	}
+	rolesByLiteral := map[string]string{}
+	for index := range outputGroup.Children {
+		child := &outputGroup.Children[index]
+		if child.Component == "badge" {
+			t.Error("expanded output group must not duplicate the job-step status pill")
+		}
+		if child.Text == nil {
+			continue
+		}
+		if child.Text.Binding == "outputGroup.command_summary" {
+			t.Error("expanded output group must not duplicate the raw command before its YAML section")
+		}
+		if child.Text.Literal != "" {
+			rolesByLiteral[child.Text.Literal] = child.Style.Role
+		}
+	}
+	for literal, wantRole := range map[string]string{
+		"YAML literal":     "output-label",
+		"Expanded command": "output-label",
+	} {
+		if got := rolesByLiteral[literal]; got != wantRole {
+			t.Errorf("%q typography role = %q, want %q", literal, got, wantRole)
+		}
+	}
+}
+
+func TestHistoryExecutionRowsOwnJobNavigation(t *testing.T) {
+	for _, screenName := range []string{"front-page", "project-details"} {
+		screen, err := LoadScreen(screenName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows := 0
+		walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+			if node.Style.Role != "history-execution-job-row" {
+				return
+			}
+			rows++
+			if len(node.Actions) != 1 || node.Actions[0].Command != "navigate" || node.Actions[0].Arguments["route"] != "/jobs/{{job.id}}" {
+				t.Errorf("%s history row action = %#v, want row-level job navigation", screenName, node.Actions)
+			}
+			for _, child := range node.Children {
+				if len(child.Actions) != 0 {
+					t.Errorf("%s history row child retains its own action: %#v", screenName, child.Actions)
+				}
+			}
+		})
+		if rows == 0 {
+			t.Errorf("%s has no history execution rows", screenName)
+		}
+	}
+}
+
+func TestFrontPageMatchesBrowserProjectAndEmptyTableSummaries(t *testing.T) {
+	payload, err := Read("screens/front-page.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(payload)
+	for _, want := range []string{
+		"literal: Managed YAML",
+		"binding: project.source_kind",
+		"equals: managed_yaml",
+		`template: "{{execution.kind}}: {{execution.title}}"`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Errorf("front-page screen no longer contains %q", want)
+		}
+	}
+	header := strings.Index(source, "role: queued-execution-header")
+	empty := strings.Index(source, "literal: No queued jobs.")
+	if header < 0 || empty < 0 || header > empty {
+		t.Errorf("queued table header must precede its empty row: header=%d empty=%d", header, empty)
+	}
+}
+
+func walkNodes(node uidsl.Node, visit func(*uidsl.Node)) {
+	visit(&node)
+	for index := range node.Children {
+		walkNodes(node.Children[index], visit)
+	}
+	if node.Disclosure != nil {
+		for index := range node.Disclosure.Summary {
+			walkNodes(node.Disclosure.Summary[index], visit)
+		}
+	}
+	if node.GraphView != nil {
+		for index := range node.GraphView.Details {
+			walkNodes(node.GraphView.Details[index], visit)
 		}
 	}
 }

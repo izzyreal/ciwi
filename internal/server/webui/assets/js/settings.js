@@ -3,17 +3,14 @@
       const select = document.getElementById('themeSelect');
       const description = document.getElementById('themeDescription');
       if (!select) return;
-      const descriptions = {
-        default: 'Bright mint with stronger color and contrast.',
-        jungle: 'Deep forest greens with vivid tropical accents.',
-        space: 'Midnight blue with cyan and violet highlights.',
-        'pina-colada': 'Pineapple gold, coconut cream, leafy green, and a splash of lagoon teal.',
-        'mango-kent': 'Golden-orange flesh framed by Kent mango red, yellow, and green skin.',
-        'mango-chaunsa': 'Sunlit Chaunsa yellow with honey, saffron, and warm wooden notes.',
-        'mango-alphonso': 'Deep Alphonso orange with burnt amber and softly creamy surfaces.',
-        'yellow-dragon-fruit': 'Luminous yellow rind, cactus green, and seed-speckled ivory.',
-        'dragon-fruit': 'Electric magenta skin, fresh green scales, and clean white flesh.',
-      };
+      const descriptions = {};
+      ciwiThemeContracts().then(documents => {
+        documents.forEach(documentTheme => {
+          const metadata = documentTheme && documentTheme.metadata;
+          if (metadata && metadata.name) descriptions[metadata.name] = metadata.description || '';
+        });
+        if (description) description.textContent = descriptions[select.value] || '';
+      });
       const update = theme => {
         const selected = ciwiApplyTheme(theme);
         select.value = selected;

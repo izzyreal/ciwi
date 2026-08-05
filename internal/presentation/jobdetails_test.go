@@ -2,6 +2,7 @@ package presentation
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,13 +44,13 @@ func TestJobDetailsViewFormatsExecutionSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Title != "Job: macos" || view.Context != "ciwi · pipeline build · arm64 · execution job-1" || view.Duration != "1.5s" {
+	if view.Title != "ciwi / build / macos / arm64" || view.Context != "Status: Succeeded" || view.Duration != "1.5s" {
 		t.Fatalf("view = %+v", view)
 	}
 	if !view.CanRerun || view.CanCancel {
 		t.Fatalf("execution controls = can rerun %v, can cancel %v", view.CanRerun, view.CanCancel)
 	}
-	if len(view.Timeline) != 3 || view.Timeline[0].Title != "Ciwi phase 1/1: Prepare workspace" || view.Timeline[1].Title != "Job step 1/2: Compile" || view.Timeline[1].Duration != "1.2s" {
+	if len(view.Timeline) != 3 || view.Timeline[0].Title != "Ciwi phase 1/1: Prepare workspace" || view.Timeline[1].Title != "Job step 1/2: Compile" || view.Timeline[1].Duration != "00m 01s" {
 		t.Fatalf("timeline = %+v", view.Timeline)
 	}
 	if len(view.OutputGroups) != 3 || view.OutputGroups[1].YAMLLiteral != "run: go build ./..." || view.OutputGroups[2].Reached {
@@ -67,6 +68,39 @@ func TestJobDetailsViewExposesEligibleControls(t *testing.T) {
 	})
 	if blocked.CanCancel || !blocked.CanRerun {
 		t.Fatalf("blocked controls = %+v", blocked)
+	}
+}
+
+func TestJobStepDurationMatchesBrowserClockFormat(t *testing.T) {
+	if got := formatDurationMS(568); got != "00m 00s" {
+		t.Fatalf("568ms step duration = %q, want browser format %q", got, "00m 00s")
+	}
+	if got := formatDurationMS(3_661_000); got != "01h 01m 01s" {
+		t.Fatalf("long step duration = %q, want browser format %q", got, "01h 01m 01s")
+	}
+}
+
+func TestJobDetailsViewMatchesWebExecutionCards(t *testing.T) {
+	view := presentJobDetails(domain.JobExecutionDetails{
+		ID: "release-1", ProjectID: 7, ProjectName: "ciwi", PipelineID: "release", PipelineJobID: "publish",
+		Status: "succeeded", AgentID: "mac", Metadata: map[string]string{
+			"build_version": "0.3.0", "build_target": "macos", "version": "0.3.0", "tag": "v0.3.0", "artifacts": "Ciwi.zip",
+		},
+		RequiredCapabilities: map[string]string{"requires.tool.go": ">=1.25", "requires.container.tool.cmake": "*"},
+		RuntimeCapabilities:  map[string]string{"host.tool.go": "1.25.1", "container.tool.cmake": "4.0"},
+		CacheStats:           []domain.JobCacheStatistics{{ID: "go", Environment: "host", Type: "directory", Path: "/cache/go", SizeBytes: 1536, Files: 3, Directories: 1}},
+	})
+	if view.ProjectID != 7 || view.Title != "ciwi / release / publish" || len(view.JobProperties) != 11 {
+		t.Fatalf("job header/properties = %+v", view)
+	}
+	if len(view.CacheStatistics) != 1 || !strings.Contains(view.CacheStatistics[0].Value, "Size: 1.5 KB | Files: 3 | Dirs: 1") {
+		t.Fatalf("cache statistics = %+v", view.CacheStatistics)
+	}
+	if view.HostToolRequirements.Summary != "Requirements matched" || view.ContainerToolRequirements.Summary != "Requirements matched" {
+		t.Fatalf("tool requirements = %+v / %+v", view.HostToolRequirements, view.ContainerToolRequirements)
+	}
+	if !view.HasReleaseSummary || len(view.ReleaseSummary) < 4 {
+		t.Fatalf("release summary = %+v", view.ReleaseSummary)
 	}
 }
 

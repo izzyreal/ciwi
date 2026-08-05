@@ -70,14 +70,15 @@ func tablerIcons() map[string]nativeIcon {
 		return func(path *clip.Path) { path.MoveTo(from); path.CubeTo(c1, c2, to) }
 	}
 	return map[string]nativeIcon{
-		"arrow-left":    tablerIcon{paths(line(f32.Pt(5, 12), f32.Pt(19, 12)), line(f32.Pt(5, 12), f32.Pt(11, 18)), line(f32.Pt(5, 12), f32.Pt(11, 6)))},
-		"arrow-up":      tablerIcon{paths(line(f32.Pt(12, 5), f32.Pt(12, 19)), line(f32.Pt(18, 11), f32.Pt(12, 5), f32.Pt(6, 11)))},
-		"chevron-down":  tablerIcon{line(f32.Pt(6, 9), f32.Pt(12, 15), f32.Pt(18, 9))},
-		"chevron-right": tablerIcon{line(f32.Pt(9, 6), f32.Pt(15, 12), f32.Pt(9, 18))},
-		"chevron-up":    tablerIcon{line(f32.Pt(6, 15), f32.Pt(12, 9), f32.Pt(18, 15))},
-		"chevrons-down": tablerIcon{paths(line(f32.Pt(7, 7), f32.Pt(12, 12), f32.Pt(17, 7)), line(f32.Pt(7, 13), f32.Pt(12, 18), f32.Pt(17, 13)))},
-		"chevrons-up":   tablerIcon{paths(line(f32.Pt(7, 11), f32.Pt(12, 6), f32.Pt(17, 11)), line(f32.Pt(7, 17), f32.Pt(12, 12), f32.Pt(17, 17)))},
-		"player-play":   tablerIcon{line(f32.Pt(7, 4), f32.Pt(7, 20), f32.Pt(20, 12), f32.Pt(7, 4))},
+		"arrow-left":        tablerIcon{paths(line(f32.Pt(5, 12), f32.Pt(19, 12)), line(f32.Pt(5, 12), f32.Pt(11, 18)), line(f32.Pt(5, 12), f32.Pt(11, 6)))},
+		"arrow-up":          tablerIcon{paths(line(f32.Pt(12, 5), f32.Pt(12, 19)), line(f32.Pt(18, 11), f32.Pt(12, 5), f32.Pt(6, 11)))},
+		"arrow-bar-to-down": tablerIcon{paths(line(f32.Pt(4, 4), f32.Pt(20, 4)), line(f32.Pt(12, 10), f32.Pt(12, 20)), line(f32.Pt(8, 16), f32.Pt(12, 20), f32.Pt(16, 16)))},
+		"chevron-down":      tablerIcon{line(f32.Pt(6, 9), f32.Pt(12, 15), f32.Pt(18, 9))},
+		"chevron-right":     tablerIcon{line(f32.Pt(9, 6), f32.Pt(15, 12), f32.Pt(9, 18))},
+		"chevron-up":        tablerIcon{line(f32.Pt(6, 15), f32.Pt(12, 9), f32.Pt(18, 15))},
+		"chevrons-down":     tablerIcon{paths(line(f32.Pt(7, 7), f32.Pt(12, 12), f32.Pt(17, 7)), line(f32.Pt(7, 13), f32.Pt(12, 18), f32.Pt(17, 13)))},
+		"chevrons-up":       tablerIcon{paths(line(f32.Pt(7, 11), f32.Pt(12, 6), f32.Pt(17, 11)), line(f32.Pt(7, 17), f32.Pt(12, 12), f32.Pt(17, 17)))},
+		"player-play":       tablerIcon{line(f32.Pt(7, 4), f32.Pt(7, 20), f32.Pt(20, 12), f32.Pt(7, 4))},
 		"loader-2": tablerIcon{func(path *clip.Path) {
 			path.MoveTo(f32.Pt(12, 3))
 			path.CubeTo(f32.Pt(17, 3), f32.Pt(21, 7), f32.Pt(21, 12))

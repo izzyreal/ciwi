@@ -327,6 +327,10 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	managedYAMLScreen, err := sharedUI.LoadScreen("managed-yaml")
+	if err != nil {
+		return err
+	}
 	runOptionsScreen, err := sharedUI.LoadScreen("run-options")
 	if err != nil {
 		return err
@@ -345,7 +349,7 @@ func Run(options Options) error {
 	}
 	screens := map[string]*uidsl.ScreenDocument{
 		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
-		"settings": settingsScreen, "run-options": runOptionsScreen, "agents": agentsScreen, "agent-details": agentDetailsScreen,
+		"settings": settingsScreen, "managed-yaml": managedYAMLScreen, "run-options": runOptionsScreen, "agents": agentsScreen, "agent-details": agentDetailsScreen,
 		"agent-script": agentScriptScreen,
 	}
 	preferencesPath, err := nativePreferencesPath()
@@ -1304,6 +1308,12 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 			return
 		}
 		renderer.SetRootBinding("settings", binding, command.arguments["value"])
+	case "set-managed-yaml-field":
+		if strings.TrimSpace(command.arguments["field"]) != "yaml" {
+			renderer.SetStatus("Unknown managed YAML field")
+			return
+		}
+		renderer.SetRootBinding("managedYAML", "yaml", command.arguments["value"])
 	case "set-server-update-option":
 		binding := map[string]string{
 			"update": "selected_update_version", "rollback": "selected_rollback_version",
@@ -1422,6 +1432,14 @@ func navigationForRoute(route string) (navigationState, error) {
 		next = navigationState{screen: "run-options", projectID: projectID, chainID: parts[2]}
 	case route == "/settings":
 		next.screen = "settings"
+	case route == "/managed-yaml/new":
+		next = navigationState{screen: "managed-yaml"}
+	case strings.HasPrefix(route, "/managed-yaml/"):
+		projectID, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(route, "/managed-yaml/"), "/"), 10, 64)
+		if err != nil || projectID <= 0 {
+			return navigationState{}, fmt.Errorf("invalid managed YAML route %q", route)
+		}
+		next = navigationState{screen: "managed-yaml", projectID: projectID}
 	case route == "/agents":
 		next.screen = "agents"
 	case strings.HasPrefix(route, "/agents/"):
@@ -1472,6 +1490,8 @@ func loadScreenData(ctx context.Context, client *cnpclient.Client, navigation na
 		return jobDetailsBindingData(view)
 	case "settings":
 		return loadSettingsData(ctx, client, themeName)
+	case "managed-yaml":
+		return loadManagedYAMLData(ctx, client, navigation.projectID)
 	case "run-options":
 		return loadRunOptions(ctx, client, navigation)
 	case "agents":
@@ -1497,6 +1517,34 @@ func loadScreenData(ctx context.Context, client *cnpclient.Client, navigation na
 	default:
 		return nil, fmt.Errorf("screen %q is unsupported", navigation.screen)
 	}
+}
+
+func loadManagedYAMLData(ctx context.Context, client *cnpclient.Client, projectID int64) (map[string]any, error) {
+	if projectID <= 0 {
+		return managedYAMLBindingData(nil), nil
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	definition, err := client.GetManagedYAML(requestCtx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return managedYAMLBindingData(definition), nil
+}
+
+func managedYAMLBindingData(definition *cnpv1.ManagedYAMLDefinition) map[string]any {
+	projectID, name, raw, revision := int64(0), "New managed project", "", ""
+	editing := definition != nil && definition.ProjectId > 0
+	if definition != nil {
+		projectID, name, raw, revision = definition.ProjectId, definition.ProjectName, definition.Yaml, definition.Revision
+	}
+	title := "Add Managed YAML"
+	if editing {
+		title = "Edit Managed YAML"
+	}
+	return map[string]any{"managedYAML": map[string]any{
+		"title": title, "project_id": projectID, "project_name": name, "yaml": raw, "revision": revision, "editing": editing,
+	}}
 }
 
 func loadSettingsData(ctx context.Context, client *cnpclient.Client, themeName string) (map[string]any, error) {
@@ -1603,6 +1651,8 @@ func screenLoadingData(navigation navigationState, clientVersion, themeName, mod
 		return jobDetailsBindingData(&cnpv1.JobDetailsView{})
 	case "settings":
 		return offlineSettingsBindingData(clientVersion, themeName, mode, endpoint, sshSettings)
+	case "managed-yaml":
+		return managedYAMLBindingData(nil), nil
 	case "run-options":
 		return runOptionsLoadingData(navigation), nil
 	case "agents":
@@ -1708,7 +1758,16 @@ func decorateSettingsProjects(projects []any) {
 			continue
 		}
 		sourceKind := strings.TrimSpace(fmt.Sprint(project["source_kind"]))
-		project["can_reload"] = sourceKind != "managed_yaml"
+		managed := sourceKind == "managed_yaml"
+		project["is_managed"] = managed
+		project["can_reload"] = !managed
+		repoURL := strings.TrimSpace(fmt.Sprint(project["repo_url"]))
+		project["has_repo"] = repoURL != ""
+		ref := strings.TrimSpace(fmt.Sprint(project["repo_ref"]))
+		if ref == "" {
+			ref = "default"
+		}
+		project["repo_ref_label"] = ref
 		project["action_status"] = ""
 		project["action_tone"] = "muted"
 		commit := strings.TrimSpace(fmt.Sprint(project["loaded_commit"]))
@@ -1720,12 +1779,12 @@ func decorateSettingsProjects(projects []any) {
 		project["loaded_commit_url"] = loadedCommitURL(strings.TrimSpace(fmt.Sprint(project["repo_url"])), commit)
 		project["updated_label"] = formatLoadedProjectTime(project["updated_unix_ms"])
 		project["has_loaded_commit"] = commit != ""
-		if sourceKind == "managed_yaml" {
+		if managed {
 			project["source_label"] = "Managed YAML stored in ciwi"
 			continue
 		}
-		label := strings.TrimSpace(fmt.Sprint(project["repo_url"]))
-		if ref := strings.TrimSpace(fmt.Sprint(project["repo_ref"])); ref != "" {
+		label := repoURL
+		if ref != "default" {
 			label += " · " + ref
 		}
 		project["source_label"] = label
@@ -2077,16 +2136,37 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 	}
 	if root, ok := data["jobDetails"].(map[string]any); ok {
 		ensureSchedulingDiagnosisBinding(root)
+		for _, field := range []string{"created", "started", "finished"} {
+			if parsed, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(root[field]))); parseErr == nil {
+				root[field] = formatExecutionCardTimestamp(parsed)
+			}
+		}
+		if properties, propertiesOK := root["job_properties"].([]any); propertiesOK {
+			propertyFields := map[string]string{"Created": "created", "Started": "started"}
+			for _, raw := range properties {
+				property, propertyOK := raw.(map[string]any)
+				if !propertyOK {
+					continue
+				}
+				if field := propertyFields[strings.TrimSpace(fmt.Sprint(property["label"]))]; field != "" {
+					property["value"] = root[field]
+				}
+			}
+		}
 		root["output"] = ""
 		root["system_output"] = ""
 		root["output_search"] = ""
 		root["output_search_count"] = "0/0"
-		root["tailing_label"] = "Tailing: Off"
+		root["tailing_label"] = "Tailing: On"
+		root["tailing_tone"] = "success"
 		if groups, ok := root["output_groups"].([]any); ok {
 			for _, raw := range groups {
 				entry, entryOK := raw.(map[string]any)
 				if !entryOK {
 					continue
+				}
+				if parsed, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(entry["started"]))); parseErr == nil {
+					entry["started"] = formatExecutionCardTimestamp(parsed)
 				}
 				entry["output"] = ""
 				entry["is_phase"] = fmt.Sprint(entry["kind"]) == "phase"

@@ -1,6 +1,6 @@
 apiVersion: ciwi.ui/v1
 kind: Theme
-metadata: {name: mango-kent, title: Mango Kent, description: Red-green skin and brilliant orange flesh}
+metadata: {name: mango-kent, title: Mango Kent, description: "Golden-orange flesh framed by Kent mango red, yellow, and green skin."}
 theme:
   colors:
     background: "#fff3df"
@@ -29,6 +29,7 @@ theme:
     console-text: "#ffe8c4"
     console-muted: "#c4a08a"
     console-accent: "#ffb94e"
+    console-success: "#a9cc69"
   gradients:
     page: {kind: linear, angle: 135, stops: [{color: "#f7d36d", position: 0}, {color: "#f18732", position: 55}, {color: "#b9494b", position: 100}]}
     hero: {kind: radial, stops: [{color: "#fff8e8", position: 0}, {color: "#f7b548", position: 100}]}

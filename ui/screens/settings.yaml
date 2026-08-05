@@ -59,20 +59,28 @@ screen:
                 children:
                   - component: badge
                     text:
-                      template: "Client: {{settings.client_version}}"
+                      binding: settings.server_version
                     style:
-                      tone: accent
-                  - component: badge
-                    text:
-                      template: "Server: {{settings.server_version}}"
-                    style:
-                      toneBinding: client.tone
-              - component: text
-                text:
-                  literal: Native client appearance and connection
-                style:
-                  role: subtitle
-                  tone: muted
+                      tone: muted
+                      emphasis: strong
+          - component: button
+            text:
+              literal: Back to Main
+            icon: arrow-left
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /
+          - component: button
+            text:
+              literal: Agents
+            icon: server
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /agents
           - component: button
             text:
               literal: Restart Server
@@ -86,15 +94,6 @@ screen:
                 confirm:
                   title: Restart Server
                   message: Restart ciwi server now? The native client will reconnect automatically.
-          - component: button
-            text:
-              literal: Back to Main
-            icon: arrow-left
-            actions:
-              - on: activate
-                command: navigate
-                arguments:
-                  route: /
       - component: section
         id: appearance
         layout:
@@ -107,16 +106,26 @@ screen:
             style:
               role: heading
               emphasis: strong
-          - component: card
+          - component: text
+            text:
+              literal: Choose the color theme for ciwi in this native client.
+            style:
+              tone: muted
+          - component: row
             layout:
-              direction: vertical
-              gap: medium
-              padding: medium
+              direction: horizontal
+              gap: small
+              align: center
+              wrap: true
             children:
               - component: text
                 text:
-                  literal: Choose the color theme for this native ciwi client.
+                  literal: Theme
+                style:
+                  emphasis: strong
               - component: select
+                layout:
+                  minWidth: "220"
                 select:
                   value: settings.selected_theme
                   options: settings.themes
@@ -347,14 +356,13 @@ screen:
               emphasis: strong
           - component: text
             text:
-              literal: Reload repository definitions or remove projects from ciwi. Existing execution history is preserved when a project is deleted.
+              literal: Import a definition from a repository or store and edit a self-contained YAML definition directly in ciwi.
             style:
               tone: muted
-          - component: card
+          - component: row
             layout:
               direction: horizontal
               gap: small
-              padding: medium
               align: center
               wrap: true
             children:
@@ -364,7 +372,7 @@ screen:
                   minWidth: "280"
                 input:
                   value: settings.import_repo_url
-                  placeholder: Repository URL
+                  placeholder: https://github.com/you/project.git
                 actions:
                   - on: change
                     command: set-project-import-field
@@ -374,7 +382,7 @@ screen:
                   minWidth: "160"
                 input:
                   value: settings.import_repo_ref
-                  placeholder: Ref (optional)
+                  placeholder: "ref (optional: main, tag, sha)"
                 actions:
                   - on: change
                     command: set-project-import-field
@@ -399,6 +407,13 @@ screen:
                       repoUrl: "{{settings.import_repo_url}}"
                       repoRef: "{{settings.import_repo_ref}}"
                       configFile: "{{settings.import_config_file}}"
+              - component: button
+                text:
+                  literal: Add Managed YAML
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments: {route: /managed-yaml/new}
           - component: list
             layout:
               direction: vertical
@@ -408,12 +423,14 @@ screen:
               as: project
               key: project.id
             children:
-              - component: card
+              - component: row
                 layout:
                   direction: horizontal
-                  gap: medium
-                  padding: medium
+                  gap: small
                   align: center
+                  wrap: true
+                style:
+                  role: settings-project-row
                 children:
                   - component: column
                     layout:
@@ -421,16 +438,40 @@ screen:
                       gap: small
                       grow: true
                     children:
+                      - component: row
+                        layout: {direction: horizontal, gap: small, align: center, wrap: true}
+                        children:
+                          - component: text
+                            text: {literal: "Project:"}
+                            style: {emphasis: strong}
+                          - component: text
+                            text: {binding: project.name}
+                            style: {emphasis: strong, tone: accent}
+                            actions:
+                              - on: activate
+                                command: navigate
+                                arguments: {route: "/projects/{{project.id}}"}
+                          - component: badge
+                            visible: {binding: project.is_managed}
+                            text: {literal: Managed YAML}
+                            style: {tone: muted}
+                          - component: badge
+                            visible: {binding: project.has_repo}
+                            text: {binding: project.repo_url}
+                            style: {tone: muted}
+                          - component: badge
+                            visible: {binding: project.has_repo}
+                            text: {template: "branch:{{project.repo_ref_label}}"}
+                            style: {tone: muted}
+                          - component: badge
+                            visible: {binding: project.has_repo}
+                            text: {binding: project.config_file}
+                            style: {tone: muted}
                       - component: text
+                        visible: {binding: project.is_managed}
                         text:
-                          template: "Project: {{project.name}}"
-                        style:
-                          emphasis: strong
-                      - component: text
-                        text:
-                          binding: project.source_label
-                        style:
-                          tone: muted
+                          template: "Stored in ciwi database | Last update time: {{project.updated_label}}"
+                        style: {tone: muted}
                       - component: row
                         visible:
                           binding: project.has_loaded_commit
@@ -462,16 +503,7 @@ screen:
                               tone: muted
                   - component: button
                     text:
-                      literal: View
-                    actions:
-                      - on: activate
-                        command: navigate
-                        arguments:
-                          route: /projects/{{project.id}}
-                  - component: button
-                    text:
-                      literal: Reload from VCS
-                    icon: refresh
+                      literal: Reload project definition from VCS
                     visible:
                       binding: project.can_reload
                     actions:
@@ -479,9 +511,15 @@ screen:
                         command: project-action
                         arguments: {projectId: "{{project.id}}", action: reload}
                   - component: button
+                    text: {literal: Edit YAML}
+                    visible: {binding: project.is_managed}
+                    actions:
+                      - on: activate
+                        command: navigate
+                        arguments: {route: "/managed-yaml/{{project.id}}"}
+                  - component: button
                     text:
-                      literal: Delete
-                    icon: trash
+                      literal: Delete Project
                     actions:
                       - on: activate
                         command: project-action

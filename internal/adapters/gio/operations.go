@@ -87,6 +87,8 @@ type nativeActionClient interface {
 	RunAgentScript(context.Context, *cnpv1.RunAgentScriptRequest, string) (*cnpv1.RunAgentScriptResult, error)
 	ProjectAction(context.Context, int64, string, string) (*cnpv1.ProjectActionResult, error)
 	ImportProject(context.Context, *cnpv1.ImportProjectRequest, string) (*cnpv1.ImportProjectResult, error)
+	ValidateManagedYAML(context.Context, *cnpv1.ManagedYAMLRequest) (*cnpv1.ManagedYAMLDefinition, error)
+	SaveManagedYAML(context.Context, *cnpv1.ManagedYAMLRequest, string) (*cnpv1.ManagedYAMLDefinition, error)
 	CheckServerUpdates(context.Context) (*cnpv1.ServerUpdateCheckResult, error)
 	ListServerUpdateVersions(context.Context) (*cnpv1.ServerUpdateVersions, error)
 	ServerUpdateActionWithKey(context.Context, string, string, string) (*cnpv1.ServerUpdateActionResult, error)
@@ -163,6 +165,8 @@ func validateNativeOperation(operation operations.Operation) error {
 		return require("action", "project action")
 	case "import-project":
 		return require("repoUrl", "repository URL")
+	case "validate-managed-yaml", "save-managed-yaml":
+		return require("yaml", "YAML definition")
 	case "server-update-action":
 		if err := require("action", "server update action"); err != nil {
 			return err
@@ -350,6 +354,30 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 			return nativeOperationEffect{}, fmt.Errorf("import project: %w", err)
 		}
 		return nativeOperationEffect{Message: "Imported " + result.ProjectName, Refresh: true}, nil
+	case "validate-managed-yaml", "save-managed-yaml":
+		projectID := int64(0)
+		if rawID := strings.TrimSpace(arguments["projectId"]); rawID != "" && rawID != "0" {
+			var err error
+			projectID, err = positiveInt64(rawID, "project identifier")
+			if err != nil {
+				return nativeOperationEffect{}, err
+			}
+		}
+		request := &cnpv1.ManagedYAMLRequest{ProjectId: projectID, Yaml: arguments["yaml"], Revision: strings.TrimSpace(arguments["revision"])}
+		commandCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if operation.Command == "validate-managed-yaml" {
+			result, err := client.ValidateManagedYAML(commandCtx, request)
+			if err != nil {
+				return nativeOperationEffect{}, fmt.Errorf("validate managed YAML: %w", err)
+			}
+			return nativeOperationEffect{Message: fmt.Sprintf("Valid: %s — %d pipeline(s), %d chain(s)", result.ProjectName, result.Pipelines, result.PipelineChains)}, nil
+		}
+		result, err := client.SaveManagedYAML(commandCtx, request, key)
+		if err != nil {
+			return nativeOperationEffect{}, fmt.Errorf("save managed YAML: %w", err)
+		}
+		return nativeOperationEffect{Message: "Saved " + result.ProjectName, NavigateRoute: "/settings", Refresh: true}, nil
 	case "check-server-updates":
 		commandCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()

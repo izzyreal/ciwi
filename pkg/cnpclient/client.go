@@ -350,6 +350,44 @@ func (c *Client) ImportProject(ctx context.Context, request *cnpv1.ImportProject
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) GetManagedYAML(ctx context.Context, projectID int64) (*cnpv1.ManagedYAMLDefinition, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetManagedYaml{
+		GetManagedYaml: &cnpv1.GetManagedYAMLRequest{ProjectId: projectID},
+	}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetManagedYaml(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) ValidateManagedYAML(ctx context.Context, request *cnpv1.ManagedYAMLRequest) (*cnpv1.ManagedYAMLDefinition, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_ValidateManagedYaml{ValidateManagedYaml: request}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetManagedYaml(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) SaveManagedYAML(ctx context.Context, request *cnpv1.ManagedYAMLRequest, idempotencyKey string) (*cnpv1.ManagedYAMLDefinition, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_SaveManagedYaml{SaveManagedYaml: request}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetManagedYaml(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) GetRunOptions(ctx context.Context, request *cnpv1.GetRunOptionsRequest) (*cnpv1.RunOptionsView, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetRunOptions{GetRunOptions: request}}, "")
 	if err != nil {
@@ -415,7 +453,7 @@ func (c *Client) RunAgentScript(ctx context.Context, request *cnpv1.RunAgentScri
 
 func (c *Client) GetJobDetails(ctx context.Context, jobExecutionID string) (*cnpv1.JobDetailsView, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetJobDetails{
-		GetJobDetails: &cnpv1.GetJobDetailsRequest{JobExecutionId: jobExecutionID},
+		GetJobDetails: &cnpv1.GetJobDetailsRequest{JobExecutionId: jobExecutionID, IncludeProjectIcon: true},
 	}}, "")
 	if err != nil {
 		return nil, err

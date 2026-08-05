@@ -20,9 +20,10 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ciwi-favicon.png":               {"assets/ciwi-favicon.png", "image/png", true},
 	"/ciwi-logo.png":                  {"assets/ciwi-logo.png", "image/png", true},
 	"/ui/fonts/ciwi-mono-regular.ttf": {"assets/fonts/GeistMono-Regular.ttf", "font/ttf", true},
+	"/ui/fonts/ciwi-mono-medium.ttf":  {"assets/fonts/GeistMono-Medium.ttf", "font/ttf", true},
 	"/ui/fonts/ciwi-mono-bold.ttf":    {"assets/fonts/GeistMono-Bold.ttf", "font/ttf", true},
 	"/ui/icons.svg":                   {"assets/tabler-icons.svg", "image/svg+xml", true},
-	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", true},
+	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", false},
 	"/ui/shared.js":                   {"assets/js/shared.js", "application/javascript; charset=utf-8", false},
 	"/ui/actions.js":                  {"assets/js/actions.js", "application/javascript; charset=utf-8", false},
 	"/ui/pages.js":                    {"assets/js/pages.js", "application/javascript; charset=utf-8", false},
@@ -47,6 +48,14 @@ var staticRoutes = map[string]embeddedAsset{
 
 // Handler serves ciwi's browser pages and embedded static assets.
 func Handler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/ui/css/typography.css" {
+		serveTypographyCSS(w)
+		return
+	}
+	if r.URL.Path == "/ui/contracts/typography.json" {
+		serveTypographyContract(w)
+		return
+	}
 	if r.URL.Path == "/ui/contracts/actions.json" {
 		serveActionContract(w)
 		return

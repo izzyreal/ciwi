@@ -64,7 +64,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      font-family: "Ciwi Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-family:var(--ciwi-font-mono);
       font-size: 11px;
       background: var(--code-bg);
       border: 1px solid var(--code-line);
@@ -83,10 +83,11 @@
       max-height: 65vh;
       min-height: 320px;
       overflow: auto;
-      font-size: 12px;
-      line-height: 1.35;
+      font-size:var(--ciwi-type-output-code-size);
+      font-weight:var(--ciwi-type-output-code-weight);
+      line-height:var(--ciwi-type-output-code-line-height);
       white-space: pre-wrap;
-      font-family: "Ciwi Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-family:var(--ciwi-font-mono);
     }
     .log-line { display:block; }
     .log-line.phase-meta { color: var(--console-blue); }
@@ -133,7 +134,7 @@
     details.log-step > summary {
       cursor: pointer;
       color: var(--console-ink);
-      font-weight: 700;
+      font-weight:var(--ciwi-type-output-summary-weight);
       display: flex;
       align-items: baseline;
       gap: 8px;
@@ -152,8 +153,8 @@
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--console-muted);
-      font-size: 11px;
-      font-weight: 600;
+      font-size:var(--ciwi-type-output-meta-size);
+      font-weight:var(--ciwi-weight-medium);
     }
     details.log-step-unreached {
       border-left-color: var(--console-muted);
@@ -166,8 +167,8 @@
     .log-step-status {
       flex: 0 0 auto;
       color: var(--console-muted);
-      font-size: 11px;
-      font-weight: 700;
+      font-size:var(--ciwi-type-output-meta-size);
+      font-weight:var(--ciwi-weight-strong);
     }
     .log-step-collapse-btn {
       position: sticky;
@@ -194,18 +195,22 @@
       gap: 8px;
       margin: 8px 0;
       color: var(--console-muted);
-      font-size: 11px;
+      font-size:var(--ciwi-type-output-meta-size);
+	  font-weight:var(--ciwi-type-output-meta-weight);
+	  line-height:var(--ciwi-type-output-meta-line-height);
     }
     .log-step-label {
       color: var(--console-accent);
-      font-weight: 700;
+      font-size:var(--ciwi-type-output-label-size);
+      font-weight:var(--ciwi-type-output-label-weight);
+	  line-height:var(--ciwi-type-output-label-line-height);
       margin: 8px 0 3px;
     }
     .log-step pre {
       margin: 0 0 8px;
       white-space: pre-wrap;
       color: var(--console-ink);
-      font: inherit;
+      font:var(--ciwi-type-output-code-weight) var(--ciwi-type-output-code-size)/var(--ciwi-type-output-code-line-height) var(--ciwi-type-output-code-family);
     }
     .tok-version { color: var(--console-yellow); font-weight: 700; }
     .tok-sha { color: var(--console-blue); }

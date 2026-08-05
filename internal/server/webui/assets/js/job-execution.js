@@ -2586,20 +2586,11 @@
         if (cleanBtn) cleanBtn.href = '/api/v1/jobs/' + encodeURIComponent(jobId) + '/log?format=clean';
         if (rawBtn) rawBtn.href = '/api/v1/jobs/' + encodeURIComponent(jobId) + '/log?format=raw';
 
-        const desc = jobDescription(job);
         const metaSource = (job && job.metadata) || {};
         const projectName = String(metaSource.project || '').trim();
         const projectID = String(metaSource.project_id || '').trim();
         const pipelineJobID = String(metaSource.pipeline_job_id || '').trim();
-        const matrixName = String(metaSource.matrix_name || '').trim();
-        let title = pipelineJobID || desc;
-        if (pipelineJobID && matrixName) {
-          title = pipelineJobID + ' / ' + matrixName;
-        }
-        if (projectName) {
-          title = projectName + ' / ' + title;
-        }
-        document.getElementById('jobTitle').textContent = title;
+        document.getElementById('jobTitle').textContent = jobExecutionTitle(job);
         renderProjectIcon(projectID);
 
         const pipeline = String(metaSource.pipeline_id || '').trim();

@@ -126,3 +126,9 @@ func executeIdempotentCommand[T any](ctx context.Context, receipts CommandReceip
 	}
 	return result, nil
 }
+
+// ExecuteIdempotentCommand exposes the shared receipt protocol to server-side
+// adapters that implement commands outside the core application packages.
+func ExecuteIdempotentCommand[T any](ctx context.Context, receipts CommandReceiptRepository, key, operation, fingerprint string, execute func() (T, error)) (T, error) {
+	return executeIdempotentCommand(ctx, receipts, key, operation, fingerprint, execute)
+}

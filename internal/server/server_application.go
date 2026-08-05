@@ -31,6 +31,7 @@ type serverApplication struct {
 	executionCommands *application.ExecutionCommands
 	executionControls *application.ExecutionControlCommands
 	commandReceipts   *application.CommandReceiptQueries
+	receipts          application.CommandReceiptRepository
 	frontPage         *presentation.FrontPageQueries
 	projectDetails    *presentation.ProjectDetailsQueries
 	jobDetails        *presentation.JobDetailsQueries
@@ -82,6 +83,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
 		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),
 		commandReceipts:   application.NewCommandReceiptQueries(receipts),
+		receipts:          receipts,
 		frontPage:         presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
 		projectDetails:    presentation.NewProjectDetailsQueries(projectQueries, executionQueries),
 		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),

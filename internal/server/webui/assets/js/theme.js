@@ -14,13 +14,17 @@ const ciwiThemeNames = new Set([
 const ciwiDarkThemeNames = new Set(['jungle', 'space']);
 let ciwiThemeContractsPromise;
 
-function ciwiApplyContractTheme(name) {
+function ciwiThemeContracts() {
   if (!ciwiThemeContractsPromise) {
-    ciwiThemeContractsPromise = fetch('/ui/contracts/themes.json', {cache: 'force-cache'})
+    ciwiThemeContractsPromise = fetch('/ui/contracts/themes.json', {cache: 'no-store'})
       .then(response => response.ok ? response.json() : Promise.reject(new Error('theme contracts unavailable')))
       .catch(() => []);
   }
-  ciwiThemeContractsPromise.then(documents => {
+  return ciwiThemeContractsPromise;
+}
+
+function ciwiApplyContractTheme(name) {
+  ciwiThemeContracts().then(documents => {
     if (document.documentElement.getAttribute('data-ciwi-theme') !== name) return;
     const documentTheme = documents.find(item => item && item.metadata && item.metadata.name === name)
       || documents.find(item => item && item.metadata && item.metadata.name === 'default');
@@ -37,6 +41,7 @@ function ciwiApplyContractTheme(name) {
       'console-background': '--console-bg', 'console-surface': '--console-surface',
       'console-border': '--console-line', 'console-text': '--console-ink',
       'console-muted': '--console-muted', 'console-accent': '--console-accent',
+      'console-success': '--console-green',
     };
     const style = document.documentElement.style;
     Object.entries(mapping).forEach(([token, variable]) => {

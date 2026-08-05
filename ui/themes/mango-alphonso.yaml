@@ -1,6 +1,6 @@
 apiVersion: ciwi.ui/v1
 kind: Theme
-metadata: {name: mango-alphonso, title: Mango Alphonso, description: Saffron-orange flesh and warm ochre skin}
+metadata: {name: mango-alphonso, title: Mango Alphonso, description: "Deep Alphonso orange with burnt amber and softly creamy surfaces."}
 theme:
   colors:
     background: "#fff1dc"
@@ -29,6 +29,7 @@ theme:
     console-text: "#ffe8c9"
     console-muted: "#c59b7e"
     console-accent: "#ffab48"
+    console-success: "#b4cc75"
   gradients:
     page: {kind: linear, angle: 135, stops: [{color: "#ffd56f", position: 0}, {color: "#eb741b", position: 100}]}
     hero: {kind: radial, stops: [{color: "#fff7e9", position: 0}, {color: "#f39a36", position: 100}]}

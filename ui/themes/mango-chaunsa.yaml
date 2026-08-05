@@ -1,6 +1,6 @@
 apiVersion: ciwi.ui/v1
 kind: Theme
-metadata: {name: mango-chaunsa, title: Mango Chaunsa, description: "Honey yellow, soft green and sunlit flesh"}
+metadata: {name: mango-chaunsa, title: Mango Chaunsa, description: "Sunlit Chaunsa yellow with honey, saffron, and warm wooden notes."}
 theme:
   colors:
     background: "#fff8d9"
@@ -29,6 +29,7 @@ theme:
     console-text: "#fff0c4"
     console-muted: "#c9ab78"
     console-accent: "#ffc84a"
+    console-success: "#b1d16d"
   gradients:
     page: {kind: linear, angle: 140, stops: [{color: "#fffce5", position: 0}, {color: "#f1cb3f", position: 100}]}
     hero: {kind: radial, stops: [{color: "#fffde7", position: 0}, {color: "#f5dd64", position: 100}]}

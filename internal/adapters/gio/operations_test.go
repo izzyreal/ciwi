@@ -56,6 +56,14 @@ func (c *recordingNativeActionClient) ProjectAction(_ context.Context, _ int64, 
 func (c *recordingNativeActionClient) ImportProject(_ context.Context, _ *cnpv1.ImportProjectRequest, key string) (*cnpv1.ImportProjectResult, error) {
 	return &cnpv1.ImportProjectResult{ProjectName: "ciwi"}, c.record("import-project", key)
 }
+
+func (c *recordingNativeActionClient) ValidateManagedYAML(_ context.Context, request *cnpv1.ManagedYAMLRequest) (*cnpv1.ManagedYAMLDefinition, error) {
+	return &cnpv1.ManagedYAMLDefinition{ProjectId: request.ProjectId, ProjectName: "managed", Pipelines: 1}, c.record("validate-managed-yaml", "")
+}
+
+func (c *recordingNativeActionClient) SaveManagedYAML(_ context.Context, request *cnpv1.ManagedYAMLRequest, key string) (*cnpv1.ManagedYAMLDefinition, error) {
+	return &cnpv1.ManagedYAMLDefinition{ProjectId: request.ProjectId, ProjectName: "managed", Revision: "rev"}, c.record("save-managed-yaml", key)
+}
 func (c *recordingNativeActionClient) CheckServerUpdates(context.Context) (*cnpv1.ServerUpdateCheckResult, error) {
 	return &cnpv1.ServerUpdateCheckResult{}, c.record("check-server-updates", "")
 }

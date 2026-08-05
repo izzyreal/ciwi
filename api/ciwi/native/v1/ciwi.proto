@@ -149,6 +149,7 @@ message GetProjectDetailsRequest {
 
 message GetJobDetailsRequest {
   string job_execution_id = 1;
+  bool include_project_icon = 2;
 }
 
 message JobDetailsView {
@@ -172,6 +173,17 @@ message JobDetailsView {
   repeated JobOutputGroup output_groups = 18;
   SchedulingDiagnosis scheduling_diagnosis = 19;
   Progress progress = 20;
+  int64 project_id = 21;
+  bytes project_icon = 22;
+  string project_icon_content_type = 23;
+  repeated JobDetailRow job_properties = 24;
+  repeated JobDetailRow cache_statistics = 25;
+  string cache_statistics_empty = 26;
+  ToolRequirements host_tool_requirements = 27;
+  ToolRequirements container_tool_requirements = 28;
+  repeated JobDetailRow release_summary = 29;
+  bool has_release_summary = 30;
+  JobRunContext run_context = 31;
 }
 
 message SchedulingDiagnosis {
@@ -468,6 +480,25 @@ message ImportProjectResult {
   uint32 pipelines = 5;
 }
 
+message GetManagedYAMLRequest {
+  int64 project_id = 1;
+}
+
+message ManagedYAMLRequest {
+  int64 project_id = 1;
+  string yaml = 2;
+  string revision = 3;
+}
+
+message ManagedYAMLDefinition {
+  int64 project_id = 1;
+  string project_name = 2;
+  string yaml = 3;
+  string revision = 4;
+  uint32 pipelines = 5;
+  uint32 pipeline_chains = 6;
+}
+
 message ServerUpdateStatus {
   string current_version = 1;
   string latest_version = 2;
@@ -596,6 +627,9 @@ message Request {
     GetAgentDetailsRequest get_agent_details = 33;
     CommandReceiptStatusRequest get_command_receipt_status = 34;
     RunAgentScriptRequest run_agent_script = 35;
+    GetManagedYAMLRequest get_managed_yaml = 36;
+    ManagedYAMLRequest validate_managed_yaml = 37;
+    ManagedYAMLRequest save_managed_yaml = 38;
   }
 }
 
@@ -629,6 +663,7 @@ message Response {
     AgentDetailsView agent_details = 34;
     CommandReceiptStatus command_receipt_status = 35;
     RunAgentScriptResult run_agent_script = 36;
+    ManagedYAMLDefinition managed_yaml = 37;
   }
 }
 
@@ -644,4 +679,53 @@ message ServerMessage {
     Welcome welcome = 1;
     Response response = 2;
   }
+}
+
+message JobDetailRow {
+  string label = 1;
+  string value = 2;
+  string tone = 3;
+}
+
+message ToolRequirements {
+  string empty_label = 1;
+  string summary = 2;
+  string tone = 3;
+  repeated string issues = 4;
+}
+
+message JobRunContext {
+  bool available = 1;
+  string scope = 2;
+  string scope_label = 3;
+  string current_execution_id = 4;
+  string current_pipeline_id = 5;
+  string current_pipeline_job_id = 6;
+  repeated JobRunContextPipeline pipelines = 7;
+}
+
+message JobRunContextPipeline {
+  int64 id = 1;
+  string pipeline_id = 2;
+  repeated string depends_on = 3;
+  string status = 4;
+  string summary_label = 5;
+  repeated JobRunContextJob jobs = 6;
+}
+
+message JobRunContextJob {
+  string id = 1;
+  repeated string needs = 2;
+  string status = 3;
+  string summary_label = 4;
+  repeated JobRunContextExecution executions = 5;
+}
+
+message JobRunContextExecution {
+  string id = 1;
+  string status = 2;
+  string matrix_label = 3;
+  string attempt_label = 4;
+  bool current = 5;
+  bool latest_attempt = 6;
 }

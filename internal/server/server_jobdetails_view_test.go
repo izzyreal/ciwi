@@ -31,7 +31,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&view); err != nil {
 		t.Fatal(err)
 	}
-	if view.ID != job.ID || view.Title != "Job: unit-tests" || view.Context == "" || view.Status != "queued" {
+	if view.ID != job.ID || view.Title != "ciwi / build / unit-tests" || view.Context == "" || view.Status != "queued" {
 		t.Fatalf("view = %+v", view)
 	}
 	if view.SchedulingDiagnosis == nil || view.SchedulingDiagnosis.Summary != "No agents are registered" {

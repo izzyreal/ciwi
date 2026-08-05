@@ -1,6 +1,6 @@
 apiVersion: ciwi.ui/v1
 kind: Theme
-metadata: {name: space, title: Space, description: "Deep indigo, starlight and electric violet"}
+metadata: {name: space, title: Space, description: "Midnight blue with cyan and violet highlights."}
 theme:
   dark: true
   colors:
@@ -30,6 +30,7 @@ theme:
     console-text: "#dce7ff"
     console-muted: "#98a7cb"
     console-accent: "#8ddfff"
+    console-success: "#72e6bc"
   gradients:
     page: {kind: linear, angle: 135, stops: [{color: "#24134e", position: 0}, {color: "#07152f", position: 100}]}
     hero: {kind: radial, stops: [{color: "#292f63", position: 0}, {color: "#111a36", position: 100}]}

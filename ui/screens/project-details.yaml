@@ -705,13 +705,6 @@ screen:
             style:
               role: heading
               emphasis: strong
-          - component: text
-            text:
-              literal: No execution history for this project.
-            visible:
-              binding: projectDetails.history_empty
-            style:
-              tone: muted
           - component: row
             layout:
               direction: horizontal
@@ -741,6 +734,14 @@ screen:
               - component: text
                 text: {literal: Duration}
                 style: {role: table-header, emphasis: strong}
+          - component: text
+            text:
+              literal: No execution history for this project.
+            visible:
+              binding: projectDetails.history_empty
+            style:
+              role: empty-state
+              tone: muted
           - component: list
             layout:
               direction: vertical
@@ -765,7 +766,7 @@ screen:
                   gap: small
                   padding: small
                 text:
-                  binding: execution.title
+                  template: "{{execution.kind}}: {{execution.title}}"
                 image:
                   asset: ciwi-logo
                   description: ciwi execution
@@ -815,6 +816,11 @@ screen:
                                   align: start
                                 style:
                                   role: history-execution-job-row
+                                actions:
+                                  - on: activate
+                                    command: navigate
+                                    arguments:
+                                      route: /jobs/{{job.id}}
                                 children:
                                   - component: text
                                     text:
@@ -823,11 +829,6 @@ screen:
                                       role: link
                                       tone: accent
                                       emphasis: strong
-                                    actions:
-                                      - on: activate
-                                        command: navigate
-                                        arguments:
-                                          route: /jobs/{{job.id}}
                                   - component: text
                                     text:
                                       binding: job.status

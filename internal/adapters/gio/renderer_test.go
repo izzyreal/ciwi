@@ -26,7 +26,7 @@ func TestCiwiFontCollectionContainsExplicitMonospaceFaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[font.Weight]bool{font.Normal: false, font.Bold: false}
+	want := map[font.Weight]bool{font.Normal: false, font.Medium: false, font.Bold: false}
 	for _, face := range faces {
 		if face.Font.Typeface != font.Typeface("Ciwi Mono") {
 			continue
@@ -40,6 +40,78 @@ func TestCiwiFontCollectionContainsExplicitMonospaceFaces(t *testing.T) {
 			t.Errorf("Ciwi Mono weight %v is not embedded in the native font collection", weight)
 		}
 	}
+}
+
+func TestCSSGradientLineUsesWebAngleCoordinates(t *testing.T) {
+	start, end := cssGradientLine(image.Rect(0, 0, 200, 100), 145)
+	if end.X <= start.X || end.Y <= start.Y {
+		t.Fatalf("145-degree CSS gradient line = %v -> %v, want down and right", start, end)
+	}
+	center := image.Pt(int((start.X+end.X)/2), int((start.Y+end.Y)/2))
+	if center.X != 100 || center.Y != 50 {
+		t.Fatalf("gradient center = %v, want (100,50)", center)
+	}
+}
+
+func TestRenderedPageBackgroundIsContinuousAcrossFormerSplit(t *testing.T) {
+	background := renderPageBackground(image.Pt(320, 180), palette{
+		backgroundStart: color.NRGBA{R: 76, G: 42, B: 132, A: 255},
+		background:      color.NRGBA{R: 15, G: 22, B: 52, A: 255},
+		backgroundEnd:   color.NRGBA{R: 32, G: 84, B: 113, A: 255},
+		backgroundGlowA: color.NRGBA{R: 126, G: 75, B: 207, A: 255},
+		backgroundGlowB: color.NRGBA{R: 65, G: 195, B: 231, A: 255},
+	})
+	maximumDelta := 0
+	for y := 1; y < background.Bounds().Dy()-1; y++ {
+		for x := 1; x < background.Bounds().Dx()-1; x++ {
+			current := background.NRGBAAt(x, y)
+			for _, neighbor := range []color.NRGBA{background.NRGBAAt(x+1, y), background.NRGBAAt(x, y+1)} {
+				for _, delta := range []int{absInt(int(current.R) - int(neighbor.R)), absInt(int(current.G) - int(neighbor.G)), absInt(int(current.B) - int(neighbor.B))} {
+					maximumDelta = max(maximumDelta, delta)
+				}
+			}
+		}
+	}
+	if maximumDelta > 3 {
+		t.Fatalf("largest adjacent gradient-channel delta = %d, want a continuous raster without a diagonal seam", maximumDelta)
+	}
+}
+
+func TestGradientTextureSizeCapsRasterWorkAndPreservesAspect(t *testing.T) {
+	for _, test := range []struct {
+		target image.Point
+		want   image.Point
+	}{
+		{target: image.Pt(320, 180), want: image.Pt(320, 180)},
+		{target: image.Pt(1920, 1080), want: image.Pt(384, 216)},
+		{target: image.Pt(1080, 1920), want: image.Pt(216, 384)},
+		{target: image.Pt(1900, 170), want: image.Pt(384, 34)},
+	} {
+		if got := gradientTextureSize(test.target); got != test.want {
+			t.Errorf("gradientTextureSize(%v) = %v, want %v", test.target, got, test.want)
+		}
+	}
+}
+
+func TestButtonIconsFollowWebOrdering(t *testing.T) {
+	for _, icon := range []string{"server", "settings", "refresh", "player-play"} {
+		if !buttonIconAfter(icon) {
+			t.Errorf("%q icon should follow its button label", icon)
+		}
+	}
+	if buttonIconAfter("arrow-left") {
+		t.Fatal("back-navigation icon should precede its button label")
+	}
+	if buttonIconAfter("") {
+		t.Fatal("an absent icon cannot follow its button label")
+	}
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func TestExecutionGridWeightsMatchSharedTableColumns(t *testing.T) {
@@ -94,8 +166,19 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if logo, ok := renderer.images["ciwi-logo"]; !ok || logo.Filter != paint.FilterNearest {
 		t.Fatal("ciwi logo must use nearest-neighbor filtering")
 	}
-	if renderer.theme.Face != ciwiBodyTypeface {
-		t.Fatalf("native body typeface = %q, want browser stack %q", renderer.theme.Face, ciwiBodyTypeface)
+	typography, err := sharedUI.LoadTypography()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBodyTypeface := font.Typeface(typography.Typography.Families["body"])
+	if renderer.theme.Face != wantBodyTypeface {
+		t.Fatalf("native body typeface = %q, want shared typography family %q", renderer.theme.Face, wantBodyTypeface)
+	}
+	if got := renderer.nativeTextStyle("body", false).font.Weight; got != font.Weight(50) {
+		t.Fatalf("native regular text weight = %v, want 450-equivalent", got)
+	}
+	if got := renderer.nativeTextStyle("body", true).font.Weight; got != font.Bold {
+		t.Fatalf("native strong text weight = %v, want bold", got)
 	}
 	wantAccentStrong, err := parseColor(theme.Theme.Colors["accent-strong"])
 	if err != nil {
@@ -111,8 +194,23 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if renderer.palette.pillBackground != wantPill {
 		t.Fatalf("native pill background = %v, want shared theme token %v", renderer.palette.pillBackground, wantPill)
 	}
-	if renderer.metrics.textBody != 16 || renderer.metrics.textControl != 14 || renderer.metrics.textHeading != 18 || renderer.metrics.textTitle != 28 {
-		t.Fatalf("native type scale = body %v control %v heading %v title %v, want browser 16/14/18/28", renderer.metrics.textBody, renderer.metrics.textControl, renderer.metrics.textHeading, renderer.metrics.textTitle)
+	for token, got := range map[string]color.NRGBA{
+		"console-surface": renderer.palette.consoleSurface,
+		"console-text":    renderer.palette.consoleText,
+		"console-muted":   renderer.palette.consoleMuted,
+		"console-accent":  renderer.palette.consoleAccent,
+		"console-success": renderer.palette.consoleSuccess,
+	} {
+		want, parseErr := parseColor(theme.Theme.Colors[token])
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		if got != want {
+			t.Errorf("native %s = %v, want shared theme token %v", token, got, want)
+		}
+	}
+	if renderer.metrics.textBody != 16 || renderer.metrics.textControl != 14 || renderer.metrics.textHeading != 18 || renderer.metrics.textJobTitle != 20 || renderer.metrics.textTitle != 28 {
+		t.Fatalf("native type scale = body %v control %v heading %v job title %v title %v, want browser 16/14/18/20/28", renderer.metrics.textBody, renderer.metrics.textControl, renderer.metrics.textHeading, renderer.metrics.textJobTitle, renderer.metrics.textTitle)
 	}
 	if renderer.metrics.heroPadding != 16 || renderer.metrics.imageBrandWidth != 110 || renderer.metrics.imageBrandHeight != 91 {
 		t.Fatalf("native masthead metrics = padding %v image %vx%v, want browser 16 and 110x91", renderer.metrics.heroPadding, renderer.metrics.imageBrandWidth, renderer.metrics.imageBrandHeight)
@@ -885,6 +983,62 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	}
 }
 
+func TestRendererLaysOutAuthoritativeJobHeaderAndDetailCards(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectIcon, err := sharedUI.Read("assets/ciwi-logo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-1", ProjectId: 7, ProjectIcon: projectIcon, Title: "ciwi / build / compile",
+		Status: "succeeded", StatusLabel: "Succeeded", Mode: "Ordinary run",
+		JobProperties:             []*cnpv1.JobDetailRow{{Label: "Job Execution ID", Value: "job-1"}},
+		CacheStatisticsEmpty:      "No cache statistics reported for this job.",
+		HostToolRequirements:      &cnpv1.ToolRequirements{Summary: "Requirements matched", Tone: "success"},
+		ContainerToolRequirements: &cnpv1.ToolRequirements{EmptyLabel: "No container tool requirements declared for this job."},
+		ReleaseSummary:            []*cnpv1.JobDetailRow{{Label: "Tag", Value: "v0.3.0"}}, HasReleaseSummary: true,
+		RunContext: &cnpv1.JobRunContext{Available: true, ScopeLabel: "Pipeline run", Pipelines: []*cnpv1.JobRunContextPipeline{{
+			PipelineId: "build", Status: "succeeded", SummaryLabel: "succeeded · 1 job(s)",
+			Jobs: []*cnpv1.JobRunContextJob{{Id: "compile", Status: "succeeded", SummaryLabel: "succeeded · 1 execution(s)"}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetScreenAndData(screen, data)
+	var operations op.Ops
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 2200))})
+	if len(renderer.dynamicImages) != 1 {
+		t.Fatalf("job header dynamic images = %d, want project icon", len(renderer.dynamicImages))
+	}
+	wanted := map[string]bool{
+		"ciwi / build / compile": false, "Job Properties": false, "Cache Statistics": false,
+		"Host Tool Requirements": false, "Container Tool Requirements": false,
+		"Release Summary": false, "Run Context": false,
+	}
+	for _, selectable := range renderer.selectables {
+		if _, ok := wanted[selectable.Text()]; ok {
+			wanted[selectable.Text()] = true
+		}
+	}
+	for label, found := range wanted {
+		if !found {
+			t.Errorf("job details did not render %q", label)
+		}
+	}
+}
+
 func TestJobOutputBindingUsesSelectableReadOnlyEditor(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("job-details")
 	if err != nil {
@@ -1361,10 +1515,52 @@ func TestProgressTrackUsesAvailableWidth(t *testing.T) {
 	}
 }
 
-func TestOutputGroupProgressUsesRoundedDisclosureSurface(t *testing.T) {
+func TestOutputGroupProgressUsesSurfaceOnlyWhileCollapsed(t *testing.T) {
 	node := uidsl.Node{Component: "disclosure", Style: uidsl.Style{Role: "output-group"}}
-	if !usesSurfaceProgress(node, true) || !usesSurfaceProgress(node, false) {
-		t.Fatal("output-group progress must paint the complete disclosure surface")
+	if !usesSurfaceProgress(node, false) {
+		t.Fatal("collapsed output-group progress must paint the complete disclosure surface")
+	}
+	if usesSurfaceProgress(node, true) {
+		t.Fatal("expanded output-group progress must stay on its header")
+	}
+}
+
+func TestOutputGroupBodyDefaultsToSharedConsoleText(t *testing.T) {
+	children := []uidsl.Node{
+		{Component: "text"},
+		{Component: "text", Style: uidsl.Style{Tone: "danger"}},
+		{Component: "row", Children: []uidsl.Node{{Component: "text"}}},
+	}
+	got := withDefaultConsoleText(children)
+	if got[0].Style.Tone != "console-text" || got[1].Style.Tone != "danger" || got[2].Children[0].Style.Tone != "console-text" {
+		t.Fatalf("console defaults = %#v", got)
+	}
+	if children[0].Style.Tone != "" || children[2].Children[0].Style.Tone != "" {
+		t.Fatal("console defaults mutated the shared screen document")
+	}
+}
+
+func TestProgressColorMatchesBrowserSRGBComposition(t *testing.T) {
+	background := color.NRGBA{R: 0x11, G: 0x19, B: 0x36, A: 0xff}
+	foreground := color.NRGBA{R: 0x72, G: 0xe6, B: 0xbc, A: 0xff}
+	want := color.NRGBA{R: 0x22, G: 0x3e, B: 0x4e, A: 0xff}
+	if got := mixColorSRGB(background, foreground, .18); got != want {
+		t.Fatalf("native progress composition = %v, want browser sRGB result %v", got, want)
+	}
+}
+
+func TestOutputTailingUsesCompactStatefulIconToggle(t *testing.T) {
+	if tablerIcons()["arrow-bar-to-down"] == nil {
+		t.Fatal("arrow-bar-to-down icon is unavailable")
+	}
+	renderer := &Renderer{data: map[string]any{"jobDetails": map[string]any{
+		"tailing_label": "Tailing: Off", "tailing_tone": "warning",
+	}}}
+	renderer.dispatchFromLayout(layout.Context{Ops: new(op.Ops)}, uidsl.Action{Command: "toggle-output-tailing"}, nil)
+	label, labelErr := uidsl.Resolve(renderer.data, "jobDetails.tailing_label")
+	tone, toneErr := uidsl.Resolve(renderer.data, "jobDetails.tailing_tone")
+	if labelErr != nil || toneErr != nil || label != "Tailing: On" || tone != "success" {
+		t.Fatalf("tailing state = label %v (%v), tone %v (%v)", label, labelErr, tone, toneErr)
 	}
 }
 

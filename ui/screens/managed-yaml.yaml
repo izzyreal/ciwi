@@ -1,0 +1,70 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata: {name: managed-yaml, title: Managed YAML}
+screen:
+  dataSources:
+    - {name: managedYAML, query: get-managed-yaml, watchTopics: [projects]}
+  root:
+    component: page
+    id: managed-yaml
+    layout: {direction: vertical, gap: large, padding: large, maxWidth: page}
+    children:
+      - component: card
+        layout: {direction: horizontal, gap: medium, padding: large, align: center, wrap: true}
+        children:
+          - component: column
+            layout: {direction: vertical, gap: small, grow: true}
+            children:
+              - component: text
+                text: {binding: managedYAML.title}
+                style: {role: title, emphasis: strong}
+              - component: text
+                text: {binding: managedYAML.project_name}
+                style: {tone: muted}
+          - component: button
+            text: {literal: Back to Global Settings}
+            icon: arrow-left
+            actions: [{on: activate, command: navigate, arguments: {route: /settings}}]
+      - component: card
+        layout: {direction: vertical, gap: medium, padding: large}
+        children:
+          - component: text
+            text: {literal: Project YAML}
+            style: {role: heading, emphasis: strong}
+          - component: text
+            text: {literal: Repository checkout is configured explicitly with vcs_source.}
+            style: {tone: muted}
+          - component: input
+            input:
+              value: managedYAML.yaml
+              placeholder: "version: 1\nproject:\n  name: my-project\npipelines: []"
+              multiline: true
+              minLines: 18
+            style: {role: code}
+            actions:
+              - on: change
+                command: set-managed-yaml-field
+                arguments: {field: yaml, value: "{{input.value}}"}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Reload latest}
+                visible: {binding: managedYAML.editing}
+                actions:
+                  - on: activate
+                    command: refresh
+                    confirm: {title: "Reload latest YAML?", message: "Reloading discards the current editor contents."}
+              - component: button
+                text: {literal: Validate}
+                actions:
+                  - on: activate
+                    command: validate-managed-yaml
+                    arguments: {projectId: "{{managedYAML.project_id}}", yaml: "{{managedYAML.yaml}}"}
+              - component: button
+                text: {literal: Save}
+                style: {emphasis: strong}
+                actions:
+                  - on: activate
+                    command: save-managed-yaml
+                    arguments: {projectId: "{{managedYAML.project_id}}", revision: "{{managedYAML.revision}}", yaml: "{{managedYAML.yaml}}"}

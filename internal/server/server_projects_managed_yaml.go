@@ -1,6 +1,9 @@
 package server
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +15,72 @@ import (
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
+
+func (s *stateStore) GetManagedYAML(_ context.Context, projectID int64) (protocol.ManagedYAMLDefinition, error) {
+	definition, err := s.projectStore().GetManagedYAMLProject(projectID)
+	return definition, managedYAMLApplicationError(err)
+}
+
+func (s *stateStore) ValidateManagedYAML(_ context.Context, projectID int64, raw string) (protocol.ManagedYAMLDefinition, error) {
+	if len(raw) > managedYAMLMaxRequestBytes {
+		return protocol.ManagedYAMLDefinition{}, application.NewError(application.ErrorInvalidArgument, errManagedYAMLRequestTooLarge.Error(), errManagedYAMLRequestTooLarge)
+	}
+	cfg, err := parseManagedYAML(raw)
+	if err != nil {
+		return protocol.ManagedYAMLDefinition{}, application.NewError(application.ErrorInvalidArgument, err.Error(), err)
+	}
+	if err := s.projectStore().ValidateManagedYAMLName(cfg.Project.Name, projectID); err != nil {
+		return protocol.ManagedYAMLDefinition{}, managedYAMLApplicationError(err)
+	}
+	return protocol.ManagedYAMLDefinition{ProjectID: projectID, ProjectName: cfg.Project.Name, Pipelines: len(cfg.Pipelines), PipelineChains: len(cfg.PipelineChains)}, nil
+}
+
+func (s *stateStore) SaveManagedYAML(ctx context.Context, projectID int64, revision, raw, idempotencyKey string) (protocol.ManagedYAMLDefinition, error) {
+	if _, err := s.ValidateManagedYAML(ctx, projectID, raw); err != nil {
+		return protocol.ManagedYAMLDefinition{}, err
+	}
+	cfg, err := parseManagedYAML(raw)
+	if err != nil {
+		return protocol.ManagedYAMLDefinition{}, application.NewError(application.ErrorInvalidArgument, err.Error(), err)
+	}
+	if projectID > 0 && strings.TrimSpace(revision) == "" {
+		return protocol.ManagedYAMLDefinition{}, application.NewError(application.ErrorInvalidArgument, "revision is required", nil)
+	}
+	payload, _ := json.Marshal(struct {
+		ProjectID int64  `json:"project_id"`
+		Revision  string `json:"revision"`
+		YAML      string `json:"yaml"`
+	}{projectID, strings.TrimSpace(revision), raw})
+	fingerprint := sha256.Sum256(payload)
+	execute := func() (protocol.ManagedYAMLDefinition, error) {
+		var definition protocol.ManagedYAMLDefinition
+		if projectID > 0 {
+			definition, err = s.projectStore().UpdateManagedYAMLProject(projectID, strings.TrimSpace(revision), cfg, raw)
+		} else {
+			definition, err = s.projectStore().CreateManagedYAMLProject(cfg, raw)
+		}
+		if err != nil {
+			return protocol.ManagedYAMLDefinition{}, managedYAMLApplicationError(err)
+		}
+		s.app().changes.Publish(application.ChangeProjects)
+		return definition, nil
+	}
+	return application.ExecuteIdempotentCommand(ctx, s.app().receipts, strings.TrimSpace(idempotencyKey), "managed_yaml_save", hex.EncodeToString(fingerprint[:]), execute)
+}
+
+func managedYAMLApplicationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, store.ErrManagedYAMLNameConflict), errors.Is(err, store.ErrManagedYAMLRevisionConflict), errors.Is(err, store.ErrProjectIsNotManagedYAML):
+		return application.NewError(application.ErrorConflict, err.Error(), err)
+	case strings.Contains(err.Error(), "not found"):
+		return application.NewError(application.ErrorNotFound, err.Error(), err)
+	default:
+		return application.WrapInternal("managed YAML", err)
+	}
+}
 
 const managedYAMLMaxRequestBytes = 2 << 20
 

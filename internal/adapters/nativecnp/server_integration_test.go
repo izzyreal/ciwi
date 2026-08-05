@@ -15,6 +15,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
 )
@@ -28,11 +29,13 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		Server:            serverService{},
 		Projects:          projectService{},
 		ProjectCommands:   projectService{},
+		ManagedYAML:       managedYAMLService{},
 		Updates:           updateService{},
 		FrontPage:         frontPageService{},
 		ProjectDetails:    projectDetailsService{},
 		ProjectIcons:      icons,
 		JobDetails:        jobDetailsService{},
+		JobContexts:       jobContextService{},
 		Pipelines:         pipelines,
 		PipelineChains:    pipelines,
 		RunOptions:        pipelines,
@@ -122,6 +125,9 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if jobDetails.Title != "Job: compile" || len(jobDetails.Timeline) != 1 || jobDetails.Timeline[0].Status != "succeeded" || len(jobDetails.OutputGroups) != 1 || jobDetails.OutputGroups[0].ExpandedCommand != "go build ./..." || !jobDetails.CanRerun {
 		t.Fatalf("job details = %#v", jobDetails)
 	}
+	if string(jobDetails.ProjectIcon) != "project-icon" || len(jobDetails.JobProperties) != 1 || jobDetails.RunContext == nil || len(jobDetails.RunContext.Pipelines) != 1 {
+		t.Fatalf("enriched job details = %#v", jobDetails)
+	}
 	output, outputErrors, err := client.WatchJobOutput(ctx, "job-1", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -186,6 +192,18 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	importResult, err := client.ImportProject(ctx, &cnpv1.ImportProjectRequest{RepoUrl: "https://example.test/repo.git", ConfigFile: "ciwi-project.yaml"}, "import-command-key")
 	if err != nil || importResult.ProjectName != "imported" || importResult.Pipelines != 1 {
 		t.Fatalf("project import = %#v, %v", importResult, err)
+	}
+	managed, err := client.GetManagedYAML(ctx, 7)
+	if err != nil || managed.ProjectId != 7 || managed.Revision != "rev" {
+		t.Fatalf("managed YAML get = %#v, %v", managed, err)
+	}
+	validated, err := client.ValidateManagedYAML(ctx, &cnpv1.ManagedYAMLRequest{ProjectId: 7, Yaml: "project: {name: managed}"})
+	if err != nil || validated.ProjectName != "managed" || validated.Pipelines != 1 {
+		t.Fatalf("managed YAML validate = %#v, %v", validated, err)
+	}
+	saved, err := client.SaveManagedYAML(ctx, &cnpv1.ManagedYAMLRequest{ProjectId: 7, Yaml: "project: {name: managed}", Revision: "rev"}, "managed-command-key")
+	if err != nil || saved.ProjectName != "managed" || saved.Revision != "rev" {
+		t.Fatalf("managed YAML save = %#v, %v", saved, err)
 	}
 	updateStatus, err := client.GetServerUpdateStatus(ctx)
 	if err != nil || updateStatus.CurrentVersion != "v0.2.0" || !updateStatus.SelfUpdateSupported {
@@ -352,7 +370,7 @@ func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
 func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -384,7 +402,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	changes := application.NewChangeHub()
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -412,7 +430,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -489,7 +507,7 @@ func completeTestServices(changes *application.ChangeHub) nativecnp.Services {
 	pipelines := &pipelineService{}
 	executions := &executionCommandService{}
 	return nativecnp.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Updates: updateService{},
 		FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: pipelines, PipelineChains: pipelines, RunOptions: pipelines,
 		Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: executions,
@@ -543,6 +561,20 @@ func (serverService) GetServerInfo(context.Context) (domain.ServerInfo, error) {
 }
 
 type projectService struct{}
+
+type managedYAMLService struct{}
+
+func (managedYAMLService) GetManagedYAML(_ context.Context, projectID int64) (protocol.ManagedYAMLDefinition, error) {
+	return protocol.ManagedYAMLDefinition{ProjectID: projectID, ProjectName: "managed", YAML: "project: {name: managed}", Revision: "rev"}, nil
+}
+
+func (managedYAMLService) ValidateManagedYAML(_ context.Context, projectID int64, raw string) (protocol.ManagedYAMLDefinition, error) {
+	return protocol.ManagedYAMLDefinition{ProjectID: projectID, ProjectName: "managed", YAML: raw, Pipelines: 1}, nil
+}
+
+func (managedYAMLService) SaveManagedYAML(_ context.Context, projectID int64, revision, raw, _ string) (protocol.ManagedYAMLDefinition, error) {
+	return protocol.ManagedYAMLDefinition{ProjectID: projectID, ProjectName: "managed", YAML: raw, Revision: revision, Pipelines: 1}, nil
+}
 
 type updateService struct{}
 
@@ -642,10 +674,23 @@ type jobDetailsService struct{}
 
 func (jobDetailsService) GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error) {
 	return presentation.JobDetailsView{
-		ID: "job-1", Title: "Job: compile", Status: "succeeded", StatusLabel: "Succeeded",
-		CanRerun:     true,
-		Timeline:     []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
-		OutputGroups: []presentation.JobOutputGroupView{{ID: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded", Reached: true, YAMLLiteral: "run: go build ./...", ExpandedCommand: "go build ./..."}},
+		ID: "job-1", ProjectID: 7, Title: "Job: compile", Status: "succeeded", StatusLabel: "Succeeded",
+		CanRerun:      true,
+		JobProperties: []presentation.JobDetailRowView{{Label: "Job Execution ID", Value: "job-1"}},
+		Timeline:      []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
+		OutputGroups:  []presentation.JobOutputGroupView{{ID: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded", Reached: true, YAMLLiteral: "run: go build ./...", ExpandedCommand: "go build ./..."}},
+	}, nil
+}
+
+type jobContextService struct{}
+
+func (jobContextService) GetJobExecutionGraphContext(context.Context, string) (protocol.JobExecutionGraphContext, error) {
+	return protocol.JobExecutionGraphContext{
+		Scope: "pipeline", CurrentExecutionID: "job-1", CurrentPipelineID: "build", CurrentPipelineJobID: "compile",
+		Pipelines: []protocol.JobExecutionGraphPipeline{{
+			PipelineID: "build", Status: "succeeded",
+			Jobs: []protocol.JobExecutionGraphJob{{PipelineJobID: "compile", Status: "succeeded"}},
+		}},
 	}, nil
 }
 

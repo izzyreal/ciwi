@@ -4,38 +4,61 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
 type JobDetailsView struct {
-	ID                     string
-	Title                  string
-	Context                string
-	Status                 string
-	StatusLabel            string
-	CurrentStep            string
-	Agent                  string
-	Mode                   string
-	Created                string
-	Started                string
-	Finished               string
-	Duration               string
-	ExitCode               string
-	Error                  string
-	CanCancel              bool
-	CanRerun               bool
-	SchedulingState        string
-	SchedulingSummary      string
-	SchedulingRequirements string
-	SchedulingAgents       []SchedulingAgentView
-	SchedulingAdditional   string
-	Progress               domain.Progress
-	Timeline               []JobTimelineView
-	OutputGroups           []JobOutputGroupView
+	ID                        string
+	ProjectID                 int64
+	Title                     string
+	Context                   string
+	Status                    string
+	StatusLabel               string
+	CurrentStep               string
+	Agent                     string
+	Mode                      string
+	Created                   string
+	Started                   string
+	Finished                  string
+	Duration                  string
+	ExitCode                  string
+	Error                     string
+	CanCancel                 bool
+	CanRerun                  bool
+	SchedulingState           string
+	SchedulingSummary         string
+	SchedulingRequirements    string
+	SchedulingAgents          []SchedulingAgentView
+	SchedulingAdditional      string
+	JobProperties             []JobDetailRowView
+	CacheStatistics           []JobDetailRowView
+	CacheStatisticsEmpty      string
+	HostToolRequirements      ToolRequirementsView
+	ContainerToolRequirements ToolRequirementsView
+	ReleaseSummary            []JobDetailRowView
+	HasReleaseSummary         bool
+	Progress                  domain.Progress
+	Timeline                  []JobTimelineView
+	OutputGroups              []JobOutputGroupView
+}
+
+type JobDetailRowView struct {
+	Label string
+	Value string
+	Tone  string
+}
+
+type ToolRequirementsView struct {
+	EmptyLabel string
+	Summary    string
+	Tone       string
+	Issues     []string
 }
 
 type SchedulingAgentView struct {
@@ -140,9 +163,8 @@ func (q *JobDetailsQueries) GetJobDetailsView(ctx context.Context, jobID string)
 
 func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 	now := time.Now().UTC()
-	titleTarget := firstNonEmpty(details.PipelineJobID, details.PipelineID, details.ID)
 	view := JobDetailsView{
-		ID: details.ID, Title: "Job: " + titleTarget, Context: jobContext(details),
+		ID: details.ID, ProjectID: details.ProjectID, Title: jobHeaderTitle(details), Context: jobHeaderContext(details),
 		Status: details.Status, StatusLabel: humanStatus(details.Status), CurrentStep: details.CurrentStep,
 		Agent: details.AgentID, Created: formatTimestamp(details.CreatedUTC), Started: formatTimestamp(details.StartedUTC),
 		Finished: formatTimestamp(details.FinishedUTC), ExitCode: formatExitCode(details.ExitCode), Error: details.Error,
@@ -156,12 +178,17 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 	if details.DryRun {
 		view.Mode = "Dry run"
 	} else {
-		view.Mode = "Run"
+		view.Mode = "Ordinary run"
 	}
 	applySchedulingDiagnosis(&view, details.SchedulingDiagnosis)
 	if !details.StartedUTC.IsZero() && !details.FinishedUTC.IsZero() && !details.FinishedUTC.Before(details.StartedUTC) {
 		view.Duration = formatDuration(details.FinishedUTC.Sub(details.StartedUTC))
 	}
+	view.JobProperties = presentJobProperties(details, view)
+	view.CacheStatistics, view.CacheStatisticsEmpty = presentCacheStatistics(details.CacheStats)
+	view.HostToolRequirements = presentToolRequirements(details, "requires.tool.", "host.tool.", "No tool requirements declared for this job.")
+	view.ContainerToolRequirements = presentToolRequirements(details, "requires.container.tool.", "container.tool.", "No container tool requirements declared for this job.")
+	view.ReleaseSummary, view.HasReleaseSummary = presentReleaseSummary(details)
 	phaseTotal, stepTotal := 0, 0
 	for _, item := range details.Timeline {
 		if item.Kind == "phase" {
@@ -208,6 +235,197 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 		})
 	}
 	return view
+}
+
+func jobHeaderTitle(details domain.JobExecutionDetails) string {
+	parts := make([]string, 0, 4)
+	if project := strings.TrimSpace(details.ProjectName); project != "" {
+		parts = append(parts, project)
+	}
+	if strings.TrimSpace(details.Metadata["adhoc"]) == "1" {
+		parts = append(parts, "Adhoc script")
+	} else {
+		for _, value := range []string{details.PipelineID, details.PipelineJobID, details.MatrixName} {
+			if value = strings.TrimSpace(value); value != "" {
+				parts = append(parts, value)
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return "Job Execution"
+	}
+	return strings.Join(parts, " / ")
+}
+
+func jobHeaderContext(details domain.JobExecutionDetails) string {
+	context := "Status: " + humanStatus(details.Status)
+	if step := strings.TrimSpace(details.CurrentStep); step != "" {
+		context += " · " + step
+	}
+	return context
+}
+
+func presentJobProperties(details domain.JobExecutionDetails, view JobDetailsView) []JobDetailRowView {
+	build := strings.TrimSpace(details.Metadata["build_version"])
+	if target := strings.TrimSpace(details.Metadata["build_target"]); build != "" && target != "" {
+		build += " (" + target + ")"
+	}
+	rows := []JobDetailRowView{
+		{Label: "Job Execution ID", Value: details.ID},
+		{Label: "Project", Value: details.ProjectName},
+		{Label: "Job ID", Value: details.PipelineJobID},
+		{Label: "Pipeline", Value: details.PipelineID},
+		{Label: "Mode", Value: view.Mode},
+		{Label: "Build", Value: build},
+		{Label: "Agent", Value: details.AgentID},
+		{Label: "Created", Value: view.Created},
+		{Label: "Started", Value: view.Started},
+		{Label: "Duration", Value: view.Duration},
+		{Label: "Exit Code", Value: view.ExitCode},
+	}
+	return rows
+}
+
+func presentCacheStatistics(statistics []domain.JobCacheStatistics) ([]JobDetailRowView, string) {
+	if len(statistics) == 0 {
+		return nil, "No cache statistics reported for this job."
+	}
+	rows := make([]JobDetailRowView, 0, len(statistics))
+	for _, stats := range statistics {
+		attributes := make([]string, 0, 3)
+		if stats.Environment != "" {
+			attributes = append(attributes, stats.Environment)
+		}
+		if stats.Type != "" {
+			attributes = append(attributes, stats.Type)
+		}
+		if stats.Source != "" {
+			attributes = append(attributes, "source: "+stats.Source)
+		}
+		lines := make([]string, 0, 4)
+		if len(attributes) > 0 {
+			lines = append(lines, strings.Join(attributes, " · "))
+		}
+		if stats.Path != "" {
+			lines = append(lines, "Path: "+stats.Path)
+		}
+		lines = append(lines, fmt.Sprintf("Size: %s | Files: %d | Dirs: %d", formatBytes(stats.SizeBytes), stats.Files, stats.Directories))
+		keys := make([]string, 0, len(stats.ToolMetrics))
+		for key := range stats.ToolMetrics {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys[:min(len(keys), 10)] {
+			lines = append(lines, key+": "+stats.ToolMetrics[key])
+		}
+		tone := ""
+		if stats.Error != "" {
+			lines = append(lines, "Error: "+stats.Error)
+			tone = "danger"
+		}
+		rows = append(rows, JobDetailRowView{Label: firstNonEmpty(stats.ID, "cache"), Value: strings.Join(lines, "\n"), Tone: tone})
+	}
+	return rows, ""
+}
+
+func presentToolRequirements(details domain.JobExecutionDetails, requiredPrefix, runtimePrefix, emptyLabel string) ToolRequirementsView {
+	type requirement struct{ tool, constraint string }
+	items := make([]requirement, 0)
+	for key, constraint := range details.RequiredCapabilities {
+		if strings.HasPrefix(key, requiredPrefix) {
+			if tool := strings.TrimSpace(strings.TrimPrefix(key, requiredPrefix)); tool != "" {
+				items = append(items, requirement{tool: tool, constraint: strings.TrimSpace(constraint)})
+			}
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].tool < items[j].tool })
+	if len(items) == 0 {
+		return ToolRequirementsView{EmptyLabel: emptyLabel}
+	}
+	observed := false
+	issues := make([]string, 0)
+	for _, item := range items {
+		actual := strings.TrimSpace(details.RuntimeCapabilities[runtimePrefix+item.tool])
+		observed = observed || actual != ""
+		if !requirements.ToolConstraintMatch(actual, item.constraint) {
+			expected := firstNonEmpty(item.constraint, "*")
+			issues = append(issues, fmt.Sprintf("%s expected %s, got %s", item.tool, expected, firstNonEmpty(actual, "missing")))
+		}
+	}
+	if !observed {
+		status := strings.ToLower(strings.TrimSpace(details.Status))
+		message := "Runtime capability report unavailable for this execution."
+		if status == "queued" || status == "waiting" {
+			message = "No agent has leased this job yet; runtime capability data is not available."
+		} else if status == "running" || status == "leased" || status == "in progress" {
+			message = "Waiting for the leased agent runtime capability report."
+		}
+		return ToolRequirementsView{EmptyLabel: message}
+	}
+	if len(issues) == 0 {
+		return ToolRequirementsView{Summary: "Requirements matched", Tone: "success"}
+	}
+	return ToolRequirementsView{Summary: "Requirements mismatch", Tone: "danger", Issues: issues}
+}
+
+func presentReleaseSummary(details domain.JobExecutionDetails) ([]JobDetailRowView, bool) {
+	if details.PipelineID != "release" {
+		return nil, false
+	}
+	mode := "live"
+	if details.DryRun {
+		mode = "dry-run"
+	}
+	rows := []JobDetailRowView{{Label: "Mode", Value: mode}}
+	for _, field := range []struct{ key, label string }{
+		{"version", "Version"}, {"pipeline_version_raw", "Version"},
+		{"tag", "Tag"}, {"pipeline_version", "Tag"}, {"artifacts", "Assets"},
+		{"next_version", "Next version"}, {"auto_bump_branch", "Auto bump branch"},
+	} {
+		value := strings.TrimSpace(details.Metadata[field.key])
+		if value == "" {
+			continue
+		}
+		already := false
+		for _, row := range rows {
+			already = already || row.Label == field.label
+		}
+		if !already {
+			rows = append(rows, JobDetailRowView{Label: field.label, Value: value})
+		}
+	}
+	if len(rows) == 1 {
+		rows = append(rows, JobDetailRowView{Value: "No release metadata reported yet.", Tone: "muted"})
+	}
+	return rows, true
+}
+
+func formatBytes(value int64) string {
+	if value < 0 {
+		return "0 B"
+	}
+	if value < 1024 {
+		return fmt.Sprintf("%d B", value)
+	}
+	units := []string{"KB", "MB", "GB", "TB"}
+	size := float64(value) / 1024
+	unitIndex := 0
+	for size >= 1024 && unitIndex < len(units)-1 {
+		size /= 1024
+		unitIndex++
+	}
+	precision := 2
+	if size >= 10 {
+		precision = 1
+	}
+	formatted := fmt.Sprintf("%.*f", precision, size)
+	if precision == 2 {
+		formatted = strings.TrimSuffix(formatted, ".00")
+		if strings.HasSuffix(formatted, "0") && strings.Contains(formatted, ".") {
+			formatted = strings.TrimSuffix(formatted, "0")
+		}
+	}
+	return formatted + " " + units[unitIndex]
 }
 
 func applySchedulingDiagnosis(view *JobDetailsView, diagnosis *domain.SchedulingDiagnosis) {
@@ -301,7 +519,14 @@ func formatDurationMS(value int64) string {
 	if value <= 0 {
 		return ""
 	}
-	return formatDuration(time.Duration(value) * time.Millisecond)
+	totalSeconds := value / 1000
+	hours := totalSeconds / 3600
+	minutes := (totalSeconds % 3600) / 60
+	seconds := totalSeconds % 60
+	if hours > 0 {
+		return fmt.Sprintf("%02dh %02dm %02ds", hours, minutes, seconds)
+	}
+	return fmt.Sprintf("%02dm %02ds", minutes, seconds)
 }
 
 func formatExitCode(value *int) string {

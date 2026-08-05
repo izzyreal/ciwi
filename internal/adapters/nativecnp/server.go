@@ -11,6 +11,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/pkg/cnp"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 )
@@ -25,6 +26,11 @@ type Services struct {
 	ProjectCommands interface {
 		Execute(context.Context, application.ProjectActionRequest) (application.ProjectActionResult, error)
 		Import(context.Context, application.ImportProjectRequest) (application.ImportProjectResult, error)
+	}
+	ManagedYAML interface {
+		GetManagedYAML(context.Context, int64) (protocol.ManagedYAMLDefinition, error)
+		ValidateManagedYAML(context.Context, int64, string) (protocol.ManagedYAMLDefinition, error)
+		SaveManagedYAML(context.Context, int64, string, string, string) (protocol.ManagedYAMLDefinition, error)
 	}
 	Updates interface {
 		Status(context.Context) (application.ServerUpdateStatus, error)
@@ -44,6 +50,9 @@ type Services struct {
 	JobDetails interface {
 		GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error)
 		GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error)
+	}
+	JobContexts interface {
+		GetJobExecutionGraphContext(context.Context, string) (protocol.JobExecutionGraphContext, error)
 	}
 	Pipelines interface {
 		RunPipeline(context.Context, application.RunPipelineRequest) (application.RunPipelineResult, error)
@@ -85,7 +94,7 @@ type Handler struct {
 }
 
 func NewHandler(services Services) (*Handler, error) {
-	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.AgentScripts == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.ManagedYAML == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.AgentScripts == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native CNP services are incomplete")
 	}
 	return &Handler{services: services}, nil
@@ -111,7 +120,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerInstanceId:     snapshot.InstanceID,
 		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -305,7 +314,27 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		var view presentation.JobDetailsView
 		view, err = s.services.JobDetails.GetJobDetailsView(ctx, operation.GetJobDetails.GetJobExecutionId())
 		if err == nil {
-			response.Result = &cnpv1.Response_JobDetails{JobDetails: jobDetailsToProto(view)}
+			result := jobDetailsToProto(view)
+			if operation.GetJobDetails.GetIncludeProjectIcon() && view.ProjectID > 0 && s.services.ProjectIcons != nil {
+				var contentType string
+				var data []byte
+				var found bool
+				contentType, data, found, err = s.services.ProjectIcons.GetProjectIcon(ctx, view.ProjectID)
+				if err == nil && found {
+					result.ProjectIcon = append([]byte(nil), data...)
+					result.ProjectIconContentType = contentType
+				}
+			}
+			if err == nil && s.services.JobContexts != nil {
+				var graphContext protocol.JobExecutionGraphContext
+				graphContext, err = s.services.JobContexts.GetJobExecutionGraphContext(ctx, view.ID)
+				if err == nil {
+					result.RunContext = jobRunContextToProto(graphContext)
+				}
+			}
+			if err == nil {
+				response.Result = &cnpv1.Response_JobDetails{JobDetails: result}
+			}
 		}
 	case *cnpv1.Request_RunPipeline:
 		var result application.RunPipelineResult
@@ -389,6 +418,24 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 				ProjectName: result.ProjectName, RepoUrl: result.RepoURL, RepoRef: result.RepoRef,
 				ConfigFile: result.ConfigFile, Pipelines: uint32(max(result.Pipelines, 0)),
 			}}
+		}
+	case *cnpv1.Request_GetManagedYaml:
+		var definition protocol.ManagedYAMLDefinition
+		definition, err = s.services.ManagedYAML.GetManagedYAML(ctx, operation.GetManagedYaml.GetProjectId())
+		if err == nil {
+			response.Result = &cnpv1.Response_ManagedYaml{ManagedYaml: managedYAMLToProto(definition)}
+		}
+	case *cnpv1.Request_ValidateManagedYaml:
+		var definition protocol.ManagedYAMLDefinition
+		definition, err = s.services.ManagedYAML.ValidateManagedYAML(ctx, operation.ValidateManagedYaml.GetProjectId(), operation.ValidateManagedYaml.GetYaml())
+		if err == nil {
+			response.Result = &cnpv1.Response_ManagedYaml{ManagedYaml: managedYAMLToProto(definition)}
+		}
+	case *cnpv1.Request_SaveManagedYaml:
+		var definition protocol.ManagedYAMLDefinition
+		definition, err = s.services.ManagedYAML.SaveManagedYAML(ctx, operation.SaveManagedYaml.GetProjectId(), operation.SaveManagedYaml.GetRevision(), operation.SaveManagedYaml.GetYaml(), request.Metadata.IdempotencyKey)
+		if err == nil {
+			response.Result = &cnpv1.Response_ManagedYaml{ManagedYaml: managedYAMLToProto(definition)}
 		}
 	case *cnpv1.Request_GetServerUpdateStatus:
 		var result application.ServerUpdateStatus

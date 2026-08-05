@@ -109,3 +109,18 @@ func TestOverflowTooltipsCoverTruncatedUI(t *testing.T) {
 		}
 	}
 }
+
+func TestJobExecutionHeaderUsesCanonicalPipelineTitle(t *testing.T) {
+	for _, want := range []string{
+		"function jobExecutionTitle(job)",
+		"m.project",
+		"m.pipeline_id",
+		"m.pipeline_job_id",
+		"m.matrix_name",
+		"document.getElementById('jobTitle').textContent = jobExecutionTitle(job);",
+	} {
+		if !strings.Contains(sharedJS+jobExecutionJS, want) {
+			t.Errorf("canonical job header title no longer contains %q", want)
+		}
+	}
+}

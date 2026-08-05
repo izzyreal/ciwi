@@ -1,3 +1,4 @@
+@import url("/ui/css/typography.css");
 
     :root[data-ciwi-theme="pina-colada"] {
       --bg: #fff8e8;
@@ -637,7 +638,10 @@
     }
     body {
       margin: 0;
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-family: var(--ciwi-font-body);
+	  font-size: var(--ciwi-type-body-size);
+	  font-weight: var(--ciwi-type-body-weight);
+	  line-height: var(--ciwi-type-body-line-height);
       color: var(--ink);
       background: var(--page-background);
       background-attachment: fixed;
@@ -845,18 +849,4 @@
       justify-content: center;
       font-size: 1.15em;
       line-height: 1;
-    }
-    @font-face {
-      font-family: "Ciwi Mono";
-      src: url("/ui/fonts/ciwi-mono-regular.ttf?v=2") format("truetype");
-      font-style: normal;
-      font-weight: 400;
-      font-display: swap;
-    }
-    @font-face {
-      font-family: "Ciwi Mono";
-      src: url("/ui/fonts/ciwi-mono-bold.ttf?v=2") format("truetype");
-      font-style: normal;
-      font-weight: 700;
-      font-display: swap;
     }

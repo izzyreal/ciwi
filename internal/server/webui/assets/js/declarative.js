@@ -109,6 +109,10 @@
       'pill-background': '--pill-bg', 'pill-text': '--pill-ink',
       text: '--ink', 'text-muted': '--muted', accent: '--accent', 'accent-strong': '--accent-strong',
       border: '--line', success: '--ok', warning: '--warn', danger: '--bad', focus: '--focus-ring',
+      'console-background': '--console-bg', 'console-surface': '--console-surface',
+      'console-border': '--console-line', 'console-text': '--console-ink',
+      'console-muted': '--console-muted', 'console-accent': '--console-accent',
+      'console-success': '--console-green',
     };
     Object.entries(mapping).forEach(([token, variable]) => { if (colors[token]) style.setProperty(variable, colors[token]); });
 	Object.entries(dimensionVariables).forEach(([token, variable]) => {
@@ -307,6 +311,12 @@
       case 'spacer': return document.createElement('span');
       default: return document.createElement('div');
     }
+  }
+
+  function elementContainsTextSelection(element) {
+    const selection = window.getSelection && window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) return false;
+    return element.contains(selection.anchorNode) || element.contains(selection.focusNode);
   }
 
   function bindActions(element, actions, data) {
@@ -552,6 +562,7 @@
         element.setAttribute('role', element.tagName === 'BUTTON' ? 'button' : 'link');
         element.addEventListener('click', event => {
           if (element.tagName === 'BUTTON' || element.closest('summary')) event.stopPropagation();
+		  if (element.tagName !== 'BUTTON' && elementContainsTextSelection(element)) return;
           invoke(data).catch(error => window.alert(error.message || String(error)));
         });
         element.addEventListener('keydown', event => {

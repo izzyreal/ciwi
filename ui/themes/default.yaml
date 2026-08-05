@@ -1,6 +1,6 @@
 apiVersion: ciwi.ui/v1
 kind: Theme
-metadata: {name: default, title: Default, description: Crisp mint with bolder status colors}
+metadata: {name: default, title: Default, description: "Bright mint with stronger color and contrast."}
 theme:
   colors: &colors
     background: "#edf7f1"
@@ -29,6 +29,7 @@ theme:
     console-text: "#d5eee2"
     console-muted: "#98b4a7"
     console-accent: "#a8d7c1"
+    console-success: "#9ce397"
   gradients:
     page:
       kind: linear

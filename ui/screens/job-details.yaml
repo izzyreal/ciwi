@@ -29,6 +29,16 @@ screen:
         style:
           role: hero
         children:
+          - component: image
+            image:
+              binding: jobDetails.project_icon
+              description: Project logo
+            visible:
+              binding: jobDetails.project_icon
+              empty: true
+              not: true
+            style:
+              role: job-header-icon
           - component: column
             layout:
               direction: vertical
@@ -39,15 +49,21 @@ screen:
                 text:
                   binding: jobDetails.title
                 style:
-                  role: title
+                  role: job-title
                   emphasis: strong
-              - component: text
-                text:
-                  binding: jobDetails.context
-                style:
-                  role: subtitle
-                  tone: muted
-                  truncate: true
+              - component: row
+                layout: {direction: horizontal, gap: small, align: center}
+                children:
+                  - component: text
+                    text: {literal: "Status:"}
+                    style: {role: subtitle, tone: muted}
+                  - component: text
+                    text: {binding: jobDetails.status_label}
+                    style: {role: subtitle, emphasis: strong, toneBinding: jobDetails.status}
+                  - component: text
+                    text: {template: "- {{jobDetails.current_step}}"}
+                    visible: {binding: jobDetails.current_step, empty: true, not: true}
+                    style: {role: subtitle, tone: muted, truncate: true}
           - component: button
             text:
               literal: Run Job Again
@@ -64,7 +80,7 @@ screen:
                   message: Creates an independent queued attempt from this stored execution. It does not interrupt, replace, or otherwise affect jobs that are already queued or running.
           - component: button
             text:
-              literal: Cancel Execution
+              literal: Cancel
             icon: circle-x
             visible:
               binding: jobDetails.can_cancel
@@ -78,177 +94,233 @@ screen:
                   message: Marks this execution failed on the server. A process already running on an agent is not forcibly terminated and may finish in the background; other queued and running executions are unaffected.
           - component: button
             text:
-              literal: Back to Executions
+              literal: Back to Job Executions
             icon: arrow-left
             actions:
               - on: activate
                 command: navigate
                 arguments:
                   route: /
-      - component: section
-        id: execution-summary
+      - component: column
+        id: execution-details
         layout:
           direction: vertical
           gap: medium
         children:
-          - component: text
-            text:
-              literal: Execution
-            style:
-              role: heading
-              emphasis: strong
-          - component: card
-            layout:
-              direction: vertical
-              gap: small
-              padding: medium
+          - component: row
+            layout: {direction: horizontal, gap: medium, align: start, wrap: true}
             children:
-              - component: row
-                layout:
-                  direction: horizontal
-                  gap: small
-                  align: center
-                children:
-                  - component: badge
-                    text:
-                      binding: jobDetails.status_label
-                    style:
-                      toneBinding: jobDetails.status
-                  - component: badge
-                    text:
-                      binding: jobDetails.mode
-                    style:
-                      tone: muted
-              - component: text
-                text:
-                  template: "Created: {{jobDetails.created}}"
-                visible:
-                  binding: jobDetails.created
-                  empty: true
-                  not: true
-                style:
-                  tone: muted
-              - component: text
-                text:
-                  template: "Started: {{jobDetails.started}}"
-                visible:
-                  binding: jobDetails.started
-                  empty: true
-                  not: true
-                style:
-                  tone: muted
-              - component: text
-                text:
-                  template: "Finished: {{jobDetails.finished}} · Duration: {{jobDetails.duration}}"
-                visible:
-                  binding: jobDetails.finished
-                  empty: true
-                  not: true
-                style:
-                  tone: muted
-              - component: text
-                text:
-                  template: "Agent: {{jobDetails.agent}}"
-                visible:
-                  binding: jobDetails.agent
-                  empty: true
-                  not: true
-                style:
-                  tone: muted
-              - component: text
-                text:
-                  template: "Current step: {{jobDetails.current_step}}"
-                visible:
-                  binding: jobDetails.current_step
-                  empty: true
-                  not: true
-              - component: text
-                text:
-                  template: "Exit code: {{jobDetails.exit_code}}"
-                visible:
-                  binding: jobDetails.exit_code
-                  empty: true
-                  not: true
-              - component: text
-                text:
-                  template: "Error: {{jobDetails.error}}"
-                visible:
-                  binding: jobDetails.error
-                  empty: true
-                  not: true
-                style:
-                  tone: danger
-              - component: column
-                layout:
-                  direction: vertical
-                  gap: small
-                visible:
-                  binding: jobDetails.scheduling_diagnosis.summary
-                  empty: true
-                  not: true
+              - component: card
+                layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
                 children:
                   - component: text
-                    text:
-                      literal: Scheduling
-                    style:
-                      emphasis: strong
-                  - component: text
-                    text:
-                      binding: jobDetails.scheduling_diagnosis.summary
-                  - component: text
-                    text:
-                      template: "Required: {{jobDetails.scheduling_diagnosis.requirements_label}}"
-                    visible:
-                      binding: jobDetails.scheduling_diagnosis.requirements_label
-                      empty: true
-                      not: true
-                    style:
-                      tone: muted
+                    text: {literal: Job Properties}
+                    style: {role: heading, emphasis: strong}
                   - component: list
-                    layout:
-                      direction: vertical
-                      gap: small
-                    repeat:
-                      source: jobDetails.scheduling_diagnosis.agents
-                      as: schedulingAgent
-                      key: schedulingAgent.agent_id
+                    layout: {direction: vertical, gap: small}
+                    repeat: {source: jobDetails.job_properties, as: detailRow, key: detailRow.label}
                     children:
                       - component: row
-                        layout:
-                          direction: horizontal
-                          gap: small
-                          align: center
+                        layout: {direction: horizontal, gap: small, align: start}
+                        overrides:
+                          compact:
+                            layout: {direction: vertical, align: start}
                         children:
                           - component: text
-                            text:
-                              binding: schedulingAgent.agent_id
-                            style:
-                              emphasis: strong
-                          - component: badge
-                            text:
-                              binding: schedulingAgent.status
-                            style:
-                              toneBinding: schedulingAgent.tone
+                            text: {binding: detailRow.label}
+                            layout: {minWidth: "150"}
+                            style: {role: detail, tone: muted}
                           - component: text
-                            text:
-                              binding: schedulingAgent.details
-                            visible:
-                              binding: schedulingAgent.details
-                              empty: true
-                              not: true
-                            layout:
-                              grow: true
-                            style:
-                              tone: muted
+                            text: {binding: detailRow.value}
+                            layout: {grow: true}
+                            style: {role: detail}
+              - component: card
+                layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+                children:
                   - component: text
-                    text:
-                      binding: jobDetails.scheduling_diagnosis.additional_agents_label
-                    visible:
-                      binding: jobDetails.scheduling_diagnosis.additional_agents_label
-                      empty: true
-                      not: true
-                    style:
-                      tone: muted
+                    text: {literal: Cache Statistics}
+                    style: {role: heading, emphasis: strong}
+                  - component: text
+                    text: {binding: jobDetails.cache_statistics_empty}
+                    visible: {binding: jobDetails.cache_statistics_empty, empty: true, not: true}
+                    style: {role: detail, tone: muted}
+                  - component: list
+                    layout: {direction: vertical, gap: small}
+                    repeat: {source: jobDetails.cache_statistics, as: cacheRow, key: cacheRow.label}
+                    children:
+                      - component: card
+                        layout: {direction: vertical, gap: small, padding: small}
+                        children:
+                          - component: text
+                            text: {binding: cacheRow.label}
+                            style: {role: detail, emphasis: strong}
+                          - component: text
+                            text: {binding: cacheRow.value}
+                            style: {role: detail-small, toneBinding: cacheRow.tone}
+          - component: row
+            layout: {direction: horizontal, gap: medium, align: start, wrap: true}
+            children:
+              - component: card
+                visible: {binding: jobDetails.scheduling_diagnosis.summary, empty: true, not: true}
+                layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+                children:
+                  - component: text
+                    text: {literal: Scheduling}
+                    style: {role: heading, emphasis: strong}
+                  - component: text
+                    text: {binding: jobDetails.scheduling_diagnosis.summary}
+                    style: {role: detail, emphasis: strong}
+                  - component: text
+                    text: {template: "Required: {{jobDetails.scheduling_diagnosis.requirements_label}}"}
+                    visible: {binding: jobDetails.scheduling_diagnosis.requirements_label, empty: true, not: true}
+                    style: {role: detail, tone: muted}
+                  - component: list
+                    layout: {direction: vertical, gap: small}
+                    repeat: {source: jobDetails.scheduling_diagnosis.agents, as: schedulingAgent, key: schedulingAgent.agent_id}
+                    children:
+                      - component: text
+                        text: {template: "{{schedulingAgent.agent_id}}: {{schedulingAgent.status}} — {{schedulingAgent.details}}"}
+                        style: {role: detail, toneBinding: schedulingAgent.tone}
+                  - component: text
+                    text: {binding: jobDetails.scheduling_diagnosis.additional_agents_label}
+                    visible: {binding: jobDetails.scheduling_diagnosis.additional_agents_label, empty: true, not: true}
+                    style: {role: detail, tone: muted}
+              - component: card
+                layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+                children:
+                  - component: text
+                    text: {literal: Host Tool Requirements}
+                    style: {role: heading, emphasis: strong}
+                  - component: text
+                    text: {binding: jobDetails.host_tool_requirements.empty_label}
+                    visible: {binding: jobDetails.host_tool_requirements.empty_label, empty: true, not: true}
+                    style: {role: detail, tone: muted}
+                  - component: text
+                    text: {binding: jobDetails.host_tool_requirements.summary}
+                    visible: {binding: jobDetails.host_tool_requirements.summary, empty: true, not: true}
+                    style: {role: detail, emphasis: strong, toneBinding: jobDetails.host_tool_requirements.tone}
+                  - component: list
+                    layout: {direction: vertical, gap: small}
+                    repeat: {source: jobDetails.host_tool_requirements.issues, as: requirementIssue, key: requirementIssue}
+                    children:
+                      - component: text
+                        text: {template: "• {{requirementIssue}}"}
+                        style: {role: detail, tone: danger}
+              - component: card
+                layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+                children:
+                  - component: text
+                    text: {literal: Container Tool Requirements}
+                    style: {role: heading, emphasis: strong}
+                  - component: text
+                    text: {binding: jobDetails.container_tool_requirements.empty_label}
+                    visible: {binding: jobDetails.container_tool_requirements.empty_label, empty: true, not: true}
+                    style: {role: detail, tone: muted}
+                  - component: text
+                    text: {binding: jobDetails.container_tool_requirements.summary}
+                    visible: {binding: jobDetails.container_tool_requirements.summary, empty: true, not: true}
+                    style: {role: detail, emphasis: strong, toneBinding: jobDetails.container_tool_requirements.tone}
+                  - component: list
+                    layout: {direction: vertical, gap: small}
+                    repeat: {source: jobDetails.container_tool_requirements.issues, as: requirementIssue, key: requirementIssue}
+                    children:
+                      - component: text
+                        text: {template: "• {{requirementIssue}}"}
+                        style: {role: detail, tone: danger}
+          - component: card
+            visible: {binding: jobDetails.has_release_summary}
+            layout: {direction: vertical, gap: small, padding: medium}
+            children:
+              - component: text
+                text: {literal: Release Summary}
+                style: {role: heading, emphasis: strong}
+              - component: list
+                layout: {direction: vertical, gap: small}
+                repeat: {source: jobDetails.release_summary, as: releaseRow, key: releaseRow.label}
+                children:
+                  - component: row
+                    layout: {direction: horizontal, gap: small, align: start}
+                    children:
+                      - component: text
+                        text: {template: "{{releaseRow.label}}:"}
+                        visible: {binding: releaseRow.label, empty: true, not: true}
+                        style: {role: detail, emphasis: strong}
+                      - component: text
+                        text: {binding: releaseRow.value}
+                        style: {role: detail, toneBinding: releaseRow.tone}
+          - component: card
+            visible: {binding: jobDetails.run_context.available}
+            layout: {direction: vertical, gap: medium, padding: medium}
+            children:
+              - component: text
+                text: {literal: Run Context}
+                style: {role: heading, emphasis: strong}
+              - component: text
+                text: {binding: jobDetails.run_context.scope_label}
+                style: {role: detail, tone: muted}
+              - component: graph-view
+                text: {literal: Pipelines}
+                graphView:
+                  stateKey: "job-run-context:{{jobDetails.id}}"
+                  defaultMode: graph
+                  nodes: jobDetails.run_context.pipelines
+                  as: runPipeline
+                  nodeKey: runPipeline.pipeline_id
+                  nodeLabel: {binding: runPipeline.pipeline_id}
+                  nodeMeta: {binding: runPipeline.summary_label}
+                  dependencies: runPipeline.depends_on
+                  details:
+                    - component: text
+                      text: {template: "Pipeline: {{runPipeline.pipeline_id}}"}
+                      style: {role: heading, emphasis: strong}
+                    - component: graph-view
+                      text: {literal: Jobs}
+                      graphView:
+                        stateKey: "job-run-context-jobs:{{jobDetails.id}}:{{runPipeline.pipeline_id}}"
+                        defaultMode: graph
+                        nodes: runPipeline.jobs
+                        as: runJob
+                        nodeKey: runJob.id
+                        nodeLabel: {binding: runJob.id}
+                        nodeMeta: {binding: runJob.summary_label}
+                        dependencies: runJob.needs
+                        details:
+                          - component: text
+                            text: {template: "Job: {{runJob.id}}"}
+                            style: {role: heading, emphasis: strong}
+                          - component: list
+                            layout: {direction: vertical, gap: small}
+                            repeat: {source: runJob.executions, as: runExecution, key: runExecution.id}
+                            children:
+                              - component: row
+                                layout: {direction: horizontal, gap: small, align: center}
+                                children:
+                                  - component: button
+                                    text: {binding: runExecution.matrix_label}
+                                    actions:
+                                      - on: activate
+                                        command: navigate
+                                        arguments: {route: "/jobs/{{runExecution.id}}"}
+                                  - component: badge
+                                    text: {binding: runExecution.status}
+                                    style: {toneBinding: runExecution.status}
+                                  - component: text
+                                    text: {binding: runExecution.attempt_label}
+                                    style: {role: detail-small, tone: muted}
+                      children:
+                        - component: list
+                          repeat: {source: runPipeline.jobs, as: runJob, key: runJob.id}
+                          children:
+                            - component: text
+                              text: {template: "{{runJob.id}} · {{runJob.summary_label}}"}
+                              style: {role: detail}
+                children:
+                  - component: list
+                    repeat: {source: jobDetails.run_context.pipelines, as: runPipeline, key: runPipeline.pipeline_id}
+                    children:
+                      - component: text
+                        text: {template: "{{runPipeline.pipeline_id}} · {{runPipeline.summary_label}}"}
+                        style: {role: detail}
       - component: section
         id: execution-output
         layout:
@@ -266,10 +338,16 @@ screen:
               direction: horizontal
               gap: small
               align: center
+            style:
+              role: compact-toolbar
             children:
               - component: button
                 text:
                   binding: jobDetails.tailing_label
+                icon: arrow-bar-to-down
+                style:
+                  role: tailing-toggle
+                  toneBinding: jobDetails.tailing_tone
                 actions:
                   - on: activate
                     command: toggle-output-tailing
@@ -277,13 +355,17 @@ screen:
                 text:
                   literal: Copy Output
                 icon: copy
+                overrides:
+                  compact:
+                    style:
+                      role: icon-button
                 actions:
                   - on: activate
                     command: copy-output
               - component: input
                 layout:
                   grow: true
-                  minWidth: "180"
+                  minWidth: "90"
                 input:
                   value: jobDetails.output_search
                   placeholder: Search output
@@ -394,7 +476,7 @@ screen:
                 text:
                   binding: jobDetails.system_output
                 style:
-                  role: code
+                  role: output-code
                   tone: console-text
           - component: scroller
             id: job-output-groups
@@ -424,21 +506,9 @@ screen:
                   toneBinding: outputGroup.status
                 children:
                   - component: text
-                    text:
-                      binding: outputGroup.command_summary
-                    visible:
-                      binding: outputGroup.command_summary
-                      empty: true
-                      not: true
-                    style:
-                      role: code
-                      tone: console-muted
-                      truncate: true
-                  - component: badge
-                    text:
-                      binding: outputGroup.status_label
-                    style:
-                      toneBinding: outputGroup.status
+                    text: {literal: "Status: Not reached"}
+                    visible: {binding: outputGroup.reached, equals: "false"}
+                    style: {role: output-meta, tone: console-muted}
                   - component: text
                     text:
                       template: "Started: {{outputGroup.started}}"
@@ -447,6 +517,7 @@ screen:
                       empty: true
                       not: true
                     style:
+                      role: output-meta
                       tone: console-muted
                   - component: text
                     text:
@@ -456,6 +527,7 @@ screen:
                       empty: true
                       not: true
                     style:
+                      role: output-meta
                       tone: console-muted
                   - component: text
                     text:
@@ -464,6 +536,7 @@ screen:
                       binding: outputGroup.exit_code
                       empty: true
                       not: true
+                    style: {role: output-meta, tone: console-text}
                   - component: text
                     text:
                       template: "Error: {{outputGroup.error}}"
@@ -472,6 +545,7 @@ screen:
                       empty: true
                       not: true
                     style:
+                      role: output-meta
                       tone: danger
                   - component: text
                     text:
@@ -479,7 +553,7 @@ screen:
                     visible:
                       binding: outputGroup.is_phase
                     style:
-                      emphasis: strong
+                      role: output-label
                       tone: console-accent
                   - component: text
                     text:
@@ -487,7 +561,7 @@ screen:
                     visible:
                       binding: outputGroup.is_phase
                     style:
-                      role: code
+                      role: output-code
                       tone: console-text
                   - component: text
                     text:
@@ -495,7 +569,7 @@ screen:
                     visible:
                       binding: outputGroup.is_step
                     style:
-                      emphasis: strong
+                      role: output-label
                       tone: console-accent
                   - component: text
                     text:
@@ -503,7 +577,7 @@ screen:
                     visible:
                       binding: outputGroup.is_step
                     style:
-                      role: code
+                      role: output-code
                       tone: console-text
                   - component: text
                     text:
@@ -511,7 +585,7 @@ screen:
                     visible:
                       binding: outputGroup.is_step
                     style:
-                      emphasis: strong
+                      role: output-label
                       tone: console-accent
                   - component: text
                     text:
@@ -519,13 +593,13 @@ screen:
                     visible:
                       binding: outputGroup.is_step
                     style:
-                      role: code
+                      role: output-code
                       tone: console-text
                   - component: text
                     text:
                       literal: Output
                     style:
-                      emphasis: strong
+                      role: output-label
                       tone: console-accent
                   - component: text
                     id: job-output-group-text
@@ -536,7 +610,7 @@ screen:
                       empty: true
                       not: true
                     style:
-                      role: code
+                      role: output-code
                       tone: console-text
                   - component: text
                     text:
@@ -545,7 +619,7 @@ screen:
                       binding: outputGroup.output
                       empty: true
                     style:
-                      role: code
+                      role: output-code
                       tone: console-muted
                   - component: button
                     text:

@@ -61,25 +61,43 @@ type ExecutionSummary struct {
 // execution. Output is intentionally excluded: live logs use a separate,
 // incremental query so large histories do not inflate every status refresh.
 type JobExecutionDetails struct {
-	ID                  string
-	ProjectName         string
-	PipelineID          string
-	PipelineJobID       string
-	MatrixName          string
-	Status              string
-	CurrentStep         string
-	AgentID             string
-	DryRun              bool
-	CreatedUTC          time.Time
-	StartedUTC          time.Time
-	FinishedUTC         time.Time
-	ExitCode            *int
-	Error               string
-	ExpectedDurationMS  int64
-	Waiting             bool
-	Progress            Progress
-	SchedulingDiagnosis *SchedulingDiagnosis
-	Timeline            []JobTimelineItem
+	ID                   string
+	ProjectID            int64
+	ProjectName          string
+	PipelineID           string
+	PipelineJobID        string
+	MatrixName           string
+	Status               string
+	CurrentStep          string
+	AgentID              string
+	DryRun               bool
+	CreatedUTC           time.Time
+	StartedUTC           time.Time
+	FinishedUTC          time.Time
+	ExitCode             *int
+	Error                string
+	ExpectedDurationMS   int64
+	Waiting              bool
+	Progress             Progress
+	SchedulingDiagnosis  *SchedulingDiagnosis
+	Metadata             map[string]string
+	RequiredCapabilities map[string]string
+	RuntimeCapabilities  map[string]string
+	CacheStats           []JobCacheStatistics
+	Timeline             []JobTimelineItem
+}
+
+type JobCacheStatistics struct {
+	ID          string
+	Environment string
+	Type        string
+	Path        string
+	Source      string
+	SizeBytes   int64
+	Files       int64
+	Directories int64
+	ToolMetrics map[string]string
+	Error       string
 }
 
 const (

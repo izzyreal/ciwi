@@ -1,6 +1,6 @@
 apiVersion: ciwi.ui/v1
 kind: Theme
-metadata: {name: dragon-fruit, title: Dragon Fruit, description: "Magenta peel, leafy green and speckled white flesh"}
+metadata: {name: dragon-fruit, title: Dragon Fruit, description: "Electric magenta skin, fresh green scales, and clean white flesh."}
 theme:
   colors:
     background: "#fff2f6"
@@ -29,6 +29,7 @@ theme:
     console-text: "#ffe9f0"
     console-muted: "#c69aaa"
     console-accent: "#ff82aa"
+    console-success: "#acd374"
   gradients:
     page: {kind: linear, angle: 140, stops: [{color: "#fffafd", position: 0}, {color: "#e63d82", position: 100}]}
     hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f1b0cc", position: 100}]}

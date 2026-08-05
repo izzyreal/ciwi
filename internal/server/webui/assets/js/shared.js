@@ -261,6 +261,21 @@ function jobDescription(job) {
   return 'Job Execution';
 }
 
+function jobExecutionTitle(job) {
+  const m = (job && job.metadata) || {};
+  const project = String(m.project || '').trim();
+  const parts = project ? [project] : [];
+  if (String(m.adhoc || '').trim() === '1') {
+    parts.push('Adhoc script');
+  } else {
+    [m.pipeline_id, m.pipeline_job_id, m.matrix_name].forEach(value => {
+      value = String(value || '').trim();
+      if (value) parts.push(value);
+    });
+  }
+  return parts.length ? parts.join(' / ') : 'Job Execution';
+}
+
 function buildVersionLabel(job) {
   const m = (job && job.metadata) || {};
   const version = (m.build_version || '').trim();

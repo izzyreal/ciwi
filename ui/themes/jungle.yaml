@@ -1,6 +1,6 @@
 apiVersion: ciwi.ui/v1
 kind: Theme
-metadata: {name: jungle, title: Jungle, description: "Dense greens, tropical light and volcanic soil"}
+metadata: {name: jungle, title: Jungle, description: "Deep forest greens with vivid tropical accents."}
 theme:
   dark: true
   colors:
@@ -30,6 +30,7 @@ theme:
     console-text: "#e1f2d0"
     console-muted: "#9fbc9c"
     console-accent: "#b8e27a"
+    console-success: "#a3e635"
   gradients:
     page: {kind: linear, angle: 145, stops: [{color: "#071b16", position: 0}, {color: "#183b23", position: 100}]}
     hero: {kind: radial, stops: [{color: "#284d2a", position: 0}, {color: "#0c241b", position: 100}]}

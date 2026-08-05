@@ -1,12 +1,14 @@
 package nativecnp
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 )
 
@@ -82,12 +84,76 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 		})
 	}
 	return &cnpv1.JobDetailsView{
-		Id: view.ID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
+		Id: view.ID, ProjectId: view.ProjectID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, Timeline: timeline, CanCancel: view.CanCancel, CanRerun: view.CanRerun,
 		OutputGroups: outputGroups, SchedulingDiagnosis: presentedSchedulingDiagnosisToProto(view),
-		Progress: progressToProto(view.Progress),
+		Progress: progressToProto(view.Progress), JobProperties: jobDetailRowsToProto(view.JobProperties),
+		CacheStatistics: jobDetailRowsToProto(view.CacheStatistics), CacheStatisticsEmpty: view.CacheStatisticsEmpty,
+		HostToolRequirements:      toolRequirementsToProto(view.HostToolRequirements),
+		ContainerToolRequirements: toolRequirementsToProto(view.ContainerToolRequirements),
+		ReleaseSummary:            jobDetailRowsToProto(view.ReleaseSummary), HasReleaseSummary: view.HasReleaseSummary,
+	}
+}
+
+func jobDetailRowsToProto(rows []presentation.JobDetailRowView) []*cnpv1.JobDetailRow {
+	result := make([]*cnpv1.JobDetailRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, &cnpv1.JobDetailRow{Label: row.Label, Value: row.Value, Tone: row.Tone})
+	}
+	return result
+}
+
+func toolRequirementsToProto(view presentation.ToolRequirementsView) *cnpv1.ToolRequirements {
+	return &cnpv1.ToolRequirements{
+		EmptyLabel: view.EmptyLabel, Summary: view.Summary, Tone: view.Tone,
+		Issues: append([]string(nil), view.Issues...),
+	}
+}
+
+func jobRunContextToProto(view protocol.JobExecutionGraphContext) *cnpv1.JobRunContext {
+	pipelines := make([]*cnpv1.JobRunContextPipeline, 0, len(view.Pipelines))
+	for _, pipeline := range view.Pipelines {
+		jobs := make([]*cnpv1.JobRunContextJob, 0, len(pipeline.Jobs))
+		for _, job := range pipeline.Jobs {
+			executions := make([]*cnpv1.JobRunContextExecution, 0, len(job.Executions))
+			for _, execution := range job.Executions {
+				matrixLabel := strings.TrimSpace(execution.MatrixName)
+				if matrixLabel == "" && strings.TrimSpace(execution.MatrixIndex) != "" {
+					matrixLabel = "index-" + strings.TrimSpace(execution.MatrixIndex)
+				}
+				if matrixLabel == "" {
+					matrixLabel = "job"
+				}
+				attemptLabel := "Previous attempt"
+				if execution.LatestAttempt {
+					attemptLabel = "Latest attempt"
+				}
+				executions = append(executions, &cnpv1.JobRunContextExecution{
+					Id: execution.ID, Status: execution.Status, MatrixLabel: matrixLabel,
+					AttemptLabel: attemptLabel, Current: execution.ID == view.CurrentExecutionID,
+					LatestAttempt: execution.LatestAttempt,
+				})
+			}
+			jobs = append(jobs, &cnpv1.JobRunContextJob{
+				Id: job.PipelineJobID, Needs: append([]string(nil), job.Needs...), Status: job.Status,
+				SummaryLabel: fmt.Sprintf("%s · %d execution(s)", job.Status, len(job.Executions)), Executions: executions,
+			})
+		}
+		pipelines = append(pipelines, &cnpv1.JobRunContextPipeline{
+			Id: pipeline.PipelineDBID, PipelineId: pipeline.PipelineID, DependsOn: append([]string(nil), pipeline.DependsOn...),
+			Status: pipeline.Status, SummaryLabel: fmt.Sprintf("%s · %d job(s)", pipeline.Status, len(pipeline.Jobs)), Jobs: jobs,
+		})
+	}
+	scopeLabel := strings.TrimSpace(view.Scope)
+	if scopeLabel != "" {
+		scopeLabel = strings.ToUpper(scopeLabel[:1]) + scopeLabel[1:] + " run"
+	}
+	return &cnpv1.JobRunContext{
+		Available: len(pipelines) > 0, Scope: view.Scope, ScopeLabel: scopeLabel,
+		CurrentExecutionId: view.CurrentExecutionID, CurrentPipelineId: view.CurrentPipelineID,
+		CurrentPipelineJobId: view.CurrentPipelineJobID, Pipelines: pipelines,
 	}
 }
 
@@ -342,6 +408,14 @@ func agentSummaryToProto(agent presentation.AgentView) *cnpv1.AgentSummary {
 
 func agentDetailsToProto(view presentation.AgentDetailsView) *cnpv1.AgentDetailsView {
 	return &cnpv1.AgentDetailsView{Agent: agentSummaryToProto(view.Agent)}
+}
+
+func managedYAMLToProto(definition protocol.ManagedYAMLDefinition) *cnpv1.ManagedYAMLDefinition {
+	return &cnpv1.ManagedYAMLDefinition{
+		ProjectId: definition.ProjectID, ProjectName: definition.ProjectName,
+		Yaml: definition.YAML, Revision: definition.Revision,
+		Pipelines: uint32(max(definition.Pipelines, 0)), PipelineChains: uint32(max(definition.PipelineChains, 0)),
+	}
 }
 
 func changeToProto(change application.Change) *cnpv1.ChangeEvent {

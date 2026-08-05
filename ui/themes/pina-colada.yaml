@@ -1,6 +1,6 @@
 apiVersion: ciwi.ui/v1
 kind: Theme
-metadata: {name: pina-colada, title: Piña Colada, description: "Pineapple gold, coconut cream and sandy shore"}
+metadata: {name: pina-colada, title: Piña Colada, description: "Pineapple gold, coconut cream, leafy green, and a splash of lagoon teal."}
 theme:
   colors:
     background: "#fff8e8"
@@ -29,6 +29,7 @@ theme:
     console-text: "#fff5d7"
     console-muted: "#b8bea0"
     console-accent: "#f7d96a"
+    console-success: "#9dd574"
   gradients:
     page: {kind: linear, angle: 145, stops: [{color: "#fffdf5", position: 0}, {color: "#f2d983", position: 100}]}
     hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f8e6aa", position: 100}]}

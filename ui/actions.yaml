@@ -14,6 +14,7 @@ actions:
   - { command: set-agent-script-field, class: local }
   - { command: set-project-structure-filter, class: local }
   - { command: set-project-import-field, class: local }
+  - { command: set-managed-yaml-field, class: local }
   - { command: set-server-update-option, class: local }
   - { command: set-connection-field, class: local }
   - { command: generate-ssh-device-key, class: local }
@@ -38,4 +39,6 @@ actions:
   - { command: run-agent-script, class: mutation, scope: "agent:{{agentId}}", pending: "Queuing script…" }
   - { command: project-action, class: mutation, scope: "project:{{projectId}}", pending: "Updating project…" }
   - { command: import-project, class: mutation, scope: "projects", pending: "Importing project…" }
+  - { command: validate-managed-yaml, class: query, scope: "managed-yaml:{{projectId}}", pending: "Validating…" }
+  - { command: save-managed-yaml, class: mutation, scope: "managed-yaml:{{projectId}}", pending: "Saving…" }
   - { command: server-update-action, class: mutation, scope: "server:update", pending: "Updating server…", persistence: receipt-only }
