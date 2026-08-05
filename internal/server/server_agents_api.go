@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/application"
-	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +76,18 @@ func (s *stateStore) agentActionHandler(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if action == "run-script" {
-		s.runAgentScriptHandler(w, agentID, req.Script, req.Shell, req.TimeoutSeconds)
+		result, err := s.app().agentScripts.Run(r.Context(), application.RunAgentScriptRequest{
+			AgentID: agentID, Script: req.Script, Shell: req.Shell, TimeoutSeconds: req.TimeoutSeconds,
+			IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusCreated, agentRunScriptResponse{
+			Queued: result.Queued, AgentID: result.AgentID, JobExecutionID: result.JobExecutionID,
+			Shell: result.Shell, TimeoutSeconds: result.TimeoutSeconds,
+		})
 		return
 	}
 	result, err := s.app().agentCommands.Execute(r.Context(), application.AgentActionRequest{
@@ -89,59 +99,6 @@ func (s *stateStore) agentActionHandler(w http.ResponseWriter, r *http.Request, 
 	}
 	writeJSON(w, http.StatusOK, agentActionResponse{
 		Requested: result.Requested, AgentID: result.AgentID, Message: result.Message, Target: result.Target,
-	})
-}
-
-func (s *stateStore) runAgentScriptHandler(w http.ResponseWriter, agentID, rawScript, rawShell string, timeout int) {
-	script := strings.TrimSpace(rawScript)
-	shell := strings.ToLower(strings.TrimSpace(rawShell))
-	if script == "" {
-		http.Error(w, "script is required", http.StatusBadRequest)
-		return
-	}
-	if shell == "" {
-		http.Error(w, "shell is required", http.StatusBadRequest)
-		return
-	}
-	s.mu.Lock()
-	agent, ok := s.agents[agentID]
-	if !ok {
-		s.mu.Unlock()
-		http.Error(w, "agent not found", http.StatusNotFound)
-		return
-	}
-	if strings.TrimSpace(agent.Capabilities["executor"]) != "script" {
-		s.mu.Unlock()
-		http.Error(w, "agent does not advertise script executor support", http.StatusBadRequest)
-		return
-	}
-	if !containsString(capabilityShells(agent.Capabilities), shell) {
-		s.mu.Unlock()
-		http.Error(w, "agent does not support requested shell", http.StatusBadRequest)
-		return
-	}
-	s.mu.Unlock()
-	if timeout <= 0 {
-		timeout = 600
-	}
-	job, err := s.agentJobExecutionStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
-		Script:               script,
-		RequiredCapabilities: map[string]string{"agent_id": agentID, "executor": "script", "shell": shell},
-		TimeoutSeconds:       timeout,
-		Metadata:             map[string]string{"adhoc": "1", "adhoc_agent_id": agentID, "adhoc_shell": shell},
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	s.mu.Lock()
-	if agent, ok := s.agents[agentID]; ok {
-		agent.RecentLog = appendAgentLog(agent.RecentLog, "ad-hoc script queued ("+shell+") job="+job.ID)
-		s.agents[agentID] = agent
-	}
-	s.mu.Unlock()
-	writeJSON(w, http.StatusCreated, agentRunScriptResponse{
-		Queued: true, AgentID: agentID, JobExecutionID: job.ID, Shell: shell, TimeoutSeconds: timeout,
 	})
 }
 

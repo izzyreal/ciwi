@@ -84,6 +84,7 @@ type nativeActionClient interface {
 	CancelExecution(context.Context, string, string) (*cnpv1.CancelExecutionResult, error)
 	RerunExecution(context.Context, string, string) (*cnpv1.RerunExecutionResult, error)
 	AgentAction(context.Context, *cnpv1.AgentActionRequest, string) (*cnpv1.AgentActionResult, error)
+	RunAgentScript(context.Context, *cnpv1.RunAgentScriptRequest, string) (*cnpv1.RunAgentScriptResult, error)
 	ProjectAction(context.Context, int64, string, string) (*cnpv1.ProjectActionResult, error)
 	ImportProject(context.Context, *cnpv1.ImportProjectRequest, string) (*cnpv1.ImportProjectResult, error)
 	CheckServerUpdates(context.Context) (*cnpv1.ServerUpdateCheckResult, error)
@@ -147,6 +148,14 @@ func validateNativeOperation(operation operations.Operation) error {
 			return err
 		}
 		return require("action", "agent action")
+	case "run-agent-script":
+		if err := require("agentId", "agent identifier"); err != nil {
+			return err
+		}
+		if err := require("shell", "script shell"); err != nil {
+			return err
+		}
+		return require("script", "script")
 	case "project-action":
 		if _, err := positiveInt64(arguments["projectId"], "project identifier"); err != nil {
 			return err
@@ -294,6 +303,22 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 			message = "Agent request accepted"
 		}
 		return nativeOperationEffect{Message: message, Refresh: true}, nil
+	case "run-agent-script":
+		agentID := strings.TrimSpace(arguments["agentId"])
+		shell := strings.TrimSpace(arguments["shell"])
+		script := strings.TrimSpace(arguments["script"])
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		result, err := client.RunAgentScript(commandCtx, &cnpv1.RunAgentScriptRequest{
+			AgentId: agentID, Shell: shell, Script: script, TimeoutSeconds: 600,
+		}, key)
+		if err != nil {
+			return nativeOperationEffect{}, fmt.Errorf("run agent script: %w", err)
+		}
+		return nativeOperationEffect{
+			Message:       "Queued ad-hoc script on " + result.AgentId,
+			NavigateRoute: "/jobs/" + result.JobExecutionId,
+		}, nil
 	case "project-action":
 		projectID, err := positiveInt64(arguments["projectId"], "project identifier")
 		action := strings.TrimSpace(arguments["action"])

@@ -61,6 +61,9 @@ type Services struct {
 	AgentCommands interface {
 		Execute(context.Context, application.AgentActionRequest) (application.AgentActionResult, error)
 	}
+	AgentScripts interface {
+		Run(context.Context, application.RunAgentScriptRequest) (application.RunAgentScriptResult, error)
+	}
 	ExecutionCommands interface {
 		ClearQueue(context.Context, application.ClearExecutionQueueRequest) (application.ClearExecutionQueueResult, error)
 		RemoveQueued(context.Context, application.RemoveQueuedExecutionRequest) (application.RemoveQueuedExecutionResult, error)
@@ -82,7 +85,7 @@ type Handler struct {
 }
 
 func NewHandler(services Services) (*Handler, error) {
-	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.AgentScripts == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native CNP services are incomplete")
 	}
 	return &Handler{services: services}, nil
@@ -108,7 +111,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerInstanceId:     snapshot.InstanceID,
 		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -349,6 +352,19 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		if err == nil {
 			response.Result = &cnpv1.Response_AgentAction{AgentAction: &cnpv1.AgentActionResult{
 				Requested: result.Requested, AgentId: result.AgentID, Message: result.Message, Target: result.Target,
+			}}
+		}
+	case *cnpv1.Request_RunAgentScript:
+		var result application.RunAgentScriptResult
+		result, err = s.services.AgentScripts.Run(ctx, application.RunAgentScriptRequest{
+			AgentID: operation.RunAgentScript.GetAgentId(), Shell: operation.RunAgentScript.GetShell(),
+			Script: operation.RunAgentScript.GetScript(), TimeoutSeconds: int(operation.RunAgentScript.GetTimeoutSeconds()),
+			IdempotencyKey: request.Metadata.IdempotencyKey,
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_RunAgentScript{RunAgentScript: &cnpv1.RunAgentScriptResult{
+				Queued: result.Queued, AgentId: result.AgentID, JobExecutionId: result.JobExecutionID,
+				Shell: result.Shell, TimeoutSeconds: int32(result.TimeoutSeconds),
 			}}
 		}
 	case *cnpv1.Request_ProjectAction:

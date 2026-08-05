@@ -2047,12 +2047,14 @@ func (r *Renderer) layoutInput(gtx layout.Context, node uidsl.Node, data any, pa
 	}
 	editor := r.inputEditors[path]
 	if editor == nil {
-		editor = &widget.Editor{SingleLine: true, Submit: true}
+		editor = &widget.Editor{}
 		editor.SetText(fmt.Sprint(value))
 		r.inputEditors[path] = editor
 	} else if !gtx.Focused(editor) && editor.Text() != fmt.Sprint(value) {
 		editor.SetText(fmt.Sprint(value))
 	}
+	editor.SingleLine = !node.Input.Multiline
+	editor.Submit = !node.Input.Multiline
 	changed := false
 	submitted := false
 	for {
@@ -2073,8 +2075,18 @@ func (r *Renderer) layoutInput(gtx layout.Context, node uidsl.Node, data any, pa
 	}
 	return widget.Border{Color: r.palette.border, CornerRadius: r.metrics.controlRadius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: r.metrics.controlPaddingY, Right: r.metrics.controlPaddingX, Bottom: r.metrics.controlPaddingY, Left: r.metrics.controlPaddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if node.Input.Multiline && node.Input.MinLines > 1 {
+				minimum := gtx.Dp(unit.Dp(float32(node.Input.MinLines) * 24))
+				if gtx.Constraints.Min.Y < minimum {
+					gtx.Constraints.Min.Y = minimum
+				}
+			}
 			style := material.Editor(r.theme, editor, node.Input.Placeholder)
 			style.TextSize = r.metrics.textControl
+			if node.Style.Role == "code" || node.Style.Role == "code-inline" {
+				style.Font.Typeface = font.Typeface("Ciwi Mono")
+				style.TextSize = r.metrics.textCode
+			}
 			style.Color = r.palette.text
 			style.HintColor = r.palette.muted
 			return style.Layout(gtx)

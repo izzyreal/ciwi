@@ -1,0 +1,79 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: agent-script
+  title: Run Ad-hoc Script
+screen:
+  dataSources:
+    - name: agentScript
+      query: get-agent-details
+      watchTopics: [agents]
+  root:
+    component: page
+    id: agent-script
+    layout: {direction: vertical, gap: large, padding: large, maxWidth: page}
+    children:
+      - component: card
+        layout: {direction: horizontal, gap: medium, padding: large, align: center, wrap: true}
+        children:
+          - component: column
+            layout: {direction: vertical, gap: small, grow: true}
+            children:
+              - component: text
+                text: {literal: Run Ad-hoc Script}
+                style: {role: title, emphasis: strong}
+              - component: text
+                text: {template: "{{agentScript.agent_label}} · {{agentScript.agent_id}}"}
+                style: {tone: muted}
+          - component: button
+            text: {literal: Back to Agent}
+            icon: arrow-left
+            actions: [{on: activate, command: navigate, arguments: {route: "/agents/{{agentScript.agent_id}}"}}]
+      - component: card
+        layout: {direction: vertical, gap: medium, padding: large}
+        children:
+          - component: text
+            text: {literal: Shell}
+            style: {role: heading, emphasis: strong}
+          - component: select
+            select:
+              value: agentScript.selected_shell
+              options: agentScript.shells
+              as: shellOption
+              optionValue: shellOption.value
+              optionLabel: shellOption.label
+            actions:
+              - on: change
+                command: set-agent-script-field
+                arguments: {field: shell, value: "{{selection.value}}"}
+          - component: text
+            text: {literal: Script}
+            style: {role: heading, emphasis: strong}
+          - component: input
+            input:
+              value: agentScript.script
+              placeholder: Enter a script to run on this agent
+              multiline: true
+              minLines: 12
+            style: {role: code}
+            actions:
+              - on: change
+                command: set-agent-script-field
+                arguments: {field: script, value: "{{input.value}}"}
+          - component: text
+            text: {literal: The script runs as an ordinary ciwi job and opens in Job Details after it is queued.}
+            style: {tone: muted}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Run Script}
+                icon: player-play
+                enabled: {binding: agentScript.can_run}
+                actions:
+                  - on: activate
+                    command: run-agent-script
+                    arguments:
+                      agentId: "{{agentScript.agent_id}}"
+                      shell: "{{agentScript.selected_shell}}"
+                      script: "{{agentScript.script}}"

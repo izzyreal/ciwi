@@ -38,6 +38,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		RunOptions:        pipelines,
 		Agents:            agentService{},
 		AgentCommands:     agentService{},
+		AgentScripts:      agentService{},
 		ExecutionCommands: executions,
 		ExecutionControls: executions,
 		CommandReceipts:   commandReceiptService{},
@@ -171,6 +172,12 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	agentResult, err := client.AgentAction(ctx, &cnpv1.AgentActionRequest{AgentId: "agent-1", Action: "restart"}, "agent-command-key")
 	if err != nil || !agentResult.Requested || agentResult.AgentId != "agent-1" {
 		t.Fatalf("agent action = %#v, %v", agentResult, err)
+	}
+	scriptResult, err := client.RunAgentScript(ctx, &cnpv1.RunAgentScriptRequest{
+		AgentId: "agent-1", Shell: "posix", Script: "uname -a", TimeoutSeconds: 45,
+	}, "script-command-key")
+	if err != nil || !scriptResult.Queued || scriptResult.JobExecutionId != "job-script" || scriptResult.TimeoutSeconds != 45 {
+		t.Fatalf("agent script = %#v, %v", scriptResult, err)
 	}
 	projectResult, err := client.ProjectAction(ctx, 7, application.ProjectActionReload, "project-command-key")
 	if err != nil || projectResult.ProjectId != 7 {
@@ -346,7 +353,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -378,7 +385,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
-		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -406,7 +413,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
-		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
+		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -485,7 +492,7 @@ func completeTestServices(changes *application.ChangeHub) nativecnp.Services {
 		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, Updates: updateService{},
 		FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: pipelines, PipelineChains: pipelines, RunOptions: pipelines,
-		Agents: agentService{}, AgentCommands: agentService{}, ExecutionCommands: executions,
+		Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: executions,
 		ExecutionControls: executions, Changes: changes, Version: "v0.2.0",
 		CommandReceipts: commandReceiptService{},
 	}
@@ -581,6 +588,10 @@ func (agentService) GetAgentDetailsView(_ context.Context, agentID string) (pres
 
 func (agentService) Execute(_ context.Context, request application.AgentActionRequest) (application.AgentActionResult, error) {
 	return application.AgentActionResult{Requested: true, AgentID: request.AgentID, Message: request.Action + " requested"}, nil
+}
+
+func (agentService) Run(_ context.Context, request application.RunAgentScriptRequest) (application.RunAgentScriptResult, error) {
+	return application.RunAgentScriptResult{Queued: true, AgentID: request.AgentID, JobExecutionID: "job-script", Shell: request.Shell, TimeoutSeconds: request.TimeoutSeconds}, nil
 }
 
 func (frontPageService) GetFrontPageView(context.Context) (presentation.FrontPageView, error) {

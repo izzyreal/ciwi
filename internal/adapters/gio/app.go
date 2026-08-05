@@ -13,6 +13,7 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/op"
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
@@ -44,13 +45,17 @@ type navigationState struct {
 	sourceRef      string
 	agentID        string
 	agentDetailsID string
+	agentScriptID  string
+	scriptShell    string
+	script         string
 }
 
-type runOptionsLoadResult struct {
-	navigation navigationState
-	generation uint64
-	data       map[string]any
-	err        error
+type screenLoadResult struct {
+	navigation          navigationState
+	generation          uint64
+	recoverMissingRoute bool
+	data                map[string]any
+	err                 error
 }
 
 type jobOutputBuffer struct {
@@ -334,9 +339,14 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	agentScriptScreen, err := sharedUI.LoadScreen("agent-script")
+	if err != nil {
+		return err
+	}
 	screens := map[string]*uidsl.ScreenDocument{
 		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
 		"settings": settingsScreen, "run-options": runOptionsScreen, "agents": agentsScreen, "agent-details": agentDetailsScreen,
+		"agent-script": agentScriptScreen,
 	}
 	preferencesPath, err := nativePreferencesPath()
 	if err != nil {
@@ -372,7 +382,7 @@ func Run(options Options) error {
 	operationJournal := newNativeOperationJournal(preferencesPath, clientBroker.ServerInstallationID)
 	coordinator := operations.New(ctx, 4, nativeOperationExecutor{clients: clientBroker}, operationJournal)
 	defer coordinator.Close()
-	commands := make(chan commandRequest, 16)
+	commands := make(chan commandRequest, 256)
 	var renderer *Renderer
 	renderer, err = NewRenderer(frontPageScreen, theme, func(action uidsl.Action, arguments map[string]string) {
 		spec, ok := actionCatalog.Spec(action.Command)
@@ -526,54 +536,43 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			session.close()
 		}
 	}()
-	runOptionsLoads := make(chan runOptionsLoadResult, 8)
-	var runOptionsCancel context.CancelFunc
-	var runOptionsGeneration uint64
-	startRunOptionsLoad := func(target navigationState) {
-		if runOptionsCancel != nil {
-			runOptionsCancel()
+	screenLoads := make(chan screenLoadResult, 8)
+	var screenLoadCancel context.CancelFunc
+	var screenLoadGeneration uint64
+	queueScreenLoad := func(target navigationState, recoverMissingRoute bool) {
+		if screenLoadCancel != nil {
+			screenLoadCancel()
 		}
 		loadCtx, cancelLoad := context.WithCancel(ctx)
-		runOptionsCancel = cancelLoad
-		runOptionsGeneration++
-		generation := runOptionsGeneration
+		screenLoadCancel = cancelLoad
+		screenLoadGeneration++
+		generation := screenLoadGeneration
 		activeClient := client
+		themeName := renderer.ThemeName()
 		go func() {
 			if activeClient == nil {
 				return
 			}
-			data, loadErr := loadRunOptions(loadCtx, activeClient, target)
+			data, loadErr := loadScreenData(loadCtx, activeClient, target, themeName)
 			select {
-			case runOptionsLoads <- runOptionsLoadResult{navigation: target, generation: generation, data: data, err: loadErr}:
+			case screenLoads <- screenLoadResult{
+				navigation: target, generation: generation, recoverMissingRoute: recoverMissingRoute,
+				data: data, err: loadErr,
+			}:
 			case <-ctx.Done():
 			}
 		}()
 	}
+	startScreenLoad := func(target navigationState) { queueScreenLoad(target, false) }
+	startResyncLoad := func(target navigationState) { queueScreenLoad(target, true) }
 	defer func() {
-		if runOptionsCancel != nil {
-			runOptionsCancel()
+		if screenLoadCancel != nil {
+			screenLoadCancel()
 		}
 	}()
 	navigation := navigationState{screen: "front-page"}
 	if strings.TrimSpace(options.Route) != "" {
 		navigation, _ = navigationForRoute(options.Route)
-	}
-	if initialConnectErr == nil {
-		if refreshErr := refreshScreen(ctx, client, renderer, screens, navigation); refreshErr != nil {
-			// A remembered deep route can disappear between sessions. Keep a
-			// healthy connection and recover to the main screen in that case.
-			navigation = navigationState{screen: "front-page"}
-			if fallbackErr := refreshScreen(ctx, client, renderer, screens, navigation); fallbackErr != nil {
-				initialConnectErr = fmt.Errorf("resynchronize: %w", fallbackErr)
-				if session != nil {
-					session.close()
-					session = nil
-				}
-				client = nil
-				changes = nil
-				watchErrors = nil
-			}
-		}
 	}
 	if initialConnectErr != nil {
 		if navigation.screen != "front-page" && navigation.screen != "settings" {
@@ -602,6 +601,47 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			renderer.SetRootBinding("settings", "client_version", options.Version)
 		}
 		renderer.SetTransientStatus("Connected to "+address, nativeNoticeDuration)
+	}
+	showScreenLoading := func(target navigationState) error {
+		screen := screens[target.screen]
+		if screen == nil {
+			return fmt.Errorf("screen %q is unavailable", target.screen)
+		}
+		data, loadErr := screenLoadingData(target, options.Version, renderer.ThemeName(), mode, endpoint, sshSettings)
+		if loadErr != nil {
+			return loadErr
+		}
+		renderer.SetScreenAndData(screen, data)
+		if target.screen == "settings" {
+			applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
+			renderer.SetRootBinding("settings", "client_version", options.Version)
+		}
+		return nil
+	}
+	beginNavigationWith := func(target navigationState, recoverMissingRoute bool) error {
+		navigation = target
+		if err := showScreenLoading(target); err != nil {
+			return err
+		}
+		if target.screen == "job-details" {
+			startOutput(target.jobID)
+		} else {
+			stopOutput()
+		}
+		if recoverMissingRoute {
+			startResyncLoad(target)
+		} else {
+			startScreenLoad(target)
+		}
+		renderer.SetStatus(loadingScreenLabel(target.screen))
+		return nil
+	}
+	beginNavigation := func(target navigationState) error { return beginNavigationWith(target, false) }
+	beginResyncNavigation := func(target navigationState) error { return beginNavigationWith(target, true) }
+	if client != nil {
+		if err := beginResyncNavigation(navigation); err != nil {
+			renderer.SetStatus("Could not load the initial screen: " + err.Error())
+		}
 	}
 	window.Invalidate()
 	var statusTimer *time.Timer
@@ -669,10 +709,10 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		changes = nil
 		watchErrors = nil
 		stopOutput()
-		if runOptionsCancel != nil {
-			runOptionsCancel()
-			runOptionsCancel = nil
-			runOptionsGeneration++
+		if screenLoadCancel != nil {
+			screenLoadCancel()
+			screenLoadCancel = nil
+			screenLoadGeneration++
 		}
 	}
 	pauseReconnect := func(status string) {
@@ -780,30 +820,17 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			renderer.SetRootBinding("settings", field+"_tone", "success")
 		}
 		if effect.NavigateRoute != "" && client != nil {
-			previous := navigation
-			if err := navigate(ctx, client, renderer, screens, &navigation, effect.NavigateRoute); err != nil {
+			next, parseErr := navigationForRoute(effect.NavigateRoute)
+			if parseErr != nil {
+				renderer.SetStatus(effect.Message + ", but navigation failed: " + parseErr.Error())
+				return
+			}
+			if err := beginNavigation(next); err != nil {
 				renderer.SetStatus(effect.Message + ", but navigation failed: " + err.Error())
 				return
 			}
-			if navigation != previous {
-				if navigation.screen == "job-details" {
-					startOutput(navigation.jobID)
-				} else {
-					stopOutput()
-				}
-			}
 		} else if effect.Refresh && client != nil {
-			if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
-				renderer.SetStatus(effect.Message + ", but refresh failed: " + err.Error())
-				return
-			}
-			if navigation.screen == "settings" {
-				applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
-				renderer.SetRootBinding("settings", "client_version", options.Version)
-			}
-			if navigation.screen == "job-details" {
-				outputBuffer.apply(renderer)
-			}
+			startResyncLoad(navigation)
 		}
 		if effect.Message != "" {
 			renderer.SetTransientStatus(effect.Message, nativeNoticeDuration)
@@ -842,15 +869,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			watchErrors = connected.watchErrors
 			address = connected.address
 			reconnectDelay = time.Second
-			if refreshErr := refreshScreen(ctx, client, renderer, screens, navigation); refreshErr != nil {
-				// A stale deep link should not make a healthy native connection look
-				// broken. Fall back to the main screen and keep the session.
-				navigation = navigationState{screen: "front-page"}
-				if fallbackErr := refreshScreen(ctx, client, renderer, screens, navigation); fallbackErr != nil {
-					scheduleReconnect("resynchronize: " + fallbackErr.Error())
-					continue
-				}
-			}
+			startScreenLoad(navigation)
 			if mode != connectionModeSSH {
 				rememberSuccessfulEndpoint(preferencesPath, address)
 				preferences.LastSuccessfulEndpoint = address
@@ -877,22 +896,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			}
 			if change.ResyncRequired || relevantScreenChange(navigation, change) {
-				if navigation.screen == "run-options" {
-					renderer.SetStatus("Refreshing run options…")
-					startRunOptionsLoad(navigation)
-					window.Invalidate()
-					continue
-				}
-				if err := refreshScreen(ctx, client, renderer, screens, navigation); err != nil {
-					renderer.SetStatus("Refresh failed: " + err.Error())
-				}
-				if navigation.screen == "settings" {
-					applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
-					renderer.SetRootBinding("settings", "client_version", options.Version)
-				}
-				if navigation.screen == "job-details" {
-					outputBuffer.apply(renderer)
-				}
+				startScreenLoad(navigation)
 				window.Invalidate()
 			}
 		case watchErr, ok := <-watchErrors:
@@ -921,15 +925,35 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				window.Invalidate()
 			}
 			outputErrors = nil
-		case result := <-runOptionsLoads:
-			if navigation != result.navigation || result.generation != runOptionsGeneration {
+		case result := <-screenLoads:
+			if navigation != result.navigation || result.generation != screenLoadGeneration {
 				continue
 			}
 			if result.err != nil {
-				renderer.SetStatus("Run options failed: " + result.err.Error())
+				if result.recoverMissingRoute && navigation.screen != "front-page" {
+					if err := beginResyncNavigation(navigationState{screen: "front-page"}); err != nil {
+						renderer.SetStatus("Loading failed: " + result.err.Error())
+					}
+					window.Invalidate()
+					continue
+				}
+				if result.recoverMissingRoute {
+					scheduleReconnect("resynchronize: " + result.err.Error())
+					continue
+				}
+				renderer.SetStatus("Loading failed: " + result.err.Error())
 			} else {
-				renderer.SetScreenAndData(screens["run-options"], result.data)
-				renderer.SetStatus("")
+				renderer.SetScreenAndData(screens[navigation.screen], result.data)
+				if navigation.screen == "settings" {
+					applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
+					renderer.SetRootBinding("settings", "client_version", options.Version)
+				}
+				if navigation.screen == "job-details" {
+					outputBuffer.apply(renderer)
+				}
+				if isScreenLoadingStatus(renderer.status) {
+					renderer.SetStatus("")
+				}
 			}
 			window.Invalidate()
 		case <-coordinator.Changed():
@@ -1127,20 +1151,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					window.Invalidate()
 					continue
 				}
-				if next.screen == "run-options" {
-					navigation = next
-					stopOutput()
-					renderer.SetScreenAndData(screens["run-options"], runOptionsLoadingData(next))
-					renderer.SetStatus("Loading run options…")
-					startRunOptionsLoad(next)
-					window.Invalidate()
-					continue
+				if err := beginNavigation(next); err != nil {
+					renderer.SetStatus("Navigation failed: " + err.Error())
 				}
-				if navigation.screen == "run-options" && runOptionsCancel != nil {
-					runOptionsCancel()
-					runOptionsCancel = nil
-					runOptionsGeneration++
-				}
+				window.Invalidate()
+				continue
 			}
 			if client == nil && command.action.Command != "change-theme" && command.action.Command != "set-project-import-field" {
 				renderer.SetStatus("Server is offline; reconnecting…")
@@ -1162,12 +1177,12 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 				renderer.SetRootBinding("runOptions", "target_kind", "loading")
 				renderer.SetStatus("Refreshing eligible agents…")
-				startRunOptionsLoad(navigation)
+				startScreenLoad(navigation)
 				window.Invalidate()
 				continue
 			}
 			previous := navigation
-			handleCommand(ctx, client, renderer, screens, &navigation, command, preferencesPath)
+			handleCommand(renderer, &navigation, command, preferencesPath)
 			if navigation.screen == "settings" {
 				applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 				renderer.SetRootBinding("settings", "client_version", options.Version)
@@ -1258,7 +1273,7 @@ func captureSSHHostKeyError(settings *sshConnectionSettings, err error) bool {
 	return true
 }
 
-func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, command commandRequest, preferencesPath string) {
+func handleCommand(renderer *Renderer, navigation *navigationState, command commandRequest, preferencesPath string) {
 	switch command.action.Command {
 	case "set-project-structure-filter":
 		filter := strings.TrimSpace(command.arguments["value"])
@@ -1267,18 +1282,20 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetStatus("")
-	case "set-run-option":
+	case "set-agent-script-field":
 		field := strings.TrimSpace(command.arguments["field"])
-		value := strings.TrimSpace(command.arguments["value"])
-		refreshEligibility, err := applyRunOptionSelection(renderer, navigation, field, value)
-		if err != nil {
-			renderer.SetStatus(err.Error())
-			return
-		}
-		if refreshEligibility {
-			if err := refreshRunOptions(ctx, client, renderer, screens["run-options"], *navigation); err != nil {
-				renderer.SetStatus("Run options refresh failed: " + err.Error())
-			}
+		value := command.arguments["value"]
+		switch field {
+		case "shell":
+			navigation.scriptShell = strings.TrimSpace(value)
+			navigation.script = presentation.ExampleAgentScript(navigation.scriptShell)
+			renderer.SetRootBinding("agentScript", "selected_shell", navigation.scriptShell)
+			renderer.SetRootBinding("agentScript", "script", navigation.script)
+		case "script":
+			navigation.script = value
+			renderer.SetRootBinding("agentScript", "script", value)
+		default:
+			renderer.SetStatus("Unknown agent script field")
 		}
 	case "set-project-import-field":
 		binding := map[string]string{"repoUrl": "import_repo_url", "repoRef": "import_repo_ref", "configFile": "import_config_file"}[strings.TrimSpace(command.arguments["field"])]
@@ -1296,10 +1313,6 @@ func handleCommand(ctx context.Context, client *cnpclient.Client, renderer *Rend
 			return
 		}
 		renderer.SetRootBinding("settings", binding, strings.TrimSpace(command.arguments["value"]))
-	case "navigate":
-		if err := navigate(ctx, client, renderer, screens, navigation, command.arguments["route"]); err != nil {
-			renderer.SetStatus("Navigation failed: " + err.Error())
-		}
 	case "change-theme":
 		theme, err := findTheme(command.arguments["theme"])
 		if err != nil {
@@ -1362,19 +1375,6 @@ func splitExecutionIDs(raw string) []string {
 	return result
 }
 
-func navigate(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation *navigationState, route string) error {
-	next, err := navigationForRoute(route)
-	if err != nil {
-		return err
-	}
-	if err := refreshScreen(ctx, client, renderer, screens, next); err != nil {
-		return err
-	}
-	*navigation = next
-	renderer.SetStatus("")
-	return nil
-}
-
 func navigationForRoute(route string) (navigationState, error) {
 	route = strings.TrimSpace(route)
 	next := navigationState{}
@@ -1425,6 +1425,12 @@ func navigationForRoute(route string) (navigationState, error) {
 	case route == "/agents":
 		next.screen = "agents"
 	case strings.HasPrefix(route, "/agents/"):
+		trimmed := strings.Trim(strings.TrimPrefix(route, "/agents/"), "/")
+		parts := strings.Split(trimmed, "/")
+		if len(parts) == 2 && parts[1] == "script" && strings.TrimSpace(parts[0]) != "" {
+			next = navigationState{screen: "agent-script", agentScriptID: parts[0]}
+			break
+		}
 		agentID := strings.Trim(strings.TrimPrefix(route, "/agents/"), "/")
 		if agentID == "" || strings.Contains(agentID, "/") {
 			return navigationState{}, fmt.Errorf("invalid agent route %q", route)
@@ -1438,70 +1444,126 @@ func navigationForRoute(route string) (navigationState, error) {
 	return next, nil
 }
 
-func refreshScreen(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState) error {
-	screen := screens[navigation.screen]
-	if screen == nil {
-		return fmt.Errorf("screen %q is unavailable", navigation.screen)
-	}
+func loadScreenData(ctx context.Context, client *cnpclient.Client, navigation navigationState, themeName string) (map[string]any, error) {
 	switch navigation.screen {
 	case "front-page":
-		return refreshFrontPage(ctx, client, renderer, screen)
+		requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		view, err := client.GetFrontPageView(requestCtx)
+		if err != nil {
+			return nil, err
+		}
+		return frontPageBindingData(view)
 	case "project-details":
-		return refreshProjectDetails(ctx, client, renderer, screen, navigation.projectID)
+		requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		view, err := client.GetProjectDetails(requestCtx, navigation.projectID)
+		if err != nil {
+			return nil, err
+		}
+		return projectDetailsBindingData(view)
 	case "job-details":
-		return refreshJobDetails(ctx, client, renderer, screen, navigation.jobID)
+		requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		view, err := client.GetJobDetails(requestCtx, navigation.jobID)
+		if err != nil {
+			return nil, err
+		}
+		return jobDetailsBindingData(view)
 	case "settings":
-		return refreshSettings(ctx, client, renderer, screen)
+		return loadSettingsData(ctx, client, themeName)
 	case "run-options":
-		return refreshRunOptions(ctx, client, renderer, screen, navigation)
+		return loadRunOptions(ctx, client, navigation)
 	case "agents":
-		return refreshAgents(ctx, client, renderer, screen)
+		requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		view, err := client.GetAgentsView(requestCtx)
+		if err != nil {
+			return nil, err
+		}
+		return protobufBindingData("agents", "agents", view)
 	case "agent-details":
-		return refreshAgentDetails(ctx, client, renderer, screen, navigation.agentDetailsID)
+		requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		view, err := client.GetAgentDetails(requestCtx, navigation.agentDetailsID)
+		if err != nil {
+			return nil, err
+		}
+		return protobufBindingData("agentDetails", "agent details", view)
+	case "agent-script":
+		return loadAgentScriptData(ctx, client, navigation)
 	case "connection":
-		return nil
+		return map[string]any{}, nil
 	default:
-		return fmt.Errorf("screen %q is unsupported", navigation.screen)
+		return nil, fmt.Errorf("screen %q is unsupported", navigation.screen)
 	}
 }
 
-func refreshAgents(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument) error {
+func loadSettingsData(ctx context.Context, client *cnpclient.Client, themeName string) (map[string]any, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	view, err := client.GetAgentsView(requestCtx)
+	server, err := client.GetServerInfo(requestCtx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	data, err := protobufBindingData("agents", "agents", view)
+	projects, err := client.ListProjects(requestCtx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	renderer.SetScreenAndData(screen, data)
-	return nil
+	updateStatus, updateStatusErr := client.GetServerUpdateStatus(requestCtx)
+	themes, err := sharedUI.LoadThemes()
+	if err != nil {
+		return nil, err
+	}
+	data, err := settingsBindingData(server, themes, themeName)
+	if err != nil {
+		return nil, err
+	}
+	settings, ok := data["settings"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("settings binding is malformed")
+	}
+	projectData, err := protobufBindingData("projects", "settings projects", projects)
+	if err != nil {
+		return nil, err
+	}
+	projectRoot, ok := projectData["projects"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("settings projects binding is malformed")
+	}
+	projectItems, _ := projectRoot["projects"].([]any)
+	decorateSettingsProjects(projectItems)
+	settings["projects"] = projectItems
+	decorateSettingsUpdate(settings, updateStatus, updateStatusErr)
+	return data, nil
 }
 
-func refreshAgentDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, agentID string) error {
+func loadAgentScriptData(ctx context.Context, client *cnpclient.Client, navigation navigationState) (map[string]any, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	view, err := client.GetAgentDetails(requestCtx, agentID)
+	view, err := client.GetAgentDetails(requestCtx, navigation.agentScriptID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	data, err := protobufBindingData("agentDetails", "agent details", view)
-	if err != nil {
-		return err
+	shells := make([]any, 0, len(view.GetAgent().GetScriptShells()))
+	for _, shell := range view.GetAgent().GetScriptShells() {
+		shells = append(shells, map[string]any{
+			"value": shell.GetValue(), "label": shell.GetLabel(), "example_script": shell.GetExampleScript(),
+		})
 	}
-	renderer.SetScreenAndData(screen, data)
-	return nil
-}
-
-func refreshRunOptions(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, navigation navigationState) error {
-	data, err := loadRunOptions(ctx, client, navigation)
-	if err != nil {
-		return err
+	selectedShell := strings.TrimSpace(navigation.scriptShell)
+	script := navigation.script
+	if selectedShell == "" && len(view.GetAgent().GetScriptShells()) > 0 {
+		selectedShell = view.GetAgent().GetScriptShells()[0].GetValue()
 	}
-	renderer.SetScreenAndData(screen, data)
-	return nil
+	if script == "" {
+		script = presentation.ExampleAgentScript(selectedShell)
+	}
+	return map[string]any{"agentScript": map[string]any{
+		"agent_id": navigation.agentScriptID, "agent_label": view.GetAgent().GetHostname(),
+		"shells": shells, "selected_shell": selectedShell, "script": script,
+		"can_run": view.GetAgent().GetCanRunScript() && selectedShell != "",
+	}}, nil
 }
 
 func loadRunOptions(ctx context.Context, client *cnpclient.Client, navigation navigationState) (map[string]any, error) {
@@ -1531,44 +1593,48 @@ func runOptionsLoadingData(navigation navigationState) map[string]any {
 	}}
 }
 
-func refreshSettings(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument) error {
-	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	server, err := client.GetServerInfo(requestCtx)
-	if err != nil {
-		return err
+func screenLoadingData(navigation navigationState, clientVersion, themeName, mode, endpoint string, sshSettings sshConnectionSettings) (map[string]any, error) {
+	switch navigation.screen {
+	case "front-page":
+		return offlineFrontPageBindingData(clientVersion)
+	case "project-details":
+		return projectDetailsBindingData(&cnpv1.ProjectDetailsView{})
+	case "job-details":
+		return jobDetailsBindingData(&cnpv1.JobDetailsView{})
+	case "settings":
+		return offlineSettingsBindingData(clientVersion, themeName, mode, endpoint, sshSettings)
+	case "run-options":
+		return runOptionsLoadingData(navigation), nil
+	case "agents":
+		return protobufBindingData("agents", "agents", &cnpv1.AgentsView{})
+	case "agent-details":
+		return protobufBindingData("agentDetails", "agent details", &cnpv1.AgentDetailsView{
+			Agent: &cnpv1.AgentSummary{Id: navigation.agentDetailsID},
+		})
+	case "agent-script":
+		return map[string]any{"agentScript": map[string]any{
+			"agent_id": navigation.agentScriptID, "agent_label": navigation.agentScriptID,
+			"shells": []any{}, "selected_shell": "", "script": "", "can_run": false,
+		}}, nil
+	default:
+		return nil, fmt.Errorf("screen %q is unavailable", navigation.screen)
 	}
-	projects, err := client.ListProjects(requestCtx)
-	if err != nil {
-		return err
+}
+
+func loadingScreenLabel(screen string) string {
+	if screen == "run-options" {
+		return "Loading run options…"
 	}
-	updateStatus, updateStatusErr := client.GetServerUpdateStatus(requestCtx)
-	themes, err := sharedUI.LoadThemes()
-	if err != nil {
-		return err
+	return "Loading…"
+}
+
+func isScreenLoadingStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "Loading…", "Loading run options…", "Refreshing eligible agents…":
+		return true
+	default:
+		return false
 	}
-	data, err := settingsBindingData(server, themes, renderer.ThemeName())
-	if err != nil {
-		return err
-	}
-	settings, ok := data["settings"].(map[string]any)
-	if !ok {
-		return fmt.Errorf("settings binding is malformed")
-	}
-	projectData, err := protobufBindingData("projects", "settings projects", projects)
-	if err != nil {
-		return err
-	}
-	projectRoot, ok := projectData["projects"].(map[string]any)
-	if !ok {
-		return fmt.Errorf("settings projects binding is malformed")
-	}
-	projectItems, _ := projectRoot["projects"].([]any)
-	decorateSettingsProjects(projectItems)
-	settings["projects"] = projectItems
-	decorateSettingsUpdate(settings, updateStatus, updateStatusErr)
-	renderer.SetScreenAndData(screen, data)
-	return nil
 }
 
 func decorateSettingsUpdate(settings map[string]any, status *cnpv1.ServerUpdateStatus, statusErr error) {
@@ -1695,51 +1761,6 @@ func formatLoadedProjectTime(value any) string {
 		return "Unknown"
 	}
 	return time.UnixMilli(milliseconds).Local().Format("Mon 02 Jan, 15:04:05")
-}
-
-func refreshJobDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, jobID string) error {
-	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	view, err := client.GetJobDetails(requestCtx, jobID)
-	if err != nil {
-		return err
-	}
-	data, err := jobDetailsBindingData(view)
-	if err != nil {
-		return err
-	}
-	renderer.SetScreenAndData(screen, data)
-	return nil
-}
-
-func refreshFrontPage(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument) error {
-	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	view, err := client.GetFrontPageView(requestCtx)
-	if err != nil {
-		return err
-	}
-	data, err := frontPageBindingData(view)
-	if err != nil {
-		return err
-	}
-	renderer.SetScreenAndData(screen, data)
-	return nil
-}
-
-func refreshProjectDetails(ctx context.Context, client *cnpclient.Client, renderer *Renderer, screen *uidsl.ScreenDocument, projectID int64) error {
-	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	view, err := client.GetProjectDetails(requestCtx, projectID)
-	if err != nil {
-		return err
-	}
-	data, err := projectDetailsBindingData(view)
-	if err != nil {
-		return err
-	}
-	renderer.SetScreenAndData(screen, data)
-	return nil
 }
 
 func frontPageBindingData(view *cnpv1.FrontPageView) (map[string]any, error) {

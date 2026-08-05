@@ -47,6 +47,9 @@ func (c *recordingNativeActionClient) RerunExecution(_ context.Context, id, key 
 func (c *recordingNativeActionClient) AgentAction(_ context.Context, _ *cnpv1.AgentActionRequest, key string) (*cnpv1.AgentActionResult, error) {
 	return &cnpv1.AgentActionResult{Message: "Agent restarted"}, c.record("agent-action", key)
 }
+func (c *recordingNativeActionClient) RunAgentScript(_ context.Context, request *cnpv1.RunAgentScriptRequest, key string) (*cnpv1.RunAgentScriptResult, error) {
+	return &cnpv1.RunAgentScriptResult{AgentId: request.AgentId, JobExecutionId: "job-script"}, c.record("run-agent-script", key)
+}
 func (c *recordingNativeActionClient) ProjectAction(_ context.Context, _ int64, _ string, key string) (*cnpv1.ProjectActionResult, error) {
 	return &cnpv1.ProjectActionResult{Message: "Project reloaded"}, c.record("project-action", key)
 }
@@ -128,6 +131,7 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 		{command: "cancel-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "cancel-execution"},
 		{command: "rerun-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "rerun-execution", wantRoute: "/jobs/job-1-rerun"},
 		{command: "agent-action", arguments: map[string]string{"agentId": "agent-1", "action": "restart"}, wantCall: "agent-action"},
+		{command: "run-agent-script", arguments: map[string]string{"agentId": "agent-1", "shell": "posix", "script": "uname -a"}, wantCall: "run-agent-script", wantRoute: "/jobs/job-script"},
 		{command: "project-action", arguments: map[string]string{"projectId": "2", "action": "reload"}, wantCall: "project-action"},
 		{command: "import-project", arguments: map[string]string{"repoUrl": "https://example.com/ciwi.git"}, wantCall: "import-project"},
 		{command: "check-server-updates", wantCall: "check-server-updates"},

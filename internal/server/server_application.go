@@ -26,6 +26,7 @@ type serverApplication struct {
 	runOptions        *application.RunOptionsQueries
 	agents            *presentation.AgentsQueries
 	agentCommands     *application.AgentCommands
+	agentScripts      *application.AgentScriptCommands
 	executions        *application.ExecutionQueries
 	executionCommands *application.ExecutionCommands
 	executionControls *application.ExecutionControlCommands
@@ -76,6 +77,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 		runOptions:        application.NewRunOptionsQueries(runOptionsAdapter{state: s}),
 		agents:            presentation.NewAgentsQueries(agentQueries),
 		agentCommands:     application.NewAgentCommands(agentMutatorAdapter{state: s}, receipts, changes),
+		agentScripts:      application.NewAgentScriptCommands(agentScriptMutatorAdapter{state: s}, receipts, changes),
 		executions:        executionQueries,
 		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
 		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),

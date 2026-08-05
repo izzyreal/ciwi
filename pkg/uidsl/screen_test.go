@@ -136,6 +136,28 @@ func TestParseScreenValidatesInputBindingAndChangeScope(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesMultilineInput(t *testing.T) {
+	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: input
+        input:
+          value: frontPage.server.version
+          multiline: true
+          minLines: 8
+      - component: list
+`, 1)
+	document, err := ParseScreen([]byte(payload))
+	if err != nil {
+		t.Fatalf("valid multiline input: %v", err)
+	}
+	input := document.Screen.Root.Children[1].Input
+	if input == nil || !input.Multiline || input.MinLines != 8 {
+		t.Fatalf("multiline input = %#v", input)
+	}
+	payload = strings.Replace(payload, "          multiline: true\n", "", 1)
+	if _, err := ParseScreen([]byte(payload)); err == nil || !strings.Contains(err.Error(), "requires multiline") {
+		t.Fatalf("single-line minLines error = %v", err)
+	}
+}
+
 func TestParseScreenValidatesDisclosureStateKey(t *testing.T) {
 	payload := strings.Replace(validScreen, "          - component: card\n", `          - component: disclosure
             disclosure:

@@ -11,6 +11,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 type agentRepositoryAdapter struct {
@@ -61,6 +62,46 @@ func optionalTimeValue(value *time.Time) time.Time {
 
 type agentMutatorAdapter struct {
 	state *stateStore
+}
+
+type agentScriptMutatorAdapter struct{ state *stateStore }
+
+func (a agentScriptMutatorAdapter) RunAgentScript(ctx context.Context, request application.RunAgentScriptRequest) (application.RunAgentScriptResult, error) {
+	if err := ctx.Err(); err != nil {
+		return application.RunAgentScriptResult{}, err
+	}
+	s := a.state
+	s.mu.Lock()
+	agent, ok := s.agents[request.AgentID]
+	if !ok {
+		s.mu.Unlock()
+		return application.RunAgentScriptResult{}, agentNotFoundError(request.AgentID)
+	}
+	if strings.TrimSpace(agent.Capabilities["executor"]) != "script" {
+		s.mu.Unlock()
+		return application.RunAgentScriptResult{}, application.NewError(application.ErrorInvalidArgument, "agent does not advertise script executor support", nil)
+	}
+	if !containsString(capabilityShells(agent.Capabilities), request.Shell) {
+		s.mu.Unlock()
+		return application.RunAgentScriptResult{}, application.NewError(application.ErrorInvalidArgument, "agent does not support requested shell", nil)
+	}
+	s.mu.Unlock()
+	job, err := s.agentJobExecutionStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script:               request.Script,
+		RequiredCapabilities: map[string]string{"agent_id": request.AgentID, "executor": "script", "shell": request.Shell},
+		TimeoutSeconds:       request.TimeoutSeconds,
+		Metadata:             map[string]string{"adhoc": "1", "adhoc_agent_id": request.AgentID, "adhoc_shell": request.Shell},
+	})
+	if err != nil {
+		return application.RunAgentScriptResult{}, application.WrapInternal("queue agent script", err)
+	}
+	s.mu.Lock()
+	if current, found := s.agents[request.AgentID]; found {
+		current.RecentLog = appendAgentLog(current.RecentLog, "ad-hoc script queued ("+request.Shell+") job="+job.ID)
+		s.agents[request.AgentID] = current
+	}
+	s.mu.Unlock()
+	return application.RunAgentScriptResult{Queued: true, AgentID: request.AgentID, JobExecutionID: job.ID, Shell: request.Shell, TimeoutSeconds: request.TimeoutSeconds}, nil
 }
 
 func (a agentMutatorAdapter) ExecuteAgentAction(ctx context.Context, request application.AgentActionRequest) (application.AgentActionResult, error) {

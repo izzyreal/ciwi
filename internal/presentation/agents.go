@@ -12,24 +12,32 @@ import (
 )
 
 type AgentView struct {
-	ID                string `json:"id"`
-	Hostname          string `json:"hostname"`
-	Platform          string `json:"platform"`
-	Version           string `json:"version"`
-	Status            string `json:"status"`
-	StatusLabel       string `json:"status_label"`
-	Authorization     string `json:"authorization"`
-	Activation        string `json:"activation"`
-	Authorized        bool   `json:"authorized"`
-	Deactivated       bool   `json:"deactivated"`
-	JobInProgress     bool   `json:"job_in_progress"`
-	CapabilitiesLabel string `json:"capabilities_label"`
-	RunMode           string `json:"run_mode"`
-	LastSeen          string `json:"last_seen"`
-	RecentLog         string `json:"recent_log"`
-	UpdateLabel       string `json:"update_label"`
-	CanUpdate         bool   `json:"can_update"`
-	CanContact        bool   `json:"can_contact"`
+	ID                string             `json:"id"`
+	Hostname          string             `json:"hostname"`
+	Platform          string             `json:"platform"`
+	Version           string             `json:"version"`
+	Status            string             `json:"status"`
+	StatusLabel       string             `json:"status_label"`
+	Authorization     string             `json:"authorization"`
+	Activation        string             `json:"activation"`
+	Authorized        bool               `json:"authorized"`
+	Deactivated       bool               `json:"deactivated"`
+	JobInProgress     bool               `json:"job_in_progress"`
+	CapabilitiesLabel string             `json:"capabilities_label"`
+	RunMode           string             `json:"run_mode"`
+	LastSeen          string             `json:"last_seen"`
+	RecentLog         string             `json:"recent_log"`
+	UpdateLabel       string             `json:"update_label"`
+	CanUpdate         bool               `json:"can_update"`
+	CanContact        bool               `json:"can_contact"`
+	CanRunScript      bool               `json:"can_run_script"`
+	ScriptShells      []AgentScriptShell `json:"script_shells"`
+}
+
+type AgentScriptShell struct {
+	Value         string `json:"value"`
+	Label         string `json:"label"`
+	ExampleScript string `json:"example_script"`
 }
 
 type AgentsView struct {
@@ -111,6 +119,7 @@ func agentToView(agent domain.Agent, now time.Time) AgentView {
 	if strings.EqualFold(strings.TrimSpace(agent.Capabilities["run_mode"]), "service") {
 		runMode = "Service"
 	}
+	scriptShells := AgentScriptShells(agent.Capabilities)
 	return AgentView{
 		ID: agent.ID, Hostname: agent.Hostname, Platform: strings.Trim(strings.TrimSpace(agent.OS)+"/"+strings.TrimSpace(agent.Arch), "/"),
 		Version: agent.Version, Status: status, StatusLabel: strings.ToUpper(status[:1]) + status[1:],
@@ -118,8 +127,43 @@ func agentToView(agent domain.Agent, now time.Time) AgentView {
 		Authorized: agent.Authorized, Deactivated: agent.Deactivated, JobInProgress: agent.JobInProgress,
 		CapabilitiesLabel: strings.Join(capabilities, ", "), RunMode: runMode, LastSeen: formatAgentTime(agent.LastSeenUTC),
 		RecentLog: strings.Join(agent.RecentLog, "\n"), UpdateLabel: updateLabel,
-		CanUpdate:  !agent.UpdateInProgress && (agent.UpdateRequested || agent.NeedsUpdate) && status != "offline",
-		CanContact: status != "offline",
+		CanUpdate:    !agent.UpdateInProgress && (agent.UpdateRequested || agent.NeedsUpdate) && status != "offline",
+		CanContact:   status != "offline",
+		CanRunScript: status != "offline" && len(scriptShells) > 0, ScriptShells: scriptShells,
+	}
+}
+
+// AgentScriptShells converts runtime capabilities into client-neutral choices.
+func AgentScriptShells(capabilities map[string]string) []AgentScriptShell {
+	if !strings.EqualFold(strings.TrimSpace(capabilities["executor"]), "script") {
+		return []AgentScriptShell{}
+	}
+	seen := map[string]bool{}
+	values := make([]string, 0)
+	for _, raw := range strings.Split(capabilities["shells"], ",") {
+		shell := strings.ToLower(strings.TrimSpace(raw))
+		if shell != "" && !seen[shell] {
+			seen[shell] = true
+			values = append(values, shell)
+		}
+	}
+	sort.Strings(values)
+	result := make([]AgentScriptShell, 0, len(values))
+	for _, shell := range values {
+		result = append(result, AgentScriptShell{Value: shell, Label: shell, ExampleScript: ExampleAgentScript(shell)})
+	}
+	return result
+}
+
+// ExampleAgentScript is the shared starter script used by every client.
+func ExampleAgentScript(shell string) string {
+	switch shell {
+	case "cmd":
+		return "ver\necho Hello from ciwi ad-hoc cmd\necho Date: %DATE%\necho Time: %TIME%"
+	case "powershell":
+		return "$ErrorActionPreference = \"Stop\"\nWrite-Host \"Hello from ciwi ad-hoc (PowerShell)\"\nWrite-Host (\"PSVersion: \" + $PSVersionTable.PSVersion.ToString())\nWrite-Host (\"Date: \" + (Get-Date -Format \"yyyy-MM-dd HH:mm:ss\"))"
+	default:
+		return "set -eu\necho \"Hello from ciwi ad-hoc (POSIX)\"\nuname -a\ndate"
 	}
 }
 

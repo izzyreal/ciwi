@@ -835,7 +835,7 @@ func TestChangeThemeCommandPersistsNativePreference(t *testing.T) {
 	}
 	renderer.SetData(data)
 	preferencePath := filepath.Join(t.TempDir(), "native-ui.json")
-	handleCommand(t.Context(), nil, renderer, nil, &navigationState{screen: "settings"}, commandRequest{
+	handleCommand(renderer, &navigationState{screen: "settings"}, commandRequest{
 		action: uidsl.Action{Command: "change-theme"}, arguments: map[string]string{"theme": "space"},
 	}, preferencePath)
 	preferences, err := loadNativePreferences(preferencePath)
@@ -1205,6 +1205,59 @@ func TestPipelineRunOptionsRoutePreservesProjectForImmediateBack(t *testing.T) {
 	root := runOptionsLoadingData(navigation)["runOptions"].(map[string]any)
 	if root["project_id"] != int64(7) || root["target_kind"] != "loading" {
 		t.Fatalf("loading data = %+v", root)
+	}
+}
+
+func TestAgentScriptRouteAndLoadingDataAreImmediate(t *testing.T) {
+	navigation, err := navigationForRoute("/agents/agent-1/script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if navigation.screen != "agent-script" || navigation.agentScriptID != "agent-1" {
+		t.Fatalf("navigation = %+v", navigation)
+	}
+	data, err := screenLoadingData(navigation, "v0.2.9", "default", connectionModeDiscover, "", sshConnectionSettings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := data["agentScript"].(map[string]any)
+	if root["agent_id"] != "agent-1" || root["can_run"] != false {
+		t.Fatalf("loading data = %+v", root)
+	}
+}
+
+func TestSetAgentScriptFieldUpdatesNavigationAndBindings(t *testing.T) {
+	renderer := &Renderer{data: map[string]any{"agentScript": map[string]any{
+		"selected_shell": "", "script": "",
+	}}}
+	navigation := &navigationState{screen: "agent-script", agentScriptID: "agent-1"}
+	handleCommand(renderer, navigation, commandRequest{
+		action:    uidsl.Action{Command: "set-agent-script-field"},
+		arguments: map[string]string{"field": "shell", "value": "powershell"},
+	}, "")
+	if navigation.scriptShell != "powershell" || !strings.Contains(navigation.script, "$ErrorActionPreference") {
+		t.Fatalf("navigation = %+v", navigation)
+	}
+	root := renderer.data.(map[string]any)["agentScript"].(map[string]any)
+	if root["selected_shell"] != "powershell" || root["script"] != navigation.script {
+		t.Fatalf("bindings = %+v", root)
+	}
+}
+
+func TestEveryConnectedScreenHasImmediateLoadingData(t *testing.T) {
+	tests := []navigationState{
+		{screen: "front-page"}, {screen: "project-details", projectID: 1},
+		{screen: "job-details", jobID: "job-1"}, {screen: "settings"},
+		{screen: "run-options", pipelineDBID: 1}, {screen: "agents"},
+		{screen: "agent-details", agentDetailsID: "agent-1"},
+		{screen: "agent-script", agentScriptID: "agent-1"},
+	}
+	for _, navigation := range tests {
+		t.Run(navigation.screen, func(t *testing.T) {
+			if _, err := screenLoadingData(navigation, "v0.2.9", "default", connectionModeDiscover, "", sshConnectionSettings{}); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

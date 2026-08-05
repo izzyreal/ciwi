@@ -152,6 +152,7 @@ func Run(ctx context.Context) error {
 			RunOptions:        app.runOptions,
 			Agents:            app.agents,
 			AgentCommands:     app.agentCommands,
+			AgentScripts:      app.agentScripts,
 			ExecutionCommands: app.executionCommands, ExecutionControls: app.executionControls,
 			CommandReceipts: app.commandReceipts,
 			Changes:         app.changes, Version: currentVersion(),

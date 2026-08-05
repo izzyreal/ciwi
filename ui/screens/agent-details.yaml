@@ -88,6 +88,11 @@ screen:
                 visible: {binding: agentDetails.agent.can_contact}
                 actions: [{on: activate, command: agent-action, arguments: {agentId: "{{agentDetails.agent.id}}", action: refresh-tools}}]
               - component: button
+                text: {literal: Run Ad-hoc Script}
+                icon: terminal-2
+                visible: {binding: agentDetails.agent.can_run_script}
+                actions: [{on: activate, command: navigate, arguments: {route: "/agents/{{agentDetails.agent.id}}/script"}}]
+              - component: button
                 text: {literal: Restart}
                 icon: refresh
                 visible: {binding: agentDetails.agent.can_contact}

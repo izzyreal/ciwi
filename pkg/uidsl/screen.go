@@ -93,6 +93,8 @@ type Select struct {
 type Input struct {
 	Value       string `yaml:"value" json:"value"`
 	Placeholder string `yaml:"placeholder,omitempty" json:"placeholder,omitempty"`
+	Multiline   bool   `yaml:"multiline,omitempty" json:"multiline,omitempty"`
+	MinLines    int    `yaml:"minLines,omitempty" json:"minLines,omitempty"`
 }
 
 // Progress binds a semantic progress snapshot supplied by the presentation
@@ -198,8 +200,10 @@ var commands = map[string]bool{
 	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
 	"set-disclosures":              true,
 	"set-run-option":               true,
+	"set-agent-script-field":       true,
 	"set-project-structure-filter": true,
 	"agent-action":                 true,
+	"run-agent-script":             true,
 	"project-action":               true,
 	"set-project-import-field":     true, "import-project": true,
 	"set-server-update-option": true, "check-server-updates": true,
@@ -383,6 +387,12 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		}
 		if err := validateBinding(node.Input.Value, scope); err != nil {
 			return fmt.Errorf("%s.input.value: %w", path, err)
+		}
+		if node.Input.MinLines < 0 {
+			return fmt.Errorf("%s.input.minLines must not be negative", path)
+		}
+		if node.Input.MinLines > 1 && !node.Input.Multiline {
+			return fmt.Errorf("%s.input.minLines requires multiline", path)
 		}
 		actionScope = cloneScope(scope)
 		actionScope["input"] = struct{}{}

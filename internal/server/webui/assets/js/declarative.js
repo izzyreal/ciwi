@@ -301,7 +301,7 @@
       case 'disclosure': return document.createElement('details');
       case 'button': return document.createElement('button');
       case 'select': return document.createElement('select');
-      case 'input': return document.createElement('input');
+      case 'input': return document.createElement(node.input && node.input.multiline ? 'textarea' : 'input');
       case 'image': return document.createElement('img');
       case 'divider': return document.createElement('hr');
       case 'spacer': return document.createElement('span');
@@ -917,7 +917,8 @@
         element.appendChild(option);
       });
     } else if (node.component === 'input' && node.input) {
-      element.type = 'text';
+	  if (!node.input.multiline) element.type = 'text';
+	  if (node.input.minLines) element.rows = Number(node.input.minLines);
       element.value = String(resolve(data, node.input.value) ?? '');
       element.placeholder = node.input.placeholder || '';
     } else if (node.text) {

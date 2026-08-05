@@ -11,6 +11,7 @@ actions:
   - { command: toggle-output-tailing, class: local }
   - { command: set-disclosures, class: local }
   - { command: set-run-option, class: local }
+  - { command: set-agent-script-field, class: local }
   - { command: set-project-structure-filter, class: local }
   - { command: set-project-import-field, class: local }
   - { command: set-server-update-option, class: local }
@@ -34,6 +35,7 @@ actions:
   - { command: cancel-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Cancelling execution…" }
   - { command: rerun-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Queuing rerun…" }
   - { command: agent-action, class: mutation, scope: "agent:{{agentId}}", pending: "Updating agent…" }
+  - { command: run-agent-script, class: mutation, scope: "agent:{{agentId}}", pending: "Queuing script…" }
   - { command: project-action, class: mutation, scope: "project:{{projectId}}", pending: "Updating project…" }
   - { command: import-project, class: mutation, scope: "projects", pending: "Importing project…" }
   - { command: server-update-action, class: mutation, scope: "server:update", pending: "Updating server…", persistence: receipt-only }

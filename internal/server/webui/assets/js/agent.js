@@ -31,47 +31,6 @@
       return entries.map(([k, v]) => '<code class="cap-code">' + escapeHtml(String(k) + '=' + String(v)) + '</code>').join('');
     }
 
-    function parseAgentShells(caps) {
-      const executor = String((caps && caps.executor) || '').trim().toLowerCase();
-      if (executor !== 'script') return [];
-      const raw = String((caps && caps.shells) || '').trim();
-      if (!raw) return [];
-      const unique = {};
-      const out = [];
-      raw.split(',').forEach(part => {
-        const v = String(part || '').trim().toLowerCase();
-        if (!v || unique[v]) return;
-        unique[v] = true;
-        out.push(v);
-      });
-      return out;
-    }
-
-    function exampleScriptForShell(shell) {
-      if (shell === 'cmd') {
-        return [
-          'ver',
-          'echo Hello from ciwi ad-hoc cmd',
-          'echo Date: %DATE%',
-          'echo Time: %TIME%',
-        ].join('\n');
-      }
-      if (shell === 'powershell') {
-        return [
-          '$ErrorActionPreference = "Stop"',
-          'Write-Host "Hello from ciwi ad-hoc (PowerShell)"',
-          'Write-Host ("PSVersion: " + $PSVersionTable.PSVersion.ToString())',
-          'Write-Host ("Date: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))',
-        ].join('\n');
-      }
-      return [
-        'set -eu',
-        'echo "Hello from ciwi ad-hoc (POSIX)"',
-        'uname -a',
-        'date',
-      ].join('\n');
-    }
-
     function clearAdhocPoll() {
       if (adhocPollTimer) {
         clearTimeout(adhocPollTimer);
@@ -139,7 +98,7 @@
         opt.textContent = shell;
         adhocShellSelect.appendChild(opt);
       });
-      const suggested = exampleScriptForShell(adhocShellSelect.value || adhocShells[0]);
+      const suggested = adhocShellExamples[adhocShellSelect.value || adhocShells[0]] || '';
       adhocScriptInput.value = suggested;
       lastSuggestedScript = suggested;
       if (!adhocActiveJobID) {
@@ -271,6 +230,7 @@
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
     let adhocShells = [];
+    let adhocShellExamples = {};
     let adhocActiveJobID = '';
     let adhocPollTimer = null;
     let adhocEvents = [];
@@ -314,7 +274,9 @@
         const flushAgentHistoryButton = document.getElementById('flushAgentHistoryBtn');
         const refreshToolsButton = document.getElementById('refreshToolsBtn');
         const runAdhocButton = document.getElementById('runAdhocBtn');
-        adhocShells = parseAgentShells(a.capabilities || {});
+        const scriptShells = Array.isArray(a.script_shells) ? a.script_shells : [];
+        adhocShells = scriptShells.map(shell => String(shell.value || '').trim()).filter(Boolean);
+        adhocShellExamples = Object.fromEntries(scriptShells.map(shell => [String(shell.value || '').trim(), String(shell.example_script || '')]));
         const showUpdate = (!a.update_in_progress) && (!!a.update_requested || (!!a.needs_update && s.label !== 'offline'));
         activationButton.textContent = a.deactivated ? 'Activate' : 'Deactivate';
         updateButton.style.display = showUpdate ? 'inline-block' : 'none';
@@ -444,7 +406,7 @@
     };
     wireModalCloseBehavior(adhocModalOverlay, closeAdhocModal);
     adhocShellSelect.onchange = () => {
-      const suggested = exampleScriptForShell(String(adhocShellSelect.value || ''));
+      const suggested = adhocShellExamples[String(adhocShellSelect.value || '')] || '';
       adhocScriptInput.value = suggested;
       lastSuggestedScript = suggested;
     };

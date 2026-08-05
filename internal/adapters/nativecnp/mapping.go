@@ -325,6 +325,10 @@ func agentsViewToProto(view presentation.AgentsView) *cnpv1.AgentsView {
 }
 
 func agentSummaryToProto(agent presentation.AgentView) *cnpv1.AgentSummary {
+	shells := make([]*cnpv1.AgentScriptShell, 0, len(agent.ScriptShells))
+	for _, shell := range agent.ScriptShells {
+		shells = append(shells, &cnpv1.AgentScriptShell{Value: shell.Value, Label: shell.Label, ExampleScript: shell.ExampleScript})
+	}
 	return &cnpv1.AgentSummary{
 		Id: agent.ID, Hostname: agent.Hostname, Platform: agent.Platform, Version: agent.Version,
 		Status: agent.Status, StatusLabel: agent.StatusLabel, Authorization: agent.Authorization,
@@ -332,6 +336,7 @@ func agentSummaryToProto(agent presentation.AgentView) *cnpv1.AgentSummary {
 		JobInProgress: agent.JobInProgress, CapabilitiesLabel: agent.CapabilitiesLabel,
 		RunMode: agent.RunMode, LastSeen: agent.LastSeen, RecentLog: agent.RecentLog,
 		UpdateLabel: agent.UpdateLabel, CanUpdate: agent.CanUpdate, CanContact: agent.CanContact,
+		CanRunScript: agent.CanRunScript, ScriptShells: shells,
 	}
 }
 

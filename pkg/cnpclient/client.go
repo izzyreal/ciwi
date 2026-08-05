@@ -399,6 +399,20 @@ func (c *Client) AgentAction(ctx context.Context, request *cnpv1.AgentActionRequ
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) RunAgentScript(ctx context.Context, request *cnpv1.RunAgentScriptRequest, idempotencyKey string) (*cnpv1.RunAgentScriptResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_RunAgentScript{RunAgentScript: request}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetRunAgentScript(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) GetJobDetails(ctx context.Context, jobExecutionID string) (*cnpv1.JobDetailsView, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetJobDetails{
 		GetJobDetails: &cnpv1.GetJobDetailsRequest{JobExecutionId: jobExecutionID},

@@ -394,6 +394,14 @@ message AgentSummary {
   string update_label = 16;
   bool can_update = 17;
   bool can_contact = 18;
+  bool can_run_script = 19;
+  repeated AgentScriptShell script_shells = 20;
+}
+
+message AgentScriptShell {
+  string value = 1;
+  string label = 2;
+  string example_script = 3;
 }
 
 message AgentsView {
@@ -419,6 +427,21 @@ message AgentActionResult {
   string agent_id = 2;
   string message = 3;
   string target = 4;
+}
+
+message RunAgentScriptRequest {
+  string agent_id = 1;
+  string shell = 2;
+  string script = 3;
+  int32 timeout_seconds = 4;
+}
+
+message RunAgentScriptResult {
+  bool queued = 1;
+  string agent_id = 2;
+  string job_execution_id = 3;
+  string shell = 4;
+  int32 timeout_seconds = 5;
 }
 
 message ProjectActionRequest {
@@ -572,6 +595,7 @@ message Request {
     ControlExecutionRequest remove_queued_execution = 32;
     GetAgentDetailsRequest get_agent_details = 33;
     CommandReceiptStatusRequest get_command_receipt_status = 34;
+    RunAgentScriptRequest run_agent_script = 35;
   }
 }
 
@@ -604,6 +628,7 @@ message Response {
     RemoveQueuedExecutionResult remove_queued_execution = 33;
     AgentDetailsView agent_details = 34;
     CommandReceiptStatus command_receipt_status = 35;
+    RunAgentScriptResult run_agent_script = 36;
   }
 }
 
