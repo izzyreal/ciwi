@@ -2101,6 +2101,10 @@ func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, 
 
 func decorateProjectDetails(root map[string]any) {
 	if project, ok := root["project"].(map[string]any); ok {
+		if strings.TrimSpace(fmt.Sprint(project["project_icon"])) == "" {
+			project["project_icon"] = root["project_icon"]
+			project["project_icon_content_type"] = root["project_icon_content_type"]
+		}
 		metadata := make([]string, 0, 2)
 		if repoRef := strings.TrimSpace(fmt.Sprint(project["repo_ref"])); repoRef != "" {
 			metadata = append(metadata, "branch: "+repoRef)

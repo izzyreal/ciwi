@@ -199,6 +199,9 @@ screen:
               - component: disclosure
                 text:
                   literal: "Project:"
+                image:
+                  binding: project.project_icon
+                  description: Project logo
                 disclosure:
                   defaultExpanded: true
                   stateKey: "front-project:{{project.id}}"

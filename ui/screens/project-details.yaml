@@ -34,10 +34,10 @@ screen:
         children:
           - component: image
             image:
-              binding: projectDetails.project_icon
+              binding: projectDetails.project.project_icon
               description: Project logo
             visible:
-              binding: projectDetails.project_icon
+              binding: projectDetails.project.project_icon
               empty: true
               not: true
             style:

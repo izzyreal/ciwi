@@ -120,10 +120,15 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if !renderer.statusText.ReadOnly {
 		t.Fatal("status text must remain selectable but read-only")
 	}
+	projectIcon, err := sharedUI.Read("assets/ciwi-logo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
 	data, err := frontPageBindingData(&cnpv1.FrontPageView{
 		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
 		Projects: []*cnpv1.ProjectSummary{{
 			Id: 1, Name: "ciwi", RepoUrl: "https://github.com/izzyreal/ciwi",
+			ProjectIcon: projectIcon, ProjectIconContentType: "image/png",
 			Pipelines:      []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build", SupportsDryRun: true}},
 			PipelineChains: []*cnpv1.PipelineChainSummary{{Id: "build+release", Name: "Build and release", SequenceLabel: "build → release", SupportsDryRun: true}},
 		}},
@@ -136,6 +141,9 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	dimensions := renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
+	}
+	if len(renderer.dynamicImages) != 1 {
+		t.Fatalf("expanded front-page project images = %d, want 1", len(renderer.dynamicImages))
 	}
 	var foundTitle bool
 	var foundChain bool
@@ -442,10 +450,9 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
-		Project: &cnpv1.ProjectSummary{Id: 1, Name: "ciwi", PipelineChains: []*cnpv1.PipelineChainSummary{{
+		Project: &cnpv1.ProjectSummary{Id: 1, Name: "ciwi", ProjectIcon: projectIcon, ProjectIconContentType: "image/png", PipelineChains: []*cnpv1.PipelineChainSummary{{
 			Id: "build+release", Name: "Build and release", SequenceLabel: "build → release", SupportsDryRun: true,
 		}}},
-		ProjectIcon: projectIcon, ProjectIconContentType: "image/png",
 		Pipelines: []*cnpv1.ProjectPipelineDetails{{
 			Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 1, SupportsDryRun: true,
 			Jobs: []*cnpv1.ProjectJobDetails{{

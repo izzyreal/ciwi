@@ -79,6 +79,8 @@ message ProjectSummary {
   int64 updated_unix_ms = 9;
   repeated PipelineSummary pipelines = 10;
   repeated PipelineChainSummary pipeline_chains = 11;
+  bytes project_icon = 12;
+  string project_icon_content_type = 13;
 }
 
 message ProjectList {
@@ -90,6 +92,10 @@ message FrontPageView {
   repeated ProjectSummary projects = 2;
   repeated ExecutionCardSummary queued_executions = 3;
   repeated ExecutionCardSummary history_executions = 4;
+}
+
+message GetFrontPageViewRequest {
+  repeated int64 include_project_icon_ids = 1;
 }
 
 message ProjectDetailsView {
@@ -528,7 +534,7 @@ message Request {
   oneof operation {
     Empty get_server_info = 10;
     Empty list_projects = 11;
-    Empty get_front_page_view = 12;
+    GetFrontPageViewRequest get_front_page_view = 12;
     RunPipelineRequest run_pipeline = 13;
     WatchChangesRequest watch_changes = 14;
     GetProjectDetailsRequest get_project_details = 15;

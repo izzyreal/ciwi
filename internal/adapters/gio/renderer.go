@@ -776,7 +776,11 @@ func (r *Renderer) layoutFullScreenSheet(gtx layout.Context, sheet *activeSheet)
 	return layout.Inset{Top: pageInset, Right: pageInset, Bottom: pageInset, Left: pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Min = gtx.Constraints.Max
 		return r.surface(func(gtx layout.Context) layout.Dimensions {
-			return sheet.list.Layout(gtx, len(sheet.node.Children)+1, func(gtx layout.Context, index int) layout.Dimensions {
+			imageItems := 0
+			if sheet.node.Image != nil {
+				imageItems = 1
+			}
+			return sheet.list.Layout(gtx, len(sheet.node.Children)+1+imageItems, func(gtx layout.Context, index int) layout.Dimensions {
 				if index == 0 {
 					return layout.Inset{Bottom: r.metrics.spaceMedium}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						title := material.H6(r.theme, sheet.title)
@@ -795,6 +799,12 @@ func (r *Renderer) layoutFullScreenSheet(gtx layout.Context, sheet *activeSheet)
 						)
 					})
 				}
+				if imageItems > 0 && index == 1 {
+					return layout.Inset{Bottom: r.metrics.spaceMedium}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return r.layoutImage(gtx, uidsl.Node{Image: sheet.node.Image, Style: uidsl.Style{Role: "project-icon"}}, sheet.data, "compact-sheet/"+sheet.path+"/image")
+					})
+				}
+				index -= imageItems
 				return layout.Inset{Bottom: r.metrics.spaceMedium}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return r.layoutNode(gtx, sheet.node.Children[index-1], sheet.data, fmt.Sprintf("compact-sheet/%s/%d", sheet.path, index-1))
 				})
@@ -1250,7 +1260,20 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			return layout.Inset{Top: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				contentNode := node
 				contentNode.Layout.Padding = ""
-				return r.layoutChildren(gtx, contentNode, data, path+"/content")
+				content := func(gtx layout.Context) layout.Dimensions {
+					return r.layoutChildren(gtx, contentNode, data, path+"/content")
+				}
+				if !isProjectRow || node.Image == nil {
+					return content(gtx)
+				}
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Right: r.metrics.spaceLarge}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return r.layoutImage(gtx, uidsl.Node{Image: node.Image, Style: uidsl.Style{Role: "project-icon"}}, data, path+"/project-image")
+						})
+					}),
+					layout.Flexed(1, content),
+				)
 			})
 		}),
 	)

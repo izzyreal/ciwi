@@ -174,7 +174,36 @@ func (c *Client) ListProjects(ctx context.Context) (*cnpv1.ProjectList, error) {
 }
 
 func (c *Client) GetFrontPageView(ctx context.Context) (*cnpv1.FrontPageView, error) {
-	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetFrontPageView{GetFrontPageView: &cnpv1.Empty{}}}, "")
+	result, err := c.getFrontPageView(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	missing := make([]int64, 0, len(result.Projects))
+	c.projectMu.Lock()
+	for _, project := range result.Projects {
+		if project == nil {
+			continue
+		}
+		icon, ok := c.projectIcons[project.Id]
+		if !ok || icon.loadedCommit != project.LoadedCommit {
+			missing = append(missing, project.Id)
+		}
+	}
+	c.projectMu.Unlock()
+	if len(missing) > 0 {
+		result, err = c.getFrontPageView(ctx, missing)
+		if err != nil {
+			return nil, err
+		}
+	}
+	c.decorateProjectIcons(result.Projects)
+	return result, nil
+}
+
+func (c *Client) getFrontPageView(ctx context.Context, projectIconIDs []int64) (*cnpv1.FrontPageView, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetFrontPageView{
+		GetFrontPageView: &cnpv1.GetFrontPageViewRequest{IncludeProjectIconIds: projectIconIDs},
+	}}, "")
 	if err != nil {
 		return nil, err
 	}
@@ -188,13 +217,20 @@ func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1
 	c.projectMu.Lock()
 	cachedIcon, hasCachedIcon := c.projectIcons[projectID]
 	c.projectMu.Unlock()
-	result, err := c.getProjectDetails(ctx, projectID, !hasCachedIcon)
+	// A front-page response from a server predating summary icons leaves a
+	// negative cache entry. Still ask the project-details operation for its
+	// established top-level icon so details-page logos remain compatible.
+	result, err := c.getProjectDetails(ctx, projectID, !hasCachedIcon || len(cachedIcon.data) == 0)
 	if err != nil {
 		return nil, err
 	}
 	loadedCommit := ""
 	if result.Project != nil {
 		loadedCommit = result.Project.LoadedCommit
+		if len(result.ProjectIcon) == 0 && len(result.Project.ProjectIcon) > 0 {
+			result.ProjectIcon = append([]byte(nil), result.Project.ProjectIcon...)
+			result.ProjectIconContentType = result.Project.ProjectIconContentType
+		}
 	}
 	if len(result.ProjectIcon) == 0 && hasCachedIcon && cachedIcon.loadedCommit != loadedCommit {
 		result, err = c.getProjectDetails(ctx, projectID, true)
@@ -218,12 +254,40 @@ func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1
 	} else if hasCachedIcon && cachedIcon.loadedCommit == loadedCommit {
 		result.ProjectIcon = append([]byte(nil), cachedIcon.data...)
 		result.ProjectIconContentType = cachedIcon.contentType
-	} else if hasCachedIcon {
+	} else {
+		cachedIcon = projectIcon{loadedCommit: loadedCommit}
 		c.projectMu.Lock()
-		delete(c.projectIcons, projectID)
+		c.projectIcons[projectID] = cachedIcon
 		c.projectMu.Unlock()
 	}
+	if result.Project != nil {
+		result.Project.ProjectIcon = append([]byte(nil), result.ProjectIcon...)
+		result.Project.ProjectIconContentType = result.ProjectIconContentType
+	}
 	return result, nil
+}
+
+func (c *Client) decorateProjectIcons(projects []*cnpv1.ProjectSummary) {
+	c.projectMu.Lock()
+	defer c.projectMu.Unlock()
+	for _, project := range projects {
+		if project == nil {
+			continue
+		}
+		if len(project.ProjectIcon) > 0 {
+			c.projectIcons[project.Id] = projectIcon{
+				contentType: project.ProjectIconContentType,
+				data:        append([]byte(nil), project.ProjectIcon...), loadedCommit: project.LoadedCommit,
+			}
+			continue
+		}
+		if cached, ok := c.projectIcons[project.Id]; ok && cached.loadedCommit == project.LoadedCommit {
+			project.ProjectIcon = append([]byte(nil), cached.data...)
+			project.ProjectIconContentType = cached.contentType
+			continue
+		}
+		c.projectIcons[project.Id] = projectIcon{loadedCommit: project.LoadedCommit}
+	}
 }
 
 func (c *Client) getProjectDetails(ctx context.Context, projectID int64, includeProjectIcon bool) (*cnpv1.ProjectDetailsView, error) {

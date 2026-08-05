@@ -76,6 +76,16 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if frontPage.Server.Version != "v0.2.0" || len(frontPage.Projects) != 1 || len(frontPage.QueuedExecutions) != 1 || frontPage.Projects[0].PipelineChains[0].SequenceLabel != "build → release" {
 		t.Fatalf("front page = %#v", frontPage)
 	}
+	if string(frontPage.Projects[0].ProjectIcon) != "project-icon" || frontPage.Projects[0].ProjectIconContentType != "image/png" {
+		t.Fatalf("front-page project icon = %q (%q)", frontPage.Projects[0].ProjectIcon, frontPage.Projects[0].ProjectIconContentType)
+	}
+	frontPage, err = client.GetFrontPageView(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(frontPage.Projects[0].ProjectIcon) != "project-icon" || icons.callCount() != 1 {
+		t.Fatalf("cached front-page project icon = %q, server calls = %d", frontPage.Projects[0].ProjectIcon, icons.callCount())
+	}
 	projectDetails, err := client.GetProjectDetails(ctx, 7)
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +95,9 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	}
 	if string(projectDetails.ProjectIcon) != "project-icon" || projectDetails.ProjectIconContentType != "image/png" {
 		t.Fatalf("project icon = %q (%q)", projectDetails.ProjectIcon, projectDetails.ProjectIconContentType)
+	}
+	if string(projectDetails.Project.ProjectIcon) != "project-icon" || projectDetails.Project.ProjectIconContentType != "image/png" {
+		t.Fatalf("project summary icon = %q (%q)", projectDetails.Project.ProjectIcon, projectDetails.Project.ProjectIconContentType)
 	}
 	projectDetails, err = client.GetProjectDetails(ctx, 7)
 	if err != nil {

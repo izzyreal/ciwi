@@ -260,11 +260,15 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		var view presentation.FrontPageView
 		view, err = s.services.FrontPage.GetFrontPageView(ctx)
 		if err == nil {
-			response.Result = &cnpv1.Response_FrontPageView{FrontPageView: &cnpv1.FrontPageView{
+			result := &cnpv1.FrontPageView{
 				Server: serverInfoToProto(view.Server), Projects: projectsToProto(view.Projects),
 				QueuedExecutions:  executionCardsToProto(view.QueuedExecutions),
 				HistoryExecutions: executionCardsToProto(view.HistoryExecutions),
-			}}
+			}
+			err = s.populateProjectIcons(ctx, result.Projects, operation.GetFrontPageView.GetIncludeProjectIconIds())
+			if err == nil {
+				response.Result = &cnpv1.Response_FrontPageView{FrontPageView: result}
+			}
 		}
 	case *cnpv1.Request_GetProjectDetails:
 		var view presentation.ProjectDetailsView
@@ -279,6 +283,10 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 				if err == nil && found {
 					result.ProjectIcon = append([]byte(nil), data...)
 					result.ProjectIconContentType = contentType
+					if result.Project != nil {
+						result.Project.ProjectIcon = append([]byte(nil), data...)
+						result.Project.ProjectIconContentType = contentType
+					}
 				}
 			}
 			if err == nil {
@@ -447,6 +455,33 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		response.Result = &cnpv1.Response_Error{Error: errorToProto(err)}
 	}
 	return response
+}
+
+func (s *Handler) populateProjectIcons(ctx context.Context, projects []*cnpv1.ProjectSummary, projectIDs []int64) error {
+	if s.services.ProjectIcons == nil || len(projectIDs) == 0 {
+		return nil
+	}
+	wanted := make(map[int64]struct{}, len(projectIDs))
+	for _, projectID := range projectIDs {
+		wanted[projectID] = struct{}{}
+	}
+	for _, project := range projects {
+		if project == nil {
+			continue
+		}
+		if _, ok := wanted[project.Id]; !ok {
+			continue
+		}
+		contentType, data, found, err := s.services.ProjectIcons.GetProjectIcon(ctx, project.Id)
+		if err != nil {
+			return err
+		}
+		if found {
+			project.ProjectIcon = append([]byte(nil), data...)
+			project.ProjectIconContentType = contentType
+		}
+	}
+	return nil
 }
 
 func (s *Handler) writeChanges(ctx context.Context, stream cnp.Stream, requestID string, peerDone <-chan struct{}) {
