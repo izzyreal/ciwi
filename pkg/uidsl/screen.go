@@ -77,7 +77,8 @@ type Text struct {
 }
 
 type Image struct {
-	Asset       string `yaml:"asset" json:"asset"`
+	Asset       string `yaml:"asset,omitempty" json:"asset,omitempty"`
+	Binding     string `yaml:"binding,omitempty" json:"binding,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
@@ -101,9 +102,10 @@ type Progress struct {
 }
 
 type Disclosure struct {
-	DefaultExpanded bool   `yaml:"defaultExpanded,omitempty" json:"defaultExpanded,omitempty"`
-	StateKey        string `yaml:"stateKey,omitempty" json:"stateKey,omitempty"`
-	Summary         []Node `yaml:"summary,omitempty" json:"summary,omitempty"`
+	DefaultExpanded     bool   `yaml:"defaultExpanded,omitempty" json:"defaultExpanded,omitempty"`
+	StateKey            string `yaml:"stateKey,omitempty" json:"stateKey,omitempty"`
+	CompactPresentation string `yaml:"compactPresentation,omitempty" json:"compactPresentation,omitempty"`
+	Summary             []Node `yaml:"summary,omitempty" json:"summary,omitempty"`
 }
 
 // GraphView describes one definition graph. The node's children are its list
@@ -267,7 +269,7 @@ func (d *ScreenDocument) Validate() error {
 		sources[item.Name] = struct{}{}
 	}
 	for platform := range d.Screen.Overrides {
-		if platform != "web" && platform != "gio" {
+		if platform != "web" && platform != "gio" && platform != "compact" {
 			return fmt.Errorf("screen.overrides contains unsupported platform %q", platform)
 		}
 	}
@@ -332,6 +334,23 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 			}
 		}
 	}
+	if node.Image != nil {
+		choices := 0
+		if strings.TrimSpace(node.Image.Asset) != "" {
+			choices++
+		}
+		if strings.TrimSpace(node.Image.Binding) != "" {
+			choices++
+		}
+		if choices != 1 {
+			return fmt.Errorf("%s.image must set exactly one of asset or binding", path)
+		}
+		if node.Image.Binding != "" {
+			if err := validateBinding(node.Image.Binding, scope); err != nil {
+				return fmt.Errorf("%s.image.binding: %w", path, err)
+			}
+		}
+	}
 	if node.Select != nil {
 		if node.Component != "select" {
 			return fmt.Errorf("%s.select is only valid for the select component", path)
@@ -378,6 +397,9 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 			if err := validateTemplate(node.Disclosure.StateKey, scope); err != nil {
 				return fmt.Errorf("%s.disclosure.stateKey: %w", path, err)
 			}
+		}
+		if presentation := node.Disclosure.CompactPresentation; presentation != "" && presentation != "inline" && presentation != "sheet" {
+			return fmt.Errorf("%s.disclosure.compactPresentation must be inline or sheet", path)
 		}
 		for i, summaryNode := range node.Disclosure.Summary {
 			if err := validateNode(summaryNode, fmt.Sprintf("%s.disclosure.summary[%d]", path, i), ids, scope); err != nil {
@@ -462,7 +484,7 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		}
 	}
 	for platform := range node.Overrides {
-		if platform != "web" && platform != "gio" {
+		if platform != "web" && platform != "gio" && platform != "compact" {
 			return fmt.Errorf("%s.overrides contains unsupported platform %q", path, platform)
 		}
 	}

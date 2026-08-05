@@ -38,6 +38,9 @@ type Services struct {
 	ProjectDetails interface {
 		GetProjectDetailsView(context.Context, int64) (presentation.ProjectDetailsView, error)
 	}
+	ProjectIcons interface {
+		GetProjectIcon(context.Context, int64) (contentType string, data []byte, found bool, err error)
+	}
 	JobDetails interface {
 		GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error)
 		GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error)
@@ -267,7 +270,20 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		var view presentation.ProjectDetailsView
 		view, err = s.services.ProjectDetails.GetProjectDetailsView(ctx, operation.GetProjectDetails.GetProjectId())
 		if err == nil {
-			response.Result = &cnpv1.Response_ProjectDetails{ProjectDetails: projectDetailsToProto(view)}
+			result := projectDetailsToProto(view)
+			if s.services.ProjectIcons != nil && operation.GetProjectDetails.GetIncludeProjectIcon() {
+				var contentType string
+				var data []byte
+				var found bool
+				contentType, data, found, err = s.services.ProjectIcons.GetProjectIcon(ctx, operation.GetProjectDetails.GetProjectId())
+				if err == nil && found {
+					result.ProjectIcon = append([]byte(nil), data...)
+					result.ProjectIconContentType = contentType
+				}
+			}
+			if err == nil {
+				response.Result = &cnpv1.Response_ProjectDetails{ProjectDetails: result}
+			}
 		}
 	case *cnpv1.Request_GetJobDetails:
 		var view presentation.JobDetailsView

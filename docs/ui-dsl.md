@@ -31,12 +31,14 @@ The `ciwi.ui/v1` schema contains:
 - repetitions and visibility conditions;
 - named semantic commands with string arguments and confirmation copy;
 - client/session persistence declarations;
-- narrow `web` and `gio` overrides;
+- narrow `web`, `gio`, and compact-viewport overrides;
 - semantic color, gradient, and dimension tokens.
 
 Icons and bundled images are semantic asset names resolved by each renderer;
 screen documents never contain renderer-specific vector paths or filesystem
-locations. A style can use `toneBinding` to map execution states such as
+locations. An image can alternatively bind to presentation data (for example,
+a project icon conveyed as bytes over CNP and as an image endpoint in the
+browser proof renderer). A style can use `toneBinding` to map execution states such as
 `succeeded`, `failed`, `queued`, and `running` onto the shared semantic status
 palette without duplicating status-color logic in every screen.
 
@@ -48,7 +50,9 @@ action. A repeated `scroller` describes a bounded horizontal collection while
 leaving native gesture handling and browser overflow behavior to each adapter.
 Disclosures can declare a renderer-neutral initial state and a templated stable
 state key. Clients persist only keyed disclosure state; unkeyed disclosures
-retain ordinary screen-session behavior.
+retain ordinary screen-session behavior. A disclosure may request a full-screen
+sheet in compact viewports, allowing phone clients to drill into detail that is
+shown inline on larger screens without duplicating the screen definition.
 
 Ordinary non-control text, including headings, disclosure labels, and status
 copy, is selectable in the Gio adapter. The semantic `code` text role renders

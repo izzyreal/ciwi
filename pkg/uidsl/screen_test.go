@@ -170,6 +170,22 @@ func TestParseScreenValidatesDisclosureSummary(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesBoundImages(t *testing.T) {
+	payload := strings.Replace(validScreen, "          - component: card\n", `          - component: image
+            image:
+              binding: project.name
+              description: Project logo
+`, 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid bound image: %v", err)
+	}
+	payload = strings.Replace(payload, "project.name", "missing.name", 1)
+	_, err := ParseScreen([]byte(payload))
+	if err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid bound image error = %v", err)
+	}
+}
+
 func TestParseScreenValidatesGraphViewBindingsAndNodeActionScope(t *testing.T) {
 	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: graph-view
         graphView:

@@ -1,5 +1,7 @@
 package server
 
+import "context"
+
 func (s *stateStore) setProjectIcon(projectID int64, contentType string, data []byte) {
 	if projectID <= 0 {
 		return
@@ -34,4 +36,12 @@ func (s *stateStore) getProjectIcon(projectID int64) (projectIconState, bool) {
 		ContentType: icon.ContentType,
 		Data:        copyData,
 	}, true
+}
+
+func (s *stateStore) GetProjectIcon(_ context.Context, projectID int64) (string, []byte, bool, error) {
+	icon, ok := s.getProjectIcon(projectID)
+	if !ok {
+		return "", nil, false, nil
+	}
+	return icon.ContentType, icon.Data, true, nil
 }

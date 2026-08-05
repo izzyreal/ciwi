@@ -33,88 +33,115 @@ screen:
           align: center
         style:
           role: hero
-        children:
-          - component: image
-            image:
-              asset: ciwi-logo
-              description: ciwi CI/CD server
-          - component: column
+        overrides:
+          compact:
             layout:
               direction: vertical
-              gap: small
+              align: start
+        children:
+          - component: row
+            layout:
+              direction: horizontal
+              gap: medium
+              align: center
               grow: true
             children:
-              - component: row
+              - component: image
+                image:
+                  asset: ciwi-logo
+                  description: ciwi CI/CD server
+              - component: column
                 layout:
-                  direction: horizontal
+                  direction: vertical
                   gap: small
-                  align: center
                 children:
+                  - component: row
+                    layout:
+                      direction: horizontal
+                      gap: small
+                      align: center
+                    children:
+                      - component: text
+                        text:
+                          literal: ciwi
+                        style:
+                          role: title
+                          emphasis: strong
+                      - component: badge
+                        text:
+                          binding: frontPage.server.version
+                        style:
+                          tone: muted
                   - component: text
                     text:
-                      literal: ciwi
+                      literal: Projects, pipelines and job executions
                     style:
-                      role: title
-                      emphasis: strong
-                  - component: badge
-                    text:
-                      binding: frontPage.server.version
-                    style:
+                      role: subtitle
                       tone: muted
-              - component: text
+          - component: row
+            layout:
+              direction: horizontal
+              gap: small
+              align: center
+            style:
+              role: compact-toolbar
+            children:
+              - component: button
                 text:
-                  literal: Projects, pipelines and job executions
+                  literal: Agents
+                icon: server
+                enabled:
+                  binding: client.connected
                 style:
-                  role: subtitle
-                  tone: muted
-          - component: button
-            text:
-              literal: Agents
-            icon: server
-            enabled:
-              binding: client.connected
-            style:
-              emphasis: strong
-            actions:
-              - on: activate
-                command: navigate
-                arguments:
-                  route: /agents
-          - component: button
-            text:
-              literal: Global Settings
-            icon: settings
-            style:
-              emphasis: strong
-            actions:
-              - on: activate
-                command: navigate
-                arguments:
-                  route: /settings
-          - component: button
-            text:
-              literal: Trying to connect…
-            icon: network
-            style:
-              role: connection-pulse
-            visible:
-              binding: client.connecting
-            actions:
-              - on: activate
-                command: navigate
-                arguments:
-                  route: /settings
-          - component: button
-            text:
-              literal: Configure server
-            icon: server
-            visible:
-              binding: client.offline
-            actions:
-              - on: activate
-                command: navigate
-                arguments:
-                  route: /settings
+                  emphasis: strong
+                overrides:
+                  compact:
+                    style:
+                      role: icon-button
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /agents
+              - component: button
+                text:
+                  literal: Global Settings
+                icon: settings
+                style:
+                  emphasis: strong
+                overrides:
+                  compact:
+                    style:
+                      role: icon-button
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /settings
+              - component: button
+                text:
+                  literal: Trying to connect…
+                icon: network
+                style:
+                  role: connection-pulse
+                visible:
+                  binding: client.connecting
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /settings
+              - component: button
+                text:
+                  literal: Configure server
+                icon: server
+                visible:
+                  binding: client.offline
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /settings
       - component: section
         id: projects
         layout:
@@ -175,6 +202,7 @@ screen:
                 disclosure:
                   defaultExpanded: true
                   stateKey: "front-project:{{project.id}}"
+                  compactPresentation: sheet
                   summary:
                     - component: text
                       text:
@@ -298,6 +326,10 @@ screen:
                             text:
                               literal: Options
                             icon: adjustments
+                            overrides:
+                              compact:
+                                style:
+                                  role: icon-button
                             actions:
                               - on: activate
                                 command: navigate
@@ -332,6 +364,8 @@ screen:
                                 confirm:
                                   title: Dry-run pipeline chain
                                   message: Queues a dry-run execution of every pipeline in this chain. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
+                        style:
+                          role: compact-action-row
                   - component: list
                     layout:
                       direction: vertical
@@ -360,6 +394,10 @@ screen:
                             text:
                               literal: Options
                             icon: adjustments
+                            overrides:
+                              compact:
+                                style:
+                                  role: icon-button
                             actions:
                               - on: activate
                                 command: navigate
@@ -392,6 +430,8 @@ screen:
                                 confirm:
                                   title: Dry-run pipeline
                                   message: Queues a dry-run execution of this pipeline. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
+                        style:
+                          role: compact-action-row
         overrides:
           gio:
             layout:
@@ -413,6 +453,8 @@ screen:
               direction: horizontal
               gap: small
               align: center
+            style:
+              role: compact-toolbar
             children:
               - component: button
                 text:
@@ -500,6 +542,7 @@ screen:
                   binding: execution.progress
                 disclosure:
                   stateKey: "front-queued:{{execution.key}}"
+                  compactPresentation: sheet
                   summary:
                     - component: text
                       text:
@@ -640,6 +683,8 @@ screen:
               direction: horizontal
               gap: small
               align: center
+            style:
+              role: compact-toolbar
             children:
               - component: button
                 text:
@@ -722,6 +767,7 @@ screen:
               - component: disclosure
                 disclosure:
                   stateKey: "front-history:{{execution.key}}"
+                  compactPresentation: sheet
                   summary:
                     - component: text
                       text:

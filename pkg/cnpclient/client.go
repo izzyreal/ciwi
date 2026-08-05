@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,8 +28,16 @@ func (e *Error) Error() string {
 }
 
 type Client struct {
-	session cnp.Session
-	welcome *cnpv1.Welcome
+	session      cnp.Session
+	welcome      *cnpv1.Welcome
+	projectMu    sync.Mutex
+	projectIcons map[int64]projectIcon
+}
+
+type projectIcon struct {
+	contentType  string
+	data         []byte
+	loadedCommit string
 }
 
 func Dial(ctx context.Context, address, clientName, clientVersion string) (*Client, error) {
@@ -52,7 +61,7 @@ func Dial(ctx context.Context, address, clientName, clientVersion string) (*Clie
 }
 
 func newClient(ctx context.Context, session cnp.Session, clientName, clientVersion string) (*Client, error) {
-	client := &Client{session: session}
+	client := &Client{session: session, projectIcons: map[int64]projectIcon{}}
 	if err := client.hello(ctx, clientName, clientVersion); err != nil {
 		_ = session.CloseWithError(fmt.Errorf("hello failed: %w", err))
 		return nil, err
@@ -176,8 +185,50 @@ func (c *Client) GetFrontPageView(ctx context.Context) (*cnpv1.FrontPageView, er
 }
 
 func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1.ProjectDetailsView, error) {
+	c.projectMu.Lock()
+	cachedIcon, hasCachedIcon := c.projectIcons[projectID]
+	c.projectMu.Unlock()
+	result, err := c.getProjectDetails(ctx, projectID, !hasCachedIcon)
+	if err != nil {
+		return nil, err
+	}
+	loadedCommit := ""
+	if result.Project != nil {
+		loadedCommit = result.Project.LoadedCommit
+	}
+	if len(result.ProjectIcon) == 0 && hasCachedIcon && cachedIcon.loadedCommit != loadedCommit {
+		result, err = c.getProjectDetails(ctx, projectID, true)
+		if err != nil {
+			return nil, err
+		}
+		if result.Project != nil {
+			loadedCommit = result.Project.LoadedCommit
+		}
+	}
+	if len(result.ProjectIcon) > 0 {
+		cachedIcon = projectIcon{
+			contentType:  result.ProjectIconContentType,
+			data:         append([]byte(nil), result.ProjectIcon...),
+			loadedCommit: loadedCommit,
+		}
+		hasCachedIcon = true
+		c.projectMu.Lock()
+		c.projectIcons[projectID] = cachedIcon
+		c.projectMu.Unlock()
+	} else if hasCachedIcon && cachedIcon.loadedCommit == loadedCommit {
+		result.ProjectIcon = append([]byte(nil), cachedIcon.data...)
+		result.ProjectIconContentType = cachedIcon.contentType
+	} else if hasCachedIcon {
+		c.projectMu.Lock()
+		delete(c.projectIcons, projectID)
+		c.projectMu.Unlock()
+	}
+	return result, nil
+}
+
+func (c *Client) getProjectDetails(ctx context.Context, projectID int64, includeProjectIcon bool) (*cnpv1.ProjectDetailsView, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetProjectDetails{
-		GetProjectDetails: &cnpv1.GetProjectDetailsRequest{ProjectId: projectID},
+		GetProjectDetails: &cnpv1.GetProjectDetailsRequest{ProjectId: projectID, IncludeProjectIcon: includeProjectIcon},
 	}}, "")
 	if err != nil {
 		return nil, err

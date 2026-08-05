@@ -96,6 +96,8 @@ message ProjectDetailsView {
   ProjectSummary project = 1;
   repeated ProjectPipelineDetails pipelines = 2;
   repeated ExecutionCardSummary history_executions = 3;
+  bytes project_icon = 4;
+  string project_icon_content_type = 5;
 }
 
 message ProjectPipelineDetails {
@@ -134,6 +136,7 @@ message ProjectStepDetails {
 
 message GetProjectDetailsRequest {
   int64 project_id = 1;
+  bool include_project_icon = 2;
 }
 
 message GetJobDetailsRequest {

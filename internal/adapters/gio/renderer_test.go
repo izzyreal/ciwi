@@ -437,10 +437,15 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	projectIcon, err := sharedUI.Read("assets/ciwi-logo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
 	data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
 		Project: &cnpv1.ProjectSummary{Id: 1, Name: "ciwi", PipelineChains: []*cnpv1.PipelineChainSummary{{
 			Id: "build+release", Name: "Build and release", SequenceLabel: "build → release", SupportsDryRun: true,
 		}}},
+		ProjectIcon: projectIcon, ProjectIconContentType: "image/png",
 		Pipelines: []*cnpv1.ProjectPipelineDetails{{
 			Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 1, SupportsDryRun: true,
 			Jobs: []*cnpv1.ProjectJobDetails{{
@@ -458,6 +463,9 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	dimensions := renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
+	}
+	if len(renderer.dynamicImages) != 1 {
+		t.Fatalf("bound project images = %d, want 1", len(renderer.dynamicImages))
 	}
 	if got := len(renderer.buttons); got < 8 {
 		t.Fatalf("project details did not expose chain, pipeline, dry-run, and job controls: %d widgets", got)
@@ -1326,6 +1334,24 @@ func TestCompactPageInsetUsesPhoneSizedGutter(t *testing.T) {
 	}
 }
 
+func TestCompactViewportKeepsIPadDesktopLayoutAndCatchesIPhoneLandscape(t *testing.T) {
+	for _, test := range []struct {
+		platform      string
+		width, height float32
+		want          bool
+	}{
+		{platform: "ios", width: 390, height: 844, want: true},
+		{platform: "ios", width: 844, height: 390, want: true},
+		{platform: "ios", width: 834, height: 1112, want: false},
+		{platform: "darwin", width: 500, height: 900, want: true},
+		{platform: "darwin", width: 900, height: 500, want: false},
+	} {
+		if got := compactViewport(test.platform, test.width, test.height); got != test.want {
+			t.Errorf("compactViewport(%q, %v, %v) = %v, want %v", test.platform, test.width, test.height, got, test.want)
+		}
+	}
+}
+
 func TestCompactControlRowDoesNotExplodeVertically(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("front-page")
 	if err != nil {
@@ -1413,6 +1439,76 @@ func TestCompactFrontPageContentRemainsBounded(t *testing.T) {
 	renderer.Layout(gtx)
 	if renderer.list.Position.Length > 2200 {
 		t.Fatalf("compact front page content height = %d, want <= 2200", renderer.list.Position.Length)
+	}
+}
+
+func TestCompactProjectDisclosureOpensAndClosesSheet(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := frontPageBindingData(&cnpv1.FrontPageView{
+		Server: &cnpv1.ServerInfo{Version: "v0.2.8"},
+		Projects: []*cnpv1.ProjectSummary{{
+			Id: 1, Name: "ciwi", RepoUrl: "https://github.com/izzyreal/ciwi", RepoRef: "main", ConfigFile: "ciwi-project.yaml",
+			Pipelines: []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build"}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(390, 844))}
+	renderer.Layout(gtx)
+	for _, selectable := range renderer.selectables {
+		if selectable.Text() == "build" {
+			t.Fatal("compact project details were rendered inline before opening the sheet")
+		}
+	}
+	var projectHeader *widget.Clickable
+	for path, button := range renderer.buttons {
+		if strings.HasSuffix(path, "/disclosure-header") {
+			projectHeader = button
+			break
+		}
+	}
+	if projectHeader == nil {
+		t.Fatal("compact project disclosure header was not created")
+	}
+	projectHeader.Click()
+	gtx.Ops.Reset()
+	renderer.Layout(gtx)
+	if renderer.activeSheet == nil || renderer.activeSheet.title != "Project: ciwi" {
+		t.Fatalf("active compact sheet = %#v", renderer.activeSheet)
+	}
+	gtx.Ops.Reset()
+	renderer.Layout(gtx)
+	if title := renderer.selectable("compact-sheet/title").Text(); title != "Project: ciwi" {
+		t.Fatalf("compact sheet title = %q", title)
+	}
+	foundPipeline := false
+	for _, selectable := range renderer.selectables {
+		if selectable.Text() == "build" {
+			foundPipeline = true
+			break
+		}
+	}
+	if !foundPipeline {
+		t.Fatal("compact project sheet did not render pipeline details")
+	}
+	renderer.button("compact-sheet/close").Click()
+	gtx.Ops.Reset()
+	renderer.Layout(gtx)
+	if renderer.activeSheet != nil {
+		t.Fatal("compact sheet did not close")
 	}
 }
 

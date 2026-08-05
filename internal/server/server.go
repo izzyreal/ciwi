@@ -137,6 +137,7 @@ func Run(ctx context.Context) error {
 		handler, handlerErr := nativecnp.NewHandler(nativecnp.Services{
 			Server: app.server, Projects: app.projects, ProjectCommands: app.projectCommands, Updates: app.updates, FrontPage: app.frontPage,
 			ProjectDetails: app.projectDetails,
+			ProjectIcons:   s,
 			JobDetails:     app.jobDetails,
 			Pipelines:      app.pipelines, PipelineChains: app.pipelineChains,
 			RunOptions:        app.runOptions,

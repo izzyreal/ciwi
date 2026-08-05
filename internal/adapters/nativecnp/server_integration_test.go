@@ -23,6 +23,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	changes := application.NewChangeHub()
 	pipelines := &pipelineService{}
 	executions := &executionCommandService{}
+	icons := &projectIconService{}
 	server := startServer(t, nativequic.Services{
 		Server:            serverService{},
 		Projects:          projectService{},
@@ -30,6 +31,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		Updates:           updateService{},
 		FrontPage:         frontPageService{},
 		ProjectDetails:    projectDetailsService{},
+		ProjectIcons:      icons,
 		JobDetails:        jobDetailsService{},
 		Pipelines:         pipelines,
 		PipelineChains:    pipelines,
@@ -80,6 +82,16 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	}
 	if projectDetails.Project.Name != "ciwi" || len(projectDetails.Pipelines) != 1 || projectDetails.Pipelines[0].Jobs[0].Steps[0].Name != "Compile" || !projectDetails.Pipelines[0].Jobs[0].SupportsDryRun {
 		t.Fatalf("project details = %#v", projectDetails)
+	}
+	if string(projectDetails.ProjectIcon) != "project-icon" || projectDetails.ProjectIconContentType != "image/png" {
+		t.Fatalf("project icon = %q (%q)", projectDetails.ProjectIcon, projectDetails.ProjectIconContentType)
+	}
+	projectDetails, err = client.GetProjectDetails(ctx, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(projectDetails.ProjectIcon) != "project-icon" || icons.callCount() != 1 {
+		t.Fatalf("cached project icon = %q, server calls = %d", projectDetails.ProjectIcon, icons.callCount())
 	}
 	jobDetails, err := client.GetJobDetails(ctx, "job-1")
 	if err != nil {
@@ -567,6 +579,24 @@ func (projectDetailsService) GetProjectDetailsView(context.Context, int64) (pres
 			}},
 		}},
 	}, nil
+}
+
+type projectIconService struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (s *projectIconService) GetProjectIcon(context.Context, int64) (string, []byte, bool, error) {
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+	return "image/png", []byte("project-icon"), true, nil
+}
+
+func (s *projectIconService) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
 }
 
 type jobDetailsService struct{}

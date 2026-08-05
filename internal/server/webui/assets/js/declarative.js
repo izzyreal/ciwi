@@ -212,6 +212,7 @@
 
   function decorateProjectDetails(view) {
 	const project = (view && view.project) || {};
+	view.project_icon = Number(project.id || 0) > 0 ? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon' : '';
 	const sourceMetadata = [];
 	if (String(project.repo_ref || '').trim()) sourceMetadata.push('branch: ' + String(project.repo_ref).trim());
 	if (String(project.config_file || '').trim()) sourceMetadata.push(String(project.config_file).trim());
@@ -888,8 +889,11 @@
 		(node.disclosure.summary || []).forEach(summaryNode => summary.appendChild(renderNode(summaryNode, data)));
       }
     } else if (node.component === 'image' && node.image) {
-      element.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
+	  element.src = node.image.binding
+		? String(resolve(data, node.image.binding) || '')
+		: (node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset);
       element.alt = node.image.description || '';
+	  if (node.image.binding) element.addEventListener('error', () => { element.hidden = true; }, {once: true});
     } else if (node.component === 'select' && node.select) {
       const options = resolve(data, node.select.options);
       const current = String(resolve(data, node.select.value));

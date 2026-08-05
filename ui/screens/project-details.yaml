@@ -26,7 +26,22 @@ screen:
           align: center
         style:
           role: hero
+        overrides:
+          compact:
+            layout:
+              direction: vertical
+              align: start
         children:
+          - component: image
+            image:
+              binding: projectDetails.project_icon
+              description: Project logo
+            visible:
+              binding: projectDetails.project_icon
+              empty: true
+              not: true
+            style:
+              role: project-icon
           - component: column
             layout:
               direction: vertical
@@ -35,30 +50,48 @@ screen:
             children:
               - component: text
                 text:
-                  template: "Project: {{projectDetails.project.name}}"
+                  binding: projectDetails.project.name
                 style:
                   role: title
                   emphasis: strong
-              - component: text
-                text:
-                  binding: projectDetails.project.repo_url
-                visible:
-                  binding: projectDetails.project.repo_url
-                  empty: true
-                  not: true
-                style:
-                  role: subtitle
-                  tone: muted
-                  truncate: true
-              - component: text
-                text:
-                  binding: projectDetails.project.source_metadata
-                visible:
-                  binding: projectDetails.project.source_metadata
-                  empty: true
-                  not: true
-                style:
-                  tone: muted
+              - component: row
+                layout:
+                  direction: horizontal
+                  gap: small
+                  align: center
+                overrides:
+                  compact:
+                    layout:
+                      direction: vertical
+                      align: start
+                children:
+                  - component: badge
+                    text:
+                      binding: projectDetails.project.repo_url
+                    visible:
+                      binding: projectDetails.project.repo_url
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
+                  - component: badge
+                    text:
+                      template: "branch:{{projectDetails.project.repo_ref}}"
+                    visible:
+                      binding: projectDetails.project.repo_ref
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
+                  - component: badge
+                    text:
+                      binding: projectDetails.project.config_file
+                    visible:
+                      binding: projectDetails.project.config_file
+                      empty: true
+                      not: true
+                    style:
+                      tone: muted
           - component: button
             text:
               literal: Back to Projects
