@@ -858,7 +858,8 @@ func (r *Renderer) layoutStatus(gtx layout.Context, status string) layout.Dimens
 }
 
 func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path string) layout.Dimensions {
-	node, hidden := applyGioOverride(raw, compactLayout(gtx))
+	compact := compactLayout(gtx)
+	node, hidden := applyGioOverride(raw, compact)
 	if hidden {
 		return layout.Dimensions{}
 	}
@@ -873,6 +874,13 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 	}
 	if node.Component == "scroller" {
+		if compact && node.ID == "job-output-groups" {
+			// A vertical output list nested inside the page's vertical list makes
+			// touch-drag ownership ambiguous. Phones use the page as the sole
+			// vertical scroll owner so expanded output and following steps remain
+			// reachable with one continuous gesture.
+			node.Layout.MaxHeight = ""
+		}
 		return r.constrainNode(gtx, node, func(gtx layout.Context) layout.Dimensions {
 			return r.layoutScroller(gtx, node, data, path)
 		})
@@ -937,9 +945,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 	var surfaceProgress *semanticProgress
 	if node.Progress != nil {
 		progress, active := activeSemanticProgress(data, node.Progress)
-		useSurfaceProgress := node.Style.Role == "hero" ||
-			node.Component == "card" && node.Style.Role != "output-system" ||
-			node.Component == "disclosure" && node.Style.Role == "execution-row" && !r.disclosureExpanded(node, data, path)
+		useSurfaceProgress := usesSurfaceProgress(node, r.disclosureExpanded(node, data, path))
 		if active && useSurfaceProgress {
 			surfaceProgress = &progress
 		} else {
@@ -980,7 +986,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			padding = r.metrics.heroPadding
 		}
 		if node.Component == "disclosure" && node.Style.Role == "output-group" {
-			content = r.surfaceWithBorder(content, padding, r.palette.consoleSurface, r.palette.consoleBorder)
+			content = r.surfaceWithBorderProgress(content, padding, r.palette.consoleSurface, r.palette.consoleBorder, surfaceProgress)
 		} else if node.Component == "disclosure" {
 			content = r.surfaceWithFillProgress(content, padding, r.palette.surfaceRaised, surfaceProgress)
 		} else if node.Component == "card" && node.Style.Role == "output-system" {
@@ -1005,6 +1011,13 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 	}
 	return r.constrainNode(gtx, node, widgetFn)
+}
+
+func usesSurfaceProgress(node uidsl.Node, disclosureExpanded bool) bool {
+	return node.Style.Role == "hero" ||
+		node.Component == "card" && node.Style.Role != "output-system" ||
+		node.Component == "disclosure" && node.Style.Role == "output-group" ||
+		node.Component == "disclosure" && node.Style.Role == "execution-row" && !disclosureExpanded
 }
 
 func componentHandlesOwnActions(component string) bool {
@@ -2102,6 +2115,10 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	if err != nil {
 		return r.errorLabel(gtx, err)
 	}
+	if node.ID == "job-output-groups" && compactLayout(gtx) {
+		r.outputScroller = nil
+		return r.layoutInlineScrollerItems(gtx, node, data, path, items)
+	}
 	list := r.scrollers[path]
 	if list == nil {
 		axis := layout.Horizontal
@@ -2117,6 +2134,9 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	}
 	content := func(gtx layout.Context) layout.Dimensions {
 		return list.Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
+			if list.Axis == layout.Vertical {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			}
 			itemData := mergeData(data, node.Repeat.As, items[index])
 			itemPath := fmt.Sprintf("%s/%d", path, index)
 			if key, resolveErr := uidsl.Resolve(itemData, node.Repeat.Key); resolveErr == nil {
@@ -2156,6 +2176,28 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 			})
 		}),
 	)
+}
+
+func (r *Renderer) layoutInlineScrollerItems(gtx layout.Context, node uidsl.Node, data any, path string, items []any) layout.Dimensions {
+	children := make([]layout.FlexChild, 0, len(items))
+	for index := range items {
+		itemData := mergeData(data, node.Repeat.As, items[index])
+		itemPath := fmt.Sprintf("%s/%d", path, index)
+		if key, err := uidsl.Resolve(itemData, node.Repeat.Key); err == nil {
+			itemPath = path + "/" + fmt.Sprint(key)
+		}
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return layout.Inset{Bottom: r.spacing(node.Layout.Gap)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				container := node
+				container.Component = "column"
+				container.Repeat = nil
+				container.Actions = nil
+				return r.layoutChildren(gtx, container, itemData, itemPath)
+			})
+		}))
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 }
 
 func (r *Renderer) visibleOutputGroupState(items []any, index int) (string, bool) {

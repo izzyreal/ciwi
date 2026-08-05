@@ -1361,6 +1361,74 @@ func TestProgressTrackUsesAvailableWidth(t *testing.T) {
 	}
 }
 
+func TestOutputGroupProgressUsesRoundedDisclosureSurface(t *testing.T) {
+	node := uidsl.Node{Component: "disclosure", Style: uidsl.Style{Role: "output-group"}}
+	if !usesSurfaceProgress(node, true) || !usesSurfaceProgress(node, false) {
+		t.Fatal("output-group progress must paint the complete disclosure surface")
+	}
+}
+
+func TestCompactJobDetailsUsesPageScrollForExpandedOutputGroups(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-1", Title: "Job: compile", StatusLabel: "Running", Mode: "Run",
+		OutputGroups: []*cnpv1.JobOutputGroup{
+			{Id: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/2: Compile", Reached: true},
+			{Id: "step:2", StateKey: "job-output:job-1:step:2", Kind: "step", Title: "Job step 2/2: Package", Reached: true},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetScreenAndData(screen, data)
+	renderer.SetDisclosureStates(map[string]bool{"job-output:job-1:step:1": true})
+	renderer.ApplyJobOutput(jobOutputSnapshot{Outputs: map[string]string{
+		"step:1": strings.Repeat("compiler output line\n", 120),
+		"step:2": "package complete\n",
+	}})
+	// Start at the Output / Error section so this test exercises the compact
+	// rendering even when the preceding execution summary exceeds a phone.
+	renderer.list.ScrollTo(2)
+	var operations op.Ops
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(390, 844))})
+
+	if renderer.outputScroller != nil {
+		t.Fatal("compact output groups installed a nested vertical scroller")
+	}
+	for path := range renderer.scrollers {
+		if strings.Contains(path, "job-output-groups") {
+			t.Fatalf("compact output-group scroller retained at %q", path)
+		}
+	}
+	if renderer.list.Position.Length <= 844 {
+		t.Fatalf("page scroll length = %d, want expanded output beyond the phone viewport", renderer.list.Position.Length)
+	}
+	if renderer.outputEditors["step:1"] == nil {
+		t.Fatal("expanded step output was not laid out")
+	}
+	foundFollowingStep := false
+	for path := range renderer.buttons {
+		if strings.Contains(path, "step:2") && strings.HasSuffix(path, "/disclosure-toggle") {
+			foundFollowingStep = true
+			break
+		}
+	}
+	if !foundFollowingStep {
+		t.Fatal("step following a large expanded output was not laid out into the page scroll")
+	}
+}
+
 func TestRootPageInsetsScrollWithFirstAndLastContent(t *testing.T) {
 	renderer := &Renderer{
 		list:    layout.List{Axis: layout.Vertical},
