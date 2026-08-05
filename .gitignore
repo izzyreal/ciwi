@@ -31,6 +31,11 @@ go.work.sum
 .idea/
 # .vscode/
 
+# Local Xcode state and generated iOS framework
+packaging/ios/Ciwi.xcodeproj/project.xcworkspace/xcuserdata/
+packaging/ios/Ciwi.xcodeproj/xcuserdata/
+packaging/ios/Generated/
+
 # SQLite DB
 ciwi.db
 ciwi.db-shm
