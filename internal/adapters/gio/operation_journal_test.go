@@ -174,6 +174,14 @@ func TestNativeOperationJournalReconcileReplaysOnlySafeMatchingOperation(t *test
 	case <-time.After(time.Second):
 		t.Fatal("safe operation was not replayed")
 	}
+	waitForOperationState(t, coordinator, safe.ID, operations.StateSucceeded)
+	entries, err := journal.Entries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Operation.ID != mismatch.ID {
+		t.Fatalf("entries after replay = %#v, want only mismatched operation", entries)
+	}
 }
 
 func TestNativeOperationJournalReconcilePropagatesReceiptFailure(t *testing.T) {
@@ -189,5 +197,22 @@ func TestNativeOperationJournalReconcilePropagatesReceiptFailure(t *testing.T) {
 	_, _, err := journal.reconcile(context.Background(), journalReceiptFake{serverID: "server-1", err: want}, nil)
 	if !errors.Is(err, want) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func waitForOperationState(t *testing.T, coordinator *operations.Coordinator, id string, state operations.State) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		for _, operation := range coordinator.Snapshot() {
+			if operation.ID == id && operation.State == state {
+				return
+			}
+		}
+		select {
+		case <-coordinator.Changed():
+		case <-deadline:
+			t.Fatalf("operation %s did not reach %s: %#v", id, state, coordinator.Snapshot())
+		}
 	}
 }
