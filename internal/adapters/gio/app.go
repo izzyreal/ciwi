@@ -443,7 +443,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	if initialConnectErr == nil {
 		connected, initialConnectErr = connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
 	}
-	captureSSHHostKeyError(&sshSettings, initialConnectErr)
+	initialHostKeyPending := captureSSHHostKeyError(&sshSettings, initialConnectErr)
 	connectionSettings.SSH = sshSettings
 	if initialConnectErr == nil {
 		session = connected
@@ -544,7 +544,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint, sshSettings); err != nil {
 			renderer.SetStatus(err.Error())
 		}
-		applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: "Server unavailable; reconnecting…"})
+		state := nativeConnectionState{connecting: true, status: "Server unavailable; reconnecting…"}
+		if initialHostKeyPending {
+			state = nativeConnectionState{status: "SSH host key verification required. Connection attempts are paused."}
+		}
+		applyNativeConnectionState(renderer, state)
 	} else {
 		if mode != connectionModeSSH {
 			rememberSuccessfulEndpoint(preferencesPath, address)
@@ -599,7 +603,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 
 	var reconnectTimer *time.Timer
 	var reconnect <-chan time.Time
-	scheduleReconnectAfter := func(status string, delay time.Duration) {
+	disconnect := func() {
 		if session != nil {
 			session.close()
 			session = nil
@@ -613,6 +617,24 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			runOptionsCancel = nil
 			runOptionsGeneration++
 		}
+	}
+	pauseReconnect := func(status string) {
+		disconnect()
+		if reconnectTimer != nil {
+			if !reconnectTimer.Stop() {
+				select {
+				case <-reconnectTimer.C:
+				default:
+				}
+			}
+		}
+		reconnect = nil
+		applyNativeConnectionState(renderer, nativeConnectionState{status: status})
+		renderer.SetStatus("")
+		window.Invalidate()
+	}
+	scheduleReconnectAfter := func(status string, delay time.Duration) {
+		disconnect()
 		applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: status})
 		renderer.SetStatus("")
 		if reconnectTimer == nil {
@@ -637,7 +659,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		scheduleReconnectAfter(status, reconnectDelay)
 	}
 	if initialConnectErr != nil {
-		scheduleReconnectAfter("Server unavailable: "+initialConnectErr.Error(), reconnectDelay)
+		if initialHostKeyPending {
+			pauseReconnect("SSH host key verification required. Connection attempts are paused.")
+		} else {
+			scheduleReconnectAfter("Server unavailable: "+initialConnectErr.Error(), reconnectDelay)
+		}
 	}
 	defer func() {
 		if reconnectTimer != nil {
@@ -657,10 +683,14 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			reconnect = nil
 			connected, connectErr := connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
 			if connectErr != nil {
-				captureSSHHostKeyError(&sshSettings, connectErr)
+				hostKeyPending := captureSSHHostKeyError(&sshSettings, connectErr)
 				connectionSettings.SSH = sshSettings
 				if navigation.screen == "settings" {
 					applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
+				}
+				if hostKeyPending {
+					pauseReconnect("SSH host key verification required. Connection attempts are paused.")
+					continue
 				}
 				reconnectDelay = nextReconnectDelay(reconnectDelay)
 				scheduleReconnect(connectErr.Error())
@@ -828,6 +858,17 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				applyConnectionBindings(renderer, navigation.screen, mode, endpoint, sshSettings)
 				reconnectDelay = time.Second
 				scheduleReconnectAfter("SSH host key trusted; reconnecting…", 0)
+				continue
+			case "reject-ssh-host-key":
+				if strings.TrimSpace(sshSettings.PendingFingerprint) == "" {
+					renderer.SetStatus("No pending SSH host key to reject")
+					window.Invalidate()
+					continue
+				}
+				sshSettings.PendingFingerprint = ""
+				connectionSettings.SSH = sshSettings
+				applyConnectionBindings(renderer, navigation.screen, mode, endpoint, sshSettings)
+				pauseReconnect("SSH host key rejected. Connection attempts are paused.")
 				continue
 			case "save-connection":
 				mode = strings.TrimSpace(command.arguments["mode"])

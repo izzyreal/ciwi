@@ -273,27 +273,56 @@ screen:
                     visible:
                       binding: settings.ssh_has_pending_fingerprint
                     text:
-                      template: "Untrusted SSH host key: {{settings.ssh_pending_fingerprint}}"
+                      literal: Untrusted SSH host key
                     style:
                       tone: warning
                       emphasis: strong
-                  - component: button
+                  - component: text
                     visible:
                       binding: settings.ssh_has_pending_fingerprint
                     text:
-                      literal: Trust This Host Key
-                    actions:
-                      - on: activate
-                        command: trust-ssh-host-key
-                        confirm:
-                          title: Trust SSH Host Key
-                          message: Trust this SSH host key only after verifying its fingerprint through an independent trusted channel.
+                      binding: settings.ssh_pending_fingerprint
+                    style:
+                      role: code-inline
+                      tone: warning
+                      emphasis: strong
+                  - component: row
+                    visible:
+                      binding: settings.ssh_has_pending_fingerprint
+                    layout:
+                      direction: horizontal
+                      gap: small
+                      wrap: true
+                    children:
+                      - component: button
+                        text:
+                          literal: Trust This Host Key
+                        actions:
+                          - on: activate
+                            command: trust-ssh-host-key
+                            confirm:
+                              title: Trust SSH Host Key
+                              message: Trust this SSH host key only after verifying its fingerprint through an independent trusted channel.
+                      - component: button
+                        text:
+                          literal: Reject Host Key
+                        actions:
+                          - on: activate
+                            command: reject-ssh-host-key
                   - component: text
                     visible:
                       binding: settings.ssh_has_trusted_fingerprint
                     text:
-                      template: "Trusted host key: {{settings.ssh_host_fingerprint}}"
+                      literal: Trusted SSH host key
                     style:
+                      tone: muted
+                  - component: text
+                    visible:
+                      binding: settings.ssh_has_trusted_fingerprint
+                    text:
+                      binding: settings.ssh_host_fingerprint
+                    style:
+                      role: code-inline
                       tone: muted
               - component: button
                 text:

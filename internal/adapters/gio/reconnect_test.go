@@ -76,6 +76,22 @@ func TestDialNativeTargetsReportsAllFailures(t *testing.T) {
 	}
 }
 
+func TestCaptureSSHHostKeyErrorRequiresExplicitDecision(t *testing.T) {
+	settings := sshConnectionSettings{HostKeyFingerprint: "SHA256:trusted"}
+	err := errors.Join(errors.New("connect through remote server"), &cnpclient.SSHHostKeyError{
+		Address: "192.0.2.1:22", Fingerprint: "SHA256:presented", Expected: "SHA256:trusted",
+	})
+	if !captureSSHHostKeyError(&settings, err) {
+		t.Fatal("wrapped SSH host key error was not classified as requiring verification")
+	}
+	if settings.PendingFingerprint != "SHA256:presented" || settings.HostKeyFingerprint != "SHA256:trusted" {
+		t.Fatalf("SSH fingerprint state = %+v", settings)
+	}
+	if captureSSHHostKeyError(&settings, errors.New("connection refused")) {
+		t.Fatal("ordinary connection failure was classified as a host key decision")
+	}
+}
+
 func TestRunOptionsIgnoresHeartbeatOnlyAgentInvalidations(t *testing.T) {
 	navigation := navigationState{screen: "run-options", pipelineDBID: 1}
 	if relevantScreenChange(navigation, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS}}) {

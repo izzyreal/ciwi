@@ -717,6 +717,42 @@ func TestRendererLaysOutNativeConnectionScreen(t *testing.T) {
 	}
 }
 
+func TestSettingsRendersSSHHostFingerprintAsSelectableMonospaceText(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes, err := sharedUI.LoadThemes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := settingsBindingData(&cnpv1.ServerInfo{Name: "ciwi", Version: "v0.2.8"}, themes, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(data)
+	const fingerprint = "SHA256:rglajyExampleFingerprint"
+	applyConnectionBindings(renderer, "settings", connectionModeSSH, "", sshConnectionSettings{PendingFingerprint: fingerprint})
+	renderer.Layout(layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(1100, 1400))})
+	for _, editor := range renderer.textEditors {
+		if editor.Text() == fingerprint {
+			if !editor.ReadOnly {
+				t.Fatal("SSH host fingerprint editor must be read-only")
+			}
+			return
+		}
+	}
+	t.Fatal("SSH host fingerprint was not rendered through the monospace text path")
+}
+
 func TestSettingsBindingDataUsesSelectedThemeDescription(t *testing.T) {
 	themes, err := sharedUI.LoadThemes()
 	if err != nil {

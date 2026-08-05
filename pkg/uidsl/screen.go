@@ -203,7 +203,7 @@ var commands = map[string]bool{
 	"set-server-update-option": true, "check-server-updates": true,
 	"refresh-rollback-versions": true, "server-update-action": true,
 	"set-connection-field": true, "save-connection": true, "retry-connection": true,
-	"generate-ssh-device-key": true, "trust-ssh-host-key": true, "copy-text": true,
+	"generate-ssh-device-key": true, "trust-ssh-host-key": true, "reject-ssh-host-key": true, "copy-text": true,
 	"open-url": true,
 }
 
