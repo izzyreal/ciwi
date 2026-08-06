@@ -96,6 +96,7 @@ type Renderer struct {
 	pendingOutputSelection *outputSelection
 	renderedJobID          string
 	activeOperations       map[string]operations.Operation
+	notice                 *nativeNotice
 }
 
 type outputSelection struct {
@@ -123,12 +124,22 @@ type pendingConfirmation struct {
 }
 
 type activeSheet struct {
-	path  string
-	title string
-	node  uidsl.Node
-	data  any
-	list  layout.List
-	seen  bool
+	path       string
+	title      string
+	node       uidsl.Node
+	data       any
+	stateKey   string
+	persistent bool
+	list       layout.List
+	seen       bool
+}
+
+type nativeNotice struct {
+	message     string
+	actionLabel string
+	action      uidsl.Action
+	arguments   map[string]string
+	expires     time.Time
 }
 
 type dynamicImage struct {
@@ -210,6 +221,7 @@ func (r *Renderer) SetData(data any) {
 
 func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 	r.mu.Lock()
+	screenChanged := r.screen == nil || screen == nil || r.screen.Metadata.Name != screen.Metadata.Name
 	preserveTopLevelBinding(r.data, data, "client")
 	if screen != nil && screen.Metadata.Name == "job-details" {
 		preserveJobUIState(r.data, data)
@@ -217,8 +229,9 @@ func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 	if screen != nil && screen.Metadata.Name == "settings" {
 		preserveSettingsUIState(r.data, data)
 	}
-	if r.screen == nil || screen == nil || r.screen.Metadata.Name != screen.Metadata.Name {
+	if screenChanged {
 		r.resetScroll = true
+		r.activeSheet = nil
 	}
 	r.screen = screen
 	r.data = data
@@ -420,21 +433,40 @@ func (r *Renderer) SetTransientStatus(status string, duration time.Duration) {
 	r.mu.Unlock()
 }
 
+func (r *Renderer) ShowNotice(message, actionLabel string, action uidsl.Action, arguments map[string]string, duration time.Duration) {
+	r.mu.Lock()
+	notice := &nativeNotice{message: message, actionLabel: actionLabel, action: action, arguments: cloneStringMap(arguments)}
+	if duration > 0 {
+		notice.expires = time.Now().Add(duration)
+	}
+	r.notice = notice
+	r.mu.Unlock()
+}
+
 func (r *Renderer) StatusExpiry() time.Time {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.statusExpires
+	expires := r.statusExpires
+	if r.notice != nil && !r.notice.expires.IsZero() && (expires.IsZero() || r.notice.expires.Before(expires)) {
+		expires = r.notice.expires
+	}
+	return expires
 }
 
 func (r *Renderer) ClearExpiredStatus(now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.statusExpires.IsZero() || now.Before(r.statusExpires) {
-		return false
+	changed := false
+	if !r.statusExpires.IsZero() && !now.Before(r.statusExpires) {
+		r.status = ""
+		r.statusExpires = time.Time{}
+		changed = true
 	}
-	r.status = ""
-	r.statusExpires = time.Time{}
-	return true
+	if r.notice != nil && !r.notice.expires.IsZero() && !now.Before(r.notice.expires) {
+		r.notice = nil
+		changed = true
+	}
+	return changed
 }
 
 func (r *Renderer) SetTheme(theme *uidsl.ThemeDocument) error {
@@ -623,6 +655,12 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		r.surfaceBackgrounds = map[backgroundTextureKey]paint.ImageOp{}
 	}
 	screen, data, status, resetScroll := r.screen, r.data, r.status, r.resetScroll
+	var notice *nativeNotice
+	if r.notice != nil {
+		copy := *r.notice
+		copy.arguments = cloneStringMap(r.notice.arguments)
+		notice = &copy
+	}
 	r.resetScroll = false
 	r.mu.Unlock()
 	if resetScroll {
@@ -652,7 +690,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	compact := compactLayout(gtx)
 	root, _ := applyGioOverride(screen.Screen.Root, compact)
 	children := root.Children
-	if r.activeSheet != nil {
+	if compact && r.activeSheet != nil {
 		r.activeSheet.seen = false
 	}
 	body := func(gtx layout.Context) layout.Dimensions {
@@ -667,10 +705,17 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		})
 	}
 	content := body
-	if r.activeSheet != nil {
+	if compact && r.activeSheet != nil {
 		content = func(gtx layout.Context) layout.Dimensions {
 			return r.layoutSheetOverlay(gtx, body)
 		}
+	}
+	if notice != nil {
+		content = func(underlay layout.Widget) layout.Widget {
+			return func(gtx layout.Context) layout.Dimensions {
+				return r.layoutNoticeOverlay(gtx, underlay, notice)
+			}
+		}(content)
 	}
 	if r.pending != nil {
 		content = func(underlay layout.Widget) layout.Widget {
@@ -680,10 +725,21 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		}(content)
 	}
 	dimensions := content(gtx)
-	if r.activeSheet != nil && !r.activeSheet.seen {
+	if compact && r.activeSheet != nil && !r.activeSheet.seen {
 		r.activeSheet = nil
 	}
 	return dimensions
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
 }
 
 func (r *Renderer) paintPageBackground(gtx layout.Context) {
@@ -897,6 +953,62 @@ func layoutModalOverlay(gtx layout.Context, body, confirmation layout.Widget) la
 	)
 }
 
+func (r *Renderer) layoutNoticeOverlay(gtx layout.Context, body layout.Widget, notice *nativeNotice) layout.Dimensions {
+	viewportConstraints := gtx.Constraints
+	actionButton := r.button("native-notice/action")
+	dismissButton := r.button("native-notice/dismiss")
+	for actionButton.Clicked(gtx) {
+		r.mu.Lock()
+		r.notice = nil
+		r.mu.Unlock()
+		if r.onAction != nil && strings.TrimSpace(notice.action.Command) != "" {
+			r.onAction(notice.action, cloneStringMap(notice.arguments))
+		}
+	}
+	for dismissButton.Clicked(gtx) {
+		r.mu.Lock()
+		r.notice = nil
+		r.mu.Unlock()
+		r.requestFrame()
+	}
+	return layout.Stack{Alignment: layout.SE}.Layout(gtx,
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints = viewportConstraints
+			return body(gtx)
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Right: 14, Bottom: 14, Left: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min = image.Point{}
+				gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(480))
+				return r.surfaceWithBorder(func(gtx layout.Context) layout.Dimensions {
+					message := r.materialTextLabel(notice.message, "detail", false)
+					message.Color = r.palette.text
+					actions := func(gtx layout.Context) layout.Dimensions {
+						children := make([]layout.FlexChild, 0, 2)
+						if strings.TrimSpace(notice.actionLabel) != "" {
+							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return r.layoutControlButton(gtx, actionButton, notice.actionLabel, "", true, true, false)
+							}))
+						}
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return r.layoutControlButton(gtx, dismissButton, "Dismiss", "", true, false, false)
+						}))
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(r.metrics.spaceSmall)}.Layout(gtx, children...)
+					}
+					if compactLayout(gtx) {
+						return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(r.metrics.spaceSmall)}.Layout(gtx,
+							layout.Rigid(message.Layout), layout.Rigid(actions),
+						)
+					}
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(r.metrics.spaceMedium)}.Layout(gtx,
+						layout.Flexed(1, message.Layout), layout.Rigid(actions),
+					)
+				}, r.metrics.spaceMedium, r.palette.surfaceRaised, r.palette.border)(gtx)
+			})
+		}),
+	)
+}
+
 func (r *Renderer) layoutSheetOverlay(gtx layout.Context, body layout.Widget) layout.Dimensions {
 	viewportConstraints := gtx.Constraints
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
@@ -918,6 +1030,7 @@ func (r *Renderer) layoutSheetOverlay(gtx layout.Context, body layout.Widget) la
 func (r *Renderer) layoutFullScreenSheet(gtx layout.Context, sheet *activeSheet) layout.Dimensions {
 	closeButton := r.button("compact-sheet/close")
 	for closeButton.Clicked(gtx) {
+		r.setDisclosureState(sheet.stateKey, false, sheet.persistent)
 		r.activeSheet = nil
 		r.requestFrame()
 		return layout.Dimensions{Size: gtx.Constraints.Max}
@@ -961,16 +1074,18 @@ func (r *Renderer) layoutFullScreenSheet(gtx layout.Context, sheet *activeSheet)
 	})
 }
 
-func (r *Renderer) openCompactSheet(path, title string, node uidsl.Node, data any) {
+func (r *Renderer) openCompactSheet(path, title string, node uidsl.Node, data any, stateKey string, persistent bool) {
 	if r.activeSheet != nil && r.activeSheet.path == path {
 		r.activeSheet.title = title
 		r.activeSheet.node = node
 		r.activeSheet.data = data
+		r.activeSheet.stateKey = stateKey
+		r.activeSheet.persistent = persistent
 		r.activeSheet.seen = true
 		return
 	}
 	r.activeSheet = &activeSheet{
-		path: path, title: title, node: node, data: data,
+		path: path, title: title, node: node, data: data, stateKey: stateKey, persistent: persistent,
 		list: layout.List{Axis: layout.Vertical}, seen: true,
 	}
 	r.requestFrame()
@@ -1061,6 +1176,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		if node.Component == "badge" {
 			return r.layoutBadge(gtx, node, data, path)
 		}
+		if node.Component == "icon" {
+			return r.layoutIcon(gtx, node, data)
+		}
 		if node.Component == "image" {
 			return r.layoutImage(gtx, node, data, path)
 		}
@@ -1119,7 +1237,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			// body. Keeping that padding outside the disclosure would also inset
 			// the expanded header progress layer, leaving a small rectangle inside
 			// an otherwise full-width step card.
-			if node.Style.Role == "output-group" {
+			if node.Style.Role == "output-group" || node.Style.Role == "execution-row" {
 				padding = 0
 			}
 		}
@@ -1175,10 +1293,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 }
 
 func usesSurfaceProgress(node uidsl.Node, disclosureExpanded bool) bool {
+	_ = disclosureExpanded
 	return node.Style.Role == "hero" ||
-		node.Component == "card" && node.Style.Role != "output-system" ||
-		node.Component == "disclosure" && node.Style.Role == "output-group" && !disclosureExpanded ||
-		node.Component == "disclosure" && node.Style.Role == "execution-row" && !disclosureExpanded
+		node.Component == "card" && node.Style.Role != "output-system"
 }
 
 func componentHandlesOwnActions(component string) bool {
@@ -1201,10 +1318,10 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	}
 	sheetPresentation := compactLayout(gtx) && node.Disclosure != nil && node.Disclosure.CompactPresentation == "sheet"
 	sheetTitle := compactSheetTitle(node, data, label)
-	if sheetPresentation && r.activeSheet != nil && r.activeSheet.path == path {
-		r.openCompactSheet(path, sheetTitle, node, data)
-	}
 	stateKey, persistent := r.disclosureStateKey(node, data, path)
+	if sheetPresentation && r.activeSheet != nil && r.activeSheet.path == path {
+		r.openCompactSheet(path, sheetTitle, node, data, stateKey, persistent)
+	}
 	expanded, exists := r.disclosures[stateKey]
 	if !exists {
 		expanded = node.Disclosure != nil && node.Disclosure.DefaultExpanded
@@ -1222,6 +1339,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	}
 	isProjectRow := node.Style.Role == "project-row"
 	isOutputGroup := node.Style.Role == "output-group"
+	isExecutionRow := node.Style.Role == "execution-row"
 	contentPadding := r.metrics.sectionPadding
 	if node.Layout.Padding != "" {
 		contentPadding = r.spacing(node.Layout.Padding)
@@ -1238,7 +1356,8 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		labelToggleActivated = true
 		if r.selectable(path+"/label").SelectionLen() == 0 {
 			if sheetPresentation {
-				r.openCompactSheet(path, sheetTitle, node, data)
+				r.setDisclosureState(stateKey, true, persistent)
+				r.openCompactSheet(path, sheetTitle, node, data, stateKey, persistent)
 			} else {
 				expanded = !expanded
 				r.setDisclosureState(stateKey, expanded, persistent)
@@ -1263,7 +1382,8 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	for headerToggle.Clicked(gtx) {
 		if !summaryActionActivated && !labelToggleActivated && !r.disclosureHeaderHasSelection(path) {
 			if sheetPresentation {
-				r.openCompactSheet(path, sheetTitle, node, data)
+				r.setDisclosureState(stateKey, true, persistent)
+				r.openCompactSheet(path, sheetTitle, node, data, stateKey, persistent)
 			} else {
 				expanded = !expanded
 				r.setDisclosureState(stateKey, expanded, persistent)
@@ -1446,11 +1566,11 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		})
 	}
 	headerWidget := layout.Widget(header)
-	if isOutputGroup {
+	if isOutputGroup || isExecutionRow {
 		// The output-group surface itself is deliberately unpadded so progress
-		// can occupy the complete header width. Apply the former surface inset
-		// to the header contents instead. Expanded and collapsed headers retain
-		// the same vertical rhythm as the browser summary row.
+		// can occupy the complete header width. Execution rows use the same
+		// composition so their progress geometry cannot change when expanded.
+		// Apply the former surface inset to the header contents instead.
 		headerInset := layout.Inset{
 			Top: contentPadding, Right: contentPadding,
 			Bottom: contentPadding, Left: contentPadding,
@@ -1460,7 +1580,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			return headerInset.Layout(gtx, unpaddedHeader)
 		}
 	}
-	if node.Progress != nil && expanded {
+	if node.Progress != nil {
 		headerWidget = r.progressWidget(node, data, headerWidget)
 	}
 	if !expanded {
@@ -1470,7 +1590,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		layout.Rigid(headerWidget),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			bodyInset := layout.Inset{Top: 12}
-			if isOutputGroup {
+			if isOutputGroup || isExecutionRow {
 				bodyInset.Right = contentPadding
 				bodyInset.Bottom = contentPadding
 				bodyInset.Left = contentPadding
@@ -1550,6 +1670,8 @@ const (
 	indeterminateProgressDuration = 4 * time.Second
 	connectionPulseDuration       = 4 * time.Second
 	connectionPulseMinimum        = .58
+	heartbeatPulseDuration        = 10 * time.Second
+	heartbeatPulseMinimum         = .18
 	compactLayoutWidth            = unit.Dp(520)
 )
 
@@ -1667,6 +1789,21 @@ func connectionPulseOpacity(now time.Time) float32 {
 	return float32(connectionPulseMinimum + (1-connectionPulseMinimum)*eased)
 }
 
+func heartbeatPulseOpacity(lastSeenUnixMS int64, now time.Time) float32 {
+	if lastSeenUnixMS <= 0 {
+		return heartbeatPulseMinimum
+	}
+	elapsed := now.Sub(time.UnixMilli(lastSeenUnixMS))
+	if elapsed <= 0 {
+		return 1
+	}
+	if elapsed >= heartbeatPulseDuration {
+		return heartbeatPulseMinimum
+	}
+	remaining := 1 - float64(elapsed)/float64(heartbeatPulseDuration)
+	return float32(heartbeatPulseMinimum + (1-heartbeatPulseMinimum)*remaining)
+}
+
 func resolveSemanticProgress(data any, binding *uidsl.Progress) (semanticProgress, bool) {
 	if binding == nil || strings.TrimSpace(binding.Binding) == "" {
 		return semanticProgress{}, false
@@ -1763,13 +1900,16 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		axis = layout.Horizontal
 	}
 	compact := compactLayout(gtx)
-	if compact && (node.Style.Role == "queued-execution-header" || node.Style.Role == "history-execution-header") {
+	if compact && (node.Style.Role == "queued-execution-header" || node.Style.Role == "history-execution-header" || node.Style.Role == "agent-header") {
 		// Desktop column labels become unreadable before the rows themselves do.
 		// Compact execution details are rendered as vertical records instead.
 		return layout.Dimensions{}
 	}
 	if compact && (node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row") {
 		return r.layoutCompactExecutionRecord(gtx, node, data, path)
+	}
+	if compact && node.Style.Role == "agent-record" {
+		return r.layoutCompactAgentRecord(gtx, node, data, path)
 	}
 	if compact && node.Style.Role == "compact-action-row" {
 		return r.layoutCompactActionRow(gtx, node, data, path)
@@ -1887,6 +2027,35 @@ func (r *Renderer) layoutCompactExecutionRecord(gtx layout.Context, node uidsl.N
 	})
 }
 
+func (r *Renderer) layoutCompactAgentRecord(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	labels := []string{"Agent ID", "Host", "Platform", "Version", "Heartbeat", "Health", "Run mode"}
+	rows := make([]layout.FlexChild, 0, len(labels))
+	for index := range node.Children {
+		if index >= len(labels) || !compactNodeHasContent(node.Children[index], data) {
+			continue
+		}
+		child := node.Children[index]
+		label := labels[index]
+		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Bottom: r.metrics.spaceSmall}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				key := r.materialTextLabel(label, "table-header", false)
+				key.Color = r.palette.muted
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Start}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						gtx.Constraints.Min.X = gtx.Dp(88)
+						return key.Layout(gtx)
+					}),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						gtx.Constraints.Min.X = 0
+						return r.layoutNode(gtx, child, data, fmt.Sprintf("%s/%d", path, index))
+					}),
+				)
+			})
+		}))
+	}
+	return layout.Flex{Axis: layout.Vertical, Alignment: layout.Start}.Layout(gtx, rows...)
+}
+
 func compactNodeHasContent(node uidsl.Node, data any) bool {
 	if node.Visible != nil {
 		value, err := uidsl.Resolve(data, node.Visible.Binding)
@@ -1948,6 +2117,10 @@ func executionGridWeights(role string, childCount int) []float32 {
 		weights = []float32{2.0, 1.0, 1.25, 1.1, 1.2, 1.35, 2.25, 0.85}
 	case "history-execution-header", "history-execution-job-row":
 		weights = []float32{2.2, 1.1, 1.3, 1.1, 1.2, 1.45, 1.0}
+	case "agent-header":
+		weights = []float32{1.4, 1.2, 1.1, 0.8, 1.0, 0.9, 0.8}
+	case "agent-record":
+		weights = []float32{1.4, 1.2, 1.1, 0.8, 1.0, 0.9, 0.8, 0.2}
 	default:
 		return nil
 	}
@@ -2226,6 +2399,32 @@ func (r *Renderer) layoutImage(gtx layout.Context, node uidsl.Node, data any, pa
 		return r.layoutImageSource(gtx, dynamic.source, node.Image.Description, width, height)
 	}
 	return r.layoutImageSized(gtx, node.Image, r.metrics.imageBrandWidth, r.metrics.imageBrandHeight)
+}
+
+func (r *Renderer) layoutIcon(gtx layout.Context, node uidsl.Node, data any) layout.Dimensions {
+	if strings.TrimSpace(node.Icon) == "" {
+		return r.errorLabel(gtx, fmt.Errorf("icon name is missing"))
+	}
+	tone := node.Style.Tone
+	if tone == "" {
+		tone = "accent"
+	}
+	if node.Pulse == nil {
+		return r.layoutGlyph(gtx, node.Icon, tone, 21)
+	}
+	value, err := uidsl.Resolve(data, node.Pulse.Binding)
+	if err != nil {
+		return r.errorLabel(gtx, err)
+	}
+	opacity := heartbeatPulseOpacity(int64(numberValue(value)), gtx.Now)
+	if opacity > heartbeatPulseMinimum {
+		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+	}
+	semantic.DescriptionOp("Heartbeat").Add(gtx.Ops)
+	fade := paint.PushOpacity(gtx.Ops, opacity)
+	dimensions := r.layoutGlyph(gtx, node.Icon, tone, 21)
+	fade.Pop()
+	return dimensions
 }
 
 func (r *Renderer) layoutImageSized(gtx layout.Context, description *uidsl.Image, width, height unit.Dp) layout.Dimensions {

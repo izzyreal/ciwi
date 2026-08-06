@@ -38,7 +38,7 @@ screen:
         children:
           - component: row
             layout: {direction: horizontal, gap: medium, wrap: true}
-            style: {emphasis: strong, tone: muted}
+            style: {role: agent-header, emphasis: strong, tone: muted}
             children:
               - component: text
                 text: {literal: Agent ID}
@@ -62,6 +62,8 @@ screen:
                 text: {literal: Run mode}
                 layout: {grow: true}
           - component: divider
+            overrides:
+              compact: {hidden: true}
           - component: list
             layout: {direction: vertical, gap: small}
             repeat: {source: agents.agents, as: agent, key: agent.id}
@@ -75,6 +77,7 @@ screen:
                 children:
                   - component: row
                     layout: {direction: horizontal, gap: medium, align: center, wrap: true}
+                    style: {role: agent-record}
                     children:
                       - component: text
                         text: {binding: agent.id}
@@ -90,10 +93,16 @@ screen:
                       - component: text
                         text: {binding: agent.version}
                         layout: {grow: true}
-                      - component: text
-                        text: {binding: agent.last_seen}
-                        layout: {grow: true}
-                        style: {tone: muted}
+                      - component: column
+                        layout: {direction: vertical, gap: small, grow: true}
+                        children:
+                          - component: icon
+                            icon: heart
+                            pulse: {binding: agent.last_seen_unix_ms}
+                            style: {tone: danger}
+                          - component: text
+                            text: {binding: agent.last_seen}
+                            style: {role: detail-small, tone: muted}
                       - component: badge
                         text: {binding: agent.status_label}
                         layout: {grow: true}

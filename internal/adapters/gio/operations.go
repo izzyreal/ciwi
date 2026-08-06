@@ -69,6 +69,9 @@ type nativeOperationEffect struct {
 	Message       string
 	Refresh       bool
 	NavigateRoute string
+	NoticeRoute   string
+	NoticeLabel   string
+	CancelledJob  string
 	Value         any
 }
 
@@ -278,7 +281,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("cancel execution: %w", err)
 		}
-		return nativeOperationEffect{Message: "Execution " + result.JobExecutionId + " marked failed", Refresh: true}, nil
+		return nativeOperationEffect{Message: "Execution " + result.JobExecutionId + " marked failed", Refresh: true, CancelledJob: result.JobExecutionId}, nil
 	case "rerun-execution":
 		jobID := strings.TrimSpace(arguments["jobExecutionId"])
 		if jobID == "" {
@@ -320,8 +323,9 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 			return nativeOperationEffect{}, fmt.Errorf("run agent script: %w", err)
 		}
 		return nativeOperationEffect{
-			Message:       "Queued ad-hoc script on " + result.AgentId,
-			NavigateRoute: "/jobs/" + result.JobExecutionId,
+			Message:     "Queued ad-hoc script on " + result.AgentId,
+			NoticeRoute: "/jobs/" + result.JobExecutionId,
+			NoticeLabel: "Show job execution",
 		}, nil
 	case "project-action":
 		projectID, err := positiveInt64(arguments["projectId"], "project identifier")

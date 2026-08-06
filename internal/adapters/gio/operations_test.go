@@ -125,10 +125,12 @@ func TestValidateNativeOperationRejectsInvalidIntentBeforeTransport(t *testing.T
 
 func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 	tests := []struct {
-		command   string
-		arguments map[string]string
-		wantCall  string
-		wantRoute string
+		command    string
+		arguments  map[string]string
+		wantCall   string
+		wantRoute  string
+		wantNotice string
+		wantCancel string
 	}{
 		{command: "run-pipeline", arguments: map[string]string{"pipelineDbId": "7", "pipelineJobId": "unit-tests", "dryRun": "true"}, wantCall: "run-pipeline"},
 		{command: "run-chain", arguments: map[string]string{"projectId": "2", "chainId": "release"}, wantCall: "run-chain"},
@@ -136,10 +138,10 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 		{command: "remove-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "remove-execution"},
 		{command: "flush-history", wantCall: "flush-history"},
 		{command: "delete-execution", arguments: map[string]string{"jobExecutionIds": "job-1, job-2"}, wantCall: "flush-history"},
-		{command: "cancel-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "cancel-execution"},
+		{command: "cancel-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "cancel-execution", wantCancel: "job-1"},
 		{command: "rerun-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "rerun-execution", wantRoute: "/jobs/job-1-rerun"},
 		{command: "agent-action", arguments: map[string]string{"agentId": "agent-1", "action": "restart"}, wantCall: "agent-action"},
-		{command: "run-agent-script", arguments: map[string]string{"agentId": "agent-1", "shell": "posix", "script": "uname -a"}, wantCall: "run-agent-script", wantRoute: "/jobs/job-script"},
+		{command: "run-agent-script", arguments: map[string]string{"agentId": "agent-1", "shell": "posix", "script": "uname -a"}, wantCall: "run-agent-script", wantNotice: "/jobs/job-script"},
 		{command: "project-action", arguments: map[string]string{"projectId": "2", "action": "reload"}, wantCall: "project-action"},
 		{command: "import-project", arguments: map[string]string{"repoUrl": "https://example.com/ciwi.git"}, wantCall: "import-project"},
 		{command: "check-server-updates", wantCall: "check-server-updates"},
@@ -163,6 +165,12 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 			}
 			if effect.NavigateRoute != test.wantRoute {
 				t.Fatalf("navigate route = %q, want %q", effect.NavigateRoute, test.wantRoute)
+			}
+			if effect.NoticeRoute != test.wantNotice {
+				t.Fatalf("notice route = %q, want %q", effect.NoticeRoute, test.wantNotice)
+			}
+			if effect.CancelledJob != test.wantCancel {
+				t.Fatalf("cancelled job = %q, want %q", effect.CancelledJob, test.wantCancel)
 			}
 		})
 	}

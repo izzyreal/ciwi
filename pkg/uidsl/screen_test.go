@@ -89,6 +89,27 @@ func TestParseScreenValidatesDynamicToneBinding(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesTimestampPulseBindingsOnIcons(t *testing.T) {
+	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: icon
+        icon: heart
+        pulse:
+          binding: frontPage.server.heartbeat_unix_ms
+      - component: list
+`, 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid icon pulse: %v", err)
+	}
+	payload = strings.Replace(payload, "frontPage.server.heartbeat_unix_ms", "missing.heartbeat_unix_ms", 1)
+	if _, err := ParseScreen([]byte(payload)); err == nil || !strings.Contains(err.Error(), "unknown root") {
+		t.Fatalf("invalid pulse binding error = %v", err)
+	}
+	payload = strings.Replace(payload, "missing.heartbeat_unix_ms", "frontPage.server.heartbeat_unix_ms", 1)
+	payload = strings.Replace(payload, "component: icon", "component: text", 1)
+	if _, err := ParseScreen([]byte(payload)); err == nil || !strings.Contains(err.Error(), "pulse") {
+		t.Fatalf("pulse on text error = %v", err)
+	}
+}
+
 func TestParseScreenValidatesSelectBindings(t *testing.T) {
 	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: select
         select:

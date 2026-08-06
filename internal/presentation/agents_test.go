@@ -31,6 +31,9 @@ func TestAgentsViewDecoratesAndSortsAgentState(t *testing.T) {
 	if view.Summary != "1/2 online" || len(view.Agents) != 2 || view.Agents[0].ID != "a-online" || view.Agents[0].Status != "online" || view.Agents[0].RunMode != "Service" || view.Agents[1].Status != "offline" {
 		t.Fatalf("view = %+v", view)
 	}
+	if view.Agents[0].LastSeenUnixMS != now.Add(-5*time.Second).UnixMilli() || view.Agents[1].LastSeenUnixMS != now.Add(-2*time.Minute).UnixMilli() {
+		t.Fatalf("heartbeat timestamps = %d, %d", view.Agents[0].LastSeenUnixMS, view.Agents[1].LastSeenUnixMS)
+	}
 }
 
 func TestAgentDetailsViewUsesTheSharedAgentPresentation(t *testing.T) {

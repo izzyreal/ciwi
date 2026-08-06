@@ -42,10 +42,25 @@
     updateSemanticProgress(element, Date.now());
   }
 
+  function updateTimestampPulse(element, nowMs) {
+    const timestamp = Number(element && element.__ciwiPulseTimestamp || 0);
+    const elapsed = timestamp > 0 ? Math.max(0, Number(nowMs || Date.now()) - timestamp) : 10000;
+    const remaining = Math.max(0, Math.min(1, 1 - elapsed / 10000));
+    element.style.opacity = String(.18 + .82 * remaining);
+  }
+
+  function bindTimestampPulse(element, timestamp) {
+    if (!element) return;
+    element.classList.add('dsl-pulse');
+    element.__ciwiPulseTimestamp = Number(timestamp || 0);
+    updateTimestampPulse(element, Date.now());
+  }
+
   window.setInterval(() => {
     document.querySelectorAll('.ciwi-progress-surface').forEach(element => {
       if (element.__ciwiSemanticProgress) updateSemanticProgress(element, Date.now());
     });
+    document.querySelectorAll('.dsl-pulse').forEach(element => updateTimestampPulse(element, Date.now()));
   }, 250);
 
   const dimensionVariables = {
@@ -910,6 +925,11 @@
         }
 		(node.disclosure.summary || []).forEach(summaryNode => summary.appendChild(renderNode(summaryNode, data)));
       }
+    } else if (node.component === 'icon' && node.icon) {
+      element.appendChild(declarativeIcon(node.icon));
+      element.setAttribute('role', 'img');
+      element.setAttribute('aria-label', node.icon === 'heart' ? 'Heartbeat' : node.icon);
+      if (node.pulse && node.pulse.binding) bindTimestampPulse(element, resolve(data, node.pulse.binding));
     } else if (node.component === 'image' && node.image) {
 	  element.src = node.image.binding
 		? String(resolve(data, node.image.binding) || '')

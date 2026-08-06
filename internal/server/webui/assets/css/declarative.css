@@ -104,6 +104,9 @@ body { min-height: 100vh; }
 .dsl-image { width: var(--ciwi-image-brand-width, 132px); height: var(--ciwi-image-brand-height, 110px); object-fit: contain; image-rendering: pixelated; }
 .dsl-image.dsl-project-icon { width:72px; height:72px; }
 .dsl-image.dsl-job-header-icon { width:100px; height:100px; }
+.dsl-icon { display:inline-flex; width:21px; height:21px; color:var(--accent); }
+.dsl-icon.dsl-danger { color:var(--bad); }
+.dsl-icon > .ciwi-icon { width:100%; height:100%; }
 .dsl-button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); border-radius: var(--ciwi-control-radius, 8px); padding: var(--ciwi-control-padding-y, 8px) var(--ciwi-control-padding-x, 12px); font:var(--ciwi-type-control-weight) var(--ciwi-type-control-size)/var(--ciwi-type-control-line-height) var(--ciwi-type-control-family); cursor: pointer; }
 .dsl-button:hover { border-color: var(--accent); }
 .dsl-icon-button { width: 34px; height: 34px; padding: 0; justify-content: center; font-size: 0; flex: 0 0 auto; }

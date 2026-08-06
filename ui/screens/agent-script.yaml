@@ -61,7 +61,7 @@ screen:
                 command: set-agent-script-field
                 arguments: {field: script, value: "{{input.value}}"}
           - component: text
-            text: {literal: The script runs as an ordinary ciwi job and opens in Job Details after it is queued.}
+            text: {literal: The script runs as an ordinary ciwi job. Use the queued notification to open Job Details.}
             style: {tone: muted}
           - component: row
             layout: {direction: horizontal, gap: small, wrap: true}

@@ -1380,6 +1380,50 @@ func TestAgentScriptRouteAndLoadingDataAreImmediate(t *testing.T) {
 	}
 }
 
+func TestJobDetailsLoadingDataProvidesNestedRequirementSchemas(t *testing.T) {
+	navigation := navigationState{screen: "job-details", jobID: "job-1"}
+	data, err := screenLoadingData(navigation, "v0.2.9", "default", connectionModeDiscover, "", sshConnectionSettings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := data["jobDetails"].(map[string]any)
+	for _, key := range []string{"host_tool_requirements", "container_tool_requirements"} {
+		requirements, ok := root[key].(map[string]any)
+		if !ok {
+			t.Fatalf("%s loading schema = %#v", key, root[key])
+		}
+		for _, field := range []string{"empty_label", "summary", "tone", "issues"} {
+			if _, exists := requirements[field]; !exists {
+				t.Errorf("%s loading schema is missing %s: %#v", key, field, requirements)
+			}
+		}
+	}
+	runContext, ok := root["run_context"].(map[string]any)
+	if !ok || runContext["available"] != false {
+		t.Fatalf("run_context loading schema = %#v", root["run_context"])
+	}
+
+	screen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetScreenAndData(screen, data)
+	renderer.Layout(layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(390, 844))})
+	for path := range renderer.selectables {
+		if strings.HasPrefix(path, "error/") {
+			t.Fatalf("loading job details rendered binding error %q", path)
+		}
+	}
+}
+
 func TestSetAgentScriptFieldUpdatesNavigationAndBindings(t *testing.T) {
 	renderer := &Renderer{data: map[string]any{"agentScript": map[string]any{
 		"selected_shell": "", "script": "",
@@ -1442,6 +1486,22 @@ func TestTransientStatusExpiresWithoutClearingPersistentErrors(t *testing.T) {
 	renderer.SetStatus("Run failed")
 	if !renderer.StatusExpiry().IsZero() || renderer.ClearExpiredStatus(time.Now().Add(2*time.Hour)) || renderer.status != "Run failed" {
 		t.Fatalf("persistent status unexpectedly expired: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
+	}
+}
+
+func TestActionableNoticeExpiresIndependentlyFromStatus(t *testing.T) {
+	renderer := &Renderer{}
+	renderer.SetTransientStatus("Queued", 2*time.Hour)
+	renderer.ShowNotice("Script queued", "Show job execution", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/jobs/job-1"}, time.Hour)
+	noticeExpiry := renderer.StatusExpiry()
+	if noticeExpiry.IsZero() || renderer.notice == nil || renderer.notice.arguments["route"] != "/jobs/job-1" {
+		t.Fatalf("notice state = %#v, expiry=%v", renderer.notice, noticeExpiry)
+	}
+	if !renderer.ClearExpiredStatus(noticeExpiry) || renderer.notice != nil {
+		t.Fatalf("notice did not expire: %#v", renderer.notice)
+	}
+	if renderer.status != "Queued" || renderer.StatusExpiry().IsZero() {
+		t.Fatalf("notice expiration disturbed status: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
 	}
 }
 
@@ -1515,13 +1575,30 @@ func TestProgressTrackUsesAvailableWidth(t *testing.T) {
 	}
 }
 
-func TestOutputGroupProgressUsesSurfaceOnlyWhileCollapsed(t *testing.T) {
+func TestDisclosureProgressAlwaysUsesStableHeaderLayer(t *testing.T) {
 	node := uidsl.Node{Component: "disclosure", Style: uidsl.Style{Role: "output-group"}}
-	if !usesSurfaceProgress(node, false) {
-		t.Fatal("collapsed output-group progress must paint the complete disclosure surface")
+	if usesSurfaceProgress(node, false) {
+		t.Fatal("collapsed output-group progress must stay on the stable header layer")
 	}
 	if usesSurfaceProgress(node, true) {
 		t.Fatal("expanded output-group progress must stay on its header")
+	}
+}
+
+func TestHeartbeatPulseMatchesBrowserFade(t *testing.T) {
+	now := time.Unix(100, 0)
+	if got := heartbeatPulseOpacity(now.UnixMilli(), now); got != 1 {
+		t.Fatalf("heartbeat start opacity = %g, want 1", got)
+	}
+	middle := heartbeatPulseOpacity(now.UnixMilli(), now.Add(heartbeatPulseDuration/2))
+	if middle < .589 || middle > .591 {
+		t.Fatalf("heartbeat midpoint opacity = %g, want .59", middle)
+	}
+	if got := heartbeatPulseOpacity(now.UnixMilli(), now.Add(heartbeatPulseDuration)); got != heartbeatPulseMinimum {
+		t.Fatalf("heartbeat end opacity = %g, want %g", got, heartbeatPulseMinimum)
+	}
+	if got := heartbeatPulseOpacity(0, now); got != heartbeatPulseMinimum {
+		t.Fatalf("missing heartbeat opacity = %g, want %g", got, heartbeatPulseMinimum)
 	}
 }
 
@@ -1833,11 +1910,33 @@ func TestCompactProjectDisclosureOpensAndClosesSheet(t *testing.T) {
 	if !foundPipeline {
 		t.Fatal("compact project sheet did not render pipeline details")
 	}
+	stateKey := renderer.activeSheet.stateKey
+	if !renderer.disclosures[stateKey] {
+		t.Fatalf("compact sheet did not mark disclosure %q expanded", stateKey)
+	}
+	// A resize/orientation change reuses the same screen and refreshed binding
+	// data. The logical disclosure and compact sheet must survive both.
+	renderer.SetScreenAndData(screen, data)
+	gtx.Constraints = layout.Exact(image.Pt(844, 390))
+	gtx.Ops.Reset()
+	renderer.Layout(gtx)
+	if renderer.activeSheet == nil || !renderer.disclosures[stateKey] {
+		t.Fatalf("orientation change reset compact disclosure: sheet=%#v state=%v", renderer.activeSheet, renderer.disclosures[stateKey])
+	}
+	gtx.Constraints = layout.Exact(image.Pt(390, 844))
+	gtx.Ops.Reset()
+	renderer.Layout(gtx)
+	if renderer.activeSheet == nil || !renderer.activeSheet.seen {
+		t.Fatalf("compact sheet was not restored after returning to portrait: %#v", renderer.activeSheet)
+	}
 	renderer.button("compact-sheet/close").Click()
 	gtx.Ops.Reset()
 	renderer.Layout(gtx)
 	if renderer.activeSheet != nil {
 		t.Fatal("compact sheet did not close")
+	}
+	if renderer.disclosures[stateKey] {
+		t.Fatalf("closing compact sheet left disclosure %q expanded", stateKey)
 	}
 }
 

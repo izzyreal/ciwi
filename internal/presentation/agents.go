@@ -26,6 +26,7 @@ type AgentView struct {
 	CapabilitiesLabel string             `json:"capabilities_label"`
 	RunMode           string             `json:"run_mode"`
 	LastSeen          string             `json:"last_seen"`
+	LastSeenUnixMS    int64              `json:"last_seen_unix_ms"`
 	RecentLog         string             `json:"recent_log"`
 	UpdateLabel       string             `json:"update_label"`
 	CanUpdate         bool               `json:"can_update"`
@@ -126,11 +127,19 @@ func agentToView(agent domain.Agent, now time.Time) AgentView {
 		Authorization: boolLabel(agent.Authorized, "Authorized", "Unauthorized"), Activation: boolLabel(!agent.Deactivated, "Active", "Deactivated"),
 		Authorized: agent.Authorized, Deactivated: agent.Deactivated, JobInProgress: agent.JobInProgress,
 		CapabilitiesLabel: strings.Join(capabilities, ", "), RunMode: runMode, LastSeen: formatAgentTime(agent.LastSeenUTC),
-		RecentLog: strings.Join(agent.RecentLog, "\n"), UpdateLabel: updateLabel,
+		LastSeenUnixMS: unixMilliOrZero(agent.LastSeenUTC),
+		RecentLog:      strings.Join(agent.RecentLog, "\n"), UpdateLabel: updateLabel,
 		CanUpdate:    !agent.UpdateInProgress && (agent.UpdateRequested || agent.NeedsUpdate) && status != "offline",
 		CanContact:   status != "offline",
 		CanRunScript: status != "offline" && len(scriptShells) > 0, ScriptShells: scriptShells,
 	}
+}
+
+func unixMilliOrZero(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.UnixMilli()
 }
 
 // AgentScriptShells converts runtime capabilities into client-neutral choices.

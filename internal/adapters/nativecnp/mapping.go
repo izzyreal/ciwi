@@ -400,7 +400,7 @@ func agentSummaryToProto(agent presentation.AgentView) *cnpv1.AgentSummary {
 		Status: agent.Status, StatusLabel: agent.StatusLabel, Authorization: agent.Authorization,
 		Activation: agent.Activation, Authorized: agent.Authorized, Deactivated: agent.Deactivated,
 		JobInProgress: agent.JobInProgress, CapabilitiesLabel: agent.CapabilitiesLabel,
-		RunMode: agent.RunMode, LastSeen: agent.LastSeen, RecentLog: agent.RecentLog,
+		RunMode: agent.RunMode, LastSeen: agent.LastSeen, LastSeenUnixMs: agent.LastSeenUnixMS, RecentLog: agent.RecentLog,
 		UpdateLabel: agent.UpdateLabel, CanUpdate: agent.CanUpdate, CanContact: agent.CanContact,
 		CanRunScript: agent.CanRunScript, ScriptShells: shells,
 	}

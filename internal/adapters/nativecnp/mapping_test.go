@@ -67,3 +67,11 @@ func TestProgressMappingsPreserveSharedSemanticSnapshot(t *testing.T) {
 		t.Fatalf("job progress was not mapped: %+v", job)
 	}
 }
+
+func TestAgentMappingCarriesHeartbeatTimestamp(t *testing.T) {
+	const heartbeatUnixMS = int64(1786017600123)
+	agent := agentSummaryToProto(presentation.AgentView{ID: "agent-1", LastSeenUnixMS: heartbeatUnixMS})
+	if agent.LastSeenUnixMs != heartbeatUnixMS {
+		t.Fatalf("heartbeat timestamp = %d, want %d", agent.LastSeenUnixMs, heartbeatUnixMS)
+	}
+}

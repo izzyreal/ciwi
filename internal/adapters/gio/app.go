@@ -65,9 +65,10 @@ type jobOutputBuffer struct {
 }
 
 const (
-	maxNativeOutputBytes = 1024 * 1024
-	nativeNoticeDuration = 6 * time.Second
-	nativeReconnectMax   = 8 * time.Second
+	maxNativeOutputBytes   = 1024 * 1024
+	nativeNoticeDuration   = 6 * time.Second
+	nativeSnackbarDuration = 8 * time.Second
+	nativeReconnectMax     = 8 * time.Second
 )
 
 type nativeSession struct {
@@ -472,6 +473,8 @@ func Run(options Options) error {
 }
 
 func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal) {
+	screenCache := newNativeScreenCache()
+	pendingCancellations := map[string]bool{}
 	connectionSettings := nativeConnectionSettingsForLaunch(preferences, options.Address)
 	mode, endpoint := connectionSettings.Mode, connectionSettings.Endpoint
 	sshSettings := connectionSettings.SSH
@@ -503,6 +506,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		changes = connected.changes
 		watchErrors = connected.watchErrors
 		address = connected.address
+		screenCache.SetServerInstallationID(client.Welcome().GetServerInstallationId())
 	}
 	var outputBatches <-chan *cnpv1.JobOutputBatch
 	var outputErrors <-chan error
@@ -622,9 +626,27 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		}
 		return nil
 	}
+	showScreenData := func(target navigationState, data map[string]any) error {
+		screen := screens[target.screen]
+		if screen == nil {
+			return fmt.Errorf("screen %q is unavailable", target.screen)
+		}
+		renderer.SetScreenAndData(screen, data)
+		if target.screen == "settings" {
+			applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
+			renderer.SetRootBinding("settings", "client_version", options.Version)
+		}
+		return nil
+	}
 	beginNavigationWith := func(target navigationState, recoverMissingRoute bool) error {
 		navigation = target
-		if err := showScreenLoading(target); err != nil {
+		usedCache := false
+		if cached, ok := screenCache.Get(target); ok {
+			if err := showScreenData(target, cached); err != nil {
+				return err
+			}
+			usedCache = true
+		} else if err := showScreenLoading(target); err != nil {
 			return err
 		}
 		if target.screen == "job-details" {
@@ -637,7 +659,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		} else {
 			startScreenLoad(target)
 		}
-		renderer.SetStatus(loadingScreenLabel(target.screen))
+		if !usedCache {
+			renderer.SetStatus(loadingScreenLabel(target.screen))
+		} else if isScreenLoadingStatus(renderer.status) {
+			renderer.SetStatus("")
+		}
 		return nil
 	}
 	beginNavigation := func(target navigationState) error { return beginNavigationWith(target, false) }
@@ -823,6 +849,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			renderer.SetRootBinding("settings", field, effect.Message)
 			renderer.SetRootBinding("settings", field+"_tone", "success")
 		}
+		if effect.CancelledJob != "" && navigation.screen == "job-details" && navigation.jobID == effect.CancelledJob {
+			pendingCancellations[effect.CancelledJob] = true
+			renderer.SetRootBinding("jobDetails", "can_cancel", false)
+			screenCache.SetRootBinding(navigation, "jobDetails", "can_cancel", false)
+		}
 		if effect.NavigateRoute != "" && client != nil {
 			next, parseErr := navigationForRoute(effect.NavigateRoute)
 			if parseErr != nil {
@@ -836,7 +867,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		} else if effect.Refresh && client != nil {
 			startResyncLoad(navigation)
 		}
-		if effect.Message != "" {
+		if effect.NoticeRoute != "" {
+			renderer.ShowNotice(effect.Message, effect.NoticeLabel, uidsl.Action{Command: "navigate"}, map[string]string{"route": effect.NoticeRoute}, nativeSnackbarDuration)
+		} else if effect.Message != "" {
 			renderer.SetTransientStatus(effect.Message, nativeNoticeDuration)
 		}
 	}
@@ -849,6 +882,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				window.Invalidate()
 			}
 			statusExpiry = nil
+			scheduleStatusExpiry()
 		case <-reconnect:
 			reconnect = nil
 			connected, connectErr := connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
@@ -873,6 +907,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			watchErrors = connected.watchErrors
 			address = connected.address
 			reconnectDelay = time.Second
+			if screenCache.SetServerInstallationID(client.Welcome().GetServerInstallationId()) {
+				if err := showScreenLoading(navigation); err != nil {
+					renderer.SetStatus(err.Error())
+				}
+			}
 			startScreenLoad(navigation)
 			if mode != connectionModeSSH {
 				rememberSuccessfulEndpoint(preferencesPath, address)
@@ -945,8 +984,22 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					scheduleReconnect("resynchronize: " + result.err.Error())
 					continue
 				}
-				renderer.SetStatus("Loading failed: " + result.err.Error())
+				if screenCache.Has(navigation) {
+					renderer.SetStatus("Refresh failed; showing last known data: " + result.err.Error())
+				} else {
+					renderer.SetStatus("Loading failed: " + result.err.Error())
+				}
 			} else {
+				if navigation.screen == "job-details" && pendingCancellations[navigation.jobID] {
+					if root, ok := result.data["jobDetails"].(map[string]any); ok {
+						if canCancel, _ := root["can_cancel"].(bool); canCancel {
+							root["can_cancel"] = false
+						} else {
+							delete(pendingCancellations, navigation.jobID)
+						}
+					}
+				}
+				screenCache.Put(navigation, result.data)
 				renderer.SetScreenAndData(screens[navigation.screen], result.data)
 				if navigation.screen == "settings" {
 					applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
@@ -955,7 +1008,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				if navigation.screen == "job-details" {
 					outputBuffer.apply(renderer)
 				}
-				if isScreenLoadingStatus(renderer.status) {
+				if isScreenLoadingStatus(renderer.status) || strings.HasPrefix(renderer.status, "Refresh failed; showing last known data:") {
 					renderer.SetStatus("")
 				}
 			}
@@ -2136,6 +2189,14 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 	}
 	if root, ok := data["jobDetails"].(map[string]any); ok {
 		ensureSchedulingDiagnosisBinding(root)
+		for _, key := range []string{"host_tool_requirements", "container_tool_requirements"} {
+			if root[key] == nil {
+				root[key] = map[string]any{"empty_label": "", "summary": "", "tone": "muted", "issues": []any{}}
+			}
+		}
+		if root["run_context"] == nil {
+			root["run_context"] = map[string]any{"available": false, "scope_label": "", "pipelines": []any{}}
+		}
 		for _, field := range []string{"created", "started", "finished"} {
 			if parsed, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(root[field]))); parseErr == nil {
 				root[field] = formatExecutionCardTimestamp(parsed)

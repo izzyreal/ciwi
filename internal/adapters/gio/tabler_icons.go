@@ -85,6 +85,15 @@ func tablerIcons() map[string]nativeIcon {
 			path.CubeTo(f32.Pt(21, 17), f32.Pt(17, 21), f32.Pt(12, 21))
 			path.CubeTo(f32.Pt(7, 21), f32.Pt(3, 17), f32.Pt(3, 12))
 		}},
+		"heart": tablerIcon{func(path *clip.Path) {
+			path.MoveTo(f32.Pt(19.5, 12.572))
+			path.LineTo(f32.Pt(12, 20))
+			path.LineTo(f32.Pt(4.5, 12.572))
+			path.CubeTo(f32.Pt(1.5, 9.5), f32.Pt(2, 4), f32.Pt(7, 4))
+			path.CubeTo(f32.Pt(9, 4), f32.Pt(11, 5), f32.Pt(12, 6))
+			path.CubeTo(f32.Pt(13, 5), f32.Pt(15, 4), f32.Pt(17, 4))
+			path.CubeTo(f32.Pt(22, 4), f32.Pt(22.5, 9.5), f32.Pt(19.5, 12.572))
+		}},
 		"check":          tablerIcon{line(f32.Pt(5, 12), f32.Pt(10, 17), f32.Pt(19, 7))},
 		"circle-x":       tablerIcon{paths(circle(f32.Pt(12, 12), 9), line(f32.Pt(10, 10), f32.Pt(14, 14)), line(f32.Pt(14, 10), f32.Pt(10, 14)))},
 		"status-success": tablerIcon{paths(circle(f32.Pt(12, 12), 9), line(f32.Pt(8.5, 12), f32.Pt(11, 14.5), f32.Pt(16, 9.5)))},

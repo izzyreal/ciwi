@@ -60,6 +60,7 @@ type Node struct {
 	Disclosure *Disclosure         `yaml:"disclosure,omitempty" json:"disclosure,omitempty"`
 	GraphView  *GraphView          `yaml:"graphView,omitempty" json:"graphView,omitempty"`
 	Progress   *Progress           `yaml:"progress,omitempty" json:"progress,omitempty"`
+	Pulse      *Pulse              `yaml:"pulse,omitempty" json:"pulse,omitempty"`
 	Layout     Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
 	Style      Style               `yaml:"style,omitempty" json:"style,omitempty"`
 	Repeat     *Repeat             `yaml:"repeat,omitempty" json:"repeat,omitempty"`
@@ -100,6 +101,12 @@ type Input struct {
 // Progress binds a semantic progress snapshot supplied by the presentation
 // layer. It is intentionally visual-policy free.
 type Progress struct {
+	Binding string `yaml:"binding" json:"binding"`
+}
+
+// Pulse binds an icon's opacity animation to the Unix-millisecond timestamp
+// of the most recent event, such as an agent heartbeat.
+type Pulse struct {
 	Binding string `yaml:"binding" json:"binding"`
 }
 
@@ -473,6 +480,14 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 	if node.Progress != nil {
 		if err := validateBinding(node.Progress.Binding, scope); err != nil {
 			return fmt.Errorf("%s.progress.binding: %w", path, err)
+		}
+	}
+	if node.Pulse != nil {
+		if node.Component != "icon" {
+			return fmt.Errorf("%s.pulse is only valid for the icon component", path)
+		}
+		if err := validateBinding(node.Pulse.Binding, scope); err != nil {
+			return fmt.Errorf("%s.pulse.binding: %w", path, err)
 		}
 	}
 	for i, action := range node.Actions {

@@ -408,6 +408,7 @@ message AgentSummary {
   bool can_contact = 18;
   bool can_run_script = 19;
   repeated AgentScriptShell script_shells = 20;
+  int64 last_seen_unix_ms = 21;
 }
 
 message AgentScriptShell {
