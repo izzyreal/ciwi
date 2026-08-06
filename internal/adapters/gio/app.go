@@ -615,10 +615,6 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		if screen == nil {
 			return fmt.Errorf("screen %q is unavailable", target.screen)
 		}
-		if _, readScreen := nativeScreenCacheKeyFor(target); readScreen {
-			renderer.SetScreenAndData(screen, nil)
-			return nil
-		}
 		data, loadErr := screenLoadingData(target, options.Version, renderer.ThemeName(), mode, endpoint, sshSettings)
 		if loadErr != nil {
 			return loadErr
@@ -1703,7 +1699,9 @@ func screenLoadingData(navigation navigationState, clientVersion, themeName, mod
 	case "front-page":
 		return offlineFrontPageBindingData(clientVersion)
 	case "project-details":
-		return projectDetailsBindingData(&cnpv1.ProjectDetailsView{})
+		return projectDetailsBindingData(&cnpv1.ProjectDetailsView{
+			Project: &cnpv1.ProjectSummary{Id: navigation.projectID},
+		})
 	case "job-details":
 		return jobDetailsBindingData(&cnpv1.JobDetailsView{})
 	case "settings":
@@ -1895,6 +1893,7 @@ func frontPageBindingData(view *cnpv1.FrontPageView) (map[string]any, error) {
 	history, _ := root["history_executions"].([]any)
 	root["queued_empty"] = len(queued) == 0
 	root["history_empty"] = len(history) == 0
+	root["loading"] = false
 	return data, nil
 }
 
@@ -2313,9 +2312,17 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 }
 
 func offlineFrontPageBindingData(clientVersion string) (map[string]any, error) {
-	return frontPageBindingData(&cnpv1.FrontPageView{
+	data, err := frontPageBindingData(&cnpv1.FrontPageView{
 		Server: &cnpv1.ServerInfo{Version: strings.TrimSpace(clientVersion)},
 	})
+	if err != nil {
+		return nil, err
+	}
+	root := data["frontPage"].(map[string]any)
+	root["loading"] = true
+	root["queued_empty"] = false
+	root["history_empty"] = false
+	return data, nil
 }
 
 func offlineSettingsBindingData(clientVersion, selectedTheme, mode, endpoint string, sshSettings sshConnectionSettings) (map[string]any, error) {

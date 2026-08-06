@@ -187,6 +187,23 @@ screen:
                     command: navigate
                     arguments:
                       route: /settings
+          - component: column
+            visible:
+              binding: frontPage.loading
+            layout:
+              direction: vertical
+              gap: small
+            children:
+              - component: row
+                children:
+                  - component: row
+                    layout: {grow: true, minHeight: "12"}
+                    style: {role: skeleton}
+              - component: row
+                children:
+                  - component: row
+                    layout: {grow: true, minHeight: "12"}
+                    style: {role: skeleton}
           - component: list
             id: project-list
             layout:
@@ -533,6 +550,23 @@ screen:
               - component: text
                 text: {literal: Actions}
                 style: {role: table-header, emphasis: strong}
+          - component: column
+            visible:
+              binding: frontPage.loading
+            layout:
+              direction: vertical
+              gap: small
+            children:
+              - component: row
+                children:
+                  - component: row
+                    layout: {grow: true, minHeight: "12"}
+                    style: {role: skeleton}
+              - component: row
+                children:
+                  - component: row
+                    layout: {grow: true, minHeight: "12"}
+                    style: {role: skeleton}
           - component: text
             text:
               literal: No queued jobs.
@@ -761,6 +795,23 @@ screen:
               - component: text
                 text: {literal: Duration}
                 style: {role: table-header, emphasis: strong}
+          - component: column
+            visible:
+              binding: frontPage.loading
+            layout:
+              direction: vertical
+              gap: small
+            children:
+              - component: row
+                children:
+                  - component: row
+                    layout: {grow: true, minHeight: "12"}
+                    style: {role: skeleton}
+              - component: row
+                children:
+                  - component: row
+                    layout: {grow: true, minHeight: "12"}
+                    style: {role: skeleton}
           - component: text
             text:
               literal: No execution history.

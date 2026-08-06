@@ -1499,7 +1499,7 @@ func TestJobDetailsLoadingDataProvidesNestedRequirementSchemas(t *testing.T) {
 	}
 }
 
-func TestReadScreensRenderDedicatedBindingFreeLoadingState(t *testing.T) {
+func TestReadScreensRenderStructuredLoadingStateWithoutBindingErrors(t *testing.T) {
 	tests := []struct {
 		screen     string
 		navigation navigationState
@@ -1528,15 +1528,20 @@ func TestReadScreensRenderDedicatedBindingFreeLoadingState(t *testing.T) {
 			if rendererErr != nil {
 				t.Fatal(rendererErr)
 			}
-			renderer.SetScreenAndData(screen, nil)
+			data, dataErr := screenLoadingData(test.navigation, "v0.2.9", "default", connectionModeDiscover, "", sshConnectionSettings{})
+			if dataErr != nil {
+				t.Fatal(dataErr)
+			}
+			data["client"] = nativeConnectionState{connecting: true, status: "Trying to connect…"}.binding()
+			renderer.SetScreenAndData(screen, data)
 			renderer.SetStatus("Loading " + test.screen + "…")
 			renderer.Layout(layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(390, 844))})
-			if renderer.shownStatus != "Loading "+test.screen+"…" {
-				t.Fatalf("loading label = %q", renderer.shownStatus)
+			if renderer.data == nil {
+				t.Fatal("structured loading data was discarded")
 			}
 			for path := range renderer.selectables {
 				if strings.HasPrefix(path, "error/") {
-					t.Fatalf("dedicated loading state rendered binding error %q", path)
+					t.Fatalf("structured loading state rendered binding error %q", path)
 				}
 			}
 		})

@@ -1171,6 +1171,23 @@ func (r *Renderer) layoutLoadingState(gtx layout.Context, status string) layout.
 	)
 }
 
+func (r *Renderer) layoutSkeleton(gtx layout.Context) layout.Dimensions {
+	semantic.DescriptionOp("Loading content").Add(gtx.Ops)
+	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 30)})
+	size := gtx.Constraints.Min
+	if size.X <= 0 || size.Y <= 0 {
+		return layout.Dimensions{Size: size}
+	}
+	const cycle = 2200 * time.Millisecond
+	phase := float64(gtx.Now.UnixNano()%int64(cycle)) / float64(cycle)
+	opacity := .35 + .55*(.5-.5*math.Cos(phase*2*math.Pi))
+	fill := r.palette.border
+	fill.A = uint8(math.Round(float64(fill.A) * opacity))
+	radius := size.Y / 2
+	paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rectangle{Max: size}, radius).Op(gtx.Ops))
+	return layout.Dimensions{Size: size}
+}
+
 func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path string) layout.Dimensions {
 	compact := compactLayout(gtx)
 	node, hidden := applyGioOverride(raw, compact)
@@ -1227,6 +1244,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			return r.errorLabel(gtx, err)
 		}
 		node.Style.Tone = semanticTone(fmt.Sprint(value))
+	}
+	if node.Style.Role == "skeleton" {
+		return r.constrainNode(gtx, node, r.layoutSkeleton)
 	}
 
 	content := func(gtx layout.Context) layout.Dimensions {
