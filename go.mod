@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	gioui.org v0.10.0
 	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/dop251/goja v0.0.0-20260603125802-cfe4039cb6d7
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/mdns v1.0.6
@@ -22,8 +23,11 @@ require (
 
 require (
 	gioui.org/shader v1.0.8 // indirect
+	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-text/typesetting v0.3.4 // indirect
+	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
