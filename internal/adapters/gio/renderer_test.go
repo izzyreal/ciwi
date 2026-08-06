@@ -16,6 +16,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
@@ -2032,13 +2033,12 @@ func TestRootPageInsetsScrollWithFirstAndLastContent(t *testing.T) {
 }
 
 func TestCompactPageInsetUsesPhoneSizedGutter(t *testing.T) {
-	renderer := &Renderer{metrics: visualMetrics{pageInset: 16}}
-	phone := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(375, 667))}
-	if got := renderer.pageInset(phone); got != 3.2 {
+	renderer := &Renderer{metrics: visualMetrics{pageInset: 16}, compact: true}
+	if got := renderer.pageInset(); got != 3.2 {
 		t.Fatalf("phone page inset = %v, want 3.2", got)
 	}
-	tablet := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(834, 1112))}
-	if got := renderer.pageInset(tablet); got != 16 {
+	renderer.compact = false
+	if got := renderer.pageInset(); got != 16 {
 		t.Fatalf("tablet page inset = %v, want 16", got)
 	}
 }
@@ -2061,6 +2061,87 @@ func TestCompactViewportKeepsIPadDesktopLayoutAndCatchesIPhoneLandscape(t *testi
 	}
 }
 
+func TestIPhoneLandscapeCompactModeSurvivesPageListConstraints(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-1", Title: "VMPC2000XL / build / linux-offline-build", StatusLabel: "Running", Mode: "Run",
+		CanCancel: true, CanRerun: true,
+		OutputGroups: []*cnpv1.JobOutputGroup{{
+			Id: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Build", Reached: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetScreenAndData(screen, data)
+	// Jump to the output section so a nested compact decision is exercised.
+	// Gio measures vertical list items with an effectively unbounded height.
+	renderer.list.ScrollTo(2)
+	gtx := layout.Context{
+		Ops:         new(op.Ops),
+		Metric:      unit.Metric{PxPerDp: 2, PxPerSp: 2},
+		Constraints: layout.Exact(image.Pt(1334, 750)),
+	}
+	renderer.layoutForPlatform(gtx, "ios")
+
+	if !renderer.compact {
+		t.Fatal("iPhone landscape viewport was not classified as compact")
+	}
+	if renderer.outputScroller != nil {
+		t.Fatal("nested job output reverted to desktop layout inside the page list")
+	}
+	for path := range renderer.scrollers {
+		if strings.Contains(path, "job-output-groups") {
+			t.Fatalf("nested job output retained a desktop scroller at %q", path)
+		}
+	}
+}
+
+func TestCompactHeroUsesFrameModeWithUnboundedListHeight(t *testing.T) {
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(&uidsl.ScreenDocument{}, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := uidsl.Node{
+		Component: "row",
+		Layout:    uidsl.Layout{Direction: "horizontal", Gap: "small"},
+		Style:     uidsl.Style{Role: "hero"},
+		Children: []uidsl.Node{
+			{Component: "text", Text: &uidsl.Text{Literal: "First"}},
+			{Component: "text", Text: &uidsl.Text{Literal: "Second"}},
+			{Component: "text", Text: &uidsl.Text{Literal: "Third"}},
+		},
+	}
+	gtx := layout.Context{
+		Ops:         new(op.Ops),
+		Metric:      unit.Metric{PxPerDp: 2, PxPerSp: 2},
+		Constraints: layout.Constraints{Max: image.Pt(1334, 1_000_000)},
+	}
+	renderer.compact = false
+	desktop := renderer.layoutChildren(gtx, node, map[string]any{}, "desktop-hero")
+	gtx.Ops.Reset()
+	renderer.compact = true
+	compact := renderer.layoutChildren(gtx, node, map[string]any{}, "compact-hero")
+	if compact.Size.Y <= desktop.Size.Y {
+		t.Fatalf("compact hero height = %d, want greater than desktop row height %d", compact.Size.Y, desktop.Size.Y)
+	}
+}
+
 func TestCompactControlRowDoesNotExplodeVertically(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("front-page")
 	if err != nil {
@@ -2074,6 +2155,7 @@ func TestCompactControlRowDoesNotExplodeVertically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	renderer.compact = true
 	node := uidsl.Node{Component: "row", Layout: uidsl.Layout{Direction: "horizontal", Gap: "small"}, Children: []uidsl.Node{
 		{Component: "text", Text: &uidsl.Text{Literal: "release-ios-gated"}, Layout: uidsl.Layout{Grow: true}},
 		{Component: "button", Text: &uidsl.Text{Literal: "Options"}, Icon: "adjustments"},
@@ -2100,6 +2182,7 @@ func TestCompactExecutionDisclosureKeepsTitleReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	renderer.compact = true
 	node := uidsl.Node{
 		Component: "disclosure", Text: &uidsl.Text{Literal: "ciwi Build and release Tue 04 Aug, 23:25:26 v0.2.7"},
 		Disclosure: &uidsl.Disclosure{Summary: []uidsl.Node{

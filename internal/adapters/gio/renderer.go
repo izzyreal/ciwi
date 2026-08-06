@@ -103,6 +103,7 @@ type Renderer struct {
 	pendingScrollSection   string
 	activatedInteractions  map[string]bool
 	pendingNodeActivations []pendingNodeActivation
+	compact                bool
 }
 
 type outputSelection struct {
@@ -734,6 +735,11 @@ func (r *Renderer) SetViewChange(handler func(map[string]string)) {
 }
 
 func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
+	return r.layoutForPlatform(gtx, runtime.GOOS)
+}
+
+func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout.Dimensions {
+	r.compact = compactLayoutForPlatform(gtx, platform)
 	r.activatedInteractions = map[string]bool{}
 	r.pendingNodeActivations = nil
 	r.mu.Lock()
@@ -791,8 +797,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 			return r.layoutLoadingState(gtx, status)
 		})
 	}
-	compact := compactLayout(gtx)
-	root, _ := applyGioOverride(screen.Screen.Root, compact)
+	root, _ := applyGioOverride(screen.Screen.Root, r.compact)
 	children := root.Children
 	if pendingScrollSection != "" {
 		for index := range children {
@@ -807,11 +812,11 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 			}
 		}
 	}
-	if compact && r.activeSheet != nil {
+	if r.compact && r.activeSheet != nil {
 		r.activeSheet.seen = false
 	}
 	body := func(gtx layout.Context) layout.Dimensions {
-		pageInset := r.pageInset(gtx)
+		pageInset := r.pageInset()
 		return layout.Inset{Left: pageInset, Right: pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			if pageWidth := gtx.Dp(r.metrics.pageWidth); pageWidth > 0 && gtx.Constraints.Max.X > pageWidth {
 				marginPixels := gtx.Constraints.Max.X - pageWidth
@@ -822,7 +827,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		})
 	}
 	content := body
-	if compact && r.activeSheet != nil {
+	if r.compact && r.activeSheet != nil {
 		content = func(gtx layout.Context) layout.Dimensions {
 			return r.layoutSheetOverlay(gtx, body)
 		}
@@ -850,7 +855,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	}
 	dimensions := content(gtx)
 	r.flushNodeActivations(gtx)
-	if compact && r.activeSheet != nil && !r.activeSheet.seen {
+	if r.compact && r.activeSheet != nil && !r.activeSheet.seen {
 		r.activeSheet = nil
 	}
 	return dimensions
@@ -1046,12 +1051,12 @@ func (glow radialGlow) composite(background color.NRGBA, x, y float64) color.NRG
 	return mixColorSRGB(background, glow.color, alpha)
 }
 
-func compactLayout(gtx layout.Context) bool {
+func compactLayoutForPlatform(gtx layout.Context, platform string) bool {
 	pxPerDp := gtx.Metric.PxPerDp
 	if pxPerDp <= 0 {
 		pxPerDp = 1
 	}
-	return compactViewport(runtime.GOOS, float32(gtx.Constraints.Max.X)/pxPerDp, float32(gtx.Constraints.Max.Y)/pxPerDp)
+	return compactViewport(platform, float32(gtx.Constraints.Max.X)/pxPerDp, float32(gtx.Constraints.Max.Y)/pxPerDp)
 }
 
 func compactViewport(platform string, width, height float32) bool {
@@ -1061,8 +1066,8 @@ func compactViewport(platform string, width, height float32) bool {
 	return platform == "ios" && min(width, height) <= float32(compactLayoutWidth)
 }
 
-func (r *Renderer) pageInset(gtx layout.Context) unit.Dp {
-	if !compactLayout(gtx) {
+func (r *Renderer) pageInset() unit.Dp {
+	if !r.compact {
 		return r.metrics.pageInset
 	}
 	// Phone screens need the same breathing room as larger screens without
@@ -1072,7 +1077,7 @@ func (r *Renderer) pageInset(gtx layout.Context) unit.Dp {
 
 func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, screen *uidsl.ScreenDocument, data any, status string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		pageInset := r.pageInset(gtx)
+		pageInset := r.pageInset()
 		hasStatus := status != ""
 		itemCount := len(children)
 		if hasStatus {
@@ -1149,7 +1154,7 @@ func (r *Renderer) layoutNoticeOverlay(gtx layout.Context, body layout.Widget, n
 					message := r.materialTextLabel(notice.message, "detail", false)
 					message.Color = r.palette.noticeText
 					actions := func(gtx layout.Context) layout.Dimensions {
-						if compactLayout(gtx) {
+						if r.compact {
 							gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(44))
 						}
 						children := make([]layout.FlexChild, 0, 2)
@@ -1163,7 +1168,7 @@ func (r *Renderer) layoutNoticeOverlay(gtx layout.Context, body layout.Widget, n
 						}))
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(r.metrics.spaceSmall)}.Layout(gtx, children...)
 					}
-					if compactLayout(gtx) {
+					if r.compact {
 						return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(r.metrics.spaceSmall)}.Layout(gtx,
 							layout.Rigid(message.Layout), layout.Rigid(actions),
 						)
@@ -1203,7 +1208,7 @@ func (r *Renderer) layoutFullScreenSheet(gtx layout.Context, sheet *activeSheet)
 		r.requestFrame()
 		return layout.Dimensions{Size: gtx.Constraints.Max}
 	}
-	pageInset := r.pageInset(gtx)
+	pageInset := r.pageInset()
 	return layout.Inset{Top: pageInset, Right: pageInset, Bottom: pageInset, Left: pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Min = gtx.Constraints.Max
 		return r.surface(func(gtx layout.Context) layout.Dimensions {
@@ -1306,8 +1311,7 @@ func (r *Renderer) layoutSkeleton(gtx layout.Context) layout.Dimensions {
 }
 
 func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path string) layout.Dimensions {
-	compact := compactLayout(gtx)
-	node, hidden := applyGioOverride(raw, compact)
+	node, hidden := applyGioOverride(raw, r.compact)
 	if hidden {
 		return layout.Dimensions{}
 	}
@@ -1322,7 +1326,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 	}
 	if node.Component == "scroller" {
-		if compact && node.ID == "job-output-groups" {
+		if r.compact && node.ID == "job-output-groups" {
 			// A vertical output list nested inside the page's vertical list makes
 			// touch-drag ownership ambiguous. Phones use the page as the sole
 			// vertical scroll owner so expanded output and following steps remain
@@ -1528,7 +1532,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		}
 		label = resolved
 	}
-	sheetPresentation := compactLayout(gtx) && node.Disclosure != nil && node.Disclosure.CompactPresentation == "sheet"
+	sheetPresentation := r.compact && node.Disclosure != nil && node.Disclosure.CompactPresentation == "sheet"
 	sheetTitle := compactSheetTitle(node, data, label)
 	stateKey, persistent := r.disclosureStateKey(node, data, path)
 	if sheetPresentation && r.activeSheet != nil && r.activeSheet.path == path {
@@ -1671,7 +1675,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			}
 			return children
 		}
-		if compactLayout(gtx) && node.Disclosure != nil && len(node.Disclosure.Summary) > 0 {
+		if r.compact && node.Disclosure != nil && len(node.Disclosure.Summary) > 0 {
 			mainChildren := make([]layout.FlexChild, 0, 4)
 			if node.Style.Role == "execution-row" && node.Image != nil {
 				mainChildren = append(mainChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -2147,7 +2151,7 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 	if node.Component == "row" || node.Layout.Direction == "horizontal" {
 		axis = layout.Horizontal
 	}
-	compact := compactLayout(gtx)
+	compact := r.compact
 	if compact && (node.Style.Role == "queued-execution-header" || node.Style.Role == "history-execution-header" || node.Style.Role == "agent-header") {
 		// Desktop column labels become unreadable before the rows themselves do.
 		// Compact execution details are rendered as vertical records instead.
@@ -2872,7 +2876,7 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	if err != nil {
 		return r.errorLabel(gtx, err)
 	}
-	if node.ID == "job-output-groups" && compactLayout(gtx) {
+	if node.ID == "job-output-groups" && r.compact {
 		r.outputScroller = nil
 		return r.layoutInlineScrollerItems(gtx, node, data, path, items)
 	}
