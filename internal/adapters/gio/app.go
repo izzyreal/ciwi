@@ -615,6 +615,10 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		if screen == nil {
 			return fmt.Errorf("screen %q is unavailable", target.screen)
 		}
+		if _, readScreen := nativeScreenCacheKeyFor(target); readScreen {
+			renderer.SetScreenAndData(screen, nil)
+			return nil
+		}
 		data, loadErr := screenLoadingData(target, options.Version, renderer.ThemeName(), mode, endpoint, sshSettings)
 		if loadErr != nil {
 			return loadErr

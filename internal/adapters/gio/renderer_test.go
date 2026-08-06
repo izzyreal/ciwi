@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -47,9 +48,9 @@ func TestCSSGradientLineUsesWebAngleCoordinates(t *testing.T) {
 	if end.X <= start.X || end.Y <= start.Y {
 		t.Fatalf("145-degree CSS gradient line = %v -> %v, want down and right", start, end)
 	}
-	center := image.Pt(int((start.X+end.X)/2), int((start.Y+end.Y)/2))
-	if center.X != 100 || center.Y != 50 {
-		t.Fatalf("gradient center = %v, want (100,50)", center)
+	centerX, centerY := (start.X+end.X)/2, (start.Y+end.Y)/2
+	if math.Abs(float64(centerX-100)) > .0001 || math.Abs(float64(centerY-50)) > .0001 {
+		t.Fatalf("gradient center = (%g,%g), want (100,50)", centerX, centerY)
 	}
 }
 
@@ -398,10 +399,16 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 		t.Fatal("collapsed history execution does not expose its delete action")
 	}
 	deleteButton.Click()
+	// Gio reports the same pointer release to the row-sized disclosure target.
+	// The nested destructive control must own it exclusively.
+	renderer.button(historyDisclosure + "/disclosure-toggle").Click()
 	operations.Reset()
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if renderer.pending == nil || renderer.pending.action.Command != "delete-execution" {
 		t.Fatal("history header delete action did not request confirmation")
+	}
+	if renderer.disclosures[historyStateKey] {
+		t.Fatal("history delete action also activated its parent disclosure")
 	}
 	renderer.pending = nil
 	label := renderer.selectable(historyDisclosure + "/label")
@@ -429,6 +436,74 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 	}
 	if !foundJob {
 		t.Fatal("expanded execution card does not show its job rows")
+	}
+}
+
+func TestNestedButtonConsumesGenericParentActivation(t *testing.T) {
+	screen := &uidsl.ScreenDocument{
+		Metadata: uidsl.Metadata{Name: "nested-action"},
+		Screen: uidsl.Screen{Root: uidsl.Node{Component: "page", Children: []uidsl.Node{{
+			Component: "card",
+			Actions:   []uidsl.Action{{Command: "navigate", Arguments: map[string]string{"route": "/jobs/job-1"}}},
+			Children: []uidsl.Node{{
+				Component: "button", Text: &uidsl.Text{Literal: "Delete"},
+				Actions: []uidsl.Action{{Command: "delete-execution", Confirm: &uidsl.Confirmation{Title: "Delete?", Message: "Confirm deletion."}}},
+			}},
+		}}}},
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var navigated bool
+	renderer, err := NewRenderer(screen, theme, func(action uidsl.Action, _ map[string]string) {
+		navigated = navigated || action.Command == "navigate"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(map[string]any{"ready": true})
+	const parentPath = "nested-action/root/0"
+	renderer.button(parentPath).Click()
+	renderer.button(parentPath + "/0").Click()
+	renderer.Layout(layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(600, 400))})
+	if navigated {
+		t.Fatal("nested button activation propagated to its navigable parent")
+	}
+	if renderer.pending == nil || renderer.pending.action.Command != "delete-execution" {
+		t.Fatalf("nested button confirmation = %#v", renderer.pending)
+	}
+}
+
+func TestGraphRunButtonConsumesGraphNodeSelection(t *testing.T) {
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ran bool
+	renderer, err := NewRenderer(&uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "graph-interaction"}}, theme, func(action uidsl.Action, _ map[string]string) {
+		ran = ran || action.Command == "run-pipeline"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := uidsl.Node{
+		GraphView: &uidsl.GraphView{Details: []uidsl.Node{{Component: "text", Text: &uidsl.Text{Literal: "Details"}}}},
+		Actions:   []uidsl.Action{{Command: "run-pipeline"}},
+	}
+	graphNode := &definitionGraphNode{id: "build", label: "build", data: map[string]any{"id": "build"}}
+	const path = "graph/node/build"
+	renderer.button(path + "/select").Click()
+	renderer.button(path + "/run").Click()
+	renderer.layoutDefinitionGraphNode(
+		layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(240, 90))},
+		owner, graphNode, map[string]any{}, path, "project-1", false,
+	)
+	if !ran {
+		t.Fatal("graph run button did not dispatch its action")
+	}
+	if selected := renderer.graphSelections["project-1"]; selected != "" {
+		t.Fatalf("graph run button also selected node %q", selected)
 	}
 }
 
@@ -1421,6 +1496,50 @@ func TestJobDetailsLoadingDataProvidesNestedRequirementSchemas(t *testing.T) {
 		if strings.HasPrefix(path, "error/") {
 			t.Fatalf("loading job details rendered binding error %q", path)
 		}
+	}
+}
+
+func TestReadScreensRenderDedicatedBindingFreeLoadingState(t *testing.T) {
+	tests := []struct {
+		screen     string
+		navigation navigationState
+	}{
+		{screen: "front-page", navigation: navigationState{screen: "front-page"}},
+		{screen: "project-details", navigation: navigationState{screen: "project-details", projectID: 1}},
+		{screen: "job-details", navigation: navigationState{screen: "job-details", jobID: "job-1"}},
+		{screen: "settings", navigation: navigationState{screen: "settings"}},
+		{screen: "agents", navigation: navigationState{screen: "agents"}},
+		{screen: "agent-details", navigation: navigationState{screen: "agent-details", agentDetailsID: "agent-1"}},
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range tests {
+		t.Run(test.screen, func(t *testing.T) {
+			if _, readScreen := nativeScreenCacheKeyFor(test.navigation); !readScreen {
+				t.Fatalf("%+v is not classified as a read screen", test.navigation)
+			}
+			screen, loadErr := sharedUI.LoadScreen(test.screen)
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			renderer, rendererErr := NewRenderer(screen, theme, nil)
+			if rendererErr != nil {
+				t.Fatal(rendererErr)
+			}
+			renderer.SetScreenAndData(screen, nil)
+			renderer.SetStatus("Loading " + test.screen + "…")
+			renderer.Layout(layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(390, 844))})
+			if renderer.shownStatus != "Loading "+test.screen+"…" {
+				t.Fatalf("loading label = %q", renderer.shownStatus)
+			}
+			for path := range renderer.selectables {
+				if strings.HasPrefix(path, "error/") {
+					t.Fatalf("dedicated loading state rendered binding error %q", path)
+				}
+			}
+		})
 	}
 }
 

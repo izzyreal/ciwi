@@ -97,6 +97,8 @@ type Renderer struct {
 	renderedJobID          string
 	activeOperations       map[string]operations.Operation
 	notice                 *nativeNotice
+	activatedInteractions  map[string]bool
+	pendingNodeActivations []pendingNodeActivation
 }
 
 type outputSelection struct {
@@ -140,6 +142,12 @@ type nativeNotice struct {
 	action      uidsl.Action
 	arguments   map[string]string
 	expires     time.Time
+}
+
+type pendingNodeActivation struct {
+	path   string
+	action uidsl.Action
+	data   any
 }
 
 type dynamicImage struct {
@@ -641,6 +649,8 @@ func (r *Renderer) SetViewChange(handler func(map[string]string)) {
 }
 
 func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
+	r.activatedInteractions = map[string]bool{}
+	r.pendingNodeActivations = nil
 	r.mu.Lock()
 	if r.pendingTheme != nil && r.pendingPalette != nil && r.pendingMetrics != nil {
 		r.theme = r.pendingTheme
@@ -684,7 +694,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 			status = "Loading…"
 		}
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return r.layoutStatus(gtx, status)
+			return r.layoutLoadingState(gtx, status)
 		})
 	}
 	compact := compactLayout(gtx)
@@ -725,10 +735,51 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		}(content)
 	}
 	dimensions := content(gtx)
+	r.flushNodeActivations(gtx)
 	if compact && r.activeSheet != nil && !r.activeSheet.seen {
 		r.activeSheet = nil
 	}
 	return dimensions
+}
+
+func (r *Renderer) markInteraction(path string) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	if r.activatedInteractions == nil {
+		r.activatedInteractions = map[string]bool{}
+	}
+	r.activatedInteractions[path] = true
+}
+
+func (r *Renderer) queueNodeActivation(path string, action uidsl.Action, data any) {
+	r.pendingNodeActivations = append(r.pendingNodeActivations, pendingNodeActivation{path: path, action: action, data: data})
+}
+
+func (r *Renderer) flushNodeActivations(gtx layout.Context) {
+	pending := r.pendingNodeActivations
+	r.pendingNodeActivations = nil
+	for _, candidate := range pending {
+		prefix := candidate.path + "/"
+		suppressed := false
+		for path := range r.activatedInteractions {
+			if strings.HasPrefix(path, prefix) {
+				suppressed = true
+				break
+			}
+		}
+		if !suppressed {
+			for _, other := range pending {
+				if other.path != candidate.path && strings.HasPrefix(other.path, prefix) {
+					suppressed = true
+					break
+				}
+			}
+		}
+		if !suppressed {
+			r.dispatchFromLayout(gtx, candidate.action, candidate.data)
+		}
+	}
 }
 
 func cloneStringMap(values map[string]string) map[string]string {
@@ -1105,6 +1156,21 @@ func (r *Renderer) layoutStatus(gtx layout.Context, status string) layout.Dimens
 	return style.Layout(gtx)
 }
 
+func (r *Renderer) layoutLoadingState(gtx layout.Context, status string) layout.Dimensions {
+	semantic.DescriptionOp(status).Add(gtx.Ops)
+	return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return r.layoutGlyph(gtx, "loader-2", "accent", 28)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Spacer{Height: r.metrics.spaceMedium}.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return r.layoutStatus(gtx, status)
+		}),
+	)
+}
+
 func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path string) layout.Dimensions {
 	compact := compactLayout(gtx)
 	node, hidden := applyGioOverride(raw, compact)
@@ -1274,7 +1340,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		button := r.button(path)
 		for button.Clicked(gtx) {
 			if !r.nodeHasSelection(path) {
-				r.dispatchFromLayout(gtx, node.Actions[0], data)
+				r.queueNodeActivation(path, node.Actions[0], data)
 			}
 		}
 		widgetFn = func(gtx layout.Context) layout.Dimensions {
@@ -1354,6 +1420,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	labelToggleActivated := false
 	for labelToggle.Clicked(gtx) {
 		labelToggleActivated = true
+		r.markInteraction(path + "/disclosure-label")
 		if r.selectable(path+"/label").SelectionLen() == 0 {
 			if sheetPresentation {
 				r.setDisclosureState(stateKey, true, persistent)
@@ -1366,13 +1433,25 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	}
 	if node.Disclosure != nil {
 		for index, summaryNode := range node.Disclosure.Summary {
-			if len(summaryNode.Actions) == 0 || componentHandlesOwnActions(summaryNode.Component) {
+			if len(summaryNode.Actions) == 0 {
 				continue
 			}
 			summaryPath := fmt.Sprintf("%s/summary/%d", path, index)
+			if summaryNode.Component == "button" {
+				summaryCopy := summaryNode
+				_, enabled := r.buttonNodeState(&summaryCopy, data)
+				if r.handleButtonClicks(gtx, summaryNode, data, summaryPath, enabled) {
+					summaryActionActivated = true
+				}
+				continue
+			}
+			if componentHandlesOwnActions(summaryNode.Component) {
+				continue
+			}
 			actionButton := r.button(summaryPath)
 			for actionButton.Clicked(gtx) {
 				summaryActionActivated = true
+				r.markInteraction(summaryPath)
 				if !r.nodeHasSelection(summaryPath) {
 					r.dispatchFromLayout(gtx, summaryNode.Actions[0], data)
 				}
@@ -1380,6 +1459,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		}
 	}
 	for headerToggle.Clicked(gtx) {
+		r.markInteraction(headerToggleKey)
 		if !summaryActionActivated && !labelToggleActivated && !r.disclosureHeaderHasSelection(path) {
 			if sheetPresentation {
 				r.setDisclosureState(stateKey, true, persistent)
@@ -2492,6 +2572,26 @@ func (r *Renderer) layoutGlyph(gtx layout.Context, iconName, tone string, size u
 }
 
 func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	label, enabled := r.buttonNodeState(&node, data)
+	r.handleButtonClicks(gtx, node, data, path, enabled)
+	button := r.button(path)
+	if node.Style.Role == "icon-button" && node.Icon != "" {
+		return r.layoutIconButton(gtx, button, node.Icon, label)
+	}
+	if node.Style.Role == "tailing-toggle" && node.Icon != "" {
+		return r.layoutTonedIconButton(gtx, button, node.Icon, label, node.Style.Tone)
+	}
+	if node.Style.Role == "connection-pulse" {
+		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+		opacity := paint.PushOpacity(gtx.Ops, connectionPulseOpacity(gtx.Now))
+		dimensions := r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong", buttonIconAfter(node.Icon))
+		opacity.Pop()
+		return dimensions
+	}
+	return r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong", buttonIconAfter(node.Icon))
+}
+
+func (r *Renderer) buttonNodeState(node *uidsl.Node, data any) (string, bool) {
 	label := "Run"
 	if node.Text != nil {
 		if resolved, err := uidsl.RenderText(data, *node.Text); err == nil {
@@ -2516,26 +2616,20 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 		}
 		node.Icon = "loader-2"
 	}
+	return label, enabled
+}
+
+func (r *Renderer) handleButtonClicks(gtx layout.Context, node uidsl.Node, data any, path string, enabled bool) bool {
 	button := r.button(path)
+	clicked := false
 	for button.Clicked(gtx) {
+		clicked = true
+		r.markInteraction(path)
 		if enabled && len(node.Actions) > 0 {
 			r.dispatchFromLayout(gtx, node.Actions[0], data)
 		}
 	}
-	if node.Style.Role == "icon-button" && node.Icon != "" {
-		return r.layoutIconButton(gtx, button, node.Icon, label)
-	}
-	if node.Style.Role == "tailing-toggle" && node.Icon != "" {
-		return r.layoutTonedIconButton(gtx, button, node.Icon, label, node.Style.Tone)
-	}
-	if node.Style.Role == "connection-pulse" {
-		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
-		opacity := paint.PushOpacity(gtx.Ops, connectionPulseOpacity(gtx.Now))
-		dimensions := r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong", buttonIconAfter(node.Icon))
-		opacity.Pop()
-		return dimensions
-	}
-	return r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong", buttonIconAfter(node.Icon))
+	return clicked
 }
 
 func buttonIconAfter(iconName string) bool {
@@ -2661,6 +2755,7 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	}
 	collapse := r.button(path + "/floating-collapse")
 	for collapse.Clicked(gtx) {
+		r.markInteraction(path + "/floating-collapse")
 		r.setDisclosureState(stateKey, false, true)
 	}
 	return layout.Stack{Alignment: layout.NE}.Layout(gtx,
@@ -2745,6 +2840,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 	}
 	toggle := r.button(path + "/select-toggle")
 	for toggle.Clicked(gtx) {
+		r.markInteraction(path + "/select-toggle")
 		if enabled {
 			r.selectOpen[path] = !r.selectOpen[path]
 			r.requestFrame()
@@ -2773,6 +2869,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						choice := r.button(path + "/option/" + entry.value)
 						for choice.Clicked(gtx) {
+							r.markInteraction(path + "/option/" + entry.value)
 							r.selectOpen[path] = false
 							if len(node.Actions) > 0 && entry.value != selectedValue {
 								selectionData := mergeData(data, "selection", map[string]any{"value": entry.value, "label": entry.label})

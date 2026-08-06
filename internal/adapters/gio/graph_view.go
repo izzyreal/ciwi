@@ -71,9 +71,11 @@ func (r *Renderer) layoutGraphView(gtx layout.Context, node uidsl.Node, data any
 	graphButton := r.button(path + "/mode/graph")
 	listButton := r.button(path + "/mode/list")
 	for graphButton.Clicked(gtx) {
+		r.markInteraction(path + "/mode/graph")
 		setMode("graph")
 	}
 	for listButton.Clicked(gtx) {
+		r.markInteraction(path + "/mode/list")
 		setMode("list")
 	}
 	header := func(gtx layout.Context) layout.Dimensions {
@@ -163,21 +165,25 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 	zoomOutButton := r.button(path + "/zoom-out")
 	zoomInButton := r.button(path + "/zoom-in")
 	for fitButton.Clicked(gtx) {
+		r.markInteraction(path + "/fit")
 		r.graphScales[stateKey] = 0
 		actualScale = fitScale
 		r.requestFrame()
 	}
 	for resetButton.Clicked(gtx) {
+		r.markInteraction(path + "/reset")
 		r.graphScales[stateKey] = 1
 		actualScale = 1
 		r.requestFrame()
 	}
 	for zoomOutButton.Clicked(gtx) {
+		r.markInteraction(path + "/zoom-out")
 		actualScale = clampGraphScale(actualScale - 0.1)
 		r.graphScales[stateKey] = actualScale
 		r.requestFrame()
 	}
 	for zoomInButton.Clicked(gtx) {
+		r.markInteraction(path + "/zoom-in")
 		actualScale = clampGraphScale(actualScale + 0.1)
 		r.graphScales[stateKey] = actualScale
 		r.requestFrame()
@@ -464,10 +470,22 @@ func (r *Renderer) drawDefinitionGraph(gtx layout.Context, owner uidsl.Node, nod
 func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Node, graphNode *definitionGraphNode, data any, path, stateKey string, selected bool) layout.Dimensions {
 	selectable := len(owner.GraphView.Details) > 0
 	selector := r.button(path + "/select")
+	play := r.button(path + "/run")
+	playActivated := false
+	if len(owner.Actions) > 0 {
+		for play.Clicked(gtx) {
+			playActivated = true
+			r.markInteraction(path + "/run")
+			r.dispatch(owner.Actions[0], graphNode.data)
+		}
+	}
 	if selectable {
 		for selector.Clicked(gtx) {
-			r.graphSelections[stateKey] = graphNode.id
-			r.requestFrame()
+			r.markInteraction(path + "/select")
+			if !playActivated {
+				r.graphSelections[stateKey] = graphNode.id
+				r.requestFrame()
+			}
 		}
 	}
 	borderColor := r.palette.border
@@ -501,10 +519,6 @@ func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Nod
 						)
 					})}
 					if len(owner.Actions) > 0 {
-						play := r.button(path + "/run")
-						for play.Clicked(gtx) {
-							r.dispatch(owner.Actions[0], graphNode.data)
-						}
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return r.layoutGraphPlayButton(gtx, play, "Run "+graphNode.label+" as a new execution. Existing queued and running work is not interrupted.")
