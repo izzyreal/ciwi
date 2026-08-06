@@ -304,3 +304,39 @@ func TestResolveUsesJSONNamesForStructInputs(t *testing.T) {
 		t.Fatalf("value = %#v", value)
 	}
 }
+
+func TestResolveSupportsCommonAndReflectedContainers(t *testing.T) {
+	type namedMap map[string]any
+	tests := []struct {
+		name    string
+		root    any
+		binding string
+		want    any
+	}{
+		{name: "common map and slice", root: map[string]any{"items": []any{map[string]any{"name": "ciwi"}}}, binding: "items.0.name", want: "ciwi"},
+		{name: "typed slice", root: map[string]any{"items": []string{"first", "second"}}, binding: "items.1", want: "second"},
+		{name: "named string map", root: namedMap{"name": "ciwi"}, binding: "name", want: "ciwi"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := Resolve(test.root, test.binding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("Resolve() = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestResolveRejectsInvalidBindingSegmentsAndIndices(t *testing.T) {
+	root := map[string]any{"items": []any{"ciwi"}}
+	for _, binding := range []string{"", ".items", "items.", "items..0", "items.nope", "items.2", "missing"} {
+		t.Run(binding, func(t *testing.T) {
+			if _, err := Resolve(root, binding); err == nil {
+				t.Fatalf("Resolve(%q) succeeded", binding)
+			}
+		})
+	}
+}

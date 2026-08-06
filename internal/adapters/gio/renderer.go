@@ -83,6 +83,8 @@ type Renderer struct {
 	pageBackgroundReady    bool
 	surfaceBackgrounds     map[backgroundTextureKey]paint.ImageOp
 	visualOps              *visualOpCache
+	loaderTextures         map[loaderTextureKey]*loaderTextureEntry
+	loaderTextureClock     uint64
 	statusText             widget.Editor
 	shownStatus            string
 	onAction               ActionHandler
@@ -216,6 +218,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		icons: iconSet, images: imageSet, dynamicImages: map[string]dynamicImage{},
 		surfaceBackgrounds: map[backgroundTextureKey]paint.ImageOp{},
 		visualOps:          newVisualOpCache(maxVisualOpCacheEntries),
+		loaderTextures:     map[loaderTextureKey]*loaderTextureEntry{},
 		activeOperations:   map[string]operations.Operation{},
 	}
 	renderer.statusText.ReadOnly = true
@@ -760,6 +763,7 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 		r.pageBackgroundReady = false
 		r.surfaceBackgrounds = map[backgroundTextureKey]paint.ImageOp{}
 		r.visualOps.reset()
+		r.resetLoaderTextures()
 		for _, icon := range r.icons {
 			icon.resetVisualCache()
 		}
@@ -2747,12 +2751,7 @@ func (r *Renderer) layoutGlyph(gtx layout.Context, iconName, tone string, size u
 	}
 	gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(size), gtx.Dp(size)))
 	if iconName == "loader-2" {
-		now := gtx.Now
-		gtx.Execute(op.InvalidateCmd{At: now.Add(progressFrameInterval)})
-		center := float32(gtx.Dp(size)) / 2
-		angle := float32(float64(now.UnixNano()%int64(time.Second)) / float64(time.Second) * 2 * math.Pi)
-		transform := op.Affine(f32.Affine2D{}.Rotate(f32.Pt(center, center), angle)).Push(gtx.Ops)
-		defer transform.Pop()
+		return r.layoutAnimatedLoader(gtx, iconColor)
 	}
 	return icon.Layout(gtx, iconColor)
 }
@@ -2786,12 +2785,16 @@ func (r *Renderer) buttonNodeState(node *uidsl.Node, data any) (string, bool) {
 	}
 	enabled := conditionEnabled(node.Enabled, data)
 	pending := operations.Operation{}
-	if len(node.Actions) > 0 {
+	// SetOperations replaces this map instead of mutating it, so the snapshot
+	// remains safe to read after releasing the lock. Most frames have no active
+	// operations and can skip argument rendering and fingerprint hashing.
+	r.mu.RLock()
+	activeOperations := r.activeOperations
+	r.mu.RUnlock()
+	if len(activeOperations) > 0 && len(node.Actions) > 0 {
 		if arguments, err := actionArguments(node.Actions[0], data); err == nil {
 			if fingerprint, err := operations.Fingerprint(node.Actions[0].Command, arguments); err == nil {
-				r.mu.RLock()
-				pending = r.activeOperations[fingerprint]
-				r.mu.RUnlock()
+				pending = activeOperations[fingerprint]
 			}
 		}
 	}
@@ -3094,9 +3097,6 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 			r.paintCachedRoundedFill(gtx, gtx.Constraints.Min, radius, background)
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
-			if iconName == "loader-2" {
-				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
-			}
 			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: r.metrics.controlPaddingY, Right: r.metrics.controlPaddingX, Bottom: r.metrics.controlPaddingY, Left: r.metrics.controlPaddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					children := make([]layout.FlexChild, 0, 2)
@@ -3121,13 +3121,9 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 							if !enabled {
 								iconColor = r.palette.muted
 							}
-							if iconName != "loader-2" {
-								return icon.Layout(gtx, iconColor)
+							if iconName == "loader-2" {
+								return r.layoutAnimatedLoader(gtx, iconColor)
 							}
-							center := float32(gtx.Dp(19)) / 2
-							angle := float32(float64(gtx.Now.UnixNano()%int64(time.Second)) / float64(time.Second) * 2 * math.Pi)
-							transform := op.Affine(f32.Affine2D{}.Rotate(f32.Pt(center, center), angle)).Push(gtx.Ops)
-							defer transform.Pop()
 							return icon.Layout(gtx, iconColor)
 						})
 					})
@@ -4146,6 +4142,9 @@ func typographySize(typography uidsl.Typography, role string, fallback float32) 
 }
 
 func (r *Renderer) spacing(value string) unit.Dp {
+	if value == "" {
+		return 0
+	}
 	switch value {
 	case "small":
 		return r.metrics.spaceSmall

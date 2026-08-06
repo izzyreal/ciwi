@@ -10,23 +10,42 @@ import (
 // Resolve evaluates a dot-separated binding against renderer view data. It
 // supports string-keyed maps, structs through their JSON names, and slices.
 func Resolve(root any, binding string) (any, error) {
+	original := binding
 	current := root
-	for _, part := range strings.Split(binding, ".") {
+	for {
+		part, rest, more := strings.Cut(binding, ".")
 		if part == "" {
-			return nil, fmt.Errorf("invalid binding %q", binding)
+			return nil, fmt.Errorf("invalid binding %q", original)
 		}
 		var err error
-		current, err = resolveBindingPart(current, part, binding)
+		current, err = resolveBindingPart(current, part, original)
 		if err != nil {
 			return nil, err
 		}
+		if !more {
+			return current, nil
+		}
+		binding = rest
 	}
-	return current, nil
 }
 
 func resolveBindingPart(current any, part, binding string) (any, error) {
 	if current == nil {
 		return nil, fmt.Errorf("binding %q cannot descend through <nil>", binding)
+	}
+	switch value := current.(type) {
+	case map[string]any:
+		item, ok := value[part]
+		if !ok {
+			return nil, fmt.Errorf("binding %q does not exist", binding)
+		}
+		return item, nil
+	case []any:
+		index, err := strconv.Atoi(part)
+		if err != nil || index < 0 || index >= len(value) {
+			return nil, fmt.Errorf("binding %q has invalid list index %q", binding, part)
+		}
+		return value[index], nil
 	}
 
 	value := reflect.ValueOf(current)

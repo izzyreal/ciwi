@@ -875,6 +875,10 @@ func TestRendererChangesThemeFromSharedSettingsSelect(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := renderer.palette.background
+	renderer.loaderTexture(image.Pt(18, 18), renderer.palette.accent)
+	if len(renderer.loaderTextures) == 0 {
+		t.Fatal("loader texture cache was not populated")
+	}
 	if err := renderer.SetTheme(spaceTheme); err != nil {
 		t.Fatal(err)
 	}
@@ -885,6 +889,9 @@ func TestRendererChangesThemeFromSharedSettingsSelect(t *testing.T) {
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
 	if renderer.palette.background == before {
 		t.Fatal("theme palette did not change")
+	}
+	if len(renderer.loaderTextures) != 0 {
+		t.Fatal("theme change did not clear loader textures")
 	}
 }
 
