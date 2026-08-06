@@ -1,8 +1,9 @@
 # ciwi
 
-![ciwi logo](internal/server/webui/assets/ciwi-logo.png)
+![ciwi logo](ui/assets/ciwi-logo.png)
 
-Simple, portable, single-binary CI/CD server + agent.
+Simple, portable CI/CD server and agent in one binary, with browser and native
+clients.
 
 WIP.
 NOT SUITABLE FOR PUBLIC SERVERS.
@@ -17,7 +18,8 @@ ciwi started as a practical replacement for Jenkins/TeamCity for private project
 1. Install server/agent with scripts in [`docs/installation.md`](docs/installation.md).
 2. Open UI at `http://127.0.0.1:8112/`.
 3. Import a project that contains `ciwi-project.yaml`.
-4. Run pipeline and inspect jobs.
+4. Authorize the new agent from **Agents**.
+5. Run a pipeline and inspect its job executions.
 
 Detailed guide: [`docs/getting-started.md`](docs/getting-started.md).
 
@@ -36,12 +38,14 @@ Note on artifact log verbosity:
 
 - Getting started: [`docs/getting-started.md`](docs/getting-started.md)
 - Installation scripts: [`docs/installation.md`](docs/installation.md)
+- Runtime file locations: [`docs/files.md`](docs/files.md)
 - Env vars, prerequisites, tool requirements: [`docs/configuration.md`](docs/configuration.md)
 - Pipeline config and runtime model: [`docs/pipelines.md`](docs/pipelines.md)
 - Progress indicators and duration estimates: [`docs/progress-indicators.md`](docs/progress-indicators.md)
 - Backend API reference (grouped by consumer): [`docs/api.md`](docs/api.md)
 - Native CNP protocol and Gio client: [`docs/native-client.md`](docs/native-client.md)
 - Shared declarative UI contract: [`docs/ui-dsl.md`](docs/ui-dsl.md)
+- Web/native comparison workflow: [`docs/ui-parity.md`](docs/ui-parity.md)
 - Vault/AppRole integration: [`docs/vault.md`](docs/vault.md)
 - Operations (update policy, maintenance, troubleshooting): [`docs/operations.md`](docs/operations.md)
 - Architecture and flows: [`docs/architecture.md`](docs/architecture.md)

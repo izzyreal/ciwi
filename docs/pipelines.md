@@ -1,5 +1,9 @@
 # Pipelines and ciwi-project.yaml
 
+The root document uses `version: 1`, a required `project.name`, one or more
+`pipelines`, and an optional `pipeline_chains` list. YAML decoding is strict:
+unknown fields and invalid references are rejected during import or validation.
+
 ## Source and execution model
 
 Pipeline-level VCS source (optional):
@@ -14,8 +18,10 @@ Agent checkout behavior:
 - `git checkout --force FETCH_HEAD`
 
 UI run controls:
-- `Run` / `Dry Run` without modifiers: enqueue immediately with default source resolution.
-- `Shift+Run` / `Shift+Dry Run`: opens the run modal first.
+
+- Browser **Run** / **Dry Run** without modifiers: enqueue immediately with default source resolution.
+- Browser `Shift+Run` / `Shift+Dry Run`: opens the run modal first.
+- Native **Options**: opens the shared run-options screen before enqueueing.
 
 Run modal fields include:
 - source branch selector (from `.../source-refs`)
@@ -71,26 +77,53 @@ jobs:
 - On upstream failure, only blocked downstream pipelines that depend on that failed pipeline are cancelled.
 - If no in-chain `depends_on` is declared, ciwi falls back to linear order (depends on previous chain item).
 
+## Job dependency graphs
+
+- `pipelines[].jobs[].needs` lists job IDs in the same pipeline.
+- The graph must be acyclic; unknown, duplicate, and self-references are rejected.
+- A dependent job remains queued/waiting until every required job execution in
+  that pipeline run succeeds.
+- Matrix jobs materialize one execution per `matrix.include` entry. A dependent
+  job waits for all selected executions of each needed job.
+- Failure cancels only downstream work that can no longer run; independent
+  branches remain eligible.
+
 ## Versioning
 
 Optional `pipelines[].versioning`:
 - `file` (default `VERSION`)
 - `tag_prefix` (default `v`)
 - `auto_bump`: `patch|minor|major`
+- `auto_bump_vcs_token`: required when `auto_bump` is set; accepts a literal
+  token or a `{{ secret.<name> }}` placeholder declared by `auto_bump_vault`
+- `auto_bump_vault`: Vault connection and secret mappings for the auto-bump token
+
+Auto-bump appends a final step to a non-dry pipeline run, commits the next
+semantic version, and pushes it to the source branch. It requires the selection
+to materialize exactly one job execution and fails safely if the branch or
+version file advanced after resolution. Dry runs do not append the auto-bump
+step.
 
 Injected env vars:
 - `CIWI_PIPELINE_VERSION_RAW`
 - `CIWI_PIPELINE_VERSION` / `CIWI_PIPELINE_TAG`
 - `CIWI_PIPELINE_TAG_PREFIX`
 - `CIWI_PIPELINE_SOURCE_REF`
+- `CIWI_PIPELINE_SOURCE_REF_RAW`
 - `CIWI_PIPELINE_SOURCE_REPO`
 - `CIWI_PIPELINE_VERSION_FILE`
+- `CIWI_DRY_RUN` (`1` for dry-run executions)
+
+Matrix and version values can also be used in YAML templates, including
+`{{ciwi.version_raw}}`, `{{ciwi.version}}`, and `{{ciwi.tag_prefix}}`.
 
 ## Job requirements and runtime
 
 `runs_on` fields:
 - `os`, `arch`, `executor`, `shell`
 - optional `container_image` for managed container execution
+- optional `container_workdir`, `container_user`, `container_devices`, and
+  `container_groups`
 
 `executor`:
 - currently `script`
@@ -105,8 +138,13 @@ Supported step kinds:
 - `test` with parsed test reports and optional coverage reports
 
 `test` supports:
-- `format`: `go-test-json`, `junit-xml`
+- `format`: `go-test-json`, `junit`, or `junit-xml`
 - `coverage_format`: `go-coverprofile`, `lcov`
+
+Each test step requires a relative `report` path. A `coverage_report` path is
+required when `coverage_format` is set. Every step can set `name`, `env`, and
+`skip_dry_run`; a skipped dry-run step remains visible in the structured
+timeline but its command is not executed.
 
 Step-level env is supported via `steps[].env`.
 
@@ -133,6 +171,10 @@ steps:
 
 Resolved just-in-time when agent leases a job.
 
+The same mapping shape can be used at
+`pipelines[].versioning.auto_bump_vault`; in that location placeholders are
+allowed only in `auto_bump_vcs_token`. See [`vault.md`](vault.md).
+
 ## Job history actions behavior
 
 - **Run Again** creates a new job execution from existing definition.
@@ -156,6 +198,8 @@ Definitions entered through Global Settings use the separate **Managed YAML** so
 ## Cache notes
 
 - Caches are directory caches keyed by `caches[].id`.
+- Each ordinary cache also requires `caches[].env`, the environment variable
+  that receives its managed directory.
 - Recommended FetchContent approach is source-only caching; keep build output job-local.
 - Go projects can enable managed Go caches per job:
 
@@ -168,6 +212,6 @@ jobs:
 ```
 
 - `go_cache: {}` adds two managed caches under ciwi's cache root:
-- `go-build` -> `GOCACHE`
-- `go-mod` -> `GOMODCACHE`
+  - `go-build` → `GOCACHE`
+  - `go-mod` → `GOMODCACHE`
 - You can disable it explicitly with `go_cache: { enabled: false }`.

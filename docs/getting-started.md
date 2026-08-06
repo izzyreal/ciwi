@@ -17,13 +17,16 @@ curl -s http://127.0.0.1:8112/healthz
 curl -s http://127.0.0.1:8112/api/v1/server-info
 ```
 
-## 3. Open UI and import a project
+## 3. Open the UI, authorize the agent, and import a project
 
 Open `http://127.0.0.1:8112/`.
 
-From UI:
-- Import project from git
-- ciwi loads `ciwi-project.yaml`
+From the UI:
+
+- Open **Agents** and authorize the new agent. Unknown agents are intentionally
+  unable to lease jobs until authorized.
+- Open **Global Settings**, import a repository project, and let ciwi load its
+  `ciwi-project.yaml`; or create a self-contained **Managed YAML** project.
 
 API equivalent:
 
@@ -35,10 +38,15 @@ curl -s -X POST http://127.0.0.1:8112/api/v1/projects/import \
 
 ## 4. Run a pipeline
 
-From UI: open project, run pipeline/chain.
-- `Run` / `Dry Run` starts immediately.
-- Hold `Shift` while clicking to open the custom run modal (choose branch and optional eligible agent).
-- `Preview Dry Run` shows the planned jobs/capabilities without enqueueing.
+From the browser UI, open a project and run a pipeline or chain.
+
+- **Run** / **Dry Run** starts immediately.
+- Hold `Shift` while clicking to open custom run options, including source ref
+  and an optional eligible agent.
+- **Preview Dry Run** shows planned jobs and capabilities without enqueueing.
+
+In the native client, use **Options** for source-ref and agent selection, then
+run normally or as a dry run.
 
 API equivalent:
 
@@ -65,9 +73,14 @@ go run ./cmd/ciwi --help
 go run ./cmd/ciwi server
 go run ./cmd/ciwi agent
 go run ./cmd/ciwi all-in-one
+go run ./cmd/ciwi-desktop -addr tcp://127.0.0.1:8113
 ```
 
-In manual mode, read [`docs/configuration.md`](configuration.md) for env vars and prerequisites.
+The desktop command is supported on macOS, Windows, and Linux. The server
+enables both CNP transports on port 8113 by default. In manual mode, read
+[`configuration.md`](configuration.md) for environment variables and
+prerequisites, and [`native-client.md`](native-client.md) for discovery and SSH
+connection options.
 
 ## Next
 

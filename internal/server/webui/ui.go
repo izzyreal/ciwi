@@ -4,6 +4,8 @@ import (
 	"embed"
 	"net/http"
 	"strings"
+
+	sharedui "github.com/izzyreal/ciwi/ui"
 )
 
 //go:embed assets
@@ -18,7 +20,6 @@ type embeddedAsset struct {
 var staticRoutes = map[string]embeddedAsset{
 	"/favicon.ico":                    {"assets/ciwi-favicon.png", "image/png", true},
 	"/ciwi-favicon.png":               {"assets/ciwi-favicon.png", "image/png", true},
-	"/ciwi-logo.png":                  {"assets/ciwi-logo.png", "image/png", true},
 	"/ui/fonts/ciwi-mono-regular.ttf": {"assets/fonts/GeistMono-Regular.ttf", "font/ttf", true},
 	"/ui/fonts/ciwi-mono-medium.ttf":  {"assets/fonts/GeistMono-Medium.ttf", "font/ttf", true},
 	"/ui/fonts/ciwi-mono-bold.ttf":    {"assets/fonts/GeistMono-Bold.ttf", "font/ttf", true},
@@ -49,6 +50,14 @@ var staticRoutes = map[string]embeddedAsset{
 
 // Handler serves ciwi's browser pages and embedded static assets.
 func Handler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/ciwi-logo.png" {
+		serveSharedUIAsset(w, embeddedAsset{
+			path:        "assets/ciwi-logo.png",
+			contentType: "image/png",
+			cache:       true,
+		})
+		return
+	}
 	if r.URL.Path == "/ui/css/typography.css" {
 		serveTypographyCSS(w)
 		return
@@ -150,6 +159,19 @@ func serveEmbeddedAsset(w http.ResponseWriter, asset embeddedAsset) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	writeEmbeddedAsset(w, data, asset)
+}
+
+func serveSharedUIAsset(w http.ResponseWriter, asset embeddedAsset) {
+	data, err := sharedui.Read(asset.path)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	writeEmbeddedAsset(w, data, asset)
+}
+
+func writeEmbeddedAsset(w http.ResponseWriter, data []byte, asset embeddedAsset) {
 	w.Header().Set("Content-Type", asset.contentType)
 	if asset.cache {
 		w.Header().Set("Cache-Control", "public, max-age=3600")

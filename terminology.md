@@ -11,11 +11,15 @@ This document defines the canonical terms used in ciwi code, API payloads, and U
 - Matrix entry (definition): one item from `pipeline job.matrix.include`.
 - Step (definition): one configured command unit inside a pipeline job (`run` or `test`).
 - Job execution (runtime): one materialized executable unit in the queue/history.
+- Execution attempt: an original job execution or a rerun linked to the same
+  attempt root; every attempt has its own execution ID, logs, and artifacts.
 
 ## Runtime mapping
 
 - Running a pipeline creates one `JobExecution` per selected `(pipeline job, matrix entry)`.
 - Running an ad-hoc script also creates a `JobExecution`, but without a stored pipeline job definition.
+- Ad-hoc scripts are pinned to the selected agent and shell through required
+  capabilities, and otherwise follow the ordinary queue and history model.
 - Steps are currently not first-class runtime entities; they execute inside a single `JobExecution` script.
 - `current_step` tracks step progress text for the active execution.
 

@@ -8,6 +8,7 @@ language. It is a ciwi UI schema, not a general browser implementation.
 - Screen definitions: [`ui/screens`](../ui/screens)
 - Theme definitions: [`ui/themes`](../ui/themes)
 - Shared action semantics: [`ui/actions.yaml`](../ui/actions.yaml)
+- Shared fonts and images: [`ui/assets`](../ui/assets)
 - Gio adapter: [`internal/adapters/gio`](../internal/adapters/gio)
 - Browser proof adapter: [`internal/server/webui/assets/js/declarative.js`](../internal/server/webui/assets/js/declarative.js)
 
@@ -15,9 +16,10 @@ Every client embeds the same versioned bundle. A native server cannot send
 HTML, CSS, JavaScript, or replacement UI code to the desktop executable.
 
 The shared bundle currently contains front-page, project-details, job-details,
-run-options, agents, settings, and native-connection screens. Server-backed
+run-options, agents, agent-details, agent-script, settings, managed-yaml, and
+native-connection screens. Server-backed
 screens render from the same presentation contracts in the browser preview and
-the Gio desktop client; local connection preferences remain renderer-owned
+the Gio client; local connection and SSH preferences remain renderer-owned
 bindings rather than server state.
 
 ## Design boundaries
@@ -25,8 +27,8 @@ bindings rather than server state.
 The `ciwi.ui/v1` schema contains:
 
 - a typed component tree (`page`, `row`, `column`, `section`, `card`,
-  `disclosure`, `text`, `list`, `scroller`, `button`, `input`, `select`, and a
-  small set of primitives);
+  `disclosure`, `graph-view`, `text`, `icon`, `image`, `list`, `scroller`,
+  `button`, `input`, `select`, `badge`, and a small set of layout primitives);
 - renderer-neutral layout and semantic style roles;
 - dot-path data bindings and non-executable `{{binding}}` templates;
 - repetitions and visibility conditions;
@@ -49,6 +51,8 @@ native expandable choice control or a browser `<select>` as appropriate.
 The single-line `input` component similarly exposes `input.value` to a change
 action. A repeated `scroller` describes a bounded horizontal collection while
 leaving native gesture handling and browser overflow behavior to each adapter.
+`graph-view` describes a dependency graph plus its complete list fallback;
+renderers own layout, selection, pan/zoom, and local Graph/List persistence.
 Disclosures can declare a renderer-neutral initial state and a templated stable
 state key. Clients persist only keyed disclosure state; unkeyed disclosures
 retain ordinary screen-session behavior. A disclosure may request a full-screen
@@ -94,6 +98,10 @@ Actions are resolved by each transport adapter into the same application
 command. This keeps cosmetic parity practical without requiring the native
 client to parse HTML/CSS or run JavaScript.
 
+An icon can use `pulse.binding` with a Unix-millisecond event timestamp, such
+as the most recent agent heartbeat. Renderers own the opacity animation. As
+with progress, the screen never implements a timer or infers state from text.
+
 `ui/actions.yaml` is the renderer-neutral action catalog. It classifies each
 named command as local, query, or mutation and defines its conflict scope,
 pending label, navigation behavior, and recovery policy. Renderers do not
@@ -109,6 +117,11 @@ installation identity and only replays catalogued safe operations after it has
 checked the server's command receipt. Receipt-only operations retain enough
 identity to diagnose an unknown outcome but never persist sensitive or unsafe
 arguments for automatic replay.
+
+Both adapters present catalogued operation outcomes as bounded transient
+notices using shared semantic theme tones. Notices are presentation feedback,
+not a durable state channel; clients still re-query authoritative views after
+changes.
 
 ## Compatibility policy
 

@@ -14,7 +14,7 @@ client.
 ```mermaid
 flowchart LR
   WEB[Browser renderer] --> HTTP[HTTP adapter]
-  GIO[Gio renderer] --> CNPCLIENT[CNP public client]
+  GIO[Gio desktop/iOS renderer] --> CNPCLIENT[CNP public client]
   GIO --> OPS[Presentation operation coordinator]
   HTTP --> APP[Application services]
   CNP[CNP transport-neutral handler] --> APP
@@ -61,7 +61,7 @@ generic global interfaces package.
 flowchart LR
   subgraph UI[UI clients]
     FE[Browser renderer]
-    DESKTOP[Gio desktop renderer]
+    NATIVEUI[Gio desktop/iOS renderer]
   end
 
   subgraph ServerHost[ciwi Server]
@@ -89,10 +89,13 @@ flowchart LR
   GIT[(Git remotes)]
   GH[(GitHub releases API/assets)]
   VAULT[(Vault AppRole)]
+  SSH[SSH jump host]
 
   FE -->|REST/SSE| API
-  DESKTOP -->|CNP v1 / QUIC| QUIC
-  DESKTOP -->|CNP v1 / TCP| TCP
+  NATIVEUI -->|CNP v1 / QUIC| QUIC
+  NATIVEUI -->|CNP v1 / TCP| TCP
+  NATIVEUI -->|built-in SSH| SSH
+  SSH -->|forwarded CNP/TCP stream| TCP
   QUIC --> NATIVE
   TCP --> NATIVE
   API --> APP
@@ -194,7 +197,8 @@ Primary persisted entities:
 - job artifacts
 - test/coverage reports
 - app state key-values (including update status)
-- vault connections + step-level vault mappings from YAML
+- idempotent command receipts and the stable server installation ID
+- vault connections plus step-level and version auto-bump mappings from YAML
 
 ## Design principles
 
@@ -226,7 +230,9 @@ Primary persisted entities:
   dependency reconciliation into a focused `internal/server/pipelinerun`
   package so inspection and execution share one planning path.
 - Keep the browser UI as real embedded assets owned by
-  `internal/server/webui`; preserve the single-binary deployment model.
+  `internal/server/webui`, while the shared screens, themes, action catalog,
+  fonts, and canonical logo remain in `ui`; preserve the single-binary server
+  deployment model.
 - Extract agent-registry and update-controller state from the server
   composition root when those areas next require substantial changes.
 - Prefer focused packages and consumer-owned interfaces over generic model,
@@ -234,9 +240,10 @@ Primary persisted entities:
 - Continue moving front-page, project, job, settings, and agent behavior through
   application/presentation slices. The established browser UI remains valid
   while each declarative replacement proves behavioral parity.
-- Extend the job-details snapshot/navigation and incremental-output slices with
-  step navigation and execution controls. Retain the established browser page
-  until those behaviors reach parity.
+- Extend graph drill-down from pipelines into job and step dependencies, and
+  continue compact/mobile interaction work without forking screen definitions.
+- Retain established browser pages until their declarative replacements cover
+  the remaining behavior, then promote the shared screens route by route.
 - Keep agents on HTTP until agent transport migration has a concrete benefit;
   CNP is currently a client-facing protocol, not a forced whole-system rewrite.
 
@@ -244,5 +251,8 @@ Primary persisted entities:
 
 - Intended for private networks/homelab-style deployments.
 - No claim of hard multi-tenant isolation/security hardening.
-- CNP v1 encrypts QUIC and TCP sessions with TLS 1.3 but does not authenticate endpoint identity.
+- Direct CNP v1 encrypts QUIC and TCP sessions with TLS 1.3 but does not
+  authenticate endpoint identity. Built-in SSH mode authenticates the jump
+  host with a pinned host-key fingerprint and a device key, while the inner CNP
+  endpoint retains the same v1 limitation.
 - Credentials/secrets expected to be managed through Vault mappings or host environment discipline.

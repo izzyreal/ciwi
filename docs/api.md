@@ -11,8 +11,11 @@ transport adapters do not contain application behavior.
 - Agent + Frontend:
   - `GET /api/v1/jobs/{id}`
   - `GET /api/v1/jobs/{id}/artifacts`
+  - `GET /api/v1/jobs/{id}/artifacts/download-all`
 - Frontend + installer:
   - `GET /healthz`
+  - `GET /api/v1/server-info`
+- Frontend runtime state:
   - `GET /api/v1/runtime-state`
 
 ## Consumed by agent runtime
@@ -20,7 +23,7 @@ transport adapters do not contain application behavior.
 - `POST /api/v1/heartbeat`
 - `POST /api/v1/agent/lease`
 - `POST /api/v1/jobs/{id}/status`
-- `POST /api/v1/jobs/{id}/artifacts`
+- `POST /api/v1/jobs/{id}/artifacts/upload-zip`
 - `POST /api/v1/jobs/{id}/tests`
 
 ## Consumed by frontend UI
@@ -30,6 +33,10 @@ transport adapters do not contain application behavior.
   - `GET /api/v1/views/projects/{projectId}`
   - `GET /api/v1/views/jobs/{jobExecutionId}`
   - `GET /api/v1/views/jobs/{jobExecutionId}/output?after_event_id={cursor}`
+  - `GET /api/v1/views/run-options/pipelines/{pipelineDbId}`
+  - `GET /api/v1/views/run-options/projects/{projectId}/chains/{chainId}`
+  - `GET /api/v1/views/agents`
+  - `GET /api/v1/views/agents/{agentId}`
 
 - Agents:
   - `GET /api/v1/agents`
@@ -45,6 +52,7 @@ transport adapters do not contain application behavior.
   - `GET /api/v1/projects/{projectId}/managed-yaml`
   - `PUT /api/v1/projects/{projectId}/managed-yaml`
   - `GET /api/v1/projects/{projectId}/icon`
+  - `GET /api/v1/projects/{projectId}/inspect`
   - `POST /api/v1/projects/{projectId}/reload`
   - `POST /api/v1/pipelines/{pipelineDbId}/run-selection`
   - `POST /api/v1/pipelines/{pipelineDbId}/dry-run-preview`
@@ -58,11 +66,22 @@ transport adapters do not contain application behavior.
 - Jobs:
   - `GET /api/v1/jobs`
   - `DELETE /api/v1/jobs/{id}`
+  - `GET /api/v1/job-queue/layout`
+  - `GET /api/v1/job-queue/cards`
+  - `GET /api/v1/job-history/layout`
+  - `GET /api/v1/job-history/cards`
   - `POST /api/v1/jobs/clear-queue`
   - `POST /api/v1/jobs/flush-history`
   - `POST /api/v1/jobs/{id}/cancel`
   - `POST /api/v1/jobs/{id}/rerun`
+  - `GET /api/v1/jobs/{id}/events?after_id={cursor}`
+  - `GET /api/v1/jobs/{id}/log?format=clean|raw`
+  - `GET /api/v1/jobs/{id}/blocked-by`
+  - `GET /api/v1/jobs/{id}/artifacts/download?prefix={path}`
+  - `GET /api/v1/jobs/{id}/artifacts/download-all`
   - `GET /api/v1/jobs/{id}/tests`
+- Command recovery:
+  - `GET /api/v1/command-receipts/{idempotencyKey}`
 - Vault:
   - `GET /api/v1/vault/connections`
   - `POST /api/v1/vault/connections`
@@ -98,6 +117,12 @@ transport adapters do not contain application behavior.
   - `{"action":"activate"}`: marks agent active; leasing is allowed when also authorized.
   - `{"action":"deactivate"}`: marks agent deactivated; leasing is blocked.
   - `{"action":"delete"}`: deletes server-side agent snapshot/state; agent disappears from list until next heartbeat.
+  - `{"action":"refresh-tools"}`: asks the agent to rescan host/runtime capabilities.
+  - `{"action":"restart"}`: asks a service-managed agent to restart after active work finishes.
+  - `{"action":"update"}`: requests an update to the server's current release target.
+  - `{"action":"wipe-cache"}`: removes the agent cache after active work finishes.
+  - `{"action":"flush-job-history"}`: removes this agent's terminal server history/artifacts and queues local workspace-history cleanup.
+  - `{"action":"run-script","shell":"posix","script":"...","timeout_seconds":600}`: queues an ad-hoc job pinned to that agent; `cmd` and `powershell` are also accepted when advertised by the agent.
 - Deactivation is server-side only (agent protocol is unchanged).
 - New/unknown agents are unauthorized until explicitly authorized.
 - `POST /api/v1/jobs/flush-history` removes non-active job execution records and deletes artifact directories for the flushed job IDs.
@@ -114,3 +139,7 @@ transport adapters do not contain application behavior.
   - `agent_id`: pin execution to a specific eligible agent
   - `dry_run`: preview/non-writing mode
   - `offline_cached_only`: preview-time filter for cached-source feasibility
+- Mutating application-backed endpoints accept `Idempotency-Key` where the
+  corresponding command supports retries. The command-receipt endpoint reports
+  `pending`, `completed`, `failed`, or `outcome_unknown` for a found receipt;
+  an unknown key returns `found=false`.

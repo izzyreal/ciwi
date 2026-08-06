@@ -107,6 +107,10 @@ Completed jobs use their full weight. Running jobs use their elapsed fraction. E
 - HTTP and CNP carry that same snapshot. The declarative `progress` binding opts a screen surface into progress without embedding estimation or aggregation rules in the screen.
 - Browser and native renderers interpolate the supplied snapshot and paint determinate, indeterminate, waiting, complete, or overrun visuals. They do not independently decide how jobs are weighted.
 
+The pulsing agent heartbeat icon is separate from execution progress. Its
+shared `pulse.binding` contains the last-seen timestamp, and each renderer fades
+the icon over the heartbeat interval without treating it as job completion.
+
 Progress calculation never parses human-readable log output.
 
 ## Why an estimate may be unavailable

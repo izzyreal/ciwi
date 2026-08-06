@@ -19,10 +19,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 test -d "$APP_BUNDLE_ABS"
-test -f internal/server/webui/assets/ciwi-logo.png
+test -f ui/assets/ciwi-logo.png
 command -v dmgbuild >/dev/null 2>&1
 swift packaging/create-dmg-background.swift \
-    internal/server/webui/assets/ciwi-logo.png \
+    ui/assets/ciwi-logo.png \
     "$WORK_DIRECTORY/background.png"
 
 rm -f "$FINAL_DMG"
@@ -30,4 +30,3 @@ CIWI_DMG_APP="$APP_BUNDLE_ABS" \
 CIWI_DMG_BACKGROUND="$WORK_DIRECTORY/background.png" \
 CIWI_DMG_VERSION="$VERSION" \
     dmgbuild -s packaging/dmgbuild-settings.py "Ciwi" "$FINAL_DMG"
-

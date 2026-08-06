@@ -1,11 +1,14 @@
 package webui
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
+
+	sharedui "github.com/izzyreal/ciwi/ui"
 )
 
 func TestUIHandlerServesEveryPublicPageAndAsset(t *testing.T) {
@@ -14,6 +17,7 @@ func TestUIHandlerServesEveryPublicPageAndAsset(t *testing.T) {
 		contentType string
 	}{
 		{"/", "text/html"},
+		{"/ciwi-logo.png", "image/png"},
 		{"/settings", "text/html"},
 		{"/projects/42", "text/html"},
 		{"/vault", "text/html"},
@@ -48,6 +52,21 @@ func TestUIHandlerServesEveryPublicPageAndAsset(t *testing.T) {
 	Handler(rec, httptest.NewRequest(http.MethodGet, "/missing", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected unknown UI route to return 404, got %d", rec.Code)
+	}
+}
+
+func TestUIHandlerServesLogoFromSharedBundle(t *testing.T) {
+	want, err := sharedui.Read("assets/ciwi-logo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	Handler(rec, httptest.NewRequest(http.MethodGet, "/ciwi-logo.png", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), want) {
+		t.Fatal("browser logo does not match the shared UI asset")
 	}
 }
 

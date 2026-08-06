@@ -89,3 +89,15 @@ Examples:
 - Agent workdir default: `.ciwi-agent/work`
 
 For environment-variable overrides, see [`configuration.md`](configuration.md).
+
+## Native client preferences
+
+The Gio client stores `ciwi/native-ui.json` below the platform user-config
+directory. It contains the selected theme, disclosure and graph/list state,
+connection mode, explicit endpoint or SSH jump-host settings, the trusted SSH
+host-key fingerprint, and the last successful discovered endpoint.
+
+On macOS and iOS, the generated SSH device private key is stored in the system
+Keychain under service `org.izzyreal.ciwi.native`. On Windows and Linux, it is
+stored next to the preferences file as `native-ui.json.ssh-key` with user-only
+permissions. The private key is not written into `native-ui.json`.

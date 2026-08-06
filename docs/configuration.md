@@ -14,7 +14,11 @@ Common variables:
 - `CIWI_SERVER_URL`: agent target URL (default `http://127.0.0.1:8112`)
 - `CIWI_AGENT_ID`: override agent ID
 - `CIWI_AGENT_WORKDIR`: agent work dir (default `.ciwi-agent/work`)
-- `CIWI_AGENT_ENV_FILE`: Windows env file (default `%ProgramData%\\ciwi-agent\\agent.env`)
+- `CIWI_AGENT_ENV_FILE`: service env file override (macOS default
+  `$HOME/Library/Application Support/ciwi/agent.env`; Windows default
+  `%ProgramData%\\ciwi-agent\\agent.env`)
+- `CIWI_AGENT_LOG_FILE`: macOS agent log override (default
+  `$HOME/Library/Logs/ciwi/agent.log`)
 - `CIWI_AGENT_TRACE_SHELL`: shell tracing (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
 - `CIWI_ARTIFACT_LOG_LEVEL`: artifact collection log verbosity: `none|summary|verbose` (default `summary`)
@@ -24,12 +28,16 @@ Common variables:
 - `CIWI_WINDOWS_SERVICE_NAME`: Windows service name (default `ciwi-agent`)
 - `CIWI_UPDATE_REPO`: update repo (default `izzyreal/ciwi`)
 - `CIWI_UPDATE_API_BASE`: update API base (default `https://api.github.com`)
+- `CIWI_UPDATE_CHECKSUM_ASSET`: release checksum asset (default `ciwi-checksums.txt`)
+- `CIWI_UPDATE_REQUIRE_CHECKSUM`: require a matching release checksum (default `true`)
+- `CIWI_GITHUB_TOKEN`: optional GitHub token used by installers and server/agent release updates
 - `CIWI_LOG_LEVEL`: `debug|info|warn|error` (default `info`)
 
 Native client variables:
 
 - `CIWI_NATIVE_SERVER`: explicit CNP endpoint, equivalent to `ciwi-desktop -addr`; accepts `quic://host:port`, `tcp://host:port`, or scheme-less QUIC `host:port`
 - `CIWI_NATIVE_THEME`: shared theme name, equivalent to `ciwi-desktop -theme`
+- `CIWI_NATIVE_ROUTE`: initial native route, equivalent to `ciwi-desktop -route`
 - `CIWI_IOS_BUILD_NUMBER`: optional positive integer used as the iOS
   `CFBundleVersion` during local or CI archive builds (default `1`)
 
@@ -50,7 +58,7 @@ Build-time version embedding:
 Agent reports tool versions in heartbeat.
 
 Supported tool keys include:
-- `git`, `go`, `gh`, `lftp`, `lcov`, `cmake`, `ninja`, `docker`, `gcc`, `clang`
+- `git`, `go`, `gh`, `lftp`, `lcov`, `cmake`, `ninja`, `docker`, `gcc`, `clang`, `zip`
 - `sphinx-build`, `rinoh`
 - `ccache`, `sccache`
 - macOS signing/packaging tools such as `xcodebuild`, `dmgbuild`, `codesign`, `productsign`, `notarytool`, `stapler`, `packagesbuild`, `packagesutil`, `plistbuddy`
@@ -82,6 +90,19 @@ When `runs_on.container_image` is set:
 Optional:
 - `runs_on.container_devices`
 - `runs_on.container_groups`
+- `runs_on.container_workdir`
+- `runs_on.container_user`
+
+Container-only requirements can be declared separately from host requirements:
+
+```yaml
+requires:
+  tools:
+    docker: "*"
+  container:
+    tools:
+      cmake: ">=3.20"
+```
 
 ## Work directory layout
 

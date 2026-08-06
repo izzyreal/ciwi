@@ -2,6 +2,17 @@
 
 ciwi provides automated installation/uninstall scripts for Linux, macOS, and Windows.
 
+The scripts install the server and execution agents. Desktop-client packages
+are published with each GitHub release:
+
+- `Ciwi-Client-macos-v<version>.dmg`: signed, notarized universal macOS app.
+- `Ciwi-Client-windows-Setup-x86_64-v<version>.exe`: Windows x64 installer.
+- `Ciwi-Client-linux-amd64-v<version>.zip`: Linux amd64 app and desktop files.
+
+The iPhone/iPad client is distributed through TestFlight rather than the
+GitHub release assets. See [`native-client.md`](native-client.md) for native
+connection and platform details.
+
 ## Linux server (systemd)
 
 Install:
@@ -174,6 +185,7 @@ Default paths:
 ## Notes
 
 Installer scripts perform server identity checks via:
+
 - `GET /healthz`
 - `GET /api/v1/server-info`
 

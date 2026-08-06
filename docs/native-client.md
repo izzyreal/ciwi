@@ -34,7 +34,8 @@ route cannot be reached. `CIWI_NATIVE_SERVER` supplies the same explicit endpoin
 and Global Settings can persist either automatic discovery or an explicit
 endpoint in the native client's local preferences. Command-line and environment
 addresses take precedence at startup. `-theme` or `CIWI_NATIVE_THEME`
-selects one of the shared theme names.
+selects one of the shared theme names. `-route` or `CIWI_NATIVE_ROUTE` selects
+an initial route such as `/projects/1`, `/agents`, or `/settings`.
 
 TCP makes an ordinary OpenSSH local forward sufficient for remote access:
 
@@ -45,6 +46,21 @@ ciwi-desktop -addr tcp://127.0.0.1:8113
 
 The server-side TCP listener must be reachable from the SSH host. No UDP tunnel,
 TUN interface, HTTP fallback, or client-machine routing setup is required.
+
+### Built-in SSH mode
+
+Global Settings also provides an SSH connection mode that opens the CNP TCP
+stream directly through a jump host, without creating a localhost listener.
+Configure the jump-host address and username plus the server-side CNP
+destination (for example `10.77.77.2:8113`). The client can generate a
+device-specific Ed25519 key and copy a restricted `authorized_keys` entry that
+permits forwarding only to that destination.
+
+The first connection pauses at the presented SSH host-key fingerprint. Verify
+it through an independent trusted channel before selecting **Trust This Host
+Key**. Reconnects remain paused for an unknown or changed host key. Apple builds
+store the device private key in Keychain; Windows and Linux store it beside the
+native preferences with user-only permissions. See [`files.md`](files.md).
 
 The browser proof of the same declarative screen is available at
 `/declarative-preview`; project navigation continues under
@@ -70,12 +86,12 @@ the optional Wayland and Vulkan backends to keep this first archive's native
 dependency surface small. See the README inside the ZIP for runtime library
 names.
 
-The focused `Build and publish iOS client` chain builds the existing Gio
+The focused `Build and publish iOS client` chain builds the Gio
 client as an arm64 static framework, links it into the minimal UIKit host in
 `packaging/ios`, archives the app with automatic Xcode signing, validates the
-archive, and uploads it to TestFlight. It currently presents the desktop layout
-unchanged; mobile-specific layout and interaction work is deliberately a later
-slice.
+archive, and uploads it to TestFlight. Compact overrides provide phone-width
+layouts, full-screen disclosure sheets, touch scrolling, and compact job-detail
+navigation while retaining the same screen definitions used on desktop.
 
 The macOS build agent must have Xcode signed into the Apple developer account
 for team `KFBA7Q5H76`, automatic signing access, and permission to upload the
@@ -141,7 +157,7 @@ incremental output grouped into ciwi phases and YAML job steps, output copying
 and tailing, ordinary and dry-run enqueue
 commands for individual pipelines and named pipeline chains from the front page
 and Project Details, including job-scoped execution controls, native back
-navigation, and live invalidations. Output streams use
+navigation, managed YAML creation/editing, and live invalidations. Output streams use
 bounded cursor pages and clients cap their display buffer, so status refreshes
 do not reload large logs. The front page can clear queued executions, flush all
 terminal history, or delete one execution card through idempotent application
@@ -153,10 +169,17 @@ forcibly terminate an agent process that is already running. Agents continue to
 use the existing HTTP protocol.
 
 Global Settings covers native-client appearance, connection context, project
-management, agent administration, and server update/rollback controls. Theme
-changes apply immediately and are stored in the user's config
-directory as `ciwi/native-ui.json`, alongside keyed disclosure state; an explicit `-theme` or
-`CIWI_NATIVE_THEME` value overrides the saved theme for that launch.
+management, agent administration, and server update/rollback controls. Agent
+details can authorize, activate, refresh tools, restart, update, wipe caches,
+flush per-agent history, delete snapshots, and queue ad-hoc scripts in any shell
+the agent advertises. Mutations and queries run asynchronously, expose busy
+state, and report short-lived success/error notices without blocking navigation.
+
+Theme changes apply immediately and are stored in the user's config directory
+as `ciwi/native-ui.json`, alongside disclosure and graph/list state, connection
+settings, the trusted SSH fingerprint, and the last successful discovered
+endpoint. An explicit `-theme` or `CIWI_NATIVE_THEME` value overrides the saved
+theme for that launch.
 
 The Gio adapter resolves the same bundled logo, semantic icon names, theme
 gradients, status tones, and badge roles used by the declarative browser proof;
