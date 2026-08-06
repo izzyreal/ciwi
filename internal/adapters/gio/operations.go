@@ -69,8 +69,10 @@ type nativeOperationEffect struct {
 	Message       string
 	Refresh       bool
 	NavigateRoute string
+	Notice        bool
 	NoticeRoute   string
 	NoticeLabel   string
+	NoticeSection string
 	CancelledJob  string
 	Value         any
 }
@@ -211,7 +213,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if arguments["dryRun"] == "true" {
 			kind = "dry-run execution(s)"
 		}
-		return nativeOperationEffect{Message: fmt.Sprintf("Queued %d %s for %s", result.Enqueued, kind, target)}, nil
+		return nativeOperationEffect{Message: fmt.Sprintf("Queued %d %s for %s", result.Enqueued, kind, target), Notice: true, NoticeRoute: "/", NoticeLabel: "Show queued jobs", NoticeSection: "queued-executions"}, nil
 	case "run-chain":
 		projectID, err := positiveInt64(arguments["projectId"], "project identifier")
 		chainID := strings.TrimSpace(arguments["chainId"])
@@ -234,7 +236,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if arguments["dryRun"] == "true" {
 			kind = "dry-run execution(s)"
 		}
-		return nativeOperationEffect{Message: fmt.Sprintf("Queued %d %s for chain %s", result.Enqueued, kind, label)}, nil
+		return nativeOperationEffect{Message: fmt.Sprintf("Queued %d %s for chain %s", result.Enqueued, kind, label), Notice: true, NoticeRoute: "/", NoticeLabel: "Show queued jobs", NoticeSection: "queued-executions"}, nil
 	case "clear-queue":
 		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
@@ -293,7 +295,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("rerun execution: %w", err)
 		}
-		return nativeOperationEffect{Message: "Queued rerun " + result.JobExecutionId, NavigateRoute: "/jobs/" + result.JobExecutionId}, nil
+		return nativeOperationEffect{Message: "Queued rerun " + result.JobExecutionId, Notice: true, NoticeRoute: "/jobs/" + result.JobExecutionId, NoticeLabel: "Show job execution"}, nil
 	case "agent-action":
 		agentID, action := strings.TrimSpace(arguments["agentId"]), strings.TrimSpace(arguments["action"])
 		if agentID == "" || action == "" {
@@ -309,7 +311,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if message == "" {
 			message = "Agent request accepted"
 		}
-		return nativeOperationEffect{Message: message, Refresh: true}, nil
+		return nativeOperationEffect{Message: message, Refresh: true, Notice: true}, nil
 	case "run-agent-script":
 		agentID := strings.TrimSpace(arguments["agentId"])
 		shell := strings.TrimSpace(arguments["shell"])
@@ -324,6 +326,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		}
 		return nativeOperationEffect{
 			Message:     "Queued ad-hoc script on " + result.AgentId,
+			Notice:      true,
 			NoticeRoute: "/jobs/" + result.JobExecutionId,
 			NoticeLabel: "Show job execution",
 		}, nil
@@ -375,13 +378,13 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 			if err != nil {
 				return nativeOperationEffect{}, fmt.Errorf("validate managed YAML: %w", err)
 			}
-			return nativeOperationEffect{Message: fmt.Sprintf("Valid: %s — %d pipeline(s), %d chain(s)", result.ProjectName, result.Pipelines, result.PipelineChains)}, nil
+			return nativeOperationEffect{Message: fmt.Sprintf("Valid: %s — %d pipeline(s), %d chain(s)", result.ProjectName, result.Pipelines, result.PipelineChains), Notice: true}, nil
 		}
 		result, err := client.SaveManagedYAML(commandCtx, request, key)
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("save managed YAML: %w", err)
 		}
-		return nativeOperationEffect{Message: "Saved " + result.ProjectName, NavigateRoute: "/settings", Refresh: true}, nil
+		return nativeOperationEffect{Message: "Saved " + result.ProjectName, NavigateRoute: "/settings", Refresh: true, Notice: true}, nil
 	case "check-server-updates":
 		commandCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()

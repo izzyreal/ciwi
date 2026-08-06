@@ -35,6 +35,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
@@ -49,7 +50,6 @@ type Renderer struct {
 	screen                 *uidsl.ScreenDocument
 	data                   any
 	status                 string
-	statusExpires          time.Time
 	theme                  *material.Theme
 	typography             uidsl.Typography
 	palette                palette
@@ -87,6 +87,7 @@ type Renderer struct {
 	onAction               ActionHandler
 	invalidate             func()
 	pending                *pendingConfirmation
+	alert                  *nativeAlert
 	activeSheet            *activeSheet
 	resetScroll            bool
 	outputTailing          bool
@@ -98,6 +99,8 @@ type Renderer struct {
 	renderedJobID          string
 	activeOperations       map[string]operations.Operation
 	notice                 *nativeNotice
+	noticeQueue            []nativeNotice
+	pendingScrollSection   string
 	activatedInteractions  map[string]bool
 	pendingNodeActivations []pendingNodeActivation
 }
@@ -126,6 +129,11 @@ type pendingConfirmation struct {
 	message   string
 }
 
+type nativeAlert struct {
+	title   string
+	message string
+}
+
 type activeSheet struct {
 	path       string
 	title      string
@@ -142,6 +150,9 @@ type nativeNotice struct {
 	actionLabel string
 	action      uidsl.Action
 	arguments   map[string]string
+	duration    time.Duration
+	remaining   time.Duration
+	paused      bool
 	expires     time.Time
 }
 
@@ -160,6 +171,7 @@ type palette struct {
 	background, backgroundStart, backgroundEnd, backgroundGlowA, backgroundGlowB color.NRGBA
 	heroStart, heroEnd, surface, surfaceRaised, surfaceGlow, subtle              color.NRGBA
 	text, muted, accent, accentStrong, pillBackground, pillText                  color.NRGBA
+	noticeBackground, noticeText, noticeBorder                                   color.NRGBA
 	border, success, warning, danger, focus                                      color.NRGBA
 	consoleBackground, consoleSurface, consoleBorder                             color.NRGBA
 	consoleText, consoleMuted, consoleAccent, consoleSuccess                     color.NRGBA
@@ -427,55 +439,127 @@ func structuredOutputPlainText(root map[string]any, groups []any, systemOutput s
 func (r *Renderer) SetStatus(status string) {
 	r.mu.Lock()
 	r.status = status
-	r.statusExpires = time.Time{}
-	r.mu.Unlock()
-}
-
-func (r *Renderer) SetTransientStatus(status string, duration time.Duration) {
-	r.mu.Lock()
-	r.status = status
-	if duration > 0 {
-		r.statusExpires = time.Now().Add(duration)
-	} else {
-		r.statusExpires = time.Time{}
-	}
 	r.mu.Unlock()
 }
 
 func (r *Renderer) ShowNotice(message, actionLabel string, action uidsl.Action, arguments map[string]string, duration time.Duration) {
-	r.mu.Lock()
-	notice := &nativeNotice{message: message, actionLabel: actionLabel, action: action, arguments: cloneStringMap(arguments)}
-	if duration > 0 {
-		notice.expires = time.Now().Add(duration)
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
 	}
-	r.notice = notice
+	r.mu.Lock()
+	notice := nativeNotice{message: message, actionLabel: strings.TrimSpace(actionLabel), action: action, arguments: cloneStringMap(arguments), duration: duration}
+	if r.notice != nil && sameNativeNotice(*r.notice, notice) {
+		r.mu.Unlock()
+		return
+	}
+	for _, queued := range r.noticeQueue {
+		if sameNativeNotice(queued, notice) {
+			r.mu.Unlock()
+			return
+		}
+	}
+	if r.notice == nil {
+		r.activateNoticeLocked(notice, time.Now())
+	} else {
+		if len(r.noticeQueue) >= presentation.TransientNoticeCapacity-1 {
+			copy(r.noticeQueue, r.noticeQueue[1:])
+			r.noticeQueue = r.noticeQueue[:len(r.noticeQueue)-1]
+		}
+		r.noticeQueue = append(r.noticeQueue, notice)
+	}
 	r.mu.Unlock()
+	r.requestFrame()
+}
+
+func (r *Renderer) ShowAlert(title, message string) {
+	r.mu.Lock()
+	r.alert = &nativeAlert{title: strings.TrimSpace(title), message: strings.TrimSpace(message)}
+	r.mu.Unlock()
+	r.requestFrame()
+}
+
+func (r *Renderer) ScrollToSection(section string) {
+	r.mu.Lock()
+	r.pendingScrollSection = strings.TrimSpace(section)
+	r.mu.Unlock()
+	r.requestFrame()
+}
+
+func (r *Renderer) activateNoticeLocked(notice nativeNotice, now time.Time) {
+	copy := notice
+	copy.remaining = copy.duration
+	copy.paused = false
+	if copy.duration > 0 {
+		copy.expires = now.Add(copy.duration)
+	}
+	r.notice = &copy
+}
+
+func (r *Renderer) setNoticePaused(paused bool, now time.Time) {
+	r.mu.Lock()
+	if r.notice == nil || r.notice.paused == paused || r.notice.duration <= 0 {
+		r.mu.Unlock()
+		return
+	}
+	if paused {
+		r.notice.remaining = max(time.Duration(0), r.notice.expires.Sub(now))
+		r.notice.expires = time.Time{}
+		r.notice.paused = true
+	} else {
+		r.notice.expires = now.Add(r.notice.remaining)
+		r.notice.paused = false
+	}
+	r.mu.Unlock()
+	r.requestFrame()
+}
+
+func (r *Renderer) advanceNoticeLocked(now time.Time) {
+	if len(r.noticeQueue) == 0 {
+		r.notice = nil
+		return
+	}
+	next := r.noticeQueue[0]
+	r.noticeQueue = append(r.noticeQueue[:0], r.noticeQueue[1:]...)
+	r.activateNoticeLocked(next, now)
+}
+
+func (r *Renderer) dismissNotice() {
+	r.mu.Lock()
+	r.advanceNoticeLocked(time.Now())
+	r.mu.Unlock()
+	r.requestFrame()
+}
+
+func sameNativeNotice(left, right nativeNotice) bool {
+	if left.message != right.message || left.actionLabel != right.actionLabel || left.action.Command != right.action.Command || len(left.arguments) != len(right.arguments) {
+		return false
+	}
+	for key, value := range left.arguments {
+		if right.arguments[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Renderer) StatusExpiry() time.Time {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	expires := r.statusExpires
-	if r.notice != nil && !r.notice.expires.IsZero() && (expires.IsZero() || r.notice.expires.Before(expires)) {
-		expires = r.notice.expires
+	if r.notice != nil && !r.notice.expires.IsZero() {
+		return r.notice.expires
 	}
-	return expires
+	return time.Time{}
 }
 
 func (r *Renderer) ClearExpiredStatus(now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	changed := false
-	if !r.statusExpires.IsZero() && !now.Before(r.statusExpires) {
-		r.status = ""
-		r.statusExpires = time.Time{}
-		changed = true
-	}
 	if r.notice != nil && !r.notice.expires.IsZero() && !now.Before(r.notice.expires) {
-		r.notice = nil
-		changed = true
+		r.advanceNoticeLocked(now)
+		return true
 	}
-	return changed
+	return false
 }
 
 func (r *Renderer) SetTheme(theme *uidsl.ThemeDocument) error {
@@ -653,6 +737,9 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	r.activatedInteractions = map[string]bool{}
 	r.pendingNodeActivations = nil
 	r.mu.Lock()
+	if r.notice != nil && !r.notice.expires.IsZero() && !gtx.Now.Before(r.notice.expires) {
+		r.advanceNoticeLocked(gtx.Now)
+	}
 	if r.pendingTheme != nil && r.pendingPalette != nil && r.pendingMetrics != nil {
 		r.theme = r.pendingTheme
 		r.palette = *r.pendingPalette
@@ -666,11 +753,17 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		r.surfaceBackgrounds = map[backgroundTextureKey]paint.ImageOp{}
 	}
 	screen, data, status, resetScroll := r.screen, r.data, r.status, r.resetScroll
+	pendingScrollSection := r.pendingScrollSection
 	var notice *nativeNotice
 	if r.notice != nil {
 		copy := *r.notice
 		copy.arguments = cloneStringMap(r.notice.arguments)
 		notice = &copy
+	}
+	var alert *nativeAlert
+	if r.alert != nil {
+		copy := *r.alert
+		alert = &copy
 	}
 	r.resetScroll = false
 	r.mu.Unlock()
@@ -701,6 +794,19 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 	compact := compactLayout(gtx)
 	root, _ := applyGioOverride(screen.Screen.Root, compact)
 	children := root.Children
+	if pendingScrollSection != "" {
+		for index := range children {
+			if children[index].ID == pendingScrollSection {
+				r.list.ScrollTo(index)
+				r.mu.Lock()
+				if r.pendingScrollSection == pendingScrollSection {
+					r.pendingScrollSection = ""
+				}
+				r.mu.Unlock()
+				break
+			}
+		}
+	}
 	if compact && r.activeSheet != nil {
 		r.activeSheet.seen = false
 	}
@@ -725,6 +831,13 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 		content = func(underlay layout.Widget) layout.Widget {
 			return func(gtx layout.Context) layout.Dimensions {
 				return r.layoutNoticeOverlay(gtx, underlay, notice)
+			}
+		}(content)
+	}
+	if alert != nil {
+		content = func(underlay layout.Widget) layout.Widget {
+			return func(gtx layout.Context) layout.Dimensions {
+				return layoutModalOverlay(gtx, underlay, r.layoutAlert)
 			}
 		}(content)
 	}
@@ -1007,21 +1120,21 @@ func layoutModalOverlay(gtx layout.Context, body, confirmation layout.Widget) la
 
 func (r *Renderer) layoutNoticeOverlay(gtx layout.Context, body layout.Widget, notice *nativeNotice) layout.Dimensions {
 	viewportConstraints := gtx.Constraints
+	semantic.DescriptionOp(notice.message).Add(gtx.Ops)
+	if !notice.expires.IsZero() {
+		gtx.Execute(op.InvalidateCmd{At: notice.expires})
+	}
 	actionButton := r.button("native-notice/action")
 	dismissButton := r.button("native-notice/dismiss")
+	r.setNoticePaused(actionButton.Hovered() || dismissButton.Hovered() || actionButton.Pressed() || dismissButton.Pressed(), gtx.Now)
 	for actionButton.Clicked(gtx) {
-		r.mu.Lock()
-		r.notice = nil
-		r.mu.Unlock()
+		r.dismissNotice()
 		if r.onAction != nil && strings.TrimSpace(notice.action.Command) != "" {
 			r.onAction(notice.action, cloneStringMap(notice.arguments))
 		}
 	}
 	for dismissButton.Clicked(gtx) {
-		r.mu.Lock()
-		r.notice = nil
-		r.mu.Unlock()
-		r.requestFrame()
+		r.dismissNotice()
 	}
 	return layout.Stack{Alignment: layout.SE}.Layout(gtx,
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
@@ -1034,8 +1147,11 @@ func (r *Renderer) layoutNoticeOverlay(gtx layout.Context, body layout.Widget, n
 				gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(480))
 				return r.surfaceWithBorder(func(gtx layout.Context) layout.Dimensions {
 					message := r.materialTextLabel(notice.message, "detail", false)
-					message.Color = r.palette.text
+					message.Color = r.palette.noticeText
 					actions := func(gtx layout.Context) layout.Dimensions {
+						if compactLayout(gtx) {
+							gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(44))
+						}
 						children := make([]layout.FlexChild, 0, 2)
 						if strings.TrimSpace(notice.actionLabel) != "" {
 							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1055,7 +1171,7 @@ func (r *Renderer) layoutNoticeOverlay(gtx layout.Context, body layout.Widget, n
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(r.metrics.spaceMedium)}.Layout(gtx,
 						layout.Flexed(1, message.Layout), layout.Rigid(actions),
 					)
-				}, r.metrics.spaceMedium, r.palette.surfaceRaised, r.palette.border)(gtx)
+				}, r.metrics.spaceMedium, r.palette.noticeBackground, r.palette.noticeBorder)(gtx)
 			})
 		}),
 	)
@@ -3493,6 +3609,48 @@ func (r *Renderer) layoutConfirmation(gtx layout.Context) layout.Dimensions {
 	}, 14, false, nil)(gtx)
 }
 
+func (r *Renderer) layoutAlert(gtx layout.Context) layout.Dimensions {
+	r.mu.RLock()
+	alert := r.alert
+	r.mu.RUnlock()
+	if alert == nil {
+		return layout.Dimensions{}
+	}
+	if gtx.Constraints.Max.X > gtx.Dp(560) {
+		gtx.Constraints.Max.X = gtx.Dp(560)
+	}
+	gtx.Constraints.Min = image.Point{}
+	ok := r.button("alert/ok")
+	for ok.Clicked(gtx) {
+		r.mu.Lock()
+		r.alert = nil
+		r.mu.Unlock()
+		r.requestFrame()
+	}
+	semantic.DescriptionOp(alert.title + ". " + alert.message).Add(gtx.Ops)
+	return r.surface(func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top: 22, Right: 22, Bottom: 22, Left: 22}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			title := r.materialTextLabel(alert.title, "heading", false)
+			title.State = r.selectable("alert/title")
+			message := r.materialTextLabel(alert.message, "body", false)
+			message.State = r.selectable("alert/message")
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(title.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: 12, Bottom: 20}.Layout(gtx, message.Layout)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEnd}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return r.layoutControlButton(gtx, ok, "OK", "", true, true, false)
+						}),
+					)
+				}),
+			)
+		})
+	}, 14, false, nil)(gtx)
+}
+
 func (r *Renderer) requestFrame() {
 	if r.invalidate != nil {
 		r.invalidate()
@@ -3755,6 +3913,9 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 	p.surfaceRaised = p.subtle
 	p.pillBackground = p.subtle
 	p.pillText = p.accentStrong
+	p.noticeBackground = p.surfaceRaised
+	p.noticeText = p.text
+	p.noticeBorder = p.border
 	if gradient, ok := theme.Gradients["page"]; ok && len(gradient.Stops) >= 2 {
 		p.backgroundStart, err = parseColor(gradient.Stops[0].Color)
 		if err != nil {
@@ -3770,6 +3931,7 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 		"background-glow-a": &p.backgroundGlowA, "background-glow-b": &p.backgroundGlowB,
 		"surface-raised": &p.surfaceRaised, "surface-glow": &p.surfaceGlow,
 		"pill-background": &p.pillBackground, "pill-text": &p.pillText,
+		"notice-background": &p.noticeBackground, "notice-text": &p.noticeText, "notice-border": &p.noticeBorder,
 		"console-background": &p.consoleBackground, "console-surface": &p.consoleSurface,
 		"console-border": &p.consoleBorder, "console-text": &p.consoleText,
 		"console-muted": &p.consoleMuted, "console-accent": &p.consoleAccent,

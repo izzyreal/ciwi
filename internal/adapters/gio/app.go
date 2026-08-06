@@ -65,10 +65,8 @@ type jobOutputBuffer struct {
 }
 
 const (
-	maxNativeOutputBytes   = 1024 * 1024
-	nativeNoticeDuration   = 6 * time.Second
-	nativeSnackbarDuration = 8 * time.Second
-	nativeReconnectMax     = 8 * time.Second
+	maxNativeOutputBytes = 1024 * 1024
+	nativeReconnectMax   = 8 * time.Second
 )
 
 type nativeSession struct {
@@ -400,19 +398,19 @@ func Run(options Options) error {
 				Arguments: arguments,
 			})
 			if submitErr != nil {
-				renderer.SetStatus("Action could not be started: " + submitErr.Error())
+				renderer.ShowAlert("Action could not be started", submitErr.Error())
 				window.Invalidate()
 				return
 			}
 			switch submission.Disposition {
 			case operations.DispositionDuplicate:
-				renderer.SetStatus("That action is already in progress")
+				renderer.ShowAlert("Action already in progress", "That action is already in progress.")
 			case operations.DispositionConflict:
 				message := "A conflicting action is already in progress"
 				if submission.Conflict != nil && strings.TrimSpace(submission.Conflict.PendingLabel) != "" {
 					message = submission.Conflict.PendingLabel
 				}
-				renderer.SetStatus(message)
+				renderer.ShowAlert("Action unavailable", message)
 			}
 			renderer.SetOperations(coordinator.Snapshot())
 			window.Invalidate()
@@ -421,7 +419,7 @@ func Run(options Options) error {
 		select {
 		case commands <- commandRequest{action: action, arguments: arguments}:
 		default:
-			renderer.SetStatus("Another command is already being processed")
+			renderer.ShowAlert("Action unavailable", "Another command is already being processed.")
 			window.Invalidate()
 		}
 	})
@@ -608,7 +606,6 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 			renderer.SetRootBinding("settings", "client_version", options.Version)
 		}
-		renderer.SetTransientStatus("Connected to "+address, nativeNoticeDuration)
 	}
 	showScreenLoading := func(target navigationState) error {
 		screen := screens[target.screen]
@@ -718,7 +715,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			return
 		}
 		if resumed > 0 {
-			renderer.SetTransientStatus(fmt.Sprintf("Resumed %d interrupted action(s)", resumed), nativeNoticeDuration)
+			renderer.ShowNotice(fmt.Sprintf("Resumed %d interrupted action(s)", resumed), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 		} else if message != "" {
 			renderer.SetStatus(message)
 		}
@@ -803,13 +800,13 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			if message == "" {
 				message = "The action did not complete"
 			}
-			renderer.SetStatus(message)
+			renderer.ShowAlert("Action failed", message)
 			return
 		}
 		effect, ok := operation.Value.(nativeOperationEffect)
 		if !ok {
 			if operation.Message != "" {
-				renderer.SetTransientStatus(operation.Message, nativeNoticeDuration)
+				renderer.ShowNotice(operation.Message, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			}
 			return
 		}
@@ -867,10 +864,17 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		} else if effect.Refresh && client != nil {
 			startResyncLoad(navigation)
 		}
-		if effect.NoticeRoute != "" {
-			renderer.ShowNotice(effect.Message, effect.NoticeLabel, uidsl.Action{Command: "navigate"}, map[string]string{"route": effect.NoticeRoute}, nativeSnackbarDuration)
-		} else if effect.Message != "" {
-			renderer.SetTransientStatus(effect.Message, nativeNoticeDuration)
+		if effect.Notice && effect.Message != "" {
+			action := uidsl.Action{}
+			arguments := map[string]string{}
+			if effect.NoticeRoute != "" {
+				action.Command = "navigate"
+				arguments["route"] = effect.NoticeRoute
+				if effect.NoticeSection != "" {
+					arguments["section"] = effect.NoticeSection
+				}
+			}
+			renderer.ShowNotice(effect.Message, effect.NoticeLabel, action, arguments, presentation.TransientNoticeDuration)
 		}
 	}
 	for {
@@ -930,7 +934,6 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				startOutput(navigation.jobID)
 			}
 			reconcileOperations()
-			renderer.SetTransientStatus("Reconnected to "+address, nativeNoticeDuration)
 			scheduleStatusExpiry()
 			window.Invalidate()
 		case change, ok := <-changes:
@@ -1190,6 +1193,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					window.Invalidate()
 					continue
 				}
+				if section := strings.TrimSpace(command.arguments["section"]); section != "" {
+					renderer.ScrollToSection(section)
+				}
 				if next.screen == "connection" {
 					next = navigationState{screen: "settings"}
 				}
@@ -1394,7 +1400,7 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 			renderer.SetStatus("Theme changed, but the preference could not be saved: " + err.Error())
 			return
 		}
-		renderer.SetTransientStatus("Theme: "+theme.Metadata.Title, nativeNoticeDuration)
+		renderer.SetStatus("")
 	default:
 		renderer.SetStatus("Unsupported native action: " + command.action.Command)
 	}

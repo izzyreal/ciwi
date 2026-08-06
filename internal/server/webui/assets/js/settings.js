@@ -462,7 +462,6 @@
     const projectReloadState = new Map();
     let updateRestartWatchActive = false;
     let rollbackTagsLoadedAt = 0;
-    const shownAgentUpdateWarningKeys = new Set();
 
     function parseSemverParts(value) {
       const raw = String(value || '').trim();
@@ -815,6 +814,7 @@
       const rollbackSelect = document.getElementById('rollbackTagSelect');
       const updateSelect = document.getElementById('updateVersionSelect');
       const updateCapabilityNotice = document.getElementById('updateCapabilityNotice');
+      const updateAgentCapabilityNotice = document.getElementById('updateAgentCapabilityNotice');
       const rollbackCapabilityNotice = document.getElementById('rollbackCapabilityNotice');
       try {
         const r = await apiJSON('/api/v1/update/status');
@@ -863,20 +863,15 @@
         if (rollbackRefreshBtn) rollbackRefreshBtn.disabled = !serverUpdateSupported;
 
         const blockedAgentsRaw = String(s.update_agent_non_service_agents || '').trim();
-        const targetVersion = String(s.update_agent_target_version || '').trim();
-        if (blockedAgentsRaw) {
-          blockedAgentsRaw.split(',').map(v => String(v || '').trim()).filter(Boolean).forEach(agentID => {
-            const key = agentID + '|' + targetVersion;
-            if (shownAgentUpdateWarningKeys.has(key)) return;
-            shownAgentUpdateWarningKeys.add(key);
-            showSnackbar({
-              messageHTML: 'Agent <code>' + escapeHtml(agentID) + '</code> is not running as a service. Agent self-updates are disabled on that host. Install or reinstall via the <a href="https://github.com/izzyreal/ciwi?tab=readme-ov-file#automated-installation-scripts" target="_blank" rel="noopener noreferrer">automated installation scripts</a>.',
-              timeoutMs: 12000,
-            });
-          });
+        if (updateAgentCapabilityNotice) {
+          const blockedAgents = blockedAgentsRaw.split(',').map(value => String(value || '').trim()).filter(Boolean);
+          updateAgentCapabilityNotice.innerHTML = blockedAgents.length
+            ? 'Agents not running as a service cannot self-update: <code>' + blockedAgents.map(escapeHtml).join('</code>, <code>') + '</code>. Install or reinstall them with the <a href="https://github.com/izzyreal/ciwi?tab=readme-ov-file#automated-installation-scripts" target="_blank" rel="noopener noreferrer">automated installation scripts</a>.'
+            : '';
         }
       } catch (e) {
         box.textContent = 'Update status unavailable';
+        if (updateAgentCapabilityNotice) updateAgentCapabilityNotice.textContent = '';
         if (checkBtn) checkBtn.disabled = true;
         if (applyBtn) {
           applyBtn.style.display = 'inline-block';

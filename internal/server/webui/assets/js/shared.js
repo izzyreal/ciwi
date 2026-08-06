@@ -627,17 +627,23 @@ function showAlertDialog(opts) {
 
 
 
+const ciwiSnackbarCapacity = 4;
+const ciwiSnackbarState = { active: null, queue: [] };
+
 function ensureSnackbarStyles() {
   if (document.getElementById('__ciwiSnackbarStyles')) return;
   const style = document.createElement('style');
   style.id = '__ciwiSnackbarStyles';
   style.textContent = [
-    '#ciwiSnackbarHost{position:fixed;right:14px;bottom:14px;z-index:2500;display:flex;flex-direction:column;gap:10px;max-width:min(480px,92vw);pointer-events:none;}',
-    '.ciwi-snackbar{pointer-events:auto;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--snackbar-bg);color:var(--snackbar-ink);border:1px solid var(--snackbar-line);border-radius:10px;padding:10px 12px;box-shadow:0 16px 32px var(--shadow);}',
+    '#ciwiSnackbarHost{position:fixed;right:14px;bottom:max(14px,env(safe-area-inset-bottom));z-index:2500;display:flex;max-width:min(480px,92vw);pointer-events:none;}',
+    '.ciwi-snackbar{pointer-events:auto;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--snackbar-bg);color:var(--snackbar-ink);border:1px solid var(--snackbar-line);border-radius:10px;padding:10px 12px;box-shadow:0 16px 32px var(--shadow);animation:ciwi-snackbar-in .16s ease-out;}',
     '.ciwi-snackbar-msg{font-size:13px;line-height:1.25;word-break:break-word;}',
     '.ciwi-snackbar-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}',
     '.ciwi-snackbar-btn{font:inherit;font-size:12px;font-weight:600;padding:6px 8px;border-radius:7px;border:1px solid var(--snackbar-line);background:var(--surface-hover);color:var(--ink);cursor:pointer;}',
     '.ciwi-snackbar-btn.dismiss{background:transparent;color:var(--snackbar-ink);border-color:var(--snackbar-line);}',
+    '@keyframes ciwi-snackbar-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}',
+    '@media(max-width:640px){#ciwiSnackbarHost{left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom));max-width:none}.ciwi-snackbar{width:100%;align-items:flex-start;flex-direction:column}.ciwi-snackbar-actions{width:100%;justify-content:flex-end}.ciwi-snackbar-btn{min-height:44px}}',
+    '@media(prefers-reduced-motion:reduce){.ciwi-snackbar{animation:none}}',
   ].join('');
   document.head.appendChild(style);
 }
@@ -648,37 +654,60 @@ function snackbarHost() {
   if (host) return host;
   host = document.createElement('div');
   host.id = 'ciwiSnackbarHost';
+  host.setAttribute('aria-live', 'polite');
+  host.setAttribute('aria-atomic', 'false');
   document.body.appendChild(host);
   return host;
 }
 
-function showSnackbar(opts) {
-  const options = opts || {};
-  const message = String(options.message || '').trim();
-  const messageHTML = String(options.messageHTML || '').trim();
-  if (!message && !messageHTML) return;
+function snackbarIdentity(notice) {
+  return [notice.message, notice.messageHTML, notice.actionLabel].join('\u0000');
+}
+
+function finishSnackbar(notice) {
+  if (!notice || ciwiSnackbarState.active !== notice) return;
+  if (notice.timer) clearTimeout(notice.timer);
+  if (notice.node && notice.node.parentNode) notice.node.parentNode.removeChild(notice.node);
+  ciwiSnackbarState.active = null;
+  presentNextSnackbar();
+}
+
+function pauseSnackbar(notice) {
+  if (!notice || ciwiSnackbarState.active !== notice || !notice.timer) return;
+  clearTimeout(notice.timer);
+  notice.timer = null;
+  notice.remaining = Math.max(0, notice.remaining - (Date.now() - notice.startedAt));
+}
+
+function resumeSnackbar(notice) {
+  if (!notice || ciwiSnackbarState.active !== notice || notice.timer) return;
+  notice.startedAt = Date.now();
+  notice.timer = setTimeout(() => finishSnackbar(notice), Math.max(1, notice.remaining));
+}
+
+function presentNextSnackbar() {
+  if (ciwiSnackbarState.active || ciwiSnackbarState.queue.length === 0) return;
+  const notice = ciwiSnackbarState.queue.shift();
+  ciwiSnackbarState.active = notice;
   const host = snackbarHost();
   const item = document.createElement('div');
   item.className = 'ciwi-snackbar';
+  item.setAttribute('role', 'status');
   const msg = document.createElement('div');
   msg.className = 'ciwi-snackbar-msg';
-  if (messageHTML) {
-    msg.innerHTML = messageHTML;
-  } else {
-    msg.textContent = message;
-  }
+  if (notice.messageHTML) msg.innerHTML = notice.messageHTML;
+  else msg.textContent = notice.message;
   item.appendChild(msg);
 
   const actions = document.createElement('div');
   actions.className = 'ciwi-snackbar-actions';
-  if (options.actionLabel && typeof options.onAction === 'function') {
+  if (notice.actionLabel && typeof notice.onAction === 'function') {
     const actionBtn = document.createElement('button');
     actionBtn.type = 'button';
     actionBtn.className = 'ciwi-snackbar-btn';
-    actionBtn.textContent = String(options.actionLabel);
+    actionBtn.textContent = notice.actionLabel;
     actionBtn.onclick = () => {
-      try { options.onAction(); } catch (_) {}
-      if (item.parentNode) item.parentNode.removeChild(item);
+      try { notice.onAction(); } catch (_) {} finally { finishSnackbar(notice); }
     };
     actions.appendChild(actionBtn);
   }
@@ -686,17 +715,39 @@ function showSnackbar(opts) {
   dismissBtn.type = 'button';
   dismissBtn.className = 'ciwi-snackbar-btn dismiss';
   dismissBtn.textContent = 'Dismiss';
-  dismissBtn.onclick = () => {
-    if (item.parentNode) item.parentNode.removeChild(item);
-  };
+  dismissBtn.onclick = () => finishSnackbar(notice);
   actions.appendChild(dismissBtn);
   item.appendChild(actions);
   host.appendChild(item);
+  notice.node = item;
+  item.addEventListener('mouseenter', () => pauseSnackbar(notice));
+  item.addEventListener('mouseleave', () => resumeSnackbar(notice));
+  item.addEventListener('focusin', () => pauseSnackbar(notice));
+  item.addEventListener('focusout', () => setTimeout(() => {
+    if (!item.contains(document.activeElement)) resumeSnackbar(notice);
+  }, 0));
+  resumeSnackbar(notice);
+}
 
-  const ttl = Math.max(1500, Number(options.timeoutMs || 8000));
-  setTimeout(() => {
-    if (item.parentNode) item.parentNode.removeChild(item);
-  }, ttl);
+function showSnackbar(opts) {
+  const options = opts || {};
+  const message = String(options.message || '').trim();
+  const messageHTML = String(options.messageHTML || '').trim();
+  if (!message && !messageHTML) return;
+  const notice = {
+    message, messageHTML,
+    actionLabel: String(options.actionLabel || '').trim(),
+    onAction: options.onAction,
+    remaining: Math.max(1500, Number(options.timeoutMs || 8000)),
+    timer: null, node: null, startedAt: 0,
+  };
+  const identity = snackbarIdentity(notice);
+  if ((ciwiSnackbarState.active && snackbarIdentity(ciwiSnackbarState.active) === identity)
+      || ciwiSnackbarState.queue.some(queued => snackbarIdentity(queued) === identity)) return;
+  const waitingCapacity = ciwiSnackbarState.active ? ciwiSnackbarCapacity - 1 : ciwiSnackbarCapacity;
+  if (ciwiSnackbarState.queue.length >= waitingCapacity) ciwiSnackbarState.queue.shift();
+  ciwiSnackbarState.queue.push(notice);
+  presentNextSnackbar();
 }
 
 function showJobStartedSnackbar(message, jobExecutionID) {

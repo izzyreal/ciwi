@@ -218,6 +218,11 @@
       });
     }
 
+    function showAgentActionNotice(result, fallback) {
+      const message = String((result && result.message) || fallback || 'Agent request accepted').trim();
+      showSnackbar({ message: message });
+    }
+
 
 
 
@@ -333,16 +338,18 @@
           });
           if (!confirmed) return;
         }
-        await postAction(isDeactivated ? 'activate' : 'deactivate', event.currentTarget);
+        const result = await postAction(isDeactivated ? 'activate' : 'deactivate', event.currentTarget);
         await refreshAgent(true);
+        showAgentActionNotice(result, isDeactivated ? 'Agent activation requested' : 'Agent deactivation requested');
       } catch (e) {
         await showAlertDialog({ title: 'Activation change failed', message: 'Activation change failed: ' + e.message });
       }
     };
     document.getElementById('updateBtn').onclick = async (event) => {
       try {
-        await postAction('update', event.currentTarget);
+        const result = await postAction('update', event.currentTarget);
         await refreshAgent(true);
+        showAgentActionNotice(result, 'Agent update requested');
       } catch (e) {
         await showAlertDialog({ title: 'Update request failed', message: 'Update request failed: ' + e.message });
       }
@@ -355,8 +362,9 @@
       });
       if (!confirmed) return;
       try {
-        await postAction('restart', event.currentTarget);
+        const result = await postAction('restart', event.currentTarget);
         await refreshAgent(true);
+        showAgentActionNotice(result, 'Agent restart requested');
       } catch (e) {
         await showAlertDialog({ title: 'Restart request failed', message: 'Restart request failed: ' + e.message });
       }
@@ -369,8 +377,9 @@
       });
       if (!confirmed) return;
       try {
-        await postAction('wipe-cache', event.currentTarget);
+        const result = await postAction('wipe-cache', event.currentTarget);
         await refreshAgent(true);
+        showAgentActionNotice(result, 'Agent cache wipe requested');
       } catch (e) {
         await showAlertDialog({ title: 'Cache wipe failed', message: 'Cache wipe request failed: ' + e.message });
       }
@@ -383,16 +392,18 @@
       });
       if (!confirmed) return;
       try {
-        await postAction('flush-job-history', event.currentTarget);
+        const result = await postAction('flush-job-history', event.currentTarget);
         await refreshAgent(true);
+        showAgentActionNotice(result, 'Agent job history flushed');
       } catch (e) {
         await showAlertDialog({ title: 'Flush failed', message: 'Agent job history flush failed: ' + e.message });
       }
     };
     document.getElementById('refreshToolsBtn').onclick = async (event) => {
       try {
-        await postAction('refresh-tools', event.currentTarget);
+        const result = await postAction('refresh-tools', event.currentTarget);
         await refreshAgent(true);
+        showAgentActionNotice(result, 'Agent tool refresh requested');
       } catch (e) {
         await showAlertDialog({ title: 'Refresh tools failed', message: 'Refresh tools request failed: ' + e.message });
       }

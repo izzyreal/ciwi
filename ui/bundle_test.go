@@ -80,6 +80,7 @@ func TestEmbeddedUIBundle(t *testing.T) {
 		for _, token := range []string{
 			"background-start", "background-end", "background-glow-a", "background-glow-b",
 			"surface-raised", "surface-glow", "pill-background", "pill-text",
+			"notice-background", "notice-text", "notice-border",
 			"console-background", "console-surface", "console-border", "console-text", "console-muted", "console-accent", "console-success",
 		} {
 			if theme.Theme.Colors[token] == "" {

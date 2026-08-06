@@ -196,11 +196,14 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 		t.Fatalf("native pill background = %v, want shared theme token %v", renderer.palette.pillBackground, wantPill)
 	}
 	for token, got := range map[string]color.NRGBA{
-		"console-surface": renderer.palette.consoleSurface,
-		"console-text":    renderer.palette.consoleText,
-		"console-muted":   renderer.palette.consoleMuted,
-		"console-accent":  renderer.palette.consoleAccent,
-		"console-success": renderer.palette.consoleSuccess,
+		"notice-background": renderer.palette.noticeBackground,
+		"notice-text":       renderer.palette.noticeText,
+		"notice-border":     renderer.palette.noticeBorder,
+		"console-surface":   renderer.palette.consoleSurface,
+		"console-text":      renderer.palette.consoleText,
+		"console-muted":     renderer.palette.consoleMuted,
+		"console-accent":    renderer.palette.consoleAccent,
+		"console-success":   renderer.palette.consoleSuccess,
 	} {
 		want, parseErr := parseColor(theme.Theme.Colors[token])
 		if parseErr != nil {
@@ -1596,26 +1599,9 @@ func TestInteractiveControlsDoNotReceiveGenericActionWrapper(t *testing.T) {
 	}
 }
 
-func TestTransientStatusExpiresWithoutClearingPersistentErrors(t *testing.T) {
-	renderer := &Renderer{}
-	renderer.SetTransientStatus("Queued", time.Hour)
-	expires := renderer.StatusExpiry()
-	if expires.IsZero() || renderer.ClearExpiredStatus(expires.Add(-time.Nanosecond)) {
-		t.Fatal("transient status expired too early")
-	}
-	if !renderer.ClearExpiredStatus(expires) || renderer.status != "" || !renderer.StatusExpiry().IsZero() {
-		t.Fatalf("expired status was not cleared: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
-	}
-	renderer.SetTransientStatus("Queued", time.Hour)
-	renderer.SetStatus("Run failed")
-	if !renderer.StatusExpiry().IsZero() || renderer.ClearExpiredStatus(time.Now().Add(2*time.Hour)) || renderer.status != "Run failed" {
-		t.Fatalf("persistent status unexpectedly expired: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
-	}
-}
-
 func TestActionableNoticeExpiresIndependentlyFromStatus(t *testing.T) {
 	renderer := &Renderer{}
-	renderer.SetTransientStatus("Queued", 2*time.Hour)
+	renderer.SetStatus("Persistent connection state")
 	renderer.ShowNotice("Script queued", "Show job execution", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/jobs/job-1"}, time.Hour)
 	noticeExpiry := renderer.StatusExpiry()
 	if noticeExpiry.IsZero() || renderer.notice == nil || renderer.notice.arguments["route"] != "/jobs/job-1" {
@@ -1624,8 +1610,106 @@ func TestActionableNoticeExpiresIndependentlyFromStatus(t *testing.T) {
 	if !renderer.ClearExpiredStatus(noticeExpiry) || renderer.notice != nil {
 		t.Fatalf("notice did not expire: %#v", renderer.notice)
 	}
-	if renderer.status != "Queued" || renderer.StatusExpiry().IsZero() {
+	if renderer.status != "Persistent connection state" || !renderer.StatusExpiry().IsZero() {
 		t.Fatalf("notice expiration disturbed status: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
+	}
+}
+
+func TestNativeNoticesQueueDeduplicateAndAdvance(t *testing.T) {
+	renderer := &Renderer{}
+	renderer.ShowNotice("First", "", uidsl.Action{}, nil, time.Hour)
+	renderer.ShowNotice("Second", "Show", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/jobs/2"}, 2*time.Hour)
+	renderer.ShowNotice("Second", "Show", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/jobs/2"}, 2*time.Hour)
+	if renderer.notice == nil || renderer.notice.message != "First" || len(renderer.noticeQueue) != 1 {
+		t.Fatalf("notice state = %#v, queue=%#v", renderer.notice, renderer.noticeQueue)
+	}
+	firstExpiry := renderer.notice.expires
+	if !renderer.ClearExpiredStatus(firstExpiry) {
+		t.Fatal("first notice did not expire")
+	}
+	if renderer.notice == nil || renderer.notice.message != "Second" || len(renderer.noticeQueue) != 0 {
+		t.Fatalf("advanced notice state = %#v, queue=%#v", renderer.notice, renderer.noticeQueue)
+	}
+	if want := firstExpiry.Add(2 * time.Hour); !renderer.notice.expires.Equal(want) {
+		t.Fatalf("second expiry = %v, want %v", renderer.notice.expires, want)
+	}
+}
+
+func TestNativeNoticeQueueKeepsLatestFour(t *testing.T) {
+	renderer := &Renderer{}
+	for _, message := range []string{"One", "Two", "Three", "Four", "Five", "Six"} {
+		renderer.ShowNotice(message, "", uidsl.Action{}, nil, time.Hour)
+	}
+	if renderer.notice == nil || renderer.notice.message != "One" {
+		t.Fatalf("active notice = %#v, want One", renderer.notice)
+	}
+	if len(renderer.noticeQueue) != 3 {
+		t.Fatalf("queued notice count = %d, want 3", len(renderer.noticeQueue))
+	}
+	got := []string{renderer.noticeQueue[0].message, renderer.noticeQueue[1].message, renderer.noticeQueue[2].message}
+	if strings.Join(got, ",") != "Four,Five,Six" {
+		t.Fatalf("queued notices = %q, want latest waiting notices", got)
+	}
+	renderer.dismissNotice()
+	if renderer.notice == nil || renderer.notice.message != "Four" {
+		t.Fatalf("notice after dismiss = %#v, want Four", renderer.notice)
+	}
+}
+
+func TestNativeNoticePausesAndResumesExpiry(t *testing.T) {
+	renderer := &Renderer{}
+	renderer.ShowNotice("Queued", "Show", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/"}, time.Hour)
+	started := renderer.notice.expires.Add(-time.Hour)
+	renderer.setNoticePaused(true, started.Add(10*time.Minute))
+	if !renderer.notice.paused || !renderer.notice.expires.IsZero() || renderer.notice.remaining != 50*time.Minute {
+		t.Fatalf("paused notice = %#v", renderer.notice)
+	}
+	resumedAt := started.Add(20 * time.Minute)
+	renderer.setNoticePaused(false, resumedAt)
+	if renderer.notice.paused || !renderer.notice.expires.Equal(resumedAt.Add(50*time.Minute)) {
+		t.Fatalf("resumed notice = %#v", renderer.notice)
+	}
+}
+
+func TestNativeAlertUsesDedicatedModalState(t *testing.T) {
+	renderer := &Renderer{}
+	renderer.SetStatus("Persistent connection state")
+	renderer.ShowAlert("Action failed", "server rejected request")
+	if renderer.alert == nil || renderer.alert.title != "Action failed" || renderer.alert.message != "server rejected request" {
+		t.Fatalf("alert state = %#v", renderer.alert)
+	}
+	if renderer.status != "Persistent connection state" {
+		t.Fatalf("showing alert changed inline status to %q", renderer.status)
+	}
+}
+
+func TestNativeNoticeCanTargetFrontPageSection(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := offlineFrontPageBindingData("v0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetScreenAndData(screen, data)
+	renderer.ScrollToSection("queued-executions")
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(390, 300))}
+	renderer.Layout(gtx)
+	renderer.Layout(layout.Context{Ops: new(op.Ops), Constraints: gtx.Constraints})
+	if renderer.pendingScrollSection != "" {
+		t.Fatalf("pending section target was not consumed: %q", renderer.pendingScrollSection)
+	}
+	if renderer.list.Position.First != 2 {
+		t.Fatalf("front-page list first item = %d, want queued section index 2", renderer.list.Position.First)
 	}
 }
 

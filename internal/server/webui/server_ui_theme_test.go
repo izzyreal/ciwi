@@ -207,6 +207,21 @@ func TestThemesDefineSharedComponentAndGraphTokens(t *testing.T) {
 	}
 }
 
+func TestBrowserThemeContractMapsNoticePalette(t *testing.T) {
+	declarativeJS := mustTestAsset("assets/js/declarative.js")
+	for _, source := range []string{themeJS, declarativeJS} {
+		for _, mapping := range []string{
+			`'notice-background': '--snackbar-bg'`,
+			`'notice-text': '--snackbar-ink'`,
+			`'notice-border': '--snackbar-line'`,
+		} {
+			if !strings.Contains(source, mapping) {
+				t.Errorf("browser theme contract is missing %q", mapping)
+			}
+		}
+	}
+}
+
 func TestThemesUseSharedLayeredGradientSurfaces(t *testing.T) {
 	for _, want := range []string{
 		`--page-background: radial-gradient(`,

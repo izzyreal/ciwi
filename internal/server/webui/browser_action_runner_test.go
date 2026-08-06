@@ -195,8 +195,8 @@ globalThis.probeFirst = window.ciwiRunAction('mutate', { id: 7 }, ciwiTestElemen
 globalThis.probeConflict = window.ciwiRunAction('other-mutation', { id: 7 }, ciwiTestElement(), () => Promise.resolve('unexpected'));
 `)
 		requireBrowserPromise(t, harness.promise(t, "probeConflict"), goja.PromiseStateRejected, "Working")
-		if count := harness.value(t, "window.ciwiTestSnackbars.length").ToInteger(); count != 1 {
-			t.Fatalf("snackbar count = %d, want 1", count)
+		if count := harness.value(t, "window.ciwiTestSnackbars.length").ToInteger(); count != 0 {
+			t.Fatalf("snackbar count = %d, want 0; the caller owns failure presentation", count)
 		}
 		harness.run(t, `probeGate.resolve('done')`)
 		requireBrowserPromise(t, harness.promise(t, "probeFirst"), goja.PromiseStateFulfilled, "done")

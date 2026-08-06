@@ -120,6 +120,7 @@
       'background-start': '--bg2', 'background-end': '--bg3',
       'background-glow-a': '--bg-glow-a', 'background-glow-b': '--bg-glow-b',
       'pill-background': '--pill-bg', 'pill-text': '--pill-ink',
+      'notice-background': '--snackbar-bg', 'notice-text': '--snackbar-ink', 'notice-border': '--snackbar-line',
       text: '--ink', 'text-muted': '--muted', accent: '--accent', 'accent-strong': '--accent-strong',
       border: '--line', success: '--ok', warning: '--warn', danger: '--bad', focus: '--focus-ring',
       'console-background': '--console-bg', 'console-surface': '--console-surface',

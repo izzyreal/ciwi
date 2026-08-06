@@ -101,9 +101,6 @@
         occupying.controller.abort();
       } else {
         const message = occupying.spec.pending || 'A conflicting action is already in progress';
-        if (typeof window.showSnackbar === 'function') {
-          window.showSnackbar({ message: message });
-        }
         throw new Error(message);
       }
     }
