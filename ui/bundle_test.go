@@ -81,6 +81,7 @@ func TestEmbeddedUIBundle(t *testing.T) {
 			"background-start", "background-end", "background-glow-a", "background-glow-b",
 			"surface-raised", "surface-glow", "pill-background", "pill-text",
 			"notice-background", "notice-text", "notice-border",
+			"awaiting-surface", "awaiting-border", "awaiting-text",
 			"console-background", "console-surface", "console-border", "console-text", "console-muted", "console-accent", "console-success",
 		} {
 			if theme.Theme.Colors[token] == "" {
@@ -113,6 +114,31 @@ func TestEmbeddedUIBundle(t *testing.T) {
 		if len(fontData) < 4 || string(fontData[:4]) != "\x00\x01\x00\x00" {
 			t.Fatalf("embedded %s is not a TrueType font", name)
 		}
+	}
+}
+
+func TestJobDetailsSchedulingUsesAwaitingDesign(t *testing.T) {
+	screen, err := LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schedulingCard *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.Component == "card" && node.Style.Role == "scheduling-awaiting" {
+			schedulingCard = node
+		}
+	})
+	if schedulingCard == nil {
+		t.Fatal("job details screen has no scheduling-awaiting card")
+	}
+	tones := map[string]bool{}
+	walkNodes(*schedulingCard, func(node *uidsl.Node) {
+		if node.Style.Tone != "" {
+			tones[node.Style.Tone] = true
+		}
+	})
+	if len(tones) != 1 || !tones["awaiting"] {
+		t.Fatalf("scheduling card tones = %v, want awaiting only", tones)
 	}
 }
 

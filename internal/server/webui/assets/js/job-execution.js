@@ -803,15 +803,15 @@
         const capabilityIssues = Array.isArray(agent.capability_issues) ? agent.capability_issues : [];
         const availabilityIssues = Array.isArray(agent.availability_issues) ? agent.availability_issues : [];
         const details = availabilityIssues.concat(capabilityIssues.map(issue => String((issue && issue.message) || ''))).filter(Boolean);
-        const status = agent.available ? 'eligible' : (agent.capability_match ? 'unavailable' : 'does not match');
-        return '<li><strong>' + escapeHtml(String(agent.agent_id || 'agent')) + '</strong>: ' + escapeHtml(status + (details.length ? ' — ' + details.join('; ') : '')) + '</li>';
+        const status = agent.capability_match ? (agent.available ? 'Eligible' : 'Unavailable') : 'Does not match';
+        return '<div class="scheduling-agent scheduling-primary"><strong>' + escapeHtml(String(agent.agent_id || 'agent')) + '</strong>: ' + escapeHtml(status + (details.length ? ' — ' + details.join('; ') : '')) + '</div>';
       }).join('');
       const hidden = Math.max(0, incompatibleAgents.length - 3);
-      box.className = diagnosis.state === 'ready' ? 'req-ok' : 'req-issues';
-      box.innerHTML = '<strong>' + escapeHtml(summary) + '</strong>' +
-        (requirements.length ? '<div style="margin-top:6px;">Required: ' + requirements.map(value => '<code>' + escapeHtml(String(value || '')) + '</code>').join(', ') + '</div>' : '') +
-        (agentRows ? '<ul>' + agentRows + '</ul>' : '') +
-        (hidden ? '<div>' + escapeHtml(String(hidden) + ' additional agent(s) do not match') + '</div>' : '');
+      box.className = 'scheduling-diagnosis';
+      box.innerHTML = '<strong class="scheduling-primary">' + escapeHtml(summary) + '</strong>' +
+        (requirements.length ? '<div class="scheduling-requirements scheduling-primary">Required: ' + requirements.map(value => escapeHtml(String(value || ''))).join(' · ') + '</div>' : '') +
+        agentRows +
+        (hidden ? '<div class="scheduling-primary">' + escapeHtml(String(hidden) + ' additional agent(s) do not match') + '</div>' : '');
     }
 
     function renderToolRequirements(requiredCaps, runtimeCaps, jobStatus) {

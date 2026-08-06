@@ -121,6 +121,9 @@ func TestJobDetailsViewLimitsClosestSchedulingAgents(t *testing.T) {
 	if view.SchedulingAgents[0].Status != "Unavailable" || view.SchedulingRequirements == "" {
 		t.Fatalf("scheduling view = %+v", view)
 	}
+	if view.SchedulingAgents[0].Tone != "warning" || view.SchedulingAgents[1].Tone != "danger" {
+		t.Fatalf("scheduling tones = %+v", view.SchedulingAgents)
+	}
 }
 
 func TestJobOutputViewRendersSanitizedIncrementalLines(t *testing.T) {

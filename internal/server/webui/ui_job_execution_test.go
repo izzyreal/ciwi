@@ -5,6 +5,30 @@ import (
 	"testing"
 )
 
+func TestJobExecutionSchedulingUsesAwaitingCardWithoutNestedAlert(t *testing.T) {
+	combined := jobExecutionHTML + jobExecutionCSS + jobExecutionJS
+	for _, want := range []string{
+		`class="card scheduling-awaiting" id="schedulingCard"`,
+		`background: var(--awaiting-bg, var(--warn-bg))`,
+		`class="scheduling-agent scheduling-primary"`,
+		`join(' · ')`,
+		`color:var(--awaiting-ink, var(--warn))`,
+	} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("job scheduling design no longer contains %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		`box.className = diagnosis.state === 'ready' ? 'req-ok' : 'req-issues'`,
+		`'<ul>' + agentRows + '</ul>'`,
+		`scheduling-secondary`,
+	} {
+		if strings.Contains(jobExecutionJS, unwanted) {
+			t.Fatalf("job scheduling renderer still contains nested alert treatment %q", unwanted)
+		}
+	}
+}
+
 func TestJobExecutionUIRendersUnreachedTimelineSteps(t *testing.T) {
 	for _, want := range []string{
 		"job && job.execution_timeline",

@@ -21,6 +21,8 @@ func TestSchedulingDiagnosisMappings(t *testing.T) {
 	}}}}}})
 	if got := cards[0].Sections[0].Jobs[0].SchedulingDiagnosis; got == nil || got.Summary == "" || len(got.Agents) != 1 {
 		t.Fatalf("card diagnosis = %+v", got)
+	} else if got.Agents[0].Tone != "danger" {
+		t.Fatalf("card scheduling tone = %q", got.Agents[0].Tone)
 	}
 	job := jobDetailsToProto(presentation.JobDetailsView{
 		ID: "job-1", SchedulingState: domain.SchedulingWaiting, SchedulingSummary: "Matching agent is busy",

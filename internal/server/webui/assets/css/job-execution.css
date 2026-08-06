@@ -360,6 +360,15 @@
     .cache-stat-row { font-size:12px; color:var(--ink); margin-top:2px; }
     .cache-stat-metrics { margin-top:6px; font-size:12px; color:var(--muted); }
     .cache-stat-metrics code { font-size:11px; }
+    .card.scheduling-awaiting {
+      background: var(--awaiting-bg, var(--warn-bg));
+      border-color: var(--awaiting-line, var(--warn-line));
+    }
+    .scheduling-awaiting h3,
+    .scheduling-primary { color:var(--awaiting-ink, var(--warn)); }
+    .scheduling-diagnosis { display:flex; flex-direction:column; gap:6px; font-size:14px; line-height:1.45; }
+    .scheduling-agent { overflow-wrap:anywhere; }
+    .scheduling-requirements { margin-bottom:2px; }
     .req-empty { color:var(--muted); font-size:13px; }
     .req-ok { padding:8px 10px; border:1px solid var(--ok-line); background:var(--ok-bg); border-radius:8px; color:var(--ok); font-size:13px; }
     .req-issues { padding:8px 10px; border:1px solid var(--bad-line); background:var(--bad-bg); border-radius:8px; color:var(--bad); font-size:13px; }

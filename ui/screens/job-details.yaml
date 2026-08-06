@@ -163,28 +163,29 @@ screen:
               - component: card
                 visible: {binding: jobDetails.scheduling_diagnosis.summary, empty: true, not: true}
                 layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+                style: {role: scheduling-awaiting}
                 children:
                   - component: text
                     text: {literal: Scheduling}
-                    style: {role: heading, emphasis: strong}
+                    style: {role: heading, emphasis: strong, tone: awaiting}
                   - component: text
                     text: {binding: jobDetails.scheduling_diagnosis.summary}
-                    style: {role: detail, emphasis: strong}
+                    style: {role: detail, emphasis: strong, tone: awaiting}
                   - component: text
                     text: {template: "Required: {{jobDetails.scheduling_diagnosis.requirements_label}}"}
                     visible: {binding: jobDetails.scheduling_diagnosis.requirements_label, empty: true, not: true}
-                    style: {role: detail, tone: muted}
+                    style: {role: detail, tone: awaiting}
                   - component: list
                     layout: {direction: vertical, gap: small}
                     repeat: {source: jobDetails.scheduling_diagnosis.agents, as: schedulingAgent, key: schedulingAgent.agent_id}
                     children:
                       - component: text
                         text: {template: "{{schedulingAgent.agent_id}}: {{schedulingAgent.status}} — {{schedulingAgent.details}}"}
-                        style: {role: detail, toneBinding: schedulingAgent.tone}
+                        style: {role: detail, tone: awaiting}
                   - component: text
                     text: {binding: jobDetails.scheduling_diagnosis.additional_agents_label}
                     visible: {binding: jobDetails.scheduling_diagnosis.additional_agents_label, empty: true, not: true}
-                    style: {role: detail, tone: muted}
+                    style: {role: detail, tone: awaiting}
               - component: card
                 layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
                 children:

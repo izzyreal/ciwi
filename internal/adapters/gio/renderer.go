@@ -176,6 +176,7 @@ type palette struct {
 	heroStart, heroEnd, surface, surfaceRaised, surfaceGlow, subtle              color.NRGBA
 	text, muted, accent, accentStrong, pillBackground, pillText                  color.NRGBA
 	noticeBackground, noticeText, noticeBorder                                   color.NRGBA
+	awaitingSurface, awaitingBorder, awaitingText                                color.NRGBA
 	border, success, warning, danger, focus                                      color.NRGBA
 	consoleBackground, consoleSurface, consoleBorder                             color.NRGBA
 	consoleText, consoleMuted, consoleAccent, consoleSuccess                     color.NRGBA
@@ -1482,6 +1483,8 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			content = r.surfaceWithFillProgress(content, padding, r.palette.surfaceRaised, surfaceProgress)
 		} else if node.Component == "card" && node.Style.Role == "output-system" {
 			content = r.surfaceWithBorder(content, padding, r.palette.consoleSurface, r.palette.consoleBorder)
+		} else if node.Component == "card" && node.Style.Role == "scheduling-awaiting" {
+			content = r.surfaceWithBorder(content, padding, r.palette.awaitingSurface, r.palette.awaitingBorder)
 		} else {
 			content = r.surface(content, padding, node.Style.Role == "hero", surfaceProgress)
 		}
@@ -2618,6 +2621,8 @@ func (r *Renderer) toneColor(tone string) (color.NRGBA, bool) {
 		return r.palette.success, true
 	case "warning":
 		return r.palette.warning, true
+	case "awaiting":
+		return r.palette.awaitingText, true
 	case "danger":
 		return r.palette.danger, true
 	case "focus":
@@ -3944,6 +3949,9 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 	p.noticeBackground = p.surfaceRaised
 	p.noticeText = p.text
 	p.noticeBorder = p.border
+	p.awaitingSurface = p.surfaceRaised
+	p.awaitingBorder = p.warning
+	p.awaitingText = p.warning
 	if gradient, ok := theme.Gradients["page"]; ok && len(gradient.Stops) >= 2 {
 		p.backgroundStart, err = parseColor(gradient.Stops[0].Color)
 		if err != nil {
@@ -3960,6 +3968,8 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 		"surface-raised": &p.surfaceRaised, "surface-glow": &p.surfaceGlow,
 		"pill-background": &p.pillBackground, "pill-text": &p.pillText,
 		"notice-background": &p.noticeBackground, "notice-text": &p.noticeText, "notice-border": &p.noticeBorder,
+		"awaiting-surface": &p.awaitingSurface, "awaiting-border": &p.awaitingBorder,
+		"awaiting-text":      &p.awaitingText,
 		"console-background": &p.consoleBackground, "console-surface": &p.consoleSurface,
 		"console-border": &p.consoleBorder, "console-text": &p.consoleText,
 		"console-muted": &p.consoleMuted, "console-accent": &p.consoleAccent,

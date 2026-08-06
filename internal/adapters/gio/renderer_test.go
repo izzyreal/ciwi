@@ -44,6 +44,45 @@ func TestCiwiFontCollectionContainsExplicitMonospaceFaces(t *testing.T) {
 	}
 }
 
+func TestAwaitingPaletteTextContrastAcrossThemes(t *testing.T) {
+	themes, err := sharedUI.LoadThemes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, theme := range themes {
+		background, parseErr := parseColor(theme.Theme.Colors["awaiting-surface"])
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		for _, token := range []string{"awaiting-text"} {
+			foreground, foregroundErr := parseColor(theme.Theme.Colors[token])
+			if foregroundErr != nil {
+				t.Fatal(foregroundErr)
+			}
+			if ratio := contrastRatio(background, foreground); ratio < 4.5 {
+				t.Errorf("theme %q %s contrast = %.2f, want at least 4.5", theme.Metadata.Name, token, ratio)
+			}
+		}
+	}
+}
+
+func contrastRatio(first, second color.NRGBA) float64 {
+	firstLuminance := relativeLuminance(first)
+	secondLuminance := relativeLuminance(second)
+	return (max(firstLuminance, secondLuminance) + .05) / (min(firstLuminance, secondLuminance) + .05)
+}
+
+func relativeLuminance(value color.NRGBA) float64 {
+	linear := func(channel uint8) float64 {
+		normalized := float64(channel) / 255
+		if normalized <= .04045 {
+			return normalized / 12.92
+		}
+		return math.Pow((normalized+.055)/1.055, 2.4)
+	}
+	return .2126*linear(value.R) + .7152*linear(value.G) + .0722*linear(value.B)
+}
+
 func TestCSSGradientLineUsesWebAngleCoordinates(t *testing.T) {
 	start, end := cssGradientLine(image.Rect(0, 0, 200, 100), 145)
 	if end.X <= start.X || end.Y <= start.Y {
@@ -200,6 +239,9 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 		"notice-background": renderer.palette.noticeBackground,
 		"notice-text":       renderer.palette.noticeText,
 		"notice-border":     renderer.palette.noticeBorder,
+		"awaiting-surface":  renderer.palette.awaitingSurface,
+		"awaiting-border":   renderer.palette.awaitingBorder,
+		"awaiting-text":     renderer.palette.awaitingText,
 		"console-surface":   renderer.palette.consoleSurface,
 		"console-text":      renderer.palette.consoleText,
 		"console-muted":     renderer.palette.consoleMuted,

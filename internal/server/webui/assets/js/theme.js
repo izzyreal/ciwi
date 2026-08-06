@@ -37,6 +37,8 @@ function ciwiApplyContractTheme(name) {
       'surface-glow': '--card-glow', text: '--ink', 'text-muted': '--muted',
       accent: '--accent', 'accent-strong': '--accent-strong', border: '--line',
       success: '--ok', warning: '--warn', danger: '--bad',
+      'awaiting-surface': '--awaiting-bg', 'awaiting-border': '--awaiting-line',
+      'awaiting-text': '--awaiting-ink',
       'pill-background': '--pill-bg', 'pill-text': '--pill-ink',
       'notice-background': '--snackbar-bg', 'notice-text': '--snackbar-ink', 'notice-border': '--snackbar-line',
       'console-background': '--console-bg', 'console-surface': '--console-surface',
