@@ -1,6 +1,6 @@
 # ciwi
 
-![ciwi logo](internal/server/assets/ciwi-logo.png)
+![ciwi logo](internal/server/webui/assets/ciwi-logo.png)
 
 Simple, portable, single-binary CI/CD server + agent.
 
