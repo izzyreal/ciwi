@@ -232,7 +232,7 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 			horizontalScroller = &layout.List{Axis: layout.Horizontal}
 			r.scrollers[path+"/horizontal"] = horizontalScroller
 		}
-		return widget.Border{Color: r.palette.border, CornerRadius: r.metrics.controlRadius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return r.layoutCachedBorder(gtx, r.palette.border, r.metrics.controlRadius, 1, func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y = viewportHeight
 			gtx.Constraints.Max.Y = viewportHeight
 			viewportWidth := gtx.Constraints.Max.X
@@ -498,9 +498,9 @@ func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Nod
 		borderColor = r.palette.accentStrong
 	}
 	content := func(gtx layout.Context) layout.Dimensions {
-		return widget.Border{Color: borderColor, CornerRadius: r.metrics.controlRadius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return r.layoutCachedBorder(gtx, borderColor, r.metrics.controlRadius, 1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(r.metrics.controlRadius)).Op(gtx.Ops))
+				r.paintCachedRoundedFill(gtx, gtx.Constraints.Min, r.metrics.controlRadius, background)
 				return layout.Dimensions{Size: gtx.Constraints.Min}
 			}, func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(10).Layout(gtx, func(gtx layout.Context) layout.Dimensions {

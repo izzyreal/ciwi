@@ -82,6 +82,7 @@ type Renderer struct {
 	pageBackground         paint.ImageOp
 	pageBackgroundReady    bool
 	surfaceBackgrounds     map[backgroundTextureKey]paint.ImageOp
+	visualOps              *visualOpCache
 	statusText             widget.Editor
 	shownStatus            string
 	onAction               ActionHandler
@@ -214,6 +215,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{}, outputEditors: map[string]*widget.Editor{},
 		icons: iconSet, images: imageSet, dynamicImages: map[string]dynamicImage{},
 		surfaceBackgrounds: map[backgroundTextureKey]paint.ImageOp{},
+		visualOps:          newVisualOpCache(maxVisualOpCacheEntries),
 		activeOperations:   map[string]operations.Operation{},
 	}
 	renderer.statusText.ReadOnly = true
@@ -757,6 +759,10 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 		r.pendingThemeName = ""
 		r.pageBackgroundReady = false
 		r.surfaceBackgrounds = map[backgroundTextureKey]paint.ImageOp{}
+		r.visualOps.reset()
+		for _, icon := range r.icons {
+			icon.resetVisualCache()
+		}
 	}
 	screen, data, status, resetScroll := r.screen, r.data, r.status, r.resetScroll
 	pendingScrollSection := r.pendingScrollSection
@@ -945,14 +951,18 @@ func gradientTextureSize(target image.Point) image.Point {
 }
 
 func paintScaledImage(gtx layout.Context, imageOp paint.ImageOp, target image.Point) {
+	paintScaledImageOps(gtx.Ops, imageOp, target)
+}
+
+func paintScaledImageOps(ops *op.Ops, imageOp paint.ImageOp, target image.Point) {
 	source := imageOp.Size()
 	if source.X <= 0 || source.Y <= 0 || target.X <= 0 || target.Y <= 0 {
 		return
 	}
 	scale := f32.Pt(float32(target.X)/float32(source.X), float32(target.Y)/float32(source.Y))
-	transform := op.Affine(f32.AffineId().Scale(f32.Point{}, scale)).Push(gtx.Ops)
-	imageOp.Add(gtx.Ops)
-	paint.PaintOp{}.Add(gtx.Ops)
+	transform := op.Affine(f32.AffineId().Scale(f32.Point{}, scale)).Push(ops)
+	imageOp.Add(ops)
+	paint.PaintOp{}.Add(ops)
 	transform.Pop()
 }
 
@@ -1306,7 +1316,9 @@ func (r *Renderer) layoutSkeleton(gtx layout.Context) layout.Dimensions {
 	fill := r.palette.border
 	fill.A = uint8(math.Round(float64(fill.A) * opacity))
 	radius := size.Y / 2
-	paint.FillShape(gtx.Ops, fill, clip.UniformRRect(image.Rectangle{Max: size}, radius).Op(gtx.Ops))
+	stack := r.cachedRoundedClipPx(gtx.Ops, size, radius).Push(gtx.Ops)
+	paint.Fill(gtx.Ops, fill)
+	stack.Pop()
 	return layout.Dimensions{Size: size}
 }
 
@@ -1921,7 +1933,6 @@ func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widg
 				if node.Component == "disclosure" {
 					radius = r.metrics.surfaceRadius
 				}
-				progressClip := clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(radius)).Push(gtx.Ops)
 				fill := r.palette.success
 				var underlay *color.NRGBA
 				if node.Style.Role == "output-group" {
@@ -1933,6 +1944,7 @@ func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widg
 					radius = 0
 					underlay = &r.palette.subtle
 				}
+				progressClip := r.cachedRoundedClip(gtx, size, radius).Push(gtx.Ops)
 				r.paintSemanticProgress(gtx, progress, size, fill, underlay)
 				progressClip.Pop()
 				return layout.Dimensions{Size: size}
@@ -2569,14 +2581,16 @@ func (r *Renderer) layoutBadge(gtx layout.Context, node uidsl.Node, data any, pa
 		rect := image.Rectangle{Max: gtx.Constraints.Min}
 		radius := rect.Dy() / 2
 		if borderWidth > 0 {
-			paint.FillShape(gtx.Ops, border, clip.UniformRRect(rect, radius).Op(gtx.Ops))
+			r.paintCachedRoundedFillPx(gtx.Ops, rect.Size(), radius, border)
 			inset := max(1, gtx.Dp(borderWidth))
 			inner := rect.Inset(inset)
 			if !inner.Empty() {
-				paint.FillShape(gtx.Ops, background, clip.UniformRRect(inner, max(0, radius-inset)).Op(gtx.Ops))
+				offset := op.Offset(inner.Min).Push(gtx.Ops)
+				r.paintCachedRoundedFillPx(gtx.Ops, inner.Size(), max(0, radius-inset), background)
+				offset.Pop()
 			}
 		} else {
-			paint.FillShape(gtx.Ops, background, clip.UniformRRect(rect, radius).Op(gtx.Ops))
+			r.paintCachedRoundedFillPx(gtx.Ops, rect.Size(), radius, background)
 		}
 		return layout.Dimensions{Size: rect.Size()}
 	}, func(gtx layout.Context) layout.Dimensions {
@@ -2844,7 +2858,7 @@ func (r *Renderer) layoutInput(gtx layout.Context, node uidsl.Node, data any, pa
 		inputData := mergeData(data, "input", map[string]any{"value": editor.Text()})
 		r.dispatchFromLayout(gtx, node.Actions[0], inputData)
 	}
-	return widget.Border{Color: r.palette.border, CornerRadius: r.metrics.controlRadius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return r.layoutCachedBorder(gtx, r.palette.border, r.metrics.controlRadius, 1, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: r.metrics.controlPaddingY, Right: r.metrics.controlPaddingX, Bottom: r.metrics.controlPaddingY, Left: r.metrics.controlPaddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			if node.Input.Multiline && node.Input.MinLines > 1 {
 				minimum := gtx.Dp(unit.Dp(float32(node.Input.MinLines) * 24))
@@ -3075,9 +3089,9 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 		borderColor = r.palette.focus
 	}
 	radius := r.metrics.controlRadius
-	return widget.Border{Color: borderColor, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return r.layoutCachedBorder(gtx, borderColor, radius, 1, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
+			r.paintCachedRoundedFill(gtx, gtx.Constraints.Min, radius, background)
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
 			if iconName == "loader-2" {
@@ -3170,9 +3184,9 @@ func (r *Renderer) layoutIconButton(gtx layout.Context, button *widget.Clickable
 		borderColor = r.palette.focus
 	}
 	radius := r.metrics.controlRadius
-	return widget.Border{Color: borderColor, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return r.layoutCachedBorder(gtx, borderColor, radius, 1, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
+			r.paintCachedRoundedFill(gtx, gtx.Constraints.Min, radius, background)
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
 			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -3205,9 +3219,9 @@ func (r *Renderer) layoutTonedIconButton(gtx layout.Context, button *widget.Clic
 		borderColor = r.palette.focus
 	}
 	radius := r.metrics.controlRadius
-	return widget.Border{Color: borderColor, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return r.layoutCachedBorder(gtx, borderColor, radius, 1, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, background, clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, gtx.Dp(radius)).Op(gtx.Ops))
+			r.paintCachedRoundedFill(gtx, gtx.Constraints.Min, radius, background)
 			return layout.Dimensions{Size: gtx.Constraints.Min}
 		}, func(gtx layout.Context) layout.Dimensions {
 			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -3224,7 +3238,7 @@ func (r *Renderer) layoutTonedIconButton(gtx layout.Context, button *widget.Clic
 func (r *Renderer) surface(content layout.Widget, padding unit.Dp, hero bool, progress *semanticProgress) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		radius := r.metrics.surfaceRadius
-		return widget.Border{Color: r.palette.border, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return r.layoutCachedBorder(gtx, r.palette.border, radius, 1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				rect := image.Rectangle{Max: gtx.Constraints.Min}
 				r.paintSurfaceBackground(gtx, rect, radius, hero, 0)
@@ -3247,7 +3261,7 @@ func (r *Renderer) paintSurfaceProgress(gtx layout.Context, progress semanticPro
 	if animated {
 		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
 	}
-	surfaceClip := clip.UniformRRect(surfaceRect, gtx.Dp(radius)).Push(gtx.Ops)
+	surfaceClip := r.cachedRoundedClip(gtx, surfaceRect.Size(), radius).Push(gtx.Ops)
 	progressClip := clip.Rect(progressRect).Push(gtx.Ops)
 	progressColor := r.palette.success
 	progressColor.A = uint8(math.Round(float64(progressColor.A) * opacity))
@@ -3257,8 +3271,23 @@ func (r *Renderer) paintSurfaceProgress(gtx layout.Context, progress semanticPro
 }
 
 func (r *Renderer) paintSurfaceBackground(gtx layout.Context, rect image.Rectangle, radius unit.Dp, hero bool, _ float64) {
+	radiusPx := gtx.Dp(radius)
+	variant := "surface"
+	if hero {
+		variant = "hero"
+	}
+	key := visualOpKey{
+		kind: "surface-background", variant: variant, size: rect.Size(), radius: radiusPx,
+		color1: r.palette.surface, color2: r.palette.surfaceGlow,
+	}
+	r.visualOps.add(gtx.Ops, key, func(ops *op.Ops) {
+		r.paintSurfaceBackgroundOps(ops, image.Rectangle{Max: rect.Size()}, radiusPx, hero)
+	})
+}
+
+func (r *Renderer) paintSurfaceBackgroundOps(ops *op.Ops, rect image.Rectangle, radiusPx int, hero bool) {
 	if r.palette.surfaceGlow.A != 0 {
-		stack := clip.UniformRRect(rect, gtx.Dp(radius)).Push(gtx.Ops)
+		stack := clip.UniformRRect(rect, radiusPx).Push(ops)
 		textureSize := gradientTextureSize(rect.Size())
 		key := backgroundTextureKey{size: textureSize}
 		background, ok := r.surfaceBackgrounds[key]
@@ -3270,18 +3299,18 @@ func (r *Renderer) paintSurfaceBackground(gtx layout.Context, rect image.Rectang
 			background.Filter = paint.FilterLinear
 			r.surfaceBackgrounds[key] = background
 		}
-		paintScaledImage(gtx, background, rect.Size())
+		paintScaledImageOps(ops, background, rect.Size())
 		stack.Pop()
 	} else if hero {
-		stack := clip.UniformRRect(rect, gtx.Dp(radius)).Push(gtx.Ops)
+		stack := clip.UniformRRect(rect, radiusPx).Push(ops)
 		paint.LinearGradientOp{
 			Stop1: f32.Pt(0, 0), Color1: r.palette.heroStart,
 			Stop2: f32.Pt(float32(rect.Dx()), float32(rect.Dy())), Color2: r.palette.heroEnd,
-		}.Add(gtx.Ops)
-		paint.PaintOp{}.Add(gtx.Ops)
+		}.Add(ops)
+		paint.PaintOp{}.Add(ops)
 		stack.Pop()
 	} else {
-		paint.FillShape(gtx.Ops, r.palette.surface, clip.UniformRRect(rect, gtx.Dp(radius)).Op(gtx.Ops))
+		paint.FillShape(ops, r.palette.surface, clip.UniformRRect(rect, radiusPx).Op(ops))
 	}
 }
 
@@ -3304,16 +3333,15 @@ func (r *Renderer) surfaceWithBorderProgress(content layout.Widget, padding unit
 func (r *Renderer) surfaceWithBorderProgressColor(content layout.Widget, padding unit.Dp, fill, border color.NRGBA, progress *semanticProgress, progressColor color.NRGBA) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		radius := r.metrics.surfaceRadius
-		return widget.Border{Color: border, CornerRadius: radius, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return r.layoutCachedBorder(gtx, border, radius, 1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Min
-				bounds := clip.UniformRRect(image.Rectangle{Max: size}, gtx.Dp(radius))
-				stack := bounds.Push(gtx.Ops)
-				paint.Fill(gtx.Ops, fill)
+				r.paintCachedRoundedFill(gtx, size, radius, fill)
 				if progress != nil {
+					stack := r.cachedRoundedClip(gtx, size, radius).Push(gtx.Ops)
 					r.paintSemanticProgress(gtx, *progress, size, progressColor, &fill)
+					stack.Pop()
 				}
-				stack.Pop()
 				return layout.Dimensions{Size: size}
 			}, func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(padding).Layout(gtx, content)

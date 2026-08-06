@@ -16,11 +16,21 @@ import (
 
 type nativeIcon interface {
 	Layout(layout.Context, color.NRGBA) layout.Dimensions
+	resetVisualCache()
+}
+
+func (icon *cachedNativeIcon) resetVisualCache() {
+	icon.cache.reset()
 }
 
 type tablerIcon struct{ draw func(*clip.Path) }
 
-func (icon tablerIcon) Layout(gtx layout.Context, ink color.NRGBA) layout.Dimensions {
+type cachedNativeIcon struct {
+	icon  tablerIcon
+	cache *visualOpCache
+}
+
+func (icon *cachedNativeIcon) Layout(gtx layout.Context, ink color.NRGBA) layout.Dimensions {
 	size := gtx.Constraints.Min.X
 	if size == 0 {
 		size = gtx.Dp(24)
@@ -28,10 +38,13 @@ func (icon tablerIcon) Layout(gtx layout.Context, ink color.NRGBA) layout.Dimens
 	size = gtx.Constraints.Constrain(image.Pt(size, size)).X
 	scale := float32(size) / 24
 	transform := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(scale, scale))).Push(gtx.Ops)
-	var path clip.Path
-	path.Begin(gtx.Ops)
-	icon.draw(&path)
-	paint.FillShape(gtx.Ops, ink, clip.Stroke{Path: path.End(), Width: 1.9}.Op())
+	key := visualOpKey{kind: "tabler-icon", color1: ink}
+	icon.cache.add(gtx.Ops, key, func(ops *op.Ops) {
+		var path clip.Path
+		path.Begin(ops)
+		icon.icon.draw(&path)
+		paint.FillShape(ops, ink, clip.Stroke{Path: path.End(), Width: 1.9}.Op())
+	})
 	transform.Pop()
 	return layout.Dimensions{Size: image.Pt(size, size)}
 }
@@ -69,7 +82,7 @@ func tablerIcons() map[string]nativeIcon {
 	arc := func(from, c1, c2, to f32.Point) func(*clip.Path) {
 		return func(path *clip.Path) { path.MoveTo(from); path.CubeTo(c1, c2, to) }
 	}
-	return map[string]nativeIcon{
+	definitions := map[string]tablerIcon{
 		"arrow-left":        tablerIcon{paths(line(f32.Pt(5, 12), f32.Pt(19, 12)), line(f32.Pt(5, 12), f32.Pt(11, 18)), line(f32.Pt(5, 12), f32.Pt(11, 6)))},
 		"arrow-up":          tablerIcon{paths(line(f32.Pt(12, 5), f32.Pt(12, 19)), line(f32.Pt(18, 11), f32.Pt(12, 5), f32.Pt(6, 11)))},
 		"arrow-bar-to-down": tablerIcon{paths(line(f32.Pt(4, 4), f32.Pt(20, 4)), line(f32.Pt(12, 10), f32.Pt(12, 20)), line(f32.Pt(8, 16), f32.Pt(12, 20), f32.Pt(16, 16)))},
@@ -111,4 +124,9 @@ func tablerIcons() map[string]nativeIcon {
 		"adjustments":    tablerIcon{paths(line(f32.Pt(4, 6), f32.Pt(10, 6)), line(f32.Pt(14, 6), f32.Pt(20, 6)), circle(f32.Pt(12, 6), 2), line(f32.Pt(4, 12), f32.Pt(6, 12)), line(f32.Pt(10, 12), f32.Pt(20, 12)), circle(f32.Pt(8, 12), 2), line(f32.Pt(4, 18), f32.Pt(14, 18)), line(f32.Pt(18, 18), f32.Pt(20, 18)), circle(f32.Pt(16, 18), 2))},
 		"settings":       tablerIcon{paths(circle(f32.Pt(12, 12), 3), circle(f32.Pt(12, 12), 8), line(f32.Pt(12, 2), f32.Pt(12, 4)), line(f32.Pt(12, 20), f32.Pt(12, 22)), line(f32.Pt(2, 12), f32.Pt(4, 12)), line(f32.Pt(20, 12), f32.Pt(22, 12)), line(f32.Pt(5, 5), f32.Pt(6.5, 6.5)), line(f32.Pt(17.5, 17.5), f32.Pt(19, 19)), line(f32.Pt(19, 5), f32.Pt(17.5, 6.5)), line(f32.Pt(6.5, 17.5), f32.Pt(5, 19)))},
 	}
+	icons := make(map[string]nativeIcon, len(definitions))
+	for name, definition := range definitions {
+		icons[name] = &cachedNativeIcon{icon: definition, cache: newVisualOpCache(8)}
+	}
+	return icons
 }
