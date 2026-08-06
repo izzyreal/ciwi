@@ -146,6 +146,36 @@ func TestSettingsHeaderMatchesAuthoritativeNavigation(t *testing.T) {
 	})
 }
 
+func TestFrontPagePipelineProgressUsesSectionHeaderSurface(t *testing.T) {
+	screen, err := LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var matches []*uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.Progress != nil && node.Progress.Binding == "section.progress" {
+			matches = append(matches, node)
+		}
+	})
+	if len(matches) != 1 {
+		t.Fatalf("section progress surfaces = %d, want 1", len(matches))
+	}
+	header := matches[0]
+	if header.Component != "row" || header.Style.Role != "execution-section-header" {
+		t.Fatalf("section progress target = component %q role %q, want execution-section-header row", header.Component, header.Style.Role)
+	}
+	if header.Layout.Padding != "small" || len(header.Children) != 1 {
+		t.Fatalf("section header layout = %#v with %d children", header.Layout, len(header.Children))
+	}
+	label := header.Children[0]
+	if label.Component != "text" || label.Progress != nil || label.Text == nil || label.Text.Template != "pipeline: {{section.label}}" {
+		t.Fatalf("section header label = %#v", label)
+	}
+	if label.Style.Role != "detail-small" || label.Style.Emphasis != "strong" || label.Style.Tone != "muted" {
+		t.Fatalf("section header label style = %#v", label.Style)
+	}
+}
+
 func TestSettingsAppearanceMatchesAuthoritativeStructure(t *testing.T) {
 	screen, err := LoadScreen("settings")
 	if err != nil {

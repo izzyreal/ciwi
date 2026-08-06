@@ -1699,6 +1699,85 @@ func TestProgressTrackUsesAvailableWidth(t *testing.T) {
 	}
 }
 
+func TestExecutionSectionHeaderProgressUsesFullPaddedHeader(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header *uidsl.Node
+	var findHeader func(uidsl.Node)
+	findHeader = func(node uidsl.Node) {
+		if node.Style.Role == "execution-section-header" {
+			copy := node
+			header = &copy
+			return
+		}
+		for _, child := range node.Children {
+			findHeader(child)
+		}
+		if node.Disclosure != nil {
+			for _, child := range node.Disclosure.Summary {
+				findHeader(child)
+			}
+		}
+	}
+	findHeader(screen.Screen.Root)
+	if header == nil {
+		t.Fatal("execution section header is missing")
+	}
+	data := map[string]any{"section": map[string]any{
+		"label":    "build",
+		"progress": map[string]any{"state": "determinate", "fraction": .25},
+	}}
+	for _, width := range []int{390, 844} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Constraints{Max: image.Pt(width, 100)}}
+			dimensions := renderer.layoutNode(gtx, *header, data, "section-header")
+			if dimensions.Size.X != width {
+				t.Fatalf("section header width = %d, want %d", dimensions.Size.X, width)
+			}
+			minimumHeight := 2*gtx.Dp(renderer.metrics.spaceSmall) + gtx.Sp(12)
+			if dimensions.Size.Y < minimumHeight {
+				t.Fatalf("section header height = %d, want at least padded label height %d", dimensions.Size.Y, minimumHeight)
+			}
+		})
+	}
+}
+
+func TestExecutionSectionHeaderProgressRetainsSemanticFill(t *testing.T) {
+	size := image.Pt(400, 32)
+	now := time.Unix(100, 0)
+	tests := []struct {
+		name      string
+		progress  semanticProgress
+		wantWidth int
+	}{
+		{name: "determinate", progress: semanticProgress{state: "determinate", fraction: .25}, wantWidth: 100},
+		{name: "indeterminate", progress: semanticProgress{state: "indeterminate"}, wantWidth: 88},
+		{name: "overrun", progress: semanticProgress{state: "overrun", fraction: 1}, wantWidth: 400},
+		{name: "complete", progress: semanticProgress{state: "complete", fraction: 1}, wantWidth: 400},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rect, _, _, ok := semanticProgressPaint(test.progress, size, now)
+			if !ok {
+				t.Fatal("semantic progress did not produce a fill")
+			}
+			if rect.Dx() != test.wantWidth || rect.Dy() != size.Y {
+				t.Fatalf("progress fill = %v, want width %d and full height %d", rect, test.wantWidth, size.Y)
+			}
+		})
+	}
+}
+
 func TestDisclosureProgressAlwaysUsesStableHeaderLayer(t *testing.T) {
 	node := uidsl.Node{Component: "disclosure", Style: uidsl.Style{Role: "output-group"}}
 	if usesSurfaceProgress(node, false) {
@@ -1723,6 +1802,27 @@ func TestHeartbeatPulseMatchesBrowserFade(t *testing.T) {
 	}
 	if got := heartbeatPulseOpacity(0, now); got != heartbeatPulseMinimum {
 		t.Fatalf("missing heartbeat opacity = %g, want %g", got, heartbeatPulseMinimum)
+	}
+}
+
+func TestHeartbeatUnixMillisAcceptsProtobufJSONIntegers(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  int64
+	}{
+		{name: "protobuf string", value: "1786000000123", want: 1786000000123},
+		{name: "floating point JSON", value: float64(1786000000123), want: 1786000000123},
+		{name: "native integer", value: int64(1786000000123), want: 1786000000123},
+		{name: "zero", value: "0", want: 0},
+		{name: "malformed", value: "not-a-timestamp", want: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := heartbeatUnixMillis(test.value); got != test.want {
+				t.Fatalf("heartbeat timestamp = %d, want %d", got, test.want)
+			}
+		})
 	}
 }
 

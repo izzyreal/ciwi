@@ -1,7 +1,17 @@
     let refreshInFlight = false;
     const refreshGuard = createRefreshGuard(5000);
-    const lastSeenByAgent = {};
-    const heartbeatBeatAtByAgent = {};
+
+    function updateHeartbeatVisuals() {
+      const now = Date.now();
+      document.querySelectorAll('[data-heartbeat-unix-ms]').forEach(element => {
+        const timestamp = element.getAttribute('data-heartbeat-unix-ms') || '';
+        if (element.classList.contains('heartbeat-icon')) {
+          element.style.opacity = String(window.ciwiHeartbeat.opacity(timestamp, now));
+        } else if (element.classList.contains('heartbeat-age')) {
+          element.textContent = window.ciwiHeartbeat.ageLabel(timestamp, now);
+        }
+      });
+    }
 
     function formatUpdatePrimaryText(a) {
       if (!a || !a.update_requested) return '';
@@ -69,24 +79,8 @@
             activationBadge +
             primaryUpdateText +
             retryText;
-          const agentID = String(a.agent_id || '');
           const lastSeen = String(a.last_seen_utc || '');
-          const prevLastSeen = String(lastSeenByAgent[agentID] || '');
-          if (lastSeen && lastSeen !== prevLastSeen) {
-            heartbeatBeatAtByAgent[agentID] = Date.now();
-          }
-          lastSeenByAgent[agentID] = lastSeen;
-          const beatAt = Number(heartbeatBeatAtByAgent[agentID] || 0);
-          const elapsed = Math.max(0, Date.now() - beatAt);
-          const pulseClass = beatAt > 0 ? 'pulse' : '';
-          let pulseStyle = '';
-          if (pulseClass) {
-            if (elapsed < 10000) {
-              pulseStyle = ' style="animation-delay:-' + String(elapsed) + 'ms;"';
-            } else {
-              pulseStyle = ' style="opacity:.18;"';
-            }
-          }
+          const lastSeenUnixMS = window.ciwiHeartbeat.timestampMilliseconds(lastSeen);
           const runModeRaw = String((a.capabilities && a.capabilities.run_mode) || '').trim().toLowerCase();
           const runModeLabel = runModeRaw === 'service' ? 'Service' : 'Manual';
           const actionHTML = authorized
@@ -97,12 +91,13 @@
             '<td>' + escapeHtml(a.hostname || '') + '</td>' +
             '<td>' + escapeHtml((a.os || '') + '/' + (a.arch || '')) + '</td>' +
             '<td>' + versionCell + '</td>' +
-            '<td class="heartbeat-cell"><div class="heartbeat-wrap"><span class="heartbeat-icon ' + pulseClass + '"' + pulseStyle + ' role="img" aria-label="heartbeat">❤️</span><span class="heartbeat-age">' + escapeHtml(humanizeHeartbeat(lastSeen)) + '</span></div></td>' +
+            '<td class="heartbeat-cell"><div class="heartbeat-wrap"><span class="heartbeat-icon" data-heartbeat-unix-ms="' + String(lastSeenUnixMS) + '" role="img" aria-label="heartbeat">❤️</span><span class="heartbeat-age" data-heartbeat-unix-ms="' + String(lastSeenUnixMS) + '">' + escapeHtml(window.ciwiHeartbeat.ageLabel(lastSeenUnixMS, Date.now())) + '</span></div></td>' +
             '<td class="' + s.cls + '">' + s.label + '</td>' +
             '<td class="run-mode">' + runModeLabel + '</td>' +
             '<td>' + actionHTML + '</td>';
           rows.appendChild(tr);
         }
+        updateHeartbeatVisuals();
         rows.querySelectorAll('button[data-action]').forEach(btn => {
           btn.addEventListener('click', async () => {
             const id = btn.getAttribute('data-agent-id') || '';
@@ -162,23 +157,8 @@
       }
     }
 
-    function humanizeHeartbeat(ts) {
-      const t = String(ts || '').trim();
-      if (!t) return 'never';
-      const d = new Date(t);
-      if (Number.isNaN(d.getTime())) return formatTimestamp(t);
-      const diffMs = Date.now() - d.getTime();
-      if (diffMs < 0) return 'just now';
-      const sec = Math.floor(diffMs / 1000);
-      if (sec < 60) return sec + 's ago';
-      const min = Math.floor(sec / 60);
-      if (min < 60) return min + 'm ago';
-      const hr = Math.floor(min / 60);
-      if (hr < 24) return hr + 'h ago';
-      const day = Math.floor(hr / 24);
-      return day + 'd ago';
-    }
     document.getElementById('refreshBtn').onclick = refreshAgents;
     refreshGuard.bindSelectionListener();
     refreshAgents();
     setInterval(refreshAgents, 3000);
+    setInterval(updateHeartbeatVisuals, 250);

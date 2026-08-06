@@ -1,5 +1,10 @@
 @import url("/ui/css/typography.css");
 
+:root {
+  --ciwi-heartbeat-fade-duration: 8s;
+  --ciwi-heartbeat-min-opacity: .18;
+}
+
     :root[data-ciwi-theme="pina-colada"] {
       --bg: #fff8e8;
       --bg2: #ead29c;

@@ -630,14 +630,23 @@ screen:
                           direction: vertical
                           gap: small
                         children:
-                          - component: text
+                          - component: row
                             progress:
                               binding: section.progress
-                            text:
-                              template: "pipeline: {{section.label}}"
+                            layout:
+                              direction: horizontal
+                              align: center
+                              padding: small
                             style:
-                              emphasis: strong
-                              tone: muted
+                              role: execution-section-header
+                            children:
+                              - component: text
+                                text:
+                                  template: "pipeline: {{section.label}}"
+                                style:
+                                  role: detail-small
+                                  emphasis: strong
+                                  tone: muted
                           - component: list
                             layout:
                               direction: vertical

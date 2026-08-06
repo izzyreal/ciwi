@@ -3,7 +3,8 @@ package protocol
 import "time"
 
 const (
-	AgentHeartbeatInterval = 10 * time.Second
+	AgentHeartbeatInterval     = 10 * time.Second
+	AgentHeartbeatFadeDuration = AgentHeartbeatInterval * 4 / 5
 )
 
 type HeartbeatRequest struct {

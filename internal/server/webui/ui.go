@@ -24,6 +24,7 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ui/fonts/ciwi-mono-bold.ttf":    {"assets/fonts/GeistMono-Bold.ttf", "font/ttf", true},
 	"/ui/icons.svg":                   {"assets/tabler-icons.svg", "image/svg+xml", true},
 	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", false},
+	"/ui/heartbeat.js":                {"assets/js/heartbeat.js", "application/javascript; charset=utf-8", false},
 	"/ui/shared.js":                   {"assets/js/shared.js", "application/javascript; charset=utf-8", false},
 	"/ui/actions.js":                  {"assets/js/actions.js", "application/javascript; charset=utf-8", false},
 	"/ui/pages.js":                    {"assets/js/pages.js", "application/javascript; charset=utf-8", false},

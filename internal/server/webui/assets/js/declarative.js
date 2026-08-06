@@ -44,9 +44,7 @@
 
   function updateTimestampPulse(element, nowMs) {
     const timestamp = Number(element && element.__ciwiPulseTimestamp || 0);
-    const elapsed = timestamp > 0 ? Math.max(0, Number(nowMs || Date.now()) - timestamp) : 10000;
-    const remaining = Math.max(0, Math.min(1, 1 - elapsed / 10000));
-    element.style.opacity = String(.18 + .82 * remaining);
+    element.style.opacity = String(window.ciwiHeartbeat.opacity(timestamp, nowMs));
   }
 
   function bindTimestampPulse(element, timestamp) {

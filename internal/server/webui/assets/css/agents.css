@@ -30,15 +30,10 @@
       font-size:21px;
       line-height:1;
       color:var(--bad);
-      opacity:.18;
+      opacity:var(--ciwi-heartbeat-min-opacity);
+      transition:opacity .25s linear;
       will-change: opacity;
     }
-    .heartbeat-icon.pulse {
-      animation: heartbeat-fade 10s linear forwards;
-    }
-    @keyframes heartbeat-fade {
-      0% { opacity: 1; }
-      100% { opacity: .18; }
-    }
+    @media (prefers-reduced-motion: reduce) { .heartbeat-icon { transition:none; } }
     .heartbeat-age { display:block; margin-top:4px; color:var(--muted); font-size:12px; white-space:nowrap; }
     .run-mode { white-space:nowrap; }

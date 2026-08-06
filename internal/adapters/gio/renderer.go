@@ -36,6 +36,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
 	_ "golang.org/x/image/bmp"
@@ -1294,6 +1295,15 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			}
 		}
 	}
+	if node.Style.Role == "execution-section-header" {
+		headerContent := content
+		content = func(gtx layout.Context) layout.Dimensions {
+			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				paint.FillShape(gtx.Ops, r.palette.subtle, clip.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Op())
+				return layout.Dimensions{Size: gtx.Constraints.Min}
+			}, headerContent)
+		}
+	}
 	if node.Component == "card" || node.Component == "disclosure" || node.Component == "section" || node.Component == "graph-view" || node.Style.Role == "hero" {
 		padding := unit.Dp(0)
 		if node.Component == "section" {
@@ -1770,7 +1780,7 @@ const (
 	indeterminateProgressDuration = 4 * time.Second
 	connectionPulseDuration       = 4 * time.Second
 	connectionPulseMinimum        = .58
-	heartbeatPulseDuration        = 10 * time.Second
+	heartbeatPulseDuration        = protocol.AgentHeartbeatFadeDuration
 	heartbeatPulseMinimum         = .18
 	compactLayoutWidth            = unit.Dp(520)
 )
@@ -1799,6 +1809,9 @@ func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widg
 					underlay = &r.palette.consoleSurface
 				} else if node.Style.Role == "execution-row" {
 					underlay = &r.palette.surfaceRaised
+				} else if node.Style.Role == "execution-section-header" {
+					radius = 0
+					underlay = &r.palette.subtle
 				}
 				r.paintSemanticProgress(gtx, progress, size, fill, underlay)
 				progressClip.Pop()
@@ -1902,6 +1915,25 @@ func heartbeatPulseOpacity(lastSeenUnixMS int64, now time.Time) float32 {
 	}
 	remaining := 1 - float64(elapsed)/float64(heartbeatPulseDuration)
 	return float32(heartbeatPulseMinimum + (1-heartbeatPulseMinimum)*remaining)
+}
+
+func heartbeatUnixMillis(value any) int64 {
+	switch typed := value.(type) {
+	case int64:
+		return typed
+	case int:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	case float32:
+		return int64(typed)
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func resolveSemanticProgress(data any, binding *uidsl.Progress) (semanticProgress, bool) {
@@ -2516,7 +2548,7 @@ func (r *Renderer) layoutIcon(gtx layout.Context, node uidsl.Node, data any) lay
 	if err != nil {
 		return r.errorLabel(gtx, err)
 	}
-	opacity := heartbeatPulseOpacity(int64(numberValue(value)), gtx.Now)
+	opacity := heartbeatPulseOpacity(heartbeatUnixMillis(value), gtx.Now)
 	if opacity > heartbeatPulseMinimum {
 		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
 	}
