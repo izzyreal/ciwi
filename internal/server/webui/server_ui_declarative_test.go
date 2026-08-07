@@ -380,6 +380,7 @@ func TestDeclarativeJobOutputRefreshPreservesStreamState(t *testing.T) {
 		"element.scrollTop = position.top",
 		"const pageScroll = {top: window.scrollY, left: window.scrollX}",
 		"window.scrollTo(pageScroll.left, pageScroll.top)",
+		"propertyTimestampFields", "declarativeExecutionTimestamp(group.started)",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("browser output refresh does not contain %q", expected)
@@ -472,6 +473,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) 18%",
 		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", ".dsl-output-group:not([open]) > summary",
 		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-output-group > summary { color:var(--console-accent)",
+		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
 		".dsl-project-row > summary > .dsl-disclosure-label",
 	} {

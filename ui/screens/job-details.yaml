@@ -156,7 +156,7 @@ screen:
                             style: {role: detail, emphasis: strong}
                           - component: text
                             text: {binding: cacheRow.value}
-                            style: {role: detail-small, toneBinding: cacheRow.tone}
+                            style: {role: cache-statistics, toneBinding: cacheRow.tone}
           - component: row
             layout: {direction: horizontal, gap: medium, align: start, wrap: true}
             children:

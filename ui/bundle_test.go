@@ -80,6 +80,9 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if got := typography.Typography.Roles["empty-state"].Size; got != 13 {
 		t.Fatalf("empty-state size = %v, want browser size 13", got)
 	}
+	if got := typography.Typography.Roles["cache-statistics"]; got.Family != "body" || got.Size != 12 {
+		t.Fatalf("cache-statistics typography = %+v, want shared 12px body role", got)
+	}
 	if len(themes) != 9 {
 		t.Fatalf("theme count = %d, want 9", len(themes))
 	}

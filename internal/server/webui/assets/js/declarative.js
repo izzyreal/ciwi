@@ -204,9 +204,11 @@
   function declarativeExecutionTimestamp(value) {
 	const parsed = new Date(String(value || ''));
 	if (Number.isNaN(parsed.getTime())) return '';
-	return parsed.toLocaleString(undefined, {
-	  weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-	});
+	const parts = Object.fromEntries(new Intl.DateTimeFormat(undefined, {
+	  weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+	}).formatToParts(parsed).map(part => [part.type, part.value]));
+	return [parts.weekday, parts.day, parts.month].filter(Boolean).join(' ') + ', ' +
+	  [parts.hour, parts.minute, parts.second].filter(Boolean).join(':');
   }
 
   function declarativeExecutionDuration(startedValue, finishedValue, status) {
@@ -298,6 +300,19 @@
 	  view[key].rows = Array.isArray(view[key].rows) ? view[key].rows : [];
 	});
 	view.release_summary = Array.isArray(view.release_summary) ? view.release_summary : [];
+	['created', 'started', 'finished'].forEach(field => {
+	  const formatted = declarativeExecutionTimestamp(view[field]);
+	  if (formatted) view[field] = formatted;
+	});
+	const propertyTimestampFields = {Created: 'created', Started: 'started'};
+	view.job_properties.forEach(property => {
+	  const field = propertyTimestampFields[String(property.label || '').trim()];
+	  if (field) property.value = view[field] || property.value;
+	});
+	(Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
+	  const formatted = declarativeExecutionTimestamp(group.started);
+	  if (formatted) group.started = formatted;
+	});
 	if (!view.run_context || typeof view.run_context !== 'object') {
 	  view.run_context = {available: false, scope_label: '', pipelines: []};
 	}
@@ -419,7 +434,10 @@
     if (layout.align) element.style.alignItems = layout.align;
     if (layout.justify) element.style.justifyContent = layout.justify;
     if (layout.wrap) element.style.flexWrap = 'wrap';
-    if (layout.grow) element.style.flexGrow = '1';
+    if (layout.grow) {
+      element.style.flexGrow = '1';
+      element.style.flexBasis = '0';
+    }
     if (layout.minWidth) element.style.minWidth = /^\d+$/.test(layout.minWidth) ? layout.minWidth + 'px' : layout.minWidth;
     if (layout.maxWidth && layout.maxWidth !== 'page') element.style.maxWidth = /^\d+$/.test(layout.maxWidth) ? layout.maxWidth + 'px' : layout.maxWidth;
     if (layout.minHeight) element.style.minHeight = /^\d+$/.test(layout.minHeight) ? layout.minHeight + 'px' : layout.minHeight;
