@@ -2598,6 +2598,23 @@ func TestProjectStructureFilterIncludesChainsAndSurvivesRefresh(t *testing.T) {
 	}
 }
 
+func TestManagedYAMLActionArgumentsPreserveCITemplateBindings(t *testing.T) {
+	raw := "steps:\n  - run: GOOS={{goos}} GOARCH={{goarch}} go build"
+	arguments, err := actionArguments(uidsl.Action{Arguments: map[string]string{
+		"projectId": "{{managedYAML.project_id}}",
+		"revision":  "{{managedYAML.revision}}",
+		"yaml":      "{{managedYAML.yaml}}",
+	}}, map[string]any{"managedYAML": map[string]any{
+		"project_id": 0, "revision": "", "yaml": raw,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if arguments["yaml"] != raw {
+		t.Fatalf("managed YAML argument = %q, want %q", arguments["yaml"], raw)
+	}
+}
+
 func BenchmarkRendererProjectDetailsCollapsed(b *testing.B) {
 	screen, err := sharedUI.LoadScreen("project-details")
 	if err != nil {

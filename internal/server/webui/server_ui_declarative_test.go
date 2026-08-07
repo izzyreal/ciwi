@@ -193,6 +193,28 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 	}
 }
 
+func TestDeclarativeBrowserManagedYAMLEditorUsesCorrectCreatePayloadAndFullWidth(t *testing.T) {
+	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stylePayload, err := uiAssets.ReadFile("assets/css/declarative.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	implementation := string(scriptPayload) + string(stylePayload)
+	for _, expected := range []string{
+		"? {revision: args.revision || '', yaml: args.yaml || ''}",
+		": {yaml: args.yaml || ''}",
+		"element.style.minHeight = String(minimumLines * 24) + 'px'",
+		"textarea.dsl-input { width:100%; resize:vertical; }",
+	} {
+		if !strings.Contains(implementation, expected) {
+			t.Errorf("managed YAML browser editor does not contain %q", expected)
+		}
+	}
+}
+
 func TestSettingsDeclarativeScreenContractRoute(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/settings.json", nil))

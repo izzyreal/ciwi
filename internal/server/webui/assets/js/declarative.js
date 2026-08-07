@@ -587,10 +587,13 @@
 		  const path = projectID > 0
 			? '/api/v1/projects/' + encodeURIComponent(projectID) + '/managed-yaml'
 			: '/api/v1/projects/managed-yaml';
+		  const body = projectID > 0
+			? {revision: args.revision || '', yaml: args.yaml || ''}
+			: {yaml: args.yaml || ''};
 		  const response = await fetch(path, {
 			method: projectID > 0 ? 'PUT' : 'POST',
 			headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
-			body: JSON.stringify({revision: args.revision || '', yaml: args.yaml || ''}), signal: runtime.signal,
+			body: JSON.stringify(body), signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
@@ -1218,7 +1221,11 @@
       });
     } else if (node.component === 'input' && node.input) {
 	  if (!node.input.multiline) element.type = 'text';
-	  if (node.input.minLines) element.rows = Number(node.input.minLines);
+	  if (node.input.minLines) {
+		const minimumLines = Math.max(1, Number(node.input.minLines));
+		element.rows = minimumLines;
+		element.style.minHeight = String(minimumLines * 24) + 'px';
+	  }
       element.value = String(resolve(data, node.input.value) ?? '');
       element.placeholder = node.input.placeholder || '';
     } else if (node.text) {

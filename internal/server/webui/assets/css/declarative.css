@@ -126,6 +126,7 @@ body { min-height: 100vh; }
 .dsl-select:hover, .dsl-select:focus { border-color: var(--accent); }
 .dsl-input { min-height: 44px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--surface); color: var(--ink); font:var(--ciwi-type-control-weight) var(--ciwi-type-control-size)/var(--ciwi-type-control-line-height) var(--ciwi-type-control-family); }
 .dsl-input:hover, .dsl-input:focus { border-color: var(--accent); outline: none; }
+textarea.dsl-input { width:100%; resize:vertical; }
 .dsl-settings-project-row { border-top:1px solid var(--line); padding:10px 0; }
 .dsl-project-row { min-width:0; }
 .dsl-project-row > summary { min-width:0; flex-wrap:nowrap; }

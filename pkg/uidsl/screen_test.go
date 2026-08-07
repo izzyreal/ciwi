@@ -289,6 +289,21 @@ func TestRenderTextAndResolve(t *testing.T) {
 	}
 }
 
+func TestRenderTextDoesNotInterpretBindingsInsideResolvedValues(t *testing.T) {
+	data := map[string]any{
+		"managedYAML": map[string]any{"yaml": "run: GOOS={{goos}} GOARCH={{goarch}} go build"},
+		"suffix":      "done",
+	}
+	text, err := RenderText(data, Text{Template: "{{managedYAML.yaml}}\n{{suffix}}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "run: GOOS={{goos}} GOARCH={{goarch}} go build\ndone"
+	if text != want {
+		t.Fatalf("RenderText() = %q, want %q", text, want)
+	}
+}
+
 func TestResolveUsesJSONNamesForStructInputs(t *testing.T) {
 	value, err := Resolve(struct {
 		Project struct {

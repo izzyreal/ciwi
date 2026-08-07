@@ -111,11 +111,15 @@ func RenderText(root any, expression Text) (string, error) {
 		return fmt.Sprint(value), nil
 	}
 	template := expression.Template
+	var rendered strings.Builder
+	rendered.Grow(len(template))
 	for {
 		start := strings.Index(template, "{{")
 		if start < 0 {
-			return template, nil
+			rendered.WriteString(template)
+			return rendered.String(), nil
 		}
+		rendered.WriteString(template[:start])
 		endRelative := strings.Index(template[start+2:], "}}")
 		if endRelative < 0 {
 			return "", fmt.Errorf("unterminated binding in template %q", expression.Template)
@@ -126,6 +130,7 @@ func RenderText(root any, expression Text) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		template = template[:start] + fmt.Sprint(value) + template[end+2:]
+		rendered.WriteString(fmt.Sprint(value))
+		template = template[end+2:]
 	}
 }
