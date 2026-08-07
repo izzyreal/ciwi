@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: pina-colada-dark, title: Piña Colada Dark, description: "Moonlit pineapple gold, coconut cream, deep leaf green, and lagoon teal."}
+theme:
+  dark: true
+  colors:
+    background: "#111710"
+    background-start: "#26321d"
+    background-end: "#142d2a"
+    background-glow-a: "#806d24"
+    background-glow-b: "#287b70"
+    surface: "#1b2418"
+    surface-raised: "#232e1f"
+    surface-subtle: "#20291d"
+    surface-glow: "#374125"
+    text: "#fff7dc"
+    text-muted: "#bfc4a7"
+    accent: "#f1d35f"
+    accent-strong: "#ffe993"
+    pill-background: "#31452c"
+    pill-text: "#d9ef9a"
+    notice-background: "#294438"
+    notice-text: "#fff8df"
+    notice-border: "#668b68"
+    border: "#485a40"
+    success: "#79dc92"
+    warning: "#ffd166"
+    awaiting-surface: "#473817"
+    awaiting-border: "#8c7134"
+    awaiting-text: "#ffd978"
+    danger: "#ff7f8b"
+    focus: "#62d2d1"
+    console-background: "#090d09"
+    console-surface: "#151f16"
+    console-border: "#354a36"
+    console-text: "#fff5d7"
+    console-muted: "#aeb99d"
+    console-accent: "#f7d96a"
+    console-success: "#9ddd78"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#10170f", position: 0}, {color: "#243224", position: 55}, {color: "#12302e", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#3d4427", position: 0}, {color: "#182219", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: rambutan-dark, title: Rambutan Dark, description: "Crimson rambutan hairs and leaf green glowing over deep wine-red surfaces."}
+theme:
+  dark: true
+  colors:
+    background: "#17090c"
+    background-start: "#4f111c"
+    background-end: "#213117"
+    background-glow-a: "#a81c2f"
+    background-glow-b: "#5f8338"
+    surface: "#291116"
+    surface-raised: "#35161c"
+    surface-subtle: "#301419"
+    surface-glow: "#551d27"
+    text: "#ffedef"
+    text-muted: "#c8a1a5"
+    accent: "#ff5968"
+    accent-strong: "#ff8e98"
+    pill-background: "#59212b"
+    pill-text: "#ff9ca5"
+    notice-background: "#591c28"
+    notice-text: "#fff0f1"
+    notice-border: "#a64c59"
+    border: "#65303a"
+    success: "#93dc79"
+    warning: "#ffd166"
+    awaiting-surface: "#493516"
+    awaiting-border: "#90682f"
+    awaiting-text: "#ffd579"
+    danger: "#ff6878"
+    focus: "#89b6ff"
+    console-background: "#0c0506"
+    console-surface: "#211014"
+    console-border: "#502831"
+    console-text: "#ffe8e9"
+    console-muted: "#bd9095"
+    console-accent: "#ff7b86"
+    console-success: "#a3da79"
+  gradients:
+    page: {kind: linear, angle: 140, stops: [{color: "#210b11", position: 0}, {color: "#52131e", position: 60}, {color: "#233219", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#61202a", position: 0}, {color: "#241015", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

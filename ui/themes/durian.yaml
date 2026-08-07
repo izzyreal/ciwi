@@ -1,0 +1,42 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: durian, title: Durian, description: "Spiked olive rind, rich custard flesh, and earthy tropical brown."}
+theme:
+  colors:
+    background: "#f8f4dc"
+    background-start: "#a79d54"
+    background-end: "#e5cf77"
+    background-glow-a: "#7f803f"
+    background-glow-b: "#d5a74a"
+    surface: "#fffdf2"
+    surface-raised: "#fffdf5"
+    surface-subtle: "#faf6e5"
+    surface-glow: "#f4dda0"
+    text: "#352f1f"
+    text-muted: "#70664c"
+    accent: "#807526"
+    accent-strong: "#5c5016"
+    pill-background: "#ece2ab"
+    pill-text: "#665b20"
+    notice-background: "#5a5323"
+    notice-text: "#fff9df"
+    notice-border: "#9e9553"
+    border: "#d2c583"
+    success: "#57793b"
+    warning: "#966000"
+    awaiting-surface: "#ffedb1"
+    awaiting-border: "#d7ae47"
+    awaiting-text: "#875500"
+    danger: "#b74645"
+    focus: "#407c9d"
+    console-background: "#16130b"
+    console-surface: "#2d2817"
+    console-border: "#575033"
+    console-text: "#fff2c8"
+    console-muted: "#bcb294"
+    console-accent: "#e8cd6d"
+    console-success: "#a7d16f"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#fffdf2", position: 0}, {color: "#b0a451", position: 52}, {color: "#dfbd5f", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#fff8da", position: 0}, {color: "#d9c46f", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: lychee-dark, title: Lychee Dark, description: "Deep chestnut and wine-red lychee skin with luminous pearl flesh."}
+theme:
+  dark: true
+  colors:
+    background: "#180d0b"
+    background-start: "#4d201d"
+    background-end: "#321714"
+    background-glow-a: "#a74342"
+    background-glow-b: "#793522"
+    surface: "#291816"
+    surface-raised: "#34201d"
+    surface-subtle: "#2f1c1a"
+    surface-glow: "#502a25"
+    text: "#fff0eb"
+    text-muted: "#c7a59d"
+    accent: "#ff8078"
+    accent-strong: "#ffaaa1"
+    pill-background: "#55302c"
+    pill-text: "#ffaaa1"
+    notice-background: "#552927"
+    notice-text: "#fff1ed"
+    notice-border: "#a45d56"
+    border: "#644039"
+    success: "#8bd487"
+    warning: "#ffd166"
+    awaiting-surface: "#493516"
+    awaiting-border: "#90682f"
+    awaiting-text: "#ffd579"
+    danger: "#ff707b"
+    focus: "#aaa0ff"
+    console-background: "#0c0605"
+    console-surface: "#21110f"
+    console-border: "#4f2d28"
+    console-text: "#ffeae4"
+    console-muted: "#b9938a"
+    console-accent: "#ff9184"
+    console-success: "#9bd684"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#210e0c", position: 0}, {color: "#50211e", position: 58}, {color: "#331713", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#5d302a", position: 0}, {color: "#241512", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

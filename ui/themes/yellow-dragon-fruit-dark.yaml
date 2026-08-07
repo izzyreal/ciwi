@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: yellow-dragon-fruit-dark, title: Yellow Dragon Fruit Dark, description: "Night cactus green and charcoal set off luminous yellow dragon fruit."}
+theme:
+  dark: true
+  colors:
+    background: "#11130a"
+    background-start: "#303713"
+    background-end: "#1d260f"
+    background-glow-a: "#91851b"
+    background-glow-b: "#657934"
+    surface: "#1d2112"
+    surface-raised: "#262b17"
+    surface-subtle: "#222616"
+    surface-glow: "#3e4219"
+    text: "#fffbdc"
+    text-muted: "#bec2a0"
+    accent: "#f2dc4f"
+    accent-strong: "#fff27d"
+    pill-background: "#3d4820"
+    pill-text: "#e5ef83"
+    notice-background: "#39431e"
+    notice-text: "#fffde4"
+    notice-border: "#778449"
+    border: "#4d5731"
+    success: "#8ddd75"
+    warning: "#ffd166"
+    awaiting-surface: "#463915"
+    awaiting-border: "#8d762c"
+    awaiting-text: "#ffdc68"
+    danger: "#ff7c88"
+    focus: "#7eb4ff"
+    console-background: "#090a06"
+    console-surface: "#181b0e"
+    console-border: "#3e4527"
+    console-text: "#fff9d9"
+    console-muted: "#afb390"
+    console-accent: "#f6df55"
+    console-success: "#aadd72"
+  gradients:
+    page: {kind: linear, angle: 150, stops: [{color: "#11140a", position: 0}, {color: "#343913", position: 58}, {color: "#1a260f", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#474b1b", position: 0}, {color: "#1b2010", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

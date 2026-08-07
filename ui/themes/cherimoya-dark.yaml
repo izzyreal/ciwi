@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: cherimoya-dark, title: Cherimoya Dark, description: "Glossy seed-black and cocoa brown with pale flesh and restrained rind-green accents."}
+theme:
+  dark: true
+  colors:
+    background: "#100d0a"
+    background-start: "#2c2118"
+    background-end: "#17120e"
+    background-glow-a: "#61472e"
+    background-glow-b: "#45572d"
+    surface: "#1b1612"
+    surface-raised: "#251e18"
+    surface-subtle: "#211a15"
+    surface-glow: "#3b2d21"
+    text: "#f8f2df"
+    text-muted: "#b9aa92"
+    accent: "#9fc95e"
+    accent-strong: "#c8e989"
+    pill-background: "#353526"
+    pill-text: "#c6e486"
+    notice-background: "#303824"
+    notice-text: "#faf5e2"
+    notice-border: "#697651"
+    border: "#4b3c30"
+    success: "#83dc8a"
+    warning: "#ffd166"
+    awaiting-surface: "#473817"
+    awaiting-border: "#8c7134"
+    awaiting-text: "#ffd978"
+    danger: "#ff7c87"
+    focus: "#aaa0ff"
+    console-background: "#080604"
+    console-surface: "#17120e"
+    console-border: "#3c3026"
+    console-text: "#f7f0da"
+    console-muted: "#aa9b86"
+    console-accent: "#bada70"
+    console-success: "#8bdc82"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#0d0a08", position: 0}, {color: "#302319", position: 58}, {color: "#18130f", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#413124", position: 0}, {color: "#18130f", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

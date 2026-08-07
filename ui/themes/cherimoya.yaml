@@ -1,0 +1,42 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: cherimoya, title: Cherimoya, description: "Scaly spring green, custard-white flesh, glossy black seeds, and warm stem brown."}
+theme:
+  colors:
+    background: "#f4f8e8"
+    background-start: "#a9c95f"
+    background-end: "#dce8a5"
+    background-glow-a: "#84ad40"
+    background-glow-b: "#d2bc77"
+    surface: "#fffef7"
+    surface-raised: "#fffef9"
+    surface-subtle: "#f7faec"
+    surface-glow: "#e4efb5"
+    text: "#263020"
+    text-muted: "#5f6d51"
+    accent: "#5c7d2c"
+    accent-strong: "#3b591d"
+    pill-background: "#e0ebbd"
+    pill-text: "#486525"
+    notice-background: "#405b28"
+    notice-text: "#fffde9"
+    notice-border: "#839e58"
+    border: "#c4d392"
+    success: "#477b38"
+    warning: "#916000"
+    awaiting-surface: "#fff0b9"
+    awaiting-border: "#d5b052"
+    awaiting-text: "#855600"
+    danger: "#b9434c"
+    focus: "#6c63bd"
+    console-background: "#10140d"
+    console-surface: "#242b1c"
+    console-border: "#48553a"
+    console-text: "#f8f4dd"
+    console-muted: "#afb69b"
+    console-accent: "#b9d86d"
+    console-success: "#8bd277"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#fffef6", position: 0}, {color: "#b7cf73", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#dce9ad", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

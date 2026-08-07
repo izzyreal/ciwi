@@ -83,10 +83,12 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if got := typography.Typography.Roles["cache-statistics"]; got.Family != "body" || got.Size != 12 {
 		t.Fatalf("cache-statistics typography = %+v, want shared 12px body role", got)
 	}
-	if len(themes) != 9 {
-		t.Fatalf("theme count = %d, want 9", len(themes))
+	if len(themes) != 23 {
+		t.Fatalf("theme count = %d, want 23", len(themes))
 	}
+	themesByName := make(map[string]*uidsl.ThemeDocument, len(themes))
 	for _, theme := range themes {
+		themesByName[theme.Metadata.Name] = theme
 		for _, token := range []string{
 			"background-start", "background-end", "background-glow-a", "background-glow-b",
 			"surface-raised", "surface-glow", "pill-background", "pill-text",
@@ -107,6 +109,15 @@ func TestEmbeddedUIBundle(t *testing.T) {
 			if theme.Theme.Dimensions[token] == "" {
 				t.Errorf("theme %q is missing shared visual metric %q", theme.Metadata.Name, token)
 			}
+		}
+	}
+	for _, family := range []string{"pina-colada", "mango-kent", "mango-chaunsa", "mango-alphonso", "yellow-dragon-fruit", "dragon-fruit", "cherimoya", "durian", "rambutan", "lychee"} {
+		if themesByName[family] == nil {
+			t.Errorf("light theme %q is missing", family)
+		}
+		dark := themesByName[family+"-dark"]
+		if dark == nil || !dark.Theme.Dark {
+			t.Errorf("dark theme %q is missing or not marked dark", family+"-dark")
 		}
 	}
 	logo, err := Read("assets/ciwi-logo.png")

@@ -5,13 +5,31 @@ const ciwiThemeNames = new Set([
   'jungle',
   'space',
   'pina-colada',
+  'pina-colada-dark',
   'mango-kent',
+  'mango-kent-dark',
   'mango-chaunsa',
+  'mango-chaunsa-dark',
   'mango-alphonso',
+  'mango-alphonso-dark',
   'yellow-dragon-fruit',
+  'yellow-dragon-fruit-dark',
   'dragon-fruit',
+  'dragon-fruit-dark',
+  'cherimoya',
+  'cherimoya-dark',
+  'durian',
+  'durian-dark',
+  'rambutan',
+  'rambutan-dark',
+  'lychee',
+  'lychee-dark',
 ]);
-const ciwiDarkThemeNames = new Set(['jungle', 'space']);
+const ciwiDarkThemeNames = new Set([
+  'jungle', 'space', 'pina-colada-dark', 'mango-kent-dark', 'mango-chaunsa-dark',
+  'mango-alphonso-dark', 'yellow-dragon-fruit-dark', 'dragon-fruit-dark',
+  'cherimoya-dark', 'durian-dark', 'rambutan-dark', 'lychee-dark',
+]);
 let ciwiThemeContractsPromise;
 
 function ciwiThemeContracts() {

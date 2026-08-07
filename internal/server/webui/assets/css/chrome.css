@@ -631,6 +631,55 @@
       --snackbar-ink: #f0f5ff;
       --snackbar-line: #53669a;
     }
+
+    :root:is(
+      [data-ciwi-theme="pina-colada-dark"], [data-ciwi-theme="mango-kent-dark"],
+      [data-ciwi-theme="mango-chaunsa-dark"], [data-ciwi-theme="mango-alphonso-dark"],
+      [data-ciwi-theme="yellow-dragon-fruit-dark"], [data-ciwi-theme="dragon-fruit-dark"],
+      [data-ciwi-theme="cherimoya"], [data-ciwi-theme="cherimoya-dark"],
+      [data-ciwi-theme="durian"], [data-ciwi-theme="durian-dark"],
+      [data-ciwi-theme="rambutan"], [data-ciwi-theme="rambutan-dark"],
+      [data-ciwi-theme="lychee"], [data-ciwi-theme="lychee-dark"]
+    ) {
+      --surface-soft: color-mix(in srgb, var(--surface) 92%, var(--accent));
+      --surface-hover: color-mix(in srgb, var(--surface) 84%, var(--accent));
+      --input-bg: var(--surface);
+      --code-bg: color-mix(in srgb, var(--surface) 88%, var(--accent));
+      --code-line: var(--line);
+      --focus-ring: color-mix(in srgb, var(--accent) 38%, transparent);
+      --shadow: color-mix(in srgb, var(--ink) 15%, transparent);
+      --overlay: color-mix(in srgb, var(--ink) 58%, transparent);
+      --warn-bg: color-mix(in srgb, var(--surface) 82%, var(--warn));
+      --warn-line: color-mix(in srgb, var(--line) 60%, var(--warn));
+      --ok-bg: color-mix(in srgb, var(--surface) 84%, var(--ok));
+      --ok-line: color-mix(in srgb, var(--line) 62%, var(--ok));
+      --bad-bg: color-mix(in srgb, var(--surface) 84%, var(--bad));
+      --bad-line: color-mix(in srgb, var(--line) 62%, var(--bad));
+      --info-bg: color-mix(in srgb, var(--surface) 88%, var(--accent));
+      --info-line: color-mix(in srgb, var(--line) 68%, var(--accent));
+      --graph-bg-start: var(--surface);
+      --graph-bg-end: var(--surface-subtle);
+      --graph-glow: var(--card-glow);
+      --graph-node-bg: var(--surface-raised);
+      --graph-node-border: var(--line);
+      --graph-selected-border: var(--accent);
+      --graph-selected-inset: color-mix(in srgb, var(--accent) 24%, transparent);
+      --graph-running-bg: var(--warn-bg);
+      --graph-running-border: var(--warn-line);
+      --graph-succeeded-bg: var(--ok-bg);
+      --graph-succeeded-border: var(--ok-line);
+      --graph-failed-bg: var(--bad-bg);
+      --graph-failed-border: var(--bad-line);
+      --graph-waiting-bg: color-mix(in srgb, var(--surface) 88%, var(--warn));
+      --graph-waiting-border: var(--warn-line);
+      --graph-skipped-bg: color-mix(in srgb, var(--surface) 92%, var(--muted));
+      --graph-skipped-border: var(--line);
+      --graph-edge: color-mix(in srgb, var(--muted) 72%, var(--accent));
+      --console-glow: color-mix(in srgb, var(--console-bg) 65%, var(--console-accent));
+      --console-blue: color-mix(in srgb, var(--console-accent) 70%, #63bfe8);
+      --console-yellow: color-mix(in srgb, var(--console-accent) 76%, #ffe36b);
+      --console-warn: color-mix(in srgb, var(--bad) 62%, var(--console-accent));
+    }
     * { box-sizing: border-box; }
     ::selection { background: var(--accent); color: var(--card); }
     :where(body, main, .card, p, h1, h2, h3, div, span, table, thead, tbody, tr, th, td, code, pre, input, textarea, select, label, a) {

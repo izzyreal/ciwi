@@ -414,6 +414,30 @@ func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
 	}
 }
 
+func TestThemeBootstrapRecognizesEverySharedTheme(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/theme.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes, err := sharedui.LoadThemes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	for _, theme := range themes {
+		quotedName := "'" + theme.Metadata.Name + "'"
+		if !strings.Contains(script, quotedName) {
+			t.Errorf("theme bootstrap does not recognize %q", theme.Metadata.Name)
+		}
+		if theme.Theme.Dark {
+			darkCatalog := script[strings.Index(script, "const ciwiDarkThemeNames"):]
+			if !strings.Contains(darkCatalog, quotedName) {
+				t.Errorf("theme bootstrap does not mark %q dark", theme.Metadata.Name)
+			}
+		}
+	}
+}
+
 func TestDeclarativeRendererSupportsSharedReportsAndArtifactDownloads(t *testing.T) {
 	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {

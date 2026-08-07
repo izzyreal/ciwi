@@ -1,0 +1,42 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: rambutan, title: Rambutan, description: "Wild rambutan red, fresh leaf green, and cool translucent pearl flesh."}
+theme:
+  colors:
+    background: "#fff1f1"
+    background-start: "#e74348"
+    background-end: "#8fb94f"
+    background-glow-a: "#d91f35"
+    background-glow-b: "#60a340"
+    surface: "#fffafa"
+    surface-raised: "#fffdfd"
+    surface-subtle: "#fff4f4"
+    surface-glow: "#ffcfd1"
+    text: "#382326"
+    text-muted: "#79585c"
+    accent: "#c52238"
+    accent-strong: "#8e1427"
+    pill-background: "#f8d2d5"
+    pill-text: "#9d1b2e"
+    notice-background: "#761d2b"
+    notice-text: "#fff0f1"
+    notice-border: "#ba5360"
+    border: "#e2aeb2"
+    success: "#4d7f39"
+    warning: "#976000"
+    awaiting-surface: "#fff0bd"
+    awaiting-border: "#d9b054"
+    awaiting-text: "#895700"
+    danger: "#c42c40"
+    focus: "#4779c5"
+    console-background: "#1c0b0e"
+    console-surface: "#351318"
+    console-border: "#6a3038"
+    console-text: "#ffe9e9"
+    console-muted: "#c69b9e"
+    console-accent: "#ff7d87"
+    console-success: "#a5d779"
+  gradients:
+    page: {kind: linear, angle: 140, stops: [{color: "#fffafa", position: 0}, {color: "#e83344", position: 62}, {color: "#8ab84d", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#ffffff", position: 0}, {color: "#f3afb4", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

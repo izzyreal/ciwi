@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: dragon-fruit-dark, title: Dragon Fruit Dark, description: "Electric dragon-fruit magenta and scale green against deep plum flesh tones."}
+theme:
+  dark: true
+  colors:
+    background: "#170b12"
+    background-start: "#4d1630"
+    background-end: "#233219"
+    background-glow-a: "#a9275a"
+    background-glow-b: "#66843e"
+    surface: "#29131f"
+    surface-raised: "#341827"
+    surface-subtle: "#2f1624"
+    surface-glow: "#54203a"
+    text: "#ffeef5"
+    text-muted: "#c8a4b5"
+    accent: "#ff5b91"
+    accent-strong: "#ff91b5"
+    pill-background: "#57213b"
+    pill-text: "#ff9abc"
+    notice-background: "#57203a"
+    notice-text: "#fff0f6"
+    notice-border: "#a64e70"
+    border: "#653247"
+    success: "#9adb73"
+    warning: "#ffd166"
+    awaiting-surface: "#493516"
+    awaiting-border: "#90682f"
+    awaiting-text: "#ffd579"
+    danger: "#ff6f91"
+    focus: "#a99cff"
+    console-background: "#0c0609"
+    console-surface: "#21101a"
+    console-border: "#4f293a"
+    console-text: "#ffe9f0"
+    console-muted: "#bd91a4"
+    console-accent: "#ff82aa"
+    console-success: "#acd97b"
+  gradients:
+    page: {kind: linear, angle: 140, stops: [{color: "#25101d", position: 0}, {color: "#50172f", position: 58}, {color: "#24331a", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#5e2440", position: 0}, {color: "#24121c", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

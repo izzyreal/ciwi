@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: mango-kent-dark, title: Mango Kent Dark, description: "Deep Kent mango red and leaf green around glowing golden-orange flesh."}
+theme:
+  dark: true
+  colors:
+    background: "#1b100e"
+    background-start: "#452018"
+    background-end: "#25321a"
+    background-glow-a: "#a83f32"
+    background-glow-b: "#647c31"
+    surface: "#2b1915"
+    surface-raised: "#352019"
+    surface-subtle: "#301c18"
+    surface-glow: "#59301d"
+    text: "#fff0d8"
+    text-muted: "#c9aa91"
+    accent: "#ffad3d"
+    accent-strong: "#ffd074"
+    pill-background: "#59302a"
+    pill-text: "#ffbb78"
+    notice-background: "#5b2928"
+    notice-text: "#fff2dd"
+    notice-border: "#a85b50"
+    border: "#684039"
+    success: "#9bd56c"
+    warning: "#ffc45e"
+    awaiting-surface: "#4a3216"
+    awaiting-border: "#90672c"
+    awaiting-text: "#ffd079"
+    danger: "#ff7580"
+    focus: "#c39aff"
+    console-background: "#0d0807"
+    console-surface: "#24130f"
+    console-border: "#543129"
+    console-text: "#ffe8c4"
+    console-muted: "#b9947e"
+    console-accent: "#ffb94e"
+    console-success: "#a9d873"
+  gradients:
+    page: {kind: linear, angle: 135, stops: [{color: "#351711", position: 0}, {color: "#54251e", position: 58}, {color: "#25321a", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#63331e", position: 0}, {color: "#291713", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

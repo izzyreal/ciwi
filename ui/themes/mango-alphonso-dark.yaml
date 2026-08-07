@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: mango-alphonso-dark, title: Mango Alphonso Dark, description: "Burnished Alphonso orange, deep rust, and softly glowing cream."}
+theme:
+  dark: true
+  colors:
+    background: "#1b0e08"
+    background-start: "#54200d"
+    background-end: "#32140a"
+    background-glow-a: "#b94f15"
+    background-glow-b: "#87300d"
+    surface: "#2d170d"
+    surface-raised: "#382012"
+    surface-subtle: "#321a0f"
+    surface-glow: "#5c2b12"
+    text: "#fff0d8"
+    text-muted: "#c9a88c"
+    accent: "#ff9840"
+    accent-strong: "#ffc071"
+    pill-background: "#5a301b"
+    pill-text: "#ffb976"
+    notice-background: "#5a2513"
+    notice-text: "#fff1dc"
+    notice-border: "#a55531"
+    border: "#6d3d27"
+    success: "#8fd672"
+    warning: "#ffc45d"
+    awaiting-surface: "#4a3216"
+    awaiting-border: "#90672c"
+    awaiting-text: "#ffd079"
+    danger: "#ff7771"
+    focus: "#87b8ff"
+    console-background: "#0e0704"
+    console-surface: "#251109"
+    console-border: "#57301d"
+    console-text: "#ffe7c8"
+    console-muted: "#bb9178"
+    console-accent: "#ffa64f"
+    console-success: "#9dd87a"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#251006", position: 0}, {color: "#57210c", position: 58}, {color: "#351408", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#662b12", position: 0}, {color: "#2b160c", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

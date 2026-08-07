@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: mango-chaunsa-dark, title: Mango Chaunsa Dark, description: "Dark honey, saffron, and warm wood lit by ripe Chaunsa yellow."}
+theme:
+  dark: true
+  colors:
+    background: "#181108"
+    background-start: "#46300d"
+    background-end: "#2d1b0c"
+    background-glow-a: "#9a6816"
+    background-glow-b: "#b54c18"
+    surface: "#291d0f"
+    surface-raised: "#332512"
+    surface-subtle: "#2e2111"
+    surface-glow: "#554018"
+    text: "#fff5cf"
+    text-muted: "#c8b58a"
+    accent: "#f6c84f"
+    accent-strong: "#ffe27d"
+    pill-background: "#55441e"
+    pill-text: "#ffe18a"
+    notice-background: "#523413"
+    notice-text: "#fff5d2"
+    notice-border: "#9a7132"
+    border: "#65502b"
+    success: "#9fd56d"
+    warning: "#ffd166"
+    awaiting-surface: "#493814"
+    awaiting-border: "#8e7029"
+    awaiting-text: "#ffd873"
+    danger: "#ff7a78"
+    focus: "#7fd4ce"
+    console-background: "#0d0904"
+    console-surface: "#22170b"
+    console-border: "#513a1d"
+    console-text: "#fff0bf"
+    console-muted: "#b9a275"
+    console-accent: "#f8cf54"
+    console-success: "#a9d673"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#211407", position: 0}, {color: "#4b310d", position: 55}, {color: "#321a09", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#5d4217", position: 0}, {color: "#281a0c", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}

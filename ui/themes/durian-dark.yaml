@@ -1,0 +1,43 @@
+apiVersion: ciwi.ui/v1
+kind: Theme
+metadata: {name: durian-dark, title: Durian Dark, description: "Charred husk brown and deep earth surrounding luminous durian custard."}
+theme:
+  dark: true
+  colors:
+    background: "#120d08"
+    background-start: "#382719"
+    background-end: "#24170d"
+    background-glow-a: "#7b5428"
+    background-glow-b: "#9a712c"
+    surface: "#21170f"
+    surface-raised: "#2c2016"
+    surface-subtle: "#271b12"
+    surface-glow: "#49331d"
+    text: "#fff3ce"
+    text-muted: "#c0b693"
+    accent: "#e4cd5c"
+    accent-strong: "#f7e782"
+    pill-background: "#493820"
+    pill-text: "#f0d77b"
+    notice-background: "#49331c"
+    notice-text: "#fff5d5"
+    notice-border: "#8b6840"
+    border: "#59422d"
+    success: "#91d878"
+    warning: "#ffd166"
+    awaiting-surface: "#473817"
+    awaiting-border: "#8c7134"
+    awaiting-text: "#ffd978"
+    danger: "#ff7d7a"
+    focus: "#74c8e8"
+    console-background: "#090604"
+    console-surface: "#1a120b"
+    console-border: "#443221"
+    console-text: "#fff0c5"
+    console-muted: "#afa789"
+    console-accent: "#e7ce69"
+    console-success: "#a5d876"
+  gradients:
+    page: {kind: linear, angle: 145, stops: [{color: "#100b07", position: 0}, {color: "#3d2918", position: 56}, {color: "#27180d", position: 100}]}
+    hero: {kind: radial, stops: [{color: "#50351d", position: 0}, {color: "#1d140d", position: 100}]}
+  dimensions: {small: "8", medium: "16", large: "24", page: "1600", page-inset: "16", section-padding: "14", card-padding: "16", hero-padding: "16", surface-radius: "12", control-radius: "8", control-padding-x: "12", control-padding-y: "8", text-body: "16", text-control: "14", text-code: "13", text-badge: "12", text-subtitle: "16", text-heading: "18", text-title: "28", image-brand-width: "110", image-brand-height: "91"}
