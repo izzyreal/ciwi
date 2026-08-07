@@ -1,0 +1,17 @@
+apiVersion: ciwi.ui/v1
+kind: Routes
+routes:
+  - {name: front-page, pattern: /, screen: front-page, bindingRoot: frontPage, platforms: [web, gio]}
+  - {name: project-details, pattern: "/projects/{projectId}", screen: project-details, bindingRoot: projectDetails, platforms: [web, gio]}
+  - {name: job-details, pattern: "/jobs/{jobId}", screen: job-details, bindingRoot: jobDetails, platforms: [web, gio]}
+  - {name: pipeline-run-options, pattern: "/run-options/projects/{projectId}/pipelines/{pipelineId}", screen: run-options, bindingRoot: runOptions, platforms: [web, gio]}
+  - {name: legacy-pipeline-run-options, pattern: "/run-options/pipelines/{pipelineId}", screen: run-options, bindingRoot: runOptions, platforms: [web, gio]}
+  - {name: chain-run-options, pattern: "/run-options/projects/{projectId}/chains/{chainId}", screen: run-options, bindingRoot: runOptions, platforms: [web, gio]}
+  - {name: settings, pattern: /settings, screen: settings, bindingRoot: settings, platforms: [web, gio]}
+  - {name: managed-yaml-new, pattern: /managed-yaml/new, screen: managed-yaml, bindingRoot: managedYAML, platforms: [web, gio]}
+  - {name: managed-yaml, pattern: "/managed-yaml/{projectId}", screen: managed-yaml, bindingRoot: managedYAML, platforms: [web, gio]}
+  - {name: agents, pattern: /agents, screen: agents, bindingRoot: agents, platforms: [web, gio]}
+  - {name: agent-script, pattern: "/agents/{agentId}/script", screen: agent-script, bindingRoot: agentScript, platforms: [web, gio]}
+  - {name: agent-details, pattern: "/agents/{agentId}", screen: agent-details, bindingRoot: agentDetails, platforms: [web, gio]}
+  - {name: connection, pattern: /connection, screen: connection, bindingRoot: connection, platforms: [gio]}
+  - {name: vault, pattern: /vault, screen: vault, bindingRoot: vault, platforms: [web, gio]}

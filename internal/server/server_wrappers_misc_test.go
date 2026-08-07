@@ -114,7 +114,7 @@ func TestBuildRouterSmoke(t *testing.T) {
 		t.Fatalf("expected root router to mount ciwi web UI, got %q", body)
 	}
 
-	uiAssetResp := mustJSONRequest(t, srv.Client(), http.MethodGet, srv.URL+"/ui/index.js", nil)
+	uiAssetResp := mustJSONRequest(t, srv.Client(), http.MethodGet, srv.URL+"/ui/declarative.js", nil)
 	if uiAssetResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected embedded UI asset 200, got %d body=%s", uiAssetResp.StatusCode, readBody(t, uiAssetResp))
 	}

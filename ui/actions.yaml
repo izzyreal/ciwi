@@ -15,6 +15,7 @@ actions:
   - { command: set-project-structure-filter, class: local }
   - { command: set-project-import-field, class: local }
   - { command: set-managed-yaml-field, class: local }
+  - { command: set-vault-field, class: local }
   - { command: set-server-update-option, class: local }
   - { command: set-connection-field, class: local }
   - { command: generate-ssh-device-key, class: local }
@@ -41,4 +42,7 @@ actions:
   - { command: import-project, class: mutation, scope: "projects", pending: "Importing project…" }
   - { command: validate-managed-yaml, class: query, scope: "managed-yaml:{{projectId}}", pending: "Validating…" }
   - { command: save-managed-yaml, class: mutation, scope: "managed-yaml:{{projectId}}", pending: "Saving…" }
+  - { command: save-vault-connection, class: mutation, scope: "vault:connections", pending: "Saving connection…" }
+  - { command: test-vault-connection, class: query, scope: "vault:{{id}}", pending: "Testing connection…" }
+  - { command: delete-vault-connection, class: mutation, scope: "vault:{{id}}", pending: "Deleting connection…", persistence: none }
   - { command: server-update-action, class: mutation, scope: "server:update", pending: "Updating server…", persistence: receipt-only }

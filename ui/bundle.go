@@ -13,7 +13,7 @@ import (
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
-//go:embed actions.yaml typography.yaml assets/* screens/*.yaml themes/*.yaml
+//go:embed actions.yaml routes.yaml typography.yaml assets/* screens/*.yaml themes/*.yaml
 var resources embed.FS
 
 func Read(path string) ([]byte, error) {
@@ -47,6 +47,18 @@ func LoadActionCatalog() (*uidsl.ActionCatalogDocument, error) {
 		return nil, fmt.Errorf("parse action catalog: %w", err)
 	}
 	return catalog, nil
+}
+
+func LoadRoutes() (*uidsl.RouteDocument, error) {
+	payload, err := Read("routes.yaml")
+	if err != nil {
+		return nil, err
+	}
+	document, err := uidsl.ParseRoutes(payload)
+	if err != nil {
+		return nil, fmt.Errorf("parse route catalog: %w", err)
+	}
+	return document, nil
 }
 
 func LoadTypography() (*uidsl.TypographyDocument, error) {

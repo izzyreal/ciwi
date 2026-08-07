@@ -77,3 +77,7 @@ screen:
                       agentId: "{{agentScript.agent_id}}"
                       shell: "{{agentScript.selected_shell}}"
                       script: "{{agentScript.script}}"
+          - component: text
+            text: {binding: agentScript.result}
+            style: {toneBinding: agentScript.result_tone}
+            visible: {binding: agentScript.result, empty: true, not: true}

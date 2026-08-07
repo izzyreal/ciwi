@@ -85,24 +85,19 @@ func TestHeartbeatTimingContractAndAssetsStayShared(t *testing.T) {
 	if duration != protocol.AgentHeartbeatFadeDuration {
 		t.Fatalf("browser CSS heartbeat duration = %v, want %v", duration, protocol.AgentHeartbeatFadeDuration)
 	}
-	for name, page := range map[string]string{"agents": agentsHTML, "declarative": declarativeHTML} {
+	for name, page := range map[string]string{"declarative": declarativeHTML} {
 		heartbeatAt := strings.Index(page, `src="/ui/heartbeat.js"`)
 		clientAt := strings.Index(page, `src="/ui/`+name+`.js"`)
 		if heartbeatAt < 0 || clientAt < 0 || heartbeatAt > clientAt {
 			t.Fatalf("%s page must load heartbeat.js before its client script", name)
 		}
 	}
-	for name, asset := range map[string]string{"agents.js": agentsJS, "declarative.js": mustTestAsset("assets/js/declarative.js")} {
+	for name, asset := range map[string]string{"declarative.js": mustTestAsset("assets/js/declarative.js")} {
 		if !strings.Contains(asset, "ciwiHeartbeat.opacity") {
 			t.Errorf("%s does not use shared heartbeat opacity", name)
 		}
 	}
-	if strings.Contains(agentsCSS, "heartbeat-fade 10s") || strings.Contains(agentsJS, "elapsed < 10000") {
+	if strings.Contains(mustTestAsset("assets/css/declarative.css"), "heartbeat-fade 10s") {
 		t.Fatal("legacy ten-second heartbeat timing remains in authoritative browser assets")
-	}
-	for _, expected := range []string{"data-heartbeat-unix-ms", "setInterval(updateHeartbeatVisuals, 250)"} {
-		if !strings.Contains(agentsJS, expected) {
-			t.Errorf("agents.js is missing live heartbeat behavior %q", expected)
-		}
 	}
 }

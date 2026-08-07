@@ -503,6 +503,54 @@ message ManagedYAMLDefinition {
   uint32 pipeline_chains = 6;
 }
 
+message VaultConnection {
+  int64 id = 1;
+  string name = 2;
+  string url = 3;
+  string auth_method = 4;
+  string approle_mount = 5;
+  string role_id = 6;
+  string secret_id_env = 7;
+  string namespace = 8;
+  string kv_default_mount = 9;
+  int32 kv_default_version = 10;
+}
+
+message VaultConnectionList {
+  repeated VaultConnection connections = 1;
+}
+
+message UpsertVaultConnectionRequest {
+  string name = 1;
+  string url = 2;
+  string auth_method = 3;
+  string approle_mount = 4;
+  string role_id = 5;
+  string secret_id_env = 6;
+  string namespace = 7;
+  string kv_default_mount = 8;
+  int32 kv_default_version = 9;
+}
+
+message VaultConnectionIDRequest {
+  int64 id = 1;
+}
+
+message TestVaultConnectionRequest {
+  int64 id = 1;
+  string secret_id_override = 2;
+}
+
+message TestVaultConnectionResult {
+  bool ok = 1;
+  string message = 2;
+}
+
+message DeleteVaultConnectionResult {
+  bool deleted = 1;
+  int64 id = 2;
+}
+
 message ServerUpdateStatus {
   string current_version = 1;
   string latest_version = 2;
@@ -634,6 +682,10 @@ message Request {
     GetManagedYAMLRequest get_managed_yaml = 36;
     ManagedYAMLRequest validate_managed_yaml = 37;
     ManagedYAMLRequest save_managed_yaml = 38;
+    Empty list_vault_connections = 39;
+    UpsertVaultConnectionRequest upsert_vault_connection = 40;
+    TestVaultConnectionRequest test_vault_connection = 41;
+    VaultConnectionIDRequest delete_vault_connection = 42;
   }
 }
 
@@ -668,6 +720,10 @@ message Response {
     CommandReceiptStatus command_receipt_status = 35;
     RunAgentScriptResult run_agent_script = 36;
     ManagedYAMLDefinition managed_yaml = 37;
+    VaultConnectionList vault_connection_list = 38;
+    VaultConnection vault_connection = 39;
+    TestVaultConnectionResult test_vault_connection = 40;
+    DeleteVaultConnectionResult delete_vault_connection = 41;
   }
 }
 

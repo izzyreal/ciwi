@@ -155,6 +155,17 @@ func applyNativeConnectionState(renderer *Renderer, state nativeConnectionState)
 	renderer.SetDataBinding("client", state.binding())
 }
 
+func validateNativeBindings(screen *uidsl.ScreenDocument, data map[string]any) error {
+	validationData := make(map[string]any, len(data)+1)
+	for key, value := range data {
+		validationData[key] = value
+	}
+	if _, ok := validationData["client"]; !ok {
+		validationData["client"] = nativeConnectionState{}.binding()
+	}
+	return uidsl.ValidateBindings(screen, validationData, "gio")
+}
+
 type nativeDialResult struct {
 	index  int
 	target string
@@ -346,10 +357,14 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	vaultScreen, err := sharedUI.LoadScreen("vault")
+	if err != nil {
+		return err
+	}
 	screens := map[string]*uidsl.ScreenDocument{
 		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
 		"settings": settingsScreen, "managed-yaml": managedYAMLScreen, "run-options": runOptionsScreen, "agents": agentsScreen, "agent-details": agentDetailsScreen,
-		"agent-script": agentScriptScreen,
+		"agent-script": agentScriptScreen, "vault": vaultScreen,
 	}
 	preferencesPath, err := nativePreferencesPath()
 	if err != nil {
@@ -616,6 +631,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		if loadErr != nil {
 			return loadErr
 		}
+		if err := validateNativeBindings(screen, data); err != nil {
+			return err
+		}
 		renderer.SetScreenAndData(screen, data)
 		if target.screen == "settings" {
 			applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
@@ -627,6 +645,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		screen := screens[target.screen]
 		if screen == nil {
 			return fmt.Errorf("screen %q is unavailable", target.screen)
+		}
+		if err := validateNativeBindings(screen, data); err != nil {
+			return err
 		}
 		renderer.SetScreenAndData(screen, data)
 		if target.screen == "settings" {
@@ -993,6 +1014,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					renderer.SetStatus("Loading failed: " + result.err.Error())
 				}
 			} else {
+				if err := validateNativeBindings(screens[navigation.screen], result.data); err != nil {
+					renderer.SetStatus("Loading failed: " + err.Error())
+					window.Invalidate()
+					continue
+				}
 				if navigation.screen == "job-details" && pendingCancellations[navigation.jobID] {
 					if root, ok := result.data["jobDetails"].(map[string]any); ok {
 						if canCancel, _ := root["can_cancel"].(bool); canCancel {
@@ -1373,6 +1399,13 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 			return
 		}
 		renderer.SetRootBinding("managedYAML", "yaml", command.arguments["value"])
+	case "set-vault-field":
+		field := strings.TrimSpace(command.arguments["field"])
+		if field != "name" && field != "url" && field != "role_id" && field != "approle_mount" && field != "secret_id_env" {
+			renderer.SetStatus("Unknown Vault connection field")
+			return
+		}
+		renderer.SetRootBinding("vault", field, command.arguments["value"])
 	case "set-server-update-option":
 		binding := map[string]string{
 			"update": "selected_update_version", "rollback": "selected_rollback_version",
@@ -1446,77 +1479,47 @@ func splitExecutionIDs(raw string) []string {
 
 func navigationForRoute(route string) (navigationState, error) {
 	route = strings.TrimSpace(route)
-	next := navigationState{}
-	switch {
-	case route == "/":
-		next.screen = "front-page"
-	case strings.HasPrefix(route, "/projects/"):
-		projectID, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(route, "/projects/"), "/"), 10, 64)
-		if err != nil || projectID <= 0 {
-			return navigationState{}, fmt.Errorf("invalid project route %q", route)
-		}
-		next = navigationState{screen: "project-details", projectID: projectID}
-	case strings.HasPrefix(route, "/jobs/"):
-		jobID := strings.Trim(strings.TrimPrefix(route, "/jobs/"), "/")
-		if jobID == "" || strings.Contains(jobID, "/") {
-			return navigationState{}, fmt.Errorf("invalid job route %q", route)
-		}
-		next = navigationState{screen: "job-details", jobID: jobID}
-	case strings.HasPrefix(route, "/run-options/projects/") && strings.Contains(route, "/pipelines/"):
-		parts := strings.Split(strings.Trim(strings.TrimPrefix(route, "/run-options/projects/"), "/"), "/")
-		if len(parts) != 3 || parts[1] != "pipelines" {
-			return navigationState{}, fmt.Errorf("invalid pipeline run-options route %q", route)
-		}
-		projectID, projectErr := strconv.ParseInt(parts[0], 10, 64)
-		pipelineID, pipelineErr := strconv.ParseInt(parts[2], 10, 64)
-		if projectErr != nil || projectID <= 0 || pipelineErr != nil || pipelineID <= 0 {
-			return navigationState{}, fmt.Errorf("invalid pipeline run-options route %q", route)
-		}
-		next = navigationState{screen: "run-options", projectID: projectID, pipelineDBID: pipelineID}
-	case strings.HasPrefix(route, "/run-options/pipelines/"):
-		pipelineID, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(route, "/run-options/pipelines/"), "/"), 10, 64)
-		if err != nil || pipelineID <= 0 {
-			return navigationState{}, fmt.Errorf("invalid pipeline run-options route %q", route)
-		}
-		next = navigationState{screen: "run-options", pipelineDBID: pipelineID}
-	case strings.HasPrefix(route, "/run-options/projects/"):
-		parts := strings.Split(strings.Trim(strings.TrimPrefix(route, "/run-options/projects/"), "/"), "/")
-		if len(parts) != 3 || parts[1] != "chains" {
-			return navigationState{}, fmt.Errorf("invalid chain run-options route %q", route)
-		}
-		projectID, err := strconv.ParseInt(parts[0], 10, 64)
-		if err != nil || projectID <= 0 || strings.TrimSpace(parts[2]) == "" {
-			return navigationState{}, fmt.Errorf("invalid chain run-options route %q", route)
-		}
-		next = navigationState{screen: "run-options", projectID: projectID, chainID: parts[2]}
-	case route == "/settings":
-		next.screen = "settings"
-	case route == "/managed-yaml/new":
-		next = navigationState{screen: "managed-yaml"}
-	case strings.HasPrefix(route, "/managed-yaml/"):
-		projectID, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(route, "/managed-yaml/"), "/"), 10, 64)
-		if err != nil || projectID <= 0 {
-			return navigationState{}, fmt.Errorf("invalid managed YAML route %q", route)
-		}
-		next = navigationState{screen: "managed-yaml", projectID: projectID}
-	case route == "/agents":
-		next.screen = "agents"
-	case strings.HasPrefix(route, "/agents/"):
-		trimmed := strings.Trim(strings.TrimPrefix(route, "/agents/"), "/")
-		parts := strings.Split(trimmed, "/")
-		if len(parts) == 2 && parts[1] == "script" && strings.TrimSpace(parts[0]) != "" {
-			next = navigationState{screen: "agent-script", agentScriptID: parts[0]}
-			break
-		}
-		agentID := strings.Trim(strings.TrimPrefix(route, "/agents/"), "/")
-		if agentID == "" || strings.Contains(agentID, "/") {
-			return navigationState{}, fmt.Errorf("invalid agent route %q", route)
-		}
-		next = navigationState{screen: "agent-details", agentDetailsID: agentID}
-	case route == "/connection":
-		next.screen = "connection"
-	default:
+	routes, err := sharedUI.LoadRoutes()
+	if err != nil {
+		return navigationState{}, err
+	}
+	match, ok := routes.Match(route, "gio")
+	if !ok {
 		return navigationState{}, fmt.Errorf("unsupported route %q", route)
+	}
+	next := navigationState{screen: match.Route.Screen}
+	parsePositiveID := func(name string) (int64, error) {
+		value, parseErr := strconv.ParseInt(strings.TrimSpace(match.Params[name]), 10, 64)
+		if parseErr != nil || value <= 0 {
+			return 0, fmt.Errorf("invalid %s in route %q", name, route)
+		}
+		return value, nil
+	}
+	switch match.Route.Name {
+	case "project-details", "managed-yaml":
+		next.projectID, err = parsePositiveID("projectId")
+	case "job-details":
+		next.jobID = strings.TrimSpace(match.Params["jobId"])
+	case "pipeline-run-options":
+		next.projectID, err = parsePositiveID("projectId")
+		if err == nil {
+			next.pipelineDBID, err = parsePositiveID("pipelineId")
+		}
+	case "legacy-pipeline-run-options":
+		next.pipelineDBID, err = parsePositiveID("pipelineId")
+	case "chain-run-options":
+		next.projectID, err = parsePositiveID("projectId")
+		next.chainID = strings.TrimSpace(match.Params["chainId"])
+	case "agent-script":
+		next.agentScriptID = strings.TrimSpace(match.Params["agentId"])
+	case "agent-details":
+		next.agentDetailsID = strings.TrimSpace(match.Params["agentId"])
+	}
+	if err != nil || next.jobID == "" && match.Route.Name == "job-details" || next.chainID == "" && match.Route.Name == "chain-run-options" || next.agentScriptID == "" && match.Route.Name == "agent-script" || next.agentDetailsID == "" && match.Route.Name == "agent-details" {
+		if err != nil {
+			return navigationState{}, err
+		}
+		return navigationState{}, fmt.Errorf("invalid route %q", route)
 	}
 	return next, nil
 }
@@ -1571,6 +1574,8 @@ func loadScreenData(ctx context.Context, client *cnpclient.Client, navigation na
 		return protobufBindingData("agentDetails", "agent details", view)
 	case "agent-script":
 		return loadAgentScriptData(ctx, client, navigation)
+	case "vault":
+		return loadVaultData(ctx, client)
 	case "connection":
 		return map[string]any{}, nil
 	default:
@@ -1603,6 +1608,7 @@ func managedYAMLBindingData(definition *cnpv1.ManagedYAMLDefinition) map[string]
 	}
 	return map[string]any{"managedYAML": map[string]any{
 		"title": title, "project_id": projectID, "project_name": name, "yaml": raw, "revision": revision, "editing": editing,
+		"result": "", "result_tone": "muted",
 	}}
 }
 
@@ -1669,8 +1675,39 @@ func loadAgentScriptData(ctx context.Context, client *cnpclient.Client, navigati
 	return map[string]any{"agentScript": map[string]any{
 		"agent_id": navigation.agentScriptID, "agent_label": view.GetAgent().GetHostname(),
 		"shells": shells, "selected_shell": selectedShell, "script": script,
-		"can_run": view.GetAgent().GetCanRunScript() && selectedShell != "",
+		"can_run": view.GetAgent().GetCanRunScript() && selectedShell != "", "result": "", "result_tone": "muted",
 	}}, nil
+}
+
+func loadVaultData(ctx context.Context, client *cnpclient.Client) (map[string]any, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	connections, err := client.ListVaultConnections(requestCtx)
+	if err != nil {
+		return nil, err
+	}
+	return vaultBindingData(connections)
+}
+
+func vaultBindingData(connections *cnpv1.VaultConnectionList) (map[string]any, error) {
+	data, err := protobufBindingData("vault", "Vault connections", connections)
+	if err != nil {
+		return nil, err
+	}
+	root, ok := data["vault"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("Vault binding is malformed")
+	}
+	items, _ := root["connections"].([]any)
+	root["connections_empty"] = len(items) == 0
+	root["name"] = "home-vault"
+	root["url"] = ""
+	root["role_id"] = ""
+	root["approle_mount"] = "approle"
+	root["secret_id_env"] = "CIWI_VAULT_SECRET_ID"
+	root["result"] = ""
+	root["result_tone"] = "muted"
+	return data, nil
 }
 
 func loadRunOptions(ctx context.Context, client *cnpclient.Client, navigation navigationState) (map[string]any, error) {
@@ -1725,8 +1762,10 @@ func screenLoadingData(navigation navigationState, clientVersion, themeName, mod
 	case "agent-script":
 		return map[string]any{"agentScript": map[string]any{
 			"agent_id": navigation.agentScriptID, "agent_label": navigation.agentScriptID,
-			"shells": []any{}, "selected_shell": "", "script": "", "can_run": false,
+			"shells": []any{}, "selected_shell": "", "script": "", "can_run": false, "result": "", "result_tone": "muted",
 		}}, nil
+	case "vault":
+		return vaultBindingData(&cnpv1.VaultConnectionList{})
 	default:
 		return nil, fmt.Errorf("screen %q is unavailable", navigation.screen)
 	}

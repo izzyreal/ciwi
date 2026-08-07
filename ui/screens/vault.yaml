@@ -1,0 +1,109 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata: {name: vault, title: Vault Connections}
+screen:
+  dataSources:
+    - {name: vault, query: get-vault-connections, watchTopics: [vault]}
+  root:
+    component: page
+    id: vault
+    layout: {direction: vertical, gap: large, padding: large, maxWidth: page}
+    children:
+      - component: card
+        layout: {direction: horizontal, gap: medium, padding: large, align: center, wrap: true}
+        children:
+          - component: column
+            layout: {direction: vertical, gap: small, grow: true}
+            children:
+              - component: text
+                text: {literal: Vault Connections}
+                style: {role: title, emphasis: strong}
+              - component: text
+                text: {literal: Configure AppRole connections used by pipeline secrets.}
+                style: {tone: muted}
+          - component: button
+            text: {literal: Back to Global Settings}
+            icon: arrow-left
+            actions: [{on: activate, command: navigate, arguments: {route: /settings}}]
+      - component: card
+        layout: {direction: vertical, gap: medium, padding: large}
+        children:
+          - component: text
+            text: {literal: Add / Update Connection}
+            style: {role: heading, emphasis: strong}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: input
+                input: {value: vault.name, placeholder: Connection name}
+                actions: [{on: change, command: set-vault-field, arguments: {field: name, value: "{{input.value}}"}}]
+              - component: input
+                layout: {minWidth: "260"}
+                input: {value: vault.url, placeholder: "https://vault.example"}
+                actions: [{on: change, command: set-vault-field, arguments: {field: url, value: "{{input.value}}"}}]
+              - component: input
+                layout: {minWidth: "240"}
+                input: {value: vault.role_id, placeholder: AppRole Role ID}
+                actions: [{on: change, command: set-vault-field, arguments: {field: role_id, value: "{{input.value}}"}}]
+              - component: input
+                input: {value: vault.approle_mount, placeholder: approle}
+                actions: [{on: change, command: set-vault-field, arguments: {field: approle_mount, value: "{{input.value}}"}}]
+              - component: input
+                layout: {minWidth: "220"}
+                input: {value: vault.secret_id_env, placeholder: CIWI_VAULT_SECRET_ID}
+                actions: [{on: change, command: set-vault-field, arguments: {field: secret_id_env, value: "{{input.value}}"}}]
+              - component: button
+                text: {literal: Save}
+                style: {emphasis: strong}
+                actions:
+                  - on: activate
+                    command: save-vault-connection
+                    arguments:
+                      name: "{{vault.name}}"
+                      url: "{{vault.url}}"
+                      roleId: "{{vault.role_id}}"
+                      approleMount: "{{vault.approle_mount}}"
+                      secretIdEnv: "{{vault.secret_id_env}}"
+          - component: text
+            text: {binding: vault.result}
+            style: {toneBinding: vault.result_tone}
+            visible: {binding: vault.result, empty: true, not: true}
+      - component: card
+        layout: {direction: vertical, gap: medium, padding: large}
+        children:
+          - component: text
+            text: {literal: Connections}
+            style: {role: heading, emphasis: strong}
+          - component: text
+            text: {literal: No Vault connections configured.}
+            visible: {binding: vault.connections_empty}
+            style: {tone: muted}
+          - component: list
+            layout: {direction: vertical, gap: small}
+            repeat: {source: vault.connections, as: connection, key: connection.id}
+            children:
+              - component: card
+                layout: {direction: horizontal, gap: medium, padding: medium, align: center, wrap: true}
+                children:
+                  - component: column
+                    layout: {direction: vertical, gap: small, grow: true}
+                    children:
+                      - component: text
+                        text: {binding: connection.name}
+                        style: {emphasis: strong, tone: accent}
+                      - component: text
+                        text: {template: "{{connection.url}} · mount: {{connection.approle_mount}} · role: {{connection.role_id}}"}
+                        style: {tone: muted}
+                      - component: text
+                        text: {template: "Secret ID: env:{{connection.secret_id_env}}"}
+                        style: {tone: muted}
+                  - component: button
+                    text: {literal: Test}
+                    actions: [{on: activate, command: test-vault-connection, arguments: {id: "{{connection.id}}"}}]
+                  - component: button
+                    text: {literal: Delete}
+                    actions:
+                      - on: activate
+                        command: delete-vault-connection
+                        arguments: {id: "{{connection.id}}"}
+                        confirm: {title: "Delete Vault connection?", message: "This connection will no longer be available to jobs."}

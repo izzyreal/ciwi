@@ -82,6 +82,10 @@ screen:
                 arguments:
                   route: /agents
           - component: button
+            text: {literal: Vault}
+            icon: lock
+            actions: [{on: activate, command: navigate, arguments: {route: /vault}}]
+          - component: button
             text:
               literal: Restart Server
             icon: refresh
@@ -144,6 +148,8 @@ screen:
                   tone: muted
       - component: section
         id: native-connection
+        overrides:
+          web: {hidden: true}
         layout:
           direction: vertical
           gap: medium

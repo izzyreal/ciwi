@@ -426,6 +426,14 @@ func managedYAMLToProto(definition protocol.ManagedYAMLDefinition) *cnpv1.Manage
 	}
 }
 
+func vaultConnectionToProto(connection protocol.VaultConnection) *cnpv1.VaultConnection {
+	return &cnpv1.VaultConnection{
+		Id: connection.ID, Name: connection.Name, Url: connection.URL, AuthMethod: connection.AuthMethod,
+		ApproleMount: connection.AppRoleMount, RoleId: connection.RoleID, SecretIdEnv: connection.SecretIDEnv,
+		Namespace: connection.Namespace, KvDefaultMount: connection.KVDefaultMount, KvDefaultVersion: int32(connection.KVDefaultVer),
+	}
+}
+
 func changeToProto(change application.Change) *cnpv1.ChangeEvent {
 	topics := make([]cnpv1.ChangeTopic, 0, len(change.Topics))
 	for _, topic := range change.Topics {

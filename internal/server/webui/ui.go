@@ -26,25 +26,9 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ui/icons.svg":                   {"assets/tabler-icons.svg", "image/svg+xml", true},
 	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", false},
 	"/ui/heartbeat.js":                {"assets/js/heartbeat.js", "application/javascript; charset=utf-8", false},
-	"/ui/shared.js":                   {"assets/js/shared.js", "application/javascript; charset=utf-8", false},
 	"/ui/actions.js":                  {"assets/js/actions.js", "application/javascript; charset=utf-8", false},
-	"/ui/pages.js":                    {"assets/js/pages.js", "application/javascript; charset=utf-8", false},
-	"/ui/index.js":                    {"assets/js/index.js", "application/javascript; charset=utf-8", false},
-	"/ui/settings.js":                 {"assets/js/settings.js", "application/javascript; charset=utf-8", false},
-	"/ui/project.js":                  {"assets/js/project.js", "application/javascript; charset=utf-8", false},
-	"/ui/vault.js":                    {"assets/js/vault.js", "application/javascript; charset=utf-8", false},
-	"/ui/agents.js":                   {"assets/js/agents.js", "application/javascript; charset=utf-8", false},
-	"/ui/agent.js":                    {"assets/js/agent.js", "application/javascript; charset=utf-8", false},
-	"/ui/job-execution.js":            {"assets/js/job-execution.js", "application/javascript; charset=utf-8", false},
 	"/ui/declarative.js":              {"assets/js/declarative.js", "application/javascript; charset=utf-8", false},
 	"/ui/css/chrome.css":              {"assets/css/chrome.css", "text/css; charset=utf-8", false},
-	"/ui/css/index.css":               {"assets/css/index.css", "text/css; charset=utf-8", false},
-	"/ui/css/settings.css":            {"assets/css/settings.css", "text/css; charset=utf-8", false},
-	"/ui/css/project.css":             {"assets/css/project.css", "text/css; charset=utf-8", false},
-	"/ui/css/vault.css":               {"assets/css/vault.css", "text/css; charset=utf-8", false},
-	"/ui/css/agents.css":              {"assets/css/agents.css", "text/css; charset=utf-8", false},
-	"/ui/css/agent.css":               {"assets/css/agent.css", "text/css; charset=utf-8", false},
-	"/ui/css/job-execution.css":       {"assets/css/job-execution.css", "text/css; charset=utf-8", false},
 	"/ui/css/declarative.css":         {"assets/css/declarative.css", "text/css; charset=utf-8", false},
 }
 
@@ -70,36 +54,17 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		serveActionContract(w)
 		return
 	}
-	if r.URL.Path == "/ui/contracts/screens/front-page.json" {
-		serveScreenContract(w, "front-page")
+	if r.URL.Path == "/ui/contracts/routes.json" {
+		serveRouteContract(w)
 		return
 	}
-	if r.URL.Path == "/ui/contracts/screens/project-details.json" {
-		serveScreenContract(w, "project-details")
-		return
-	}
-	if r.URL.Path == "/ui/contracts/screens/job-details.json" {
-		serveScreenContract(w, "job-details")
-		return
-	}
-	if r.URL.Path == "/ui/contracts/screens/settings.json" {
-		serveScreenContract(w, "settings")
-		return
-	}
-	if r.URL.Path == "/ui/contracts/screens/run-options.json" {
-		serveScreenContract(w, "run-options")
-		return
-	}
-	if r.URL.Path == "/ui/contracts/screens/agents.json" {
-		serveScreenContract(w, "agents")
-		return
-	}
-	if r.URL.Path == "/ui/contracts/screens/agent-details.json" {
-		serveScreenContract(w, "agent-details")
-		return
-	}
-	if r.URL.Path == "/ui/contracts/screens/connection.json" {
-		serveScreenContract(w, "connection")
+	if strings.HasPrefix(r.URL.Path, "/ui/contracts/screens/") && strings.HasSuffix(r.URL.Path, ".json") {
+		name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/ui/contracts/screens/"), ".json")
+		if name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") {
+			http.NotFound(w, r)
+			return
+		}
+		serveScreenContract(w, name)
 		return
 	}
 	if r.URL.Path == "/ui/contracts/themes.json" {
@@ -111,44 +76,21 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page := ""
-	switch {
-	case r.URL.Path == "/":
-		page = "index"
-	case r.URL.Path == "/declarative-preview":
-		page = "declarative"
-	case strings.HasPrefix(r.URL.Path, "/declarative-preview/projects/"):
-		page = "declarative"
-	case strings.HasPrefix(r.URL.Path, "/declarative-preview/jobs/"):
-		page = "declarative"
-	case strings.HasPrefix(r.URL.Path, "/declarative-preview/run-options/"):
-		page = "declarative"
-	case r.URL.Path == "/declarative-preview/settings" || r.URL.Path == "/declarative-preview/settings/":
-		page = "declarative"
-	case r.URL.Path == "/declarative-preview/agents" || r.URL.Path == "/declarative-preview/agents/":
-		page = "declarative"
-	case strings.HasPrefix(r.URL.Path, "/declarative-preview/agents/"):
-		page = "declarative"
-	case r.URL.Path == "/declarative-preview/connection" || r.URL.Path == "/declarative-preview/connection/":
-		page = "declarative"
-	case r.URL.Path == "/settings":
-		page = "settings"
-	case strings.HasPrefix(r.URL.Path, "/projects/"):
-		page = "project"
-	case r.URL.Path == "/vault":
-		page = "vault"
-	case r.URL.Path == "/agents":
-		page = "agents"
-	case strings.HasPrefix(r.URL.Path, "/agents/"):
-		page = "agent"
-	case strings.HasPrefix(r.URL.Path, "/jobs/"):
-		page = "job-execution"
-	default:
+	if strings.HasPrefix(r.URL.Path, "/declarative-preview") {
+		http.NotFound(w, r)
+		return
+	}
+	routes, err := loadRouteContract()
+	if err != nil {
+		http.Error(w, "shared UI routes unavailable", http.StatusInternalServerError)
+		return
+	}
+	if _, ok := routes.Match(r.URL.Path, "web"); !ok {
 		http.NotFound(w, r)
 		return
 	}
 	serveEmbeddedAsset(w, embeddedAsset{
-		path:        "assets/pages/" + page + ".html",
+		path:        "assets/pages/declarative.html",
 		contentType: "text/html; charset=utf-8",
 	})
 }

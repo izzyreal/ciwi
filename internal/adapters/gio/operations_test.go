@@ -64,6 +64,15 @@ func (c *recordingNativeActionClient) ValidateManagedYAML(_ context.Context, req
 func (c *recordingNativeActionClient) SaveManagedYAML(_ context.Context, request *cnpv1.ManagedYAMLRequest, key string) (*cnpv1.ManagedYAMLDefinition, error) {
 	return &cnpv1.ManagedYAMLDefinition{ProjectId: request.ProjectId, ProjectName: "managed", Revision: "rev"}, c.record("save-managed-yaml", key)
 }
+func (c *recordingNativeActionClient) UpsertVaultConnection(_ context.Context, request *cnpv1.UpsertVaultConnectionRequest, key string) (*cnpv1.VaultConnection, error) {
+	return &cnpv1.VaultConnection{Name: request.Name}, c.record("save-vault-connection", key)
+}
+func (c *recordingNativeActionClient) TestVaultConnection(_ context.Context, _ int64) (*cnpv1.TestVaultConnectionResult, error) {
+	return &cnpv1.TestVaultConnectionResult{Ok: true, Message: "Vault auth ok"}, c.record("test-vault-connection", "")
+}
+func (c *recordingNativeActionClient) DeleteVaultConnection(_ context.Context, _ int64, key string) (*cnpv1.DeleteVaultConnectionResult, error) {
+	return &cnpv1.DeleteVaultConnectionResult{Deleted: true}, c.record("delete-vault-connection", key)
+}
 func (c *recordingNativeActionClient) CheckServerUpdates(context.Context) (*cnpv1.ServerUpdateCheckResult, error) {
 	return &cnpv1.ServerUpdateCheckResult{}, c.record("check-server-updates", "")
 }
@@ -146,6 +155,9 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 		{command: "run-agent-script", arguments: map[string]string{"agentId": "agent-1", "shell": "posix", "script": "uname -a"}, wantCall: "run-agent-script", wantNotice: "/jobs/job-script", wantNoticeEnabled: true},
 		{command: "project-action", arguments: map[string]string{"projectId": "2", "action": "reload"}, wantCall: "project-action"},
 		{command: "import-project", arguments: map[string]string{"repoUrl": "https://example.com/ciwi.git"}, wantCall: "import-project"},
+		{command: "save-vault-connection", arguments: map[string]string{"name": "home-vault", "url": "https://vault.example", "roleId": "role", "secretIdEnv": "CIWI_VAULT_SECRET_ID"}, wantCall: "save-vault-connection", wantNoticeEnabled: true},
+		{command: "test-vault-connection", arguments: map[string]string{"id": "7"}, wantCall: "test-vault-connection", wantNoticeEnabled: true},
+		{command: "delete-vault-connection", arguments: map[string]string{"id": "7"}, wantCall: "delete-vault-connection", wantNoticeEnabled: true},
 		{command: "check-server-updates", wantCall: "check-server-updates"},
 		{command: "refresh-rollback-versions", wantCall: "refresh-rollback-versions"},
 		{command: "server-update-action", arguments: map[string]string{"action": "apply", "targetVersion": "v1.2.3"}, wantCall: "server-update-action"},
@@ -162,7 +174,7 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 			if client.called != test.wantCall {
 				t.Fatalf("called = %q, want %q", client.called, test.wantCall)
 			}
-			if test.wantCall != "check-server-updates" && test.wantCall != "refresh-rollback-versions" && client.idempotencyKey != "request-key" {
+			if test.wantCall != "check-server-updates" && test.wantCall != "refresh-rollback-versions" && test.wantCall != "test-vault-connection" && client.idempotencyKey != "request-key" {
 				t.Fatalf("idempotency key = %q", client.idempotencyKey)
 			}
 			if effect.NavigateRoute != test.wantRoute {

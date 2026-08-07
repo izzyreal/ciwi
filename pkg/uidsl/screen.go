@@ -214,6 +214,7 @@ var commands = map[string]bool{
 	"project-action":               true,
 	"set-project-import-field":     true, "import-project": true,
 	"set-managed-yaml-field": true, "validate-managed-yaml": true, "save-managed-yaml": true,
+	"set-vault-field": true, "save-vault-connection": true, "test-vault-connection": true, "delete-vault-connection": true,
 	"set-server-update-option": true, "check-server-updates": true,
 	"refresh-rollback-versions": true, "server-update-action": true,
 	"set-connection-field": true, "save-connection": true, "retry-connection": true,
@@ -253,7 +254,7 @@ func (d *ScreenDocument) Validate() error {
 		if source.Query == "" {
 			return fmt.Errorf("dataSources[%d].query is required", i)
 		}
-		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" && source.Query != "get-managed-yaml" && source.Query != "get-run-options" && source.Query != "get-agents-view" && source.Query != "get-agent-details" && source.Query != "get-native-connection" && source.Query != "get-native-client-state" {
+		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" && source.Query != "get-managed-yaml" && source.Query != "get-run-options" && source.Query != "get-agents-view" && source.Query != "get-agent-details" && source.Query != "get-vault-connections" && source.Query != "get-native-connection" && source.Query != "get-native-client-state" {
 			return fmt.Errorf("dataSources[%d].query %q is not supported", i, source.Query)
 		}
 		for _, topic := range source.WatchTopics {

@@ -12,6 +12,7 @@ body { min-height: 100vh; }
   line-height:var(--ciwi-type-body-line-height);
 }
 .dsl-row { display: flex; flex-direction: row; }
+.dsl-disclosure-image { width:32px; height:32px; object-fit:contain; margin-right:var(--ciwi-space-small, 8px); vertical-align:middle; }
 .dsl-column, .dsl-section, .dsl-list { display: flex; flex-direction: column; }
 .dsl-scroller { display: flex; flex-direction: row; overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
 .dsl-card, .dsl-section, .dsl-hero { border: 1px solid var(--line); border-radius: var(--ciwi-surface-radius, 12px); background: var(--ciwi-card-background, var(--surface)); }

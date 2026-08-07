@@ -1,33 +1,9 @@
 package webui
 
-// These aliases keep behavior-focused tests readable while their source of
-// truth is now the embedded browser assets rather than Go string constants.
 var (
-	indexHTML        = mustTestAsset("assets/pages/index.html")
-	settingsHTML     = mustTestAsset("assets/pages/settings.html")
-	projectHTML      = mustTestAsset("assets/pages/project.html")
-	vaultHTML        = mustTestAsset("assets/pages/vault.html")
-	agentsHTML       = mustTestAsset("assets/pages/agents.html")
-	agentHTML        = mustTestAsset("assets/pages/agent.html")
-	jobExecutionHTML = mustTestAsset("assets/pages/job-execution.html")
-	declarativeHTML  = mustTestAsset("assets/pages/declarative.html")
-
-	themeJS        = mustTestAsset("assets/js/theme.js")
-	heartbeatJS    = mustTestAsset("assets/js/heartbeat.js")
-	sharedJS       = mustTestAsset("assets/js/shared.js")
-	pagesJS        = mustTestAsset("assets/js/pages.js")
-	indexJS        = mustTestAsset("assets/js/index.js")
-	settingsJS     = mustTestAsset("assets/js/settings.js")
-	projectJS      = mustTestAsset("assets/js/project.js")
-	jobExecutionJS = mustTestAsset("assets/js/job-execution.js")
-	agentsJS       = mustTestAsset("assets/js/agents.js")
-	tablerIconsSVG = mustTestAsset("assets/tabler-icons.svg")
-
+	declarativeHTML = mustTestAsset("assets/pages/declarative.html")
+	heartbeatJS     = mustTestAsset("assets/js/heartbeat.js")
 	chromeCSS       = mustTestAsset("assets/css/chrome.css")
-	indexCSS        = mustTestAsset("assets/css/index.css")
-	projectCSS      = mustTestAsset("assets/css/project.css")
-	jobExecutionCSS = mustTestAsset("assets/css/job-execution.css")
-	agentsCSS       = mustTestAsset("assets/css/agents.css")
 )
 
 func mustTestAsset(path string) string {

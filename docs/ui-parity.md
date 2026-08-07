@@ -1,9 +1,8 @@
 # Web and native UI parity
 
-The established web UI is the current interaction reference. The shared
-`ui/screens/*.yaml` documents and presentation bindings are the long-term UI
-contract; renderer differences belong in the browser and Gio adapters rather
-than in duplicated screen definitions.
+The shared `ui/screens/*.yaml` documents, `ui/routes.yaml`, and presentation
+bindings are the authoritative UI contract. Renderer differences belong in
+the browser and Gio adapters rather than in duplicated screen definitions.
 
 Parity means matching information hierarchy, responsive layout, interaction
 semantics, state feedback, and visual rhythm. It does not require identical
@@ -29,21 +28,26 @@ On macOS, `scripts/capture-ui-parity-macos.sh <surface>` captures a native and
 browser window interactively into `/tmp/ciwi-ui-parity`. Screenshots are review
 artifacts, not pixel-exact golden tests.
 
-## Implementation order
+## Maintenance order
 
 1. Shared visual metrics and renderer primitives.
 2. Front page structure and execution cards.
 3. Project details and graph/list behavior.
 4. Job details, execution timeline, and structured output.
 5. Settings, agents, run options, connection, and exceptional states.
-6. Promote shared declarative screens from browser preview to established
-   routes once behavior is complete enough to remove the duplicated view.
+6. Verify binding conformance, topic-scoped invalidation, and both renderers
+   before changing an established screen.
 
 For every slice, test the shared contract, both renderers' binding behavior,
 text selection, keyboard focus, scrolling, disclosure persistence, dialogs,
 and live refresh behavior before relying on screenshot review.
 
-## Current checkpoint
+## Current state
+
+The established browser routes and the Gio client now consume the shared
+declarations. Vault is available over both HTTP and typed CNP operations. The
+former hand-authored browser pages and `/declarative-preview` route have been
+removed.
 
 The project-details screen declares its pipeline dependency graph once through
 the shared `graph-view` component. Browser and native renderers both provide a

@@ -24,6 +24,21 @@ func TestDeclarativeScreenContractRoute(t *testing.T) {
 	}
 }
 
+func TestDeclarativeRouteContract(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/routes.json", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var routes uidsl.RouteDocument
+	if err := json.Unmarshal(recorder.Body.Bytes(), &routes); err != nil {
+		t.Fatal(err)
+	}
+	if match, ok := routes.Match("/projects/7", "web"); !ok || match.Route.Screen != "project-details" {
+		t.Fatalf("project route match = %#v, %v", match, ok)
+	}
+}
+
 func TestActionCatalogContractAndBrowserRunnerRoutes(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/actions.json", nil))
@@ -129,7 +144,22 @@ func TestAgentDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	}
 }
 
-func TestAgentsDeclarativeScreenAndPreviewRoutes(t *testing.T) {
+func TestVaultDeclarativeScreenContractRoute(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/vault.json", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var screen uidsl.ScreenDocument
+	if err := json.Unmarshal(recorder.Body.Bytes(), &screen); err != nil {
+		t.Fatal(err)
+	}
+	if screen.Metadata.Name != "vault" || len(screen.Screen.DataSources) != 1 || screen.Screen.DataSources[0].WatchTopics[0] != "vault" {
+		t.Fatalf("screen = %#v", screen)
+	}
+}
+
+func TestAgentsDeclarativeScreenAndPublicRoute(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/agents.json", nil))
 	if recorder.Code != 200 {
@@ -143,13 +173,13 @@ func TestAgentsDeclarativeScreenAndPreviewRoutes(t *testing.T) {
 		t.Fatalf("screen = %#v", screen)
 	}
 	recorder = httptest.NewRecorder()
-	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/agents", nil))
+	Handler(recorder, httptest.NewRequest("GET", "/agents", nil))
 	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
-		t.Fatalf("preview status = %d body = %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("public route status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
 }
 
-func TestConnectionDeclarativeScreenAndPreviewRoutes(t *testing.T) {
+func TestConnectionDeclarativeScreenIsNativeOnly(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/screens/connection.json", nil))
 	if recorder.Code != 200 {
@@ -163,45 +193,39 @@ func TestConnectionDeclarativeScreenAndPreviewRoutes(t *testing.T) {
 		t.Fatalf("screen = %#v", screen)
 	}
 	recorder = httptest.NewRecorder()
-	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/connection", nil))
-	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
-		t.Fatalf("preview status = %d body = %s", recorder.Code, recorder.Body.String())
+	Handler(recorder, httptest.NewRequest("GET", "/connection", nil))
+	if recorder.Code != 404 {
+		t.Fatalf("web connection status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
 }
 
-func TestDeclarativePreviewUsesSharedContractRenderer(t *testing.T) {
+func TestDeclarativePreviewIsRemoved(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview", nil))
-	if recorder.Code != 200 {
-		t.Fatalf("status = %d", recorder.Code)
-	}
-	page := recorder.Body.String()
-	for _, expected := range []string{"declarativeRoot", "/ui/declarative.js", "/ui/css/declarative.css"} {
-		if !strings.Contains(page, expected) {
-			t.Errorf("preview page does not contain %q", expected)
-		}
+	if recorder.Code != 404 {
+		t.Fatalf("status = %d, want 404", recorder.Code)
 	}
 }
 
-func TestDeclarativeProjectPreviewUsesSharedRenderer(t *testing.T) {
+func TestPublicProjectRouteUsesSharedRenderer(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/projects/7", nil))
+	Handler(recorder, httptest.NewRequest("GET", "/projects/7", nil))
 	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
 }
 
-func TestDeclarativeJobPreviewUsesSharedRenderer(t *testing.T) {
+func TestPublicJobRouteUsesSharedRenderer(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/jobs/job-1", nil))
+	Handler(recorder, httptest.NewRequest("GET", "/jobs/job-1", nil))
 	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
 }
 
-func TestDeclarativeSettingsPreviewUsesSharedRenderer(t *testing.T) {
+func TestPublicSettingsRouteUsesSharedRenderer(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	Handler(recorder, httptest.NewRequest("GET", "/declarative-preview/settings", nil))
+	Handler(recorder, httptest.NewRequest("GET", "/settings", nil))
 	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}

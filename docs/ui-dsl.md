@@ -10,17 +10,16 @@ language. It is a ciwi UI schema, not a general browser implementation.
 - Shared action semantics: [`ui/actions.yaml`](../ui/actions.yaml)
 - Shared fonts and images: [`ui/assets`](../ui/assets)
 - Gio adapter: [`internal/adapters/gio`](../internal/adapters/gio)
-- Browser proof adapter: [`internal/server/webui/assets/js/declarative.js`](../internal/server/webui/assets/js/declarative.js)
+- Browser adapter: [`internal/server/webui/assets/js/declarative.js`](../internal/server/webui/assets/js/declarative.js)
 
 Every client embeds the same versioned bundle. A native server cannot send
 HTML, CSS, JavaScript, or replacement UI code to the desktop executable.
 
-The shared bundle currently contains front-page, project-details, job-details,
-run-options, agents, agent-details, agent-script, settings, managed-yaml, and
-native-connection screens. Server-backed
-screens render from the same presentation contracts in the browser preview and
-the Gio client; local connection and SSH preferences remain renderer-owned
-bindings rather than server state.
+The shared bundle contains every browser and native screen, including Vault,
+plus the route catalog in `ui/routes.yaml`. Public browser routes and native
+navigation resolve through that catalog. Server-backed screens render from the
+same presentation contracts in the browser and Gio client; local connection
+and SSH preferences remain renderer-owned bindings rather than server state.
 
 ## Design boundaries
 
@@ -74,6 +73,9 @@ native widgets, dialogs, scrolling, and platform conventions.
 YAML decoding uses strict known-field validation. Documents also reject unknown
 components and commands, duplicate node IDs, malformed repeats, ambiguous text
 expressions, missing theme tokens, and invalid gradients.
+`uidsl.ValidateBindings` additionally checks concrete view models—including
+repeat and select items—before Gio renders them; equivalent browser fixtures
+guard the web adapter's decorated view models.
 
 ## Data and action flow
 
@@ -118,10 +120,9 @@ checked the server's command receipt. Receipt-only operations retain enough
 identity to diagnose an unknown outcome but never persist sensitive or unsafe
 arguments for automatic replay.
 
-Both adapters present catalogued operation outcomes as bounded transient
-notices using shared semantic theme tones. Notices are presentation feedback,
-not a durable state channel; clients still re-query authoritative views after
-changes.
+Both adapters re-query authoritative views after changes. Gio consumes the CNP
+change stream and the browser consumes `/api/v1/ui/changes`; each screen's
+declared `watchTopics` determines which invalidations trigger a refresh.
 
 ## Compatibility policy
 

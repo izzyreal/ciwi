@@ -94,6 +94,9 @@ type nativeActionClient interface {
 	ImportProject(context.Context, *cnpv1.ImportProjectRequest, string) (*cnpv1.ImportProjectResult, error)
 	ValidateManagedYAML(context.Context, *cnpv1.ManagedYAMLRequest) (*cnpv1.ManagedYAMLDefinition, error)
 	SaveManagedYAML(context.Context, *cnpv1.ManagedYAMLRequest, string) (*cnpv1.ManagedYAMLDefinition, error)
+	UpsertVaultConnection(context.Context, *cnpv1.UpsertVaultConnectionRequest, string) (*cnpv1.VaultConnection, error)
+	TestVaultConnection(context.Context, int64) (*cnpv1.TestVaultConnectionResult, error)
+	DeleteVaultConnection(context.Context, int64, string) (*cnpv1.DeleteVaultConnectionResult, error)
 	CheckServerUpdates(context.Context) (*cnpv1.ServerUpdateCheckResult, error)
 	ListServerUpdateVersions(context.Context) (*cnpv1.ServerUpdateVersions, error)
 	ServerUpdateActionWithKey(context.Context, string, string, string) (*cnpv1.ServerUpdateActionResult, error)
@@ -172,6 +175,15 @@ func validateNativeOperation(operation operations.Operation) error {
 		return require("repoUrl", "repository URL")
 	case "validate-managed-yaml", "save-managed-yaml":
 		return require("yaml", "YAML definition")
+	case "save-vault-connection":
+		for _, item := range [][2]string{{"name", "connection name"}, {"url", "Vault URL"}, {"roleId", "AppRole role ID"}, {"secretIdEnv", "secret ID environment variable"}} {
+			if err := require(item[0], item[1]); err != nil {
+				return err
+			}
+		}
+	case "test-vault-connection", "delete-vault-connection":
+		_, err := positiveInt64(arguments["id"], "Vault connection identifier")
+		return err
 	case "server-update-action":
 		if err := require("action", "server update action"); err != nil {
 			return err
@@ -385,6 +397,44 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 			return nativeOperationEffect{}, fmt.Errorf("save managed YAML: %w", err)
 		}
 		return nativeOperationEffect{Message: "Saved " + result.ProjectName, NavigateRoute: "/settings", Refresh: true, Notice: true}, nil
+	case "save-vault-connection":
+		commandCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		result, err := client.UpsertVaultConnection(commandCtx, &cnpv1.UpsertVaultConnectionRequest{
+			Name: strings.TrimSpace(arguments["name"]), Url: strings.TrimSpace(arguments["url"]), AuthMethod: "approle",
+			ApproleMount: strings.TrimSpace(arguments["approleMount"]), RoleId: strings.TrimSpace(arguments["roleId"]),
+			SecretIdEnv: strings.TrimSpace(arguments["secretIdEnv"]),
+		}, key)
+		if err != nil {
+			return nativeOperationEffect{}, fmt.Errorf("save Vault connection: %w", err)
+		}
+		return nativeOperationEffect{Message: "Saved Vault connection " + result.Name, Refresh: true, Notice: true}, nil
+	case "test-vault-connection":
+		id, err := positiveInt64(arguments["id"], "Vault connection identifier")
+		if err != nil {
+			return nativeOperationEffect{}, err
+		}
+		commandCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		result, err := client.TestVaultConnection(commandCtx, id)
+		if err != nil {
+			return nativeOperationEffect{}, fmt.Errorf("test Vault connection: %w", err)
+		}
+		if !result.Ok {
+			return nativeOperationEffect{}, fmt.Errorf("Vault test failed: %s", result.Message)
+		}
+		return nativeOperationEffect{Message: result.Message, Notice: true}, nil
+	case "delete-vault-connection":
+		id, err := positiveInt64(arguments["id"], "Vault connection identifier")
+		if err != nil {
+			return nativeOperationEffect{}, err
+		}
+		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		if _, err := client.DeleteVaultConnection(commandCtx, id, key); err != nil {
+			return nativeOperationEffect{}, fmt.Errorf("delete Vault connection: %w", err)
+		}
+		return nativeOperationEffect{Message: "Deleted Vault connection", Refresh: true, Notice: true}, nil
 	case "check-server-updates":
 		commandCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()

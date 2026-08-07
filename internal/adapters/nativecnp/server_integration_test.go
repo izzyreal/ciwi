@@ -30,6 +30,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		Projects:          projectService{},
 		ProjectCommands:   projectService{},
 		ManagedYAML:       managedYAMLService{},
+		Vault:             vaultServiceStub{},
 		Updates:           updateService{},
 		FrontPage:         frontPageService{},
 		ProjectDetails:    projectDetailsService{},
@@ -373,7 +374,7 @@ func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
 func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -405,7 +406,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	changes := application.NewChangeHub()
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -433,7 +434,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -510,7 +511,7 @@ func completeTestServices(changes *application.ChangeHub) nativecnp.Services {
 	pipelines := &pipelineService{}
 	executions := &executionCommandService{}
 	return nativecnp.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Updates: updateService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{},
 		FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
 		Pipelines: pipelines, PipelineChains: pipelines, RunOptions: pipelines,
 		Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: executions,
@@ -520,6 +521,19 @@ func completeTestServices(changes *application.ChangeHub) nativecnp.Services {
 }
 
 type commandReceiptService struct{}
+
+type vaultServiceStub struct{}
+
+func (vaultServiceStub) ListVaultConnections(context.Context) ([]protocol.VaultConnection, error) {
+	return nil, nil
+}
+func (vaultServiceStub) UpsertVaultConnection(_ context.Context, request protocol.UpsertVaultConnectionRequest) (protocol.VaultConnection, error) {
+	return protocol.VaultConnection{Name: request.Name}, nil
+}
+func (vaultServiceStub) TestVaultConnection(context.Context, int64, string) (protocol.TestVaultConnectionResponse, error) {
+	return protocol.TestVaultConnectionResponse{OK: true}, nil
+}
+func (vaultServiceStub) DeleteVaultConnection(context.Context, int64) error { return nil }
 
 func (commandReceiptService) Get(_ context.Context, key string) (application.CommandReceiptStatus, error) {
 	return application.CommandReceiptStatus{Found: true, Key: key, Status: "completed", Operation: "test"}, nil

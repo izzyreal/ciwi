@@ -9,6 +9,13 @@ import (
 )
 
 func TestEmbeddedUIBundle(t *testing.T) {
+	routes, err := LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes.Routes) == 0 {
+		t.Fatal("embedded route catalog is empty")
+	}
 	screen, err := LoadScreen("front-page")
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +170,7 @@ func TestSettingsHeaderMatchesAuthoritativeNavigation(t *testing.T) {
 			labels = append(labels, child.Text.Literal)
 		}
 	}
-	if got, want := strings.Join(labels, ","), "Back to Main,Agents,Restart Server"; got != want {
+	if got, want := strings.Join(labels, ","), "Back to Main,Agents,Vault,Restart Server"; got != want {
 		t.Fatalf("settings header buttons = %q, want %q", got, want)
 	}
 	walkNodes(*header, func(node *uidsl.Node) {
@@ -270,6 +277,9 @@ func TestSettingsProjectsMatchesAuthoritativeStructure(t *testing.T) {
 	if _, err := LoadScreen("managed-yaml"); err != nil {
 		t.Fatalf("managed YAML editor screen is unavailable: %v", err)
 	}
+	if _, err := LoadScreen("vault"); err != nil {
+		t.Fatalf("Vault screen is unavailable: %v", err)
+	}
 }
 
 func TestOnlyVersionBadgesUseStrongWeight(t *testing.T) {
@@ -287,6 +297,30 @@ func TestOnlyVersionBadgesUseStrongWeight(t *testing.T) {
 				t.Errorf("%s badge %#v emphasis = %q, version badge = %v", screenName, *node.Text, node.Style.Emphasis, versionBadge)
 			}
 		})
+	}
+}
+
+func TestRoutesReferenceExistingScreensAndBindingRoots(t *testing.T) {
+	routes, err := LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range routes.Routes {
+		screen, err := LoadScreen(route.Screen)
+		if err != nil {
+			t.Errorf("route %q: %v", route.Name, err)
+			continue
+		}
+		found := false
+		for _, source := range screen.Screen.DataSources {
+			if source.Name == route.BindingRoot {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("route %q binding root %q is not a data source of screen %q", route.Name, route.BindingRoot, route.Screen)
+		}
 	}
 }
 

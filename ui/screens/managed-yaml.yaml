@@ -68,3 +68,7 @@ screen:
                   - on: activate
                     command: save-managed-yaml
                     arguments: {projectId: "{{managedYAML.project_id}}", revision: "{{managedYAML.revision}}", yaml: "{{managedYAML.yaml}}"}
+          - component: text
+            text: {binding: managedYAML.result}
+            style: {toneBinding: managedYAML.result_tone}
+            visible: {binding: managedYAML.result, empty: true, not: true}

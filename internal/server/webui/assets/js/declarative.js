@@ -6,6 +6,11 @@
   const maxOutputCharacters = 1024 * 1024;
   let currentDocument = null;
   let currentData = null;
+  let currentRouteMatch = null;
+  let routeContractPromise = null;
+  let themeContractPromise = null;
+  const screenContractPromises = new Map();
+  let changeRefreshTimer = 0;
   const disclosureStorageKey = 'ciwi.declarative.disclosures.v1';
   const disclosureStates = loadDisclosureStates();
   const viewStorageKey = 'ciwi.declarative.views.v1';
@@ -225,12 +230,15 @@
 	(Array.isArray(projects) ? projects : []).forEach(project => {
 	  const count = Array.isArray(project.pipelines) ? project.pipelines.length : 0;
 	  project.pipeline_count_label = String(count) + (count === 1 ? ' pipeline' : ' pipelines');
+	  project.project_icon = Number(project.id || 0) > 0
+		? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon'
+		: '';
 	});
   }
 
   function decorateProjectDetails(view) {
 	const project = (view && view.project) || {};
-	view.project_icon = Number(project.id || 0) > 0 ? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon' : '';
+	project.project_icon = Number(project.id || 0) > 0 ? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon' : '';
 	const sourceMetadata = [];
 	if (String(project.repo_ref || '').trim()) sourceMetadata.push('branch: ' + String(project.repo_ref).trim());
 	if (String(project.config_file || '').trim()) sourceMetadata.push(String(project.config_file).trim());
@@ -257,6 +265,57 @@
 		});
 	  });
 	});
+  }
+
+  function managedYAMLBinding(definition) {
+	const source = definition && typeof definition === 'object' ? definition : {};
+	const projectID = Number(source.project_id || 0);
+	const editing = projectID > 0;
+	return {
+	  title: editing ? 'Edit Managed YAML' : 'Add Managed YAML',
+	  project_id: projectID,
+	  project_name: String(source.project_name || (editing ? '' : 'New managed project')),
+	  yaml: String(source.yaml || ''),
+	  revision: String(source.revision || ''),
+	  editing,
+	  result: '',
+	  result_tone: 'muted',
+	};
+  }
+
+  function agentScriptBinding(view, agentID) {
+	const agent = (view && view.agent) || {};
+	const shells = (Array.isArray(agent.script_shells) ? agent.script_shells : []).map(shell => ({
+	  value: String(shell.value || ''),
+	  label: String(shell.label || shell.value || ''),
+	  example_script: String(shell.example_script || ''),
+	}));
+	const selected = shells.length ? shells[0].value : '';
+	return {
+	  agent_id: String(agentID || agent.id || ''),
+	  agent_label: String(agent.hostname || agent.id || agentID || ''),
+	  shells,
+	  selected_shell: selected,
+	  script: shells.length ? shells[0].example_script : '',
+	  can_run: !!agent.can_run_script && selected !== '',
+	  result: '',
+	  result_tone: 'muted',
+	};
+  }
+
+  function vaultBinding(view) {
+	const connections = Array.isArray(view && view.connections) ? view.connections : [];
+	return {
+	  connections,
+	  connections_empty: connections.length === 0,
+	  name: 'home-vault',
+	  url: '',
+	  role_id: '',
+	  approle_mount: 'approle',
+	  secret_id_env: 'CIWI_VAULT_SECRET_ID',
+	  result: '',
+	  result_tone: 'muted',
+	};
   }
 
   function withWebOverride(node) {
@@ -296,14 +355,71 @@
     };
   }
 
-  function runOptionsViewURL(sourceRef, agentID) {
-	const projectPipelineMatch = window.location.pathname.match(/^\/declarative-preview\/run-options\/projects\/(\d+)\/pipelines\/(\d+)\/?$/);
-    const pipelineMatch = window.location.pathname.match(/^\/declarative-preview\/run-options\/pipelines\/(\d+)\/?$/);
-    const chainMatch = window.location.pathname.match(/^\/declarative-preview\/run-options\/projects\/(\d+)\/chains\/([^/]+)\/?$/);
+  function routePath() {
+	return String(window.location.pathname || '/');
+  }
+
+  function routeSegments(path) {
+	return String(path || '/').split('/').filter(Boolean);
+  }
+
+  function matchRoutePattern(route, path) {
+	const expected = routeSegments(route.pattern);
+	const actual = routeSegments(path);
+	if (expected.length !== actual.length) return null;
+	const params = {};
+	for (let index = 0; index < expected.length; index += 1) {
+	  const segment = expected[index];
+	  if (segment.startsWith('{') && segment.endsWith('}')) {
+		params[segment.slice(1, -1)] = decodeURIComponent(actual[index]);
+	  } else if (segment !== actual[index]) {
+		return null;
+	  }
+	}
+	return {route, params};
+  }
+
+  async function resolveBrowserRoute() {
+	if (!routeContractPromise) {
+	  routeContractPromise = fetch('/ui/contracts/routes.json', {cache: 'no-store'}).then(async response => {
+		if (!response.ok) throw new Error(await response.text());
+		return response.json();
+	  });
+	}
+	const documentContract = await routeContractPromise;
+	for (const route of (documentContract.routes || [])) {
+	  if (!(route.platforms || []).includes('web')) continue;
+	  const match = matchRoutePattern(route, routePath());
+	  if (match) return match;
+	}
+	throw new Error('Unsupported declarative route: ' + routePath());
+  }
+
+  function screenContract(name) {
+	if (!screenContractPromises.has(name)) {
+	  screenContractPromises.set(name, fetch('/ui/contracts/screens/' + encodeURIComponent(name) + '.json').then(async response => {
+		if (!response.ok) throw new Error(await response.text());
+		return response.json();
+	  }));
+	}
+	return screenContractPromises.get(name);
+  }
+
+  function themeContracts() {
+	if (!themeContractPromise) {
+	  themeContractPromise = fetch('/ui/contracts/themes.json').then(async response => {
+		if (!response.ok) throw new Error(await response.text());
+		return response.json();
+	  });
+	}
+	return themeContractPromise;
+  }
+
+  function runOptionsViewURL(sourceRef, agentID, routeMatch = currentRouteMatch) {
     let path = '';
-	if (projectPipelineMatch) path = '/api/v1/views/run-options/pipelines/' + encodeURIComponent(projectPipelineMatch[2]);
-    if (pipelineMatch) path = '/api/v1/views/run-options/pipelines/' + encodeURIComponent(pipelineMatch[1]);
-    if (chainMatch) path = '/api/v1/views/run-options/projects/' + encodeURIComponent(chainMatch[1]) + '/chains/' + encodeURIComponent(chainMatch[2]);
+	if (routeMatch && routeMatch.route.name === 'pipeline-run-options') path = '/api/v1/views/run-options/pipelines/' + encodeURIComponent(routeMatch.params.pipelineId);
+    if (routeMatch && routeMatch.route.name === 'legacy-pipeline-run-options') path = '/api/v1/views/run-options/pipelines/' + encodeURIComponent(routeMatch.params.pipelineId);
+    if (routeMatch && routeMatch.route.name === 'chain-run-options') path = '/api/v1/views/run-options/projects/' + encodeURIComponent(routeMatch.params.projectId) + '/chains/' + encodeURIComponent(routeMatch.params.chainId);
     if (!path) return '';
     const query = new URLSearchParams();
     if (sourceRef) query.set('source_ref', sourceRef);
@@ -340,11 +456,7 @@
         if (action.confirm && !window.confirm(action.confirm.message || action.confirm.title || 'Continue?')) return;
         const execute = async runtime => {
         if (action.command === 'navigate' && args.route) {
-          const inPreview = window.location.pathname.startsWith('/declarative-preview');
-          const destination = inPreview
-            ? (args.route === '/' ? '/declarative-preview' : '/declarative-preview' + args.route)
-            : args.route;
-          window.location.assign(destination);
+		  window.location.assign(args.route);
         }
         else if (action.command === 'open-url' && args.url) window.open(args.url, '_blank', 'noopener,noreferrer');
         else if (action.command === 'refresh') refresh();
@@ -400,6 +512,95 @@
 		  if (!response.ok) throw new Error(await response.text());
 		  currentData = {runOptions: await response.json()};
 		  renderCurrent();
+		}
+		else if (action.command === 'set-managed-yaml-field') {
+		  const editor = currentData && currentData.managedYAML;
+		  if (!editor || args.field !== 'yaml') throw new Error('Managed YAML editor is unavailable');
+		  editor.yaml = args.value || '';
+		  editor.result = '';
+		}
+		else if (action.command === 'validate-managed-yaml') {
+		  const response = await fetch('/api/v1/projects/managed-yaml/validate', {
+			method: 'POST', headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({project_id: Number(args.projectId || 0), yaml: args.yaml || ''}), signal: runtime.signal,
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  const editor = currentData.managedYAML;
+		  editor.project_name = result.project_name || editor.project_name;
+		  editor.result = 'Valid · ' + String(Number(result.pipelines || 0)) + ' pipeline(s), ' + String(Number(result.pipeline_chains || 0)) + ' chain(s)';
+		  editor.result_tone = 'success';
+		  renderCurrent();
+		}
+		else if (action.command === 'save-managed-yaml') {
+		  const projectID = Number(args.projectId || 0);
+		  const path = projectID > 0
+			? '/api/v1/projects/' + encodeURIComponent(projectID) + '/managed-yaml'
+			: '/api/v1/projects/managed-yaml';
+		  const response = await fetch(path, {
+			method: projectID > 0 ? 'PUT' : 'POST',
+			headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
+			body: JSON.stringify({revision: args.revision || '', yaml: args.yaml || ''}), signal: runtime.signal,
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  window.location.assign('/managed-yaml/' + encodeURIComponent(result.project_id));
+		}
+		else if (action.command === 'set-agent-script-field') {
+		  const script = currentData && currentData.agentScript;
+		  if (!script) throw new Error('Agent script editor is unavailable');
+		  if (args.field === 'shell') {
+			script.selected_shell = args.value || '';
+			const shell = script.shells.find(option => option.value === script.selected_shell);
+			if (shell) script.script = shell.example_script || '';
+		  } else if (args.field === 'script') script.script = args.value || '';
+		  else throw new Error('Unknown agent script field');
+		  script.result = '';
+		  renderCurrent();
+		}
+		else if (action.command === 'run-agent-script') {
+		  const response = await fetch('/api/v1/agents/' + encodeURIComponent(args.agentId) + '/actions', {
+			method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
+			body: JSON.stringify({action: 'run-script', shell: args.shell || '', script: args.script || ''}), signal: runtime.signal,
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  if (!result.job_execution_id) throw new Error('Script response did not include a job identifier');
+		  window.location.assign('/jobs/' + encodeURIComponent(result.job_execution_id));
+		}
+		else if (action.command === 'set-vault-field') {
+		  const vault = currentData && currentData.vault;
+		  if (!vault || !Object.prototype.hasOwnProperty.call(vault, args.field)) throw new Error('Vault editor is unavailable');
+		  vault[args.field] = args.value || '';
+		  vault.result = '';
+		}
+		else if (action.command === 'save-vault-connection') {
+		  const response = await fetch('/api/v1/vault/connections', {
+			method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
+			body: JSON.stringify({
+			  name: args.name || '', url: args.url || '', auth_method: 'approle',
+			  approle_mount: args.approleMount || 'approle', role_id: args.roleId || '', secret_id_env: args.secretIdEnv || '',
+			}), signal: runtime.signal,
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
+		}
+		else if (action.command === 'test-vault-connection') {
+		  const response = await fetch('/api/v1/vault/connections/' + encodeURIComponent(args.id) + '/test', {
+			method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}', signal: runtime.signal,
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  currentData.vault.result = (result.ok ? 'OK: ' : 'FAILED: ') + String(result.message || '');
+		  currentData.vault.result_tone = result.ok ? 'success' : 'danger';
+		  renderCurrent();
+		}
+		else if (action.command === 'delete-vault-connection') {
+		  const response = await fetch('/api/v1/vault/connections/' + encodeURIComponent(args.id), {
+			method: 'DELETE', headers: ciwiActionHeaders(runtime), signal: runtime.signal,
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  await refresh();
 		}
         else if (action.command === 'run-pipeline') {
           const response = await fetch('/api/v1/pipelines/' + encodeURIComponent(args.pipelineDbId) + '/run-selection', {
@@ -563,7 +764,7 @@
 		  const result = await response.json();
 		  const rerunID = result && result.job_execution && result.job_execution.id;
 		  if (!rerunID) throw new Error('Rerun response did not include an execution identifier');
-		  window.location.assign('/declarative-preview/jobs/' + encodeURIComponent(rerunID));
+		  window.location.assign('/jobs/' + encodeURIComponent(rerunID));
 		}
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
         };
@@ -585,7 +786,7 @@
       } else if (action.on === 'change') {
         element.addEventListener('change', () => {
           const selected = element.options && element.selectedIndex >= 0 ? element.options[element.selectedIndex] : null;
-          const actionData = element.tagName === 'INPUT'
+          const actionData = element.tagName === 'INPUT' || element.tagName === 'TEXTAREA'
             ? Object.assign({}, data, {input: {value: element.value}})
             : Object.assign({}, data, {selection: {value: element.value, label: selected ? selected.textContent : element.value}});
           invoke(actionData).catch(error => window.alert(error.message || String(error)));
@@ -905,7 +1106,19 @@
 	    label.textContent = renderText(node.text, data) || 'Details';
 	    summary.appendChild(label);
 	  } else {
-	    summary.textContent = renderText(node.text, data) || 'Details';
+		if (node.image) {
+		  const image = document.createElement('img');
+		  image.className = 'dsl-disclosure-image';
+		  image.src = node.image.binding
+			? String(resolve(data, node.image.binding) || '')
+			: (node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset);
+		  image.alt = node.image.description || '';
+		  if (node.image.binding) image.addEventListener('error', () => { image.hidden = true; }, {once: true});
+		  summary.appendChild(image);
+		}
+		const label = document.createElement('span');
+		label.textContent = renderText(node.text, data) || 'Details';
+		summary.appendChild(label);
       }
       element.appendChild(summary);
       if (node.disclosure) {
@@ -1160,36 +1373,90 @@
     }
   }
 
+  function activeWatchTopics() {
+	const topics = new Set();
+	const sources = currentDocument && currentDocument.screen && currentDocument.screen.dataSources;
+	(Array.isArray(sources) ? sources : []).forEach(source => {
+	  (Array.isArray(source.watchTopics) ? source.watchTopics : []).forEach(topic => topics.add(String(topic)));
+	});
+	return topics;
+  }
+
+  function scheduleChangeRefresh() {
+	if (changeRefreshTimer) window.clearTimeout(changeRefreshTimer);
+	changeRefreshTimer = window.setTimeout(() => {
+	  changeRefreshTimer = 0;
+	  refresh();
+	}, 100);
+  }
+
+  function startChangeWatch() {
+	if (typeof window.EventSource !== 'function') return;
+	const source = new EventSource('/api/v1/ui/changes');
+	source.onmessage = event => {
+	  try {
+		const change = JSON.parse(event.data || '{}');
+		const watched = activeWatchTopics();
+		if (change.resync_required || (change.topics || []).some(topic => watched.has(String(topic)))) scheduleChangeRefresh();
+	  } catch (_) {}
+	};
+  }
+
   async function refresh() {
     const generation = ++outputWatchGeneration;
     try {
-      const projectMatch = window.location.pathname.match(/^\/declarative-preview\/projects\/(\d+)\/?$/);
-      const jobMatch = window.location.pathname.match(/^\/declarative-preview\/jobs\/([^/]+)\/?$/);
-      const settingsMatch = window.location.pathname.match(/^\/declarative-preview\/settings\/?$/);
-	  const agentDetailsMatch = window.location.pathname.match(/^\/declarative-preview\/agents\/([^/]+)\/?$/);
-	  const agentsMatch = window.location.pathname.match(/^\/declarative-preview\/agents\/?$/);
-	  const connectionMatch = window.location.pathname.match(/^\/declarative-preview\/connection\/?$/);
-	  const runOptionsURL = runOptionsViewURL('', '');
-	  const runOptionsMatch = runOptionsURL !== '';
-	  const screenName = connectionMatch ? 'connection' : (runOptionsMatch ? 'run-options' : (projectMatch ? 'project-details' : (jobMatch ? 'job-details' : (settingsMatch ? 'settings' : (agentDetailsMatch ? 'agent-details' : (agentsMatch ? 'agents' : 'front-page'))))));
-      const viewURL = projectMatch
-        ? '/api/v1/views/projects/' + encodeURIComponent(projectMatch[1])
-		: (jobMatch ? '/api/v1/views/jobs/' + encodeURIComponent(jobMatch[1]) : (settingsMatch ? '/api/v1/server-info' : (agentDetailsMatch ? '/api/v1/views/agents/' + encodeURIComponent(agentDetailsMatch[1]) : (agentsMatch ? '/api/v1/views/agents' : (runOptionsMatch ? runOptionsURL : '/api/v1/views/front-page')))));
-	  const bindingRoot = connectionMatch ? 'connection' : (runOptionsMatch ? 'runOptions' : (projectMatch ? 'projectDetails' : (jobMatch ? 'jobDetails' : (settingsMatch ? 'settings' : (agentDetailsMatch ? 'agentDetails' : (agentsMatch ? 'agents' : 'frontPage'))))));
-      const [screenResponse, themeResponse, viewResponse] = await Promise.all([
-        fetch('/ui/contracts/screens/' + screenName + '.json'),
-        fetch('/ui/contracts/themes.json'),
-        fetch(viewURL),
+	  currentRouteMatch = await resolveBrowserRoute();
+	  const routeName = currentRouteMatch.route.name;
+	  const screenName = currentRouteMatch.route.screen;
+	  const bindingRoot = currentRouteMatch.route.bindingRoot;
+	  const projectMatch = routeName === 'project-details';
+	  const jobMatch = routeName === 'job-details';
+	  const settingsMatch = routeName === 'settings';
+	  const agentDetailsMatch = routeName === 'agent-details';
+	  const agentsMatch = routeName === 'agents';
+	  const connectionMatch = routeName === 'connection';
+	  const managedYAMLMatch = routeName === 'managed-yaml' || routeName === 'managed-yaml-new';
+	  const agentScriptMatch = routeName === 'agent-script';
+	  const vaultMatch = routeName === 'vault';
+	  const runOptionsMatch = routeName === 'pipeline-run-options' || routeName === 'legacy-pipeline-run-options' || routeName === 'chain-run-options';
+	  let viewURL = '/api/v1/views/front-page';
+	  if (projectMatch) viewURL = '/api/v1/views/projects/' + encodeURIComponent(currentRouteMatch.params.projectId);
+	  if (jobMatch) viewURL = '/api/v1/views/jobs/' + encodeURIComponent(currentRouteMatch.params.jobId);
+	  if (settingsMatch) viewURL = '/api/v1/server-info';
+	  if (agentDetailsMatch) viewURL = '/api/v1/views/agents/' + encodeURIComponent(currentRouteMatch.params.agentId);
+	  if (agentsMatch) viewURL = '/api/v1/views/agents';
+	  if (managedYAMLMatch && routeName === 'managed-yaml') viewURL = '/api/v1/projects/' + encodeURIComponent(currentRouteMatch.params.projectId) + '/managed-yaml';
+	  if (managedYAMLMatch && routeName === 'managed-yaml-new') viewURL = '';
+	  if (agentScriptMatch) viewURL = '/api/v1/views/agents/' + encodeURIComponent(currentRouteMatch.params.agentId);
+	  if (vaultMatch) viewURL = '/api/v1/vault/connections';
+	  if (runOptionsMatch) viewURL = runOptionsViewURL('', '', currentRouteMatch);
+	  const viewPromise = viewURL
+		? fetch(viewURL)
+		: Promise.resolve(new Response('{}', {status: 200, headers: {'Content-Type': 'application/json'}}));
+	  const [documentContract, themes, viewResponse] = await Promise.all([
+		screenContract(screenName),
+		themeContracts(),
+		viewPromise,
       ]);
-      if (!screenResponse.ok || !themeResponse.ok || !viewResponse.ok) throw new Error('Could not load declarative view data');
-      const [documentContract, themes, responseView] = await Promise.all([screenResponse.json(), themeResponse.json(), viewResponse.json()]);
+	  if (!viewResponse.ok) throw new Error(await viewResponse.text());
+	  const responseView = await viewResponse.json();
       applyContractTheme(themes);
       let view = responseView;
-	  if (projectMatch) decorateProjectDetails(view);
-	  if (!projectMatch && !jobMatch && !settingsMatch && !agentDetailsMatch && !agentsMatch && !connectionMatch && !runOptionsMatch) {
+	  if (managedYAMLMatch) view = managedYAMLBinding(responseView);
+	  if (agentScriptMatch) view = agentScriptBinding(responseView, currentRouteMatch.params.agentId);
+	  if (vaultMatch) view = vaultBinding(responseView);
+	  if (projectMatch) {
+		decorateProjectDetails(view);
+		decorateExecutionCards(view.history_executions, false);
+		view.history_empty = !Array.isArray(view.history_executions) || view.history_executions.length === 0;
+	  }
+	  if (routeName === 'front-page') {
 		decorateFrontPageProjects(view.projects);
         decorateExecutionCards(view.queued_executions, true);
         decorateExecutionCards(view.history_executions, false);
+		view.loading = false;
+		view.queued_empty = !Array.isArray(view.queued_executions) || view.queued_executions.length === 0;
+		view.history_empty = !Array.isArray(view.history_executions) || view.history_executions.length === 0;
       }
       if (settingsMatch) {
         const selectedTheme = ciwiStoredTheme();
@@ -1264,7 +1531,8 @@
 	  currentData = { [bindingRoot]: view, client: browserClientState };
       renderCurrent();
       if (jobMatch) {
-        watchJobOutput(jobMatch[1], generation).catch(error => {
+		const jobID = currentRouteMatch.params.jobId;
+        watchJobOutput(jobID, generation).catch(error => {
           if (generation !== outputWatchGeneration) return;
           if (currentData && currentData.jobDetails) {
             appendBoundedOutput(currentData.jobDetails, '', 'Output stream failed: ' + (error.message || String(error)) + '\n');
@@ -1282,4 +1550,5 @@
   }
 
   refresh();
+  startChangeWatch();
 })();

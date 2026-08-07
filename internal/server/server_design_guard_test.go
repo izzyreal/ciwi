@@ -42,10 +42,7 @@ func TestDesignGuardGoCodeAvoidsRawJobStatusLiterals(t *testing.T) {
 func TestDesignGuardUIJobsUseSharedStatusHelpers(t *testing.T) {
 	root := repoRootFromServerTests(t)
 	files := []string{
-		"internal/server/webui/assets/js/job-execution.js",
-		"internal/server/webui/assets/js/pages.js",
-		"internal/server/webui/assets/js/agent.js",
-		"internal/server/webui/assets/js/index.js",
+		"internal/server/webui/assets/js/declarative.js",
 	}
 	directJobStatusComparison := regexp.MustCompile(`(?:\bstatus\b|\.status\b|normalizedJobStatus\s*\([^)]*\))\s*(?:===|==)\s*['"](queued|leased|running|succeeded|failed)['"]`)
 
@@ -55,7 +52,7 @@ func TestDesignGuardUIJobsUseSharedStatusHelpers(t *testing.T) {
 		if len(lines) == 0 {
 			continue
 		}
-		t.Errorf("%s contains direct job-status comparisons at lines %v; use shared status helpers from ui/shared.js", rel, lines)
+		t.Errorf("%s contains direct job-status comparisons at lines %v; keep status policy in shared presentation data", rel, lines)
 	}
 }
 

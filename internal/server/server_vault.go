@@ -1,13 +1,55 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
+
+func (s *stateStore) ListVaultConnections(_ context.Context) ([]protocol.VaultConnection, error) {
+	return s.vaultStore().ListVaultConnections()
+}
+
+func (s *stateStore) UpsertVaultConnection(_ context.Context, req protocol.UpsertVaultConnectionRequest) (protocol.VaultConnection, error) {
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" || strings.TrimSpace(req.RoleID) == "" || strings.TrimSpace(req.SecretIDEnv) == "" {
+		return protocol.VaultConnection{}, application.NewError(application.ErrorInvalidArgument, "name, url, role_id and secret_id_env are required", nil)
+	}
+	item, err := s.vaultStore().UpsertVaultConnection(req)
+	if err != nil {
+		return protocol.VaultConnection{}, application.NewError(application.ErrorInvalidArgument, err.Error(), err)
+	}
+	s.app().changes.Publish(application.ChangeVault)
+	return item, nil
+}
+
+func (s *stateStore) DeleteVaultConnection(_ context.Context, id int64) error {
+	if id <= 0 {
+		return application.NewError(application.ErrorInvalidArgument, "invalid vault connection id", nil)
+	}
+	if err := s.vaultStore().DeleteVaultConnection(id); err != nil {
+		return application.NewError(application.ErrorNotFound, err.Error(), err)
+	}
+	s.app().changes.Publish(application.ChangeVault)
+	return nil
+}
+
+func (s *stateStore) TestVaultConnection(ctx context.Context, id int64, secretIDOverride string) (protocol.TestVaultConnectionResponse, error) {
+	conn, err := s.vaultStore().GetVaultConnectionByID(id)
+	if err != nil {
+		return protocol.TestVaultConnectionResponse{}, application.NewError(application.ErrorNotFound, err.Error(), err)
+	}
+	token, err := s.getVaultToken(ctx, conn, secretIDOverride)
+	if err != nil {
+		return protocol.TestVaultConnectionResponse{OK: false, Message: err.Error()}, nil
+	}
+	return protocol.TestVaultConnectionResponse{OK: true, Message: fmt.Sprintf("vault auth ok, token=%s...", token[:minInt(8, len(token))])}, nil
+}
 
 func (s *stateStore) vaultConnectionsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -33,6 +75,7 @@ func (s *stateStore) vaultConnectionsHandler(w http.ResponseWriter, r *http.Requ
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		s.app().changes.Publish(application.ChangeVault)
 		writeJSON(w, http.StatusCreated, vaultConnectionResponse{Connection: item})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -60,6 +103,7 @@ func (s *stateStore) vaultConnectionByIDHandler(w http.ResponseWriter, r *http.R
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+		s.app().changes.Publish(application.ChangeVault)
 		writeJSON(w, http.StatusOK, vaultConnectionDeleteResponse{Deleted: true, ID: id})
 		return
 	}

@@ -62,11 +62,11 @@ Key**. Reconnects remain paused for an unknown or changed host key. Apple builds
 store the device private key in Keychain; Windows and Linux store it beside the
 native preferences with user-only permissions. See [`files.md`](files.md).
 
-The browser proof of the same declarative screen is available at
-`/declarative-preview`; project navigation continues under
-`/declarative-preview/projects/{projectId}` and execution navigation under
-`/declarative-preview/jobs/{jobExecutionId}`. These routes are intentionally
-separate from the established pages until behavioral parity is complete.
+The browser and native client now render the same shared screen declarations.
+The established browser routes (`/`, `/projects/{projectId}`,
+`/jobs/{jobExecutionId}`, `/settings`, `/agents`, and `/vault`) are resolved by
+the shared route catalog. The former `/declarative-preview` route has been
+removed.
 
 ## Native client packages
 

@@ -388,6 +388,56 @@ func (c *Client) SaveManagedYAML(ctx context.Context, request *cnpv1.ManagedYAML
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) ListVaultConnections(ctx context.Context) (*cnpv1.VaultConnectionList, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_ListVaultConnections{ListVaultConnections: &cnpv1.Empty{}}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetVaultConnectionList(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) UpsertVaultConnection(ctx context.Context, request *cnpv1.UpsertVaultConnectionRequest, idempotencyKey string) (*cnpv1.VaultConnection, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_UpsertVaultConnection{UpsertVaultConnection: request}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetVaultConnection(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) TestVaultConnection(ctx context.Context, id int64) (*cnpv1.TestVaultConnectionResult, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_TestVaultConnection{TestVaultConnection: &cnpv1.TestVaultConnectionRequest{Id: id}}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetTestVaultConnection(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) DeleteVaultConnection(ctx context.Context, id int64, idempotencyKey string) (*cnpv1.DeleteVaultConnectionResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_DeleteVaultConnection{DeleteVaultConnection: &cnpv1.VaultConnectionIDRequest{Id: id}}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetDeleteVaultConnection(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) GetRunOptions(ctx context.Context, request *cnpv1.GetRunOptionsRequest) (*cnpv1.RunOptionsView, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetRunOptions{GetRunOptions: request}}, "")
 	if err != nil {

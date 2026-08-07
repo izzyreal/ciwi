@@ -6,9 +6,22 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 
+	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
 )
+
+var (
+	routeContractOnce sync.Once
+	routeContract     *uidsl.RouteDocument
+	routeContractErr  error
+)
+
+func loadRouteContract() (*uidsl.RouteDocument, error) {
+	routeContractOnce.Do(func() { routeContract, routeContractErr = sharedUI.LoadRoutes() })
+	return routeContract, routeContractErr
+}
 
 func serveScreenContract(w http.ResponseWriter, name string) {
 	screen, err := sharedUI.LoadScreen(name)
@@ -35,6 +48,15 @@ func serveActionContract(w http.ResponseWriter) {
 		return
 	}
 	serveJSON(w, catalog)
+}
+
+func serveRouteContract(w http.ResponseWriter) {
+	routes, err := loadRouteContract()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	serveJSON(w, routes)
 }
 
 func serveTypographyContract(w http.ResponseWriter) {
