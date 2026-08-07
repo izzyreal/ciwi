@@ -116,7 +116,8 @@ type outputSelection struct {
 }
 
 type backgroundTextureKey struct {
-	size image.Point
+	size            image.Point
+	progressOpacity uint8
 }
 
 type jobOutputSnapshot struct {
@@ -1002,6 +1003,16 @@ func renderSurfaceBackground(size image.Point, colors palette) *image.NRGBA {
 	return renderCSSBackground(size, func(x, y float64) color.NRGBA {
 		return glow.composite(gradient.pixel(x, y), x, y)
 	})
+}
+
+func renderSurfaceProgressBackground(size image.Point, colors palette, progressWeight float64) *image.NRGBA {
+	result := renderSurfaceBackground(size, colors)
+	for y := 0; y < size.Y; y++ {
+		for x := 0; x < size.X; x++ {
+			result.SetNRGBA(x, y, mixColorSRGB(result.NRGBAAt(x, y), colors.success, progressWeight))
+		}
+	}
+	return result
 }
 
 func renderCSSBackground(size image.Point, pixel func(x, y float64) color.NRGBA) *image.NRGBA {
@@ -3297,6 +3308,29 @@ func (r *Renderer) paintSurfaceProgress(gtx layout.Context, progress semanticPro
 	}
 	surfaceClip := r.cachedRoundedClip(gtx, surfaceRect.Size(), radius).Push(gtx.Ops)
 	progressClip := clip.Rect(progressRect).Push(gtx.Ops)
+	if r.palette.surfaceGlow.A != 0 {
+		// Browser progress is an sRGB color-mix over the hero texture. Gio's GPU
+		// alpha blending is linear and makes bright success colors much stronger,
+		// so cache the equivalent precomposed texture and reveal only its progress
+		// portion. Quantizing animated opacity keeps the cache bounded.
+		textureSize := gradientTextureSize(surfaceRect.Size())
+		opacityByte := int(math.Round(opacity * 255))
+		opacityByte = min(255, max(0, ((opacityByte+1)/2)*2))
+		key := backgroundTextureKey{size: textureSize, progressOpacity: uint8(opacityByte)}
+		background, exists := r.surfaceBackgrounds[key]
+		if !exists {
+			if len(r.surfaceBackgrounds) >= 32 {
+				r.surfaceBackgrounds = map[backgroundTextureKey]paint.ImageOp{}
+			}
+			background = paint.NewImageOp(renderSurfaceProgressBackground(textureSize, r.palette, float64(opacityByte)/255))
+			background.Filter = paint.FilterLinear
+			r.surfaceBackgrounds[key] = background
+		}
+		paintScaledImageOps(gtx.Ops, background, surfaceRect.Size())
+		progressClip.Pop()
+		surfaceClip.Pop()
+		return
+	}
 	progressColor := r.palette.success
 	progressColor.A = uint8(math.Round(float64(progressColor.A) * opacity))
 	paint.Fill(gtx.Ops, progressColor)

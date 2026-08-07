@@ -2172,6 +2172,23 @@ func TestProgressColorMatchesBrowserSRGBComposition(t *testing.T) {
 	}
 }
 
+func TestSurfaceProgressTextureMatchesBrowserSRGBComposition(t *testing.T) {
+	colors := palette{
+		surface:     color.NRGBA{R: 0x11, G: 0x19, B: 0x36, A: 0xff},
+		subtle:      color.NRGBA{R: 0x14, G: 0x1d, B: 0x39, A: 0xff},
+		surfaceGlow: color.NRGBA{R: 0x24, G: 0x20, B: 0x52, A: 0xff},
+		success:     color.NRGBA{R: 0x52, G: 0xe2, B: 0xa2, A: 0xff},
+	}
+	size := image.Pt(24, 12)
+	base := renderSurfaceBackground(size, colors)
+	progress := renderSurfaceProgressBackground(size, colors, .18)
+	point := image.Pt(9, 5)
+	want := mixColorSRGB(base.NRGBAAt(point.X, point.Y), colors.success, .18)
+	if got := progress.NRGBAAt(point.X, point.Y); got != want {
+		t.Fatalf("surface progress pixel = %v, want browser sRGB composition %v", got, want)
+	}
+}
+
 func TestOutputTailingUsesCompactStatefulIconToggle(t *testing.T) {
 	if tablerIcons()["arrow-bar-to-down"] == nil {
 		t.Fatal("arrow-bar-to-down icon is unavailable")
