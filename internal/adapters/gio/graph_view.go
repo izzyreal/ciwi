@@ -488,17 +488,9 @@ func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Nod
 			}
 		}
 	}
-	borderColor := r.palette.border
-	background := r.palette.surface
-	if selectable && selector.Hovered() {
-		borderColor = r.palette.accent
-		background = graphNodeHoverFill(r.palette.surface, r.palette.accent)
-	}
-	if selected {
-		borderColor = r.palette.accentStrong
-	}
+	borderColor, background, borderWidth := definitionGraphNodeSurface(r.palette, selectable && selector.Hovered(), selected)
 	content := func(gtx layout.Context) layout.Dimensions {
-		return r.layoutCachedBorder(gtx, borderColor, r.metrics.controlRadius, 1, func(gtx layout.Context) layout.Dimensions {
+		return r.layoutCachedBorder(gtx, borderColor, r.metrics.controlRadius, borderWidth, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				r.paintCachedRoundedFill(gtx, gtx.Constraints.Min, r.metrics.controlRadius, background)
 				return layout.Dimensions{Size: gtx.Constraints.Min}
@@ -537,6 +529,21 @@ func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Nod
 		semantic.DescriptionOp("Select " + graphNode.label).Add(gtx.Ops)
 		return content(gtx)
 	})
+}
+
+func definitionGraphNodeSurface(colors palette, hovered, selected bool) (border, background color.NRGBA, borderWidth unit.Dp) {
+	border = colors.border
+	background = colors.surface
+	borderWidth = 1
+	if hovered {
+		border = colors.accent
+		background = graphNodeHoverFill(colors.surface, colors.accent)
+	}
+	if selected {
+		border = colors.focus
+		borderWidth = 2
+	}
+	return border, background, borderWidth
 }
 
 func graphNodeHoverFill(surface, accent color.NRGBA) color.NRGBA {

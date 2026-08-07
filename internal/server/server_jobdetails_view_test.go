@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -16,7 +15,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	defer server.Close()
 	job, err := state.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
 		Script: "go test ./...", Metadata: map[string]string{
-			"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "unit-tests",
+			"project": "ciwi", "project_id": "42", "pipeline_id": "build", "pipeline_job_id": "unit-tests",
 		},
 		RequiredCapabilities: map[string]string{"os": "windows", "requires.tool.wix": ">=6.0.0"},
 		StepPlan:             []protocol.JobStepPlanItem{{Index: 1, Total: 1, Name: "Run tests", YAMLLiteral: "run: go test ./...", Script: "go test ./..."}},
@@ -33,7 +32,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&view); err != nil {
 		t.Fatal(err)
 	}
-	if view.ID != job.ID || view.Title != "ciwi / build / unit-tests" || view.Context == "" || view.Status != "queued" {
+	if view.ID != job.ID || view.ProjectID != 42 || view.Title != "ciwi / build / unit-tests" || view.Context == "" || view.Status != "queued" {
 		t.Fatalf("view = %+v", view)
 	}
 	if view.SchedulingDiagnosis == nil || view.SchedulingDiagnosis.Summary != "No agents are registered" {
@@ -47,6 +46,21 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	}
 	if view.Progress.State != domain.ProgressIndeterminate {
 		t.Fatalf("job progress = %+v", view.Progress)
+	}
+	if len(view.JobProperties) == 0 || view.CacheStatisticsEmpty == "" {
+		t.Fatalf("job detail rows = properties %+v cache empty %q", view.JobProperties, view.CacheStatisticsEmpty)
+	}
+	if view.HostToolRequirements.Summary == "" && view.HostToolRequirements.EmptyLabel == "" {
+		t.Fatalf("host tool requirements = %+v", view.HostToolRequirements)
+	}
+	if view.ContainerToolRequirements.EmptyLabel == "" {
+		t.Fatalf("container tool requirements = %+v", view.ContainerToolRequirements)
+	}
+	if view.Artifacts.EmptyLabel == "" || view.TestReport.EmptyLabel == "" || view.CoverageReport.EmptyLabel == "" {
+		t.Fatalf("reports = artifacts %+v tests %+v coverage %+v", view.Artifacts, view.TestReport, view.CoverageReport)
+	}
+	if !view.RunContext.Available || len(view.RunContext.Pipelines) != 1 {
+		t.Fatalf("run context = %+v", view.RunContext)
 	}
 	if err := state.db.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
 		Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "Run tests"}, Output: "\x1b[32mok\x1b[0m\n",
@@ -95,8 +109,13 @@ func TestJobDetailsViewIncludesStoredReportsAndSyntheticReportArtifacts(t *testi
 		t.Fatal(err)
 	}
 
-	view, err := state.app().jobDetails.GetJobDetailsView(context.Background(), job.ID)
-	if err != nil {
+	response := mustJSONRequest(t, server.Client(), http.MethodGet, server.URL+"/api/v1/views/jobs/"+job.ID, nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.StatusCode, readBody(t, response))
+	}
+	defer response.Body.Close()
+	var view jobDetailsViewResponse
+	if err := json.NewDecoder(response.Body).Decode(&view); err != nil {
 		t.Fatal(err)
 	}
 	if len(view.Artifacts.Rows) != 2 || view.Artifacts.Rows[0].Label != "coverage-report.json" || view.Artifacts.Rows[1].Label != "test-report.json" {

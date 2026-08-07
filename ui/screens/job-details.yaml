@@ -500,8 +500,8 @@ screen:
                   stateKey: "{{outputGroup.state_key}}"
                 layout:
                   direction: vertical
-                  gap: small
-                  padding: medium
+                  gap: "0"
+                  padding: section-padding
                 style:
                   role: output-group
                   toneBinding: outputGroup.status

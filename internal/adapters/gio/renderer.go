@@ -1354,9 +1354,13 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			// reachable with one continuous gesture.
 			node.Layout.MaxHeight = ""
 		}
-		return r.constrainNode(gtx, node, func(gtx layout.Context) layout.Dimensions {
+		content := func(gtx layout.Context) layout.Dimensions {
 			return r.layoutScroller(gtx, node, data, path)
-		})
+		}
+		if node.ID == "job-output-groups" {
+			content = r.surfaceWithBorder(content, r.metrics.spaceSmall, r.palette.consoleBackground, r.palette.consoleBorder)
+		}
+		return r.constrainNode(gtx, node, content)
 	}
 	if node.Repeat != nil {
 		items, err := resolveItems(data, node.Repeat.Source)
@@ -1470,10 +1474,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			if node.Layout.Padding != "" {
 				padding = r.spacing(node.Layout.Padding)
 			}
-			// Output groups split their padding between the disclosure header and
-			// body. Keeping that padding outside the disclosure would also inset
-			// the expanded header progress layer, leaving a small rectangle inside
-			// an otherwise full-width step card.
+			// Output groups and execution rows put their declared inset inside the
+			// header and body. Their progress layer can therefore meet the top and
+			// side edges of the complete disclosure surface.
 			if node.Style.Role == "output-group" || node.Style.Role == "execution-row" {
 				padding = 0
 			}
@@ -1492,9 +1495,6 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		} else {
 			content = r.surface(content, padding, node.Style.Role == "hero", surfaceProgress)
 		}
-	}
-	if node.Component == "scroller" && node.ID == "job-output-groups" {
-		content = r.surfaceWithBorder(content, r.metrics.spaceSmall, r.palette.consoleBackground, r.palette.consoleBorder)
 	}
 	if node.Style.Role == "settings-project-row" {
 		rowContent := content
@@ -1673,7 +1673,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 					}
 					if textNode.Style.Role == "output-group" {
 						textNode.Style.Role = "output-summary"
-						textNode.Style.Tone = "console-text"
+						textNode.Style.Tone = "console-accent"
 					}
 					return r.layoutText(gtx, textNode, data, labelPath)
 				})
@@ -1829,10 +1829,8 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	}
 	headerWidget := layout.Widget(header)
 	if isOutputGroup || isExecutionRow {
-		// The output-group surface itself is deliberately unpadded so progress
-		// can occupy the complete header width. Execution rows use the same
-		// composition so their progress geometry cannot change when expanded.
-		// Apply the former surface inset to the header contents instead.
+		// The declared padding belongs to the header contents, while progress is
+		// painted behind the resulting full-width, full-height header surface.
 		headerInset := layout.Inset{
 			Top: contentPadding, Right: contentPadding,
 			Bottom: contentPadding, Left: contentPadding,
@@ -1853,6 +1851,9 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			bodyInset := layout.Inset{Top: 12}
 			if isOutputGroup || isExecutionRow {
+				if isOutputGroup {
+					bodyInset.Top = contentPadding
+				}
 				bodyInset.Right = contentPadding
 				bodyInset.Bottom = contentPadding
 				bodyInset.Left = contentPadding
@@ -2147,6 +2148,13 @@ func (r *Renderer) disclosureStateKey(node uidsl.Node, data any, fallback string
 
 func (r *Renderer) setDisclosureState(key string, expanded, persistent bool) {
 	r.disclosures[key] = expanded
+	if !expanded && strings.HasPrefix(key, "job-output:") && r.outputScroller != nil {
+		// A Gio list retains offsets measured against the formerly expanded row.
+		// Once that row becomes shorter, the stale bottom-aligned position can
+		// leave a viewport-sized blank area before the first output group.
+		r.outputScroller.ScrollToEnd = false
+		r.outputScroller.Position = layout.Position{}
+	}
 	if persistent {
 		r.persistentDisclosures[key] = true
 		r.notifyDisclosureChange()
@@ -2200,6 +2208,9 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 	}
 	for i := range node.Children {
 		child := node.Children[i]
+		if gridWeights == nil && !r.nodeOccupiesLayout(child, data) {
+			continue
+		}
 		widgetFn := func(gtx layout.Context) layout.Dimensions {
 			return r.layoutNode(gtx, child, data, fmt.Sprintf("%s/%d", path, i))
 		}
@@ -2224,6 +2235,23 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		}
 		return row(gtx)
 	})
+}
+
+func (r *Renderer) nodeOccupiesLayout(raw uidsl.Node, data any) bool {
+	node, hidden := applyGioOverride(raw, r.compact)
+	if hidden {
+		return false
+	}
+	if node.Visible == nil {
+		return true
+	}
+	value, err := uidsl.Resolve(data, node.Visible.Binding)
+	if err != nil {
+		// Preserve the binding error that layoutNode renders in place of the node.
+		return true
+	}
+	equal := conditionEqual(node.Visible, value)
+	return (node.Visible.Not && !equal) || (!node.Visible.Not && equal)
 }
 
 func (r *Renderer) layoutCompactActionRow(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
@@ -2909,7 +2937,9 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	}
 	if node.ID == "job-output-groups" {
 		r.outputScroller = list
-		list.ScrollToEnd = r.outputTailing
+		// Gio bottom-aligns a short list when ScrollToEnd is true. Only tail a
+		// list known from its previous layout to exceed the available viewport.
+		list.ScrollToEnd = r.outputTailing && list.Position.Length > gtx.Constraints.Max.Y
 	}
 	content := func(gtx layout.Context) layout.Dimensions {
 		return list.Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
@@ -4165,6 +4195,8 @@ func (r *Renderer) spacing(value string) unit.Dp {
 		return r.metrics.spaceMedium
 	case "large":
 		return r.metrics.spaceLarge
+	case "section-padding":
+		return r.metrics.sectionPadding
 	}
 	if parsed, err := strconv.ParseFloat(value, 32); err == nil {
 		return unit.Dp(parsed)

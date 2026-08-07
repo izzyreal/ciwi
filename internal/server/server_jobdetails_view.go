@@ -1,36 +1,102 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 type jobDetailsViewResponse struct {
-	ID                  string                          `json:"id"`
-	Title               string                          `json:"title"`
-	Context             string                          `json:"context"`
-	Status              string                          `json:"status"`
-	StatusLabel         string                          `json:"status_label"`
-	CurrentStep         string                          `json:"current_step"`
-	Agent               string                          `json:"agent"`
-	Mode                string                          `json:"mode"`
-	Created             string                          `json:"created"`
-	Started             string                          `json:"started"`
-	Finished            string                          `json:"finished"`
-	Duration            string                          `json:"duration"`
-	ExitCode            string                          `json:"exit_code"`
-	Error               string                          `json:"error"`
-	CanCancel           bool                            `json:"can_cancel"`
-	CanRerun            bool                            `json:"can_rerun"`
-	Output              string                          `json:"output"`
-	Timeline            []jobTimelineViewResponse       `json:"timeline"`
-	OutputGroups        []jobOutputGroupViewResponse    `json:"output_groups"`
-	SchedulingDiagnosis *jobSchedulingDiagnosisResponse `json:"scheduling_diagnosis,omitempty"`
-	Progress            domain.Progress                 `json:"progress"`
+	ID                        string                          `json:"id"`
+	ProjectID                 int64                           `json:"project_id"`
+	Title                     string                          `json:"title"`
+	Context                   string                          `json:"context"`
+	Status                    string                          `json:"status"`
+	StatusLabel               string                          `json:"status_label"`
+	CurrentStep               string                          `json:"current_step"`
+	Agent                     string                          `json:"agent"`
+	Mode                      string                          `json:"mode"`
+	Created                   string                          `json:"created"`
+	Started                   string                          `json:"started"`
+	Finished                  string                          `json:"finished"`
+	Duration                  string                          `json:"duration"`
+	ExitCode                  string                          `json:"exit_code"`
+	Error                     string                          `json:"error"`
+	CanCancel                 bool                            `json:"can_cancel"`
+	CanRerun                  bool                            `json:"can_rerun"`
+	Output                    string                          `json:"output"`
+	Timeline                  []jobTimelineViewResponse       `json:"timeline"`
+	OutputGroups              []jobOutputGroupViewResponse    `json:"output_groups"`
+	SchedulingDiagnosis       *jobSchedulingDiagnosisResponse `json:"scheduling_diagnosis,omitempty"`
+	JobProperties             []jobDetailRowResponse          `json:"job_properties"`
+	CacheStatistics           []jobDetailRowResponse          `json:"cache_statistics"`
+	CacheStatisticsEmpty      string                          `json:"cache_statistics_empty"`
+	HostToolRequirements      jobToolRequirementsResponse     `json:"host_tool_requirements"`
+	ContainerToolRequirements jobToolRequirementsResponse     `json:"container_tool_requirements"`
+	ReleaseSummary            []jobDetailRowResponse          `json:"release_summary"`
+	HasReleaseSummary         bool                            `json:"has_release_summary"`
+	Artifacts                 jobReportDetailsResponse        `json:"artifacts"`
+	TestReport                jobReportDetailsResponse        `json:"test_report"`
+	CoverageReport            jobReportDetailsResponse        `json:"coverage_report"`
+	RunContext                jobRunContextResponse           `json:"run_context"`
+	Progress                  domain.Progress                 `json:"progress"`
+}
+
+type jobDetailRowResponse struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+	Tone  string `json:"tone"`
+}
+
+type jobToolRequirementsResponse struct {
+	EmptyLabel string   `json:"empty_label"`
+	Summary    string   `json:"summary"`
+	Tone       string   `json:"tone"`
+	Issues     []string `json:"issues"`
+}
+
+type jobReportDetailsResponse struct {
+	EmptyLabel      string                 `json:"empty_label"`
+	Summary         string                 `json:"summary"`
+	Tone            string                 `json:"tone"`
+	Rows            []jobDetailRowResponse `json:"rows"`
+	AdditionalLabel string                 `json:"additional_label"`
+}
+
+type jobRunContextResponse struct {
+	Available  bool                            `json:"available"`
+	Scope      string                          `json:"scope"`
+	ScopeLabel string                          `json:"scope_label"`
+	Pipelines  []jobRunContextPipelineResponse `json:"pipelines"`
+}
+
+type jobRunContextPipelineResponse struct {
+	ID           int64                      `json:"id"`
+	PipelineID   string                     `json:"pipeline_id"`
+	DependsOn    []string                   `json:"depends_on"`
+	Status       string                     `json:"status"`
+	SummaryLabel string                     `json:"summary_label"`
+	Jobs         []jobRunContextJobResponse `json:"jobs"`
+}
+
+type jobRunContextJobResponse struct {
+	ID           string                           `json:"id"`
+	Needs        []string                         `json:"needs"`
+	Status       string                           `json:"status"`
+	SummaryLabel string                           `json:"summary_label"`
+	Executions   []jobRunContextExecutionResponse `json:"executions"`
+}
+
+type jobRunContextExecutionResponse struct {
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	MatrixLabel  string `json:"matrix_label"`
+	AttemptLabel string `json:"attempt_label"`
 }
 
 type jobSchedulingDiagnosisResponse struct {
@@ -118,7 +184,12 @@ func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, jobDetailsToResponse(view))
+	runContext, err := s.GetJobExecutionGraphContext(r.Context(), jobID)
+	if err != nil {
+		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, jobDetailsToResponse(view, runContext))
 }
 
 func (s *stateStore) jobOutputViewHandler(w http.ResponseWriter, r *http.Request, jobID string) {
@@ -149,7 +220,7 @@ func (s *stateStore) jobOutputViewHandler(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewResponse {
+func jobDetailsToResponse(view presentation.JobDetailsView, runContext protocol.JobExecutionGraphContext) jobDetailsViewResponse {
 	timeline := make([]jobTimelineViewResponse, 0, len(view.Timeline))
 	for _, item := range view.Timeline {
 		timeline = append(timeline, jobTimelineViewResponse{
@@ -169,10 +240,17 @@ func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewRespon
 		})
 	}
 	response := jobDetailsViewResponse{
-		ID: view.ID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
+		ID: view.ID, ProjectID: view.ProjectID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun, Timeline: timeline, OutputGroups: outputGroups,
+		JobProperties:   jobDetailRowsToResponse(view.JobProperties),
+		CacheStatistics: jobDetailRowsToResponse(view.CacheStatistics), CacheStatisticsEmpty: view.CacheStatisticsEmpty,
+		HostToolRequirements:      jobToolRequirementsToResponse(view.HostToolRequirements),
+		ContainerToolRequirements: jobToolRequirementsToResponse(view.ContainerToolRequirements),
+		ReleaseSummary:            jobDetailRowsToResponse(view.ReleaseSummary), HasReleaseSummary: view.HasReleaseSummary,
+		Artifacts: jobReportDetailsToResponse(view.Artifacts), TestReport: jobReportDetailsToResponse(view.TestReport),
+		CoverageReport: jobReportDetailsToResponse(view.CoverageReport), RunContext: jobRunContextToResponse(runContext),
 		Progress: view.Progress,
 	}
 	if view.SchedulingSummary != "" {
@@ -189,4 +267,67 @@ func jobDetailsToResponse(view presentation.JobDetailsView) jobDetailsViewRespon
 		}
 	}
 	return response
+}
+
+func jobDetailRowsToResponse(rows []presentation.JobDetailRowView) []jobDetailRowResponse {
+	result := make([]jobDetailRowResponse, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, jobDetailRowResponse{Label: row.Label, Value: row.Value, Tone: row.Tone})
+	}
+	return result
+}
+
+func jobToolRequirementsToResponse(view presentation.ToolRequirementsView) jobToolRequirementsResponse {
+	return jobToolRequirementsResponse{
+		EmptyLabel: view.EmptyLabel, Summary: view.Summary, Tone: view.Tone,
+		Issues: append([]string{}, view.Issues...),
+	}
+}
+
+func jobReportDetailsToResponse(view presentation.ReportDetailsView) jobReportDetailsResponse {
+	return jobReportDetailsResponse{
+		EmptyLabel: view.EmptyLabel, Summary: view.Summary, Tone: view.Tone,
+		Rows: jobDetailRowsToResponse(view.Rows), AdditionalLabel: view.AdditionalLabel,
+	}
+}
+
+func jobRunContextToResponse(view protocol.JobExecutionGraphContext) jobRunContextResponse {
+	pipelines := make([]jobRunContextPipelineResponse, 0, len(view.Pipelines))
+	for _, pipeline := range view.Pipelines {
+		jobs := make([]jobRunContextJobResponse, 0, len(pipeline.Jobs))
+		for _, job := range pipeline.Jobs {
+			executions := make([]jobRunContextExecutionResponse, 0, len(job.Executions))
+			for _, execution := range job.Executions {
+				matrixLabel := strings.TrimSpace(execution.MatrixName)
+				if matrixLabel == "" && strings.TrimSpace(execution.MatrixIndex) != "" {
+					matrixLabel = "index-" + strings.TrimSpace(execution.MatrixIndex)
+				}
+				if matrixLabel == "" {
+					matrixLabel = "job"
+				}
+				attemptLabel := "Previous attempt"
+				if execution.LatestAttempt {
+					attemptLabel = "Latest attempt"
+				}
+				executions = append(executions, jobRunContextExecutionResponse{
+					ID: execution.ID, Status: execution.Status, MatrixLabel: matrixLabel, AttemptLabel: attemptLabel,
+				})
+			}
+			jobs = append(jobs, jobRunContextJobResponse{
+				ID: job.PipelineJobID, Needs: append([]string{}, job.Needs...), Status: job.Status,
+				SummaryLabel: fmt.Sprintf("%s · %d execution(s)", job.Status, len(job.Executions)), Executions: executions,
+			})
+		}
+		pipelines = append(pipelines, jobRunContextPipelineResponse{
+			ID: pipeline.PipelineDBID, PipelineID: pipeline.PipelineID, DependsOn: append([]string{}, pipeline.DependsOn...),
+			Status: pipeline.Status, SummaryLabel: fmt.Sprintf("%s · %d job(s)", pipeline.Status, len(pipeline.Jobs)), Jobs: jobs,
+		})
+	}
+	scopeLabel := strings.TrimSpace(view.Scope)
+	if scopeLabel != "" {
+		scopeLabel = strings.ToUpper(scopeLabel[:1]) + scopeLabel[1:] + " run"
+	}
+	return jobRunContextResponse{
+		Available: len(pipelines) > 0, Scope: view.Scope, ScopeLabel: scopeLabel, Pipelines: pipelines,
+	}
 }

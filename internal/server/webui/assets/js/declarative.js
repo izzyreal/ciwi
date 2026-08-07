@@ -273,6 +273,37 @@
 	applyProjectStructureFilter(view, previousFilter);
   }
 
+  function decorateJobDetails(view) {
+	view.project_icon = Number(view.project_id || 0) > 0
+	  ? '/api/v1/projects/' + encodeURIComponent(view.project_id) + '/icon'
+	  : '';
+	view.job_properties = Array.isArray(view.job_properties) ? view.job_properties : [];
+	view.cache_statistics = Array.isArray(view.cache_statistics) ? view.cache_statistics : [];
+	view.cache_statistics_empty = String(view.cache_statistics_empty || '');
+	if (!view.scheduling_diagnosis || typeof view.scheduling_diagnosis !== 'object') {
+	  view.scheduling_diagnosis = {summary: '', requirements_label: '', agents: [], additional_agents_label: ''};
+	}
+	view.scheduling_diagnosis.agents = Array.isArray(view.scheduling_diagnosis.agents) ? view.scheduling_diagnosis.agents : [];
+	['host_tool_requirements', 'container_tool_requirements'].forEach(key => {
+	  if (!view[key] || typeof view[key] !== 'object') view[key] = {empty_label: '', summary: '', tone: 'muted', issues: []};
+	  view[key].issues = Array.isArray(view[key].issues) ? view[key].issues : [];
+	});
+	const reportEmptyLabels = {
+	  artifacts: 'No artifacts', test_report: 'No parsed test report', coverage_report: 'No parsed coverage report',
+	};
+	Object.entries(reportEmptyLabels).forEach(([key, emptyLabel]) => {
+	  if (!view[key] || typeof view[key] !== 'object') {
+		view[key] = {empty_label: emptyLabel, summary: '', tone: 'muted', rows: [], additional_label: ''};
+	  }
+	  view[key].rows = Array.isArray(view[key].rows) ? view[key].rows : [];
+	});
+	view.release_summary = Array.isArray(view.release_summary) ? view.release_summary : [];
+	if (!view.run_context || typeof view.run_context !== 'object') {
+	  view.run_context = {available: false, scope_label: '', pipelines: []};
+	}
+	view.run_context.pipelines = Array.isArray(view.run_context.pipelines) ? view.run_context.pipelines : [];
+  }
+
   function projectStructureFilterOptions(view) {
 	const options = [
 	  {value: 'all-pipelines', label: 'All Pipelines'},
@@ -372,12 +403,19 @@
 
   function applyLayout(element, layout) {
     if (!layout) return;
-    const sizes = { small: 'var(--ciwi-space-small)', medium: 'var(--ciwi-space-medium)', large: 'var(--ciwi-space-large)' };
+    const sizes = {
+      small: 'var(--ciwi-space-small)', medium: 'var(--ciwi-space-medium)', large: 'var(--ciwi-space-large)',
+      'section-padding': 'var(--ciwi-section-padding)',
+    };
 	const cssLength = value => /^\d+(?:\.\d+)?$/.test(String(value || '').trim()) ? String(value).trim() + 'px' : value;
     if (layout.direction === 'horizontal') element.style.flexDirection = 'row';
     if (layout.direction === 'vertical') element.style.flexDirection = 'column';
     if (layout.gap) element.style.gap = sizes[layout.gap] || cssLength(layout.gap);
-    if (layout.padding) element.style.padding = sizes[layout.padding] || cssLength(layout.padding);
+    if (layout.padding) {
+      const padding = sizes[layout.padding] || cssLength(layout.padding);
+      element.style.padding = padding;
+      element.style.setProperty('--dsl-layout-padding', padding);
+    }
     if (layout.align) element.style.alignItems = layout.align;
     if (layout.justify) element.style.justifyContent = layout.justify;
     if (layout.wrap) element.style.flexWrap = 'wrap';
@@ -853,7 +891,7 @@
     icon.classList.add('dsl-icon');
     icon.setAttribute('aria-hidden', 'true');
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', '/ui/icons.svg?v=declarative-2#icon-' + name);
+    use.setAttribute('href', '/ui/icons.svg?v=declarative-3#icon-' + name);
     icon.appendChild(use);
     return icon;
   }
@@ -1260,7 +1298,21 @@
 
   function renderCurrent() {
     if (!currentDocument || !currentData) return;
+    const pageScroll = {top: window.scrollY, left: window.scrollX};
+    const scrollPositions = new Map();
+    root.querySelectorAll('[id]').forEach(element => {
+      if (element.scrollTop || element.scrollLeft) {
+        scrollPositions.set(element.id, {top: element.scrollTop, left: element.scrollLeft});
+      }
+    });
     root.replaceChildren(renderNode(currentDocument.screen.root, currentData));
+    scrollPositions.forEach((position, id) => {
+      const element = document.getElementById(id);
+      if (!element || !root.contains(element)) return;
+      element.scrollTop = position.top;
+      element.scrollLeft = position.left;
+    });
+    window.scrollTo(pageScroll.left, pageScroll.top);
   }
 
   function declarativeVersionOptions(versions, emptyLabel) {
@@ -1361,13 +1413,18 @@
     selection.addRange(range);
   }
 
-  function initializeJobOutputView(view) {
-    view.system_output = '';
+  function initializeJobOutputView(view, previousView) {
+	const previousGroups = new Map((Array.isArray(previousView && previousView.output_groups) ? previousView.output_groups : [])
+	  .map(group => [String(group.id || ''), group]));
+	const previousCursor = Number(previousView && previousView.output_after_event_id || 0);
+	view.system_output = previousView ? String(previousView.system_output || '') : '';
+	view.output_after_event_id = Number.isFinite(previousCursor) && previousCursor >= 0 ? previousCursor : 0;
     (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
-      group.output = '';
+	  const previousGroup = previousGroups.get(String(group.id || ''));
+      group.output = previousGroup ? String(previousGroup.output || '') : '';
       group.is_phase = group.kind === 'phase';
       group.is_step = group.kind !== 'phase';
-      group.empty_output_label = group.reached ? '(no output)' : '(step was not reached)';
+	  group.empty_output_label = group.output ? '' : (group.reached ? '(no output)' : '(step was not reached)');
       group.yaml_literal = group.yaml_literal || '(none)';
       group.expanded_command = group.expanded_command || '(none)';
       group.details = group.details || '(none)';
@@ -1376,7 +1433,7 @@
   }
 
   function appendBoundedOutput(view, itemID, text) {
-    if (!text) return;
+	if (!text) return false;
     const group = itemID ? browserOutputGroup(view, itemID) : null;
     const fieldOwner = group || view;
     const field = group ? 'output' : 'system_output';
@@ -1385,6 +1442,7 @@
       output = '[ciwi: earlier output omitted]\n' + output.slice(output.length - maxOutputCharacters);
     }
     fieldOwner[field] = output;
+	return true;
   }
 
   function rebuildJobOutputText(view) {
@@ -1398,14 +1456,16 @@
   }
 
   function mergeJobOutputBatch(view, batch) {
+	let changed = false;
     (Array.isArray(batch.events) ? batch.events : []).forEach(event => {
       const itemID = String(event.item_id || '');
       if (event.type === 'system-message' || event.type === 'output') {
-        appendBoundedOutput(view, event.type === 'system-message' ? '' : itemID, event.text || '');
+		changed = appendBoundedOutput(view, event.type === 'system-message' ? '' : itemID, event.text || '') || changed;
       }
       if (event.type === 'finished') {
         const group = browserOutputGroup(view, itemID);
         if (group) {
+		  changed = true;
           group.reached = true;
           group.status = event.error ? 'failed' : 'succeeded';
           group.status_label = event.error ? 'Failed' : 'Succeeded';
@@ -1415,26 +1475,41 @@
         }
       }
     });
+	if (!changed) return false;
     rebuildJobOutputText(view);
     updateOutputSearch(view, 0);
+	return true;
   }
 
   async function watchJobOutput(jobID, generation) {
-    let afterEventID = 0;
+	const activeJob = currentData && currentData.jobDetails;
+	let afterEventID = activeJob && String(activeJob.id || '') === String(jobID)
+	  ? Number(activeJob.output_after_event_id || 0) : 0;
+	if (!Number.isFinite(afterEventID) || afterEventID < 0) afterEventID = 0;
     while (generation === outputWatchGeneration) {
       const response = await fetch('/api/v1/views/jobs/' + encodeURIComponent(jobID) + '/output?after_event_id=' + String(afterEventID));
-      if (!response.ok) throw new Error(await response.text());
+	  if (generation !== outputWatchGeneration) return;
+	  if (!response.ok) {
+		const message = await response.text();
+		if (generation !== outputWatchGeneration) return;
+		throw new Error(message);
+	  }
       const batch = await response.json();
-      if (currentData && currentData.jobDetails) {
-        mergeJobOutputBatch(currentData.jobDetails, batch);
-        renderCurrent();
-        if (currentData.jobDetails.output_tailing) {
+	  if (generation !== outputWatchGeneration) return;
+	  const currentJob = currentData && currentData.jobDetails;
+	  if (!currentJob || String(currentJob.id || '') !== String(jobID)) return;
+	  const nextEventID = Number(batch.next_event_id || afterEventID);
+	  if (Number.isFinite(nextEventID) && nextEventID >= afterEventID) {
+		afterEventID = nextEventID;
+		currentJob.output_after_event_id = nextEventID;
+	  }
+	  if (mergeJobOutputBatch(currentJob, batch)) {
+		renderCurrent();
+		if (currentJob.output_tailing) {
           const outputElement = document.getElementById('job-output-groups');
           if (outputElement) outputElement.scrollTop = outputElement.scrollHeight;
         }
       }
-      const nextEventID = Number(batch.next_event_id || afterEventID);
-      if (Number.isFinite(nextEventID) && nextEventID >= afterEventID) afterEventID = nextEventID;
       if (batch.terminal && !batch.has_more) return;
       if (!batch.has_more) await new Promise(resolve => window.setTimeout(resolve, 500));
     }
@@ -1593,10 +1668,11 @@
       if (jobMatch) {
 		const previousJob = currentData && currentData.jobDetails;
 		const sameJob = previousJob && String(previousJob.id || '') === String(view.id || '');
-        initializeJobOutputView(view);
+		decorateJobDetails(view);
 		view.output_search = sameJob ? String(previousJob.output_search || '') : '';
-        view.output_search_count = '0/0';
 		view.output_match_index = sameJob ? Number(previousJob.output_match_index || 0) : 0;
+		initializeJobOutputView(view, sameJob ? previousJob : null);
+		updateOutputSearch(view, 0);
 		view.output_tailing = sameJob ? !!previousJob.output_tailing : true;
 		view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
 		view.tailing_tone = view.output_tailing ? 'success' : 'warning';

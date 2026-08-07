@@ -378,6 +378,9 @@ func TestJobOutputGroupsUseAuthoritativeStepContentTypography(t *testing.T) {
 	if outputGroup == nil {
 		t.Fatal("job details screen has no output-group disclosure")
 	}
+	if outputGroup.Layout.Gap != "0" || outputGroup.Layout.Padding != "section-padding" {
+		t.Fatalf("output-group layout = gap %q padding %q, want compact shared spacing", outputGroup.Layout.Gap, outputGroup.Layout.Padding)
+	}
 	rolesByLiteral := map[string]string{}
 	for index := range outputGroup.Children {
 		child := &outputGroup.Children[index]
@@ -454,28 +457,31 @@ func TestFrontPageMatchesBrowserProjectAndEmptyTableSummaries(t *testing.T) {
 	}
 }
 
-func TestFrontPageExecutionSummariesDeclareRightAlignedContent(t *testing.T) {
-	screen, err := LoadScreen("front-page")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var executionRows int
-	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
-		if node.Component != "disclosure" || node.Style.Role != "execution-row" {
-			return
+func TestExecutionSummariesDeclareRightAlignedContent(t *testing.T) {
+	wantRows := map[string]int{"front-page": 2, "project-details": 1}
+	for screenName, want := range wantRows {
+		screen, err := LoadScreen(screenName)
+		if err != nil {
+			t.Fatal(err)
 		}
-		executionRows++
-		if node.Disclosure == nil || len(node.Disclosure.Summary) < 2 {
-			t.Errorf("execution summary = %#v, want a grow spacer followed by right-aligned content", node.Disclosure)
-			return
+		var executionRows int
+		walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+			if node.Component != "disclosure" || node.Style.Role != "execution-row" {
+				return
+			}
+			executionRows++
+			if node.Disclosure == nil || len(node.Disclosure.Summary) < 2 {
+				t.Errorf("%s execution summary = %#v, want a grow spacer followed by right-aligned content", screenName, node.Disclosure)
+				return
+			}
+			spacer := node.Disclosure.Summary[0]
+			if spacer.Component != "spacer" || !spacer.Layout.Grow {
+				t.Errorf("%s execution summary first child = %#v, want growing spacer", screenName, spacer)
+			}
+		})
+		if executionRows != want {
+			t.Errorf("%s execution disclosures = %d, want %d", screenName, executionRows, want)
 		}
-		spacer := node.Disclosure.Summary[0]
-		if spacer.Component != "spacer" || !spacer.Layout.Grow {
-			t.Errorf("execution summary first child = %#v, want growing spacer", spacer)
-		}
-	})
-	if executionRows != 2 {
-		t.Fatalf("execution disclosures = %d, want queued and history rows", executionRows)
 	}
 }
 

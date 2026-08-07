@@ -587,6 +587,42 @@ func TestGraphRunButtonConsumesGraphNodeSelection(t *testing.T) {
 	}
 }
 
+func TestDefinitionGraphNodeSurfaceUsesSharedSelectionSemantics(t *testing.T) {
+	colors := palette{
+		surface: color.NRGBA{R: 10, G: 20, B: 30, A: 255},
+		border:  color.NRGBA{R: 40, G: 50, B: 60, A: 255},
+		accent:  color.NRGBA{R: 70, G: 80, B: 90, A: 255},
+		focus:   color.NRGBA{R: 100, G: 110, B: 120, A: 255},
+	}
+
+	border, background, width := definitionGraphNodeSurface(colors, true, false)
+	if border != colors.accent || background == colors.surface || width != 1 {
+		t.Fatalf("hover surface = (%v, %v, %v), want accent, tinted surface, 1dp", border, background, width)
+	}
+
+	border, background, width = definitionGraphNodeSurface(colors, true, true)
+	if border != colors.focus || background == colors.surface || width != 2 {
+		t.Fatalf("selected hover surface = (%v, %v, %v), want focus, tinted surface, 2dp", border, background, width)
+	}
+}
+
+func TestHiddenNodesDoNotOccupyNativeFlexGaps(t *testing.T) {
+	renderer := &Renderer{}
+	visible := uidsl.Node{Visible: &uidsl.Condition{Binding: "item.visible", Equals: "true"}}
+	data := map[string]any{"item": map[string]any{"visible": false}}
+	if renderer.nodeOccupiesLayout(visible, data) {
+		t.Fatal("conditionally hidden node still occupies native layout")
+	}
+	visible.Visible.Not = true
+	if !renderer.nodeOccupiesLayout(visible, data) {
+		t.Fatal("negated visible condition was removed from native layout")
+	}
+	visible.Visible = &uidsl.Condition{Binding: "item.missing", Equals: "true"}
+	if !renderer.nodeOccupiesLayout(visible, data) {
+		t.Fatal("unresolved visibility binding must remain in layout to render its error")
+	}
+}
+
 func TestRendererPersistsProjectDisclosureAndBulkExecutionState(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("front-page")
 	if err != nil {
@@ -2056,6 +2092,21 @@ func TestDisclosureProgressAlwaysUsesStableHeaderLayer(t *testing.T) {
 	}
 	if usesSurfaceProgress(node, true) {
 		t.Fatal("expanded output-group progress must stay on its header")
+	}
+}
+
+func TestCollapsingOutputGroupClearsStaleListPosition(t *testing.T) {
+	list := &layout.List{Axis: layout.Vertical, ScrollToEnd: true}
+	list.Position = layout.Position{BeforeEnd: true, First: 2, Offset: -480, OffsetLast: 120, Count: 2, Length: 1400}
+	renderer := &Renderer{
+		disclosures:    map[string]bool{"job-output:job-1:step-2": true},
+		outputScroller: list,
+	}
+
+	renderer.setDisclosureState("job-output:job-1:step-2", false, false)
+
+	if list.ScrollToEnd || list.Position != (layout.Position{}) {
+		t.Fatalf("collapsed output list retained ScrollToEnd=%v position=%+v", list.ScrollToEnd, list.Position)
 	}
 }
 

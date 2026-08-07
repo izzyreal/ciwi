@@ -184,6 +184,9 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 	for _, expected := range []string{
 		"sameJob ? String(previousJob.output_search || '') : ''",
 		"sameJob ? !!previousJob.output_tailing : true",
+		"decorateJobDetails(view)",
+		"view.project_icon = Number(view.project_id || 0) > 0",
+		"view.run_context = {available: false, scope_label: '', pipelines: []}",
 		"data.jobDetails.tailing_tone = data.jobDetails.output_tailing ? 'success' : 'warning'",
 		"['running', 'in progress', 'failed'].includes",
 	} {
@@ -358,13 +361,39 @@ func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
 	}
 }
 
+func TestDeclarativeJobOutputRefreshPreservesStreamState(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	for _, expected := range []string{
+		"initializeJobOutputView(view, sameJob ? previousJob : null)",
+		"previousView.system_output",
+		"previousView.output_after_event_id",
+		"previousGroups.get(String(group.id || ''))",
+		"currentJob.output_after_event_id = nextEventID",
+		"if (generation !== outputWatchGeneration) return",
+		"if (mergeJobOutputBatch(currentJob, batch))",
+		"if (!changed) return false",
+		"const scrollPositions = new Map()",
+		"element.scrollTop = position.top",
+		"const pageScroll = {top: window.scrollY, left: window.scrollX}",
+		"window.scrollTo(pageScroll.left, pageScroll.top)",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Errorf("browser output refresh does not contain %q", expected)
+		}
+	}
+}
+
 func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
 	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg?v=declarative-2#icon-", "node.component === 'select'", "change-theme", "runSelectionFromArguments"} {
+	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg?v=declarative-3#icon-", "node.component === 'select'", "change-theme", "runSelectionFromArguments"} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
 		}
@@ -420,6 +449,9 @@ func TestDeclarativeScreenIconsExistInBrowserSprite(t *testing.T) {
 			t.Errorf("browser icon sprite is missing declarative icon %q", icon)
 		}
 	}
+	if !strings.Contains(sprite, `<symbol id="icon-arrow-bar-to-down" viewBox="0 0 24 24"><path d="M4 20l16 0"/>`) {
+		t.Error("browser arrow-bar-to-down icon does not use the Tabler bottom-bar geometry")
+	}
 }
 
 func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *testing.T) {
@@ -437,6 +469,9 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"dimensionVariables", "--ciwi-page-max", "node.disclosure.summary", "dsl-icon-button",
 		"element.textContent = ''", "element.prepend(declarativeIcon(node.icon))", ".dsl-disclosure > summary::after", ".dsl-code-inline",
 		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted", "cssLength(layout.gap)",
+		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) 18%",
+		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", ".dsl-output-group:not([open]) > summary",
+		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-output-group > summary { color:var(--console-accent)",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
 		".dsl-project-row > summary > .dsl-disclosure-label",
 	} {

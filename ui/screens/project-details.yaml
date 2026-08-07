@@ -752,6 +752,9 @@ screen:
                 disclosure:
                   stateKey: "project-history:{{projectDetails.project.id}}:{{execution.key}}"
                   summary:
+                    - component: spacer
+                      layout:
+                        grow: true
                     - component: text
                       text:
                         template: "{{execution.summary.succeeded}}/{{execution.summary.total_jobs}} successful"
