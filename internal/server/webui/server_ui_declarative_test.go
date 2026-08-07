@@ -40,6 +40,62 @@ func TestDeclarativeRouteContract(t *testing.T) {
 	}
 }
 
+func TestEveryWebCommandHasABrowserAdapter(t *testing.T) {
+	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := sharedui.LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := map[string]bool{}
+	var visit func(uidsl.Node)
+	visit = func(node uidsl.Node) {
+		if override, exists := node.Overrides["web"]; exists && override.Hidden {
+			return
+		}
+		for _, action := range node.Actions {
+			commands[action.Command] = true
+		}
+		for _, child := range node.Children {
+			visit(child)
+		}
+		if node.Disclosure != nil {
+			for _, child := range node.Disclosure.Summary {
+				visit(child)
+			}
+		}
+		if node.GraphView != nil {
+			for _, child := range node.GraphView.Details {
+				visit(child)
+			}
+		}
+	}
+	loaded := map[string]bool{}
+	for _, route := range routes.Routes {
+		webRoute := false
+		for _, platform := range route.Platforms {
+			webRoute = webRoute || platform == "web"
+		}
+		if !webRoute || loaded[route.Screen] {
+			continue
+		}
+		loaded[route.Screen] = true
+		screen, loadErr := sharedui.LoadScreen(route.Screen)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		visit(screen.Screen.Root)
+	}
+	script := string(scriptPayload)
+	for command := range commands {
+		if !strings.Contains(script, "'"+command+"'") {
+			t.Errorf("web-visible command %q has no browser adapter", command)
+		}
+	}
+}
+
 func TestActionCatalogContractAndBrowserRunnerRoutes(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/actions.json", nil))
@@ -92,6 +148,10 @@ func TestProjectDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if structure.GraphView.Nodes != "projectDetails.visible_pipelines" || structure.GraphView.Dependencies != "pipeline.depends_on" {
 		t.Fatalf("project graph binding = %#v", structure.GraphView)
 	}
+	filter := screen.Screen.Root.Children[1]
+	if webOverride, exists := filter.Overrides["web"]; filter.ID != "project-structure-filter" || (exists && webOverride.Hidden) {
+		t.Fatalf("project structure filter is not shared by both renderers: %#v", filter)
+	}
 	if len(structure.GraphView.Details) < 2 || structure.GraphView.Details[1].GraphView == nil {
 		t.Fatalf("project graph selected-pipeline details = %#v", structure.GraphView.Details)
 	}
@@ -112,6 +172,24 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	}
 	if screen.Metadata.Name != "job-details" {
 		t.Fatalf("screen = %#v", screen)
+	}
+}
+
+func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
+	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptPayload)
+	for _, expected := range []string{
+		"sameJob ? String(previousJob.output_search || '') : ''",
+		"sameJob ? !!previousJob.output_tailing : true",
+		"data.jobDetails.tailing_tone = data.jobDetails.output_tailing ? 'success' : 'warning'",
+		"['running', 'in progress', 'failed'].includes",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Errorf("browser job interaction state does not contain %q", expected)
+		}
 	}
 }
 
@@ -338,7 +416,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"element.prepend(declarativeIcon(node.icon))", ".dsl-disclosure > summary::after", ".dsl-code-inline",
 		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted", "cssLength(layout.gap)",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
-		".dsl-project-row-body-image", ".dsl-project-row-content", ".dsl-project-row > summary > .dsl-disclosure-label",
+		".dsl-project-row > summary > .dsl-disclosure-label",
 	} {
 		if !strings.Contains(script+style, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
@@ -361,6 +439,7 @@ func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *tes
 		"requestAnimationFrame(fit)", "bindActions(play, node.actions, graphNode.data)",
 		"node.graphView.details", "selection.onChange(graphNode.id)", "dsl-definition-graph-viewport",
 		"dsl-definition-graph-node-play", "dsl-definition-graph-details", ".dsl-definition-graph-node.selectable:hover",
+		"applyProjectStructureFilter", "projectStructureFilterOptions",
 	} {
 		if !strings.Contains(implementation, expected) {
 			t.Errorf("declarative graph renderer does not contain %q", expected)

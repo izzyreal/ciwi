@@ -103,9 +103,6 @@ screen:
                   route: /
       - component: row
         id: project-structure-filter
-        overrides:
-          web:
-            hidden: true
         layout:
           direction: horizontal
           gap: small

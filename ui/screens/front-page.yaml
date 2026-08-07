@@ -213,9 +213,6 @@ screen:
               - component: disclosure
                 text:
                   literal: "Project:"
-                image:
-                  binding: project.project_icon
-                  description: Project logo
                 disclosure:
                   defaultExpanded: true
                   stateKey: "front-project:{{project.id}}"
@@ -284,154 +281,175 @@ screen:
                   role: project-row
                   emphasis: strong
                 children:
-                  - component: list
+                  - component: row
                     layout:
-                      direction: vertical
-                      gap: small
-                    repeat:
-                      source: project.pipeline_chains
-                      as: chain
-                      key: chain.id
-                    children:
-                      - component: row
+                      direction: horizontal
+                      gap: large
+                      align: center
+                      minWidth: "0"
+                    overrides:
+                      compact:
                         layout:
-                          direction: horizontal
-                          gap: medium
-                          align: center
+                          align: start
+                    children:
+                      - component: column
                         children:
-                          - component: column
+                          - component: image
+                            image:
+                              binding: project.project_icon
+                              description: Project logo
+                            style:
+                              role: project-icon
+                      - component: column
+                        layout:
+                          direction: vertical
+                          gap: small
+                          grow: true
+                        children:
+                          - component: list
                             layout:
                               direction: vertical
                               gap: small
-                              grow: true
+                            repeat:
+                              source: project.pipeline_chains
+                              as: chain
+                              key: chain.id
                             children:
-                              - component: text
-                                text:
-                                  template: "Chain: {{chain.name}}"
+                              - component: row
+                                layout:
+                                  direction: horizontal
+                                  gap: medium
+                                  align: center
+                                children:
+                                  - component: column
+                                    layout:
+                                      direction: vertical
+                                      gap: small
+                                      grow: true
+                                    children:
+                                      - component: text
+                                        text:
+                                          template: "Chain: {{chain.name}}"
+                                        style:
+                                          role: body
+                                          emphasis: strong
+                                      - component: text
+                                        text:
+                                          binding: chain.sequence_label
+                                        style:
+                                          role: body
+                                          tone: muted
+                                          emphasis: strong
+                                  - component: button
+                                    text:
+                                      literal: Options
+                                    icon: adjustments
+                                    overrides:
+                                      compact:
+                                        style:
+                                          role: icon-button
+                                    actions:
+                                      - on: activate
+                                        command: navigate
+                                        arguments:
+                                          route: /run-options/projects/{{project.id}}/chains/{{chain.id}}
+                                  - component: button
+                                    text:
+                                      literal: Run Chain
+                                    icon: player-play
+                                    actions:
+                                      - on: activate
+                                        command: run-chain
+                                        arguments:
+                                          projectId: "{{project.id}}"
+                                          chainId: "{{chain.id}}"
+                                        confirm:
+                                          title: Run pipeline chain
+                                          message: Queues every pipeline in this chain as one independent run. It does not interrupt jobs that are already queued or running.
+                                  - component: button
+                                    text:
+                                      literal: Dry Run
+                                    icon: player-play
+                                    visible:
+                                      binding: chain.supports_dry_run
+                                    actions:
+                                      - on: activate
+                                        command: run-chain
+                                        arguments:
+                                          projectId: "{{project.id}}"
+                                          chainId: "{{chain.id}}"
+                                          dryRun: "true"
+                                        confirm:
+                                          title: Dry-run pipeline chain
+                                          message: Queues a dry-run execution of every pipeline in this chain. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
                                 style:
-                                  role: body
-                                  emphasis: strong
-                              - component: text
-                                text:
-                                  binding: chain.sequence_label
-                                style:
-                                  role: body
-                                  tone: muted
-                                  emphasis: strong
-                          - component: button
-                            text:
-                              literal: Options
-                            icon: adjustments
-                            overrides:
-                              compact:
-                                style:
-                                  role: icon-button
-                            actions:
-                              - on: activate
-                                command: navigate
-                                arguments:
-                                  route: /run-options/projects/{{project.id}}/chains/{{chain.id}}
-                          - component: button
-                            text:
-                              literal: Run Chain
-                            icon: player-play
-                            actions:
-                              - on: activate
-                                command: run-chain
-                                arguments:
-                                  projectId: "{{project.id}}"
-                                  chainId: "{{chain.id}}"
-                                confirm:
-                                  title: Run pipeline chain
-                                  message: Queues every pipeline in this chain as one independent run. It does not interrupt jobs that are already queued or running.
-                          - component: button
-                            text:
-                              literal: Dry Run
-                            icon: player-play
-                            visible:
-                              binding: chain.supports_dry_run
-                            actions:
-                              - on: activate
-                                command: run-chain
-                                arguments:
-                                  projectId: "{{project.id}}"
-                                  chainId: "{{chain.id}}"
-                                  dryRun: "true"
-                                confirm:
-                                  title: Dry-run pipeline chain
-                                  message: Queues a dry-run execution of every pipeline in this chain. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
-                        style:
-                          role: compact-action-row
-                  - component: list
-                    layout:
-                      direction: vertical
-                      gap: small
-                    repeat:
-                      source: project.pipelines
-                      as: pipeline
-                      key: pipeline.id
-                    children:
-                      - component: row
-                        layout:
-                          direction: horizontal
-                          gap: medium
-                          align: center
-                        children:
-                          - component: text
-                            text:
-                              binding: pipeline.pipeline_id
-                            style:
-                              role: body
-                              emphasis: strong
-                          - component: spacer
+                                  role: compact-action-row
+                          - component: list
                             layout:
-                              grow: true
-                          - component: button
-                            text:
-                              literal: Options
-                            icon: adjustments
-                            overrides:
-                              compact:
+                              direction: vertical
+                              gap: small
+                            repeat:
+                              source: project.pipelines
+                              as: pipeline
+                              key: pipeline.id
+                            children:
+                              - component: row
+                                layout:
+                                  direction: horizontal
+                                  gap: medium
+                                  align: center
+                                children:
+                                  - component: text
+                                    text:
+                                      binding: pipeline.pipeline_id
+                                    style:
+                                      role: body
+                                      emphasis: strong
+                                  - component: spacer
+                                    layout:
+                                      grow: true
+                                  - component: button
+                                    text:
+                                      literal: Options
+                                    icon: adjustments
+                                    overrides:
+                                      compact:
+                                        style:
+                                          role: icon-button
+                                    actions:
+                                      - on: activate
+                                        command: navigate
+                                        arguments:
+                                          route: /run-options/projects/{{project.id}}/pipelines/{{pipeline.id}}
+                                  - component: button
+                                    text:
+                                      literal: Run
+                                    icon: player-play
+                                    actions:
+                                      - on: activate
+                                        command: run-pipeline
+                                        arguments:
+                                          pipelineDbId: "{{pipeline.id}}"
+                                        confirm:
+                                          title: Run pipeline
+                                          message: This adds a new execution without interrupting jobs that are already queued or running.
+                                  - component: button
+                                    text:
+                                      literal: Dry Run
+                                    icon: player-play
+                                    visible:
+                                      binding: pipeline.supports_dry_run
+                                    actions:
+                                      - on: activate
+                                        command: run-pipeline
+                                        arguments:
+                                          pipelineDbId: "{{pipeline.id}}"
+                                          dryRun: "true"
+                                        confirm:
+                                          title: Dry-run pipeline
+                                          message: Queues a dry-run execution of this pipeline. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
                                 style:
-                                  role: icon-button
-                            actions:
-                              - on: activate
-                                command: navigate
-                                arguments:
-                                  route: /run-options/projects/{{project.id}}/pipelines/{{pipeline.id}}
-                          - component: button
-                            text:
-                              literal: Run
-                            icon: player-play
-                            actions:
-                              - on: activate
-                                command: run-pipeline
-                                arguments:
-                                  pipelineDbId: "{{pipeline.id}}"
-                                confirm:
-                                  title: Run pipeline
-                                  message: This adds a new execution without interrupting jobs that are already queued or running.
-                          - component: button
-                            text:
-                              literal: Dry Run
-                            icon: player-play
-                            visible:
-                              binding: pipeline.supports_dry_run
-                            actions:
-                              - on: activate
-                                command: run-pipeline
-                                arguments:
-                                  pipelineDbId: "{{pipeline.id}}"
-                                  dryRun: "true"
-                                confirm:
-                                  title: Dry-run pipeline
-                                  message: Queues a dry-run execution of this pipeline. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
-                        style:
-                          role: compact-action-row
-        overrides:
-          gio:
-            layout:
-              gap: small
+                                  role: compact-action-row
       - component: section
         id: queued-executions
         layout:

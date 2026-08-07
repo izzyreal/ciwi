@@ -1854,20 +1854,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				if isOutputGroup {
 					contentNode.Children = withDefaultConsoleText(node.Children)
 				}
-				content := func(gtx layout.Context) layout.Dimensions {
-					return r.layoutChildren(gtx, contentNode, data, path+"/content")
-				}
-				if !isProjectRow || node.Image == nil {
-					return content(gtx)
-				}
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Right: r.metrics.spaceLarge}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return r.layoutImage(gtx, uidsl.Node{Image: node.Image, Style: uidsl.Style{Role: "project-icon"}}, data, path+"/project-image")
-						})
-					}),
-					layout.Flexed(1, content),
-				)
+				return r.layoutChildren(gtx, contentNode, data, path+"/content")
 			})
 		}),
 	)

@@ -238,6 +238,10 @@
 
   function decorateProjectDetails(view) {
 	const project = (view && view.project) || {};
+	const previousProject = currentData && currentData.projectDetails && currentData.projectDetails.project;
+	const previousFilter = previousProject && String(previousProject.id) === String(project.id)
+	  ? String(currentData.projectDetails.structure_filter || 'all-pipelines')
+	  : 'all-pipelines';
 	project.project_icon = Number(project.id || 0) > 0 ? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon' : '';
 	const sourceMetadata = [];
 	if (String(project.repo_ref || '').trim()) sourceMetadata.push('branch: ' + String(project.repo_ref).trim());
@@ -265,6 +269,44 @@
 		});
 	  });
 	});
+	view.structure_filters = projectStructureFilterOptions(view);
+	applyProjectStructureFilter(view, previousFilter);
+  }
+
+  function projectStructureFilterOptions(view) {
+	const options = [
+	  {value: 'all-pipelines', label: 'All Pipelines'},
+	  {value: 'all-chains', label: 'All chains'},
+	];
+	const chains = Array.isArray(view && view.project && view.project.pipeline_chains)
+	  ? view.project.pipeline_chains : [];
+	chains.forEach(chain => {
+	  const id = String(chain.id || '').trim();
+	  if (!id) return;
+	  const name = String(chain.name || chain.sequence_label || '').trim();
+	  options.push({value: 'chain:' + id, label: (name || id) + ' (chain)'});
+	});
+	return options;
+  }
+
+  function applyProjectStructureFilter(view, requestedFilter) {
+	const pipelines = Array.isArray(view && view.pipelines) ? view.pipelines : [];
+	const chains = Array.isArray(view && view.project && view.project.pipeline_chains)
+	  ? view.project.pipeline_chains : [];
+	let filter = String(requestedFilter || 'all-pipelines').trim() || 'all-pipelines';
+	let visible = pipelines.slice();
+	if (filter === 'all-chains' || filter.startsWith('chain:')) {
+	  const matching = chains.filter(chain => filter === 'all-chains' || 'chain:' + String(chain.id || '') === filter);
+	  if (filter.startsWith('chain:') && matching.length === 0) {
+		filter = 'all-pipelines';
+	  } else {
+		const included = new Set();
+		matching.forEach(chain => (Array.isArray(chain.pipelines) ? chain.pipelines : []).forEach(id => included.add(String(id))));
+		visible = pipelines.filter(pipeline => included.has(String(pipeline.pipeline_id || '')));
+	  }
+	}
+	view.structure_filter = filter;
+	view.visible_pipelines = visible;
   }
 
   function managedYAMLBinding(definition) {
@@ -465,6 +507,12 @@
           ciwiApplyTheme(args.theme);
           await refresh();
         }
+		else if (action.command === 'set-project-structure-filter') {
+		  const details = currentData && currentData.projectDetails;
+		  if (!details) throw new Error('Project structure is unavailable');
+		  applyProjectStructureFilter(details, args.value || 'all-pipelines');
+		  renderCurrent();
+		}
         else if (action.command === 'select-timeline-item') {
           data.jobDetails.selected_timeline_item = data.item;
           renderCurrent();
@@ -486,6 +534,7 @@
         else if (action.command === 'toggle-output-tailing') {
           data.jobDetails.output_tailing = !data.jobDetails.output_tailing;
           data.jobDetails.tailing_label = data.jobDetails.output_tailing ? 'Tailing: On' : 'Tailing: Off';
+		  data.jobDetails.tailing_tone = data.jobDetails.output_tailing ? 'success' : 'warning';
           renderCurrent();
         }
         else if (action.command === 'set-disclosures') {
@@ -1108,7 +1157,7 @@
 	    label.textContent = renderText(node.text, data) || 'Details';
 	    summary.appendChild(label);
 	  } else {
-		if (node.image && style.role !== 'project-row') {
+		if (node.image) {
 		  const imageSource = node.image.binding
 			? String(resolve(data, node.image.binding) || '')
 			: (node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset);
@@ -1183,28 +1232,7 @@
 	  element.prepend(declarativeIcon(node.icon));
     }
     bindActions(element, node.actions, data);
-	let childrenTarget = element;
-	if (node.component === 'disclosure' && style.role === 'project-row') {
-	  const body = document.createElement('div');
-	  body.className = 'dsl-project-row-body';
-	  const content = document.createElement('div');
-	  content.className = 'dsl-project-row-content';
-	  const imageSource = node.image && node.image.binding
-		? String(resolve(data, node.image.binding) || '')
-		: '';
-	  if (imageSource) {
-		body.classList.add('dsl-project-row-body-has-image');
-		const image = document.createElement('img');
-		image.className = 'dsl-project-row-body-image';
-		image.src = imageSource;
-		image.alt = node.image.description || '';
-		image.addEventListener('error', () => { image.style.visibility = 'hidden'; }, {once: true});
-		body.appendChild(image);
-	  }
-	  body.appendChild(content);
-	  element.appendChild(body);
-	  childrenTarget = content;
-	}
+	const childrenTarget = element;
     if (node.component === 'scroller' && node.repeat) {
       const list = resolve(data, node.repeat.source);
       (Array.isArray(list) ? list : []).forEach(item => {
@@ -1554,15 +1582,22 @@
 		};
 	  }
       if (jobMatch) {
+		const previousJob = currentData && currentData.jobDetails;
+		const sameJob = previousJob && String(previousJob.id || '') === String(view.id || '');
         initializeJobOutputView(view);
-        view.output_search = '';
+		view.output_search = sameJob ? String(previousJob.output_search || '') : '';
         view.output_search_count = '0/0';
-        view.output_match_index = 0;
-        view.output_tailing = false;
-        view.tailing_label = 'Tailing: Off';
-		view.selected_timeline_item = Array.isArray(view.timeline) && view.timeline.length
-          ? view.timeline[0]
-		  : {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
+		view.output_match_index = sameJob ? Number(previousJob.output_match_index || 0) : 0;
+		view.output_tailing = sameJob ? !!previousJob.output_tailing : true;
+		view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
+		view.tailing_tone = view.output_tailing ? 'success' : 'warning';
+		const timeline = Array.isArray(view.timeline) ? view.timeline : [];
+		const previousSelectionID = sameJob && previousJob.selected_timeline_item
+		  ? String(previousJob.selected_timeline_item.id || '') : '';
+		view.selected_timeline_item = timeline.find(item => String(item.id || '') === previousSelectionID)
+		  || timeline.find(item => ['running', 'in progress', 'failed'].includes(String(item.status || '').toLowerCase()))
+		  || timeline[0]
+		  || {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
       }
 	  if (generation !== outputWatchGeneration) return;
       currentDocument = documentContract;

@@ -54,6 +54,107 @@ func TestBrowserSettingsViewModelSatisfiesWebOverrides(t *testing.T) {
 	}
 }
 
+func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
+	progress := map[string]any{"state": "none", "fraction": 0.0, "snapshot_unix_ms": 0, "rate_per_ms": 0.0}
+	step := map[string]any{
+		"index": 0, "position": 1, "name": "Compile", "type": "run", "command": "go test ./...",
+		"skip_dry_run": false, "environment_label": "CI=true",
+	}
+	job := map[string]any{
+		"id": "test", "needs": []any{}, "needs_label": "none", "tools_label": "go", "summary_label": "1 step · runs on: linux",
+		"timeout_label": "Timeout: 60s", "matrix_label": "Matrix: none", "supports_dry_run": true, "steps": []any{step},
+	}
+	pipeline := map[string]any{
+		"id": 7, "pipeline_id": "build", "summary_label": "1 job · depends on: none",
+		"graph_summary_label": "1 job · 0 dependencies", "depends_on": []any{}, "supports_dry_run": true, "jobs": []any{job},
+	}
+	project := map[string]any{
+		"id": 1, "name": "example", "project_icon": "", "repo_url": "https://example.invalid/repo",
+		"repo_ref": "main", "config_file": "ciwi-project.yaml", "has_pipeline_chains": true,
+		"pipeline_chains": []any{map[string]any{
+			"id": "release", "name": "Release", "sequence_label": "build", "supports_dry_run": true, "pipelines": []any{"build"},
+		}},
+	}
+	jobDetails := map[string]any{
+		"id": "job-1", "title": "example build", "project_icon": "", "progress": progress,
+		"status": "running", "status_label": "Running", "current_step": "Compile", "can_rerun": false, "can_cancel": true,
+		"job_properties":         []any{map[string]any{"label": "Created", "value": "now"}},
+		"cache_statistics_empty": "", "cache_statistics": []any{map[string]any{"label": "Cache", "value": "Hit", "tone": "success"}},
+		"scheduling_diagnosis": map[string]any{
+			"summary": "Waiting", "requirements_label": "linux", "additional_agents_label": "",
+			"agents": []any{map[string]any{"agent_id": "agent-1", "status": "eligible", "details": "ready"}},
+		},
+		"host_tool_requirements":      map[string]any{"empty_label": "", "summary": "Available", "tone": "success", "issues": []any{"none"}},
+		"container_tool_requirements": map[string]any{"empty_label": "", "summary": "Available", "tone": "success", "issues": []any{"none"}},
+		"has_release_summary":         true,
+		"release_summary":             []any{map[string]any{"label": "Version", "value": "v1", "tone": "success"}},
+		"run_context": map[string]any{
+			"available": true, "scope_label": "one pipeline", "pipelines": []any{map[string]any{
+				"pipeline_id": "build", "summary_label": "1 job", "depends_on": []any{}, "jobs": []any{map[string]any{
+					"id": "test", "summary_label": "1 execution", "needs": []any{}, "executions": []any{map[string]any{
+						"id": "job-1", "matrix_label": "default", "status": "running", "attempt_label": "Attempt 1",
+					}},
+				}},
+			}},
+		},
+		"output_search": "test", "output_search_count": "1/1", "tailing_label": "Tailing: On", "tailing_tone": "success",
+		"timeline":      []any{map[string]any{"id": "step:0", "title": "Compile", "status": "running", "status_label": "Running", "progress": progress}},
+		"system_output": "starting", "output_groups": []any{map[string]any{
+			"id": "step:0", "title": "Compile", "state_key": "job-output:job-1:step:0", "status": "running", "progress": progress,
+			"reached": true, "started": "now", "duration": "1s", "exit_code": "", "error": "", "is_phase": false, "is_step": true,
+			"details": "details", "yaml_literal": "run: go test", "expanded_command": "go test ./...", "output": "ok", "empty_output_label": "",
+		}},
+		"artifacts":       map[string]any{"empty_label": "", "summary": "1 artifact", "tone": "success", "additional_label": "", "rows": []any{map[string]any{"label": "binary", "value": "stored", "tone": "success"}}},
+		"test_report":     map[string]any{"empty_label": "", "summary": "1 passed", "tone": "success", "additional_label": "", "rows": []any{map[string]any{"label": "tests", "value": "1", "tone": "success"}}},
+		"coverage_report": map[string]any{"empty_label": "", "summary": "90%", "tone": "success", "additional_label": "", "rows": []any{map[string]any{"label": "lines", "value": "90%", "tone": "success"}}},
+	}
+	fixtures := map[string]map[string]any{
+		"project-details": {"projectDetails": map[string]any{
+			"project": project, "pipelines": []any{pipeline}, "visible_pipelines": []any{pipeline},
+			"structure_filter": "all-pipelines", "structure_filters": []any{map[string]any{"value": "all-pipelines", "label": "All Pipelines"}},
+			"history_empty": true, "history_executions": []any{},
+		}},
+		"job-details": {"jobDetails": jobDetails},
+		"run-options": {"runOptions": map[string]any{
+			"project_id": 1, "pipeline_db_id": 7, "chain_id": "", "target_kind": "pipeline", "target_label": "build",
+			"source_repo": "https://example.invalid/repo", "pending_jobs": 1, "selected_source_ref": "main", "selected_agent_id": "agent-1",
+			"source_refs":     []any{map[string]any{"value": "main", "label": "main"}},
+			"eligible_agents": []any{map[string]any{"value": "agent-1", "label": "agent-1"}}, "supports_dry_run": true,
+		}},
+		"agents": {"agents": map[string]any{"summary": "1 agent", "agents": []any{map[string]any{
+			"id": "agent-1", "hostname": "host", "platform": "linux", "version": "v1", "last_seen": "now",
+			"last_seen_unix_ms": 1, "status": "online", "status_label": "Online", "run_mode": "service",
+		}}}},
+		"agent-details": {"agentDetails": map[string]any{"agent": map[string]any{
+			"id": "agent-1", "hostname": "host", "platform": "linux", "version": "v1", "last_seen": "now", "status": "online",
+			"status_label": "Online", "run_mode": "service", "authorization": "Authorized", "activation": "Active", "authorized": true,
+			"deactivated": false, "can_contact": true, "can_update": true, "can_run_script": true, "capabilities_label": "go", "update_label": "Current", "recent_log": "ready",
+		}}},
+		"agent-script": {"agentScript": map[string]any{
+			"agent_id": "agent-1", "agent_label": "host", "selected_shell": "sh", "script": "echo ok", "can_run": true,
+			"result": "", "result_tone": "muted", "shells": []any{map[string]any{"value": "sh", "label": "POSIX shell"}},
+		}},
+		"managed-yaml": {"managedYAML": map[string]any{
+			"title": "Edit Managed YAML", "project_id": 1, "project_name": "example", "yaml": "name: example", "revision": "1", "editing": true,
+			"result": "Valid", "result_tone": "success",
+		}},
+		"vault": {"vault": map[string]any{
+			"connections_empty": false, "name": "home", "url": "https://vault.invalid", "role_id": "role", "approle_mount": "approle",
+			"secret_id_env": "VAULT_SECRET_ID", "example": "vault://home/secret/data/build#token", "result": "OK", "result_tone": "success",
+			"connections": []any{map[string]any{"id": "1", "name": "home", "url": "https://vault.invalid", "role_id": "role", "approle_mount": "approle", "secret_id_env": "VAULT_SECRET_ID"}},
+		}},
+	}
+	for screenName, data := range fixtures {
+		screen, err := sharedui.LoadScreen(screenName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := uidsl.ValidateBindings(screen, data, "web"); err != nil {
+			t.Errorf("%s: %v", screenName, err)
+		}
+	}
+}
+
 func browserClientBindingFixture() map[string]any {
 	return map[string]any{
 		"connected": true, "connecting": false, "offline": false, "address": "localhost",

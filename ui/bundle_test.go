@@ -454,6 +454,69 @@ func TestFrontPageMatchesBrowserProjectAndEmptyTableSummaries(t *testing.T) {
 	}
 }
 
+func TestFrontPageProjectBodyUsesOrdinaryDeclarativeNodes(t *testing.T) {
+	screen, err := LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var project *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.Component == "disclosure" && node.Style.Role == "project-row" {
+			project = node
+		}
+	})
+	if project == nil {
+		t.Fatal("front page project disclosure is missing")
+	}
+	if project.Image != nil {
+		t.Fatal("project disclosure still asks renderers to compose its body image")
+	}
+	if len(project.Children) != 1 || project.Children[0].Component != "row" {
+		t.Fatalf("project body = %#v, want one ordinary row", project.Children)
+	}
+	body := project.Children[0]
+	if body.Layout.Gap != "large" || body.Layout.MinWidth != "0" || len(body.Children) != 2 {
+		t.Fatalf("project body layout = %#v with %d children", body.Layout, len(body.Children))
+	}
+	leading, content := body.Children[0], body.Children[1]
+	if leading.Component != "column" || len(leading.Children) != 1 || leading.Children[0].Component != "image" || leading.Children[0].Style.Role != "project-icon" {
+		t.Fatalf("project leading content = %#v", leading)
+	}
+	if content.Component != "column" || !content.Layout.Grow || len(content.Children) != 2 {
+		t.Fatalf("project main content = %#v", content)
+	}
+}
+
+func TestPlatformOverridesAreLimitedToPlatformMechanics(t *testing.T) {
+	routes, err := LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := map[string]bool{}
+	for _, route := range routes.Routes {
+		if loaded[route.Screen] {
+			continue
+		}
+		loaded[route.Screen] = true
+		screen, loadErr := LoadScreen(route.Screen)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+			for platform, override := range node.Overrides {
+				if platform != "web" && platform != "gio" {
+					continue
+				}
+				allowed := route.Screen == "settings" && node.ID == "native-connection" && platform == "web" && override.Hidden
+				allowed = allowed || route.Screen == "job-details" && node.Style.Role == "floating-collapse" && platform == "gio" && override.Hidden
+				if !allowed {
+					t.Errorf("%s node %q role %q has non-mechanical %s override: %#v", route.Screen, node.ID, node.Style.Role, platform, override)
+				}
+			}
+		})
+	}
+}
+
 func walkNodes(node uidsl.Node, visit func(*uidsl.Node)) {
 	visit(&node)
 	for index := range node.Children {
