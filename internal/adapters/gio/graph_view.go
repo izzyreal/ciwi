@@ -89,7 +89,7 @@ func (r *Renderer) layoutGraphView(gtx layout.Context, node uidsl.Node, data any
 				if mode == "graph" {
 					icon = "check"
 				}
-				return r.layoutControlButton(gtx, graphButton, "Graph", icon, true, false, false)
+				return r.layoutControlButton(gtx, graphButton, "Graph", icon, true)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: r.metrics.spaceSmall}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -97,7 +97,7 @@ func (r *Renderer) layoutGraphView(gtx layout.Context, node uidsl.Node, data any
 					if mode == "list" {
 						icon = "check"
 					}
-					return r.layoutControlButton(gtx, listButton, "List", icon, true, false, false)
+					return r.layoutControlButton(gtx, listButton, "List", icon, true)
 				})
 			}),
 		)
@@ -192,11 +192,11 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 		percent := fmt.Sprintf("%d%%", int(actualScale*100+0.5))
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return r.layoutControlButton(gtx, fitButton, "Fit", "", true, false, false)
+				return r.layoutControlButton(gtx, fitButton, "Fit", "", true)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: r.metrics.spaceSmall}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return r.layoutControlButton(gtx, resetButton, "Reset", "", true, false, false)
+					return r.layoutControlButton(gtx, resetButton, "Reset", "", true)
 				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

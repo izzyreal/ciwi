@@ -54,7 +54,6 @@ screen:
                 actions: [{on: change, command: set-vault-field, arguments: {field: secret_id_env, value: "{{input.value}}"}}]
               - component: button
                 text: {literal: Save}
-                style: {emphasis: strong}
                 actions:
                   - on: activate
                     command: save-vault-connection

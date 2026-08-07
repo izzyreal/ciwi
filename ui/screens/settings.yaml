@@ -83,7 +83,7 @@ screen:
                   route: /agents
           - component: button
             text: {literal: Vault}
-            icon: lock
+            icon: vault
             actions: [{on: activate, command: navigate, arguments: {route: /vault}}]
           - component: button
             text:

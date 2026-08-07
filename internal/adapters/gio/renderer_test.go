@@ -137,20 +137,6 @@ func TestGradientTextureSizeCapsRasterWorkAndPreservesAspect(t *testing.T) {
 	}
 }
 
-func TestButtonIconsFollowWebOrdering(t *testing.T) {
-	for _, icon := range []string{"server", "settings", "refresh", "player-play"} {
-		if !buttonIconAfter(icon) {
-			t.Errorf("%q icon should follow its button label", icon)
-		}
-	}
-	if buttonIconAfter("arrow-left") {
-		t.Fatal("back-navigation icon should precede its button label")
-	}
-	if buttonIconAfter("") {
-		t.Fatal("an absent icon cannot follow its button label")
-	}
-}
-
 func absInt(value int) int {
 	if value < 0 {
 		return -value
@@ -363,7 +349,7 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if _, ok := renderer.images["ciwi-logo"]; !ok {
 		t.Fatal("embedded ciwi logo is unavailable to the native renderer")
 	}
-	if renderer.icons["settings"] == nil || renderer.icons["player-play"] == nil || renderer.icons["loader-2"] == nil || renderer.icons["arrow-left"] == nil || renderer.icons["trash"] == nil || renderer.icons["zoom-in"] == nil || renderer.icons["zoom-out"] == nil {
+	if renderer.icons["settings"] == nil || renderer.icons["vault"] == nil || renderer.icons["player-play"] == nil || renderer.icons["loader-2"] == nil || renderer.icons["arrow-left"] == nil || renderer.icons["trash"] == nil || renderer.icons["zoom-in"] == nil || renderer.icons["zoom-out"] == nil {
 		t.Fatal("declared screen icons are unavailable to the native renderer")
 	}
 }
@@ -382,6 +368,51 @@ func TestExecutionCardDecorationMatchesWebSummary(t *testing.T) {
 	}
 	if card["status"] != "running" || card["summary_tone"] != "warning" {
 		t.Fatalf("status decoration = %#v", card)
+	}
+}
+
+func TestSharedScreenIconsExistInNativeRenderer(t *testing.T) {
+	routes, err := sharedUI.LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	required := map[string]bool{}
+	var visit func(uidsl.Node)
+	visit = func(node uidsl.Node) {
+		if node.Icon != "" {
+			required[node.Icon] = true
+		}
+		if node.Disclosure != nil {
+			for _, child := range node.Disclosure.Summary {
+				visit(child)
+			}
+		}
+		if node.GraphView != nil {
+			for _, child := range node.GraphView.Details {
+				visit(child)
+			}
+		}
+		for _, child := range node.Children {
+			visit(child)
+		}
+	}
+	loaded := map[string]bool{}
+	for _, route := range routes.Routes {
+		if loaded[route.Screen] {
+			continue
+		}
+		loaded[route.Screen] = true
+		screen, loadErr := sharedUI.LoadScreen(route.Screen)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		visit(screen.Screen.Root)
+	}
+	icons := tablerIcons()
+	for icon := range required {
+		if icons[icon] == nil {
+			t.Errorf("native icon renderer is missing declarative icon %q", icon)
+		}
 	}
 }
 

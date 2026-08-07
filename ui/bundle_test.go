@@ -324,6 +324,29 @@ func TestRoutesReferenceExistingScreensAndBindingRoots(t *testing.T) {
 	}
 }
 
+func TestButtonsUseSharedControlTypography(t *testing.T) {
+	routes, err := LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := map[string]bool{}
+	for _, route := range routes.Routes {
+		if loaded[route.Screen] {
+			continue
+		}
+		loaded[route.Screen] = true
+		screen, loadErr := LoadScreen(route.Screen)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+			if node.Component == "button" && node.Style.Emphasis != "" {
+				t.Errorf("%s button %q overrides shared control emphasis with %q", route.Screen, node.ID, node.Style.Emphasis)
+			}
+		})
+	}
+}
+
 func TestThemeDescriptionsMatchAuthoritativeWebCopy(t *testing.T) {
 	themes, err := LoadThemes()
 	if err != nil {

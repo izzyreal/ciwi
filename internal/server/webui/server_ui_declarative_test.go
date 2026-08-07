@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/izzyreal/ciwi/pkg/uidsl"
+	sharedui "github.com/izzyreal/ciwi/ui"
 )
 
 func TestDeclarativeScreenContractRoute(t *testing.T) {
@@ -234,7 +235,10 @@ func TestPublicSettingsRouteUsesSharedRenderer(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, field := range []string{"project.action_status = ''", "project.action_tone = 'muted'"} {
+	for _, field := range []string{
+		"project.is_managed =", "project.has_repo =", "project.repo_ref_label =",
+		"project.action_status = ''", "project.action_tone = 'muted'",
+	} {
 		if !strings.Contains(script, field) {
 			t.Errorf("settings preview does not initialize %q", field)
 		}
@@ -260,9 +264,60 @@ func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg#icon-", "node.component === 'select'", "change-theme", "runSelectionFromArguments"} {
+	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg?v=declarative-2#icon-", "node.component === 'select'", "change-theme", "runSelectionFromArguments"} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
+		}
+	}
+}
+
+func TestDeclarativeScreenIconsExistInBrowserSprite(t *testing.T) {
+	spritePayload, err := uiAssets.ReadFile("assets/tabler-icons.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := sharedui.LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	required := map[string]bool{
+		"circle-check": true, "circle-x": true, "clock": true, "loader-2": true,
+	}
+	var visit func(uidsl.Node)
+	visit = func(node uidsl.Node) {
+		if node.Icon != "" {
+			required[node.Icon] = true
+		}
+		if node.Disclosure != nil {
+			for _, child := range node.Disclosure.Summary {
+				visit(child)
+			}
+		}
+		if node.GraphView != nil {
+			for _, child := range node.GraphView.Details {
+				visit(child)
+			}
+		}
+		for _, child := range node.Children {
+			visit(child)
+		}
+	}
+	loaded := map[string]bool{}
+	for _, route := range routes.Routes {
+		if loaded[route.Screen] {
+			continue
+		}
+		loaded[route.Screen] = true
+		screen, loadErr := sharedui.LoadScreen(route.Screen)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		visit(screen.Screen.Root)
+	}
+	sprite := string(spritePayload)
+	for icon := range required {
+		if !strings.Contains(sprite, `id="icon-`+icon+`"`) {
+			t.Errorf("browser icon sprite is missing declarative icon %q", icon)
 		}
 	}
 }
@@ -280,8 +335,10 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 	style := string(stylePayload)
 	for _, expected := range []string{
 		"dimensionVariables", "--ciwi-page-max", "node.disclosure.summary", "dsl-icon-button",
-		"element.append(declarativeIcon(node.icon))", ".dsl-disclosure > summary::after", ".dsl-code-inline",
-		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted",
+		"element.prepend(declarativeIcon(node.icon))", ".dsl-disclosure > summary::after", ".dsl-code-inline",
+		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted", "cssLength(layout.gap)",
+		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
+		".dsl-project-row-body-image", ".dsl-project-row-content", ".dsl-project-row > summary > .dsl-disclosure-label",
 	} {
 		if !strings.Contains(script+style, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)

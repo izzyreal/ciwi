@@ -1179,11 +1179,11 @@ func (r *Renderer) layoutNoticeOverlay(gtx layout.Context, body layout.Widget, n
 						children := make([]layout.FlexChild, 0, 2)
 						if strings.TrimSpace(notice.actionLabel) != "" {
 							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return r.layoutControlButton(gtx, actionButton, notice.actionLabel, "", true, true, false)
+								return r.layoutControlButton(gtx, actionButton, notice.actionLabel, "", true)
 							}))
 						}
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return r.layoutControlButton(gtx, dismissButton, "Dismiss", "", true, false, false)
+							return r.layoutControlButton(gtx, dismissButton, "Dismiss", "", true)
 						}))
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(r.metrics.spaceSmall)}.Layout(gtx, children...)
 					}
@@ -2778,11 +2778,11 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 	if node.Style.Role == "connection-pulse" {
 		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
 		opacity := paint.PushOpacity(gtx.Ops, connectionPulseOpacity(gtx.Now))
-		dimensions := r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong", buttonIconAfter(node.Icon))
+		dimensions := r.layoutControlButton(gtx, button, label, node.Icon, enabled)
 		opacity.Pop()
 		return dimensions
 	}
-	return r.layoutControlButton(gtx, button, label, node.Icon, enabled, node.Style.Emphasis == "strong", buttonIconAfter(node.Icon))
+	return r.layoutControlButton(gtx, button, label, node.Icon, enabled)
 }
 
 func (r *Renderer) buttonNodeState(node *uidsl.Node, data any) (string, bool) {
@@ -2828,10 +2828,6 @@ func (r *Renderer) handleButtonClicks(gtx layout.Context, node uidsl.Node, data 
 		}
 	}
 	return clicked
-}
-
-func buttonIconAfter(iconName string) bool {
-	return iconName != "" && iconName != "arrow-left"
 }
 
 func (r *Renderer) layoutInput(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
@@ -2960,7 +2956,7 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 		layout.Stacked(content),
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: 8, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return r.layoutControlButton(gtx, collapse, "Collapse", "chevron-up", true, true, true)
+				return r.layoutControlButton(gtx, collapse, "Collapse", "chevron-up", true)
 			})
 		}),
 	)
@@ -3066,7 +3062,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 		if r.selectOpen[path] {
 			icon = "chevron-up"
 		}
-		return r.layoutControlButton(gtx, toggle, selectedLabel, icon, enabled, false, true)
+		return r.layoutControlButton(gtx, toggle, selectedLabel, icon, enabled)
 	}
 	if !r.selectOpen[path] {
 		return header(gtx)
@@ -3094,7 +3090,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 							icon = "check"
 						}
 						return layout.Inset{Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return r.layoutControlButton(gtx, choice, entry.label, icon, true, false, false)
+							return r.layoutControlButton(gtx, choice, entry.label, icon, true)
 						})
 					}))
 				}
@@ -3104,7 +3100,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 	)
 }
 
-func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string, enabled, strong, iconAfter bool) layout.Dimensions {
+func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string, enabled bool) layout.Dimensions {
 	background := r.palette.surface
 	borderColor := r.palette.border
 	if enabled && button.Hovered() {
@@ -3124,7 +3120,7 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 				return layout.Inset{Top: r.metrics.controlPaddingY, Right: r.metrics.controlPaddingX, Bottom: r.metrics.controlPaddingY, Left: r.metrics.controlPaddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					children := make([]layout.FlexChild, 0, 2)
 					labelWidget := layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						labelStyle := r.materialTextLabel(label, "control", strong)
+						labelStyle := r.materialTextLabel(label, "control", false)
 						labelStyle.MaxLines = 1
 						labelStyle.Color = r.palette.accent
 						if !enabled {
@@ -3135,9 +3131,6 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 					icon := r.icons[iconName]
 					iconWidget := layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						inset := layout.Inset{Right: 8}
-						if iconAfter {
-							inset = layout.Inset{Left: 8}
-						}
 						return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(19), gtx.Dp(19)))
 							iconColor := r.palette.accent
@@ -3151,11 +3144,7 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 						})
 					})
 					if icon != nil {
-						if iconAfter {
-							children = append(children, labelWidget, iconWidget)
-						} else {
-							children = append(children, iconWidget, labelWidget)
-						}
+						children = append(children, iconWidget, labelWidget)
 					} else {
 						children = append(children, labelWidget)
 					}
@@ -3646,11 +3635,11 @@ func (r *Renderer) layoutConfirmation(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEnd}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return r.layoutControlButton(gtx, cancel, "Cancel", "", true, false, false)
+							return r.layoutControlButton(gtx, cancel, "Cancel", "", true)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return r.layoutControlButton(gtx, confirm, "Confirm", "", true, true, false)
+								return r.layoutControlButton(gtx, confirm, "Confirm", "", true)
 							})
 						}),
 					)
@@ -3693,7 +3682,7 @@ func (r *Renderer) layoutAlert(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEnd}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return r.layoutControlButton(gtx, ok, "OK", "", true, true, false)
+							return r.layoutControlButton(gtx, ok, "OK", "", true)
 						}),
 					)
 				}),

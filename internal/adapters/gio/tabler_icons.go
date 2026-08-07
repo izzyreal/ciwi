@@ -123,6 +123,24 @@ func tablerIcons() map[string]nativeIcon {
 		"copy":           tablerIcon{paths(line(f32.Pt(8, 8), f32.Pt(20, 8), f32.Pt(20, 20), f32.Pt(8, 20), f32.Pt(8, 8)), line(f32.Pt(16, 8), f32.Pt(16, 4), f32.Pt(4, 4), f32.Pt(4, 16), f32.Pt(8, 16)))},
 		"adjustments":    tablerIcon{paths(line(f32.Pt(4, 6), f32.Pt(10, 6)), line(f32.Pt(14, 6), f32.Pt(20, 6)), circle(f32.Pt(12, 6), 2), line(f32.Pt(4, 12), f32.Pt(6, 12)), line(f32.Pt(10, 12), f32.Pt(20, 12)), circle(f32.Pt(8, 12), 2), line(f32.Pt(4, 18), f32.Pt(14, 18)), line(f32.Pt(18, 18), f32.Pt(20, 18)), circle(f32.Pt(16, 18), 2))},
 		"settings":       tablerIcon{paths(circle(f32.Pt(12, 12), 3), circle(f32.Pt(12, 12), 8), line(f32.Pt(12, 2), f32.Pt(12, 4)), line(f32.Pt(12, 20), f32.Pt(12, 22)), line(f32.Pt(2, 12), f32.Pt(4, 12)), line(f32.Pt(20, 12), f32.Pt(22, 12)), line(f32.Pt(5, 5), f32.Pt(6.5, 6.5)), line(f32.Pt(17.5, 17.5), f32.Pt(19, 19)), line(f32.Pt(19, 5), f32.Pt(17.5, 6.5)), line(f32.Pt(6.5, 17.5), f32.Pt(5, 19)))},
+		"vault": tablerIcon{paths(
+			func(path *clip.Path) {
+				path.MoveTo(f32.Pt(6, 3))
+				path.LineTo(f32.Pt(18, 3))
+				path.CubeTo(f32.Pt(19.66, 3), f32.Pt(21, 4.34), f32.Pt(21, 6))
+				path.LineTo(f32.Pt(21, 18))
+				path.CubeTo(f32.Pt(21, 19.66), f32.Pt(19.66, 21), f32.Pt(18, 21))
+				path.LineTo(f32.Pt(6, 21))
+				path.CubeTo(f32.Pt(4.34, 21), f32.Pt(3, 19.66), f32.Pt(3, 18))
+				path.LineTo(f32.Pt(3, 6))
+				path.CubeTo(f32.Pt(3, 4.34), f32.Pt(4.34, 3), f32.Pt(6, 3))
+			},
+			circle(f32.Pt(12, 12), 3),
+			line(f32.Pt(9.75, 9.75), f32.Pt(8, 8)),
+			line(f32.Pt(14.25, 9.75), f32.Pt(16, 8)),
+			line(f32.Pt(14.25, 14.25), f32.Pt(16, 16)),
+			line(f32.Pt(9.75, 14.25), f32.Pt(8, 16)),
+		)},
 	}
 	icons := make(map[string]nativeIcon, len(definitions))
 	for name, definition := range definitions {

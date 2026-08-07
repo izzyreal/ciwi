@@ -63,7 +63,6 @@ screen:
                     arguments: {projectId: "{{managedYAML.project_id}}", yaml: "{{managedYAML.yaml}}"}
               - component: button
                 text: {literal: Save}
-                style: {emphasis: strong}
                 actions:
                   - on: activate
                     command: save-managed-yaml

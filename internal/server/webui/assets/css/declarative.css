@@ -50,12 +50,14 @@ body { min-height: 100vh; }
 .dsl-disclosure[open] > summary::after { transform: rotate(90deg); }
 .dsl-disclosure[open] > summary { margin-bottom: 14px; }
 .dsl-execution-row > summary { display:flex; align-items:center; gap:9px; font:var(--ciwi-type-control-weight) var(--ciwi-type-control-size)/var(--ciwi-type-control-line-height) var(--ciwi-type-control-family); color:var(--ink); }
+.dsl-execution-row > summary.ciwi-progress-surface { box-sizing:border-box; width:calc(100% + 2 * var(--ciwi-space-small, 8px)); margin:calc(-1 * var(--ciwi-space-small, 8px)) calc(-1 * var(--ciwi-space-small, 8px)) 0; padding:var(--ciwi-space-small, 8px); }
 .dsl-execution-row-image { width:28px; height:28px; object-fit:contain; image-rendering:pixelated; }
-.dsl-execution-row-status { color:currentColor; font-size:15px; line-height:1; }
-.dsl-execution-row.dsl-success .dsl-execution-row-status { color:var(--ok); }
-.dsl-execution-row.dsl-danger .dsl-execution-row-status { color:var(--bad); }
-.dsl-execution-row.dsl-warning .dsl-execution-row-status { color:var(--warn); }
-.dsl-execution-row.dsl-accent .dsl-execution-row-status { color:var(--accent); }
+.dsl-execution-row-status { flex:0 0 auto; width:20px; height:20px; }
+.dsl-execution-row-status.dsl-status-success { color:var(--ok); }
+.dsl-execution-row-status.dsl-status-danger { color:var(--bad); }
+.dsl-execution-row-status.dsl-status-warning,.dsl-execution-row-status.dsl-status-accent { color:var(--warn); }
+.dsl-execution-row-status.dsl-status-accent { animation:dsl-status-spin 1.2s linear infinite; }
+@keyframes dsl-status-spin { to { transform:rotate(360deg); } }
 .dsl-queued-execution-header,.dsl-queued-execution-job-row { display:grid; grid-template-columns:2fr 1fr 1.25fr 1.1fr 1.2fr 1.35fr 2.25fr .85fr; gap:var(--ciwi-space-small, 8px); align-items:start; }
 .dsl-history-execution-header,.dsl-history-execution-job-row { display:grid; grid-template-columns:2.2fr 1.1fr 1.3fr 1.1fr 1.2fr 1.45fr 1fr; gap:var(--ciwi-space-small, 8px); align-items:start; }
 .dsl-queued-execution-header,.dsl-history-execution-header { padding:6px 8px; color:var(--muted); font:var(--ciwi-type-table-header-weight) var(--ciwi-type-table-header-size)/var(--ciwi-type-table-header-line-height) var(--ciwi-type-table-header-family); }
@@ -125,6 +127,18 @@ body { min-height: 100vh; }
 .dsl-input { min-height: 44px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--surface); color: var(--ink); font:var(--ciwi-type-control-weight) var(--ciwi-type-control-size)/var(--ciwi-type-control-line-height) var(--ciwi-type-control-family); }
 .dsl-input:hover, .dsl-input:focus { border-color: var(--accent); outline: none; }
 .dsl-settings-project-row { border-top:1px solid var(--line); padding:10px 0; }
+.dsl-project-row { min-width:0; }
+.dsl-project-row > summary { min-width:0; flex-wrap:nowrap; }
+.dsl-project-row > summary > .dsl-disclosure-label { color:var(--ink); }
+.dsl-project-row > summary > .dsl-badge { white-space:nowrap; }
+.dsl-project-row > summary > .dsl-spacer { min-width:0; }
+.dsl-project-row-body { display:flex; align-items:center; gap:var(--ciwi-space-large, 24px); min-width:0; }
+.dsl-project-row-body:not(.dsl-project-row-body-has-image) { padding-left:var(--ciwi-space-large, 24px); }
+.dsl-project-row-body-image { flex:0 0 auto; width:72px; height:72px; object-fit:contain; image-rendering:pixelated; }
+.dsl-project-row-content { display:flex; flex:1 1 auto; flex-direction:column; gap:var(--ciwi-space-small, 8px); min-width:0; }
+.dsl-compact-action-row { min-width:0; min-height:44px; }
+.dsl-compact-action-row > :first-child { min-width:0; }
+.dsl-compact-action-row > .dsl-button { flex:0 0 auto; }
 .dsl-icon { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .dsl-error { margin: 24px; padding: 16px; border: 1px solid var(--bad); border-radius: 12px; color: var(--bad); background: var(--surface); }
 @media (max-width: 760px) {
@@ -133,4 +147,9 @@ body { min-height: 100vh; }
   .dsl-image { width: 110px; }
   .dsl-title { font-size: 24px; }
   .dsl-graph-view-header { align-items:flex-start; flex-direction:column; }
+	.dsl-project-row > summary { flex-wrap:wrap; }
+	.dsl-project-row-body { align-items:flex-start; }
+	.dsl-compact-action-row { align-items:stretch !important; flex-direction:column !important; }
+	.dsl-compact-action-row > .dsl-button { align-self:flex-start; }
+	.dsl-compact-action-row > .dsl-spacer { display:none; }
 }

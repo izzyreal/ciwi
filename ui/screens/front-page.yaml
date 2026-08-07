@@ -93,8 +93,6 @@ screen:
                 icon: server
                 enabled:
                   binding: client.connected
-                style:
-                  emphasis: strong
                 overrides:
                   compact:
                     style:
@@ -108,8 +106,6 @@ screen:
                 text:
                   literal: Global Settings
                 icon: settings
-                style:
-                  emphasis: strong
                 overrides:
                   compact:
                     style:
@@ -288,36 +284,6 @@ screen:
                   role: project-row
                   emphasis: strong
                 children:
-                  - component: row
-                    layout:
-                      direction: horizontal
-                      gap: medium
-                      align: center
-                    children:
-                      - component: text
-                        text:
-                          binding: project.repo_url
-                        layout:
-                          grow: true
-                        visible:
-                          binding: project.repo_url
-                          empty: true
-                          not: true
-                        style:
-                          role: body
-                          tone: muted
-                          truncate: true
-                      - component: button
-                        text:
-                          literal: View details
-                        overrides:
-                          gio:
-                            hidden: true
-                        actions:
-                          - on: activate
-                            command: navigate
-                            arguments:
-                              route: /projects/{{project.id}}
                   - component: list
                     layout:
                       direction: vertical
@@ -351,6 +317,7 @@ screen:
                                 style:
                                   role: body
                                   tone: muted
+                                  emphasis: strong
                           - component: button
                             text:
                               literal: Options

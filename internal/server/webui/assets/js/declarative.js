@@ -230,7 +230,7 @@
 	(Array.isArray(projects) ? projects : []).forEach(project => {
 	  const count = Array.isArray(project.pipelines) ? project.pipelines.length : 0;
 	  project.pipeline_count_label = String(count) + (count === 1 ? ' pipeline' : ' pipelines');
-	  project.project_icon = Number(project.id || 0) > 0
+	  project.project_icon = Number(project.id || 0) > 0 && String(project.source_kind || '') !== 'managed_yaml'
 		? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon'
 		: '';
 	});
@@ -331,10 +331,11 @@
   function applyLayout(element, layout) {
     if (!layout) return;
     const sizes = { small: 'var(--ciwi-space-small)', medium: 'var(--ciwi-space-medium)', large: 'var(--ciwi-space-large)' };
+	const cssLength = value => /^\d+(?:\.\d+)?$/.test(String(value || '').trim()) ? String(value).trim() + 'px' : value;
     if (layout.direction === 'horizontal') element.style.flexDirection = 'row';
     if (layout.direction === 'vertical') element.style.flexDirection = 'column';
-    if (layout.gap) element.style.gap = sizes[layout.gap] || layout.gap;
-    if (layout.padding) element.style.padding = sizes[layout.padding] || layout.padding;
+    if (layout.gap) element.style.gap = sizes[layout.gap] || cssLength(layout.gap);
+    if (layout.padding) element.style.padding = sizes[layout.padding] || cssLength(layout.padding);
     if (layout.align) element.style.alignItems = layout.align;
     if (layout.justify) element.style.justifyContent = layout.justify;
     if (layout.wrap) element.style.flexWrap = 'wrap';
@@ -800,7 +801,7 @@
     icon.classList.add('dsl-icon');
     icon.setAttribute('aria-hidden', 'true');
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', '/ui/icons.svg#icon-' + name);
+    use.setAttribute('href', '/ui/icons.svg?v=declarative-2#icon-' + name);
     icon.appendChild(use);
     return icon;
   }
@@ -1098,25 +1099,30 @@
 	    image.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
 	    image.alt = node.image.description || '';
 	    summary.appendChild(image);
-	    const status = document.createElement('span');
-	    status.className = 'dsl-execution-row-status';
-	    status.textContent = '●';
+		const statusTone = semanticTone(resolve(data, node.style.toneBinding));
+		const statusIcon = {success: 'circle-check', danger: 'circle-x', warning: 'clock', accent: 'loader-2'}[statusTone] || 'clock';
+	    const status = declarativeIcon(statusIcon);
+	    status.classList.add('dsl-execution-row-status', 'dsl-status-' + statusTone);
 	    summary.appendChild(status);
 	    const label = document.createElement('span');
 	    label.textContent = renderText(node.text, data) || 'Details';
 	    summary.appendChild(label);
 	  } else {
-		if (node.image) {
-		  const image = document.createElement('img');
-		  image.className = 'dsl-disclosure-image';
-		  image.src = node.image.binding
+		if (node.image && style.role !== 'project-row') {
+		  const imageSource = node.image.binding
 			? String(resolve(data, node.image.binding) || '')
 			: (node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset);
-		  image.alt = node.image.description || '';
-		  if (node.image.binding) image.addEventListener('error', () => { image.hidden = true; }, {once: true});
-		  summary.appendChild(image);
+		  if (imageSource) {
+			const image = document.createElement('img');
+			image.className = 'dsl-disclosure-image';
+			image.src = imageSource;
+			image.alt = node.image.description || '';
+			if (node.image.binding) image.addEventListener('error', () => { image.style.visibility = 'hidden'; }, {once: true});
+			summary.appendChild(image);
+		  }
 		}
 		const label = document.createElement('span');
+		label.className = 'dsl-disclosure-label';
 		label.textContent = renderText(node.text, data) || 'Details';
 		summary.appendChild(label);
       }
@@ -1143,11 +1149,13 @@
       element.setAttribute('aria-label', node.icon === 'heart' ? 'Heartbeat' : node.icon);
       if (node.pulse && node.pulse.binding) bindTimestampPulse(element, resolve(data, node.pulse.binding));
     } else if (node.component === 'image' && node.image) {
-	  element.src = node.image.binding
+	  const imageSource = node.image.binding
 		? String(resolve(data, node.image.binding) || '')
 		: (node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset);
+	  if (!imageSource) return document.createDocumentFragment();
+	  element.src = imageSource;
       element.alt = node.image.description || '';
-	  if (node.image.binding) element.addEventListener('error', () => { element.hidden = true; }, {once: true});
+	  if (node.image.binding) element.addEventListener('error', () => { element.style.visibility = 'hidden'; }, {once: true});
     } else if (node.component === 'select' && node.select) {
       const options = resolve(data, node.select.options);
       const current = String(resolve(data, node.select.value));
@@ -1172,17 +1180,39 @@
 	  element.title = element.textContent || '';
 	}
     if (node.component === 'button' && node.icon) {
-      element.append(declarativeIcon(node.icon));
+	  element.prepend(declarativeIcon(node.icon));
     }
     bindActions(element, node.actions, data);
+	let childrenTarget = element;
+	if (node.component === 'disclosure' && style.role === 'project-row') {
+	  const body = document.createElement('div');
+	  body.className = 'dsl-project-row-body';
+	  const content = document.createElement('div');
+	  content.className = 'dsl-project-row-content';
+	  const imageSource = node.image && node.image.binding
+		? String(resolve(data, node.image.binding) || '')
+		: '';
+	  if (imageSource) {
+		body.classList.add('dsl-project-row-body-has-image');
+		const image = document.createElement('img');
+		image.className = 'dsl-project-row-body-image';
+		image.src = imageSource;
+		image.alt = node.image.description || '';
+		image.addEventListener('error', () => { image.style.visibility = 'hidden'; }, {once: true});
+		body.appendChild(image);
+	  }
+	  body.appendChild(content);
+	  element.appendChild(body);
+	  childrenTarget = content;
+	}
     if (node.component === 'scroller' && node.repeat) {
       const list = resolve(data, node.repeat.source);
       (Array.isArray(list) ? list : []).forEach(item => {
         const itemData = Object.assign({}, data, {[node.repeat.as]: item});
-        (node.children || []).forEach(child => element.appendChild(renderNode(child, itemData)));
+		(node.children || []).forEach(child => childrenTarget.appendChild(renderNode(child, itemData)));
       });
     } else {
-      (node.children || []).forEach(child => element.appendChild(renderNode(child, data)));
+	  (node.children || []).forEach(child => childrenTarget.appendChild(renderNode(child, data)));
     }
     if (node.progress && node.progress.binding) {
       const target = node.component === 'disclosure' ? element.querySelector(':scope > summary') : element;
@@ -1393,9 +1423,17 @@
   function startChangeWatch() {
 	if (typeof window.EventSource !== 'function') return;
 	const source = new EventSource('/api/v1/ui/changes');
+	let initialized = false;
 	source.onmessage = event => {
 	  try {
 		const change = JSON.parse(event.data || '{}');
+		// Every new stream starts with a resync snapshot. The page refresh that
+		// opened this stream already supplies that snapshot, so rendering it again
+		// only replaces the complete declarative tree and causes a visible reflow.
+		if (!initialized) {
+		  initialized = true;
+		  return;
+		}
 		const watched = activeWatchTopics();
 		if (change.resync_required || (change.topics || []).some(topic => watched.has(String(topic)))) scheduleChangeRefresh();
 	  } catch (_) {}
@@ -1475,7 +1513,10 @@
 		const updateStatus = updateStatusPayload.status || {};
 		const projects = Array.isArray(projectsPayload.projects) ? projectsPayload.projects : [];
 		projects.forEach(project => {
-		  project.can_reload = String(project.source_kind || '') !== 'managed_yaml';
+		  project.is_managed = String(project.source_kind || '') === 'managed_yaml';
+		  project.can_reload = !project.is_managed;
+		  project.has_repo = String(project.repo_url || '').trim() !== '';
+		  project.repo_ref_label = String(project.repo_ref || '').trim() || 'default';
 		  project.action_status = '';
 		  project.action_tone = 'muted';
 		  const loadedCommit = String(project.loaded_commit || '').trim();
@@ -1519,10 +1560,11 @@
         view.output_match_index = 0;
         view.output_tailing = false;
         view.tailing_label = 'Tailing: Off';
-        view.selected_timeline_item = Array.isArray(view.timeline) && view.timeline.length
+		view.selected_timeline_item = Array.isArray(view.timeline) && view.timeline.length
           ? view.timeline[0]
-          : {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
+		  : {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
       }
+	  if (generation !== outputWatchGeneration) return;
       currentDocument = documentContract;
 	  const browserClientState = {
 		connected: true, connecting: false, offline: false, address: window.location.host,
@@ -1549,6 +1591,5 @@
     }
   }
 
-  refresh();
-  startChangeWatch();
+  refresh().finally(startChangeWatch);
 })();
