@@ -26,7 +26,7 @@ and SSH preferences remain renderer-owned bindings rather than server state.
 The `ciwi.ui/v1` schema contains:
 
 - a typed component tree (`page`, `row`, `column`, `section`, `card`,
-  `disclosure`, `graph-view`, `text`, `icon`, `image`, `list`, `scroller`,
+  `disclosure`, `graph-view`, `tree-view`, `text`, `icon`, `image`, `list`, `scroller`,
   `button`, `input`, `select`, `badge`, and a small set of layout primitives);
 - renderer-neutral layout and semantic style roles;
 - dot-path data bindings and non-executable `{{binding}}` templates;
@@ -52,6 +52,10 @@ action. A repeated `scroller` describes a bounded horizontal collection while
 leaving native gesture handling and browser overflow behavior to each adapter.
 `graph-view` describes a dependency graph plus its complete list fallback;
 renderers own layout, selection, pan/zoom, and local Graph/List persistence.
+`tree-view` describes recursive report data with stable keys, disclosure state,
+optional links, filtering metadata, and named node actions. Artifact, test, and
+coverage hierarchies therefore remain presentation data instead of being
+rebuilt independently by JavaScript and Gio.
 Disclosures can declare a renderer-neutral initial state and a templated stable
 state key. Clients persist only keyed disclosure state; unkeyed disclosures
 retain ordinary screen-session behavior. A disclosure may request a full-screen

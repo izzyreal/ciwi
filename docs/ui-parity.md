@@ -69,6 +69,14 @@ execution path, system messages, and grouped phase/step output now live in one
 `Output / Error` section; selecting a path item reveals its corresponding output
 instead of maintaining a second selected-item details card.
 
+Job reports use one recursive `tree-view` declaration and one presentation
+model in both clients. Artifact directories expose ZIP downloads at every
+level, individual files expose direct downloads, test suites retain package and
+case drill-down plus repository source links and status filters, and coverage
+paths wrap within their card. Browser downloads use the established HTTP
+endpoints; native downloads use bounded chunks over typed CNP and save without
+overwriting an existing file.
+
 Settings, managed-YAML editing, agent details, and ad-hoc agent scripts now use
 the same presentation/action contracts. Both adapters expose asynchronous busy
 state and bounded success/error notices; agent heartbeat icons use the shared

@@ -686,6 +686,7 @@ message Request {
     UpsertVaultConnectionRequest upsert_vault_connection = 40;
     TestVaultConnectionRequest test_vault_connection = 41;
     VaultConnectionIDRequest delete_vault_connection = 42;
+    ArtifactDownloadRequest download_artifact = 43;
   }
 }
 
@@ -724,6 +725,7 @@ message Response {
     VaultConnection vault_connection = 39;
     TestVaultConnectionResult test_vault_connection = 40;
     DeleteVaultConnectionResult delete_vault_connection = 41;
+    ArtifactDownloadChunk artifact_download = 42;
   }
 }
 
@@ -760,6 +762,48 @@ message ReportDetails {
   string tone = 3;
   repeated JobDetailRow rows = 4;
   string additional_label = 5;
+  repeated TreeNode nodes = 6;
+  repeated ReportFilter filters = 7;
+  string filter = 8;
+  bool can_download_all = 9;
+}
+
+message ReportFilter {
+  string value = 1;
+  string label = 2;
+}
+
+message TreeNode {
+  string key = 1;
+  reserved 2;
+  string label = 3;
+  string detail = 4;
+  string tone = 5;
+  string link = 6;
+  string action_label = 7;
+  string action_kind = 8;
+  string action_path = 9;
+  bool default_expanded = 10;
+  repeated string filter_values = 11;
+  repeated TreeNode children = 12;
+}
+
+message ArtifactDownloadRequest {
+  string job_execution_id = 1;
+  string kind = 2;
+  string path = 3;
+  string token = 4;
+  int64 offset = 5;
+}
+
+message ArtifactDownloadChunk {
+  string token = 1;
+  string file_name = 2;
+  string content_type = 3;
+  bytes data = 4;
+  int64 next_offset = 5;
+  int64 total_size = 6;
+  bool complete = 7;
 }
 
 message JobRunContext {

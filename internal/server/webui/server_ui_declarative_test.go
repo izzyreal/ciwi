@@ -407,9 +407,34 @@ func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg?v=declarative-3#icon-", "node.component === 'select'", "change-theme", "runSelectionFromArguments"} {
+	for _, expected := range []string{"semanticTone", "style.toneBinding", "/ui/icons.svg?v=declarative-4#icon-", "node.component === 'select'", "change-theme", "runSelectionFromArguments"} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
+		}
+	}
+}
+
+func TestDeclarativeRendererSupportsSharedReportsAndArtifactDownloads(t *testing.T) {
+	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stylePayload, err := uiAssets.ReadFile("assets/css/declarative.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script, styles := string(scriptPayload), string(stylePayload)
+	for _, expected := range []string{
+		"renderTreeView", "set-report-filter", "download-artifact",
+		"/artifacts/download-all", "/artifacts/download?prefix=", "'/artifacts/'",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Errorf("declarative report renderer does not contain %q", expected)
+		}
+	}
+	for _, expected := range []string{".dsl-report-card", "overflow-wrap:anywhere", "word-break:break-word"} {
+		if !strings.Contains(styles, expected) {
+			t.Errorf("declarative report styles do not contain %q", expected)
 		}
 	}
 }

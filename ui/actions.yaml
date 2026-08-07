@@ -9,6 +9,8 @@ actions:
   - { command: find-output, class: local }
   - { command: copy-output, class: local }
   - { command: toggle-output-tailing, class: local }
+  - { command: set-report-filter, class: local }
+  - { command: download-artifact, class: local }
   - { command: set-disclosures, class: local }
   - { command: set-run-option, class: local }
   - { command: set-agent-script-field, class: local }

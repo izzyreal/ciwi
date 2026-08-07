@@ -558,6 +558,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		}
 	}()
 	screenLoads := make(chan screenLoadResult, 8)
+	artifactDownloads := make(chan artifactDownloadResult, 4)
 	var screenLoadCancel context.CancelFunc
 	var screenLoadGeneration uint64
 	queueScreenLoad := func(target navigationState, recoverMissingRoute bool) {
@@ -1042,6 +1043,14 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 			}
 			window.Invalidate()
+		case result := <-artifactDownloads:
+			if result.err != nil {
+				renderer.SetStatus("Artifact download failed: " + result.err.Error())
+			} else {
+				renderer.SetStatus("Downloaded artifact to " + result.path)
+			}
+			scheduleStatusExpiry()
+			window.Invalidate()
 		case <-coordinator.Changed():
 			snapshot := coordinator.Snapshot()
 			renderer.SetOperations(snapshot)
@@ -1203,6 +1212,23 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			case "retry-connection":
 				reconnectDelay = time.Second
 				scheduleReconnectAfter("Retrying connection…", 0)
+				continue
+			case "set-report-filter":
+				renderer.SetNestedBinding("jobDetails", "test_report", "filter", strings.TrimSpace(command.arguments["value"]))
+				window.Invalidate()
+				continue
+			case "download-artifact":
+				activeClient := client
+				arguments := command.arguments
+				renderer.SetStatus("Downloading artifact…")
+				go func() {
+					path, downloadErr := downloadArtifact(ctx, activeClient, arguments)
+					select {
+					case artifactDownloads <- artifactDownloadResult{path: path, err: downloadErr}:
+					case <-ctx.Done():
+					}
+				}()
+				window.Invalidate()
 				continue
 			}
 			if command.action.Command == "open-url" {
@@ -2155,7 +2181,10 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 			"artifacts": "No artifacts", "test_report": "No parsed test report", "coverage_report": "No parsed coverage report",
 		} {
 			if root[key] == nil {
-				root[key] = map[string]any{"empty_label": emptyLabel, "summary": "", "tone": "muted", "rows": []any{}, "additional_label": ""}
+				root[key] = map[string]any{
+					"empty_label": emptyLabel, "summary": "", "tone": "muted", "rows": []any{}, "additional_label": "",
+					"nodes": []any{}, "filters": []any{}, "filter": "all", "can_download_all": false,
+				}
 			}
 		}
 		if root["run_context"] == nil {

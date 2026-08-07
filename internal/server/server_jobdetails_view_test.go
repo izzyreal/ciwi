@@ -118,7 +118,7 @@ func TestJobDetailsViewIncludesStoredReportsAndSyntheticReportArtifacts(t *testi
 	if err := json.NewDecoder(response.Body).Decode(&view); err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Artifacts.Rows) != 2 || view.Artifacts.Rows[0].Label != "coverage-report.json" || view.Artifacts.Rows[1].Label != "test-report.json" {
+	if len(view.Artifacts.Nodes) != 2 || view.Artifacts.Nodes[0].Label != "coverage-report.json" || view.Artifacts.Nodes[1].Label != "test-report.json" || !view.Artifacts.CanDownloadAll {
 		t.Fatalf("artifacts = %+v", view.Artifacts)
 	}
 	if view.TestReport.Summary != "2 total · 1 passed · 1 failed · 0 skipped" {

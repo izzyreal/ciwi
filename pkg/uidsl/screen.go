@@ -59,6 +59,7 @@ type Node struct {
 	Input      *Input              `yaml:"input,omitempty" json:"input,omitempty"`
 	Disclosure *Disclosure         `yaml:"disclosure,omitempty" json:"disclosure,omitempty"`
 	GraphView  *GraphView          `yaml:"graphView,omitempty" json:"graphView,omitempty"`
+	TreeView   *TreeView           `yaml:"treeView,omitempty" json:"treeView,omitempty"`
 	Progress   *Progress           `yaml:"progress,omitempty" json:"progress,omitempty"`
 	Pulse      *Pulse              `yaml:"pulse,omitempty" json:"pulse,omitempty"`
 	Layout     Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
@@ -133,6 +134,24 @@ type GraphView struct {
 	Details      []Node `yaml:"details,omitempty" json:"details,omitempty"`
 }
 
+// TreeView describes recursive hierarchical data. Labels, details, links, and
+// actions remain declarative while each renderer owns expansion mechanics.
+type TreeView struct {
+	StateKey        string `yaml:"stateKey" json:"stateKey"`
+	Nodes           string `yaml:"nodes" json:"nodes"`
+	As              string `yaml:"as" json:"as"`
+	NodeKey         string `yaml:"nodeKey" json:"nodeKey"`
+	NodeLabel       Text   `yaml:"nodeLabel" json:"nodeLabel"`
+	NodeDetail      Text   `yaml:"nodeDetail,omitempty" json:"nodeDetail,omitempty"`
+	NodeTone        string `yaml:"nodeTone,omitempty" json:"nodeTone,omitempty"`
+	NodeLink        string `yaml:"nodeLink,omitempty" json:"nodeLink,omitempty"`
+	Children        string `yaml:"children" json:"children"`
+	DefaultExpanded string `yaml:"defaultExpanded,omitempty" json:"defaultExpanded,omitempty"`
+	Filter          string `yaml:"filter,omitempty" json:"filter,omitempty"`
+	FilterValues    string `yaml:"filterValues,omitempty" json:"filterValues,omitempty"`
+	ActionLabel     Text   `yaml:"actionLabel,omitempty" json:"actionLabel,omitempty"`
+}
+
 type Layout struct {
 	Direction string `yaml:"direction,omitempty" json:"direction,omitempty"`
 	Gap       string `yaml:"gap,omitempty" json:"gap,omitempty"`
@@ -192,7 +211,7 @@ var templateBindingPattern = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
 var components = map[string]bool{
 	"page": true, "column": true, "row": true, "section": true,
 	"card": true, "text": true, "icon": true, "image": true,
-	"disclosure": true, "graph-view": true,
+	"disclosure": true, "graph-view": true, "tree-view": true,
 	"button": true, "select": true, "input": true, "list": true, "scroller": true, "badge": true, "spacer": true,
 	"divider": true,
 }
@@ -205,6 +224,7 @@ var commands = map[string]bool{
 	"change-theme":         true,
 	"select-timeline-item": true, "change-output-search": true,
 	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
+	"set-report-filter": true, "download-artifact": true,
 	"set-disclosures":              true,
 	"set-run-option":               true,
 	"set-agent-script-field":       true,
@@ -467,6 +487,55 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		actionScope = graphScope
 	} else if node.Component == "graph-view" {
 		return fmt.Errorf("%s.graphView is required for the graph-view component", path)
+	}
+	if node.TreeView != nil {
+		if node.Component != "tree-view" {
+			return fmt.Errorf("%s.treeView is only valid for the tree-view component", path)
+		}
+		tree := node.TreeView
+		if tree.StateKey == "" || tree.Nodes == "" || tree.NodeKey == "" || tree.Children == "" || !textDefined(tree.NodeLabel) || !identifierPattern.MatchString(tree.As) {
+			return fmt.Errorf("%s.treeView requires stateKey, nodes, a valid as name, nodeKey, nodeLabel, and children", path)
+		}
+		if err := validateTemplate(tree.StateKey, scope); err != nil {
+			return fmt.Errorf("%s.treeView.stateKey: %w", path, err)
+		}
+		if err := validateBinding(tree.Nodes, scope); err != nil {
+			return fmt.Errorf("%s.treeView.nodes: %w", path, err)
+		}
+		treeScope := cloneScope(scope)
+		treeScope[tree.As] = struct{}{}
+		for field, binding := range map[string]string{
+			"nodeKey": tree.NodeKey, "nodeTone": tree.NodeTone, "nodeLink": tree.NodeLink,
+			"children": tree.Children, "defaultExpanded": tree.DefaultExpanded,
+			"filterValues": tree.FilterValues,
+		} {
+			if binding != "" {
+				if err := validateBinding(binding, treeScope); err != nil {
+					return fmt.Errorf("%s.treeView.%s: %w", path, field, err)
+				}
+			}
+		}
+		if tree.Filter != "" {
+			if err := validateBinding(tree.Filter, scope); err != nil {
+				return fmt.Errorf("%s.treeView.filter: %w", path, err)
+			}
+		}
+		if err := validateText(tree.NodeLabel, treeScope); err != nil {
+			return fmt.Errorf("%s.treeView.nodeLabel: %w", path, err)
+		}
+		if tree.NodeDetail != (Text{}) {
+			if err := validateText(tree.NodeDetail, treeScope); err != nil {
+				return fmt.Errorf("%s.treeView.nodeDetail: %w", path, err)
+			}
+		}
+		if tree.ActionLabel != (Text{}) {
+			if err := validateText(tree.ActionLabel, treeScope); err != nil {
+				return fmt.Errorf("%s.treeView.actionLabel: %w", path, err)
+			}
+		}
+		actionScope = treeScope
+	} else if node.Component == "tree-view" {
+		return fmt.Errorf("%s.treeView is required for the tree-view component", path)
 	}
 	if node.Visible != nil {
 		if err := validateBinding(node.Visible.Binding, scope); err != nil {

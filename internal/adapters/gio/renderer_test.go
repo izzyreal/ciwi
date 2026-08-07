@@ -1209,9 +1209,9 @@ func TestRendererLaysOutAuthoritativeJobHeaderAndDetailCards(t *testing.T) {
 		HostToolRequirements:      &cnpv1.ToolRequirements{Summary: "Requirements matched", Tone: "success"},
 		ContainerToolRequirements: &cnpv1.ToolRequirements{EmptyLabel: "No container tool requirements declared for this job."},
 		ReleaseSummary:            []*cnpv1.JobDetailRow{{Label: "Tag", Value: "v0.3.0"}}, HasReleaseSummary: true,
-		Artifacts:      &cnpv1.ReportDetails{Summary: "1 artifact", Rows: []*cnpv1.JobDetailRow{{Label: "dist/app.zip", Value: "2 KB"}}},
+		Artifacts:      &cnpv1.ReportDetails{Summary: "1 artifact", Nodes: []*cnpv1.TreeNode{{Label: "dist/app.zip", Detail: "2 KB"}}},
 		TestReport:     &cnpv1.ReportDetails{Summary: "1 total · 1 passed", Tone: "success"},
-		CoverageReport: &cnpv1.ReportDetails{Summary: "80.00% overall", Rows: []*cnpv1.JobDetailRow{{Label: "main.go", Value: "80.00% · 8/10"}}},
+		CoverageReport: &cnpv1.ReportDetails{Summary: "80.00% overall", Nodes: []*cnpv1.TreeNode{{Label: "main.go", Detail: "80.00% · 8/10"}}},
 		RunContext: &cnpv1.JobRunContext{Available: true, ScopeLabel: "Pipeline run", Pipelines: []*cnpv1.JobRunContextPipeline{{
 			PipelineId: "build", Status: "succeeded", SummaryLabel: "succeeded · 1 job(s)",
 			Jobs: []*cnpv1.JobRunContextJob{{Id: "compile", Status: "succeeded", SummaryLabel: "succeeded · 1 execution(s)"}},
@@ -1237,6 +1237,11 @@ func TestRendererLaysOutAuthoritativeJobHeaderAndDetailCards(t *testing.T) {
 	for _, selectable := range renderer.selectables {
 		if _, ok := wanted[selectable.Text()]; ok {
 			wanted[selectable.Text()] = true
+		}
+	}
+	for _, editor := range renderer.textEditors {
+		if _, ok := wanted[editor.Text()]; ok {
+			wanted[editor.Text()] = true
 		}
 	}
 	for label, found := range wanted {

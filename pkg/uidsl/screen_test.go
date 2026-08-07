@@ -157,6 +157,54 @@ func TestParseScreenValidatesInputBindingAndChangeScope(t *testing.T) {
 	}
 }
 
+func TestTreeViewValidatesRecursiveBindingsAndActionScope(t *testing.T) {
+	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: tree-view
+        treeView:
+          stateKey: projects
+          nodes: frontPage.projects
+          as: treeNode
+          nodeKey: treeNode.id
+          nodeLabel: {binding: treeNode.name}
+          nodeDetail: {binding: treeNode.repo_url}
+          nodeTone: treeNode.tone
+          nodeLink: treeNode.link
+          children: treeNode.children
+          defaultExpanded: treeNode.expanded
+          filter: frontPage.server.filter
+          filterValues: treeNode.filters
+          actionLabel: {binding: treeNode.action_label}
+        actions:
+          - on: activate
+            command: download-artifact
+            arguments:
+              path: "{{treeNode.action_path}}"
+      - component: list
+`, 1)
+	document, err := ParseScreen([]byte(payload))
+	if err != nil {
+		t.Fatalf("valid tree view: %v", err)
+	}
+	leaf := map[string]any{
+		"id": "leaf", "name": "app.zip", "repo_url": "2 KB", "tone": "accent", "link": "",
+		"children": []any{}, "expanded": false, "filters": []any{"all"}, "action_label": "Download", "action_path": "dist/app.zip",
+	}
+	data := map[string]any{"frontPage": map[string]any{
+		"server": map[string]any{"version": "test", "filter": "all"},
+		"projects": []any{map[string]any{
+			"id": "root", "name": "dist", "repo_url": "", "tone": "accent", "link": "", "children": []any{leaf},
+			"expanded": true, "filters": []any{"all"}, "action_label": "Download .zip", "action_path": "dist",
+		}},
+	}}
+	if err := ValidateBindings(document, data, "web"); err != nil {
+		t.Fatalf("recursive tree bindings: %v", err)
+	}
+	leaf["action_path"] = nil
+	delete(leaf, "action_path")
+	if err := ValidateBindings(document, data, "web"); err == nil || !strings.Contains(err.Error(), "treeNode.action_path") {
+		t.Fatalf("missing recursive action binding error = %v", err)
+	}
+}
+
 func TestParseScreenValidatesMultilineInput(t *testing.T) {
 	payload := strings.Replace(validScreen, "      - component: list\n", `      - component: input
         input:

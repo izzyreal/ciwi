@@ -619,6 +619,40 @@ func (r *Renderer) SetRootBinding(root, key string, value any) bool {
 	return true
 }
 
+func (r *Renderer) SetNestedBinding(root, objectKey, key string, value any) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, ok := r.data.(map[string]any)
+	if !ok {
+		return false
+	}
+	rootData, ok := data[root].(map[string]any)
+	if !ok {
+		return false
+	}
+	object, ok := rootData[objectKey].(map[string]any)
+	if !ok {
+		return false
+	}
+	nextObject := make(map[string]any, len(object)+1)
+	for existingKey, existingValue := range object {
+		nextObject[existingKey] = existingValue
+	}
+	nextObject[key] = value
+	nextRoot := make(map[string]any, len(rootData))
+	for existingKey, existingValue := range rootData {
+		nextRoot[existingKey] = existingValue
+	}
+	nextRoot[objectKey] = nextObject
+	nextData := make(map[string]any, len(data))
+	for existingKey, existingValue := range data {
+		nextData[existingKey] = existingValue
+	}
+	nextData[root] = nextRoot
+	r.data = nextData
+	return true
+}
+
 // SetDataBinding replaces or adds one top-level binding without disturbing the
 // current screen data. Client-local state such as connectivity deliberately
 // lives beside server-provided view models so every screen can consume it.
@@ -1413,6 +1447,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		if node.Component == "graph-view" {
 			return r.layoutGraphView(gtx, node, data, path)
 		}
+		if node.Component == "tree-view" {
+			return r.layoutTreeView(gtx, node, data, path)
+		}
 		if node.Component == "text" {
 			return r.layoutText(gtx, node, data, path)
 		}
@@ -1495,7 +1532,10 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		if node.Style.Role == "hero" {
 			padding = r.metrics.heroPadding
 		}
-		if node.Component == "disclosure" && node.Style.Role == "output-group" {
+		if node.Component == "disclosure" && node.Style.Role == "tree-branch" {
+			// Recursive report trees use disclosures for expansion mechanics but
+			// deliberately remain one visual hierarchy rather than nested cards.
+		} else if node.Component == "disclosure" && node.Style.Role == "output-group" {
 			content = r.surfaceWithBorderProgressColor(content, padding, r.palette.consoleSurface, r.palette.consoleBorder, surfaceProgress, r.palette.consoleSuccess)
 		} else if node.Component == "disclosure" {
 			content = r.surfaceWithFillProgress(content, padding, r.palette.surfaceRaised, surfaceProgress)
@@ -1550,11 +1590,147 @@ func usesSurfaceProgress(node uidsl.Node, disclosureExpanded bool) bool {
 
 func componentHandlesOwnActions(component string) bool {
 	switch component {
-	case "button", "select", "input", "graph-view":
+	case "button", "select", "input", "graph-view", "tree-view":
 		return true
 	default:
 		return false
 	}
+}
+
+func (r *Renderer) layoutTreeView(gtx layout.Context, node uidsl.Node, data any, nodePath string) layout.Dimensions {
+	tree := node.TreeView
+	if tree == nil {
+		return layout.Dimensions{}
+	}
+	items, err := resolveItems(data, tree.Nodes)
+	if err != nil {
+		return r.errorLabel(gtx, err)
+	}
+	filter := ""
+	if tree.Filter != "" {
+		if value, resolveErr := uidsl.Resolve(data, tree.Filter); resolveErr == nil {
+			filter = strings.TrimSpace(fmt.Sprint(value))
+		}
+	}
+	children := make([]layout.FlexChild, 0, len(items))
+	for _, item := range items {
+		itemData := mergeData(data, tree.As, item)
+		if !treeEntryVisible(itemData, tree, filter) {
+			continue
+		}
+		key, keyErr := uidsl.Resolve(itemData, tree.NodeKey)
+		if keyErr != nil {
+			return r.errorLabel(gtx, keyErr)
+		}
+		entryPath := fmt.Sprintf("%s/%v", nodePath, key)
+		entryNode, entryErr := treeEntryNode(node, itemData, fmt.Sprint(key))
+		if entryErr != nil {
+			return r.errorLabel(gtx, entryErr)
+		}
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Bottom: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return r.layoutNode(gtx, entryNode, itemData, entryPath)
+			})
+		}))
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
+func treeEntryVisible(data any, tree *uidsl.TreeView, filter string) bool {
+	if tree == nil || filter == "" || filter == "all" {
+		return true
+	}
+	if tree.FilterValues != "" {
+		if raw, err := uidsl.Resolve(data, tree.FilterValues); err == nil {
+			if values, ok := raw.([]any); ok && len(values) > 0 {
+				matched := false
+				for _, value := range values {
+					matched = matched || fmt.Sprint(value) == filter
+				}
+				if !matched {
+					return false
+				}
+			}
+		}
+	}
+	children, err := resolveItems(data, tree.Children)
+	if err != nil || len(children) == 0 {
+		return true
+	}
+	for _, child := range children {
+		if treeEntryVisible(mergeData(data, tree.As, child), tree, filter) {
+			return true
+		}
+	}
+	return false
+}
+
+func treeEntryNode(node uidsl.Node, data any, key string) (uidsl.Node, error) {
+	tree := node.TreeView
+	label, err := uidsl.RenderText(data, tree.NodeLabel)
+	if err != nil {
+		return uidsl.Node{}, err
+	}
+	detail := ""
+	if tree.NodeDetail != (uidsl.Text{}) {
+		detail, err = uidsl.RenderText(data, tree.NodeDetail)
+		if err != nil {
+			return uidsl.Node{}, err
+		}
+	}
+	tone := ""
+	if tree.NodeTone != "" {
+		if value, resolveErr := uidsl.Resolve(data, tree.NodeTone); resolveErr == nil {
+			tone = semanticTone(fmt.Sprint(value))
+		}
+	}
+	link := ""
+	if tree.NodeLink != "" {
+		if value, resolveErr := uidsl.Resolve(data, tree.NodeLink); resolveErr == nil {
+			link = strings.TrimSpace(fmt.Sprint(value))
+		}
+	}
+	actionLabel := ""
+	if tree.ActionLabel != (uidsl.Text{}) {
+		actionLabel, err = uidsl.RenderText(data, tree.ActionLabel)
+		if err != nil {
+			return uidsl.Node{}, err
+		}
+	}
+	labelNode := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: label}, Layout: uidsl.Layout{Grow: true}, Style: uidsl.Style{Role: "code-inline", Emphasis: "strong"}}
+	if link != "" {
+		labelNode.Style.Tone = "accent"
+		labelNode.Actions = []uidsl.Action{{On: "activate", Command: "open-url", Arguments: map[string]string{"url": link}}}
+	}
+	summary := []uidsl.Node{labelNode}
+	if detail != "" {
+		summary = append(summary, uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: detail}, Style: uidsl.Style{Role: "detail-small", Tone: tone}})
+	}
+	if actionLabel != "" && len(node.Actions) > 0 {
+		summary = append(summary, uidsl.Node{Component: "button", Text: &uidsl.Text{Literal: actionLabel}, Actions: node.Actions})
+	}
+	children, _ := resolveItems(data, tree.Children)
+	if len(children) == 0 {
+		// A vertical leaf lets long artifact and coverage paths wrap within the
+		// report card. Gio's horizontal Flex measures rigid detail/action cells
+		// first, which can otherwise leave the flexible path label no width.
+		summary[0].Layout.Grow = false
+		return uidsl.Node{Component: "column", Layout: uidsl.Layout{Direction: "vertical", Gap: "small"}, Children: summary}, nil
+	}
+	defaultExpanded := false
+	if tree.DefaultExpanded != "" {
+		if value, resolveErr := uidsl.Resolve(data, tree.DefaultExpanded); resolveErr == nil {
+			defaultExpanded, _ = value.(bool)
+		}
+	}
+	childTree := *tree
+	childTree.Nodes = tree.Children
+	childNode := uidsl.Node{Component: "tree-view", TreeView: &childTree, Actions: node.Actions}
+	return uidsl.Node{
+		Component: "disclosure", Text: &uidsl.Text{Literal: label}, Style: uidsl.Style{Role: "tree-branch", Tone: tone},
+		Disclosure: &uidsl.Disclosure{StateKey: tree.StateKey + ":" + key, DefaultExpanded: defaultExpanded, Summary: summary[1:]},
+		Children:   []uidsl.Node{childNode}, Layout: uidsl.Layout{Direction: "vertical", Gap: "small", Padding: "small"},
+	}, nil
 }
 
 func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {

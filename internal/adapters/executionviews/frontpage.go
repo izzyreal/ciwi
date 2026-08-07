@@ -218,9 +218,17 @@ func mapJobTestReport(report protocol.JobExecutionTestReport) *domain.JobTestRep
 		Suites: make([]domain.JobTestSuite, 0, len(report.Suites)),
 	}
 	for _, suite := range report.Suites {
-		result.Suites = append(result.Suites, domain.JobTestSuite{
+		presentedSuite := domain.JobTestSuite{
 			Name: suite.Name, Format: suite.Format, Total: suite.Total, Passed: suite.Passed, Failed: suite.Failed, Skipped: suite.Skipped,
-		})
+			Cases: make([]domain.JobTestCase, 0, len(suite.Cases)),
+		}
+		for _, testCase := range suite.Cases {
+			presentedSuite.Cases = append(presentedSuite.Cases, domain.JobTestCase{
+				Package: testCase.Package, Name: testCase.Name, File: testCase.File, Line: testCase.Line,
+				Status: testCase.Status, DurationSeconds: testCase.DurationSeconds, Output: testCase.Output,
+			})
+		}
+		result.Suites = append(result.Suites, presentedSuite)
 	}
 	if report.Coverage != nil {
 		result.Coverage = &domain.JobCoverageReport{

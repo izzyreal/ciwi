@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v7.35.1
-// source: ciwi/native/v1/ciwi.proto
+// source: api/ciwi/native/v1/ciwi.proto
 
 package cnpv1
 
@@ -69,11 +69,11 @@ func (x StatusCode) String() string {
 }
 
 func (StatusCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_ciwi_native_v1_ciwi_proto_enumTypes[0].Descriptor()
+	return file_api_ciwi_native_v1_ciwi_proto_enumTypes[0].Descriptor()
 }
 
 func (StatusCode) Type() protoreflect.EnumType {
-	return &file_ciwi_native_v1_ciwi_proto_enumTypes[0]
+	return &file_api_ciwi_native_v1_ciwi_proto_enumTypes[0]
 }
 
 func (x StatusCode) Number() protoreflect.EnumNumber {
@@ -82,7 +82,7 @@ func (x StatusCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StatusCode.Descriptor instead.
 func (StatusCode) EnumDescriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{0}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{0}
 }
 
 type ChangeTopic int32
@@ -136,11 +136,11 @@ func (x ChangeTopic) String() string {
 }
 
 func (ChangeTopic) Descriptor() protoreflect.EnumDescriptor {
-	return file_ciwi_native_v1_ciwi_proto_enumTypes[1].Descriptor()
+	return file_api_ciwi_native_v1_ciwi_proto_enumTypes[1].Descriptor()
 }
 
 func (ChangeTopic) Type() protoreflect.EnumType {
-	return &file_ciwi_native_v1_ciwi_proto_enumTypes[1]
+	return &file_api_ciwi_native_v1_ciwi_proto_enumTypes[1]
 }
 
 func (x ChangeTopic) Number() protoreflect.EnumNumber {
@@ -149,7 +149,7 @@ func (x ChangeTopic) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ChangeTopic.Descriptor instead.
 func (ChangeTopic) EnumDescriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{1}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{1}
 }
 
 type Empty struct {
@@ -160,7 +160,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[0]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -172,7 +172,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[0]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -185,7 +185,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{0}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{0}
 }
 
 type Hello struct {
@@ -199,7 +199,7 @@ type Hello struct {
 
 func (x *Hello) Reset() {
 	*x = Hello{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[1]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -211,7 +211,7 @@ func (x *Hello) String() string {
 func (*Hello) ProtoMessage() {}
 
 func (x *Hello) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[1]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -224,7 +224,7 @@ func (x *Hello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hello.ProtoReflect.Descriptor instead.
 func (*Hello) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{1}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Hello) GetClientName() string {
@@ -261,7 +261,7 @@ type Welcome struct {
 
 func (x *Welcome) Reset() {
 	*x = Welcome{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[2]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -273,7 +273,7 @@ func (x *Welcome) String() string {
 func (*Welcome) ProtoMessage() {}
 
 func (x *Welcome) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[2]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -286,7 +286,7 @@ func (x *Welcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Welcome.ProtoReflect.Descriptor instead.
 func (*Welcome) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{2}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Welcome) GetServerName() string {
@@ -335,7 +335,7 @@ type RequestMetadata struct {
 
 func (x *RequestMetadata) Reset() {
 	*x = RequestMetadata{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[3]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -347,7 +347,7 @@ func (x *RequestMetadata) String() string {
 func (*RequestMetadata) ProtoMessage() {}
 
 func (x *RequestMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[3]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -360,7 +360,7 @@ func (x *RequestMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestMetadata.ProtoReflect.Descriptor instead.
 func (*RequestMetadata) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{3}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RequestMetadata) GetRequestId() string {
@@ -394,7 +394,7 @@ type ErrorStatus struct {
 
 func (x *ErrorStatus) Reset() {
 	*x = ErrorStatus{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[4]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -406,7 +406,7 @@ func (x *ErrorStatus) String() string {
 func (*ErrorStatus) ProtoMessage() {}
 
 func (x *ErrorStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[4]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -419,7 +419,7 @@ func (x *ErrorStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorStatus.ProtoReflect.Descriptor instead.
 func (*ErrorStatus) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{4}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ErrorStatus) GetCode() StatusCode {
@@ -449,7 +449,7 @@ type ServerInfo struct {
 
 func (x *ServerInfo) Reset() {
 	*x = ServerInfo{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[5]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -461,7 +461,7 @@ func (x *ServerInfo) String() string {
 func (*ServerInfo) ProtoMessage() {}
 
 func (x *ServerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[5]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -474,7 +474,7 @@ func (x *ServerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerInfo.ProtoReflect.Descriptor instead.
 func (*ServerInfo) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{5}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ServerInfo) GetName() string {
@@ -527,7 +527,7 @@ type PipelineSummary struct {
 
 func (x *PipelineSummary) Reset() {
 	*x = PipelineSummary{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[6]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -539,7 +539,7 @@ func (x *PipelineSummary) String() string {
 func (*PipelineSummary) ProtoMessage() {}
 
 func (x *PipelineSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[6]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -552,7 +552,7 @@ func (x *PipelineSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PipelineSummary.ProtoReflect.Descriptor instead.
 func (*PipelineSummary) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{6}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PipelineSummary) GetId() int64 {
@@ -618,7 +618,7 @@ type PipelineChainSummary struct {
 
 func (x *PipelineChainSummary) Reset() {
 	*x = PipelineChainSummary{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[7]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +630,7 @@ func (x *PipelineChainSummary) String() string {
 func (*PipelineChainSummary) ProtoMessage() {}
 
 func (x *PipelineChainSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[7]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +643,7 @@ func (x *PipelineChainSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PipelineChainSummary.ProtoReflect.Descriptor instead.
 func (*PipelineChainSummary) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{7}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PipelineChainSummary) GetId() string {
@@ -709,7 +709,7 @@ type ProjectSummary struct {
 
 func (x *ProjectSummary) Reset() {
 	*x = ProjectSummary{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[8]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -721,7 +721,7 @@ func (x *ProjectSummary) String() string {
 func (*ProjectSummary) ProtoMessage() {}
 
 func (x *ProjectSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[8]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -734,7 +734,7 @@ func (x *ProjectSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectSummary.ProtoReflect.Descriptor instead.
 func (*ProjectSummary) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{8}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ProjectSummary) GetId() int64 {
@@ -837,7 +837,7 @@ type ProjectList struct {
 
 func (x *ProjectList) Reset() {
 	*x = ProjectList{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[9]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -849,7 +849,7 @@ func (x *ProjectList) String() string {
 func (*ProjectList) ProtoMessage() {}
 
 func (x *ProjectList) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[9]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -862,7 +862,7 @@ func (x *ProjectList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectList.ProtoReflect.Descriptor instead.
 func (*ProjectList) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{9}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ProjectList) GetProjects() []*ProjectSummary {
@@ -884,7 +884,7 @@ type FrontPageView struct {
 
 func (x *FrontPageView) Reset() {
 	*x = FrontPageView{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[10]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -896,7 +896,7 @@ func (x *FrontPageView) String() string {
 func (*FrontPageView) ProtoMessage() {}
 
 func (x *FrontPageView) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[10]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -909,7 +909,7 @@ func (x *FrontPageView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrontPageView.ProtoReflect.Descriptor instead.
 func (*FrontPageView) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{10}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *FrontPageView) GetServer() *ServerInfo {
@@ -949,7 +949,7 @@ type GetFrontPageViewRequest struct {
 
 func (x *GetFrontPageViewRequest) Reset() {
 	*x = GetFrontPageViewRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[11]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -961,7 +961,7 @@ func (x *GetFrontPageViewRequest) String() string {
 func (*GetFrontPageViewRequest) ProtoMessage() {}
 
 func (x *GetFrontPageViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[11]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -974,7 +974,7 @@ func (x *GetFrontPageViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFrontPageViewRequest.ProtoReflect.Descriptor instead.
 func (*GetFrontPageViewRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{11}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetFrontPageViewRequest) GetIncludeProjectIconIds() []int64 {
@@ -997,7 +997,7 @@ type ProjectDetailsView struct {
 
 func (x *ProjectDetailsView) Reset() {
 	*x = ProjectDetailsView{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[12]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1009,7 +1009,7 @@ func (x *ProjectDetailsView) String() string {
 func (*ProjectDetailsView) ProtoMessage() {}
 
 func (x *ProjectDetailsView) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[12]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1022,7 +1022,7 @@ func (x *ProjectDetailsView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectDetailsView.ProtoReflect.Descriptor instead.
 func (*ProjectDetailsView) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{12}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ProjectDetailsView) GetProject() *ProjectSummary {
@@ -1076,7 +1076,7 @@ type ProjectPipelineDetails struct {
 
 func (x *ProjectPipelineDetails) Reset() {
 	*x = ProjectPipelineDetails{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[13]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1088,7 +1088,7 @@ func (x *ProjectPipelineDetails) String() string {
 func (*ProjectPipelineDetails) ProtoMessage() {}
 
 func (x *ProjectPipelineDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[13]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1101,7 +1101,7 @@ func (x *ProjectPipelineDetails) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectPipelineDetails.ProtoReflect.Descriptor instead.
 func (*ProjectPipelineDetails) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{13}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ProjectPipelineDetails) GetId() int64 {
@@ -1178,7 +1178,7 @@ type ProjectJobDetails struct {
 
 func (x *ProjectJobDetails) Reset() {
 	*x = ProjectJobDetails{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[14]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1190,7 @@ func (x *ProjectJobDetails) String() string {
 func (*ProjectJobDetails) ProtoMessage() {}
 
 func (x *ProjectJobDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[14]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1203,7 @@ func (x *ProjectJobDetails) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectJobDetails.ProtoReflect.Descriptor instead.
 func (*ProjectJobDetails) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{14}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ProjectJobDetails) GetId() string {
@@ -1291,7 +1291,7 @@ type ProjectStepDetails struct {
 
 func (x *ProjectStepDetails) Reset() {
 	*x = ProjectStepDetails{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[15]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1303,7 +1303,7 @@ func (x *ProjectStepDetails) String() string {
 func (*ProjectStepDetails) ProtoMessage() {}
 
 func (x *ProjectStepDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[15]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1316,7 +1316,7 @@ func (x *ProjectStepDetails) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectStepDetails.ProtoReflect.Descriptor instead.
 func (*ProjectStepDetails) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{15}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ProjectStepDetails) GetIndex() uint32 {
@@ -1378,7 +1378,7 @@ type GetProjectDetailsRequest struct {
 
 func (x *GetProjectDetailsRequest) Reset() {
 	*x = GetProjectDetailsRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[16]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1390,7 +1390,7 @@ func (x *GetProjectDetailsRequest) String() string {
 func (*GetProjectDetailsRequest) ProtoMessage() {}
 
 func (x *GetProjectDetailsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[16]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1403,7 +1403,7 @@ func (x *GetProjectDetailsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProjectDetailsRequest.ProtoReflect.Descriptor instead.
 func (*GetProjectDetailsRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{16}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetProjectDetailsRequest) GetProjectId() int64 {
@@ -1430,7 +1430,7 @@ type GetJobDetailsRequest struct {
 
 func (x *GetJobDetailsRequest) Reset() {
 	*x = GetJobDetailsRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[17]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1442,7 +1442,7 @@ func (x *GetJobDetailsRequest) String() string {
 func (*GetJobDetailsRequest) ProtoMessage() {}
 
 func (x *GetJobDetailsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[17]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1455,7 +1455,7 @@ func (x *GetJobDetailsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobDetailsRequest.ProtoReflect.Descriptor instead.
 func (*GetJobDetailsRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{17}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetJobDetailsRequest) GetJobExecutionId() string {
@@ -1514,7 +1514,7 @@ type JobDetailsView struct {
 
 func (x *JobDetailsView) Reset() {
 	*x = JobDetailsView{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[18]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1526,7 +1526,7 @@ func (x *JobDetailsView) String() string {
 func (*JobDetailsView) ProtoMessage() {}
 
 func (x *JobDetailsView) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[18]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1539,7 +1539,7 @@ func (x *JobDetailsView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobDetailsView.ProtoReflect.Descriptor instead.
 func (*JobDetailsView) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{18}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *JobDetailsView) GetId() string {
@@ -1794,7 +1794,7 @@ type SchedulingDiagnosis struct {
 
 func (x *SchedulingDiagnosis) Reset() {
 	*x = SchedulingDiagnosis{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[19]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1806,7 +1806,7 @@ func (x *SchedulingDiagnosis) String() string {
 func (*SchedulingDiagnosis) ProtoMessage() {}
 
 func (x *SchedulingDiagnosis) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[19]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1819,7 +1819,7 @@ func (x *SchedulingDiagnosis) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulingDiagnosis.ProtoReflect.Descriptor instead.
 func (*SchedulingDiagnosis) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{19}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SchedulingDiagnosis) GetState() string {
@@ -1878,7 +1878,7 @@ type SchedulingAgentAssessment struct {
 
 func (x *SchedulingAgentAssessment) Reset() {
 	*x = SchedulingAgentAssessment{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[20]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1890,7 +1890,7 @@ func (x *SchedulingAgentAssessment) String() string {
 func (*SchedulingAgentAssessment) ProtoMessage() {}
 
 func (x *SchedulingAgentAssessment) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[20]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1903,7 +1903,7 @@ func (x *SchedulingAgentAssessment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulingAgentAssessment.ProtoReflect.Descriptor instead.
 func (*SchedulingAgentAssessment) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{20}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SchedulingAgentAssessment) GetAgentId() string {
@@ -1957,7 +1957,7 @@ type ControlExecutionRequest struct {
 
 func (x *ControlExecutionRequest) Reset() {
 	*x = ControlExecutionRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[21]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1969,7 +1969,7 @@ func (x *ControlExecutionRequest) String() string {
 func (*ControlExecutionRequest) ProtoMessage() {}
 
 func (x *ControlExecutionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[21]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1982,7 +1982,7 @@ func (x *ControlExecutionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlExecutionRequest.ProtoReflect.Descriptor instead.
 func (*ControlExecutionRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{21}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ControlExecutionRequest) GetJobExecutionId() string {
@@ -2002,7 +2002,7 @@ type CancelExecutionResult struct {
 
 func (x *CancelExecutionResult) Reset() {
 	*x = CancelExecutionResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[22]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2014,7 +2014,7 @@ func (x *CancelExecutionResult) String() string {
 func (*CancelExecutionResult) ProtoMessage() {}
 
 func (x *CancelExecutionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[22]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2027,7 +2027,7 @@ func (x *CancelExecutionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExecutionResult.ProtoReflect.Descriptor instead.
 func (*CancelExecutionResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{22}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *CancelExecutionResult) GetJobExecutionId() string {
@@ -2055,7 +2055,7 @@ type RerunExecutionResult struct {
 
 func (x *RerunExecutionResult) Reset() {
 	*x = RerunExecutionResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[23]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2067,7 +2067,7 @@ func (x *RerunExecutionResult) String() string {
 func (*RerunExecutionResult) ProtoMessage() {}
 
 func (x *RerunExecutionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[23]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2080,7 +2080,7 @@ func (x *RerunExecutionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RerunExecutionResult.ProtoReflect.Descriptor instead.
 func (*RerunExecutionResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{23}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RerunExecutionResult) GetOriginalJobExecutionId() string {
@@ -2122,7 +2122,7 @@ type JobTimelineItem struct {
 
 func (x *JobTimelineItem) Reset() {
 	*x = JobTimelineItem{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[24]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2134,7 +2134,7 @@ func (x *JobTimelineItem) String() string {
 func (*JobTimelineItem) ProtoMessage() {}
 
 func (x *JobTimelineItem) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[24]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2147,7 +2147,7 @@ func (x *JobTimelineItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobTimelineItem.ProtoReflect.Descriptor instead.
 func (*JobTimelineItem) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{24}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *JobTimelineItem) GetId() string {
@@ -2244,7 +2244,7 @@ type JobOutputGroup struct {
 
 func (x *JobOutputGroup) Reset() {
 	*x = JobOutputGroup{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[25]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2256,7 +2256,7 @@ func (x *JobOutputGroup) String() string {
 func (*JobOutputGroup) ProtoMessage() {}
 
 func (x *JobOutputGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[25]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2269,7 +2269,7 @@ func (x *JobOutputGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobOutputGroup.ProtoReflect.Descriptor instead.
 func (*JobOutputGroup) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{25}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *JobOutputGroup) GetId() string {
@@ -2394,7 +2394,7 @@ type WatchJobOutputRequest struct {
 
 func (x *WatchJobOutputRequest) Reset() {
 	*x = WatchJobOutputRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[26]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2406,7 +2406,7 @@ func (x *WatchJobOutputRequest) String() string {
 func (*WatchJobOutputRequest) ProtoMessage() {}
 
 func (x *WatchJobOutputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[26]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2419,7 +2419,7 @@ func (x *WatchJobOutputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchJobOutputRequest.ProtoReflect.Descriptor instead.
 func (*WatchJobOutputRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{26}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *WatchJobOutputRequest) GetJobExecutionId() string {
@@ -2449,7 +2449,7 @@ type JobOutputBatch struct {
 
 func (x *JobOutputBatch) Reset() {
 	*x = JobOutputBatch{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[27]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2461,7 +2461,7 @@ func (x *JobOutputBatch) String() string {
 func (*JobOutputBatch) ProtoMessage() {}
 
 func (x *JobOutputBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[27]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2474,7 +2474,7 @@ func (x *JobOutputBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobOutputBatch.ProtoReflect.Descriptor instead.
 func (*JobOutputBatch) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{27}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *JobOutputBatch) GetJobExecutionId() string {
@@ -2526,7 +2526,7 @@ type JobOutputEvent struct {
 
 func (x *JobOutputEvent) Reset() {
 	*x = JobOutputEvent{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[28]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2538,7 +2538,7 @@ func (x *JobOutputEvent) String() string {
 func (*JobOutputEvent) ProtoMessage() {}
 
 func (x *JobOutputEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[28]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2551,7 +2551,7 @@ func (x *JobOutputEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobOutputEvent.ProtoReflect.Descriptor instead.
 func (*JobOutputEvent) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{28}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *JobOutputEvent) GetEventId() int64 {
@@ -2609,7 +2609,7 @@ type ExecutionSummary struct {
 
 func (x *ExecutionSummary) Reset() {
 	*x = ExecutionSummary{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[29]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2621,7 +2621,7 @@ func (x *ExecutionSummary) String() string {
 func (*ExecutionSummary) ProtoMessage() {}
 
 func (x *ExecutionSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[29]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2634,7 +2634,7 @@ func (x *ExecutionSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionSummary.ProtoReflect.Descriptor instead.
 func (*ExecutionSummary) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{29}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ExecutionSummary) GetTotalJobs() uint32 {
@@ -2687,7 +2687,7 @@ type ExecutionCardSummary struct {
 
 func (x *ExecutionCardSummary) Reset() {
 	*x = ExecutionCardSummary{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[30]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2699,7 +2699,7 @@ func (x *ExecutionCardSummary) String() string {
 func (*ExecutionCardSummary) ProtoMessage() {}
 
 func (x *ExecutionCardSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[30]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2712,7 +2712,7 @@ func (x *ExecutionCardSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionCardSummary.ProtoReflect.Descriptor instead.
 func (*ExecutionCardSummary) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{30}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ExecutionCardSummary) GetKey() string {
@@ -2776,7 +2776,7 @@ type ExecutionCardSection struct {
 
 func (x *ExecutionCardSection) Reset() {
 	*x = ExecutionCardSection{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[31]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2788,7 +2788,7 @@ func (x *ExecutionCardSection) String() string {
 func (*ExecutionCardSection) ProtoMessage() {}
 
 func (x *ExecutionCardSection) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[31]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2801,7 +2801,7 @@ func (x *ExecutionCardSection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionCardSection.ProtoReflect.Descriptor instead.
 func (*ExecutionCardSection) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{31}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ExecutionCardSection) GetKey() string {
@@ -2855,7 +2855,7 @@ type ExecutionCardJob struct {
 
 func (x *ExecutionCardJob) Reset() {
 	*x = ExecutionCardJob{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[32]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2867,7 +2867,7 @@ func (x *ExecutionCardJob) String() string {
 func (*ExecutionCardJob) ProtoMessage() {}
 
 func (x *ExecutionCardJob) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[32]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2880,7 +2880,7 @@ func (x *ExecutionCardJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionCardJob.ProtoReflect.Descriptor instead.
 func (*ExecutionCardJob) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{32}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ExecutionCardJob) GetId() string {
@@ -3000,7 +3000,7 @@ type Progress struct {
 
 func (x *Progress) Reset() {
 	*x = Progress{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[33]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3012,7 +3012,7 @@ func (x *Progress) String() string {
 func (*Progress) ProtoMessage() {}
 
 func (x *Progress) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[33]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3025,7 +3025,7 @@ func (x *Progress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Progress.ProtoReflect.Descriptor instead.
 func (*Progress) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{33}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Progress) GetState() string {
@@ -3071,7 +3071,7 @@ type RunPipelineSelection struct {
 
 func (x *RunPipelineSelection) Reset() {
 	*x = RunPipelineSelection{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[34]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3083,7 +3083,7 @@ func (x *RunPipelineSelection) String() string {
 func (*RunPipelineSelection) ProtoMessage() {}
 
 func (x *RunPipelineSelection) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[34]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3096,7 +3096,7 @@ func (x *RunPipelineSelection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunPipelineSelection.ProtoReflect.Descriptor instead.
 func (*RunPipelineSelection) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{34}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *RunPipelineSelection) GetPipelineJobId() string {
@@ -3158,7 +3158,7 @@ type RunPipelineRequest struct {
 
 func (x *RunPipelineRequest) Reset() {
 	*x = RunPipelineRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[35]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3170,7 +3170,7 @@ func (x *RunPipelineRequest) String() string {
 func (*RunPipelineRequest) ProtoMessage() {}
 
 func (x *RunPipelineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[35]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3183,7 +3183,7 @@ func (x *RunPipelineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunPipelineRequest.ProtoReflect.Descriptor instead.
 func (*RunPipelineRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{35}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *RunPipelineRequest) GetPipelineDbId() int64 {
@@ -3212,7 +3212,7 @@ type RunPipelineResult struct {
 
 func (x *RunPipelineResult) Reset() {
 	*x = RunPipelineResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[36]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3224,7 +3224,7 @@ func (x *RunPipelineResult) String() string {
 func (*RunPipelineResult) ProtoMessage() {}
 
 func (x *RunPipelineResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[36]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3237,7 +3237,7 @@ func (x *RunPipelineResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunPipelineResult.ProtoReflect.Descriptor instead.
 func (*RunPipelineResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{36}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *RunPipelineResult) GetProjectName() string {
@@ -3279,7 +3279,7 @@ type RunPipelineChainRequest struct {
 
 func (x *RunPipelineChainRequest) Reset() {
 	*x = RunPipelineChainRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[37]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3291,7 +3291,7 @@ func (x *RunPipelineChainRequest) String() string {
 func (*RunPipelineChainRequest) ProtoMessage() {}
 
 func (x *RunPipelineChainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[37]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3304,7 +3304,7 @@ func (x *RunPipelineChainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunPipelineChainRequest.ProtoReflect.Descriptor instead.
 func (*RunPipelineChainRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{37}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *RunPipelineChainRequest) GetProjectId() int64 {
@@ -3341,7 +3341,7 @@ type RunPipelineChainResult struct {
 
 func (x *RunPipelineChainResult) Reset() {
 	*x = RunPipelineChainResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[38]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3353,7 +3353,7 @@ func (x *RunPipelineChainResult) String() string {
 func (*RunPipelineChainResult) ProtoMessage() {}
 
 func (x *RunPipelineChainResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[38]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3366,7 +3366,7 @@ func (x *RunPipelineChainResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunPipelineChainResult.ProtoReflect.Descriptor instead.
 func (*RunPipelineChainResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{38}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *RunPipelineChainResult) GetProjectName() string {
@@ -3416,7 +3416,7 @@ type GetRunOptionsRequest struct {
 
 func (x *GetRunOptionsRequest) Reset() {
 	*x = GetRunOptionsRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[39]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3428,7 +3428,7 @@ func (x *GetRunOptionsRequest) String() string {
 func (*GetRunOptionsRequest) ProtoMessage() {}
 
 func (x *GetRunOptionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[39]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3441,7 +3441,7 @@ func (x *GetRunOptionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunOptionsRequest.ProtoReflect.Descriptor instead.
 func (*GetRunOptionsRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{39}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *GetRunOptionsRequest) GetPipelineDbId() int64 {
@@ -3482,7 +3482,7 @@ type RunOption struct {
 
 func (x *RunOption) Reset() {
 	*x = RunOption{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[40]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3494,7 +3494,7 @@ func (x *RunOption) String() string {
 func (*RunOption) ProtoMessage() {}
 
 func (x *RunOption) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[40]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3507,7 +3507,7 @@ func (x *RunOption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunOption.ProtoReflect.Descriptor instead.
 func (*RunOption) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{40}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *RunOption) GetValue() string {
@@ -3545,7 +3545,7 @@ type RunOptionsView struct {
 
 func (x *RunOptionsView) Reset() {
 	*x = RunOptionsView{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[41]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3557,7 +3557,7 @@ func (x *RunOptionsView) String() string {
 func (*RunOptionsView) ProtoMessage() {}
 
 func (x *RunOptionsView) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[41]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3570,7 +3570,7 @@ func (x *RunOptionsView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunOptionsView.ProtoReflect.Descriptor instead.
 func (*RunOptionsView) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{41}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *RunOptionsView) GetTargetKind() string {
@@ -3693,7 +3693,7 @@ type AgentSummary struct {
 
 func (x *AgentSummary) Reset() {
 	*x = AgentSummary{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[42]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3705,7 +3705,7 @@ func (x *AgentSummary) String() string {
 func (*AgentSummary) ProtoMessage() {}
 
 func (x *AgentSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[42]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3718,7 +3718,7 @@ func (x *AgentSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentSummary.ProtoReflect.Descriptor instead.
 func (*AgentSummary) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{42}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *AgentSummary) GetId() string {
@@ -3879,7 +3879,7 @@ type AgentScriptShell struct {
 
 func (x *AgentScriptShell) Reset() {
 	*x = AgentScriptShell{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[43]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3891,7 +3891,7 @@ func (x *AgentScriptShell) String() string {
 func (*AgentScriptShell) ProtoMessage() {}
 
 func (x *AgentScriptShell) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[43]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3904,7 +3904,7 @@ func (x *AgentScriptShell) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentScriptShell.ProtoReflect.Descriptor instead.
 func (*AgentScriptShell) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{43}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *AgentScriptShell) GetValue() string {
@@ -3938,7 +3938,7 @@ type AgentsView struct {
 
 func (x *AgentsView) Reset() {
 	*x = AgentsView{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[44]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3950,7 +3950,7 @@ func (x *AgentsView) String() string {
 func (*AgentsView) ProtoMessage() {}
 
 func (x *AgentsView) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[44]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3963,7 +3963,7 @@ func (x *AgentsView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentsView.ProtoReflect.Descriptor instead.
 func (*AgentsView) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{44}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *AgentsView) GetSummary() string {
@@ -3989,7 +3989,7 @@ type GetAgentDetailsRequest struct {
 
 func (x *GetAgentDetailsRequest) Reset() {
 	*x = GetAgentDetailsRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[45]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4001,7 +4001,7 @@ func (x *GetAgentDetailsRequest) String() string {
 func (*GetAgentDetailsRequest) ProtoMessage() {}
 
 func (x *GetAgentDetailsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[45]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4014,7 +4014,7 @@ func (x *GetAgentDetailsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentDetailsRequest.ProtoReflect.Descriptor instead.
 func (*GetAgentDetailsRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{45}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *GetAgentDetailsRequest) GetAgentId() string {
@@ -4033,7 +4033,7 @@ type AgentDetailsView struct {
 
 func (x *AgentDetailsView) Reset() {
 	*x = AgentDetailsView{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[46]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4045,7 +4045,7 @@ func (x *AgentDetailsView) String() string {
 func (*AgentDetailsView) ProtoMessage() {}
 
 func (x *AgentDetailsView) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[46]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4058,7 +4058,7 @@ func (x *AgentDetailsView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentDetailsView.ProtoReflect.Descriptor instead.
 func (*AgentDetailsView) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{46}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *AgentDetailsView) GetAgent() *AgentSummary {
@@ -4078,7 +4078,7 @@ type AgentActionRequest struct {
 
 func (x *AgentActionRequest) Reset() {
 	*x = AgentActionRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[47]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4090,7 +4090,7 @@ func (x *AgentActionRequest) String() string {
 func (*AgentActionRequest) ProtoMessage() {}
 
 func (x *AgentActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[47]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4103,7 +4103,7 @@ func (x *AgentActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentActionRequest.ProtoReflect.Descriptor instead.
 func (*AgentActionRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{47}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *AgentActionRequest) GetAgentId() string {
@@ -4132,7 +4132,7 @@ type AgentActionResult struct {
 
 func (x *AgentActionResult) Reset() {
 	*x = AgentActionResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[48]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4144,7 +4144,7 @@ func (x *AgentActionResult) String() string {
 func (*AgentActionResult) ProtoMessage() {}
 
 func (x *AgentActionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[48]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4157,7 +4157,7 @@ func (x *AgentActionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentActionResult.ProtoReflect.Descriptor instead.
 func (*AgentActionResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{48}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *AgentActionResult) GetRequested() bool {
@@ -4200,7 +4200,7 @@ type RunAgentScriptRequest struct {
 
 func (x *RunAgentScriptRequest) Reset() {
 	*x = RunAgentScriptRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[49]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4212,7 +4212,7 @@ func (x *RunAgentScriptRequest) String() string {
 func (*RunAgentScriptRequest) ProtoMessage() {}
 
 func (x *RunAgentScriptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[49]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4225,7 +4225,7 @@ func (x *RunAgentScriptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunAgentScriptRequest.ProtoReflect.Descriptor instead.
 func (*RunAgentScriptRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{49}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *RunAgentScriptRequest) GetAgentId() string {
@@ -4269,7 +4269,7 @@ type RunAgentScriptResult struct {
 
 func (x *RunAgentScriptResult) Reset() {
 	*x = RunAgentScriptResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[50]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4281,7 +4281,7 @@ func (x *RunAgentScriptResult) String() string {
 func (*RunAgentScriptResult) ProtoMessage() {}
 
 func (x *RunAgentScriptResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[50]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4294,7 +4294,7 @@ func (x *RunAgentScriptResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunAgentScriptResult.ProtoReflect.Descriptor instead.
 func (*RunAgentScriptResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{50}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *RunAgentScriptResult) GetQueued() bool {
@@ -4342,7 +4342,7 @@ type ProjectActionRequest struct {
 
 func (x *ProjectActionRequest) Reset() {
 	*x = ProjectActionRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[51]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4354,7 +4354,7 @@ func (x *ProjectActionRequest) String() string {
 func (*ProjectActionRequest) ProtoMessage() {}
 
 func (x *ProjectActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[51]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4367,7 +4367,7 @@ func (x *ProjectActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectActionRequest.ProtoReflect.Descriptor instead.
 func (*ProjectActionRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{51}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ProjectActionRequest) GetProjectId() int64 {
@@ -4394,7 +4394,7 @@ type ProjectActionResult struct {
 
 func (x *ProjectActionResult) Reset() {
 	*x = ProjectActionResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[52]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4406,7 +4406,7 @@ func (x *ProjectActionResult) String() string {
 func (*ProjectActionResult) ProtoMessage() {}
 
 func (x *ProjectActionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[52]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4419,7 +4419,7 @@ func (x *ProjectActionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectActionResult.ProtoReflect.Descriptor instead.
 func (*ProjectActionResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{52}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ProjectActionResult) GetProjectId() int64 {
@@ -4447,7 +4447,7 @@ type ImportProjectRequest struct {
 
 func (x *ImportProjectRequest) Reset() {
 	*x = ImportProjectRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[53]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4459,7 +4459,7 @@ func (x *ImportProjectRequest) String() string {
 func (*ImportProjectRequest) ProtoMessage() {}
 
 func (x *ImportProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[53]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4472,7 +4472,7 @@ func (x *ImportProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportProjectRequest.ProtoReflect.Descriptor instead.
 func (*ImportProjectRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{53}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ImportProjectRequest) GetRepoUrl() string {
@@ -4509,7 +4509,7 @@ type ImportProjectResult struct {
 
 func (x *ImportProjectResult) Reset() {
 	*x = ImportProjectResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[54]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4521,7 +4521,7 @@ func (x *ImportProjectResult) String() string {
 func (*ImportProjectResult) ProtoMessage() {}
 
 func (x *ImportProjectResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[54]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4534,7 +4534,7 @@ func (x *ImportProjectResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportProjectResult.ProtoReflect.Descriptor instead.
 func (*ImportProjectResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{54}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ImportProjectResult) GetProjectName() string {
@@ -4581,7 +4581,7 @@ type GetManagedYAMLRequest struct {
 
 func (x *GetManagedYAMLRequest) Reset() {
 	*x = GetManagedYAMLRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[55]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4593,7 +4593,7 @@ func (x *GetManagedYAMLRequest) String() string {
 func (*GetManagedYAMLRequest) ProtoMessage() {}
 
 func (x *GetManagedYAMLRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[55]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4606,7 +4606,7 @@ func (x *GetManagedYAMLRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetManagedYAMLRequest.ProtoReflect.Descriptor instead.
 func (*GetManagedYAMLRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{55}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetManagedYAMLRequest) GetProjectId() int64 {
@@ -4627,7 +4627,7 @@ type ManagedYAMLRequest struct {
 
 func (x *ManagedYAMLRequest) Reset() {
 	*x = ManagedYAMLRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[56]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4639,7 +4639,7 @@ func (x *ManagedYAMLRequest) String() string {
 func (*ManagedYAMLRequest) ProtoMessage() {}
 
 func (x *ManagedYAMLRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[56]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4652,7 +4652,7 @@ func (x *ManagedYAMLRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagedYAMLRequest.ProtoReflect.Descriptor instead.
 func (*ManagedYAMLRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{56}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ManagedYAMLRequest) GetProjectId() int64 {
@@ -4690,7 +4690,7 @@ type ManagedYAMLDefinition struct {
 
 func (x *ManagedYAMLDefinition) Reset() {
 	*x = ManagedYAMLDefinition{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[57]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4702,7 +4702,7 @@ func (x *ManagedYAMLDefinition) String() string {
 func (*ManagedYAMLDefinition) ProtoMessage() {}
 
 func (x *ManagedYAMLDefinition) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[57]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4715,7 +4715,7 @@ func (x *ManagedYAMLDefinition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagedYAMLDefinition.ProtoReflect.Descriptor instead.
 func (*ManagedYAMLDefinition) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{57}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ManagedYAMLDefinition) GetProjectId() int64 {
@@ -4778,7 +4778,7 @@ type VaultConnection struct {
 
 func (x *VaultConnection) Reset() {
 	*x = VaultConnection{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[58]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4790,7 +4790,7 @@ func (x *VaultConnection) String() string {
 func (*VaultConnection) ProtoMessage() {}
 
 func (x *VaultConnection) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[58]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4803,7 +4803,7 @@ func (x *VaultConnection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultConnection.ProtoReflect.Descriptor instead.
 func (*VaultConnection) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{58}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *VaultConnection) GetId() int64 {
@@ -4885,7 +4885,7 @@ type VaultConnectionList struct {
 
 func (x *VaultConnectionList) Reset() {
 	*x = VaultConnectionList{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[59]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4897,7 +4897,7 @@ func (x *VaultConnectionList) String() string {
 func (*VaultConnectionList) ProtoMessage() {}
 
 func (x *VaultConnectionList) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[59]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4910,7 +4910,7 @@ func (x *VaultConnectionList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultConnectionList.ProtoReflect.Descriptor instead.
 func (*VaultConnectionList) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{59}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *VaultConnectionList) GetConnections() []*VaultConnection {
@@ -4937,7 +4937,7 @@ type UpsertVaultConnectionRequest struct {
 
 func (x *UpsertVaultConnectionRequest) Reset() {
 	*x = UpsertVaultConnectionRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[60]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4949,7 +4949,7 @@ func (x *UpsertVaultConnectionRequest) String() string {
 func (*UpsertVaultConnectionRequest) ProtoMessage() {}
 
 func (x *UpsertVaultConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[60]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4962,7 +4962,7 @@ func (x *UpsertVaultConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertVaultConnectionRequest.ProtoReflect.Descriptor instead.
 func (*UpsertVaultConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{60}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *UpsertVaultConnectionRequest) GetName() string {
@@ -5037,7 +5037,7 @@ type VaultConnectionIDRequest struct {
 
 func (x *VaultConnectionIDRequest) Reset() {
 	*x = VaultConnectionIDRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[61]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5049,7 +5049,7 @@ func (x *VaultConnectionIDRequest) String() string {
 func (*VaultConnectionIDRequest) ProtoMessage() {}
 
 func (x *VaultConnectionIDRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[61]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5062,7 +5062,7 @@ func (x *VaultConnectionIDRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultConnectionIDRequest.ProtoReflect.Descriptor instead.
 func (*VaultConnectionIDRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{61}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *VaultConnectionIDRequest) GetId() int64 {
@@ -5082,7 +5082,7 @@ type TestVaultConnectionRequest struct {
 
 func (x *TestVaultConnectionRequest) Reset() {
 	*x = TestVaultConnectionRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[62]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5094,7 +5094,7 @@ func (x *TestVaultConnectionRequest) String() string {
 func (*TestVaultConnectionRequest) ProtoMessage() {}
 
 func (x *TestVaultConnectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[62]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5107,7 +5107,7 @@ func (x *TestVaultConnectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestVaultConnectionRequest.ProtoReflect.Descriptor instead.
 func (*TestVaultConnectionRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{62}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *TestVaultConnectionRequest) GetId() int64 {
@@ -5134,7 +5134,7 @@ type TestVaultConnectionResult struct {
 
 func (x *TestVaultConnectionResult) Reset() {
 	*x = TestVaultConnectionResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[63]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5146,7 +5146,7 @@ func (x *TestVaultConnectionResult) String() string {
 func (*TestVaultConnectionResult) ProtoMessage() {}
 
 func (x *TestVaultConnectionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[63]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5159,7 +5159,7 @@ func (x *TestVaultConnectionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestVaultConnectionResult.ProtoReflect.Descriptor instead.
 func (*TestVaultConnectionResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{63}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *TestVaultConnectionResult) GetOk() bool {
@@ -5186,7 +5186,7 @@ type DeleteVaultConnectionResult struct {
 
 func (x *DeleteVaultConnectionResult) Reset() {
 	*x = DeleteVaultConnectionResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[64]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5198,7 +5198,7 @@ func (x *DeleteVaultConnectionResult) String() string {
 func (*DeleteVaultConnectionResult) ProtoMessage() {}
 
 func (x *DeleteVaultConnectionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[64]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5211,7 +5211,7 @@ func (x *DeleteVaultConnectionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteVaultConnectionResult.ProtoReflect.Descriptor instead.
 func (*DeleteVaultConnectionResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{64}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *DeleteVaultConnectionResult) GetDeleted() bool {
@@ -5248,7 +5248,7 @@ type ServerUpdateStatus struct {
 
 func (x *ServerUpdateStatus) Reset() {
 	*x = ServerUpdateStatus{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[65]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5260,7 +5260,7 @@ func (x *ServerUpdateStatus) String() string {
 func (*ServerUpdateStatus) ProtoMessage() {}
 
 func (x *ServerUpdateStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[65]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5273,7 +5273,7 @@ func (x *ServerUpdateStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerUpdateStatus.ProtoReflect.Descriptor instead.
 func (*ServerUpdateStatus) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{65}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ServerUpdateStatus) GetCurrentVersion() string {
@@ -5375,7 +5375,7 @@ type ServerUpdateCheckResult struct {
 
 func (x *ServerUpdateCheckResult) Reset() {
 	*x = ServerUpdateCheckResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[66]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5387,7 +5387,7 @@ func (x *ServerUpdateCheckResult) String() string {
 func (*ServerUpdateCheckResult) ProtoMessage() {}
 
 func (x *ServerUpdateCheckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[66]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5400,7 +5400,7 @@ func (x *ServerUpdateCheckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerUpdateCheckResult.ProtoReflect.Descriptor instead.
 func (*ServerUpdateCheckResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{66}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ServerUpdateCheckResult) GetCurrentVersion() string {
@@ -5462,7 +5462,7 @@ type ServerUpdateVersions struct {
 
 func (x *ServerUpdateVersions) Reset() {
 	*x = ServerUpdateVersions{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[67]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5474,7 +5474,7 @@ func (x *ServerUpdateVersions) String() string {
 func (*ServerUpdateVersions) ProtoMessage() {}
 
 func (x *ServerUpdateVersions) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[67]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5487,7 +5487,7 @@ func (x *ServerUpdateVersions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerUpdateVersions.ProtoReflect.Descriptor instead.
 func (*ServerUpdateVersions) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{67}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ServerUpdateVersions) GetVersions() []string {
@@ -5514,7 +5514,7 @@ type ServerUpdateActionRequest struct {
 
 func (x *ServerUpdateActionRequest) Reset() {
 	*x = ServerUpdateActionRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[68]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5526,7 +5526,7 @@ func (x *ServerUpdateActionRequest) String() string {
 func (*ServerUpdateActionRequest) ProtoMessage() {}
 
 func (x *ServerUpdateActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[68]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5539,7 +5539,7 @@ func (x *ServerUpdateActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerUpdateActionRequest.ProtoReflect.Descriptor instead.
 func (*ServerUpdateActionRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{68}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ServerUpdateActionRequest) GetAction() string {
@@ -5570,7 +5570,7 @@ type ServerUpdateActionResult struct {
 
 func (x *ServerUpdateActionResult) Reset() {
 	*x = ServerUpdateActionResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[69]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5582,7 +5582,7 @@ func (x *ServerUpdateActionResult) String() string {
 func (*ServerUpdateActionResult) ProtoMessage() {}
 
 func (x *ServerUpdateActionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[69]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5595,7 +5595,7 @@ func (x *ServerUpdateActionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerUpdateActionResult.ProtoReflect.Descriptor instead.
 func (*ServerUpdateActionResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{69}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *ServerUpdateActionResult) GetUpdated() bool {
@@ -5648,7 +5648,7 @@ type ClearExecutionQueueRequest struct {
 
 func (x *ClearExecutionQueueRequest) Reset() {
 	*x = ClearExecutionQueueRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[70]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5660,7 +5660,7 @@ func (x *ClearExecutionQueueRequest) String() string {
 func (*ClearExecutionQueueRequest) ProtoMessage() {}
 
 func (x *ClearExecutionQueueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[70]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5673,7 +5673,7 @@ func (x *ClearExecutionQueueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearExecutionQueueRequest.ProtoReflect.Descriptor instead.
 func (*ClearExecutionQueueRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{70}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{70}
 }
 
 type ClearExecutionQueueResult struct {
@@ -5685,7 +5685,7 @@ type ClearExecutionQueueResult struct {
 
 func (x *ClearExecutionQueueResult) Reset() {
 	*x = ClearExecutionQueueResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[71]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5697,7 +5697,7 @@ func (x *ClearExecutionQueueResult) String() string {
 func (*ClearExecutionQueueResult) ProtoMessage() {}
 
 func (x *ClearExecutionQueueResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[71]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5710,7 +5710,7 @@ func (x *ClearExecutionQueueResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearExecutionQueueResult.ProtoReflect.Descriptor instead.
 func (*ClearExecutionQueueResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{71}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ClearExecutionQueueResult) GetCleared() int64 {
@@ -5730,7 +5730,7 @@ type FlushExecutionHistoryRequest struct {
 
 func (x *FlushExecutionHistoryRequest) Reset() {
 	*x = FlushExecutionHistoryRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[72]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5742,7 +5742,7 @@ func (x *FlushExecutionHistoryRequest) String() string {
 func (*FlushExecutionHistoryRequest) ProtoMessage() {}
 
 func (x *FlushExecutionHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[72]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5755,7 +5755,7 @@ func (x *FlushExecutionHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlushExecutionHistoryRequest.ProtoReflect.Descriptor instead.
 func (*FlushExecutionHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{72}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *FlushExecutionHistoryRequest) GetAll() bool {
@@ -5781,7 +5781,7 @@ type FlushExecutionHistoryResult struct {
 
 func (x *FlushExecutionHistoryResult) Reset() {
 	*x = FlushExecutionHistoryResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[73]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5793,7 +5793,7 @@ func (x *FlushExecutionHistoryResult) String() string {
 func (*FlushExecutionHistoryResult) ProtoMessage() {}
 
 func (x *FlushExecutionHistoryResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[73]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5806,7 +5806,7 @@ func (x *FlushExecutionHistoryResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlushExecutionHistoryResult.ProtoReflect.Descriptor instead.
 func (*FlushExecutionHistoryResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{73}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *FlushExecutionHistoryResult) GetFlushed() int64 {
@@ -5826,7 +5826,7 @@ type RemoveQueuedExecutionResult struct {
 
 func (x *RemoveQueuedExecutionResult) Reset() {
 	*x = RemoveQueuedExecutionResult{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[74]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5838,7 +5838,7 @@ func (x *RemoveQueuedExecutionResult) String() string {
 func (*RemoveQueuedExecutionResult) ProtoMessage() {}
 
 func (x *RemoveQueuedExecutionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[74]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5851,7 +5851,7 @@ func (x *RemoveQueuedExecutionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveQueuedExecutionResult.ProtoReflect.Descriptor instead.
 func (*RemoveQueuedExecutionResult) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{74}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *RemoveQueuedExecutionResult) GetJobExecutionId() string {
@@ -5877,7 +5877,7 @@ type CommandReceiptStatusRequest struct {
 
 func (x *CommandReceiptStatusRequest) Reset() {
 	*x = CommandReceiptStatusRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[75]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5889,7 +5889,7 @@ func (x *CommandReceiptStatusRequest) String() string {
 func (*CommandReceiptStatusRequest) ProtoMessage() {}
 
 func (x *CommandReceiptStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[75]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5902,7 +5902,7 @@ func (x *CommandReceiptStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandReceiptStatusRequest.ProtoReflect.Descriptor instead.
 func (*CommandReceiptStatusRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{75}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *CommandReceiptStatusRequest) GetKey() string {
@@ -5926,7 +5926,7 @@ type CommandReceiptStatus struct {
 
 func (x *CommandReceiptStatus) Reset() {
 	*x = CommandReceiptStatus{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[76]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5938,7 +5938,7 @@ func (x *CommandReceiptStatus) String() string {
 func (*CommandReceiptStatus) ProtoMessage() {}
 
 func (x *CommandReceiptStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[76]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5951,7 +5951,7 @@ func (x *CommandReceiptStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandReceiptStatus.ProtoReflect.Descriptor instead.
 func (*CommandReceiptStatus) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{76}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *CommandReceiptStatus) GetFound() bool {
@@ -6004,7 +6004,7 @@ type WatchChangesRequest struct {
 
 func (x *WatchChangesRequest) Reset() {
 	*x = WatchChangesRequest{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[77]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6016,7 +6016,7 @@ func (x *WatchChangesRequest) String() string {
 func (*WatchChangesRequest) ProtoMessage() {}
 
 func (x *WatchChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[77]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6029,7 +6029,7 @@ func (x *WatchChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchChangesRequest.ProtoReflect.Descriptor instead.
 func (*WatchChangesRequest) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{77}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{77}
 }
 
 type ChangeEvent struct {
@@ -6045,7 +6045,7 @@ type ChangeEvent struct {
 
 func (x *ChangeEvent) Reset() {
 	*x = ChangeEvent{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[78]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6057,7 +6057,7 @@ func (x *ChangeEvent) String() string {
 func (*ChangeEvent) ProtoMessage() {}
 
 func (x *ChangeEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[78]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6070,7 +6070,7 @@ func (x *ChangeEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeEvent.ProtoReflect.Descriptor instead.
 func (*ChangeEvent) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{78}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *ChangeEvent) GetServerInstanceId() string {
@@ -6146,6 +6146,7 @@ type Request struct {
 	//	*Request_UpsertVaultConnection
 	//	*Request_TestVaultConnection
 	//	*Request_DeleteVaultConnection
+	//	*Request_DownloadArtifact
 	Operation     isRequest_Operation `protobuf_oneof:"operation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -6153,7 +6154,7 @@ type Request struct {
 
 func (x *Request) Reset() {
 	*x = Request{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[79]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6165,7 +6166,7 @@ func (x *Request) String() string {
 func (*Request) ProtoMessage() {}
 
 func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[79]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6178,7 +6179,7 @@ func (x *Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Request.ProtoReflect.Descriptor instead.
 func (*Request) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{79}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *Request) GetMetadata() *RequestMetadata {
@@ -6492,6 +6493,15 @@ func (x *Request) GetDeleteVaultConnection() *VaultConnectionIDRequest {
 	return nil
 }
 
+func (x *Request) GetDownloadArtifact() *ArtifactDownloadRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*Request_DownloadArtifact); ok {
+			return x.DownloadArtifact
+		}
+	}
+	return nil
+}
+
 type isRequest_Operation interface {
 	isRequest_Operation()
 }
@@ -6628,6 +6638,10 @@ type Request_DeleteVaultConnection struct {
 	DeleteVaultConnection *VaultConnectionIDRequest `protobuf:"bytes,42,opt,name=delete_vault_connection,json=deleteVaultConnection,proto3,oneof"`
 }
 
+type Request_DownloadArtifact struct {
+	DownloadArtifact *ArtifactDownloadRequest `protobuf:"bytes,43,opt,name=download_artifact,json=downloadArtifact,proto3,oneof"`
+}
+
 func (*Request_GetServerInfo) isRequest_Operation() {}
 
 func (*Request_ListProjects) isRequest_Operation() {}
@@ -6694,6 +6708,8 @@ func (*Request_TestVaultConnection) isRequest_Operation() {}
 
 func (*Request_DeleteVaultConnection) isRequest_Operation() {}
 
+func (*Request_DownloadArtifact) isRequest_Operation() {}
+
 type Response struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -6731,6 +6747,7 @@ type Response struct {
 	//	*Response_VaultConnection
 	//	*Response_TestVaultConnection
 	//	*Response_DeleteVaultConnection
+	//	*Response_ArtifactDownload
 	Result        isResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -6738,7 +6755,7 @@ type Response struct {
 
 func (x *Response) Reset() {
 	*x = Response{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[80]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6750,7 +6767,7 @@ func (x *Response) String() string {
 func (*Response) ProtoMessage() {}
 
 func (x *Response) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[80]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6763,7 +6780,7 @@ func (x *Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response.ProtoReflect.Descriptor instead.
 func (*Response) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{80}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *Response) GetRequestId() string {
@@ -7068,6 +7085,15 @@ func (x *Response) GetDeleteVaultConnection() *DeleteVaultConnectionResult {
 	return nil
 }
 
+func (x *Response) GetArtifactDownload() *ArtifactDownloadChunk {
+	if x != nil {
+		if x, ok := x.Result.(*Response_ArtifactDownload); ok {
+			return x.ArtifactDownload
+		}
+	}
+	return nil
+}
+
 type isResponse_Result interface {
 	isResponse_Result()
 }
@@ -7200,6 +7226,10 @@ type Response_DeleteVaultConnection struct {
 	DeleteVaultConnection *DeleteVaultConnectionResult `protobuf:"bytes,41,opt,name=delete_vault_connection,json=deleteVaultConnection,proto3,oneof"`
 }
 
+type Response_ArtifactDownload struct {
+	ArtifactDownload *ArtifactDownloadChunk `protobuf:"bytes,42,opt,name=artifact_download,json=artifactDownload,proto3,oneof"`
+}
+
 func (*Response_ServerInfo) isResponse_Result() {}
 
 func (*Response_ProjectList) isResponse_Result() {}
@@ -7264,6 +7294,8 @@ func (*Response_TestVaultConnection) isResponse_Result() {}
 
 func (*Response_DeleteVaultConnection) isResponse_Result() {}
 
+func (*Response_ArtifactDownload) isResponse_Result() {}
+
 type ClientMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Body:
@@ -7277,7 +7309,7 @@ type ClientMessage struct {
 
 func (x *ClientMessage) Reset() {
 	*x = ClientMessage{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[81]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7289,7 +7321,7 @@ func (x *ClientMessage) String() string {
 func (*ClientMessage) ProtoMessage() {}
 
 func (x *ClientMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[81]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7302,7 +7334,7 @@ func (x *ClientMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientMessage.ProtoReflect.Descriptor instead.
 func (*ClientMessage) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{81}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *ClientMessage) GetBody() isClientMessage_Body {
@@ -7359,7 +7391,7 @@ type ServerMessage struct {
 
 func (x *ServerMessage) Reset() {
 	*x = ServerMessage{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[82]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7371,7 +7403,7 @@ func (x *ServerMessage) String() string {
 func (*ServerMessage) ProtoMessage() {}
 
 func (x *ServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[82]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7384,7 +7416,7 @@ func (x *ServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerMessage.ProtoReflect.Descriptor instead.
 func (*ServerMessage) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{82}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ServerMessage) GetBody() isServerMessage_Body {
@@ -7439,7 +7471,7 @@ type JobDetailRow struct {
 
 func (x *JobDetailRow) Reset() {
 	*x = JobDetailRow{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[83]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7451,7 +7483,7 @@ func (x *JobDetailRow) String() string {
 func (*JobDetailRow) ProtoMessage() {}
 
 func (x *JobDetailRow) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[83]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7464,7 +7496,7 @@ func (x *JobDetailRow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobDetailRow.ProtoReflect.Descriptor instead.
 func (*JobDetailRow) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{83}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *JobDetailRow) GetLabel() string {
@@ -7500,7 +7532,7 @@ type ToolRequirements struct {
 
 func (x *ToolRequirements) Reset() {
 	*x = ToolRequirements{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[84]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7512,7 +7544,7 @@ func (x *ToolRequirements) String() string {
 func (*ToolRequirements) ProtoMessage() {}
 
 func (x *ToolRequirements) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[84]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7525,7 +7557,7 @@ func (x *ToolRequirements) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolRequirements.ProtoReflect.Descriptor instead.
 func (*ToolRequirements) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{84}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *ToolRequirements) GetEmptyLabel() string {
@@ -7563,13 +7595,17 @@ type ReportDetails struct {
 	Tone            string                 `protobuf:"bytes,3,opt,name=tone,proto3" json:"tone,omitempty"`
 	Rows            []*JobDetailRow        `protobuf:"bytes,4,rep,name=rows,proto3" json:"rows,omitempty"`
 	AdditionalLabel string                 `protobuf:"bytes,5,opt,name=additional_label,json=additionalLabel,proto3" json:"additional_label,omitempty"`
+	Nodes           []*TreeNode            `protobuf:"bytes,6,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	Filters         []*ReportFilter        `protobuf:"bytes,7,rep,name=filters,proto3" json:"filters,omitempty"`
+	Filter          string                 `protobuf:"bytes,8,opt,name=filter,proto3" json:"filter,omitempty"`
+	CanDownloadAll  bool                   `protobuf:"varint,9,opt,name=can_download_all,json=canDownloadAll,proto3" json:"can_download_all,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ReportDetails) Reset() {
 	*x = ReportDetails{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[85]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7581,7 +7617,7 @@ func (x *ReportDetails) String() string {
 func (*ReportDetails) ProtoMessage() {}
 
 func (x *ReportDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[85]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7594,7 +7630,7 @@ func (x *ReportDetails) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportDetails.ProtoReflect.Descriptor instead.
 func (*ReportDetails) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{85}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ReportDetails) GetEmptyLabel() string {
@@ -7632,6 +7668,378 @@ func (x *ReportDetails) GetAdditionalLabel() string {
 	return ""
 }
 
+func (x *ReportDetails) GetNodes() []*TreeNode {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+func (x *ReportDetails) GetFilters() []*ReportFilter {
+	if x != nil {
+		return x.Filters
+	}
+	return nil
+}
+
+func (x *ReportDetails) GetFilter() string {
+	if x != nil {
+		return x.Filter
+	}
+	return ""
+}
+
+func (x *ReportDetails) GetCanDownloadAll() bool {
+	if x != nil {
+		return x.CanDownloadAll
+	}
+	return false
+}
+
+type ReportFilter struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportFilter) Reset() {
+	*x = ReportFilter{}
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportFilter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportFilter) ProtoMessage() {}
+
+func (x *ReportFilter) ProtoReflect() protoreflect.Message {
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportFilter.ProtoReflect.Descriptor instead.
+func (*ReportFilter) Descriptor() ([]byte, []int) {
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{86}
+}
+
+func (x *ReportFilter) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *ReportFilter) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+type TreeNode struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Key             string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Label           string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
+	Detail          string                 `protobuf:"bytes,4,opt,name=detail,proto3" json:"detail,omitempty"`
+	Tone            string                 `protobuf:"bytes,5,opt,name=tone,proto3" json:"tone,omitempty"`
+	Link            string                 `protobuf:"bytes,6,opt,name=link,proto3" json:"link,omitempty"`
+	ActionLabel     string                 `protobuf:"bytes,7,opt,name=action_label,json=actionLabel,proto3" json:"action_label,omitempty"`
+	ActionKind      string                 `protobuf:"bytes,8,opt,name=action_kind,json=actionKind,proto3" json:"action_kind,omitempty"`
+	ActionPath      string                 `protobuf:"bytes,9,opt,name=action_path,json=actionPath,proto3" json:"action_path,omitempty"`
+	DefaultExpanded bool                   `protobuf:"varint,10,opt,name=default_expanded,json=defaultExpanded,proto3" json:"default_expanded,omitempty"`
+	FilterValues    []string               `protobuf:"bytes,11,rep,name=filter_values,json=filterValues,proto3" json:"filter_values,omitempty"`
+	Children        []*TreeNode            `protobuf:"bytes,12,rep,name=children,proto3" json:"children,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *TreeNode) Reset() {
+	*x = TreeNode{}
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TreeNode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TreeNode) ProtoMessage() {}
+
+func (x *TreeNode) ProtoReflect() protoreflect.Message {
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TreeNode.ProtoReflect.Descriptor instead.
+func (*TreeNode) Descriptor() ([]byte, []int) {
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *TreeNode) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *TreeNode) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *TreeNode) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+func (x *TreeNode) GetTone() string {
+	if x != nil {
+		return x.Tone
+	}
+	return ""
+}
+
+func (x *TreeNode) GetLink() string {
+	if x != nil {
+		return x.Link
+	}
+	return ""
+}
+
+func (x *TreeNode) GetActionLabel() string {
+	if x != nil {
+		return x.ActionLabel
+	}
+	return ""
+}
+
+func (x *TreeNode) GetActionKind() string {
+	if x != nil {
+		return x.ActionKind
+	}
+	return ""
+}
+
+func (x *TreeNode) GetActionPath() string {
+	if x != nil {
+		return x.ActionPath
+	}
+	return ""
+}
+
+func (x *TreeNode) GetDefaultExpanded() bool {
+	if x != nil {
+		return x.DefaultExpanded
+	}
+	return false
+}
+
+func (x *TreeNode) GetFilterValues() []string {
+	if x != nil {
+		return x.FilterValues
+	}
+	return nil
+}
+
+func (x *TreeNode) GetChildren() []*TreeNode {
+	if x != nil {
+		return x.Children
+	}
+	return nil
+}
+
+type ArtifactDownloadRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	JobExecutionId string                 `protobuf:"bytes,1,opt,name=job_execution_id,json=jobExecutionId,proto3" json:"job_execution_id,omitempty"`
+	Kind           string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Path           string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Token          string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`
+	Offset         int64                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ArtifactDownloadRequest) Reset() {
+	*x = ArtifactDownloadRequest{}
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[88]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArtifactDownloadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArtifactDownloadRequest) ProtoMessage() {}
+
+func (x *ArtifactDownloadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[88]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArtifactDownloadRequest.ProtoReflect.Descriptor instead.
+func (*ArtifactDownloadRequest) Descriptor() ([]byte, []int) {
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{88}
+}
+
+func (x *ArtifactDownloadRequest) GetJobExecutionId() string {
+	if x != nil {
+		return x.JobExecutionId
+	}
+	return ""
+}
+
+func (x *ArtifactDownloadRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ArtifactDownloadRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ArtifactDownloadRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ArtifactDownloadRequest) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+type ArtifactDownloadChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	FileName      string                 `protobuf:"bytes,2,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
+	ContentType   string                 `protobuf:"bytes,3,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
+	NextOffset    int64                  `protobuf:"varint,5,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
+	TotalSize     int64                  `protobuf:"varint,6,opt,name=total_size,json=totalSize,proto3" json:"total_size,omitempty"`
+	Complete      bool                   `protobuf:"varint,7,opt,name=complete,proto3" json:"complete,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArtifactDownloadChunk) Reset() {
+	*x = ArtifactDownloadChunk{}
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[89]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArtifactDownloadChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArtifactDownloadChunk) ProtoMessage() {}
+
+func (x *ArtifactDownloadChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[89]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArtifactDownloadChunk.ProtoReflect.Descriptor instead.
+func (*ArtifactDownloadChunk) Descriptor() ([]byte, []int) {
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{89}
+}
+
+func (x *ArtifactDownloadChunk) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ArtifactDownloadChunk) GetFileName() string {
+	if x != nil {
+		return x.FileName
+	}
+	return ""
+}
+
+func (x *ArtifactDownloadChunk) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *ArtifactDownloadChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *ArtifactDownloadChunk) GetNextOffset() int64 {
+	if x != nil {
+		return x.NextOffset
+	}
+	return 0
+}
+
+func (x *ArtifactDownloadChunk) GetTotalSize() int64 {
+	if x != nil {
+		return x.TotalSize
+	}
+	return 0
+}
+
+func (x *ArtifactDownloadChunk) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
 type JobRunContext struct {
 	state                protoimpl.MessageState   `protogen:"open.v1"`
 	Available            bool                     `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
@@ -7647,7 +8055,7 @@ type JobRunContext struct {
 
 func (x *JobRunContext) Reset() {
 	*x = JobRunContext{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[86]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7659,7 +8067,7 @@ func (x *JobRunContext) String() string {
 func (*JobRunContext) ProtoMessage() {}
 
 func (x *JobRunContext) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[86]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7672,7 +8080,7 @@ func (x *JobRunContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobRunContext.ProtoReflect.Descriptor instead.
 func (*JobRunContext) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{86}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *JobRunContext) GetAvailable() bool {
@@ -7738,7 +8146,7 @@ type JobRunContextPipeline struct {
 
 func (x *JobRunContextPipeline) Reset() {
 	*x = JobRunContextPipeline{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[87]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7750,7 +8158,7 @@ func (x *JobRunContextPipeline) String() string {
 func (*JobRunContextPipeline) ProtoMessage() {}
 
 func (x *JobRunContextPipeline) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[87]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7763,7 +8171,7 @@ func (x *JobRunContextPipeline) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobRunContextPipeline.ProtoReflect.Descriptor instead.
 func (*JobRunContextPipeline) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{87}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *JobRunContextPipeline) GetId() int64 {
@@ -7821,7 +8229,7 @@ type JobRunContextJob struct {
 
 func (x *JobRunContextJob) Reset() {
 	*x = JobRunContextJob{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[88]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7833,7 +8241,7 @@ func (x *JobRunContextJob) String() string {
 func (*JobRunContextJob) ProtoMessage() {}
 
 func (x *JobRunContextJob) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[88]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7846,7 +8254,7 @@ func (x *JobRunContextJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobRunContextJob.ProtoReflect.Descriptor instead.
 func (*JobRunContextJob) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{88}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *JobRunContextJob) GetId() string {
@@ -7898,7 +8306,7 @@ type JobRunContextExecution struct {
 
 func (x *JobRunContextExecution) Reset() {
 	*x = JobRunContextExecution{}
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[89]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7910,7 +8318,7 @@ func (x *JobRunContextExecution) String() string {
 func (*JobRunContextExecution) ProtoMessage() {}
 
 func (x *JobRunContextExecution) ProtoReflect() protoreflect.Message {
-	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[89]
+	mi := &file_api_ciwi_native_v1_ciwi_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7923,7 +8331,7 @@ func (x *JobRunContextExecution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobRunContextExecution.ProtoReflect.Descriptor instead.
 func (*JobRunContextExecution) Descriptor() ([]byte, []int) {
-	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{89}
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *JobRunContextExecution) GetId() string {
@@ -7968,11 +8376,11 @@ func (x *JobRunContextExecution) GetLatestAttempt() bool {
 	return false
 }
 
-var File_ciwi_native_v1_ciwi_proto protoreflect.FileDescriptor
+var File_api_ciwi_native_v1_ciwi_proto protoreflect.FileDescriptor
 
-const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
+const file_api_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\n" +
-	"\x19ciwi/native/v1/ciwi.proto\x12\x0eciwi.native.v1\"\a\n" +
+	"\x1dapi/ciwi/native/v1/ciwi.proto\x12\x0eciwi.native.v1\"\a\n" +
 	"\x05Empty\"s\n" +
 	"\x05Hello\x12\x1f\n" +
 	"\vclient_name\x18\x01 \x01(\tR\n" +
@@ -8516,7 +8924,7 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x123\n" +
 	"\x06topics\x18\x03 \x03(\x0e2\x1b.ciwi.native.v1.ChangeTopicR\x06topics\x12(\n" +
 	"\x10occurred_unix_ms\x18\x04 \x01(\x03R\x0eoccurredUnixMs\x12'\n" +
-	"\x0fresync_required\x18\x05 \x01(\bR\x0eresyncRequired\"\xcd\x16\n" +
+	"\x0fresync_required\x18\x05 \x01(\bR\x0eresyncRequired\"\xa5\x17\n" +
 	"\aRequest\x12;\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1f.ciwi.native.v1.RequestMetadataR\bmetadata\x12?\n" +
 	"\x0fget_server_info\x18\n" +
@@ -8552,8 +8960,9 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x16list_vault_connections\x18' \x01(\v2\x15.ciwi.native.v1.EmptyH\x00R\x14listVaultConnections\x12f\n" +
 	"\x17upsert_vault_connection\x18( \x01(\v2,.ciwi.native.v1.UpsertVaultConnectionRequestH\x00R\x15upsertVaultConnection\x12`\n" +
 	"\x15test_vault_connection\x18) \x01(\v2*.ciwi.native.v1.TestVaultConnectionRequestH\x00R\x13testVaultConnection\x12b\n" +
-	"\x17delete_vault_connection\x18* \x01(\v2(.ciwi.native.v1.VaultConnectionIDRequestH\x00R\x15deleteVaultConnectionB\v\n" +
-	"\toperation\"\xbb\x14\n" +
+	"\x17delete_vault_connection\x18* \x01(\v2(.ciwi.native.v1.VaultConnectionIDRequestH\x00R\x15deleteVaultConnection\x12V\n" +
+	"\x11download_artifact\x18+ \x01(\v2'.ciwi.native.v1.ArtifactDownloadRequestH\x00R\x10downloadArtifactB\v\n" +
+	"\toperation\"\x91\x15\n" +
 	"\bResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12=\n" +
@@ -8594,7 +9003,8 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x15vault_connection_list\x18& \x01(\v2#.ciwi.native.v1.VaultConnectionListH\x00R\x13vaultConnectionList\x12L\n" +
 	"\x10vault_connection\x18' \x01(\v2\x1f.ciwi.native.v1.VaultConnectionH\x00R\x0fvaultConnection\x12_\n" +
 	"\x15test_vault_connection\x18( \x01(\v2).ciwi.native.v1.TestVaultConnectionResultH\x00R\x13testVaultConnection\x12e\n" +
-	"\x17delete_vault_connection\x18) \x01(\v2+.ciwi.native.v1.DeleteVaultConnectionResultH\x00R\x15deleteVaultConnectionB\b\n" +
+	"\x17delete_vault_connection\x18) \x01(\v2+.ciwi.native.v1.DeleteVaultConnectionResultH\x00R\x15deleteVaultConnection\x12T\n" +
+	"\x11artifact_download\x18* \x01(\v2%.ciwi.native.v1.ArtifactDownloadChunkH\x00R\x10artifactDownloadB\b\n" +
 	"\x06result\"{\n" +
 	"\rClientMessage\x12-\n" +
 	"\x05hello\x18\x01 \x01(\v2\x15.ciwi.native.v1.HelloH\x00R\x05hello\x123\n" +
@@ -8613,14 +9023,52 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"emptyLabel\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x12\n" +
 	"\x04tone\x18\x03 \x01(\tR\x04tone\x12\x16\n" +
-	"\x06issues\x18\x04 \x03(\tR\x06issues\"\xbb\x01\n" +
+	"\x06issues\x18\x04 \x03(\tR\x06issues\"\xe5\x02\n" +
 	"\rReportDetails\x12\x1f\n" +
 	"\vempty_label\x18\x01 \x01(\tR\n" +
 	"emptyLabel\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x12\n" +
 	"\x04tone\x18\x03 \x01(\tR\x04tone\x120\n" +
 	"\x04rows\x18\x04 \x03(\v2\x1c.ciwi.native.v1.JobDetailRowR\x04rows\x12)\n" +
-	"\x10additional_label\x18\x05 \x01(\tR\x0fadditionalLabel\"\xc2\x02\n" +
+	"\x10additional_label\x18\x05 \x01(\tR\x0fadditionalLabel\x12.\n" +
+	"\x05nodes\x18\x06 \x03(\v2\x18.ciwi.native.v1.TreeNodeR\x05nodes\x126\n" +
+	"\afilters\x18\a \x03(\v2\x1c.ciwi.native.v1.ReportFilterR\afilters\x12\x16\n" +
+	"\x06filter\x18\b \x01(\tR\x06filter\x12(\n" +
+	"\x10can_download_all\x18\t \x01(\bR\x0ecanDownloadAll\":\n" +
+	"\fReportFilter\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\"\xe3\x02\n" +
+	"\bTreeNode\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05label\x18\x03 \x01(\tR\x05label\x12\x16\n" +
+	"\x06detail\x18\x04 \x01(\tR\x06detail\x12\x12\n" +
+	"\x04tone\x18\x05 \x01(\tR\x04tone\x12\x12\n" +
+	"\x04link\x18\x06 \x01(\tR\x04link\x12!\n" +
+	"\faction_label\x18\a \x01(\tR\vactionLabel\x12\x1f\n" +
+	"\vaction_kind\x18\b \x01(\tR\n" +
+	"actionKind\x12\x1f\n" +
+	"\vaction_path\x18\t \x01(\tR\n" +
+	"actionPath\x12)\n" +
+	"\x10default_expanded\x18\n" +
+	" \x01(\bR\x0fdefaultExpanded\x12#\n" +
+	"\rfilter_values\x18\v \x03(\tR\ffilterValues\x124\n" +
+	"\bchildren\x18\f \x03(\v2\x18.ciwi.native.v1.TreeNodeR\bchildrenJ\x04\b\x02\x10\x03\"\x99\x01\n" +
+	"\x17ArtifactDownloadRequest\x12(\n" +
+	"\x10job_execution_id\x18\x01 \x01(\tR\x0ejobExecutionId\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12\x14\n" +
+	"\x05token\x18\x04 \x01(\tR\x05token\x12\x16\n" +
+	"\x06offset\x18\x05 \x01(\x03R\x06offset\"\xdd\x01\n" +
+	"\x15ArtifactDownloadChunk\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1b\n" +
+	"\tfile_name\x18\x02 \x01(\tR\bfileName\x12!\n" +
+	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\x12\x12\n" +
+	"\x04data\x18\x04 \x01(\fR\x04data\x12\x1f\n" +
+	"\vnext_offset\x18\x05 \x01(\x03R\n" +
+	"nextOffset\x12\x1d\n" +
+	"\n" +
+	"total_size\x18\x06 \x01(\x03R\ttotalSize\x12\x1a\n" +
+	"\bcomplete\x18\a \x01(\bR\bcomplete\"\xc2\x02\n" +
 	"\rJobRunContext\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x12\x14\n" +
 	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x1f\n" +
@@ -8676,20 +9124,20 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x1eCHANGE_TOPIC_AGENT_ELIGIBILITY\x10\bB+Z)github.com/izzyreal/ciwi/pkg/cnp/v1;cnpv1b\x06proto3"
 
 var (
-	file_ciwi_native_v1_ciwi_proto_rawDescOnce sync.Once
-	file_ciwi_native_v1_ciwi_proto_rawDescData []byte
+	file_api_ciwi_native_v1_ciwi_proto_rawDescOnce sync.Once
+	file_api_ciwi_native_v1_ciwi_proto_rawDescData []byte
 )
 
-func file_ciwi_native_v1_ciwi_proto_rawDescGZIP() []byte {
-	file_ciwi_native_v1_ciwi_proto_rawDescOnce.Do(func() {
-		file_ciwi_native_v1_ciwi_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_ciwi_native_v1_ciwi_proto_rawDesc), len(file_ciwi_native_v1_ciwi_proto_rawDesc)))
+func file_api_ciwi_native_v1_ciwi_proto_rawDescGZIP() []byte {
+	file_api_ciwi_native_v1_ciwi_proto_rawDescOnce.Do(func() {
+		file_api_ciwi_native_v1_ciwi_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_ciwi_native_v1_ciwi_proto_rawDesc), len(file_api_ciwi_native_v1_ciwi_proto_rawDesc)))
 	})
-	return file_ciwi_native_v1_ciwi_proto_rawDescData
+	return file_api_ciwi_native_v1_ciwi_proto_rawDescData
 }
 
-var file_ciwi_native_v1_ciwi_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ciwi_native_v1_ciwi_proto_msgTypes = make([]protoimpl.MessageInfo, 90)
-var file_ciwi_native_v1_ciwi_proto_goTypes = []any{
+var file_api_ciwi_native_v1_ciwi_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_api_ciwi_native_v1_ciwi_proto_msgTypes = make([]protoimpl.MessageInfo, 94)
+var file_api_ciwi_native_v1_ciwi_proto_goTypes = []any{
 	(StatusCode)(0),                      // 0: ciwi.native.v1.StatusCode
 	(ChangeTopic)(0),                     // 1: ciwi.native.v1.ChangeTopic
 	(*Empty)(nil),                        // 2: ciwi.native.v1.Empty
@@ -8778,12 +9226,16 @@ var file_ciwi_native_v1_ciwi_proto_goTypes = []any{
 	(*JobDetailRow)(nil),                 // 85: ciwi.native.v1.JobDetailRow
 	(*ToolRequirements)(nil),             // 86: ciwi.native.v1.ToolRequirements
 	(*ReportDetails)(nil),                // 87: ciwi.native.v1.ReportDetails
-	(*JobRunContext)(nil),                // 88: ciwi.native.v1.JobRunContext
-	(*JobRunContextPipeline)(nil),        // 89: ciwi.native.v1.JobRunContextPipeline
-	(*JobRunContextJob)(nil),             // 90: ciwi.native.v1.JobRunContextJob
-	(*JobRunContextExecution)(nil),       // 91: ciwi.native.v1.JobRunContextExecution
+	(*ReportFilter)(nil),                 // 88: ciwi.native.v1.ReportFilter
+	(*TreeNode)(nil),                     // 89: ciwi.native.v1.TreeNode
+	(*ArtifactDownloadRequest)(nil),      // 90: ciwi.native.v1.ArtifactDownloadRequest
+	(*ArtifactDownloadChunk)(nil),        // 91: ciwi.native.v1.ArtifactDownloadChunk
+	(*JobRunContext)(nil),                // 92: ciwi.native.v1.JobRunContext
+	(*JobRunContextPipeline)(nil),        // 93: ciwi.native.v1.JobRunContextPipeline
+	(*JobRunContextJob)(nil),             // 94: ciwi.native.v1.JobRunContextJob
+	(*JobRunContextExecution)(nil),       // 95: ciwi.native.v1.JobRunContextExecution
 }
-var file_ciwi_native_v1_ciwi_proto_depIdxs = []int32{
+var file_api_ciwi_native_v1_ciwi_proto_depIdxs = []int32{
 	0,   // 0: ciwi.native.v1.ErrorStatus.code:type_name -> ciwi.native.v1.StatusCode
 	8,   // 1: ciwi.native.v1.ProjectSummary.pipelines:type_name -> ciwi.native.v1.PipelineSummary
 	9,   // 2: ciwi.native.v1.ProjectSummary.pipeline_chains:type_name -> ciwi.native.v1.PipelineChainSummary
@@ -8806,7 +9258,7 @@ var file_ciwi_native_v1_ciwi_proto_depIdxs = []int32{
 	86,  // 19: ciwi.native.v1.JobDetailsView.host_tool_requirements:type_name -> ciwi.native.v1.ToolRequirements
 	86,  // 20: ciwi.native.v1.JobDetailsView.container_tool_requirements:type_name -> ciwi.native.v1.ToolRequirements
 	85,  // 21: ciwi.native.v1.JobDetailsView.release_summary:type_name -> ciwi.native.v1.JobDetailRow
-	88,  // 22: ciwi.native.v1.JobDetailsView.run_context:type_name -> ciwi.native.v1.JobRunContext
+	92,  // 22: ciwi.native.v1.JobDetailsView.run_context:type_name -> ciwi.native.v1.JobRunContext
 	87,  // 23: ciwi.native.v1.JobDetailsView.artifacts:type_name -> ciwi.native.v1.ReportDetails
 	87,  // 24: ciwi.native.v1.JobDetailsView.test_report:type_name -> ciwi.native.v1.ReportDetails
 	87,  // 25: ciwi.native.v1.JobDetailsView.coverage_report:type_name -> ciwi.native.v1.ReportDetails
@@ -8865,60 +9317,65 @@ var file_ciwi_native_v1_ciwi_proto_depIdxs = []int32{
 	62,  // 78: ciwi.native.v1.Request.upsert_vault_connection:type_name -> ciwi.native.v1.UpsertVaultConnectionRequest
 	64,  // 79: ciwi.native.v1.Request.test_vault_connection:type_name -> ciwi.native.v1.TestVaultConnectionRequest
 	63,  // 80: ciwi.native.v1.Request.delete_vault_connection:type_name -> ciwi.native.v1.VaultConnectionIDRequest
-	7,   // 81: ciwi.native.v1.Response.server_info:type_name -> ciwi.native.v1.ServerInfo
-	11,  // 82: ciwi.native.v1.Response.project_list:type_name -> ciwi.native.v1.ProjectList
-	12,  // 83: ciwi.native.v1.Response.front_page_view:type_name -> ciwi.native.v1.FrontPageView
-	38,  // 84: ciwi.native.v1.Response.run_pipeline:type_name -> ciwi.native.v1.RunPipelineResult
-	80,  // 85: ciwi.native.v1.Response.change:type_name -> ciwi.native.v1.ChangeEvent
-	6,   // 86: ciwi.native.v1.Response.error:type_name -> ciwi.native.v1.ErrorStatus
-	14,  // 87: ciwi.native.v1.Response.project_details:type_name -> ciwi.native.v1.ProjectDetailsView
-	20,  // 88: ciwi.native.v1.Response.job_details:type_name -> ciwi.native.v1.JobDetailsView
-	29,  // 89: ciwi.native.v1.Response.job_output:type_name -> ciwi.native.v1.JobOutputBatch
-	73,  // 90: ciwi.native.v1.Response.clear_execution_queue:type_name -> ciwi.native.v1.ClearExecutionQueueResult
-	75,  // 91: ciwi.native.v1.Response.flush_execution_history:type_name -> ciwi.native.v1.FlushExecutionHistoryResult
-	24,  // 92: ciwi.native.v1.Response.cancel_execution:type_name -> ciwi.native.v1.CancelExecutionResult
-	25,  // 93: ciwi.native.v1.Response.rerun_execution:type_name -> ciwi.native.v1.RerunExecutionResult
-	40,  // 94: ciwi.native.v1.Response.run_pipeline_chain:type_name -> ciwi.native.v1.RunPipelineChainResult
-	43,  // 95: ciwi.native.v1.Response.run_options:type_name -> ciwi.native.v1.RunOptionsView
-	46,  // 96: ciwi.native.v1.Response.agents_view:type_name -> ciwi.native.v1.AgentsView
-	50,  // 97: ciwi.native.v1.Response.agent_action:type_name -> ciwi.native.v1.AgentActionResult
-	54,  // 98: ciwi.native.v1.Response.project_action:type_name -> ciwi.native.v1.ProjectActionResult
-	56,  // 99: ciwi.native.v1.Response.import_project:type_name -> ciwi.native.v1.ImportProjectResult
-	67,  // 100: ciwi.native.v1.Response.server_update_status:type_name -> ciwi.native.v1.ServerUpdateStatus
-	68,  // 101: ciwi.native.v1.Response.server_update_check:type_name -> ciwi.native.v1.ServerUpdateCheckResult
-	69,  // 102: ciwi.native.v1.Response.server_update_versions:type_name -> ciwi.native.v1.ServerUpdateVersions
-	71,  // 103: ciwi.native.v1.Response.server_update_action:type_name -> ciwi.native.v1.ServerUpdateActionResult
-	76,  // 104: ciwi.native.v1.Response.remove_queued_execution:type_name -> ciwi.native.v1.RemoveQueuedExecutionResult
-	48,  // 105: ciwi.native.v1.Response.agent_details:type_name -> ciwi.native.v1.AgentDetailsView
-	78,  // 106: ciwi.native.v1.Response.command_receipt_status:type_name -> ciwi.native.v1.CommandReceiptStatus
-	52,  // 107: ciwi.native.v1.Response.run_agent_script:type_name -> ciwi.native.v1.RunAgentScriptResult
-	59,  // 108: ciwi.native.v1.Response.managed_yaml:type_name -> ciwi.native.v1.ManagedYAMLDefinition
-	61,  // 109: ciwi.native.v1.Response.vault_connection_list:type_name -> ciwi.native.v1.VaultConnectionList
-	60,  // 110: ciwi.native.v1.Response.vault_connection:type_name -> ciwi.native.v1.VaultConnection
-	65,  // 111: ciwi.native.v1.Response.test_vault_connection:type_name -> ciwi.native.v1.TestVaultConnectionResult
-	66,  // 112: ciwi.native.v1.Response.delete_vault_connection:type_name -> ciwi.native.v1.DeleteVaultConnectionResult
-	3,   // 113: ciwi.native.v1.ClientMessage.hello:type_name -> ciwi.native.v1.Hello
-	81,  // 114: ciwi.native.v1.ClientMessage.request:type_name -> ciwi.native.v1.Request
-	4,   // 115: ciwi.native.v1.ServerMessage.welcome:type_name -> ciwi.native.v1.Welcome
-	82,  // 116: ciwi.native.v1.ServerMessage.response:type_name -> ciwi.native.v1.Response
-	85,  // 117: ciwi.native.v1.ReportDetails.rows:type_name -> ciwi.native.v1.JobDetailRow
-	89,  // 118: ciwi.native.v1.JobRunContext.pipelines:type_name -> ciwi.native.v1.JobRunContextPipeline
-	90,  // 119: ciwi.native.v1.JobRunContextPipeline.jobs:type_name -> ciwi.native.v1.JobRunContextJob
-	91,  // 120: ciwi.native.v1.JobRunContextJob.executions:type_name -> ciwi.native.v1.JobRunContextExecution
-	121, // [121:121] is the sub-list for method output_type
-	121, // [121:121] is the sub-list for method input_type
-	121, // [121:121] is the sub-list for extension type_name
-	121, // [121:121] is the sub-list for extension extendee
-	0,   // [0:121] is the sub-list for field type_name
+	90,  // 81: ciwi.native.v1.Request.download_artifact:type_name -> ciwi.native.v1.ArtifactDownloadRequest
+	7,   // 82: ciwi.native.v1.Response.server_info:type_name -> ciwi.native.v1.ServerInfo
+	11,  // 83: ciwi.native.v1.Response.project_list:type_name -> ciwi.native.v1.ProjectList
+	12,  // 84: ciwi.native.v1.Response.front_page_view:type_name -> ciwi.native.v1.FrontPageView
+	38,  // 85: ciwi.native.v1.Response.run_pipeline:type_name -> ciwi.native.v1.RunPipelineResult
+	80,  // 86: ciwi.native.v1.Response.change:type_name -> ciwi.native.v1.ChangeEvent
+	6,   // 87: ciwi.native.v1.Response.error:type_name -> ciwi.native.v1.ErrorStatus
+	14,  // 88: ciwi.native.v1.Response.project_details:type_name -> ciwi.native.v1.ProjectDetailsView
+	20,  // 89: ciwi.native.v1.Response.job_details:type_name -> ciwi.native.v1.JobDetailsView
+	29,  // 90: ciwi.native.v1.Response.job_output:type_name -> ciwi.native.v1.JobOutputBatch
+	73,  // 91: ciwi.native.v1.Response.clear_execution_queue:type_name -> ciwi.native.v1.ClearExecutionQueueResult
+	75,  // 92: ciwi.native.v1.Response.flush_execution_history:type_name -> ciwi.native.v1.FlushExecutionHistoryResult
+	24,  // 93: ciwi.native.v1.Response.cancel_execution:type_name -> ciwi.native.v1.CancelExecutionResult
+	25,  // 94: ciwi.native.v1.Response.rerun_execution:type_name -> ciwi.native.v1.RerunExecutionResult
+	40,  // 95: ciwi.native.v1.Response.run_pipeline_chain:type_name -> ciwi.native.v1.RunPipelineChainResult
+	43,  // 96: ciwi.native.v1.Response.run_options:type_name -> ciwi.native.v1.RunOptionsView
+	46,  // 97: ciwi.native.v1.Response.agents_view:type_name -> ciwi.native.v1.AgentsView
+	50,  // 98: ciwi.native.v1.Response.agent_action:type_name -> ciwi.native.v1.AgentActionResult
+	54,  // 99: ciwi.native.v1.Response.project_action:type_name -> ciwi.native.v1.ProjectActionResult
+	56,  // 100: ciwi.native.v1.Response.import_project:type_name -> ciwi.native.v1.ImportProjectResult
+	67,  // 101: ciwi.native.v1.Response.server_update_status:type_name -> ciwi.native.v1.ServerUpdateStatus
+	68,  // 102: ciwi.native.v1.Response.server_update_check:type_name -> ciwi.native.v1.ServerUpdateCheckResult
+	69,  // 103: ciwi.native.v1.Response.server_update_versions:type_name -> ciwi.native.v1.ServerUpdateVersions
+	71,  // 104: ciwi.native.v1.Response.server_update_action:type_name -> ciwi.native.v1.ServerUpdateActionResult
+	76,  // 105: ciwi.native.v1.Response.remove_queued_execution:type_name -> ciwi.native.v1.RemoveQueuedExecutionResult
+	48,  // 106: ciwi.native.v1.Response.agent_details:type_name -> ciwi.native.v1.AgentDetailsView
+	78,  // 107: ciwi.native.v1.Response.command_receipt_status:type_name -> ciwi.native.v1.CommandReceiptStatus
+	52,  // 108: ciwi.native.v1.Response.run_agent_script:type_name -> ciwi.native.v1.RunAgentScriptResult
+	59,  // 109: ciwi.native.v1.Response.managed_yaml:type_name -> ciwi.native.v1.ManagedYAMLDefinition
+	61,  // 110: ciwi.native.v1.Response.vault_connection_list:type_name -> ciwi.native.v1.VaultConnectionList
+	60,  // 111: ciwi.native.v1.Response.vault_connection:type_name -> ciwi.native.v1.VaultConnection
+	65,  // 112: ciwi.native.v1.Response.test_vault_connection:type_name -> ciwi.native.v1.TestVaultConnectionResult
+	66,  // 113: ciwi.native.v1.Response.delete_vault_connection:type_name -> ciwi.native.v1.DeleteVaultConnectionResult
+	91,  // 114: ciwi.native.v1.Response.artifact_download:type_name -> ciwi.native.v1.ArtifactDownloadChunk
+	3,   // 115: ciwi.native.v1.ClientMessage.hello:type_name -> ciwi.native.v1.Hello
+	81,  // 116: ciwi.native.v1.ClientMessage.request:type_name -> ciwi.native.v1.Request
+	4,   // 117: ciwi.native.v1.ServerMessage.welcome:type_name -> ciwi.native.v1.Welcome
+	82,  // 118: ciwi.native.v1.ServerMessage.response:type_name -> ciwi.native.v1.Response
+	85,  // 119: ciwi.native.v1.ReportDetails.rows:type_name -> ciwi.native.v1.JobDetailRow
+	89,  // 120: ciwi.native.v1.ReportDetails.nodes:type_name -> ciwi.native.v1.TreeNode
+	88,  // 121: ciwi.native.v1.ReportDetails.filters:type_name -> ciwi.native.v1.ReportFilter
+	89,  // 122: ciwi.native.v1.TreeNode.children:type_name -> ciwi.native.v1.TreeNode
+	93,  // 123: ciwi.native.v1.JobRunContext.pipelines:type_name -> ciwi.native.v1.JobRunContextPipeline
+	94,  // 124: ciwi.native.v1.JobRunContextPipeline.jobs:type_name -> ciwi.native.v1.JobRunContextJob
+	95,  // 125: ciwi.native.v1.JobRunContextJob.executions:type_name -> ciwi.native.v1.JobRunContextExecution
+	126, // [126:126] is the sub-list for method output_type
+	126, // [126:126] is the sub-list for method input_type
+	126, // [126:126] is the sub-list for extension type_name
+	126, // [126:126] is the sub-list for extension extendee
+	0,   // [0:126] is the sub-list for field type_name
 }
 
-func init() { file_ciwi_native_v1_ciwi_proto_init() }
-func file_ciwi_native_v1_ciwi_proto_init() {
-	if File_ciwi_native_v1_ciwi_proto != nil {
+func init() { file_api_ciwi_native_v1_ciwi_proto_init() }
+func file_api_ciwi_native_v1_ciwi_proto_init() {
+	if File_api_ciwi_native_v1_ciwi_proto != nil {
 		return
 	}
-	file_ciwi_native_v1_ciwi_proto_msgTypes[34].OneofWrappers = []any{}
-	file_ciwi_native_v1_ciwi_proto_msgTypes[79].OneofWrappers = []any{
+	file_api_ciwi_native_v1_ciwi_proto_msgTypes[34].OneofWrappers = []any{}
+	file_api_ciwi_native_v1_ciwi_proto_msgTypes[79].OneofWrappers = []any{
 		(*Request_GetServerInfo)(nil),
 		(*Request_ListProjects)(nil),
 		(*Request_GetFrontPageView)(nil),
@@ -8952,8 +9409,9 @@ func file_ciwi_native_v1_ciwi_proto_init() {
 		(*Request_UpsertVaultConnection)(nil),
 		(*Request_TestVaultConnection)(nil),
 		(*Request_DeleteVaultConnection)(nil),
+		(*Request_DownloadArtifact)(nil),
 	}
-	file_ciwi_native_v1_ciwi_proto_msgTypes[80].OneofWrappers = []any{
+	file_api_ciwi_native_v1_ciwi_proto_msgTypes[80].OneofWrappers = []any{
 		(*Response_ServerInfo)(nil),
 		(*Response_ProjectList)(nil),
 		(*Response_FrontPageView)(nil),
@@ -8986,12 +9444,13 @@ func file_ciwi_native_v1_ciwi_proto_init() {
 		(*Response_VaultConnection)(nil),
 		(*Response_TestVaultConnection)(nil),
 		(*Response_DeleteVaultConnection)(nil),
+		(*Response_ArtifactDownload)(nil),
 	}
-	file_ciwi_native_v1_ciwi_proto_msgTypes[81].OneofWrappers = []any{
+	file_api_ciwi_native_v1_ciwi_proto_msgTypes[81].OneofWrappers = []any{
 		(*ClientMessage_Hello)(nil),
 		(*ClientMessage_Request)(nil),
 	}
-	file_ciwi_native_v1_ciwi_proto_msgTypes[82].OneofWrappers = []any{
+	file_api_ciwi_native_v1_ciwi_proto_msgTypes[82].OneofWrappers = []any{
 		(*ServerMessage_Welcome)(nil),
 		(*ServerMessage_Response)(nil),
 	}
@@ -8999,18 +9458,18 @@ func file_ciwi_native_v1_ciwi_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ciwi_native_v1_ciwi_proto_rawDesc), len(file_ciwi_native_v1_ciwi_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_ciwi_native_v1_ciwi_proto_rawDesc), len(file_api_ciwi_native_v1_ciwi_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   90,
+			NumMessages:   94,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_ciwi_native_v1_ciwi_proto_goTypes,
-		DependencyIndexes: file_ciwi_native_v1_ciwi_proto_depIdxs,
-		EnumInfos:         file_ciwi_native_v1_ciwi_proto_enumTypes,
-		MessageInfos:      file_ciwi_native_v1_ciwi_proto_msgTypes,
+		GoTypes:           file_api_ciwi_native_v1_ciwi_proto_goTypes,
+		DependencyIndexes: file_api_ciwi_native_v1_ciwi_proto_depIdxs,
+		EnumInfos:         file_api_ciwi_native_v1_ciwi_proto_enumTypes,
+		MessageInfos:      file_api_ciwi_native_v1_ciwi_proto_msgTypes,
 	}.Build()
-	File_ciwi_native_v1_ciwi_proto = out.File
-	file_ciwi_native_v1_ciwi_proto_goTypes = nil
-	file_ciwi_native_v1_ciwi_proto_depIdxs = nil
+	File_api_ciwi_native_v1_ciwi_proto = out.File
+	file_api_ciwi_native_v1_ciwi_proto_goTypes = nil
+	file_api_ciwi_native_v1_ciwi_proto_depIdxs = nil
 }

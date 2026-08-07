@@ -72,14 +72,17 @@ func TestProgressMappingsPreserveSharedSemanticSnapshot(t *testing.T) {
 
 func TestJobDetailsMappingCarriesArtifactsAndReports(t *testing.T) {
 	job := jobDetailsToProto(presentation.JobDetailsView{
-		Artifacts:      presentation.ReportDetailsView{Summary: "1 artifact", Rows: []presentation.JobDetailRowView{{Label: "dist/app.zip", Value: "2 KB"}}},
-		TestReport:     presentation.ReportDetailsView{Summary: "1 total · 1 passed", Tone: "success"},
-		CoverageReport: presentation.ReportDetailsView{Summary: "80.00% overall", Rows: []presentation.JobDetailRowView{{Label: "main.go", Value: "80.00% · 8/10"}}},
+		Artifacts: presentation.ReportDetailsView{
+			Summary: "1 artifact", CanDownloadAll: true,
+			Nodes: []presentation.TreeNodeView{{Key: "file:dist/app.zip", Label: "dist/app.zip", Detail: "2 KB", ActionKind: "file", ActionPath: "dist/app.zip"}},
+		},
+		TestReport:     presentation.ReportDetailsView{Summary: "1 total · 1 passed", Tone: "success", Filter: "all", Filters: []presentation.ReportFilterView{{Value: "all", Label: "All"}}},
+		CoverageReport: presentation.ReportDetailsView{Summary: "80.00% overall", Nodes: []presentation.TreeNodeView{{Key: "coverage:main.go", Label: "main.go", Detail: "80.00% · 8/10"}}},
 	})
-	if job.Artifacts == nil || len(job.Artifacts.Rows) != 1 || job.Artifacts.Rows[0].Label != "dist/app.zip" {
+	if job.Artifacts == nil || len(job.Artifacts.Nodes) != 1 || job.Artifacts.Nodes[0].Label != "dist/app.zip" || !job.Artifacts.CanDownloadAll {
 		t.Fatalf("artifacts = %+v", job.Artifacts)
 	}
-	if job.TestReport == nil || job.TestReport.Tone != "success" || job.CoverageReport == nil || len(job.CoverageReport.Rows) != 1 {
+	if job.TestReport == nil || job.TestReport.Tone != "success" || len(job.TestReport.Filters) != 1 || job.CoverageReport == nil || len(job.CoverageReport.Nodes) != 1 {
 		t.Fatalf("reports = test %+v coverage %+v", job.TestReport, job.CoverageReport)
 	}
 }

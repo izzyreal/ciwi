@@ -61,11 +61,34 @@ type jobToolRequirementsResponse struct {
 }
 
 type jobReportDetailsResponse struct {
-	EmptyLabel      string                 `json:"empty_label"`
-	Summary         string                 `json:"summary"`
-	Tone            string                 `json:"tone"`
-	Rows            []jobDetailRowResponse `json:"rows"`
-	AdditionalLabel string                 `json:"additional_label"`
+	EmptyLabel      string                    `json:"empty_label"`
+	Summary         string                    `json:"summary"`
+	Tone            string                    `json:"tone"`
+	Rows            []jobDetailRowResponse    `json:"rows"`
+	AdditionalLabel string                    `json:"additional_label"`
+	Nodes           []jobTreeNodeResponse     `json:"nodes"`
+	Filters         []jobReportFilterResponse `json:"filters"`
+	Filter          string                    `json:"filter"`
+	CanDownloadAll  bool                      `json:"can_download_all"`
+}
+
+type jobReportFilterResponse struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+type jobTreeNodeResponse struct {
+	Key             string                `json:"key"`
+	Label           string                `json:"label"`
+	Detail          string                `json:"detail"`
+	Tone            string                `json:"tone"`
+	Link            string                `json:"link"`
+	ActionLabel     string                `json:"action_label"`
+	ActionKind      string                `json:"action_kind"`
+	ActionPath      string                `json:"action_path"`
+	DefaultExpanded bool                  `json:"default_expanded"`
+	FilterValues    []string              `json:"filter_values"`
+	Children        []jobTreeNodeResponse `json:"children"`
 }
 
 type jobRunContextResponse struct {
@@ -283,10 +306,27 @@ func jobToolRequirementsToResponse(view presentation.ToolRequirementsView) jobTo
 }
 
 func jobReportDetailsToResponse(view presentation.ReportDetailsView) jobReportDetailsResponse {
+	filters := make([]jobReportFilterResponse, 0, len(view.Filters))
+	for _, filter := range view.Filters {
+		filters = append(filters, jobReportFilterResponse{Value: filter.Value, Label: filter.Label})
+	}
 	return jobReportDetailsResponse{
 		EmptyLabel: view.EmptyLabel, Summary: view.Summary, Tone: view.Tone,
 		Rows: jobDetailRowsToResponse(view.Rows), AdditionalLabel: view.AdditionalLabel,
+		Nodes: jobTreeNodesToResponse(view.Nodes), Filters: filters, Filter: view.Filter, CanDownloadAll: view.CanDownloadAll,
 	}
+}
+
+func jobTreeNodesToResponse(nodes []presentation.TreeNodeView) []jobTreeNodeResponse {
+	result := make([]jobTreeNodeResponse, 0, len(nodes))
+	for _, node := range nodes {
+		result = append(result, jobTreeNodeResponse{
+			Key: node.Key, Label: node.Label, Detail: node.Detail, Tone: node.Tone, Link: node.Link,
+			ActionLabel: node.ActionLabel, ActionKind: node.ActionKind, ActionPath: node.ActionPath,
+			DefaultExpanded: node.DefaultExpanded, FilterValues: append([]string{}, node.FilterValues...), Children: jobTreeNodesToResponse(node.Children),
+		})
+	}
+	return result
 }
 
 func jobRunContextToResponse(view protocol.JobExecutionGraphContext) jobRunContextResponse {

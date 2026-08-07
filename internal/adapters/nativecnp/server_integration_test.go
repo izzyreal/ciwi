@@ -36,6 +36,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		ProjectDetails:    projectDetailsService{},
 		ProjectIcons:      icons,
 		JobDetails:        jobDetailsService{},
+		ArtifactDownloads: artifactDownloadService{},
 		JobContexts:       jobContextService{},
 		Pipelines:         pipelines,
 		PipelineChains:    pipelines,
@@ -129,8 +130,12 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if string(jobDetails.ProjectIcon) != "project-icon" || len(jobDetails.JobProperties) != 1 || jobDetails.RunContext == nil || len(jobDetails.RunContext.Pipelines) != 1 {
 		t.Fatalf("enriched job details = %#v", jobDetails)
 	}
-	if jobDetails.Artifacts == nil || len(jobDetails.Artifacts.Rows) != 1 || jobDetails.TestReport == nil || jobDetails.CoverageReport == nil {
+	if jobDetails.Artifacts == nil || len(jobDetails.Artifacts.Nodes) != 1 || jobDetails.TestReport == nil || jobDetails.CoverageReport == nil {
 		t.Fatalf("job artifacts/reports = %#v", jobDetails)
+	}
+	download, err := client.DownloadArtifactChunk(ctx, &cnpv1.ArtifactDownloadRequest{JobExecutionId: "job-1", Kind: "file", Path: "dist/app.zip"})
+	if err != nil || string(download.Data) != "artifact-data" || !download.Complete || download.FileName != "app.zip" {
+		t.Fatalf("artifact download = %#v, %v", download, err)
 	}
 	output, outputErrors, err := client.WatchJobOutput(ctx, "job-1", 0)
 	if err != nil {
@@ -374,7 +379,7 @@ func TestListenRejectsIncompleteServiceSetBeforeBinding(t *testing.T) {
 func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{}, ArtifactDownloads: artifactDownloadService{},
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -406,7 +411,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 	changes := application.NewChangeHub()
 	jobDetails := &streamingJobDetailsService{}
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails,
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetails, ArtifactDownloads: artifactDownloadService{},
 		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -434,7 +439,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
-		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{}, ArtifactDownloads: artifactDownloadService{},
 		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -512,7 +517,7 @@ func completeTestServices(changes *application.ChangeHub) nativecnp.Services {
 	executions := &executionCommandService{}
 	return nativecnp.Services{
 		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{},
-		FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{},
+		FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{}, ArtifactDownloads: artifactDownloadService{},
 		Pipelines: pipelines, PipelineChains: pipelines, RunOptions: pipelines,
 		Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: executions,
 		ExecutionControls: executions, Changes: changes, Version: "v0.2.0",
@@ -689,15 +694,24 @@ func (s *projectIconService) callCount() int {
 
 type jobDetailsService struct{}
 
+type artifactDownloadService struct{}
+
+func (artifactDownloadService) DownloadArtifact(_ context.Context, request application.ArtifactDownloadRequest) (application.ArtifactDownloadChunk, error) {
+	return application.ArtifactDownloadChunk{
+		Token: "done", FileName: "app.zip", ContentType: "application/zip", Data: []byte("artifact-data"),
+		NextOffset: int64(len("artifact-data")), TotalSize: int64(len("artifact-data")), Complete: true,
+	}, nil
+}
+
 func (jobDetailsService) GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error) {
 	return presentation.JobDetailsView{
 		ID: "job-1", ProjectID: 7, Title: "Job: compile", Status: "succeeded", StatusLabel: "Succeeded",
 		CanRerun:      true,
 		JobProperties: []presentation.JobDetailRowView{{Label: "Job Execution ID", Value: "job-1"}},
-		Artifacts:     presentation.ReportDetailsView{Summary: "1 artifact", Rows: []presentation.JobDetailRowView{{Label: "dist/app.zip", Value: "2 KB"}}},
+		Artifacts:     presentation.ReportDetailsView{Summary: "1 artifact", Nodes: []presentation.TreeNodeView{{Label: "dist/app.zip", Detail: "2 KB"}}},
 		TestReport:    presentation.ReportDetailsView{Summary: "1 total · 1 passed", Tone: "success"},
 		CoverageReport: presentation.ReportDetailsView{
-			Summary: "80.00% overall", Rows: []presentation.JobDetailRowView{{Label: "main.go", Value: "80.00% · 8/10"}},
+			Summary: "80.00% overall", Nodes: []presentation.TreeNodeView{{Label: "main.go", Detail: "80.00% · 8/10"}},
 		},
 		Timeline:     []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
 		OutputGroups: []presentation.JobOutputGroupView{{ID: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded", Reached: true, YAMLLiteral: "run: go build ./...", ExpandedCommand: "go build ./..."}},

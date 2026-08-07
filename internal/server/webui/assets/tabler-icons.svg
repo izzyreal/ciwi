@@ -16,6 +16,7 @@
   <symbol id="icon-network" viewBox="0 0 24 24"><path d="M10 5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M3 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M17 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M12 7v4l-7 5"/><path d="M12 11l7 5"/></symbol>
   <symbol id="icon-adjustments" viewBox="0 0 24 24"><path d="M4 6h6m4 0h6"/><path d="M10 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 12h2m4 0h10"/><path d="M6 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 18h10m4 0h2"/><path d="M14 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/></symbol>
   <symbol id="icon-copy" viewBox="0 0 24 24"><path d="M8 8h12v12h-12z"/><path d="M16 8v-4h-12v12h4"/></symbol>
+  <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3l0 12"/><path d="M7 10l5 5l5 -5"/><path d="M5 21l14 0"/></symbol>
   <symbol id="icon-loader-2" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/></symbol>
   <symbol id="icon-lock" viewBox="0 0 24 24"><path d="M5 11m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z"/><path d="M8 11v-4a4 4 0 0 1 8 0v4"/></symbol>
   <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.572a5 5 0 1 1 7.5 6.572"/></symbol>

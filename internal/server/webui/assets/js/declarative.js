@@ -450,6 +450,26 @@
 		  applyProjectStructureFilter(details, args.value || 'all-pipelines');
 		  renderCurrent();
 		}
+		else if (action.command === 'set-report-filter') {
+		  const report = currentData && currentData.jobDetails && currentData.jobDetails.test_report;
+		  if (!report) throw new Error('Test report is unavailable');
+		  report.filter = args.value || 'all';
+		  renderCurrent();
+		}
+		else if (action.command === 'download-artifact') {
+		  const jobID = encodeURIComponent(args.jobExecutionId || '');
+		  const kind = String(args.kind || 'all');
+		  const artifactPath = String(args.path || '');
+		  let url = '/api/v1/jobs/' + jobID + '/artifacts/download-all';
+		  if (kind === 'prefix') url = '/api/v1/jobs/' + jobID + '/artifacts/download?prefix=' + encodeURIComponent(artifactPath);
+		  if (kind === 'file') url = '/artifacts/' + jobID + '/' + artifactPath.split('/').map(encodeURIComponent).join('/');
+		  const anchor = document.createElement('a');
+		  anchor.href = url;
+		  anchor.download = '';
+		  document.body.appendChild(anchor);
+		  anchor.click();
+		  anchor.remove();
+		}
         else if (action.command === 'select-timeline-item') {
           data.jobDetails.selected_timeline_item = data.item;
           renderCurrent();
@@ -789,7 +809,7 @@
     icon.classList.add('dsl-icon');
     icon.setAttribute('aria-hidden', 'true');
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', '/ui/icons.svg?v=declarative-3#icon-' + name);
+    use.setAttribute('href', '/ui/icons.svg?v=declarative-4#icon-' + name);
     icon.appendChild(use);
     return icon;
   }
@@ -1040,6 +1060,79 @@
     renderBody();
   }
 
+  function renderTreeView(element, node, data) {
+	const tree = node.treeView || {};
+	const filter = tree.filter ? String(resolve(data, tree.filter) || 'all') : '';
+	const source = resolve(data, tree.nodes);
+
+	function prepared(raw, depth) {
+	  const itemData = Object.assign({}, data, {[tree.as]: raw});
+	  const rawChildren = resolve(itemData, tree.children);
+	  const children = (Array.isArray(rawChildren) ? rawChildren : []).map(child => prepared(child, depth + 1)).filter(Boolean);
+	  const filterValues = tree.filterValues ? resolve(itemData, tree.filterValues) : [];
+	  const values = Array.isArray(filterValues) ? filterValues.map(String) : [];
+	  if (filter && filter !== 'all' && values.length && !values.includes(filter)) return null;
+	  if (filter && filter !== 'all' && Array.isArray(rawChildren) && rawChildren.length && children.length === 0) return null;
+	  return {raw, itemData, children, depth};
+	}
+
+	function renderEntry(entry) {
+	  const itemData = entry.itemData;
+	  const row = document.createElement('div');
+	  row.className = 'dsl-tree-row';
+	  row.style.setProperty('--ciwi-tree-depth', String(entry.depth));
+	  const link = tree.nodeLink ? String(resolve(itemData, tree.nodeLink) || '') : '';
+	  const label = renderText(tree.nodeLabel, itemData);
+	  const labelElement = document.createElement(link ? 'a' : 'span');
+	  labelElement.className = 'dsl-tree-label';
+	  labelElement.textContent = label;
+	  if (link) {
+		labelElement.href = link;
+		labelElement.target = '_blank';
+		labelElement.rel = 'noopener noreferrer';
+	  }
+	  row.appendChild(labelElement);
+	  const detail = tree.nodeDetail ? renderText(tree.nodeDetail, itemData) : '';
+	  if (detail) {
+		const detailElement = document.createElement('span');
+		detailElement.className = 'dsl-tree-detail';
+		detailElement.textContent = detail;
+		const tone = tree.nodeTone ? semanticTone(resolve(itemData, tree.nodeTone)) : '';
+		if (tone) detailElement.classList.add('dsl-' + tone);
+		row.appendChild(detailElement);
+	  }
+	  const actionLabel = tree.actionLabel ? renderText(tree.actionLabel, itemData) : '';
+	  if (actionLabel && Array.isArray(node.actions) && node.actions.length) {
+		const button = document.createElement('button');
+		button.className = 'dsl-button dsl-tree-action';
+		button.type = 'button';
+		button.textContent = actionLabel;
+		bindActions(button, node.actions, itemData);
+		row.appendChild(button);
+	  }
+	  if (!entry.children.length) return row;
+	  const details = document.createElement('details');
+	  details.className = 'dsl-tree-branch';
+	  const key = String(resolve(itemData, tree.nodeKey) || '');
+	  const stateKey = String(tree.stateKey || '') + ':' + key;
+	  const fallback = tree.defaultExpanded ? !!resolve(itemData, tree.defaultExpanded) : false;
+	  details.open = disclosureStates.get(stateKey, fallback);
+	  details.dataset.disclosureKey = stateKey;
+	  details.addEventListener('toggle', () => disclosureStates.set(stateKey, details.open));
+	  const summary = document.createElement('summary');
+	  summary.appendChild(row);
+	  details.appendChild(summary);
+	  const children = document.createElement('div');
+	  children.className = 'dsl-tree-children';
+	  entry.children.forEach(child => children.appendChild(renderEntry(child)));
+	  details.appendChild(children);
+	  return details;
+	}
+
+	const preparedNodes = (Array.isArray(source) ? source : []).map(item => prepared(item, 0)).filter(Boolean);
+	preparedNodes.forEach(entry => element.appendChild(renderEntry(entry)));
+  }
+
   function renderNode(rawNode, data) {
     const node = withWebOverride(rawNode);
     if (node.hidden) return document.createDocumentFragment();
@@ -1071,6 +1164,10 @@
     applyLayout(element, node.layout);
 	if (node.component === 'graph-view' && node.graphView) {
 	  renderGraphView(element, node, data);
+	  return element;
+	}
+	if (node.component === 'tree-view' && node.treeView) {
+	  renderTreeView(element, node, data);
 	  return element;
 	}
 	if (node.enabled) {

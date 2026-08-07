@@ -143,13 +143,15 @@ func Run(ctx context.Context) error {
 	nativeAddresses := nativeListenAddresses()
 	if nativeAddresses.QUIC != "" || nativeAddresses.TCP != "" {
 		app := s.app()
+		artifactDownloads := newArtifactDownloadService(s.db, artifactsDir)
 		handler, handlerErr := nativecnp.NewHandler(nativecnp.Services{
 			Server: app.server, Projects: app.projects, ProjectCommands: app.projectCommands, ManagedYAML: s, Vault: s, Updates: app.updates, FrontPage: app.frontPage,
-			ProjectDetails: app.projectDetails,
-			ProjectIcons:   s,
-			JobDetails:     app.jobDetails,
-			JobContexts:    s,
-			Pipelines:      app.pipelines, PipelineChains: app.pipelineChains,
+			ProjectDetails:    app.projectDetails,
+			ProjectIcons:      s,
+			JobDetails:        app.jobDetails,
+			ArtifactDownloads: artifactDownloads,
+			JobContexts:       s,
+			Pipelines:         app.pipelines, PipelineChains: app.pipelineChains,
 			RunOptions:        app.runOptions,
 			Agents:            app.agents,
 			AgentCommands:     app.agentCommands,

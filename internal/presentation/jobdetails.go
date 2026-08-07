@@ -70,6 +70,31 @@ type ReportDetailsView struct {
 	Tone            string
 	Rows            []JobDetailRowView
 	AdditionalLabel string
+	Nodes           []TreeNodeView
+	Filters         []ReportFilterView
+	Filter          string
+	CanDownloadAll  bool
+}
+
+type ReportFilterView struct {
+	Value string
+	Label string
+}
+
+// TreeNodeView is the shared recursive presentation used for artifacts, test
+// cases, and coverage paths. Renderers own only drawing and expansion.
+type TreeNodeView struct {
+	Key             string
+	Label           string
+	Detail          string
+	Tone            string
+	Link            string
+	ActionLabel     string
+	ActionKind      string
+	ActionPath      string
+	DefaultExpanded bool
+	FilterValues    []string
+	Children        []TreeNodeView
 }
 
 type SchedulingAgentView struct {
@@ -201,7 +226,7 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 	view.ContainerToolRequirements = presentToolRequirements(details, "requires.container.tool.", "container.tool.", "No container tool requirements declared for this job.")
 	view.ReleaseSummary, view.HasReleaseSummary = presentReleaseSummary(details)
 	view.Artifacts = presentArtifacts(details.Artifacts)
-	view.TestReport = presentTestReport(details.TestReport)
+	view.TestReport = presentTestReport(details.TestReport, details.Metadata)
 	view.CoverageReport = presentCoverageReport(details.TestReport)
 	phaseTotal, stepTotal := 0, 0
 	for _, item := range details.Timeline {
@@ -257,50 +282,21 @@ func presentArtifacts(artifacts []domain.JobArtifact) ReportDetailsView {
 	}
 	items := append([]domain.JobArtifact(nil), artifacts...)
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Path < items[j].Path })
-	const visibleLimit = 40
-	view := ReportDetailsView{Summary: fmt.Sprintf("%d artifact(s)", len(items)), Tone: "accent"}
-	for _, artifact := range items[:min(len(items), visibleLimit)] {
-		path := strings.TrimSpace(artifact.Path)
-		if path == "" {
-			path = "(unnamed artifact)"
-		}
-		view.Rows = append(view.Rows, JobDetailRowView{Label: path, Value: formatBytes(artifact.SizeBytes)})
+	return ReportDetailsView{
+		Summary: fmt.Sprintf("%d artifact(s)", len(items)), Tone: "accent", CanDownloadAll: true,
+		Nodes: presentArtifactTree(items),
 	}
-	if hidden := len(items) - len(view.Rows); hidden > 0 {
-		view.AdditionalLabel = fmt.Sprintf("%d additional artifact(s)", hidden)
-	}
-	return view
 }
 
-func presentTestReport(report *domain.JobTestReport) ReportDetailsView {
+func presentTestReport(report *domain.JobTestReport, metadata map[string]string) ReportDetailsView {
 	if report == nil {
 		return ReportDetailsView{EmptyLabel: "No parsed test report"}
 	}
-	view := ReportDetailsView{Summary: formatTestCounts(report.Total, report.Passed, report.Failed, report.Skipped), Tone: reportTone(report.Total, report.Failed)}
-	suites := append([]domain.JobTestSuite(nil), report.Suites...)
-	sort.SliceStable(suites, func(i, j int) bool {
-		if suites[i].Failed != suites[j].Failed {
-			return suites[i].Failed > suites[j].Failed
-		}
-		return suites[i].Name < suites[j].Name
-	})
-	const visibleLimit = 30
-	for index, suite := range suites[:min(len(suites), visibleLimit)] {
-		label := strings.TrimSpace(suite.Name)
-		if label == "" {
-			label = strings.TrimSpace(suite.Format)
-		}
-		if label == "" {
-			label = fmt.Sprintf("Suite %d", index+1)
-		}
-		view.Rows = append(view.Rows, JobDetailRowView{
-			Label: label, Value: formatTestCounts(suite.Total, suite.Passed, suite.Failed, suite.Skipped), Tone: reportTone(suite.Total, suite.Failed),
-		})
+	return ReportDetailsView{
+		Summary: formatTestCounts(report.Total, report.Passed, report.Failed, report.Skipped), Tone: reportTone(report.Total, report.Failed),
+		Filter: "all", Filters: []ReportFilterView{{Value: "all", Label: "All"}, {Value: "fail", Label: "Failed"}, {Value: "skip", Label: "Skipped"}, {Value: "pass", Label: "Passed"}},
+		Nodes: presentTestTree(report, metadata),
 	}
-	if hidden := len(suites) - len(view.Rows); hidden > 0 {
-		view.AdditionalLabel = fmt.Sprintf("%d additional suite(s)", hidden)
-	}
-	return view
 }
 
 func presentCoverageReport(report *domain.JobTestReport) ReportDetailsView {
@@ -321,28 +317,7 @@ func presentCoverageReport(report *domain.JobTestReport) ReportDetailsView {
 		Summary: fmt.Sprintf("%.2f%% overall · %d/%d %s · %d file(s) · %s", percent, covered, total, unit, len(coverage.Files), format),
 		Tone:    "accent",
 	}
-	files := append([]domain.JobCoverageFile(nil), coverage.Files...)
-	sort.SliceStable(files, func(i, j int) bool {
-		leftTotal, leftCovered := coverageFileTotals(files[i])
-		rightTotal, rightCovered := coverageFileTotals(files[j])
-		left := coveragePercent(leftCovered, leftTotal, files[i].Percent)
-		right := coveragePercent(rightCovered, rightTotal, files[j].Percent)
-		if left != right {
-			return left < right
-		}
-		return files[i].Path < files[j].Path
-	})
-	const visibleLimit = 40
-	for _, file := range files[:min(len(files), visibleLimit)] {
-		fileTotal, fileCovered := coverageFileTotals(file)
-		filePercent := coveragePercent(fileCovered, fileTotal, file.Percent)
-		view.Rows = append(view.Rows, JobDetailRowView{
-			Label: strings.TrimSpace(file.Path), Value: fmt.Sprintf("%.2f%% · %d/%d", filePercent, fileCovered, fileTotal),
-		})
-	}
-	if hidden := len(files) - len(view.Rows); hidden > 0 {
-		view.AdditionalLabel = fmt.Sprintf("%d additional file(s)", hidden)
-	}
+	view.Nodes = presentCoverageTree(coverage.Files)
 	return view
 }
 

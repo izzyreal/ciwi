@@ -114,10 +114,27 @@ func toolRequirementsToProto(view presentation.ToolRequirementsView) *cnpv1.Tool
 }
 
 func reportDetailsToProto(view presentation.ReportDetailsView) *cnpv1.ReportDetails {
+	filters := make([]*cnpv1.ReportFilter, 0, len(view.Filters))
+	for _, filter := range view.Filters {
+		filters = append(filters, &cnpv1.ReportFilter{Value: filter.Value, Label: filter.Label})
+	}
 	return &cnpv1.ReportDetails{
 		EmptyLabel: view.EmptyLabel, Summary: view.Summary, Tone: view.Tone,
 		Rows: jobDetailRowsToProto(view.Rows), AdditionalLabel: view.AdditionalLabel,
+		Nodes: treeNodesToProto(view.Nodes), Filters: filters, Filter: view.Filter, CanDownloadAll: view.CanDownloadAll,
 	}
+}
+
+func treeNodesToProto(nodes []presentation.TreeNodeView) []*cnpv1.TreeNode {
+	result := make([]*cnpv1.TreeNode, 0, len(nodes))
+	for _, node := range nodes {
+		result = append(result, &cnpv1.TreeNode{
+			Key: node.Key, Label: node.Label, Detail: node.Detail, Tone: node.Tone, Link: node.Link,
+			ActionLabel: node.ActionLabel, ActionKind: node.ActionKind, ActionPath: node.ActionPath,
+			DefaultExpanded: node.DefaultExpanded, FilterValues: append([]string(nil), node.FilterValues...), Children: treeNodesToProto(node.Children),
+		})
+	}
+	return result
 }
 
 func jobRunContextToProto(view protocol.JobExecutionGraphContext) *cnpv1.JobRunContext {

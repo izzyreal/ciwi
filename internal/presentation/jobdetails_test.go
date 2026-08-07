@@ -111,14 +111,65 @@ func TestJobDetailsViewMatchesWebExecutionCards(t *testing.T) {
 	if !view.HasReleaseSummary || len(view.ReleaseSummary) < 4 {
 		t.Fatalf("release summary = %+v", view.ReleaseSummary)
 	}
-	if len(view.Artifacts.Rows) != 1 || view.Artifacts.Rows[0].Value != "2 KB" {
+	if len(view.Artifacts.Nodes) != 1 || len(view.Artifacts.Nodes[0].Children) != 1 || view.Artifacts.Nodes[0].Children[0].Detail != "2 KB" || !view.Artifacts.CanDownloadAll {
 		t.Fatalf("artifacts = %+v", view.Artifacts)
 	}
-	if view.TestReport.Tone != "danger" || !strings.Contains(view.TestReport.Summary, "1 failed") || len(view.TestReport.Rows) != 1 {
+	if view.TestReport.Tone != "danger" || !strings.Contains(view.TestReport.Summary, "1 failed") || len(view.TestReport.Nodes) != 1 || len(view.TestReport.Filters) != 4 {
 		t.Fatalf("test report = %+v", view.TestReport)
 	}
-	if !strings.Contains(view.CoverageReport.Summary, "75.00% overall") || view.CoverageReport.Rows[0].Value != "50.00% · 10/20" {
+	if !strings.Contains(view.CoverageReport.Summary, "75.00% overall") || view.CoverageReport.Nodes[0].Detail != "50.00% · 10/20" {
 		t.Fatalf("coverage report = %+v", view.CoverageReport)
+	}
+}
+
+func TestJobReportTreesPreserveHierarchyFiltersDownloadsAndSourceLinks(t *testing.T) {
+	view := presentJobDetails(domain.JobExecutionDetails{
+		ID: "job-1",
+		Metadata: map[string]string{
+			"pipeline_source_repo":         "git@github.com:izzyreal/ciwi.git",
+			"pipeline_source_ref_resolved": "feature/reports",
+		},
+		Artifacts: []domain.JobArtifact{
+			{Path: "dist/macos/Ciwi.app.zip", SizeBytes: 4096},
+			{Path: "dist/linux/ciwi", SizeBytes: 2048},
+		},
+		TestReport: &domain.JobTestReport{
+			Total: 2, Passed: 1, Failed: 1,
+			Suites: []domain.JobTestSuite{{
+				Name: "unit", Format: "junit-xml", Total: 2, Passed: 1, Failed: 1,
+				Cases: []domain.JobTestCase{
+					{Package: "github.com/izzyreal/ciwi/internal/presentation", Name: "TestPass", File: "jobdetails_test.go", Line: 42, Status: "pass", DurationSeconds: .125},
+					{Package: "github.com/izzyreal/ciwi/internal/presentation", Name: "TestFailureWithoutFile", Status: "fail", DurationSeconds: .25},
+				},
+			}},
+			Coverage: &domain.JobCoverageReport{
+				TotalStatements: 20, CoveredStatements: 10,
+				Files: []domain.JobCoverageFile{
+					{Path: "internal/presentation/jobdetails.go", TotalStatements: 10, CoveredStatements: 8},
+					{Path: "internal/server/server.go", TotalStatements: 10, CoveredStatements: 2},
+				},
+			},
+		},
+	})
+	if len(view.Artifacts.Nodes) != 1 || view.Artifacts.Nodes[0].ActionKind != "prefix" || len(view.Artifacts.Nodes[0].Children) != 2 {
+		t.Fatalf("artifact tree = %+v", view.Artifacts.Nodes)
+	}
+	macOS := view.Artifacts.Nodes[0].Children[1]
+	if macOS.ActionPath != "dist/macos" || len(macOS.Children) != 1 || macOS.Children[0].ActionKind != "file" {
+		t.Fatalf("nested artifact tree = %+v", macOS)
+	}
+	if view.TestReport.Filter != "all" || len(view.TestReport.Filters) != 4 || len(view.TestReport.Nodes) != 1 {
+		t.Fatalf("test report = %+v", view.TestReport)
+	}
+	packageNode := view.TestReport.Nodes[0].Children[0]
+	if len(packageNode.Children) != 2 || packageNode.Children[0].Tone != "danger" || !strings.Contains(packageNode.Children[0].Link, "/search?") {
+		t.Fatalf("test cases = %+v", packageNode.Children)
+	}
+	if !strings.Contains(packageNode.Children[1].Link, "/blob/feature%2Freports/internal/presentation/jobdetails_test.go#L42") {
+		t.Fatalf("test source link = %q", packageNode.Children[1].Link)
+	}
+	if len(view.CoverageReport.Nodes) != 1 || view.CoverageReport.Nodes[0].Label != "internal" || len(view.CoverageReport.Nodes[0].Children) != 2 {
+		t.Fatalf("coverage tree = %+v", view.CoverageReport.Nodes)
 	}
 }
 

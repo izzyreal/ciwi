@@ -57,7 +57,8 @@ type Services struct {
 		GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error)
 		GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error)
 	}
-	JobContexts interface {
+	ArtifactDownloads application.ArtifactDownloadService
+	JobContexts       interface {
 		GetJobExecutionGraphContext(context.Context, string) (protocol.JobExecutionGraphContext, error)
 	}
 	Pipelines interface {
@@ -100,7 +101,7 @@ type Handler struct {
 }
 
 func NewHandler(services Services) (*Handler, error) {
-	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.ManagedYAML == nil || services.Vault == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.AgentScripts == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.ManagedYAML == nil || services.Vault == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.ArtifactDownloads == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.AgentScripts == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native CNP services are incomplete")
 	}
 	return &Handler{services: services}, nil
@@ -126,7 +127,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerInstanceId:     snapshot.InstanceID,
 		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_details", "job_details", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_details", "job_details", "artifact_downloads", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -341,6 +342,21 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 			if err == nil {
 				response.Result = &cnpv1.Response_JobDetails{JobDetails: result}
 			}
+		}
+	case *cnpv1.Request_DownloadArtifact:
+		var chunk application.ArtifactDownloadChunk
+		chunk, err = s.services.ArtifactDownloads.DownloadArtifact(ctx, application.ArtifactDownloadRequest{
+			JobExecutionID: operation.DownloadArtifact.GetJobExecutionId(),
+			Kind:           operation.DownloadArtifact.GetKind(),
+			Path:           operation.DownloadArtifact.GetPath(),
+			Token:          operation.DownloadArtifact.GetToken(),
+			Offset:         operation.DownloadArtifact.GetOffset(),
+		})
+		if err == nil {
+			response.Result = &cnpv1.Response_ArtifactDownload{ArtifactDownload: &cnpv1.ArtifactDownloadChunk{
+				Token: chunk.Token, FileName: chunk.FileName, ContentType: chunk.ContentType,
+				Data: chunk.Data, NextOffset: chunk.NextOffset, TotalSize: chunk.TotalSize, Complete: chunk.Complete,
+			}}
 		}
 	case *cnpv1.Request_RunPipeline:
 		var result application.RunPipelineResult

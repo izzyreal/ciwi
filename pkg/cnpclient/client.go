@@ -514,6 +514,17 @@ func (c *Client) GetJobDetails(ctx context.Context, jobExecutionID string) (*cnp
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) DownloadArtifactChunk(ctx context.Context, request *cnpv1.ArtifactDownloadRequest) (*cnpv1.ArtifactDownloadChunk, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_DownloadArtifact{DownloadArtifact: request}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetArtifactDownload(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) RunPipeline(ctx context.Context, request *cnpv1.RunPipelineRequest, idempotencyKey string) (*cnpv1.RunPipelineResult, error) {
 	if idempotencyKey == "" {
 		idempotencyKey = uuid.NewString()

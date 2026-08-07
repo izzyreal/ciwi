@@ -289,16 +289,47 @@ func writeArtifactsZIP(w http.ResponseWriter, artifactsDir, jobID string, artifa
 }
 
 func writeArtifactsZIPWithFileName(w http.ResponseWriter, artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact, fileName string) error {
+	tmpPath, fileName, err := BuildArtifactsZIP(artifactsDir, jobID, artifacts, fileName)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpPath)
+	tmp, err := os.Open(tmpPath)
+	if err != nil {
+		return fmt.Errorf("open temp zip: %w", err)
+	}
+	defer tmp.Close()
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fileName+`"`)
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, tmp); err != nil {
+		return fmt.Errorf("stream zip: %w", err)
+	}
+	return nil
+}
+
+// BuildArtifactsZIP writes a deterministic artifact archive to a temporary
+// file. The caller owns the returned path and must remove it when finished.
+// Keeping archive construction independent from HTTP lets every frontend use
+// the same artifact selection and naming behavior.
+func BuildArtifactsZIP(artifactsDir, jobID string, artifacts []protocol.JobExecutionArtifact, fileName string) (string, string, error) {
 	zipPrefix := sanitizeZIPName(jobID)
 	if zipPrefix == "" {
 		zipPrefix = "job"
 	}
 	tmp, err := os.CreateTemp("", "ciwi-"+zipPrefix+"-artifacts-*.zip")
 	if err != nil {
-		return fmt.Errorf("create temp zip: %w", err)
+		return "", "", fmt.Errorf("create temp zip: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	keep := false
+	defer func() {
+		_ = tmp.Close()
+		if !keep {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 
 	zw := zip.NewWriter(tmp)
 	// Deterministic order yields stable archive listing in the UI.
@@ -316,56 +347,51 @@ func writeArtifactsZIPWithFileName(w http.ResponseWriter, artifactsDir, jobID st
 		fh, err := zip.FileInfoHeader(info)
 		if err != nil {
 			_ = zw.Close()
-			_ = tmp.Close()
-			return fmt.Errorf("build zip header for %q: %w", rel, err)
+			return "", "", fmt.Errorf("build zip header for %q: %w", rel, err)
 		}
 		fh.Name = rel
 		fh.Method = zip.Deflate
 		entry, err := zw.CreateHeader(fh)
 		if err != nil {
 			_ = zw.Close()
-			_ = tmp.Close()
-			return fmt.Errorf("create zip entry for %q: %w", rel, err)
+			return "", "", fmt.Errorf("create zip entry for %q: %w", rel, err)
 		}
 		f, err := os.Open(full)
 		if err != nil {
 			_ = zw.Close()
-			_ = tmp.Close()
-			return fmt.Errorf("open artifact %q: %w", rel, err)
+			return "", "", fmt.Errorf("open artifact %q: %w", rel, err)
 		}
 		_, copyErr := io.Copy(entry, f)
 		closeErr := f.Close()
 		if copyErr != nil {
 			_ = zw.Close()
-			_ = tmp.Close()
-			return fmt.Errorf("zip artifact %q: %w", rel, copyErr)
+			return "", "", fmt.Errorf("zip artifact %q: %w", rel, copyErr)
 		}
 		if closeErr != nil {
 			_ = zw.Close()
-			_ = tmp.Close()
-			return fmt.Errorf("close artifact %q: %w", rel, closeErr)
+			return "", "", fmt.Errorf("close artifact %q: %w", rel, closeErr)
 		}
 	}
 	if err := zw.Close(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("finalize zip: %w", err)
+		return "", "", fmt.Errorf("finalize zip: %w", err)
 	}
-	if _, err := tmp.Seek(0, 0); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("rewind zip: %w", err)
+	if err := tmp.Close(); err != nil {
+		return "", "", fmt.Errorf("close temp zip: %w", err)
 	}
-	defer tmp.Close()
 
 	if strings.TrimSpace(fileName) == "" {
 		fileName = "job-artifacts.zip"
 	}
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+fileName+`"`)
-	w.WriteHeader(http.StatusOK)
-	if _, err := io.Copy(w, tmp); err != nil {
-		return fmt.Errorf("stream zip: %w", err)
-	}
-	return nil
+	keep = true
+	return tmpPath, fileName, nil
+}
+
+func NormalizeRelativeArtifactPath(raw string) (string, bool) {
+	return normalizeRelativeArtifactPath(raw)
+}
+
+func BuildArtifactsZIPFileName(jobID, prefix string) string {
+	return buildArtifactsZIPFileName(jobID, prefix)
 }
 
 func sanitizeZIPName(v string) string {

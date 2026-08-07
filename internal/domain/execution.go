@@ -110,6 +110,17 @@ type JobTestSuite struct {
 	Passed  int
 	Failed  int
 	Skipped int
+	Cases   []JobTestCase
+}
+
+type JobTestCase struct {
+	Package         string
+	Name            string
+	File            string
+	Line            int
+	Status          string
+	DurationSeconds float64
+	Output          string
 }
 
 type JobCoverageReport struct {

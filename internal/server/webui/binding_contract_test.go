@@ -56,6 +56,11 @@ func TestBrowserSettingsViewModelSatisfiesWebOverrides(t *testing.T) {
 
 func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 	progress := map[string]any{"state": "none", "fraction": 0.0, "snapshot_unix_ms": 0, "rate_per_ms": 0.0}
+	reportNode := map[string]any{
+		"key": "file:binary", "label": "binary", "detail": "stored", "tone": "success", "link": "",
+		"action_label": "Download", "action_kind": "file", "action_path": "binary", "default_expanded": false,
+		"filter_values": []any{"all", "pass"}, "children": []any{},
+	}
 	step := map[string]any{
 		"index": 0, "position": 1, "name": "Compile", "type": "run", "command": "go test ./...",
 		"skip_dry_run": false, "environment_label": "CI=true",
@@ -104,9 +109,18 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 			"reached": true, "started": "now", "duration": "1s", "exit_code": "", "error": "", "is_phase": false, "is_step": true,
 			"details": "details", "yaml_literal": "run: go test", "expanded_command": "go test ./...", "output": "ok", "empty_output_label": "",
 		}},
-		"artifacts":       map[string]any{"empty_label": "", "summary": "1 artifact", "tone": "success", "additional_label": "", "rows": []any{map[string]any{"label": "binary", "value": "stored", "tone": "success"}}},
-		"test_report":     map[string]any{"empty_label": "", "summary": "1 passed", "tone": "success", "additional_label": "", "rows": []any{map[string]any{"label": "tests", "value": "1", "tone": "success"}}},
-		"coverage_report": map[string]any{"empty_label": "", "summary": "90%", "tone": "success", "additional_label": "", "rows": []any{map[string]any{"label": "lines", "value": "90%", "tone": "success"}}},
+		"artifacts": map[string]any{
+			"empty_label": "", "summary": "1 artifact", "tone": "success", "additional_label": "", "rows": []any{},
+			"nodes": []any{reportNode}, "filters": []any{}, "filter": "", "can_download_all": true,
+		},
+		"test_report": map[string]any{
+			"empty_label": "", "summary": "1 passed", "tone": "success", "additional_label": "", "rows": []any{},
+			"nodes": []any{reportNode}, "filters": []any{map[string]any{"value": "all", "label": "All"}}, "filter": "all", "can_download_all": false,
+		},
+		"coverage_report": map[string]any{
+			"empty_label": "", "summary": "90%", "tone": "success", "additional_label": "", "rows": []any{},
+			"nodes": []any{reportNode}, "filters": []any{}, "filter": "", "can_download_all": false,
+		},
 	}
 	fixtures := map[string]map[string]any{
 		"project-details": {"projectDetails": map[string]any{

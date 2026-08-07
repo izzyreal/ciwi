@@ -199,7 +199,67 @@ func validateNodeInstanceBindings(node Node, data, locals map[string]any, platfo
 			}
 		}
 	}
-	if node.GraphView == nil {
+	if node.TreeView != nil {
+		if err := checkTemplate("treeView.stateKey", node.TreeView.StateKey, false); err != nil {
+			return err
+		}
+		value, err := resolveBindingValue(data, locals, node.TreeView.Nodes)
+		if err != nil {
+			return fmt.Errorf("%s.treeView.nodes: %w", location, err)
+		}
+		items, err := bindingSlice(value)
+		if err != nil {
+			return fmt.Errorf("%s.treeView.nodes: %w", location, err)
+		}
+		var validateTreeItems func([]any, map[string]any, string) error
+		validateTreeItems = func(items []any, parentLocals map[string]any, itemLocation string) error {
+			for index, item := range items {
+				next := cloneBindingLocals(parentLocals)
+				next[node.TreeView.As] = item
+				for label, binding := range map[string]string{
+					"key": node.TreeView.NodeKey, "tone": node.TreeView.NodeTone, "link": node.TreeView.NodeLink,
+					"children": node.TreeView.Children, "defaultExpanded": node.TreeView.DefaultExpanded,
+					"filterValues": node.TreeView.FilterValues,
+				} {
+					if binding != "" {
+						if _, err := resolveBindingValue(data, next, binding); err != nil {
+							return fmt.Errorf("%s[%d].%s: %w", itemLocation, index, label, err)
+						}
+					}
+				}
+				for label, text := range map[string]Text{"label": node.TreeView.NodeLabel, "detail": node.TreeView.NodeDetail, "actionLabel": node.TreeView.ActionLabel} {
+					if text.Binding != "" {
+						if _, err := resolveBindingValue(data, next, text.Binding); err != nil {
+							return fmt.Errorf("%s[%d].%s: %w", itemLocation, index, label, err)
+						}
+					}
+				}
+				for actionIndex, action := range node.Actions {
+					for name, value := range action.Arguments {
+						for _, match := range templateBindingPattern.FindAllStringSubmatch(value, -1) {
+							binding := strings.TrimSpace(match[1])
+							if _, err := resolveBindingValue(data, next, binding); err != nil {
+								return fmt.Errorf("%s[%d].actions[%d].arguments.%s: %w", itemLocation, index, actionIndex, name, err)
+							}
+						}
+					}
+				}
+				childrenValue, _ := resolveBindingValue(data, next, node.TreeView.Children)
+				children, childErr := bindingSlice(childrenValue)
+				if childErr != nil {
+					return fmt.Errorf("%s[%d].children: %w", itemLocation, index, childErr)
+				}
+				if err := validateTreeItems(children, next, fmt.Sprintf("%s[%d].children", itemLocation, index)); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if err := validateTreeItems(items, locals, location+".treeView.nodes"); err != nil {
+			return err
+		}
+	}
+	if node.GraphView == nil && node.TreeView == nil {
 		for actionIndex, action := range node.Actions {
 			for name, value := range action.Arguments {
 				if err := checkTemplate(fmt.Sprintf("actions[%d].arguments.%s", actionIndex, name), value, true); err != nil {

@@ -168,6 +168,12 @@ through idempotent CNP commands. Cancellation updates server state but does not
 forcibly terminate an agent process that is already running. Agents continue to
 use the existing HTTP protocol.
 
+Job Details also carries recursive artifact, test, and coverage report trees.
+Native artifact files and directory/all-artifact ZIP archives are transferred
+through a typed, bounded CNP chunk operation and written to the user's
+Downloads directory under a collision-safe name. The native client does not
+fall back to the browser's artifact URLs.
+
 Global Settings covers native-client appearance, connection context, project
 management, agent administration, and server update/rollback controls. Agent
 details can authorize, activate, refresh tools, restart, update, wipe caches,
