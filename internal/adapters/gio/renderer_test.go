@@ -659,9 +659,9 @@ func TestRendererPersistsProjectDisclosureAndBulkExecutionState(t *testing.T) {
 		t.Fatal("project disclosure did not default to expanded")
 	}
 	var projectPath string
-	for path, selectable := range renderer.selectables {
-		if selectable.Text() == "Project:" && strings.HasSuffix(path, "/label") {
-			projectPath = strings.TrimSuffix(path, "/label")
+	for path := range renderer.buttons {
+		if strings.HasSuffix(path, "/disclosure-header") {
+			projectPath = strings.TrimSuffix(path, "/disclosure-header")
 			break
 		}
 	}
@@ -2586,12 +2586,12 @@ func TestCompactProjectDisclosureOpensAndClosesSheet(t *testing.T) {
 	projectHeader.Click()
 	gtx.Ops.Reset()
 	renderer.Layout(gtx)
-	if renderer.activeSheet == nil || renderer.activeSheet.title != "Project: ciwi" {
+	if renderer.activeSheet == nil || renderer.activeSheet.title != "ciwi" {
 		t.Fatalf("active compact sheet = %#v", renderer.activeSheet)
 	}
 	gtx.Ops.Reset()
 	renderer.Layout(gtx)
-	if title := renderer.selectable("compact-sheet/title").Text(); title != "Project: ciwi" {
+	if title := renderer.selectable("compact-sheet/title").Text(); title != "ciwi" {
 		t.Fatalf("compact sheet title = %q", title)
 	}
 	foundPipeline := false
@@ -2644,8 +2644,8 @@ func TestFlexAlignmentDefaultsColumnsToStartAndRowsToMiddle(t *testing.T) {
 	if got := flexAlignment(layout.Vertical, "center", false); got != layout.Middle {
 		t.Fatalf("explicit center alignment = %v, want middle", got)
 	}
-	if got := flexAlignment(layout.Horizontal, "center", true); got != layout.Start {
-		t.Fatalf("execution-grid alignment = %v, want start", got)
+	if got := flexAlignment(layout.Horizontal, "center", true); got != layout.Middle {
+		t.Fatalf("explicit execution-grid alignment = %v, want middle", got)
 	}
 }
 

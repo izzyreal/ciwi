@@ -1,7 +1,7 @@
 @import url("/ui/css/typography.css");
 
 :root {
-  --ciwi-heartbeat-fade-duration: 8s;
+  --ciwi-heartbeat-fade-duration: 6.4s;
   --ciwi-heartbeat-min-opacity: .18;
 }
 
@@ -777,7 +777,7 @@
     }
     .ciwi-modal-overlay { display: none; }
     a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    a:hover { text-decoration: none; }
     button,
     a.nav-btn {
       border: 1px solid var(--line);

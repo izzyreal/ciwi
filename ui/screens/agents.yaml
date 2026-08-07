@@ -34,10 +34,10 @@ screen:
             icon: arrow-left
             actions: [{on: activate, command: navigate, arguments: {route: /}}]
       - component: card
-        layout: {direction: vertical, gap: medium, padding: medium}
+        layout: {direction: vertical, gap: small, padding: medium}
         children:
           - component: row
-            layout: {direction: horizontal, gap: medium, wrap: true}
+            layout: {direction: horizontal, gap: medium, align: center, wrap: true}
             style: {role: agent-header, emphasis: strong, tone: muted}
             children:
               - component: text
@@ -61,9 +61,6 @@ screen:
               - component: text
                 text: {literal: Run mode}
                 layout: {grow: true}
-          - component: divider
-            overrides:
-              compact: {hidden: true}
           - component: list
             layout: {direction: vertical, gap: small}
             repeat: {source: agents.agents, as: agent, key: agent.id}

@@ -1559,6 +1559,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			})
 		}
 	}
+	if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {
+		content = r.surfaceWithBorderRadius(content, 0, r.palette.surfaceRaised, r.palette.border, r.metrics.controlRadius)
+	}
 	widgetFn := content
 	if len(node.Actions) > 0 && !componentHandlesOwnActions(node.Component) {
 		button := r.button(path)
@@ -1890,7 +1893,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			}
 			return children
 		}
-		if r.compact && node.Disclosure != nil && len(node.Disclosure.Summary) > 0 {
+		if r.compact && !isProjectRow && node.Disclosure != nil && len(node.Disclosure.Summary) > 0 {
 			mainChildren := make([]layout.FlexChild, 0, 4)
 			if node.Style.Role == "execution-row" && node.Image != nil {
 				mainChildren = append(mainChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1958,10 +1961,10 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		}
 		if node.Style.Role != "execution-row" {
 			labelChild := layout.Flexed(1, labelWidget)
-			if isProjectRow {
-				labelChild = layout.Rigid(labelWidget)
-			}
 			children := []layout.FlexChild{labelChild}
+			if isProjectRow {
+				children = nil
+			}
 			if isTreeBranch {
 				children = []layout.FlexChild{layout.Rigid(toggleWidget), labelChild}
 				children = append(children, summaryChildren()...)
@@ -2103,6 +2106,9 @@ func compactSheetTitle(node uidsl.Node, data any, fallback string) string {
 	if err != nil || strings.TrimSpace(name) == "" {
 		return fallback
 	}
+	if strings.TrimSpace(name) == strings.TrimSpace(fallback) {
+		return strings.TrimSpace(fallback)
+	}
 	return strings.TrimSpace(fallback + " " + name)
 }
 
@@ -2155,7 +2161,7 @@ func (r *Renderer) progressWidget(node uidsl.Node, data any, content layout.Widg
 				} else if node.Style.Role == "execution-row" {
 					underlay = &r.palette.surfaceRaised
 				} else if node.Style.Role == "execution-section-header" {
-					radius = 0
+					radius = r.metrics.controlRadius
 					underlay = &r.palette.subtle
 				}
 				progressClip := r.cachedRoundedClip(gtx, size, radius).Push(gtx.Ops)
@@ -2440,7 +2446,7 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 			return layout.Flex{Axis: axis, Alignment: alignment, Gap: gtx.Dp(r.spacing(node.Layout.Gap))}.Layout(gtx, children...)
 		}
 		if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {
-			return layout.Inset{Top: 7, Bottom: 7}.Layout(gtx, row)
+			return layout.Inset{Top: 7, Right: r.metrics.spaceSmall, Bottom: 7, Left: r.metrics.spaceSmall}.Layout(gtx, row)
 		}
 		return row(gtx)
 	})
@@ -2530,7 +2536,7 @@ func (r *Renderer) layoutCompactExecutionRecord(gtx layout.Context, node uidsl.N
 			})
 		}))
 	}
-	return layout.Inset{Top: 7, Bottom: 7}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: 7, Right: r.metrics.spaceSmall, Bottom: 7, Left: r.metrics.spaceSmall}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Start}.Layout(gtx, rows...)
 	})
 }
@@ -2601,15 +2607,15 @@ func compactRowNeedsStack(children []uidsl.Node) bool {
 }
 
 func flexAlignment(axis layout.Axis, align string, executionGrid bool) layout.Alignment {
-	if executionGrid {
-		return layout.Start
-	}
 	switch strings.ToLower(strings.TrimSpace(align)) {
 	case "center", "middle":
 		return layout.Middle
 	case "end":
 		return layout.End
 	case "start":
+		return layout.Start
+	}
+	if executionGrid {
 		return layout.Start
 	}
 	if axis == layout.Horizontal {
@@ -2624,7 +2630,7 @@ func executionGridWeights(role string, childCount int) []float32 {
 	case "queued-execution-header", "queued-execution-job-row":
 		weights = []float32{2.0, 1.0, 1.25, 1.1, 1.2, 1.35, 2.25, 0.85}
 	case "history-execution-header", "history-execution-job-row":
-		weights = []float32{2.2, 1.1, 1.3, 1.1, 1.2, 1.45, 1.0}
+		weights = []float32{2.0, 1.0, 1.25, 1.1, 1.2, 1.35, 1.0}
 	case "agent-header":
 		weights = []float32{1.4, 1.2, 1.1, 0.8, 1.0, 0.9, 0.8}
 	case "agent-record":
@@ -3589,7 +3595,21 @@ func (r *Renderer) surfaceWithFillProgress(content layout.Widget, padding unit.D
 }
 
 func (r *Renderer) surfaceWithBorder(content layout.Widget, padding unit.Dp, fill, border color.NRGBA) layout.Widget {
-	return r.surfaceWithBorderProgress(content, padding, fill, border, nil)
+	return r.surfaceWithBorderRadius(content, padding, fill, border, r.metrics.surfaceRadius)
+}
+
+func (r *Renderer) surfaceWithBorderRadius(content layout.Widget, padding unit.Dp, fill, border color.NRGBA, radius unit.Dp) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		return r.layoutCachedBorder(gtx, border, radius, 1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				size := gtx.Constraints.Min
+				r.paintCachedRoundedFill(gtx, size, radius, fill)
+				return layout.Dimensions{Size: size}
+			}, func(gtx layout.Context) layout.Dimensions {
+				return layout.UniformInset(padding).Layout(gtx, content)
+			})
+		})
+	}
 }
 
 func (r *Renderer) surfaceWithBorderProgress(content layout.Widget, padding unit.Dp, fill, border color.NRGBA, progress *semanticProgress) layout.Widget {

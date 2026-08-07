@@ -212,7 +212,7 @@ screen:
             children:
               - component: disclosure
                 text:
-                  literal: "Project:"
+                  binding: project.name
                 disclosure:
                   defaultExpanded: true
                   stateKey: "front-project:{{project.id}}"
@@ -827,6 +827,8 @@ screen:
               key: execution.key
             children:
               - component: disclosure
+                progress:
+                  binding: execution.progress
                 disclosure:
                   stateKey: "front-history:{{execution.key}}"
                   compactPresentation: sheet
@@ -887,12 +889,23 @@ screen:
                           direction: vertical
                           gap: small
                         children:
-                          - component: text
-                            text:
-                              template: "pipeline: {{section.label}}"
+                          - component: row
+                            progress:
+                              binding: section.progress
+                            layout:
+                              direction: horizontal
+                              align: center
+                              padding: small
                             style:
-                              emphasis: strong
-                              tone: muted
+                              role: execution-section-header
+                            children:
+                              - component: text
+                                text:
+                                  template: "pipeline: {{section.label}}"
+                                style:
+                                  role: detail-small
+                                  emphasis: strong
+                                  tone: muted
                           - component: list
                             layout:
                               direction: vertical

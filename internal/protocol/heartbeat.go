@@ -4,7 +4,7 @@ import "time"
 
 const (
 	AgentHeartbeatInterval     = 10 * time.Second
-	AgentHeartbeatFadeDuration = AgentHeartbeatInterval * 4 / 5
+	AgentHeartbeatFadeDuration = AgentHeartbeatInterval * 16 / 25
 )
 
 type HeartbeatRequest struct {

@@ -194,22 +194,23 @@ func TestFrontPagePipelineProgressUsesSectionHeaderSurface(t *testing.T) {
 			matches = append(matches, node)
 		}
 	})
-	if len(matches) != 1 {
-		t.Fatalf("section progress surfaces = %d, want 1", len(matches))
+	if len(matches) != 2 {
+		t.Fatalf("section progress surfaces = %d, want queued and history headers", len(matches))
 	}
-	header := matches[0]
-	if header.Component != "row" || header.Style.Role != "execution-section-header" {
-		t.Fatalf("section progress target = component %q role %q, want execution-section-header row", header.Component, header.Style.Role)
-	}
-	if header.Layout.Padding != "small" || len(header.Children) != 1 {
-		t.Fatalf("section header layout = %#v with %d children", header.Layout, len(header.Children))
-	}
-	label := header.Children[0]
-	if label.Component != "text" || label.Progress != nil || label.Text == nil || label.Text.Template != "pipeline: {{section.label}}" {
-		t.Fatalf("section header label = %#v", label)
-	}
-	if label.Style.Role != "detail-small" || label.Style.Emphasis != "strong" || label.Style.Tone != "muted" {
-		t.Fatalf("section header label style = %#v", label.Style)
+	for _, header := range matches {
+		if header.Component != "row" || header.Style.Role != "execution-section-header" {
+			t.Fatalf("section progress target = component %q role %q, want execution-section-header row", header.Component, header.Style.Role)
+		}
+		if header.Layout.Padding != "small" || len(header.Children) != 1 {
+			t.Fatalf("section header layout = %#v with %d children", header.Layout, len(header.Children))
+		}
+		label := header.Children[0]
+		if label.Component != "text" || label.Progress != nil || label.Text == nil || label.Text.Template != "pipeline: {{section.label}}" {
+			t.Fatalf("section header label = %#v", label)
+		}
+		if label.Style.Role != "detail-small" || label.Style.Emphasis != "strong" || label.Style.Tone != "muted" {
+			t.Fatalf("section header label style = %#v", label.Style)
+		}
 	}
 }
 
@@ -502,6 +503,9 @@ func TestFrontPageProjectBodyUsesOrdinaryDeclarativeNodes(t *testing.T) {
 	if project == nil {
 		t.Fatal("front page project disclosure is missing")
 	}
+	if project.Text == nil || project.Text.Binding != "project.name" || project.Text.Literal != "" {
+		t.Fatalf("project disclosure label = %#v, want only the project name", project.Text)
+	}
 	if project.Image != nil {
 		t.Fatal("project disclosure still asks renderers to compose its body image")
 	}
@@ -518,6 +522,35 @@ func TestFrontPageProjectBodyUsesOrdinaryDeclarativeNodes(t *testing.T) {
 	}
 	if content.Component != "column" || !content.Layout.Grow || len(content.Children) != 2 {
 		t.Fatalf("project main content = %#v", content)
+	}
+}
+
+func TestAgentsTableUsesOneCenteredTightLayout(t *testing.T) {
+	screen, err := LoadScreen("agents")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header, record *uidsl.Node
+	dividers := 0
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		switch node.Style.Role {
+		case "agent-header":
+			header = node
+		case "agent-record":
+			record = node
+		}
+		if node.Component == "divider" {
+			dividers++
+		}
+	})
+	if header == nil || header.Layout.Align != "center" {
+		t.Fatalf("agent header = %#v, want centered shared row", header)
+	}
+	if record == nil || record.Layout.Align != "center" {
+		t.Fatalf("agent record = %#v, want centered shared row", record)
+	}
+	if dividers != 0 {
+		t.Fatalf("agent table dividers = %d, want none", dividers)
 	}
 }
 

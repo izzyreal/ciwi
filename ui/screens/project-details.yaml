@@ -749,6 +749,8 @@ screen:
               key: execution.key
             children:
               - component: disclosure
+                progress:
+                  binding: execution.progress
                 disclosure:
                   stateKey: "project-history:{{projectDetails.project.id}}:{{execution.key}}"
                   summary:
@@ -794,12 +796,23 @@ screen:
                           direction: vertical
                           gap: small
                         children:
-                          - component: text
-                            text:
-                              template: "pipeline: {{section.label}}"
+                          - component: row
+                            progress:
+                              binding: section.progress
+                            layout:
+                              direction: horizontal
+                              align: center
+                              padding: small
                             style:
-                              emphasis: strong
-                              tone: muted
+                              role: execution-section-header
+                            children:
+                              - component: text
+                                text:
+                                  template: "pipeline: {{section.label}}"
+                                style:
+                                  role: detail-small
+                                  emphasis: strong
+                                  tone: muted
                           - component: list
                             layout:
                               direction: vertical

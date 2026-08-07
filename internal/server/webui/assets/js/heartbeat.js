@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const fallbackDurationMilliseconds = 8000;
+  const fallbackDurationMilliseconds = 6400;
   const fallbackMinimumOpacity = .18;
 
   function cssValue(name) {

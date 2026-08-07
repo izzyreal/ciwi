@@ -514,10 +514,15 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
 		".dsl-project-row > summary > .dsl-disclosure-label",
+		".dsl-execution-row:not([open]) > summary.ciwi-progress-surface", "border-radius:var(--ciwi-surface-radius",
+		".dsl-execution-section-header", ".dsl-agent-header,.dsl-agent-record { align-items:center; }",
 	} {
 		if !strings.Contains(script+style, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
 		}
+	}
+	if strings.Contains(style+chromeCSS, "text-decoration: underline") {
+		t.Fatal("browser text hover styling still introduces underlines")
 	}
 }
 
