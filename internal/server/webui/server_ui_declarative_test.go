@@ -435,7 +435,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 	style := string(stylePayload)
 	for _, expected := range []string{
 		"dimensionVariables", "--ciwi-page-max", "node.disclosure.summary", "dsl-icon-button",
-		"element.prepend(declarativeIcon(node.icon))", ".dsl-disclosure > summary::after", ".dsl-code-inline",
+		"element.textContent = ''", "element.prepend(declarativeIcon(node.icon))", ".dsl-disclosure > summary::after", ".dsl-code-inline",
 		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted", "cssLength(layout.gap)",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
 		".dsl-project-row > summary > .dsl-disclosure-label",

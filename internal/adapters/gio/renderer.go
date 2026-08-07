@@ -1647,6 +1647,12 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		toggleWidget := func(gtx layout.Context) layout.Dimensions {
 			return r.layoutDisclosureIndicator(gtx, iconName)
 		}
+		layoutSummaryNode := func(gtx layout.Context, summaryNode uidsl.Node, index int) layout.Dimensions {
+			if summaryNode.Component == "spacer" {
+				return layout.Dimensions{Size: image.Pt(gtx.Constraints.Min.X, 0)}
+			}
+			return r.layoutNode(gtx, summaryNode, data, fmt.Sprintf("%s/summary/%d", path, index))
+		}
 		labelWidget := func(gtx layout.Context) layout.Dimensions {
 			labelPath := path + "/label"
 			layoutLabel := func(gtx layout.Context) layout.Dimensions {
@@ -1687,7 +1693,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 						left = 6
 					}
 					return layout.Inset{Left: left}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return r.layoutNode(gtx, summaryNode, data, fmt.Sprintf("%s/summary/%d", path, index))
+						return layoutSummaryNode(gtx, summaryNode, index)
 					})
 				}
 				if summaryNode.Layout.Grow {
@@ -1727,12 +1733,15 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			for index := range node.Disclosure.Summary {
 				summaryNode := node.Disclosure.Summary[index]
 				widgetFn := func(gtx layout.Context) layout.Dimensions {
+					if summaryNode.Component == "spacer" {
+						return layoutSummaryNode(gtx, summaryNode, index)
+					}
 					return layout.Inset{Top: 6, Right: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						gtx.Constraints.Min.X = 0
-						return r.layoutNode(gtx, summaryNode, data, fmt.Sprintf("%s/summary/%d", path, index))
+						return layoutSummaryNode(gtx, summaryNode, index)
 					})
 				}
-				if node.Style.Role == "execution-row" && summaryNode.Component != "button" {
+				if summaryNode.Layout.Grow {
 					summaries = append(summaries, layout.Flexed(1, widgetFn))
 				} else {
 					summaries = append(summaries, layout.Rigid(widgetFn))

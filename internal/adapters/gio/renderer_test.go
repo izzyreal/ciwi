@@ -471,10 +471,10 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 	if historyDisclosure == "" {
 		t.Fatal("history execution is not rendered as a disclosure")
 	}
-	if summary := renderer.selectable(historyDisclosure + "/summary/0"); summary.Text() != "1/1 successful" {
+	if summary := renderer.selectable(historyDisclosure + "/summary/1"); summary.Text() != "1/1 successful" {
 		t.Fatalf("history summary = %q", summary.Text())
 	}
-	deleteButton := renderer.buttons[historyDisclosure+"/summary/1"]
+	deleteButton := renderer.buttons[historyDisclosure+"/summary/2"]
 	if deleteButton == nil {
 		t.Fatal("collapsed history execution does not expose its delete action")
 	}
@@ -2415,6 +2415,7 @@ func TestCompactExecutionDisclosureKeepsTitleReadable(t *testing.T) {
 	node := uidsl.Node{
 		Component: "disclosure", Text: &uidsl.Text{Literal: "ciwi Build and release Tue 04 Aug, 23:25:26 v0.2.7"},
 		Disclosure: &uidsl.Disclosure{Summary: []uidsl.Node{
+			{Component: "spacer", Layout: uidsl.Layout{Grow: true}},
 			{Component: "text", Text: &uidsl.Text{Literal: "17/17 successful"}, Style: uidsl.Style{Emphasis: "strong"}},
 			{Component: "button", Text: &uidsl.Text{Literal: "Delete execution"}, Icon: "trash", Style: uidsl.Style{Role: "icon-button"}},
 		}},

@@ -454,6 +454,31 @@ func TestFrontPageMatchesBrowserProjectAndEmptyTableSummaries(t *testing.T) {
 	}
 }
 
+func TestFrontPageExecutionSummariesDeclareRightAlignedContent(t *testing.T) {
+	screen, err := LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var executionRows int
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.Component != "disclosure" || node.Style.Role != "execution-row" {
+			return
+		}
+		executionRows++
+		if node.Disclosure == nil || len(node.Disclosure.Summary) < 2 {
+			t.Errorf("execution summary = %#v, want a grow spacer followed by right-aligned content", node.Disclosure)
+			return
+		}
+		spacer := node.Disclosure.Summary[0]
+		if spacer.Component != "spacer" || !spacer.Layout.Grow {
+			t.Errorf("execution summary first child = %#v, want growing spacer", spacer)
+		}
+	})
+	if executionRows != 2 {
+		t.Fatalf("execution disclosures = %d, want queued and history rows", executionRows)
+	}
+}
+
 func TestFrontPageProjectBodyUsesOrdinaryDeclarativeNodes(t *testing.T) {
 	screen, err := LoadScreen("front-page")
 	if err != nil {

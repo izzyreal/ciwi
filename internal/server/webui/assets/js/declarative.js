@@ -1232,8 +1232,10 @@
       element.textContent = renderText(node.text, data);
     }
 	if (node.component === 'button' && style.role === 'icon-button') {
-	  element.setAttribute('aria-label', element.textContent || 'Action');
-	  element.title = element.textContent || '';
+	  const accessibleLabel = element.textContent || 'Action';
+	  element.setAttribute('aria-label', accessibleLabel);
+	  element.title = accessibleLabel;
+	  element.textContent = '';
 	}
     if (node.component === 'button' && node.icon) {
 	  element.prepend(declarativeIcon(node.icon));

@@ -576,6 +576,9 @@ screen:
                   stateKey: "front-queued:{{execution.key}}"
                   compactPresentation: sheet
                   summary:
+                    - component: spacer
+                      layout:
+                        grow: true
                     - component: text
                       text:
                         binding: execution.summary_label
@@ -828,6 +831,9 @@ screen:
                   stateKey: "front-history:{{execution.key}}"
                   compactPresentation: sheet
                   summary:
+                    - component: spacer
+                      layout:
+                        grow: true
                     - component: text
                       text:
                         template: "{{execution.summary.succeeded}}/{{execution.summary.total_jobs}} successful"
