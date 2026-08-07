@@ -25,7 +25,7 @@ pipelines:
           - name: Run Go unit tests
             test:
               name: go-unit
-              command: mkdir -p dist && go test -tags nowayland,nox11,novulkan,noopengl -coverpkg=./... -json -coverprofile=dist/go-unit.cover ./... > dist/go-unit.json
+              command: mkdir -p dist && go test -p 1 -tags nowayland,nox11,novulkan,noopengl -coverpkg=./... -json -coverprofile=dist/go-unit.cover ./... > dist/go-unit.json
               format: go-test-json
               report: dist/go-unit.json
               coverage_format: go-coverprofile
