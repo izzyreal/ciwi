@@ -137,6 +137,30 @@ func requireBrowserPromise(t *testing.T, promise *goja.Promise, state goja.Promi
 }
 
 func TestBrowserActionRunnerBehavior(t *testing.T) {
+	t.Run("confirmation policy honors cancellation and message fallback", func(t *testing.T) {
+		harness := newBrowserActionHarness(t)
+		harness.run(t, `
+window.ciwiTestConfirmations = [];
+window.confirm = message => {
+  window.ciwiTestConfirmations.push(message);
+  return message === 'Proceed';
+};
+window.ciwiNoConfirmation = window.ciwiConfirmAction(null);
+window.ciwiAcceptedConfirmation = window.ciwiConfirmAction({message: 'Proceed'});
+window.ciwiCancelledConfirmation = window.ciwiConfirmAction({title: 'Cancel this'});
+`)
+		for expression, expected := range map[string]bool{
+			"window.ciwiNoConfirmation":                                        true,
+			"window.ciwiAcceptedConfirmation":                                  true,
+			"window.ciwiCancelledConfirmation":                                 false,
+			"window.ciwiTestConfirmations.join('|') === 'Proceed|Cancel this'": true,
+		} {
+			if actual := harness.value(t, expression).ToBoolean(); actual != expected {
+				t.Errorf("%s = %v, want %v", expression, actual, expected)
+			}
+		}
+	})
+
 	t.Run("mutation coalesces duplicates and restores its element", func(t *testing.T) {
 		harness := newBrowserActionHarness(t)
 		harness.run(t, `

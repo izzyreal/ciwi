@@ -35,7 +35,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if view.ID != job.ID || view.ProjectID != 42 || view.Title != "ciwi / build / unit-tests" || view.Context == "" || view.Status != "queued" {
 		t.Fatalf("view = %+v", view)
 	}
-	if view.SchedulingDiagnosis == nil || view.SchedulingDiagnosis.Summary != "No agents are registered" {
+	if view.SchedulingDiagnosis.Summary != "No agents are registered" {
 		t.Fatalf("scheduling diagnosis = %+v", view.SchedulingDiagnosis)
 	}
 	if len(view.Timeline) < 3 || view.Timeline[2].Title != "Job step 1/1: Run tests" {

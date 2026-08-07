@@ -12,39 +12,39 @@ import (
 )
 
 type jobDetailsViewResponse struct {
-	ID                        string                          `json:"id"`
-	ProjectID                 int64                           `json:"project_id"`
-	Title                     string                          `json:"title"`
-	Context                   string                          `json:"context"`
-	Status                    string                          `json:"status"`
-	StatusLabel               string                          `json:"status_label"`
-	CurrentStep               string                          `json:"current_step"`
-	Agent                     string                          `json:"agent"`
-	Mode                      string                          `json:"mode"`
-	Created                   string                          `json:"created"`
-	Started                   string                          `json:"started"`
-	Finished                  string                          `json:"finished"`
-	Duration                  string                          `json:"duration"`
-	ExitCode                  string                          `json:"exit_code"`
-	Error                     string                          `json:"error"`
-	CanCancel                 bool                            `json:"can_cancel"`
-	CanRerun                  bool                            `json:"can_rerun"`
-	Output                    string                          `json:"output"`
-	Timeline                  []jobTimelineViewResponse       `json:"timeline"`
-	OutputGroups              []jobOutputGroupViewResponse    `json:"output_groups"`
-	SchedulingDiagnosis       *jobSchedulingDiagnosisResponse `json:"scheduling_diagnosis,omitempty"`
-	JobProperties             []jobDetailRowResponse          `json:"job_properties"`
-	CacheStatistics           []jobDetailRowResponse          `json:"cache_statistics"`
-	CacheStatisticsEmpty      string                          `json:"cache_statistics_empty"`
-	HostToolRequirements      jobToolRequirementsResponse     `json:"host_tool_requirements"`
-	ContainerToolRequirements jobToolRequirementsResponse     `json:"container_tool_requirements"`
-	ReleaseSummary            []jobDetailRowResponse          `json:"release_summary"`
-	HasReleaseSummary         bool                            `json:"has_release_summary"`
-	Artifacts                 jobReportDetailsResponse        `json:"artifacts"`
-	TestReport                jobReportDetailsResponse        `json:"test_report"`
-	CoverageReport            jobReportDetailsResponse        `json:"coverage_report"`
-	RunContext                jobRunContextResponse           `json:"run_context"`
-	Progress                  domain.Progress                 `json:"progress"`
+	ID                        string                         `json:"id"`
+	ProjectID                 int64                          `json:"project_id"`
+	Title                     string                         `json:"title"`
+	Context                   string                         `json:"context"`
+	Status                    string                         `json:"status"`
+	StatusLabel               string                         `json:"status_label"`
+	CurrentStep               string                         `json:"current_step"`
+	Agent                     string                         `json:"agent"`
+	Mode                      string                         `json:"mode"`
+	Created                   string                         `json:"created"`
+	Started                   string                         `json:"started"`
+	Finished                  string                         `json:"finished"`
+	Duration                  string                         `json:"duration"`
+	ExitCode                  string                         `json:"exit_code"`
+	Error                     string                         `json:"error"`
+	CanCancel                 bool                           `json:"can_cancel"`
+	CanRerun                  bool                           `json:"can_rerun"`
+	Output                    string                         `json:"output"`
+	Timeline                  []jobTimelineViewResponse      `json:"timeline"`
+	OutputGroups              []jobOutputGroupViewResponse   `json:"output_groups"`
+	SchedulingDiagnosis       jobSchedulingDiagnosisResponse `json:"scheduling_diagnosis"`
+	JobProperties             []jobDetailRowResponse         `json:"job_properties"`
+	CacheStatistics           []jobDetailRowResponse         `json:"cache_statistics"`
+	CacheStatisticsEmpty      string                         `json:"cache_statistics_empty"`
+	HostToolRequirements      jobToolRequirementsResponse    `json:"host_tool_requirements"`
+	ContainerToolRequirements jobToolRequirementsResponse    `json:"container_tool_requirements"`
+	ReleaseSummary            []jobDetailRowResponse         `json:"release_summary"`
+	HasReleaseSummary         bool                           `json:"has_release_summary"`
+	Artifacts                 jobReportDetailsResponse       `json:"artifacts"`
+	TestReport                jobReportDetailsResponse       `json:"test_report"`
+	CoverageReport            jobReportDetailsResponse       `json:"coverage_report"`
+	RunContext                jobRunContextResponse          `json:"run_context"`
+	Progress                  domain.Progress                `json:"progress"`
 }
 
 type jobDetailRowResponse struct {
@@ -253,18 +253,16 @@ func jobDetailsToResponse(view presentation.JobDetailsView, runContext protocol.
 		CoverageReport: jobReportDetailsToResponse(view.CoverageReport), RunContext: jobRunContextToResponse(runContext),
 		Progress: view.Progress,
 	}
-	if view.SchedulingSummary != "" {
-		agents := make([]jobSchedulingAgentResponse, 0, len(view.SchedulingAgents))
-		for _, agent := range view.SchedulingAgents {
-			agents = append(agents, jobSchedulingAgentResponse{
-				AgentID: agent.AgentID, Status: agent.Status, Details: agent.Details, Tone: agent.Tone,
-			})
-		}
-		response.SchedulingDiagnosis = &jobSchedulingDiagnosisResponse{
-			State: view.SchedulingState, Summary: view.SchedulingSummary,
-			RequirementsLabel: view.SchedulingRequirements, Agents: agents,
-			AdditionalAgentsLabel: view.SchedulingAdditional,
-		}
+	agents := make([]jobSchedulingAgentResponse, 0, len(view.SchedulingAgents))
+	for _, agent := range view.SchedulingAgents {
+		agents = append(agents, jobSchedulingAgentResponse{
+			AgentID: agent.AgentID, Status: agent.Status, Details: agent.Details, Tone: agent.Tone,
+		})
+	}
+	response.SchedulingDiagnosis = jobSchedulingDiagnosisResponse{
+		State: view.SchedulingState, Summary: view.SchedulingSummary,
+		RequirementsLabel: view.SchedulingRequirements, Agents: agents,
+		AdditionalAgentsLabel: view.SchedulingAdditional,
 	}
 	return response
 }

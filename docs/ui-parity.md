@@ -82,10 +82,25 @@ platform-specific overrides are restricted to the native connection panel and
 the browser's sticky output-collapse affordance. This prevents cosmetic layout
 or content forks from being added silently.
 
+Renderer-independent labels and semantic states for execution cards and
+project structure are produced by `internal/presentation` and carried by the
+HTTP view contract or derived from the same helpers by the typed CNP adapter.
+The browser no longer recomputes those rules in JavaScript. Adapter-owned state
+is deliberately limited to transport representation and interaction state such
+as project-icon bytes versus URLs, graph/list selection, output search and
+tailing, connection settings, and pending notices.
+
+Lifecycle regression tests exercise browser page and nested-scroll retention,
+focused-control selection, persistent disclosures, confirmation cancellation,
+and incremental output refresh. Gio renderer tests cover the corresponding
+disclosure, scroller, selected-timeline-item, compact-sheet, and confirmation
+paths. Screenshot comparison remains useful for visual polish, but refresh
+state is no longer protected only by manual observation.
+
 ## Cutover footprint and performance
 
 Relative to pre-cutover `main` at `4493cf2`, the declarative branch deletes 31
-files and removes approximately 9,660 net lines. Five-run Apple M1 benchmarks
+files and removes approximately 9,300 net lines. Five-run Apple M1 benchmarks
 show unchanged allocations and no CPU regression: the native collapsed front
 page is about 13% faster, native collapsed Project Details about 1% faster, and
 the declarative browser route benchmark is effectively unchanged from the first

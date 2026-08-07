@@ -11,8 +11,7 @@
   let themeContractPromise = null;
   const screenContractPromises = new Map();
   let changeRefreshTimer = 0;
-  const disclosureStorageKey = 'ciwi.declarative.disclosures.v1';
-  const disclosureStates = loadDisclosureStates();
+  const disclosureStates = window.ciwiDisclosureState;
   const viewStorageKey = 'ciwi.declarative.views.v1';
   const viewStates = loadViewStates();
 
@@ -79,17 +78,6 @@
     'text-title': '--ciwi-text-title', 'image-brand-width': '--ciwi-image-brand-width',
     'image-brand-height': '--ciwi-image-brand-height',
   };
-
-  function loadDisclosureStates() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(disclosureStorageKey) || '{}');
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch (_) { return {}; }
-  }
-
-  function saveDisclosureStates() {
-    try { localStorage.setItem(disclosureStorageKey, JSON.stringify(disclosureStates)); } catch (_) {}
-  }
 
   function loadViewStates() {
     try {
@@ -177,30 +165,6 @@
     }
   }
 
-  function decorateExecutionCards(cards, queued) {
-    (Array.isArray(cards) ? cards : []).forEach(card => {
-      const summary = card.summary || {};
-      card.status = Number(summary.failed || 0) > 0
-        ? 'failed'
-        : (queued ? (Number(summary.in_progress || 0) > 0 ? 'running' : 'waiting') : 'succeeded');
-	  card.summary_tone = Number(summary.failed || 0) > 0
-		? 'danger'
-		: (queued && Number(summary.in_progress || 0) > 0 ? 'warning' : (queued ? 'muted' : 'success'));
-	  const summaryParts = [Math.max(0, Number(summary.succeeded || 0)) + '/' + Math.max(0, Number(summary.total_jobs || 0)) + ' successful'];
-	  if (Number(summary.failed || 0) > 0) summaryParts.push(Number(summary.failed) + ' failed');
-	  if (Number(summary.in_progress || 0) > 0) summaryParts.push(Number(summary.in_progress) + ' in progress');
-	  if (Number(summary.waiting || 0) > 0) summaryParts.push(Number(summary.waiting) + ' waiting');
-	  card.summary_label = summaryParts.join(', ');
-	  card.job_execution_ids_csv = (Array.isArray(card.job_execution_ids) ? card.job_execution_ids : []).join(',');
-	  (Array.isArray(card.sections) ? card.sections : []).forEach(section => {
-		(Array.isArray(section.jobs) ? section.jobs : []).forEach(job => {
-		  job.created_label = declarativeExecutionTimestamp(job.created_utc);
-		  job.duration_label = declarativeExecutionDuration(job.started_utc, job.finished_utc, job.status);
-		});
-	  });
-    });
-  }
-
   function declarativeExecutionTimestamp(value) {
 	const parsed = new Date(String(value || ''));
 	if (Number.isNaN(parsed.getTime())) return '';
@@ -211,27 +175,8 @@
 	  [parts.hour, parts.minute, parts.second].filter(Boolean).join(':');
   }
 
-  function declarativeExecutionDuration(startedValue, finishedValue, status) {
-	const started = new Date(String(startedValue || ''));
-	if (Number.isNaN(started.getTime())) return '';
-	let finished = new Date(String(finishedValue || ''));
-	if (Number.isNaN(finished.getTime())) {
-	  if (String(status || '').trim().toLowerCase() !== 'running') return '';
-	  finished = new Date();
-	}
-	const total = Math.max(0, Math.floor((finished.getTime() - started.getTime()) / 1000));
-	const hours = Math.floor(total / 3600);
-	const minutes = Math.floor((total % 3600) / 60);
-	const seconds = total % 60;
-	return hours > 0
-	  ? String(hours).padStart(2, '0') + 'h ' + String(minutes).padStart(2, '0') + 'm ' + String(seconds).padStart(2, '0') + 's'
-	  : String(minutes).padStart(2, '0') + 'm ' + String(seconds).padStart(2, '0') + 's';
-  }
-
   function decorateFrontPageProjects(projects) {
 	(Array.isArray(projects) ? projects : []).forEach(project => {
-	  const count = Array.isArray(project.pipelines) ? project.pipelines.length : 0;
-	  project.pipeline_count_label = String(count) + (count === 1 ? ' pipeline' : ' pipelines');
 	  project.project_icon = Number(project.id || 0) > 0 && String(project.source_kind || '') !== 'managed_yaml'
 		? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon'
 		: '';
@@ -245,32 +190,6 @@
 	  ? String(currentData.projectDetails.structure_filter || 'all-pipelines')
 	  : 'all-pipelines';
 	project.project_icon = Number(project.id || 0) > 0 ? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon' : '';
-	const sourceMetadata = [];
-	if (String(project.repo_ref || '').trim()) sourceMetadata.push('branch: ' + String(project.repo_ref).trim());
-	if (String(project.config_file || '').trim()) sourceMetadata.push(String(project.config_file).trim());
-	project.source_metadata = sourceMetadata.join(' · ');
-	project.has_pipeline_chains = Array.isArray(project.pipeline_chains) && project.pipeline_chains.length > 0;
-	(Array.isArray(view && view.pipelines) ? view.pipelines : []).forEach(pipeline => {
-	  const jobsCount = Number(pipeline.jobs_count || 0);
-	  const dependencies = String(pipeline.dependencies || '').trim() || 'none';
-	  pipeline.summary_label = String(jobsCount) + (jobsCount === 1 ? ' job' : ' jobs') + ' · depends on: ' + dependencies;
-	  const dependencyCount = Array.isArray(pipeline.depends_on) ? pipeline.depends_on.length : 0;
-	  pipeline.graph_summary_label = String(jobsCount) + (jobsCount === 1 ? ' job' : ' jobs') + ' · ' + String(dependencyCount) + (dependencyCount === 1 ? ' dependency' : ' dependencies');
-	  (Array.isArray(pipeline.jobs) ? pipeline.jobs : []).forEach(job => {
-		const stepsCount = Number(job.steps_count || 0);
-		job.runs_on_label = String(job.runs_on_label || '').trim() || 'unspecified';
-		job.needs_label = String(job.needs_label || '').trim() || 'none';
-		job.tools_label = String(job.tools_label || '').trim() || 'none';
-		job.summary_label = String(stepsCount) + (stepsCount === 1 ? ' step' : ' steps') + ' · runs on: ' + job.runs_on_label;
-		job.timeout_label = 'Timeout: ' + String(Number(job.timeout_seconds || 0)) + 's';
-		const matrixCount = Number(job.matrix_count || 0);
-		job.matrix_label = matrixCount === 0 ? 'Matrix: none' : ('Matrix: ' + String(matrixCount) + (matrixCount === 1 ? ' execution' : ' executions'));
-		(Array.isArray(job.steps) ? job.steps : []).forEach(step => {
-		  step.environment_label = (Array.isArray(step.environment) ? step.environment : []).map(String).filter(Boolean).join(' · ');
-		  if (!String(step.command || '').trim()) step.command = '(no command)';
-		});
-	  });
-	});
 	view.structure_filters = projectStructureFilterOptions(view);
 	applyProjectStructureFilter(view, previousFilter);
   }
@@ -279,44 +198,6 @@
 	view.project_icon = Number(view.project_id || 0) > 0
 	  ? '/api/v1/projects/' + encodeURIComponent(view.project_id) + '/icon'
 	  : '';
-	view.job_properties = Array.isArray(view.job_properties) ? view.job_properties : [];
-	view.cache_statistics = Array.isArray(view.cache_statistics) ? view.cache_statistics : [];
-	view.cache_statistics_empty = String(view.cache_statistics_empty || '');
-	if (!view.scheduling_diagnosis || typeof view.scheduling_diagnosis !== 'object') {
-	  view.scheduling_diagnosis = {summary: '', requirements_label: '', agents: [], additional_agents_label: ''};
-	}
-	view.scheduling_diagnosis.agents = Array.isArray(view.scheduling_diagnosis.agents) ? view.scheduling_diagnosis.agents : [];
-	['host_tool_requirements', 'container_tool_requirements'].forEach(key => {
-	  if (!view[key] || typeof view[key] !== 'object') view[key] = {empty_label: '', summary: '', tone: 'muted', issues: []};
-	  view[key].issues = Array.isArray(view[key].issues) ? view[key].issues : [];
-	});
-	const reportEmptyLabels = {
-	  artifacts: 'No artifacts', test_report: 'No parsed test report', coverage_report: 'No parsed coverage report',
-	};
-	Object.entries(reportEmptyLabels).forEach(([key, emptyLabel]) => {
-	  if (!view[key] || typeof view[key] !== 'object') {
-		view[key] = {empty_label: emptyLabel, summary: '', tone: 'muted', rows: [], additional_label: ''};
-	  }
-	  view[key].rows = Array.isArray(view[key].rows) ? view[key].rows : [];
-	});
-	view.release_summary = Array.isArray(view.release_summary) ? view.release_summary : [];
-	['created', 'started', 'finished'].forEach(field => {
-	  const formatted = declarativeExecutionTimestamp(view[field]);
-	  if (formatted) view[field] = formatted;
-	});
-	const propertyTimestampFields = {Created: 'created', Started: 'started'};
-	view.job_properties.forEach(property => {
-	  const field = propertyTimestampFields[String(property.label || '').trim()];
-	  if (field) property.value = view[field] || property.value;
-	});
-	(Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
-	  const formatted = declarativeExecutionTimestamp(group.started);
-	  if (formatted) group.started = formatted;
-	});
-	if (!view.run_context || typeof view.run_context !== 'object') {
-	  view.run_context = {available: false, scope_label: '', pipelines: []};
-	}
-	view.run_context.pipelines = Array.isArray(view.run_context.pipelines) ? view.run_context.pipelines : [];
   }
 
   function projectStructureFilterOptions(view) {
@@ -552,7 +433,7 @@
     (actions || []).forEach(action => {
       const invoke = async actionData => {
         const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, actionData)]));
-        if (action.confirm && !window.confirm(action.confirm.message || action.confirm.title || 'Continue?')) return;
+        if (!window.ciwiConfirmAction(action.confirm)) return;
         const execute = async runtime => {
         if (action.command === 'navigate' && args.route) {
 		  window.location.assign(args.route);
@@ -597,9 +478,8 @@
           const expanded = args.expanded === 'true';
           document.querySelectorAll('[data-disclosure-key^="' + CSS.escape(args.prefix || '') + '"]').forEach(details => {
             details.open = expanded;
-            disclosureStates[details.dataset.disclosureKey] = expanded;
+            disclosureStates.set(details.dataset.disclosureKey, expanded);
           });
-          saveDisclosureStates();
         }
 		else if (action.command === 'set-run-option') {
 		  const options = currentData && currentData.runOptions;
@@ -1239,12 +1119,9 @@
         const stateKey = node.disclosure.stateKey ? renderText({template: node.disclosure.stateKey}, data) : '';
         if (stateKey) {
           element.dataset.disclosureKey = stateKey;
-          element.open = Object.prototype.hasOwnProperty.call(disclosureStates, stateKey)
-            ? !!disclosureStates[stateKey]
-            : !!node.disclosure.defaultExpanded;
+          element.open = disclosureStates.get(stateKey, node.disclosure.defaultExpanded);
           element.addEventListener('toggle', () => {
-            disclosureStates[stateKey] = element.open;
-            saveDisclosureStates();
+			disclosureStates.set(stateKey, element.open);
           });
         } else {
           element.open = !!node.disclosure.defaultExpanded;
@@ -1316,21 +1193,9 @@
 
   function renderCurrent() {
     if (!currentDocument || !currentData) return;
-    const pageScroll = {top: window.scrollY, left: window.scrollX};
-    const scrollPositions = new Map();
-    root.querySelectorAll('[id]').forEach(element => {
-      if (element.scrollTop || element.scrollLeft) {
-        scrollPositions.set(element.id, {top: element.scrollTop, left: element.scrollLeft});
-      }
-    });
+    const viewState = window.ciwiCaptureViewState(root);
     root.replaceChildren(renderNode(currentDocument.screen.root, currentData));
-    scrollPositions.forEach((position, id) => {
-      const element = document.getElementById(id);
-      if (!element || !root.contains(element)) return;
-      element.scrollTop = position.top;
-      element.scrollLeft = position.left;
-    });
-    window.scrollTo(pageScroll.left, pageScroll.top);
+    window.ciwiRestoreViewState(root, viewState);
   }
 
   function declarativeVersionOptions(versions, emptyLabel) {
@@ -1408,8 +1273,7 @@
     const target = document.querySelector('[data-disclosure-key="' + CSS.escape(String(group.state_key || '')) + '"]');
     if (!target) return null;
     target.open = true;
-    disclosureStates[String(group.state_key || '')] = true;
-    saveDisclosureStates();
+    disclosureStates.set(String(group.state_key || ''), true);
     target.scrollIntoView({block: 'nearest'});
     return target;
   }
@@ -1615,16 +1479,9 @@
 	  if (vaultMatch) view = vaultBinding(responseView);
 	  if (projectMatch) {
 		decorateProjectDetails(view);
-		decorateExecutionCards(view.history_executions, false);
-		view.history_empty = !Array.isArray(view.history_executions) || view.history_executions.length === 0;
 	  }
 	  if (routeName === 'front-page') {
 		decorateFrontPageProjects(view.projects);
-        decorateExecutionCards(view.queued_executions, true);
-        decorateExecutionCards(view.history_executions, false);
-		view.loading = false;
-		view.queued_empty = !Array.isArray(view.queued_executions) || view.queued_executions.length === 0;
-		view.history_empty = !Array.isArray(view.history_executions) || view.history_executions.length === 0;
       }
       if (settingsMatch) {
         const selectedTheme = ciwiStoredTheme();

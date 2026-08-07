@@ -638,10 +638,7 @@ func jobContext(details domain.JobExecutionDetails) string {
 }
 
 func formatTimestamp(value time.Time) string {
-	if value.IsZero() {
-		return ""
-	}
-	return value.UTC().Format(time.RFC3339)
+	return DeclarativeTimestamp(value)
 }
 
 func formatDuration(value time.Duration) string {

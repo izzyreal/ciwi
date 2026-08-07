@@ -13,17 +13,20 @@ type projectDetailsViewResponse struct {
 	Project           frontPageProjectResponse         `json:"project"`
 	Pipelines         []projectPipelineDetailsResponse `json:"pipelines"`
 	HistoryExecutions []executionCardResponse          `json:"history_executions"`
+	HistoryEmpty      bool                             `json:"history_empty"`
 }
 
 type projectPipelineDetailsResponse struct {
-	ID             int64                       `json:"id"`
-	PipelineID     string                      `json:"pipeline_id"`
-	Trigger        string                      `json:"trigger"`
-	DependsOn      []string                    `json:"depends_on"`
-	Dependencies   string                      `json:"dependencies"`
-	JobsCount      int                         `json:"jobs_count"`
-	SupportsDryRun bool                        `json:"supports_dry_run"`
-	Jobs           []projectJobDetailsResponse `json:"jobs"`
+	ID                int64                       `json:"id"`
+	PipelineID        string                      `json:"pipeline_id"`
+	Trigger           string                      `json:"trigger"`
+	DependsOn         []string                    `json:"depends_on"`
+	Dependencies      string                      `json:"dependencies"`
+	JobsCount         int                         `json:"jobs_count"`
+	SupportsDryRun    bool                        `json:"supports_dry_run"`
+	Jobs              []projectJobDetailsResponse `json:"jobs"`
+	SummaryLabel      string                      `json:"summary_label"`
+	GraphSummaryLabel string                      `json:"graph_summary_label"`
 }
 
 type projectJobDetailsResponse struct {
@@ -37,16 +40,20 @@ type projectJobDetailsResponse struct {
 	StepsCount     int                          `json:"steps_count"`
 	SupportsDryRun bool                         `json:"supports_dry_run"`
 	Steps          []projectStepDetailsResponse `json:"steps"`
+	SummaryLabel   string                       `json:"summary_label"`
+	TimeoutLabel   string                       `json:"timeout_label"`
+	MatrixLabel    string                       `json:"matrix_label"`
 }
 
 type projectStepDetailsResponse struct {
-	Index       int      `json:"index"`
-	Position    int      `json:"position"`
-	Name        string   `json:"name"`
-	Type        string   `json:"type"`
-	Command     string   `json:"command"`
-	SkipDryRun  bool     `json:"skip_dry_run"`
-	Environment []string `json:"environment"`
+	Index            int      `json:"index"`
+	Position         int      `json:"position"`
+	Name             string   `json:"name"`
+	Type             string   `json:"type"`
+	Command          string   `json:"command"`
+	SkipDryRun       bool     `json:"skip_dry_run"`
+	Environment      []string `json:"environment"`
+	EnvironmentLabel string   `json:"environment_label"`
 }
 
 func (s *stateStore) projectDetailsViewHandler(w http.ResponseWriter, r *http.Request) {
@@ -78,22 +85,29 @@ func projectDetailsToResponse(view presentation.ProjectDetailsView) projectDetai
 			for _, step := range job.Steps {
 				steps = append(steps, projectStepDetailsResponse{
 					Index: step.Index, Position: step.Position, Name: step.Name, Type: step.Type,
-					Command: step.Command, SkipDryRun: step.SkipDryRun,
-					Environment: append([]string{}, step.Environment...),
+					Command: presentation.ProjectStepCommand(step.Command), SkipDryRun: step.SkipDryRun,
+					Environment:      append([]string{}, step.Environment...),
+					EnvironmentLabel: presentation.ProjectStepEnvironmentLabel(step.Environment),
 				})
 			}
+			runsOn := presentation.DeclarativeDefaultLabel(job.RunsOnLabel, "unspecified")
 			jobs = append(jobs, projectJobDetailsResponse{
-				ID: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: job.NeedsLabel,
-				RunsOnLabel: job.RunsOnLabel, ToolsLabel: job.ToolsLabel,
+				ID: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: presentation.DeclarativeDefaultLabel(job.NeedsLabel, "none"),
+				RunsOnLabel: runsOn, ToolsLabel: presentation.DeclarativeDefaultLabel(job.ToolsLabel, "none"),
 				TimeoutSeconds: job.TimeoutSeconds, MatrixCount: job.MatrixCount,
 				StepsCount: job.StepsCount, SupportsDryRun: job.SupportsDryRun, Steps: steps,
+				SummaryLabel: presentation.ProjectJobSummaryLabel(job.StepsCount, runsOn),
+				TimeoutLabel: presentation.ProjectJobTimeoutLabel(job.TimeoutSeconds), MatrixLabel: presentation.ProjectJobMatrixLabel(job.MatrixCount),
 			})
 		}
 		pipelines = append(pipelines, projectPipelineDetailsResponse{
 			ID: pipeline.ID, PipelineID: pipeline.PipelineID, Trigger: pipeline.Trigger,
 			DependsOn: append([]string{}, pipeline.DependsOn...), Dependencies: pipeline.Dependencies,
 			JobsCount: pipeline.JobsCount, SupportsDryRun: pipeline.SupportsDryRun, Jobs: jobs,
+			SummaryLabel:      presentation.PipelineSummaryLabel(pipeline.JobsCount, pipeline.Dependencies),
+			GraphSummaryLabel: presentation.PipelineGraphSummaryLabel(pipeline.JobsCount, len(pipeline.DependsOn)),
 		})
 	}
-	return projectDetailsViewResponse{Project: project, Pipelines: pipelines, HistoryExecutions: executionCardsToResponse(view.HistoryExecutions)}
+	history := executionCardsToResponse(view.HistoryExecutions, false)
+	return projectDetailsViewResponse{Project: project, Pipelines: pipelines, HistoryExecutions: history, HistoryEmpty: len(history) == 0}
 }

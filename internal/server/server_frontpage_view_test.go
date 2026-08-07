@@ -41,6 +41,13 @@ func TestFrontPageViewIncludesExecutionCardSummaries(t *testing.T) {
 	if response.QueuedExecutions[0].Progress.State != domain.ProgressIndeterminate {
 		t.Fatalf("queued execution progress = %+v", response.QueuedExecutions[0].Progress)
 	}
+	card := response.QueuedExecutions[0]
+	if card.Status != "running" || card.SummaryTone != "warning" || card.SummaryLabel != "0/1 successful, 1 in progress" || card.JobExecutionIDsCSV == "" {
+		t.Fatalf("declarative execution presentation = %+v", card)
+	}
+	if response.Loading || response.QueuedEmpty || !response.HistoryEmpty {
+		t.Fatalf("front-page lifecycle flags = loading %v queued empty %v history empty %v", response.Loading, response.QueuedEmpty, response.HistoryEmpty)
+	}
 }
 
 func TestFrontPageProjectResponseKeepsEmptyContractFields(t *testing.T) {
@@ -53,7 +60,7 @@ func TestFrontPageProjectResponseKeepsEmptyContractFields(t *testing.T) {
 	}
 	for _, field := range [][]byte{
 		[]byte(`"repo_url":""`), []byte(`"repo_ref":""`), []byte(`"config_file":""`),
-		[]byte(`"depends_on":[]`), []byte(`"pipeline_chains":[]`),
+		[]byte(`"depends_on":[]`), []byte(`"pipeline_chains":[]`), []byte(`"pipeline_count_label":"1 pipeline"`),
 	} {
 		if !bytes.Contains(payload, field) {
 			t.Errorf("response omits stable contract field %s: %s", field, payload)

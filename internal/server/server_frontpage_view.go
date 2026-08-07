@@ -13,20 +13,26 @@ type frontPageViewResponse struct {
 	Projects          []frontPageProjectResponse `json:"projects"`
 	QueuedExecutions  []executionCardResponse    `json:"queued_executions"`
 	HistoryExecutions []executionCardResponse    `json:"history_executions"`
+	Loading           bool                       `json:"loading"`
+	QueuedEmpty       bool                       `json:"queued_empty"`
+	HistoryEmpty      bool                       `json:"history_empty"`
 }
 
 type frontPageProjectResponse struct {
-	ID             int64                            `json:"id"`
-	Name           string                           `json:"name"`
-	SourceKind     string                           `json:"source_kind"`
-	ConfigPath     string                           `json:"config_path"`
-	RepoURL        string                           `json:"repo_url"`
-	RepoRef        string                           `json:"repo_ref"`
-	ConfigFile     string                           `json:"config_file"`
-	LoadedCommit   string                           `json:"loaded_commit"`
-	UpdatedUnixMS  int64                            `json:"updated_unix_ms"`
-	Pipelines      []frontPagePipelineResponse      `json:"pipelines"`
-	PipelineChains []frontPagePipelineChainResponse `json:"pipeline_chains"`
+	ID                 int64                            `json:"id"`
+	Name               string                           `json:"name"`
+	SourceKind         string                           `json:"source_kind"`
+	ConfigPath         string                           `json:"config_path"`
+	RepoURL            string                           `json:"repo_url"`
+	RepoRef            string                           `json:"repo_ref"`
+	ConfigFile         string                           `json:"config_file"`
+	LoadedCommit       string                           `json:"loaded_commit"`
+	UpdatedUnixMS      int64                            `json:"updated_unix_ms"`
+	Pipelines          []frontPagePipelineResponse      `json:"pipelines"`
+	PipelineChains     []frontPagePipelineChainResponse `json:"pipeline_chains"`
+	PipelineCountLabel string                           `json:"pipeline_count_label"`
+	SourceMetadata     string                           `json:"source_metadata"`
+	HasPipelineChains  bool                             `json:"has_pipeline_chains"`
 }
 
 type frontPagePipelineResponse struct {
@@ -49,13 +55,17 @@ type frontPagePipelineChainResponse struct {
 }
 
 type executionCardResponse struct {
-	Key             string                         `json:"key"`
-	Kind            string                         `json:"kind"`
-	Title           string                         `json:"title"`
-	JobExecutionIDs []string                       `json:"job_execution_ids"`
-	Summary         executionSummaryResponse       `json:"summary"`
-	Sections        []executionCardSectionResponse `json:"sections"`
-	Progress        domain.Progress                `json:"progress"`
+	Key                string                         `json:"key"`
+	Kind               string                         `json:"kind"`
+	Title              string                         `json:"title"`
+	JobExecutionIDs    []string                       `json:"job_execution_ids"`
+	Summary            executionSummaryResponse       `json:"summary"`
+	Sections           []executionCardSectionResponse `json:"sections"`
+	Progress           domain.Progress                `json:"progress"`
+	Status             string                         `json:"status"`
+	SummaryTone        string                         `json:"summary_tone"`
+	SummaryLabel       string                         `json:"summary_label"`
+	JobExecutionIDsCSV string                         `json:"job_execution_ids_csv"`
 }
 
 type executionCardSectionResponse struct {
@@ -66,19 +76,21 @@ type executionCardSectionResponse struct {
 }
 
 type executionCardJobResponse struct {
-	ID          string          `json:"id"`
-	Label       string          `json:"label"`
-	Status      string          `json:"status"`
-	PipelineID  string          `json:"pipeline_id"`
-	BuildLabel  string          `json:"build_label"`
-	AgentID     string          `json:"agent_id"`
-	CreatedUTC  string          `json:"created_utc"`
-	StartedUTC  string          `json:"started_utc"`
-	FinishedUTC string          `json:"finished_utc"`
-	Reason      string          `json:"reason"`
-	Action      string          `json:"action"`
-	CurrentStep string          `json:"current_step"`
-	Progress    domain.Progress `json:"progress"`
+	ID            string          `json:"id"`
+	Label         string          `json:"label"`
+	Status        string          `json:"status"`
+	PipelineID    string          `json:"pipeline_id"`
+	BuildLabel    string          `json:"build_label"`
+	AgentID       string          `json:"agent_id"`
+	CreatedUTC    string          `json:"created_utc"`
+	StartedUTC    string          `json:"started_utc"`
+	FinishedUTC   string          `json:"finished_utc"`
+	Reason        string          `json:"reason"`
+	Action        string          `json:"action"`
+	CurrentStep   string          `json:"current_step"`
+	Progress      domain.Progress `json:"progress"`
+	CreatedLabel  string          `json:"created_label"`
+	DurationLabel string          `json:"duration_label"`
 }
 
 type executionSummaryResponse struct {
@@ -96,14 +108,15 @@ func (s *stateStore) frontPageViewHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	projects := frontPageProjectsToResponse(view.Projects)
-	queued := executionCardsToResponse(view.QueuedExecutions)
-	history := executionCardsToResponse(view.HistoryExecutions)
+	queued := executionCardsToResponse(view.QueuedExecutions, true)
+	history := executionCardsToResponse(view.HistoryExecutions, false)
 	writeJSON(w, http.StatusOK, frontPageViewResponse{
 		Server: serverInfoResponse{
 			Name: view.Server.Name, APIVersion: view.Server.APIVersion,
 			Version: view.Server.Version, Hostname: view.Server.Hostname,
 		},
 		Projects: projects, QueuedExecutions: queued, HistoryExecutions: history,
+		QueuedEmpty: len(queued) == 0, HistoryEmpty: len(history) == 0,
 	})
 }
 
@@ -135,14 +148,18 @@ func frontPageProjectsToResponse(projects []domain.Project) []frontPageProjectRe
 			RepoURL: project.RepoURL, RepoRef: project.RepoRef, ConfigFile: project.ConfigFile,
 			LoadedCommit: project.LoadedCommit, UpdatedUnixMS: updatedUnixMS,
 			Pipelines: pipelines, PipelineChains: chains,
+			PipelineCountLabel: presentation.PipelineCountLabel(len(pipelines)),
+			SourceMetadata:     presentation.ProjectSourceMetadata(project.RepoRef, project.ConfigFile),
+			HasPipelineChains:  len(chains) > 0,
 		})
 	}
 	return out
 }
 
-func executionCardsToResponse(cards []domain.ExecutionCard) []executionCardResponse {
+func executionCardsToResponse(cards []domain.ExecutionCard, queued bool) []executionCardResponse {
 	out := make([]executionCardResponse, 0, len(cards))
 	for _, card := range cards {
+		display := presentation.PresentExecutionCard(card, queued)
 		out = append(out, executionCardResponse{
 			Key: card.Key, Kind: card.Kind, Title: card.Title,
 			JobExecutionIDs: append([]string(nil), card.JobExecutionIDs...),
@@ -151,22 +168,27 @@ func executionCardsToResponse(cards []domain.ExecutionCard) []executionCardRespo
 				Failed: card.Summary.Failed, InProgress: card.Summary.InProgress, Waiting: card.Summary.Waiting,
 			},
 			Sections: executionCardSectionsToResponse(card.Sections), Progress: card.Progress,
+			Status: display.Status, SummaryTone: display.SummaryTone, SummaryLabel: display.SummaryLabel,
+			JobExecutionIDsCSV: display.JobExecutionIDsCSV,
 		})
 	}
 	return out
 }
 
 func executionCardSectionsToResponse(sections []domain.ExecutionCardSection) []executionCardSectionResponse {
+	now := time.Now()
 	out := make([]executionCardSectionResponse, 0, len(sections))
 	for _, section := range sections {
 		jobs := make([]executionCardJobResponse, 0, len(section.Jobs))
 		for _, job := range section.Jobs {
+			display := presentation.PresentExecutionCardJob(job, now)
 			jobs = append(jobs, executionCardJobResponse{
 				ID: job.ID, Label: job.Label, Status: job.Status,
 				PipelineID: job.PipelineID, BuildLabel: job.BuildLabel, AgentID: job.AgentID,
 				CreatedUTC: formatExecutionCardTime(job.CreatedUTC), StartedUTC: formatExecutionCardTime(job.StartedUTC),
 				FinishedUTC: formatExecutionCardTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,
 				CurrentStep: job.CurrentStep, Progress: job.Progress,
+				CreatedLabel: display.CreatedLabel, DurationLabel: display.DurationLabel,
 			})
 		}
 		out = append(out, executionCardSectionResponse{

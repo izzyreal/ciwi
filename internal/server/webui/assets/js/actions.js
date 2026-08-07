@@ -133,9 +133,15 @@
     return result;
   }
 
+  function confirmAction(confirmation) {
+    if (!confirmation) return true;
+    return window.confirm(confirmation.message || confirmation.title || 'Continue?');
+  }
+
   window.ciwiRunAction = runAction;
   window.ciwiActionHeaders = actionHeaders;
   window.ciwiActionID = newActionID;
+  window.ciwiConfirmAction = confirmAction;
   window.ciwiActiveOperations = () => Array.from(activeByFingerprint.values());
   // Warm the shared contract so the first user action receives immediate
   // feedback without waiting for a catalog round trip.

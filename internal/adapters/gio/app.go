@@ -13,9 +13,9 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/op"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
-	"github.com/izzyreal/ciwi/internal/protocol"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
@@ -1953,11 +1953,7 @@ func decorateFrontPageProjects(value any) {
 			continue
 		}
 		pipelines, _ := project["pipelines"].([]any)
-		label := "pipelines"
-		if len(pipelines) == 1 {
-			label = "pipeline"
-		}
-		project["pipeline_count_label"] = fmt.Sprintf("%d %s", len(pipelines), label)
+		project["pipeline_count_label"] = presentation.PipelineCountLabel(len(pipelines))
 	}
 }
 
@@ -1972,28 +1968,22 @@ func decorateExecutionCards(value any, queued bool) {
 		if !entryOK || !summaryOK {
 			continue
 		}
-		status := "succeeded"
-		summaryTone := "success"
-		if numberValue(summary["failed"]) > 0 {
-			status = "failed"
-			summaryTone = "danger"
-		} else if queued && numberValue(summary["in_progress"]) > 0 {
-			status = "running"
-			summaryTone = "warning"
-		} else if queued {
-			status = "waiting"
-			summaryTone = "muted"
-		}
-		entry["status"] = status
-		entry["summary_tone"] = summaryTone
-		entry["summary_label"] = executionCardSummaryLabel(summary)
+		card := domain.ExecutionCard{Summary: domain.ExecutionSummary{
+			TotalJobs: int(numberValue(summary["total_jobs"])), Succeeded: int(numberValue(summary["succeeded"])),
+			Failed: int(numberValue(summary["failed"])), InProgress: int(numberValue(summary["in_progress"])), Waiting: int(numberValue(summary["waiting"])),
+		}}
 		if ids, ok := entry["job_execution_ids"].([]any); ok {
 			parts := make([]string, 0, len(ids))
 			for _, id := range ids {
 				parts = append(parts, fmt.Sprint(id))
 			}
-			entry["job_execution_ids_csv"] = strings.Join(parts, ",")
+			card.JobExecutionIDs = parts
 		}
+		display := presentation.PresentExecutionCard(card, queued)
+		entry["status"] = display.Status
+		entry["summary_tone"] = display.SummaryTone
+		entry["summary_label"] = display.SummaryLabel
+		entry["job_execution_ids_csv"] = display.JobExecutionIDsCSV
 		if sections, ok := entry["sections"].([]any); ok {
 			for _, rawSection := range sections {
 				section, _ := rawSection.(map[string]any)
@@ -2008,63 +1998,21 @@ func decorateExecutionCards(value any, queued bool) {
 	}
 }
 
-func executionCardSummaryLabel(summary map[string]any) string {
-	total := max(0, int(numberValue(summary["total_jobs"])))
-	parts := []string{fmt.Sprintf("%d/%d successful", max(0, int(numberValue(summary["succeeded"]))), total)}
-	if failed := max(0, int(numberValue(summary["failed"]))); failed > 0 {
-		parts = append(parts, fmt.Sprintf("%d failed", failed))
-	}
-	if inProgress := max(0, int(numberValue(summary["in_progress"]))); inProgress > 0 {
-		parts = append(parts, fmt.Sprintf("%d in progress", inProgress))
-	}
-	if waiting := max(0, int(numberValue(summary["waiting"]))); waiting > 0 {
-		parts = append(parts, fmt.Sprintf("%d waiting", waiting))
-	}
-	return strings.Join(parts, ", ")
-}
-
 func decorateExecutionCardJob(job map[string]any) {
 	if job == nil {
 		return
 	}
-	created := parseExecutionCardTime(job["created_utc"])
-	started := parseExecutionCardTime(job["started_utc"])
-	finished := parseExecutionCardTime(job["finished_utc"])
-	job["created_label"] = formatExecutionCardTimestamp(created)
-	job["duration_label"] = formatExecutionCardDuration(started, finished, strings.TrimSpace(fmt.Sprint(job["status"])))
+	display := presentation.PresentExecutionCardJob(domain.ExecutionCardJob{
+		Status: strings.TrimSpace(fmt.Sprint(job["status"])), CreatedUTC: parseExecutionCardTime(job["created_utc"]),
+		StartedUTC: parseExecutionCardTime(job["started_utc"]), FinishedUTC: parseExecutionCardTime(job["finished_utc"]),
+	}, time.Now())
+	job["created_label"] = display.CreatedLabel
+	job["duration_label"] = display.DurationLabel
 }
 
 func parseExecutionCardTime(value any) time.Time {
 	parsed, _ := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(value)))
 	return parsed
-}
-
-func formatExecutionCardTimestamp(value time.Time) string {
-	if value.IsZero() {
-		return ""
-	}
-	return value.Local().Format("Mon 02 Jan, 15:04:05")
-}
-
-func formatExecutionCardDuration(started, finished time.Time, status string) string {
-	if started.IsZero() {
-		return ""
-	}
-	end := finished
-	if end.IsZero() && protocol.NormalizeJobExecutionStatus(status) == protocol.JobExecutionStatusRunning {
-		end = time.Now()
-	}
-	if end.IsZero() || end.Before(started) {
-		return ""
-	}
-	totalSeconds := int(end.Sub(started).Seconds())
-	hours := totalSeconds / 3600
-	minutes := (totalSeconds % 3600) / 60
-	seconds := totalSeconds % 60
-	if hours > 0 {
-		return fmt.Sprintf("%02dh %02dm %02ds", hours, minutes, seconds)
-	}
-	return fmt.Sprintf("%02dm %02ds", minutes, seconds)
 }
 
 func ensureSchedulingDiagnosisBinding(value map[string]any) {
@@ -2107,14 +2055,7 @@ func decorateProjectDetails(root map[string]any) {
 			project["project_icon"] = root["project_icon"]
 			project["project_icon_content_type"] = root["project_icon_content_type"]
 		}
-		metadata := make([]string, 0, 2)
-		if repoRef := strings.TrimSpace(fmt.Sprint(project["repo_ref"])); repoRef != "" {
-			metadata = append(metadata, "branch: "+repoRef)
-		}
-		if configFile := strings.TrimSpace(fmt.Sprint(project["config_file"])); configFile != "" {
-			metadata = append(metadata, configFile)
-		}
-		project["source_metadata"] = strings.Join(metadata, " · ")
+		project["source_metadata"] = presentation.ProjectSourceMetadata(fmt.Sprint(project["repo_ref"]), fmt.Sprint(project["config_file"]))
 		chains, _ := project["pipeline_chains"].([]any)
 		project["has_pipeline_chains"] = len(chains) > 0
 	}
@@ -2128,21 +2069,10 @@ func decorateProjectDetails(root map[string]any) {
 			continue
 		}
 		jobsCount := int(numberValue(pipeline["jobs_count"]))
-		jobNoun := "jobs"
-		if jobsCount == 1 {
-			jobNoun = "job"
-		}
 		dependencies := strings.TrimSpace(fmt.Sprint(pipeline["dependencies"]))
-		if dependencies == "" {
-			dependencies = "none"
-		}
-		pipeline["summary_label"] = fmt.Sprintf("%d %s · depends on: %s", jobsCount, jobNoun, dependencies)
+		pipeline["summary_label"] = presentation.PipelineSummaryLabel(jobsCount, dependencies)
 		dependsOn, _ := pipeline["depends_on"].([]any)
-		dependencyNoun := "dependencies"
-		if len(dependsOn) == 1 {
-			dependencyNoun = "dependency"
-		}
-		pipeline["graph_summary_label"] = fmt.Sprintf("%d %s · %d %s", jobsCount, jobNoun, len(dependsOn), dependencyNoun)
+		pipeline["graph_summary_label"] = presentation.PipelineGraphSummaryLabel(jobsCount, len(dependsOn))
 		jobs, _ := pipeline["jobs"].([]any)
 		for _, rawJob := range jobs {
 			job, jobOK := rawJob.(map[string]any)
@@ -2150,35 +2080,21 @@ func decorateProjectDetails(root map[string]any) {
 				continue
 			}
 			stepsCount := int(numberValue(job["steps_count"]))
-			stepNoun := "steps"
-			if stepsCount == 1 {
-				stepNoun = "step"
-			}
-			runsOn := defaultLabel(job["runs_on_label"], "unspecified")
-			job["needs_label"] = defaultLabel(job["needs_label"], "none")
-			job["tools_label"] = defaultLabel(job["tools_label"], "none")
-			job["summary_label"] = fmt.Sprintf("%d %s · runs on: %s", stepsCount, stepNoun, runsOn)
-			job["timeout_label"] = fmt.Sprintf("Timeout: %ds", int(numberValue(job["timeout_seconds"])))
+			runsOn := presentation.DeclarativeDefaultLabel(fmt.Sprint(job["runs_on_label"]), "unspecified")
+			job["needs_label"] = presentation.DeclarativeDefaultLabel(fmt.Sprint(job["needs_label"]), "none")
+			job["tools_label"] = presentation.DeclarativeDefaultLabel(fmt.Sprint(job["tools_label"]), "none")
+			job["summary_label"] = presentation.ProjectJobSummaryLabel(stepsCount, runsOn)
+			job["timeout_label"] = presentation.ProjectJobTimeoutLabel(int(numberValue(job["timeout_seconds"])))
 			matrixCount := int(numberValue(job["matrix_count"]))
-			if matrixCount == 0 {
-				job["matrix_label"] = "Matrix: none"
-			} else {
-				matrixNoun := "executions"
-				if matrixCount == 1 {
-					matrixNoun = "execution"
-				}
-				job["matrix_label"] = fmt.Sprintf("Matrix: %d %s", matrixCount, matrixNoun)
-			}
+			job["matrix_label"] = presentation.ProjectJobMatrixLabel(matrixCount)
 			steps, _ := job["steps"].([]any)
 			for _, rawStep := range steps {
 				step, stepOK := rawStep.(map[string]any)
 				if !stepOK {
 					continue
 				}
-				step["environment_label"] = stringListLabel(step["environment"])
-				if strings.TrimSpace(fmt.Sprint(step["command"])) == "" {
-					step["command"] = "(no command)"
-				}
+				step["environment_label"] = presentation.ProjectStepEnvironmentLabel(stringListValue(step["environment"]))
+				step["command"] = presentation.ProjectStepCommand(fmt.Sprint(step["command"]))
 			}
 		}
 	}
@@ -2209,17 +2125,10 @@ func projectStructureFilterOptions(root map[string]any, pipelines []any) []any {
 	return options
 }
 
-func defaultLabel(value any, fallback string) string {
-	if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
-		return text
-	}
-	return fallback
-}
-
-func stringListLabel(value any) string {
+func stringListValue(value any) []string {
 	items, ok := value.([]any)
 	if !ok {
-		return ""
+		return nil
 	}
 	parts := make([]string, 0, len(items))
 	for _, item := range items {
@@ -2227,7 +2136,7 @@ func stringListLabel(value any) string {
 			parts = append(parts, text)
 		}
 	}
-	return strings.Join(parts, " · ")
+	return parts
 }
 
 func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
@@ -2252,23 +2161,6 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 		if root["run_context"] == nil {
 			root["run_context"] = map[string]any{"available": false, "scope_label": "", "pipelines": []any{}}
 		}
-		for _, field := range []string{"created", "started", "finished"} {
-			if parsed, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(root[field]))); parseErr == nil {
-				root[field] = formatExecutionCardTimestamp(parsed)
-			}
-		}
-		if properties, propertiesOK := root["job_properties"].([]any); propertiesOK {
-			propertyFields := map[string]string{"Created": "created", "Started": "started"}
-			for _, raw := range properties {
-				property, propertyOK := raw.(map[string]any)
-				if !propertyOK {
-					continue
-				}
-				if field := propertyFields[strings.TrimSpace(fmt.Sprint(property["label"]))]; field != "" {
-					property["value"] = root[field]
-				}
-			}
-		}
 		root["output"] = ""
 		root["system_output"] = ""
 		root["output_search"] = ""
@@ -2280,9 +2172,6 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 				entry, entryOK := raw.(map[string]any)
 				if !entryOK {
 					continue
-				}
-				if parsed, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(entry["started"]))); parseErr == nil {
-					entry["started"] = formatExecutionCardTimestamp(parsed)
 				}
 				entry["output"] = ""
 				entry["is_phase"] = fmt.Sprint(entry["kind"]) == "phase"

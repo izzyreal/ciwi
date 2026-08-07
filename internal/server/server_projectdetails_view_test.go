@@ -39,6 +39,12 @@ func TestProjectDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if steps := view.Pipelines[0].Jobs[0].Steps; len(steps) == 0 || steps[0].Name == "" {
 		t.Fatalf("steps = %+v", steps)
 	}
+	if view.Pipelines[0].SummaryLabel == "" || view.Pipelines[0].GraphSummaryLabel == "" || view.Pipelines[0].Jobs[0].SummaryLabel == "" {
+		t.Fatalf("declarative pipeline labels = %+v", view.Pipelines[0])
+	}
+	if !view.HistoryEmpty {
+		t.Fatalf("history_empty = false for an empty project history")
+	}
 }
 
 func TestProjectDetailsResponseCarriesJobDryRunCapability(t *testing.T) {

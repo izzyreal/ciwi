@@ -186,7 +186,6 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 		"sameJob ? !!previousJob.output_tailing : true",
 		"decorateJobDetails(view)",
 		"view.project_icon = Number(view.project_id || 0) > 0",
-		"view.run_context = {available: false, scope_label: '', pipelines: []}",
 		"data.jobDetails.tailing_tone = data.jobDetails.output_tailing ? 'success' : 'warning'",
 		"['running', 'in progress', 'failed'].includes",
 	} {
@@ -376,14 +375,28 @@ func TestDeclarativeJobOutputRefreshPreservesStreamState(t *testing.T) {
 		"if (generation !== outputWatchGeneration) return",
 		"if (mergeJobOutputBatch(currentJob, batch))",
 		"if (!changed) return false",
-		"const scrollPositions = new Map()",
-		"element.scrollTop = position.top",
-		"const pageScroll = {top: window.scrollY, left: window.scrollX}",
-		"window.scrollTo(pageScroll.left, pageScroll.top)",
-		"propertyTimestampFields", "declarativeExecutionTimestamp(group.started)",
+		"window.ciwiCaptureViewState(root)",
+		"window.ciwiRestoreViewState(root, viewState)",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("browser output refresh does not contain %q", expected)
+		}
+	}
+}
+
+func TestDeclarativeBrowserConsumesAuthoritativePresentationLabels(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	for _, duplicatedRule := range []string{
+		"card.summary_label =", "card.summary_tone =", "job.created_label =", "job.duration_label =",
+		"pipeline.summary_label =", "pipeline.graph_summary_label =", "job.summary_label =",
+		"job.timeout_label =", "job.matrix_label =", "step.environment_label =",
+	} {
+		if strings.Contains(script, duplicatedRule) {
+			t.Errorf("browser still derives authoritative presentation field %q", duplicatedRule)
 		}
 	}
 }

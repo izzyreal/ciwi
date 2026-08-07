@@ -27,6 +27,7 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", false},
 	"/ui/heartbeat.js":                {"assets/js/heartbeat.js", "application/javascript; charset=utf-8", false},
 	"/ui/actions.js":                  {"assets/js/actions.js", "application/javascript; charset=utf-8", false},
+	"/ui/view-state.js":               {"assets/js/view-state.js", "application/javascript; charset=utf-8", false},
 	"/ui/declarative.js":              {"assets/js/declarative.js", "application/javascript; charset=utf-8", false},
 	"/ui/css/chrome.css":              {"assets/css/chrome.css", "text/css; charset=utf-8", false},
 	"/ui/css/declarative.css":         {"assets/css/declarative.css", "text/css; charset=utf-8", false},

@@ -237,13 +237,15 @@ Primary persisted entities:
   composition root when those areas next require substantial changes.
 - Prefer focused packages and consumer-owned interfaces over generic model,
   service, or utility layers.
-- Continue moving front-page, project, job, settings, and agent behavior through
-  application/presentation slices. The established browser UI remains valid
-  while each declarative replacement proves behavioral parity.
+- Continue moving renderer-independent labels, semantic state, and validation
+  through application/presentation slices; keep only transport representation
+  and interaction state in the HTTP/browser and CNP/Gio adapters.
 - Extend graph drill-down from pipelines into job and step dependencies, and
   continue compact/mobile interaction work without forking screen definitions.
-- Retain established browser pages until their declarative replacements cover
-  the remaining behavior, then promote the shared screens route by route.
+- Treat the shared declarative routes as the production UI contract. Add new
+  browser and native behavior to the shared screen/action definitions first,
+  with explicit platform overrides only when the interaction is inherently
+  platform-specific.
 - Keep agents on HTTP until agent transport migration has a concrete benefit;
   CNP is currently a client-facing protocol, not a forced whole-system rewrite.
 
