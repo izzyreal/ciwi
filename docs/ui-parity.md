@@ -49,19 +49,20 @@ declarations. Vault is available over both HTTP and typed CNP operations. The
 former hand-authored browser pages and `/declarative-preview` route have been
 removed.
 
-The project-details screen declares its pipeline dependency graph once through
-the shared `graph-view` component. Browser and native renderers both provide a
-persistent Graph/List switch, fit/reset/zoom controls, two-dimensional overflow,
-selectable node copy, dependency edges, and per-pipeline run actions. The List
-mode remains the complete pipeline/job/step hierarchy while graph drill-down to
-jobs and steps is developed as a later parity slice.
+The project-details screen declares its nested pipeline and job dependency
+graphs once through the shared `graph-view` component. Browser and native
+renderers both provide persistent Graph/List switches, fit/reset/zoom controls,
+two-dimensional overflow, selectable node copy, dependency edges, per-node run
+actions, and selected-job step details. The List mode remains the complete
+pipeline/job/step fallback.
 
 The front-page contract now uses the same link and disclosure semantics in both
 renderers: project names and execution job names navigate directly, surrounding
 summary rows disclose their content, and selecting text does neither. Queue and
 history details use compact horizontal job rows rather than renderer-specific
-cards. Browser and native code/identifier text share the bundled Geist Mono
-face.
+cards. Project icons and pipeline content are ordinary shared row/column/image
+nodes rather than renderer-composed project bodies. Browser and native
+code/identifier text share the bundled Geist Mono face.
 
 Job output uses theme-owned console tokens in both renderers. Its controls,
 execution path, system messages, and grouped phase/step output now live in one
@@ -74,3 +75,19 @@ state and bounded success/error notices; agent heartbeat icons use the shared
 event-timestamp pulse binding. Compact overrides provide phone-width layouts,
 touch scrolling, and full-screen disclosure sheets without separate mobile
 screen definitions.
+
+Tests enforce the renderer boundary: populated browser binding fixtures cover
+every shared route, every web-visible command must have a browser adapter, and
+platform-specific overrides are restricted to the native connection panel and
+the browser's sticky output-collapse affordance. This prevents cosmetic layout
+or content forks from being added silently.
+
+## Cutover footprint and performance
+
+Relative to pre-cutover `main` at `4493cf2`, the declarative branch deletes 31
+files and removes approximately 9,660 net lines. Five-run Apple M1 benchmarks
+show unchanged allocations and no CPU regression: the native collapsed front
+page is about 13% faster, native collapsed Project Details about 1% faster, and
+the declarative browser route benchmark is effectively unchanged from the first
+cutover checkpoint. These are microbenchmarks rather than a process-RSS claim;
+the renderer allocation counts are the repeatable memory signal covered here.
