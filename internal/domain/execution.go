@@ -84,7 +84,51 @@ type JobExecutionDetails struct {
 	RequiredCapabilities map[string]string
 	RuntimeCapabilities  map[string]string
 	CacheStats           []JobCacheStatistics
+	Artifacts            []JobArtifact
+	TestReport           *JobTestReport
 	Timeline             []JobTimelineItem
+}
+
+type JobArtifact struct {
+	Path      string
+	SizeBytes int64
+}
+
+type JobTestReport struct {
+	Total    int
+	Passed   int
+	Failed   int
+	Skipped  int
+	Suites   []JobTestSuite
+	Coverage *JobCoverageReport
+}
+
+type JobTestSuite struct {
+	Name    string
+	Format  string
+	Total   int
+	Passed  int
+	Failed  int
+	Skipped int
+}
+
+type JobCoverageReport struct {
+	Format            string
+	TotalLines        int
+	CoveredLines      int
+	TotalStatements   int
+	CoveredStatements int
+	Percent           float64
+	Files             []JobCoverageFile
+}
+
+type JobCoverageFile struct {
+	Path              string
+	TotalLines        int
+	CoveredLines      int
+	TotalStatements   int
+	CoveredStatements int
+	Percent           float64
 }
 
 type JobCacheStatistics struct {

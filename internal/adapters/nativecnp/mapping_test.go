@@ -70,6 +70,20 @@ func TestProgressMappingsPreserveSharedSemanticSnapshot(t *testing.T) {
 	}
 }
 
+func TestJobDetailsMappingCarriesArtifactsAndReports(t *testing.T) {
+	job := jobDetailsToProto(presentation.JobDetailsView{
+		Artifacts:      presentation.ReportDetailsView{Summary: "1 artifact", Rows: []presentation.JobDetailRowView{{Label: "dist/app.zip", Value: "2 KB"}}},
+		TestReport:     presentation.ReportDetailsView{Summary: "1 total · 1 passed", Tone: "success"},
+		CoverageReport: presentation.ReportDetailsView{Summary: "80.00% overall", Rows: []presentation.JobDetailRowView{{Label: "main.go", Value: "80.00% · 8/10"}}},
+	})
+	if job.Artifacts == nil || len(job.Artifacts.Rows) != 1 || job.Artifacts.Rows[0].Label != "dist/app.zip" {
+		t.Fatalf("artifacts = %+v", job.Artifacts)
+	}
+	if job.TestReport == nil || job.TestReport.Tone != "success" || job.CoverageReport == nil || len(job.CoverageReport.Rows) != 1 {
+		t.Fatalf("reports = test %+v coverage %+v", job.TestReport, job.CoverageReport)
+	}
+}
+
 func TestAgentMappingCarriesHeartbeatTimestamp(t *testing.T) {
 	const heartbeatUnixMS = int64(1786017600123)
 	agent := agentSummaryToProto(presentation.AgentView{ID: "agent-1", LastSeenUnixMS: heartbeatUnixMS})

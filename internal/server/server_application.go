@@ -54,10 +54,11 @@ func (s localServerInfoSource) ServerInfo(context.Context) (domain.ServerInfo, e
 func newServerApplication(s *stateStore) *serverApplication {
 	serverQueries := application.NewServerQueries(localServerInfoSource{installationID: s.installationID})
 	projectQueries := application.NewProjectQueries(sqliteadapter.NewProjectRepository(s.db))
-	executionRepository := executionviewsadapter.NewRepository(s.db, 40, schedulingAgentSourceAdapter{state: s})
+	executionStore := executionDetailsStore{Store: s.db, artifactsDir: s.artifactsDir}
+	executionRepository := executionviewsadapter.NewRepository(executionStore, 40, schedulingAgentSourceAdapter{state: s})
 	if s.jobProgress != nil {
 		executionRepository = executionviewsadapter.NewRepositoryWithProgress(
-			s.db, 40, schedulingAgentSourceAdapter{state: s}, s.jobProgress,
+			executionStore, 40, schedulingAgentSourceAdapter{state: s}, s.jobProgress,
 		)
 	}
 	executionQueries := application.NewExecutionQueries(executionRepository)
@@ -89,6 +90,25 @@ func newServerApplication(s *stateStore) *serverApplication {
 		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),
 		changes:           changes,
 	}
+}
+
+// executionDetailsStore keeps every presentation surface on the same artifact
+// list as the HTTP artifact endpoints. Test and coverage report JSON files live
+// on disk rather than in the artifact table, so they must be added here before
+// the shared job-details presenter builds either the native or HTTP view.
+type executionDetailsStore struct {
+	executionviewsadapter.Store
+	artifactsDir string
+}
+
+func (s executionDetailsStore) ListJobExecutionArtifacts(jobID string) ([]protocol.JobExecutionArtifact, error) {
+	artifacts, err := s.Store.ListJobExecutionArtifacts(jobID)
+	if err != nil {
+		return nil, err
+	}
+	artifacts = jobexecution.AppendSyntheticTestReportArtifact(s.artifactsDir, jobID, artifacts)
+	artifacts = jobexecution.AppendSyntheticCoverageReportArtifact(s.artifactsDir, jobID, artifacts)
+	return artifacts, nil
 }
 
 type pipelineChainRunnerAdapter struct {

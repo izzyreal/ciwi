@@ -394,6 +394,7 @@ func TestHandleByIDArtifactsUploadZIP(t *testing.T) {
 	artifactsDir := t.TempDir()
 	store := &stubStore{}
 	var saveCalled bool
+	var historyChanged bool
 	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
 		return protocol.JobExecution{ID: id, LeasedByAgentID: "agent-1"}, nil
 	}
@@ -424,12 +425,15 @@ func TestHandleByIDArtifactsUploadZIP(t *testing.T) {
 	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/artifacts/upload-zip", bytes.NewReader(payload.Bytes()))
 	reqPost.Header.Set("Content-Type", "application/zip")
 	reqPost.Header.Set("X-CIWI-Agent-ID", "agent-1")
-	HandleByID(recPost, reqPost, HandlerDeps{Store: store, ArtifactsDir: artifactsDir})
+	HandleByID(recPost, reqPost, HandlerDeps{Store: store, ArtifactsDir: artifactsDir, OnHistoryChanged: func() { historyChanged = true }})
 	if recPost.Code != http.StatusOK {
 		t.Fatalf("expected POST 200, got %d: %s", recPost.Code, recPost.Body.String())
 	}
 	if !saveCalled {
 		t.Fatalf("expected SaveJobExecutionArtifacts to be called")
+	}
+	if !historyChanged {
+		t.Fatal("artifact upload did not publish a history change")
 	}
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(filepath.Join(artifactsDir, "job-1", "dist", "app.bin"))
@@ -446,6 +450,7 @@ func TestHandleByIDTestsGetAndPost(t *testing.T) {
 	artifactsDir := t.TempDir()
 	store := &stubStore{}
 	var saveReportCalled bool
+	var historyChanged bool
 	report := protocol.JobExecutionTestReport{
 		Total:  1,
 		Passed: 1,
@@ -474,11 +479,14 @@ func TestHandleByIDTestsGetAndPost(t *testing.T) {
 	})
 	recPost := httptest.NewRecorder()
 	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/tests", strings.NewReader(string(postReqBody)))
-	HandleByID(recPost, reqPost, HandlerDeps{Store: store, ArtifactsDir: artifactsDir})
+	HandleByID(recPost, reqPost, HandlerDeps{Store: store, ArtifactsDir: artifactsDir, OnHistoryChanged: func() { historyChanged = true }})
 	if recPost.Code != http.StatusOK {
 		t.Fatalf("expected POST 200, got %d: %s", recPost.Code, recPost.Body.String())
 	}
 	if !saveReportCalled {
 		t.Fatalf("expected SaveJobExecutionTestReport to be called")
+	}
+	if !historyChanged {
+		t.Fatal("test report upload did not publish a history change")
 	}
 }

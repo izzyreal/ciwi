@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 )
 
 func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
@@ -62,5 +64,48 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	}
 	if output.NextEventID <= 0 || output.Terminal || len(output.Events) != 1 || output.Events[0].Text != "ok\n" {
 		t.Fatalf("output = %+v", output)
+	}
+}
+
+func TestJobDetailsViewIncludesStoredReportsAndSyntheticReportArtifacts(t *testing.T) {
+	server, state := newTestHTTPServerWithState(t)
+	defer server.Close()
+	job, err := state.db.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script: "go test ./...",
+		Metadata: map[string]string{
+			"project": "ciwi", "pipeline_id": "build", "pipeline_job_id": "unit-tests",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := protocol.JobExecutionTestReport{
+		Total: 2, Passed: 1, Failed: 1,
+		Coverage: &protocol.CoverageReport{
+			Format: "go-coverprofile", TotalStatements: 10, CoveredStatements: 6, Percent: 60,
+		},
+	}
+	if err := state.db.SaveJobExecutionTestReport(job.ID, report); err != nil {
+		t.Fatal(err)
+	}
+	if err := jobexecution.PersistTestReportArtifact(state.artifactsDir, job.ID, report); err != nil {
+		t.Fatal(err)
+	}
+	if err := jobexecution.PersistCoverageReportArtifact(state.artifactsDir, job.ID, report); err != nil {
+		t.Fatal(err)
+	}
+
+	view, err := state.app().jobDetails.GetJobDetailsView(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Artifacts.Rows) != 2 || view.Artifacts.Rows[0].Label != "coverage-report.json" || view.Artifacts.Rows[1].Label != "test-report.json" {
+		t.Fatalf("artifacts = %+v", view.Artifacts)
+	}
+	if view.TestReport.Summary != "2 total · 1 passed · 1 failed · 0 skipped" {
+		t.Fatalf("test report = %+v", view.TestReport)
+	}
+	if view.CoverageReport.Summary != "60.00% overall · 6/10 statements · 0 file(s) · go-coverprofile" {
+		t.Fatalf("coverage report = %+v", view.CoverageReport)
 	}
 }

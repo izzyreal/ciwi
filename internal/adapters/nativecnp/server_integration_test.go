@@ -128,6 +128,9 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if string(jobDetails.ProjectIcon) != "project-icon" || len(jobDetails.JobProperties) != 1 || jobDetails.RunContext == nil || len(jobDetails.RunContext.Pipelines) != 1 {
 		t.Fatalf("enriched job details = %#v", jobDetails)
 	}
+	if jobDetails.Artifacts == nil || len(jobDetails.Artifacts.Rows) != 1 || jobDetails.TestReport == nil || jobDetails.CoverageReport == nil {
+		t.Fatalf("job artifacts/reports = %#v", jobDetails)
+	}
 	output, outputErrors, err := client.WatchJobOutput(ctx, "job-1", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -677,8 +680,13 @@ func (jobDetailsService) GetJobDetailsView(context.Context, string) (presentatio
 		ID: "job-1", ProjectID: 7, Title: "Job: compile", Status: "succeeded", StatusLabel: "Succeeded",
 		CanRerun:      true,
 		JobProperties: []presentation.JobDetailRowView{{Label: "Job Execution ID", Value: "job-1"}},
-		Timeline:      []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
-		OutputGroups:  []presentation.JobOutputGroupView{{ID: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded", Reached: true, YAMLLiteral: "run: go build ./...", ExpandedCommand: "go build ./..."}},
+		Artifacts:     presentation.ReportDetailsView{Summary: "1 artifact", Rows: []presentation.JobDetailRowView{{Label: "dist/app.zip", Value: "2 KB"}}},
+		TestReport:    presentation.ReportDetailsView{Summary: "1 total · 1 passed", Tone: "success"},
+		CoverageReport: presentation.ReportDetailsView{
+			Summary: "80.00% overall", Rows: []presentation.JobDetailRowView{{Label: "main.go", Value: "80.00% · 8/10"}},
+		},
+		Timeline:     []presentation.JobTimelineView{{ID: "step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded"}},
+		OutputGroups: []presentation.JobOutputGroupView{{ID: "step:1", StateKey: "job-output:job-1:step:1", Kind: "step", Title: "Job step 1/1: Compile", Status: "succeeded", StatusLabel: "Succeeded", Reached: true, YAMLLiteral: "run: go build ./...", ExpandedCommand: "go build ./..."}},
 	}, nil
 }
 

@@ -89,6 +89,15 @@ func TestJobDetailsViewMatchesWebExecutionCards(t *testing.T) {
 		RequiredCapabilities: map[string]string{"requires.tool.go": ">=1.25", "requires.container.tool.cmake": "*"},
 		RuntimeCapabilities:  map[string]string{"host.tool.go": "1.25.1", "container.tool.cmake": "4.0"},
 		CacheStats:           []domain.JobCacheStatistics{{ID: "go", Environment: "host", Type: "directory", Path: "/cache/go", SizeBytes: 1536, Files: 3, Directories: 1}},
+		Artifacts:            []domain.JobArtifact{{Path: "dist/ciwi.zip", SizeBytes: 2048}},
+		TestReport: &domain.JobTestReport{
+			Total: 3, Passed: 2, Failed: 1,
+			Suites: []domain.JobTestSuite{{Name: "unit", Total: 3, Passed: 2, Failed: 1}},
+			Coverage: &domain.JobCoverageReport{
+				Format: "go-coverprofile", TotalStatements: 100, CoveredStatements: 75,
+				Files: []domain.JobCoverageFile{{Path: "main.go", TotalStatements: 20, CoveredStatements: 10}},
+			},
+		},
 	})
 	if view.ProjectID != 7 || view.Title != "ciwi / release / publish" || len(view.JobProperties) != 11 {
 		t.Fatalf("job header/properties = %+v", view)
@@ -101,6 +110,15 @@ func TestJobDetailsViewMatchesWebExecutionCards(t *testing.T) {
 	}
 	if !view.HasReleaseSummary || len(view.ReleaseSummary) < 4 {
 		t.Fatalf("release summary = %+v", view.ReleaseSummary)
+	}
+	if len(view.Artifacts.Rows) != 1 || view.Artifacts.Rows[0].Value != "2 KB" {
+		t.Fatalf("artifacts = %+v", view.Artifacts)
+	}
+	if view.TestReport.Tone != "danger" || !strings.Contains(view.TestReport.Summary, "1 failed") || len(view.TestReport.Rows) != 1 {
+		t.Fatalf("test report = %+v", view.TestReport)
+	}
+	if !strings.Contains(view.CoverageReport.Summary, "75.00% overall") || view.CoverageReport.Rows[0].Value != "50.00% · 10/20" {
+		t.Fatalf("coverage report = %+v", view.CoverageReport)
 	}
 }
 

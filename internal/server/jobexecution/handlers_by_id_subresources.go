@@ -273,6 +273,9 @@ func handleJobArtifactsUploadZIP(w http.ResponseWriter, r *http.Request, deps Ha
 	if deps.MarkAgentSeen != nil {
 		deps.MarkAgentSeen(agentID, nowUTC(deps))
 	}
+	if deps.OnHistoryChanged != nil {
+		deps.OnHistoryChanged()
+	}
 	httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
 }
 
@@ -372,6 +375,9 @@ func handleJobTests(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 		}
 		if deps.MarkAgentSeen != nil {
 			deps.MarkAgentSeen(req.AgentID, nowUTC(deps))
+		}
+		if deps.OnHistoryChanged != nil {
+			deps.OnHistoryChanged()
 		}
 		httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionTestReportResponse{Report: req.Report})
 	default:

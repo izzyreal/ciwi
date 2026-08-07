@@ -2203,6 +2203,13 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 				root[key] = map[string]any{"empty_label": "", "summary": "", "tone": "muted", "issues": []any{}}
 			}
 		}
+		for key, emptyLabel := range map[string]string{
+			"artifacts": "No artifacts", "test_report": "No parsed test report", "coverage_report": "No parsed coverage report",
+		} {
+			if root[key] == nil {
+				root[key] = map[string]any{"empty_label": emptyLabel, "summary": "", "tone": "muted", "rows": []any{}, "additional_label": ""}
+			}
+		}
 		if root["run_context"] == nil {
 			root["run_context"] = map[string]any{"available": false, "scope_label": "", "pipelines": []any{}}
 		}

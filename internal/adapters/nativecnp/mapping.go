@@ -94,6 +94,7 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 		HostToolRequirements:      toolRequirementsToProto(view.HostToolRequirements),
 		ContainerToolRequirements: toolRequirementsToProto(view.ContainerToolRequirements),
 		ReleaseSummary:            jobDetailRowsToProto(view.ReleaseSummary), HasReleaseSummary: view.HasReleaseSummary,
+		Artifacts: reportDetailsToProto(view.Artifacts), TestReport: reportDetailsToProto(view.TestReport), CoverageReport: reportDetailsToProto(view.CoverageReport),
 	}
 }
 
@@ -109,6 +110,13 @@ func toolRequirementsToProto(view presentation.ToolRequirementsView) *cnpv1.Tool
 	return &cnpv1.ToolRequirements{
 		EmptyLabel: view.EmptyLabel, Summary: view.Summary, Tone: view.Tone,
 		Issues: append([]string(nil), view.Issues...),
+	}
+}
+
+func reportDetailsToProto(view presentation.ReportDetailsView) *cnpv1.ReportDetails {
+	return &cnpv1.ReportDetails{
+		EmptyLabel: view.EmptyLabel, Summary: view.Summary, Tone: view.Tone,
+		Rows: jobDetailRowsToProto(view.Rows), AdditionalLabel: view.AdditionalLabel,
 	}
 }
 

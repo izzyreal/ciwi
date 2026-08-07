@@ -19,6 +19,8 @@ type Store interface {
 	GetJobExecution(string) (protocol.JobExecution, error)
 	ListJobExecutionTimelineEvents(string) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionEventsPageAfter(string, int64, int) ([]protocol.JobExecutionEvent, error)
+	ListJobExecutionArtifacts(string) ([]protocol.JobExecutionArtifact, error)
+	GetJobExecutionTestReport(string) (protocol.JobExecutionTestReport, bool, error)
 }
 
 type SchedulingAgentSource interface {
@@ -130,10 +132,18 @@ func (r *Repository) GetJobExecutionDetails(ctx context.Context, jobID string) (
 	if err := ctx.Err(); err != nil {
 		return domain.JobExecutionDetails{}, err
 	}
-	return mapJobExecutionDetails(job, events), nil
+	artifacts, err := r.store.ListJobExecutionArtifacts(jobID)
+	if err != nil {
+		return domain.JobExecutionDetails{}, err
+	}
+	testReport, reportFound, err := r.store.GetJobExecutionTestReport(jobID)
+	if err != nil {
+		return domain.JobExecutionDetails{}, err
+	}
+	return mapJobExecutionDetails(job, events, artifacts, testReport, reportFound), nil
 }
 
-func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExecutionEvent) domain.JobExecutionDetails {
+func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExecutionEvent, artifacts []protocol.JobExecutionArtifact, testReport protocol.JobExecutionTestReport, reportFound bool) domain.JobExecutionDetails {
 	projectID, _ := strconv.ParseInt(protocol.JobMetadataValue(job, protocol.JobMetadataProjectID), 10, 64)
 	details := domain.JobExecutionDetails{
 		ID: job.ID, ProjectID: projectID, ProjectName: protocol.JobMetadataValue(job, protocol.JobMetadataProject),
@@ -154,6 +164,12 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 			SizeBytes: stats.SizeBytes, Files: stats.Files, Directories: stats.Directories,
 			ToolMetrics: copyStringMap(stats.ToolMetrics), Error: strings.TrimSpace(stats.Error),
 		})
+	}
+	for _, artifact := range artifacts {
+		details.Artifacts = append(details.Artifacts, domain.JobArtifact{Path: strings.TrimSpace(artifact.Path), SizeBytes: artifact.SizeBytes})
+	}
+	if reportFound {
+		details.TestReport = mapJobTestReport(testReport)
 	}
 	states := timelineStates(events)
 	stepsByIndex := make(map[int]protocol.JobStepPlanItem, len(job.StepPlan))
@@ -194,6 +210,32 @@ func mapJobExecutionDetails(job protocol.JobExecution, events []protocol.JobExec
 		details.Timeline = append(details.Timeline, timelineItem)
 	}
 	return details
+}
+
+func mapJobTestReport(report protocol.JobExecutionTestReport) *domain.JobTestReport {
+	result := &domain.JobTestReport{
+		Total: report.Total, Passed: report.Passed, Failed: report.Failed, Skipped: report.Skipped,
+		Suites: make([]domain.JobTestSuite, 0, len(report.Suites)),
+	}
+	for _, suite := range report.Suites {
+		result.Suites = append(result.Suites, domain.JobTestSuite{
+			Name: suite.Name, Format: suite.Format, Total: suite.Total, Passed: suite.Passed, Failed: suite.Failed, Skipped: suite.Skipped,
+		})
+	}
+	if report.Coverage != nil {
+		result.Coverage = &domain.JobCoverageReport{
+			Format: report.Coverage.Format, TotalLines: report.Coverage.TotalLines, CoveredLines: report.Coverage.CoveredLines,
+			TotalStatements: report.Coverage.TotalStatements, CoveredStatements: report.Coverage.CoveredStatements,
+			Percent: report.Coverage.Percent, Files: make([]domain.JobCoverageFile, 0, len(report.Coverage.Files)),
+		}
+		for _, file := range report.Coverage.Files {
+			result.Coverage.Files = append(result.Coverage.Files, domain.JobCoverageFile{
+				Path: file.Path, TotalLines: file.TotalLines, CoveredLines: file.CoveredLines,
+				TotalStatements: file.TotalStatements, CoveredStatements: file.CoveredStatements, Percent: file.Percent,
+			})
+		}
+	}
+	return result
 }
 
 func copyStringMap(source map[string]string) map[string]string {

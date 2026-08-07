@@ -1106,8 +1106,11 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	if got := len(renderer.buttons); got != 8 {
 		t.Fatalf("job view created %d clickable widgets, want execution controls, Back, timeline selection, and output buttons", got)
 	}
-	if len(renderer.scrollers) != 2 {
-		t.Fatalf("execution-path and grouped-output scrollers = %d", len(renderer.scrollers))
+	if len(renderer.scrollers) != 1 {
+		t.Fatalf("collapsed job view scrollers = %d, want only execution path", len(renderer.scrollers))
+	}
+	if renderer.outputScroller != nil {
+		t.Fatal("collapsed desktop output groups retained a height-filling scroller")
 	}
 }
 
@@ -1136,6 +1139,9 @@ func TestRendererLaysOutAuthoritativeJobHeaderAndDetailCards(t *testing.T) {
 		HostToolRequirements:      &cnpv1.ToolRequirements{Summary: "Requirements matched", Tone: "success"},
 		ContainerToolRequirements: &cnpv1.ToolRequirements{EmptyLabel: "No container tool requirements declared for this job."},
 		ReleaseSummary:            []*cnpv1.JobDetailRow{{Label: "Tag", Value: "v0.3.0"}}, HasReleaseSummary: true,
+		Artifacts:      &cnpv1.ReportDetails{Summary: "1 artifact", Rows: []*cnpv1.JobDetailRow{{Label: "dist/app.zip", Value: "2 KB"}}},
+		TestReport:     &cnpv1.ReportDetails{Summary: "1 total · 1 passed", Tone: "success"},
+		CoverageReport: &cnpv1.ReportDetails{Summary: "80.00% overall", Rows: []*cnpv1.JobDetailRow{{Label: "main.go", Value: "80.00% · 8/10"}}},
 		RunContext: &cnpv1.JobRunContext{Available: true, ScopeLabel: "Pipeline run", Pipelines: []*cnpv1.JobRunContextPipeline{{
 			PipelineId: "build", Status: "succeeded", SummaryLabel: "succeeded · 1 job(s)",
 			Jobs: []*cnpv1.JobRunContextJob{{Id: "compile", Status: "succeeded", SummaryLabel: "succeeded · 1 execution(s)"}},
@@ -1147,13 +1153,16 @@ func TestRendererLaysOutAuthoritativeJobHeaderAndDetailCards(t *testing.T) {
 	renderer.SetScreenAndData(screen, data)
 	var operations op.Ops
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 2200))})
+	renderer.list.ScrollTo(3)
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 2200))})
 	if len(renderer.dynamicImages) != 1 {
 		t.Fatalf("job header dynamic images = %d, want project icon", len(renderer.dynamicImages))
 	}
 	wanted := map[string]bool{
 		"ciwi / build / compile": false, "Job Properties": false, "Cache Statistics": false,
 		"Host Tool Requirements": false, "Container Tool Requirements": false,
-		"Release Summary": false, "Run Context": false,
+		"Release Summary": false, "Run Context": false, "Artifacts": false, "Test Report": false, "Coverage Report": false,
+		"dist/app.zip": false, "main.go": false,
 	}
 	for _, selectable := range renderer.selectables {
 		if _, ok := wanted[selectable.Text()]; ok {
@@ -2057,6 +2066,49 @@ func TestCompactJobDetailsUsesPageScrollForExpandedOutputGroups(t *testing.T) {
 	}
 	if !foundFollowingStep {
 		t.Fatal("step following a large expanded output was not laid out into the page scroll")
+	}
+}
+
+func TestCollapsedDesktopOutputGroupsShrinkWrapWithoutNestedScroller(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-1", Title: "Job: compile", StatusLabel: "Failed", Mode: "Run",
+		OutputGroups: []*cnpv1.JobOutputGroup{
+			{Id: "phase:1", StateKey: "job-output:job-1:phase:1", Kind: "phase", Title: "Ciwi phase 1/2: Prepare workspace", Reached: true},
+			{Id: "phase:2", StateKey: "job-output:job-1:phase:2", Kind: "phase", Title: "Ciwi phase 2/2: Check out source", Reached: true},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetScreenAndData(screen, data)
+	renderer.list.ScrollTo(2)
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(1400, 900))}
+	renderer.Layout(gtx)
+	if renderer.outputScroller != nil {
+		t.Fatal("collapsed desktop output groups retained the bottom-aligning nested scroller")
+	}
+	for path := range renderer.scrollers {
+		if strings.Contains(path, "job-output-groups") {
+			t.Fatalf("collapsed desktop output groups retained scroller at %q", path)
+		}
+	}
+
+	renderer.SetDisclosureStates(map[string]bool{"job-output:job-1:phase:1": true})
+	renderer.Layout(gtx)
+	if renderer.outputScroller == nil {
+		t.Fatal("expanded desktop output group did not restore its bounded scroller")
 	}
 }
 

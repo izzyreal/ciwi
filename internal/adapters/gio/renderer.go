@@ -2898,7 +2898,7 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	if err != nil {
 		return r.errorLabel(gtx, err)
 	}
-	if node.ID == "job-output-groups" && r.compact {
+	if node.ID == "job-output-groups" && (r.compact || !r.anyOutputGroupExpanded(items)) {
 		r.outputScroller = nil
 		return r.layoutInlineScrollerItems(gtx, node, data, path, items)
 	}
@@ -2960,6 +2960,20 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 			})
 		}),
 	)
+}
+
+func (r *Renderer) anyOutputGroupExpanded(items []any) bool {
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		stateKey := strings.TrimSpace(fmt.Sprint(item["state_key"]))
+		if stateKey != "" && r.disclosures[stateKey] {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Renderer) layoutInlineScrollerItems(gtx layout.Context, node uidsl.Node, data any, path string, items []any) layout.Dimensions {

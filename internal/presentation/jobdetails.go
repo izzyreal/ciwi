@@ -43,6 +43,9 @@ type JobDetailsView struct {
 	ContainerToolRequirements ToolRequirementsView
 	ReleaseSummary            []JobDetailRowView
 	HasReleaseSummary         bool
+	Artifacts                 ReportDetailsView
+	TestReport                ReportDetailsView
+	CoverageReport            ReportDetailsView
 	Progress                  domain.Progress
 	Timeline                  []JobTimelineView
 	OutputGroups              []JobOutputGroupView
@@ -59,6 +62,14 @@ type ToolRequirementsView struct {
 	Summary    string
 	Tone       string
 	Issues     []string
+}
+
+type ReportDetailsView struct {
+	EmptyLabel      string
+	Summary         string
+	Tone            string
+	Rows            []JobDetailRowView
+	AdditionalLabel string
 }
 
 type SchedulingAgentView struct {
@@ -189,6 +200,9 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 	view.HostToolRequirements = presentToolRequirements(details, "requires.tool.", "host.tool.", "No tool requirements declared for this job.")
 	view.ContainerToolRequirements = presentToolRequirements(details, "requires.container.tool.", "container.tool.", "No container tool requirements declared for this job.")
 	view.ReleaseSummary, view.HasReleaseSummary = presentReleaseSummary(details)
+	view.Artifacts = presentArtifacts(details.Artifacts)
+	view.TestReport = presentTestReport(details.TestReport)
+	view.CoverageReport = presentCoverageReport(details.TestReport)
 	phaseTotal, stepTotal := 0, 0
 	for _, item := range details.Timeline {
 		if item.Kind == "phase" {
@@ -235,6 +249,129 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 		})
 	}
 	return view
+}
+
+func presentArtifacts(artifacts []domain.JobArtifact) ReportDetailsView {
+	if len(artifacts) == 0 {
+		return ReportDetailsView{EmptyLabel: "No artifacts"}
+	}
+	items := append([]domain.JobArtifact(nil), artifacts...)
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Path < items[j].Path })
+	const visibleLimit = 40
+	view := ReportDetailsView{Summary: fmt.Sprintf("%d artifact(s)", len(items)), Tone: "accent"}
+	for _, artifact := range items[:min(len(items), visibleLimit)] {
+		path := strings.TrimSpace(artifact.Path)
+		if path == "" {
+			path = "(unnamed artifact)"
+		}
+		view.Rows = append(view.Rows, JobDetailRowView{Label: path, Value: formatBytes(artifact.SizeBytes)})
+	}
+	if hidden := len(items) - len(view.Rows); hidden > 0 {
+		view.AdditionalLabel = fmt.Sprintf("%d additional artifact(s)", hidden)
+	}
+	return view
+}
+
+func presentTestReport(report *domain.JobTestReport) ReportDetailsView {
+	if report == nil {
+		return ReportDetailsView{EmptyLabel: "No parsed test report"}
+	}
+	view := ReportDetailsView{Summary: formatTestCounts(report.Total, report.Passed, report.Failed, report.Skipped), Tone: reportTone(report.Total, report.Failed)}
+	suites := append([]domain.JobTestSuite(nil), report.Suites...)
+	sort.SliceStable(suites, func(i, j int) bool {
+		if suites[i].Failed != suites[j].Failed {
+			return suites[i].Failed > suites[j].Failed
+		}
+		return suites[i].Name < suites[j].Name
+	})
+	const visibleLimit = 30
+	for index, suite := range suites[:min(len(suites), visibleLimit)] {
+		label := strings.TrimSpace(suite.Name)
+		if label == "" {
+			label = strings.TrimSpace(suite.Format)
+		}
+		if label == "" {
+			label = fmt.Sprintf("Suite %d", index+1)
+		}
+		view.Rows = append(view.Rows, JobDetailRowView{
+			Label: label, Value: formatTestCounts(suite.Total, suite.Passed, suite.Failed, suite.Skipped), Tone: reportTone(suite.Total, suite.Failed),
+		})
+	}
+	if hidden := len(suites) - len(view.Rows); hidden > 0 {
+		view.AdditionalLabel = fmt.Sprintf("%d additional suite(s)", hidden)
+	}
+	return view
+}
+
+func presentCoverageReport(report *domain.JobTestReport) ReportDetailsView {
+	if report == nil || report.Coverage == nil {
+		return ReportDetailsView{EmptyLabel: "No parsed coverage report"}
+	}
+	coverage := report.Coverage
+	total, covered, unit := coverage.TotalStatements, coverage.CoveredStatements, "statements"
+	if total == 0 {
+		total, covered, unit = coverage.TotalLines, coverage.CoveredLines, "lines"
+	}
+	percent := coveragePercent(covered, total, coverage.Percent)
+	format := strings.TrimSpace(coverage.Format)
+	if format == "" {
+		format = "unknown format"
+	}
+	view := ReportDetailsView{
+		Summary: fmt.Sprintf("%.2f%% overall · %d/%d %s · %d file(s) · %s", percent, covered, total, unit, len(coverage.Files), format),
+		Tone:    "accent",
+	}
+	files := append([]domain.JobCoverageFile(nil), coverage.Files...)
+	sort.SliceStable(files, func(i, j int) bool {
+		leftTotal, leftCovered := coverageFileTotals(files[i])
+		rightTotal, rightCovered := coverageFileTotals(files[j])
+		left := coveragePercent(leftCovered, leftTotal, files[i].Percent)
+		right := coveragePercent(rightCovered, rightTotal, files[j].Percent)
+		if left != right {
+			return left < right
+		}
+		return files[i].Path < files[j].Path
+	})
+	const visibleLimit = 40
+	for _, file := range files[:min(len(files), visibleLimit)] {
+		fileTotal, fileCovered := coverageFileTotals(file)
+		filePercent := coveragePercent(fileCovered, fileTotal, file.Percent)
+		view.Rows = append(view.Rows, JobDetailRowView{
+			Label: strings.TrimSpace(file.Path), Value: fmt.Sprintf("%.2f%% · %d/%d", filePercent, fileCovered, fileTotal),
+		})
+	}
+	if hidden := len(files) - len(view.Rows); hidden > 0 {
+		view.AdditionalLabel = fmt.Sprintf("%d additional file(s)", hidden)
+	}
+	return view
+}
+
+func formatTestCounts(total, passed, failed, skipped int) string {
+	return fmt.Sprintf("%d total · %d passed · %d failed · %d skipped", total, passed, failed, skipped)
+}
+
+func reportTone(total, failed int) string {
+	if failed > 0 {
+		return "danger"
+	}
+	if total > 0 {
+		return "success"
+	}
+	return "muted"
+}
+
+func coverageFileTotals(file domain.JobCoverageFile) (int, int) {
+	if file.TotalStatements > 0 {
+		return file.TotalStatements, file.CoveredStatements
+	}
+	return file.TotalLines, file.CoveredLines
+}
+
+func coveragePercent(covered, total int, reported float64) float64 {
+	if reported != 0 || total == 0 {
+		return reported
+	}
+	return 100 * float64(covered) / float64(total)
 }
 
 func jobHeaderTitle(details domain.JobExecutionDetails) string {

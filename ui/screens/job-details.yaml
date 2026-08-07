@@ -637,3 +637,100 @@ screen:
                         arguments:
                           prefix: "{{outputGroup.state_key}}"
                           expanded: "false"
+      - component: row
+        id: execution-reports
+        layout: {direction: horizontal, gap: medium, align: start, wrap: true}
+        children:
+          - component: card
+            layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+            children:
+              - component: text
+                text: {literal: Artifacts}
+                style: {role: heading, emphasis: strong}
+              - component: text
+                text: {binding: jobDetails.artifacts.empty_label}
+                visible: {binding: jobDetails.artifacts.empty_label, empty: true, not: true}
+                style: {role: detail, tone: muted}
+              - component: text
+                text: {binding: jobDetails.artifacts.summary}
+                visible: {binding: jobDetails.artifacts.summary, empty: true, not: true}
+                style: {role: detail, emphasis: strong, toneBinding: jobDetails.artifacts.tone}
+              - component: list
+                layout: {direction: vertical, gap: small}
+                repeat: {source: jobDetails.artifacts.rows, as: reportRow, key: reportRow.label}
+                children:
+                  - component: column
+                    layout: {direction: vertical, gap: small}
+                    children:
+                      - component: text
+                        text: {binding: reportRow.label}
+                        style: {role: detail, emphasis: strong}
+                      - component: text
+                        text: {binding: reportRow.value}
+                        style: {role: detail-small, toneBinding: reportRow.tone}
+              - component: text
+                text: {binding: jobDetails.artifacts.additional_label}
+                visible: {binding: jobDetails.artifacts.additional_label, empty: true, not: true}
+                style: {role: detail, tone: muted}
+          - component: card
+            layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+            children:
+              - component: text
+                text: {literal: Test Report}
+                style: {role: heading, emphasis: strong}
+              - component: text
+                text: {binding: jobDetails.test_report.empty_label}
+                visible: {binding: jobDetails.test_report.empty_label, empty: true, not: true}
+                style: {role: detail, tone: muted}
+              - component: text
+                text: {binding: jobDetails.test_report.summary}
+                visible: {binding: jobDetails.test_report.summary, empty: true, not: true}
+                style: {role: detail, emphasis: strong, toneBinding: jobDetails.test_report.tone}
+              - component: list
+                layout: {direction: vertical, gap: small}
+                repeat: {source: jobDetails.test_report.rows, as: reportRow, key: reportRow.label}
+                children:
+                  - component: column
+                    layout: {direction: vertical, gap: small}
+                    children:
+                      - component: text
+                        text: {binding: reportRow.label}
+                        style: {role: detail, emphasis: strong}
+                      - component: text
+                        text: {binding: reportRow.value}
+                        style: {role: detail-small, toneBinding: reportRow.tone}
+              - component: text
+                text: {binding: jobDetails.test_report.additional_label}
+                visible: {binding: jobDetails.test_report.additional_label, empty: true, not: true}
+                style: {role: detail, tone: muted}
+          - component: card
+            layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+            children:
+              - component: text
+                text: {literal: Coverage Report}
+                style: {role: heading, emphasis: strong}
+              - component: text
+                text: {binding: jobDetails.coverage_report.empty_label}
+                visible: {binding: jobDetails.coverage_report.empty_label, empty: true, not: true}
+                style: {role: detail, tone: muted}
+              - component: text
+                text: {binding: jobDetails.coverage_report.summary}
+                visible: {binding: jobDetails.coverage_report.summary, empty: true, not: true}
+                style: {role: detail, emphasis: strong, toneBinding: jobDetails.coverage_report.tone}
+              - component: list
+                layout: {direction: vertical, gap: small}
+                repeat: {source: jobDetails.coverage_report.rows, as: reportRow, key: reportRow.label}
+                children:
+                  - component: column
+                    layout: {direction: vertical, gap: small}
+                    children:
+                      - component: text
+                        text: {binding: reportRow.label}
+                        style: {role: detail, emphasis: strong}
+                      - component: text
+                        text: {binding: reportRow.value}
+                        style: {role: detail-small, toneBinding: reportRow.tone}
+              - component: text
+                text: {binding: jobDetails.coverage_report.additional_label}
+                visible: {binding: jobDetails.coverage_report.additional_label, empty: true, not: true}
+                style: {role: detail, tone: muted}

@@ -184,6 +184,9 @@ message JobDetailsView {
   repeated JobDetailRow release_summary = 29;
   bool has_release_summary = 30;
   JobRunContext run_context = 31;
+  ReportDetails artifacts = 32;
+  ReportDetails test_report = 33;
+  ReportDetails coverage_report = 34;
 }
 
 message SchedulingDiagnosis {
@@ -693,6 +696,14 @@ message ToolRequirements {
   string summary = 2;
   string tone = 3;
   repeated string issues = 4;
+}
+
+message ReportDetails {
+  string empty_label = 1;
+  string summary = 2;
+  string tone = 3;
+  repeated JobDetailRow rows = 4;
+  string additional_label = 5;
 }
 
 message JobRunContext {

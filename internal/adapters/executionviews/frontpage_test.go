@@ -18,8 +18,10 @@ func (s schedulingSourceStub) ListSchedulingAgents(context.Context) ([]requireme
 }
 
 type executionStoreStub struct {
-	jobs   []protocol.JobExecution
-	events map[string][]protocol.JobExecutionEvent
+	jobs       []protocol.JobExecution
+	events     map[string][]protocol.JobExecutionEvent
+	artifacts  map[string][]protocol.JobExecutionArtifact
+	testReport map[string]protocol.JobExecutionTestReport
 }
 
 func (s executionStoreStub) GetJobExecution(id string) (protocol.JobExecution, error) {
@@ -50,6 +52,15 @@ func (s executionStoreStub) ListJobExecutions() ([]protocol.JobExecution, error)
 	return append([]protocol.JobExecution(nil), s.jobs...), nil
 }
 
+func (s executionStoreStub) ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error) {
+	return append([]protocol.JobExecutionArtifact(nil), s.artifacts[id]...), nil
+}
+
+func (s executionStoreStub) GetJobExecutionTestReport(id string) (protocol.JobExecutionTestReport, bool, error) {
+	report, found := s.testReport[id]
+	return report, found, nil
+}
+
 func TestRepositoryPagesJobOutputAndAdvancesOverLifecycleEvents(t *testing.T) {
 	repository := NewRepository(executionStoreStub{
 		jobs: []protocol.JobExecution{{ID: "job-1", Status: "running"}},
@@ -64,6 +75,29 @@ func TestRepositoryPagesJobOutputAndAdvancesOverLifecycleEvents(t *testing.T) {
 	}
 	if batch.NextEventID != 5 || batch.Terminal || len(batch.Events) != 2 || batch.Events[1].Type != domain.JobOutputEventOutput {
 		t.Fatalf("batch = %+v", batch)
+	}
+}
+
+func TestRepositoryAddsArtifactsAndReportsToJobDetails(t *testing.T) {
+	repository := NewRepository(executionStoreStub{
+		jobs:      []protocol.JobExecution{{ID: "job-1", Status: "succeeded"}},
+		artifacts: map[string][]protocol.JobExecutionArtifact{"job-1": {{Path: "dist/app.zip", SizeBytes: 2048}}},
+		testReport: map[string]protocol.JobExecutionTestReport{"job-1": {
+			Total: 1, Passed: 1,
+			Suites: []protocol.TestSuiteReport{{Name: "unit", Format: "go-json", Total: 1, Passed: 1}},
+			Coverage: &protocol.CoverageReport{Format: "go-coverprofile", TotalStatements: 10, CoveredStatements: 8,
+				Files: []protocol.CoverageFileReport{{Path: "main.go", TotalStatements: 10, CoveredStatements: 8}}},
+		}},
+	}, 40)
+	details, err := repository.GetJobExecutionDetails(t.Context(), "job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(details.Artifacts) != 1 || details.Artifacts[0].Path != "dist/app.zip" {
+		t.Fatalf("artifacts = %+v", details.Artifacts)
+	}
+	if details.TestReport == nil || len(details.TestReport.Suites) != 1 || details.TestReport.Coverage == nil || len(details.TestReport.Coverage.Files) != 1 {
+		t.Fatalf("test report = %+v", details.TestReport)
 	}
 }
 
