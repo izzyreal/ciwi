@@ -4345,7 +4345,7 @@ func semanticTone(value string) string {
 		return "success"
 	case "failed", "failure", "error", "cancelled", "canceled", "offline":
 		return "danger"
-	case "warning", "queued", "waiting", "pending", "not reached", "stale":
+	case "warning", "queued", "waiting", "pending", "not reached", "stale", "deactivated":
 		return "warning"
 	case "accent", "running", "leased", "in progress", "active":
 		return "accent"

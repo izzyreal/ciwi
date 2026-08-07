@@ -3,10 +3,12 @@
 
   const root = document.getElementById('declarativeRoot');
   let outputWatchGeneration = 0;
+  let routeLoadGeneration = 0;
   const maxOutputCharacters = 1024 * 1024;
   let currentDocument = null;
   let currentData = null;
   let currentRouteMatch = null;
+  let currentPath = '';
   let routeContractPromise = null;
   let themeContractPromise = null;
   const screenContractPromises = new Map();
@@ -158,7 +160,7 @@
     switch (String(value || '').trim().toLowerCase()) {
       case 'succeeded': case 'success': case 'passed': case 'complete': case 'completed': case 'online': return 'success';
       case 'failed': case 'failure': case 'error': case 'cancelled': case 'canceled': case 'offline': return 'danger';
-      case 'warning': case 'queued': case 'waiting': case 'pending': case 'not reached': case 'stale': return 'warning';
+      case 'warning': case 'queued': case 'waiting': case 'pending': case 'not reached': case 'stale': case 'deactivated': return 'warning';
       case 'accent': case 'running': case 'leased': case 'in progress': case 'active': return 'accent';
       case 'muted': return 'muted';
       default: return 'muted';
@@ -359,7 +361,7 @@
 	return {route, params};
   }
 
-  async function resolveBrowserRoute() {
+  async function resolveBrowserRoute(path = routePath()) {
 	if (!routeContractPromise) {
 	  routeContractPromise = fetch('/ui/contracts/routes.json', {cache: 'no-store'}).then(async response => {
 		if (!response.ok) throw new Error(await response.text());
@@ -369,7 +371,7 @@
 	const documentContract = await routeContractPromise;
 	for (const route of (documentContract.routes || [])) {
 	  if (!(route.platforms || []).includes('web')) continue;
-	  const match = matchRoutePattern(route, routePath());
+	  const match = matchRoutePattern(route, path);
 	  if (match) return match;
 	}
 	throw new Error('Unsupported declarative route: ' + routePath());
@@ -436,10 +438,20 @@
         if (!window.ciwiConfirmAction(action.confirm)) return;
         const execute = async runtime => {
         if (action.command === 'navigate' && args.route) {
-		  window.location.assign(args.route);
+		  const previousDisabled = !!element.disabled;
+		  element.disabled = true;
+		  element.setAttribute('aria-busy', 'true');
+		  element.classList.add('ciwi-action-pending');
+		  try {
+			await navigateBrowser(args.route);
+		  } finally {
+			element.disabled = previousDisabled;
+			element.removeAttribute('aria-busy');
+			element.classList.remove('ciwi-action-pending');
+		  }
         }
         else if (action.command === 'open-url' && args.url) window.open(args.url, '_blank', 'noopener,noreferrer');
-        else if (action.command === 'refresh') refresh();
+		else if (action.command === 'refresh') await refresh({throwOnError: true});
         else if (action.command === 'change-theme') {
           ciwiApplyTheme(args.theme);
           await refresh();
@@ -465,7 +477,12 @@
 		  if (kind === 'file') url = '/artifacts/' + jobID + '/' + artifactPath.split('/').map(encodeURIComponent).join('/');
 		  const anchor = document.createElement('a');
 		  anchor.href = url;
-		  anchor.download = '';
+		  if (kind === 'file') {
+			anchor.target = '_blank';
+			anchor.rel = 'noopener noreferrer';
+		  } else {
+			anchor.download = '';
+		  }
 		  document.body.appendChild(anchor);
 		  anchor.click();
 		  anchor.remove();
@@ -553,7 +570,7 @@
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
-		  window.location.assign('/managed-yaml/' + encodeURIComponent(result.project_id));
+		  await navigateBrowser('/managed-yaml/' + encodeURIComponent(result.project_id));
 		}
 		else if (action.command === 'set-agent-script-field') {
 		  const script = currentData && currentData.agentScript;
@@ -575,7 +592,7 @@
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
 		  if (!result.job_execution_id) throw new Error('Script response did not include a job identifier');
-		  window.location.assign('/jobs/' + encodeURIComponent(result.job_execution_id));
+		  await navigateBrowser('/jobs/' + encodeURIComponent(result.job_execution_id));
 		}
 		else if (action.command === 'set-vault-field') {
 		  const vault = currentData && currentData.vault;
@@ -773,7 +790,7 @@
 		  const result = await response.json();
 		  const rerunID = result && result.job_execution && result.job_execution.id;
 		  if (!rerunID) throw new Error('Rerun response did not include an execution identifier');
-		  window.location.assign('/jobs/' + encodeURIComponent(rerunID));
+		  await navigateBrowser('/jobs/' + encodeURIComponent(rerunID));
 		}
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
         };
@@ -1081,7 +1098,16 @@
 	  const row = document.createElement('div');
 	  row.className = 'dsl-tree-row';
 	  row.style.setProperty('--ciwi-tree-depth', String(entry.depth));
-	  const link = tree.nodeLink ? String(resolve(itemData, tree.nodeLink) || '') : '';
+	  let link = tree.nodeLink ? String(resolve(itemData, tree.nodeLink) || '') : '';
+	  const fileDownload = (node.actions || []).find(action => action.command === 'download-artifact');
+	  if (!link && fileDownload) {
+		const args = Object.fromEntries(Object.entries(fileDownload.arguments || {}).map(([key, value]) => [key, renderText({template: value}, itemData)]));
+		if (String(args.kind || '') === 'file') {
+		  const jobID = encodeURIComponent(args.jobExecutionId || '');
+		  const artifactPath = String(args.path || '').split('/').map(encodeURIComponent).join('/');
+		  link = '/artifacts/' + jobID + '/' + artifactPath;
+		}
+	  }
 	  const label = renderText(tree.nodeLabel, itemData);
 	  const labelElement = document.createElement(link ? 'a' : 'span');
 	  labelElement.className = 'dsl-tree-label';
@@ -1295,6 +1321,18 @@
     window.ciwiRestoreViewState(root, viewState);
   }
 
+  async function navigateBrowser(path, options = {}) {
+	const targetPath = String(path || '/');
+	const previousPath = currentPath || routePath();
+	if (!options.fromHistory) window.history.pushState({}, '', targetPath);
+	try {
+	  await refresh({throwOnError: true});
+	} catch (error) {
+	  window.history.replaceState({}, '', previousPath);
+	  throw error;
+	}
+  }
+
   function declarativeVersionOptions(versions, emptyLabel) {
 	const values = (Array.isArray(versions) ? versions : []).map(value => String(value || '').trim()).filter(Boolean);
 	return values.length ? values.map(value => ({value, label: value})) : [{value: '', label: emptyLabel}];
@@ -1467,7 +1505,7 @@
 	if (!Number.isFinite(afterEventID) || afterEventID < 0) afterEventID = 0;
     while (generation === outputWatchGeneration) {
       const response = await fetch('/api/v1/views/jobs/' + encodeURIComponent(jobID) + '/output?after_event_id=' + String(afterEventID));
-	  if (generation !== outputWatchGeneration) return;
+      if (generation !== outputWatchGeneration) return;
 	  if (!response.ok) {
 		const message = await response.text();
 		if (generation !== outputWatchGeneration) return;
@@ -1531,13 +1569,14 @@
 	};
   }
 
-  async function refresh() {
-    const generation = ++outputWatchGeneration;
+  async function refresh(options = {}) {
+    const loadGeneration = ++routeLoadGeneration;
+    const generation = outputWatchGeneration + 1;
     try {
-	  currentRouteMatch = await resolveBrowserRoute();
-	  const routeName = currentRouteMatch.route.name;
-	  const screenName = currentRouteMatch.route.screen;
-	  const bindingRoot = currentRouteMatch.route.bindingRoot;
+	  const nextRouteMatch = await resolveBrowserRoute();
+	  const routeName = nextRouteMatch.route.name;
+	  const screenName = nextRouteMatch.route.screen;
+	  const bindingRoot = nextRouteMatch.route.bindingRoot;
 	  const projectMatch = routeName === 'project-details';
 	  const jobMatch = routeName === 'job-details';
 	  const settingsMatch = routeName === 'settings';
@@ -1549,16 +1588,16 @@
 	  const vaultMatch = routeName === 'vault';
 	  const runOptionsMatch = routeName === 'pipeline-run-options' || routeName === 'legacy-pipeline-run-options' || routeName === 'chain-run-options';
 	  let viewURL = '/api/v1/views/front-page';
-	  if (projectMatch) viewURL = '/api/v1/views/projects/' + encodeURIComponent(currentRouteMatch.params.projectId);
-	  if (jobMatch) viewURL = '/api/v1/views/jobs/' + encodeURIComponent(currentRouteMatch.params.jobId);
+	  if (projectMatch) viewURL = '/api/v1/views/projects/' + encodeURIComponent(nextRouteMatch.params.projectId);
+	  if (jobMatch) viewURL = '/api/v1/views/jobs/' + encodeURIComponent(nextRouteMatch.params.jobId);
 	  if (settingsMatch) viewURL = '/api/v1/server-info';
-	  if (agentDetailsMatch) viewURL = '/api/v1/views/agents/' + encodeURIComponent(currentRouteMatch.params.agentId);
+	  if (agentDetailsMatch) viewURL = '/api/v1/views/agents/' + encodeURIComponent(nextRouteMatch.params.agentId);
 	  if (agentsMatch) viewURL = '/api/v1/views/agents';
-	  if (managedYAMLMatch && routeName === 'managed-yaml') viewURL = '/api/v1/projects/' + encodeURIComponent(currentRouteMatch.params.projectId) + '/managed-yaml';
+	  if (managedYAMLMatch && routeName === 'managed-yaml') viewURL = '/api/v1/projects/' + encodeURIComponent(nextRouteMatch.params.projectId) + '/managed-yaml';
 	  if (managedYAMLMatch && routeName === 'managed-yaml-new') viewURL = '';
-	  if (agentScriptMatch) viewURL = '/api/v1/views/agents/' + encodeURIComponent(currentRouteMatch.params.agentId);
+	  if (agentScriptMatch) viewURL = '/api/v1/views/agents/' + encodeURIComponent(nextRouteMatch.params.agentId);
 	  if (vaultMatch) viewURL = '/api/v1/vault/connections';
-	  if (runOptionsMatch) viewURL = runOptionsViewURL('', '', currentRouteMatch);
+	  if (runOptionsMatch) viewURL = runOptionsViewURL('', '', nextRouteMatch);
 	  const viewPromise = viewURL
 		? fetch(viewURL)
 		: Promise.resolve(new Response('{}', {status: 200, headers: {'Content-Type': 'application/json'}}));
@@ -1572,7 +1611,7 @@
       applyContractTheme(themes);
       let view = responseView;
 	  if (managedYAMLMatch) view = managedYAMLBinding(responseView);
-	  if (agentScriptMatch) view = agentScriptBinding(responseView, currentRouteMatch.params.agentId);
+	  if (agentScriptMatch) view = agentScriptBinding(responseView, nextRouteMatch.params.agentId);
 	  if (vaultMatch) view = vaultBinding(responseView);
 	  if (projectMatch) {
 		decorateProjectDetails(view);
@@ -1656,8 +1695,11 @@
 		  || timeline[0]
 		  || {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
       }
-	  if (generation !== outputWatchGeneration) return;
-      currentDocument = documentContract;
+	  if (loadGeneration !== routeLoadGeneration) return false;
+	  outputWatchGeneration = generation;
+	  currentRouteMatch = nextRouteMatch;
+	  currentPath = routePath();
+	  currentDocument = documentContract;
 	  const browserClientState = {
 		connected: true, connecting: false, offline: false, address: window.location.host,
 		status: 'Connected through the browser', tone: 'success', progress: {state: 'none'},
@@ -1665,7 +1707,7 @@
 	  currentData = { [bindingRoot]: view, client: browserClientState };
       renderCurrent();
       if (jobMatch) {
-		const jobID = currentRouteMatch.params.jobId;
+		const jobID = nextRouteMatch.params.jobId;
         watchJobOutput(jobID, generation).catch(error => {
           if (generation !== outputWatchGeneration) return;
           if (currentData && currentData.jobDetails) {
@@ -1676,12 +1718,22 @@
         });
       }
     } catch (error) {
+	  if (options.throwOnError) throw error;
+	  if (currentDocument && currentData) {
+		console.error(error);
+		return false;
+	  }
       const message = document.createElement('div');
       message.className = 'dsl-error';
       message.textContent = error.message || String(error);
       root.replaceChildren(message);
+	  return false;
     }
+	return true;
   }
 
+  window.addEventListener('popstate', () => {
+	navigateBrowser(routePath(), {fromHistory: true}).catch(error => window.alert(error.message || String(error)));
+  });
   refresh().finally(startChangeWatch);
 })();

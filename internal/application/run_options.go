@@ -40,8 +40,8 @@ type RunOptions struct {
 	SupportsDryRun    bool        `json:"supports_dry_run"`
 	SourceRepo        string      `json:"source_repo"`
 	DefaultSourceRef  string      `json:"default_source_ref,omitempty"`
-	SelectedSourceRef string      `json:"selected_source_ref,omitempty"`
-	SelectedAgentID   string      `json:"selected_agent_id,omitempty"`
+	SelectedSourceRef string      `json:"selected_source_ref"`
+	SelectedAgentID   string      `json:"selected_agent_id"`
 	SourceRefs        []RunOption `json:"source_refs"`
 	EligibleAgents    []RunOption `json:"eligible_agents"`
 	PendingJobs       int         `json:"pending_jobs"`

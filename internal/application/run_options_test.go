@@ -2,12 +2,26 @@ package application
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 )
 
 type runOptionsProviderStub struct {
 	request RunOptionsRequest
 	result  RunOptions
+}
+
+func TestRunOptionsJSONKeepsEmptySelections(t *testing.T) {
+	payload, err := json.Marshal(RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"selected_source_ref":""`, `"selected_agent_id":""`} {
+		if !strings.Contains(string(payload), field) {
+			t.Fatalf("run options JSON %s does not contain %s", payload, field)
+		}
+	}
 }
 
 func (s *runOptionsProviderStub) GetRunOptions(_ context.Context, request RunOptionsRequest) (RunOptions, error) {

@@ -591,6 +591,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	}
 	startScreenLoad := func(target navigationState) { queueScreenLoad(target, false) }
 	startResyncLoad := func(target navigationState) { queueScreenLoad(target, true) }
+	var pendingNavigation *navigationState
 	defer func() {
 		if screenLoadCancel != nil {
 			screenLoadCancel()
@@ -662,27 +663,27 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		return nil
 	}
 	beginNavigationWith := func(target navigationState, recoverMissingRoute bool) error {
-		navigation = target
-		usedCache := false
 		if cached, ok := screenCache.Get(target); ok {
+			navigation = target
+			pendingNavigation = nil
 			if err := showScreenData(target, cached); err != nil {
 				return err
 			}
-			usedCache = true
-		} else if err := showScreenLoading(target); err != nil {
-			return err
-		}
-		if target.screen == "job-details" {
-			startOutput(target.jobID)
+			if target.screen == "job-details" {
+				startOutput(target.jobID)
+			} else {
+				stopOutput()
+			}
 		} else {
-			stopOutput()
+			pending := target
+			pendingNavigation = &pending
 		}
 		if recoverMissingRoute {
 			startResyncLoad(target)
 		} else {
 			startScreenLoad(target)
 		}
-		if !usedCache {
+		if pendingNavigation != nil {
 			renderer.SetStatus(loadingScreenLabel(target.screen))
 		} else if isScreenLoadingStatus(renderer.status) {
 			renderer.SetStatus("")
@@ -998,11 +999,15 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			outputErrors = nil
 		case result := <-screenLoads:
-			if navigation != result.navigation || result.generation != screenLoadGeneration {
+			expectedNavigation := navigation
+			if pendingNavigation != nil {
+				expectedNavigation = *pendingNavigation
+			}
+			if expectedNavigation != result.navigation || result.generation != screenLoadGeneration {
 				continue
 			}
 			if result.err != nil {
-				if result.recoverMissingRoute && navigation.screen != "front-page" {
+				if result.recoverMissingRoute && result.navigation.screen != "front-page" {
 					if err := beginResyncNavigation(navigationState{screen: "front-page"}); err != nil {
 						renderer.SetStatus("Loading failed: " + result.err.Error())
 					}
@@ -1010,31 +1015,47 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					continue
 				}
 				if result.recoverMissingRoute {
+					pendingNavigation = nil
 					scheduleReconnect("resynchronize: " + result.err.Error())
 					continue
 				}
-				if screenCache.Has(navigation) {
+				if pendingNavigation != nil {
+					pendingNavigation = nil
+					renderer.SetStatus("Loading failed; showing the previous screen: " + result.err.Error())
+				} else if screenCache.Has(navigation) {
 					renderer.SetStatus("Refresh failed; showing last known data: " + result.err.Error())
 				} else {
 					renderer.SetStatus("Loading failed: " + result.err.Error())
 				}
 			} else {
-				if err := validateNativeBindings(screens[navigation.screen], result.data); err != nil {
-					renderer.SetStatus("Loading failed: " + err.Error())
+				if err := validateNativeBindings(screens[result.navigation.screen], result.data); err != nil {
+					if pendingNavigation != nil {
+						pendingNavigation = nil
+						renderer.SetStatus("Loading failed; showing the previous screen: " + err.Error())
+					} else {
+						renderer.SetStatus("Loading failed: " + err.Error())
+					}
 					window.Invalidate()
 					continue
 				}
-				if navigation.screen == "job-details" && pendingCancellations[navigation.jobID] {
+				if result.navigation.screen == "job-details" && pendingCancellations[result.navigation.jobID] {
 					if root, ok := result.data["jobDetails"].(map[string]any); ok {
 						if canCancel, _ := root["can_cancel"].(bool); canCancel {
 							root["can_cancel"] = false
 						} else {
-							delete(pendingCancellations, navigation.jobID)
+							delete(pendingCancellations, result.navigation.jobID)
 						}
 					}
 				}
+				navigation = result.navigation
+				pendingNavigation = nil
 				screenCache.Put(navigation, result.data)
 				renderer.SetScreenAndData(screens[navigation.screen], result.data)
+				if navigation.screen == "job-details" {
+					startOutput(navigation.jobID)
+				} else {
+					stopOutput()
+				}
 				if navigation.screen == "settings" {
 					applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 					renderer.SetRootBinding("settings", "client_version", options.Version)

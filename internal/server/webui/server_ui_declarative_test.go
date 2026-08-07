@@ -426,7 +426,7 @@ func TestDeclarativeRendererSupportsSharedReportsAndArtifactDownloads(t *testing
 	script, styles := string(scriptPayload), string(stylePayload)
 	for _, expected := range []string{
 		"renderTreeView", "set-report-filter", "download-artifact",
-		"/artifacts/download-all", "/artifacts/download?prefix=", "'/artifacts/'",
+		"/artifacts/download-all", "/artifacts/download?prefix=", "'/artifacts/'", "anchor.target = '_blank'",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative report renderer does not contain %q", expected)
@@ -515,7 +515,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
 		".dsl-project-row > summary > .dsl-disclosure-label",
 		".dsl-execution-row:not([open]) > summary.ciwi-progress-surface", "border-radius:var(--ciwi-surface-radius",
-		".dsl-execution-section-header", ".dsl-agent-header,.dsl-agent-record { align-items:center; }",
+		".dsl-execution-section-header", ".dsl-agent-header,.dsl-agent-record { display:grid !important;",
 	} {
 		if !strings.Contains(script+style, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
@@ -523,6 +523,22 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 	}
 	if strings.Contains(style+chromeCSS, "text-decoration: underline") {
 		t.Fatal("browser text hover styling still introduces underlines")
+	}
+}
+
+func TestDeclarativeNavigationKeepsTheCurrentPageWhileLoading(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	for _, expected := range []string{"navigateBrowser", "window.history.pushState", "window.addEventListener('popstate'", "currentDocument && currentData", "aria-busy"} {
+		if !strings.Contains(script, expected) {
+			t.Errorf("declarative navigation does not contain %q", expected)
+		}
+	}
+	if strings.Contains(script, "window.location.assign") {
+		t.Fatal("declarative navigation still performs full document reloads")
 	}
 }
 

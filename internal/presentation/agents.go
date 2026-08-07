@@ -70,7 +70,7 @@ func (q *AgentsQueries) GetAgentsView(ctx context.Context) (AgentsView, error) {
 	online := 0
 	for _, agent := range agents {
 		view := agentToView(agent, now)
-		if view.Status == "online" {
+		if agentStatus(agent.LastSeenUTC, now) == "online" {
 			online++
 		}
 		views = append(views, view)
@@ -97,6 +97,9 @@ func (q *AgentsQueries) GetAgentDetailsView(ctx context.Context, agentID string)
 
 func agentToView(agent domain.Agent, now time.Time) AgentView {
 	status := agentStatus(agent.LastSeenUTC, now)
+	if agent.Deactivated && status == "online" {
+		status = "deactivated"
+	}
 	capabilities := make([]string, 0, len(agent.Capabilities))
 	for key, value := range agent.Capabilities {
 		capabilities = append(capabilities, key+"="+value)

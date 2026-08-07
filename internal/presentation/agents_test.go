@@ -36,6 +36,37 @@ func TestAgentsViewDecoratesAndSortsAgentState(t *testing.T) {
 	}
 }
 
+func TestDeactivatedAgentOverridesOnlyOnlineStatus(t *testing.T) {
+	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	online := agentToView(domain.Agent{Deactivated: true, LastSeenUTC: now.Add(-5 * time.Second)}, now)
+	if online.Status != "deactivated" || online.StatusLabel != "Deactivated" {
+		t.Fatalf("online deactivated status = %q (%q)", online.Status, online.StatusLabel)
+	}
+	stale := agentToView(domain.Agent{Deactivated: true, LastSeenUTC: now.Add(-30 * time.Second)}, now)
+	if stale.Status != "stale" || stale.StatusLabel != "Stale" {
+		t.Fatalf("stale deactivated status = %q (%q)", stale.Status, stale.StatusLabel)
+	}
+	offline := agentToView(domain.Agent{Deactivated: true, LastSeenUTC: now.Add(-2 * time.Minute)}, now)
+	if offline.Status != "offline" || offline.StatusLabel != "Offline" {
+		t.Fatalf("offline deactivated status = %q (%q)", offline.Status, offline.StatusLabel)
+	}
+}
+
+func TestDeactivatedOnlineAgentStillCountsAsOnline(t *testing.T) {
+	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	queries := NewAgentsQueries(application.NewAgentQueries(presentationAgentRepository{agents: []domain.Agent{{
+		ID: "agent-1", Deactivated: true, LastSeenUTC: now.Add(-5 * time.Second),
+	}}}))
+	queries.now = func() time.Time { return now }
+	view, err := queries.GetAgentsView(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Summary != "1/1 online" || view.Agents[0].Status != "deactivated" {
+		t.Fatalf("deactivated online view = %+v", view)
+	}
+}
+
 func TestAgentDetailsViewUsesTheSharedAgentPresentation(t *testing.T) {
 	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 	queries := NewAgentsQueries(application.NewAgentQueries(presentationAgentRepository{agents: []domain.Agent{
