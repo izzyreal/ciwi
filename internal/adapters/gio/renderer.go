@@ -814,6 +814,10 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 		for index := range children {
 			if children[index].ID == pendingScrollSection {
 				r.list.ScrollTo(index)
+				// layout.List applies a programmatic scroll over its current and
+				// following layout pass. Guarantee that follow-up pass even when
+				// navigating to a section on the screen that is already visible.
+				gtx.Execute(op.InvalidateCmd{})
 				r.mu.Lock()
 				if r.pendingScrollSection == pendingScrollSection {
 					r.pendingScrollSection = ""

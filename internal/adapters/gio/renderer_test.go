@@ -12,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/f32"
 	"gioui.org/font"
+	"gioui.org/io/input"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
@@ -1672,6 +1675,100 @@ func TestActionableNoticeExpiresIndependentlyFromStatus(t *testing.T) {
 	if renderer.status != "Persistent connection state" || !renderer.StatusExpiry().IsZero() {
 		t.Fatalf("notice expiration disturbed status: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
 	}
+}
+
+func TestNativeQueuedJobsNoticeNavigatesAndScrollsAfterTouch(t *testing.T) {
+	screen, err := sharedUI.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theme, err := findTheme("space")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := make(chan commandRequest, 1)
+	renderer, err := NewRenderer(screen, theme, func(action uidsl.Action, arguments map[string]string) {
+		commands <- commandRequest{action: action, arguments: arguments}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := offlineFrontPageBindingData("v0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetScreenAndData(screen, data)
+	renderer.ShowNotice("Pipeline queued", "Show queued jobs", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/", "section": "queued-executions"}, time.Hour)
+	var router input.Router
+	gtx := layout.Context{Ops: new(op.Ops), Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(390, 600))}
+	renderer.Layout(gtx)
+	router.Frame(gtx.Ops)
+	actionBounds, ok := semanticClickBoundsForLabel(router.AppendSemantics(nil), "Show queued jobs")
+	if !ok {
+		t.Fatalf("notice action is missing from semantics: %#v", router.AppendSemantics(nil))
+	}
+	center := actionBounds.Min.Add(actionBounds.Size().Div(2))
+	router.Queue(
+		pointer.Event{Source: pointer.Touch, Kind: pointer.Press, Position: f32.Pt(float32(center.X), float32(center.Y))},
+		pointer.Event{Source: pointer.Touch, Kind: pointer.Release, Position: f32.Pt(float32(center.X), float32(center.Y))},
+	)
+	gtx.Reset()
+	renderer.Layout(gtx)
+	router.Frame(gtx.Ops)
+	var command commandRequest
+	select {
+	case command = <-commands:
+	default:
+		t.Fatal("notice action was not dispatched")
+	}
+	if command.action.Command != "navigate" || command.arguments["route"] != "/" || command.arguments["section"] != "queued-executions" {
+		t.Fatalf("notice action = %#v", command)
+	}
+	if renderer.notice != nil {
+		t.Fatalf("notice was not dismissed: %#v", renderer.notice)
+	}
+	navigation, err := navigationForRoute(command.arguments["route"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if navigation.screen != "front-page" {
+		t.Fatalf("navigation = %+v", navigation)
+	}
+	renderer.ScrollToSection(command.arguments["section"])
+	renderer.SetScreenAndData(screen, data)
+	gtx.Reset()
+	renderer.Layout(gtx)
+	router.Frame(gtx.Ops)
+	if _, redraw := router.WakeupTime(); !redraw {
+		t.Fatal("queued section scroll did not request its settling frame")
+	}
+	gtx.Reset()
+	renderer.Layout(gtx)
+	router.Frame(gtx.Ops)
+	if renderer.pendingScrollSection != "" || renderer.list.Position.Offset <= 0 {
+		t.Fatalf("queued section target pending=%q position=%+v", renderer.pendingScrollSection, renderer.list.Position)
+	}
+}
+
+func semanticClickBoundsForLabel(nodes []input.SemanticNode, label string) (image.Rectangle, bool) {
+	for _, node := range nodes {
+		if node.Desc.Gestures&input.ClickGesture != 0 && semanticTreeHasLabel(node.Children, label) {
+			return node.Desc.Bounds, true
+		}
+		if bounds, ok := semanticClickBoundsForLabel(node.Children, label); ok {
+			return bounds, true
+		}
+	}
+	return image.Rectangle{}, false
+}
+
+func semanticTreeHasLabel(nodes []input.SemanticNode, label string) bool {
+	for _, node := range nodes {
+		if node.Desc.Label == label || semanticTreeHasLabel(node.Children, label) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNativeNoticesQueueDeduplicateAndAdvance(t *testing.T) {
