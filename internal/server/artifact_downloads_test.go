@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"io"
 	"os"
 	"path/filepath"
@@ -92,5 +93,46 @@ func TestArtifactDownloadServiceStreamsFilesAndPrefixArchives(t *testing.T) {
 	}
 	if len(entries) != 2 || entries["dist/readme.txt"] != "hello" || len(entries["dist/app.bin"]) != artifactDownloadChunkSize+37 {
 		t.Fatalf("archive entries = %#v", entries)
+	}
+}
+
+func TestArtifactDownloadServiceCancellationRemovesTemporaryArchive(t *testing.T) {
+	artifactsDir := t.TempDir()
+	jobID := "job-cancel"
+	artifactPath := filepath.Join(artifactsDir, jobID, "dist", "app.bin")
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := make([]byte, artifactDownloadChunkSize+1)
+	if _, err := rand.Read(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifactPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service := newArtifactDownloadService(artifactDownloadStoreStub{artifacts: []protocol.JobExecutionArtifact{{Path: "dist/app.bin", SizeBytes: artifactDownloadChunkSize + 1}}}, artifactsDir)
+	first, err := service.DownloadArtifact(context.Background(), application.ArtifactDownloadRequest{JobExecutionID: jobID, Kind: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, ok := service.sessions[first.Token]
+	if !ok || !session.temporary {
+		t.Fatalf("temporary session not retained: %+v", service.sessions)
+	}
+	if _, err := os.Stat(session.path); err != nil {
+		t.Fatalf("temporary archive missing before cancellation: %v", err)
+	}
+	result, err := service.DownloadArtifact(context.Background(), application.ArtifactDownloadRequest{Token: first.Token, Cancel: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Complete {
+		t.Fatalf("cancellation result = %+v", result)
+	}
+	if _, ok := service.sessions[first.Token]; ok {
+		t.Fatal("cancelled session was retained")
+	}
+	if _, err := os.Stat(session.path); !os.IsNotExist(err) {
+		t.Fatalf("temporary archive survived cancellation: %v", err)
 	}
 }

@@ -170,9 +170,10 @@ use the existing HTTP protocol.
 
 Job Details also carries recursive artifact, test, and coverage report trees.
 Native artifact files and directory/all-artifact ZIP archives are transferred
-through a typed, bounded CNP chunk operation and written to the user's
-Downloads directory under a collision-safe name. The native client does not
-fall back to the browser's artifact URLs.
+through a typed, bounded CNP chunk operation. The platform's native save dialog
+asks where each file or archive should be written; dismissing it also cancels
+the server-side transfer. The native client does not fall back to the browser's
+artifact URLs.
 
 Global Settings covers native-client appearance, connection context, project
 management, agent administration, and server update/rollback controls. Agent

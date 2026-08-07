@@ -3,21 +3,26 @@
 package gio
 
 import (
+	"bytes"
 	"context"
-	"os"
-	"path/filepath"
+	"io"
 	"testing"
 
+	"gioui.org/x/explorer"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type artifactChunkClientStub struct {
-	calls int
+	requests []*cnpv1.ArtifactDownloadRequest
 }
 
 func (s *artifactChunkClientStub) DownloadArtifactChunk(_ context.Context, request *cnpv1.ArtifactDownloadRequest) (*cnpv1.ArtifactDownloadChunk, error) {
-	s.calls++
-	if s.calls == 1 {
+	s.requests = append(s.requests, proto.Clone(request).(*cnpv1.ArtifactDownloadRequest))
+	if request.GetCancel() {
+		return &cnpv1.ArtifactDownloadChunk{Token: request.GetToken(), Complete: true}, nil
+	}
+	if request.GetToken() == "" {
 		return &cnpv1.ArtifactDownloadChunk{Token: "token", FileName: "../app.zip", Data: []byte("first-"), NextOffset: 6, TotalSize: 12}, nil
 	}
 	if request.GetToken() != "token" || request.GetOffset() != 6 {
@@ -26,30 +31,55 @@ func (s *artifactChunkClientStub) DownloadArtifactChunk(_ context.Context, reque
 	return &cnpv1.ArtifactDownloadChunk{Token: "token", FileName: "../app.zip", Data: []byte("second"), NextOffset: 12, TotalSize: 12, Complete: true}, nil
 }
 
-func TestDownloadArtifactToDirStreamsWithoutOverwriting(t *testing.T) {
-	downloadDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(downloadDir, "app.zip"), []byte("existing"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+type artifactWriter struct {
+	bytes.Buffer
+	closed bool
+}
+
+func (w *artifactWriter) Close() error {
+	w.closed = true
+	return nil
+}
+
+type artifactPickerStub struct {
+	name   string
+	writer io.WriteCloser
+	err    error
+}
+
+func (p *artifactPickerStub) CreateFile(name string) (io.WriteCloser, error) {
+	p.name = name
+	return p.writer, p.err
+}
+
+func TestDownloadArtifactUsesNativePickerAndStreamsContent(t *testing.T) {
 	client := &artifactChunkClientStub{}
-	path, err := downloadArtifactToDir(t.Context(), client, map[string]string{
+	writer := &artifactWriter{}
+	picker := &artifactPickerStub{writer: writer}
+	name, err := downloadArtifactWithPicker(t.Context(), client, picker, map[string]string{
 		"jobExecutionId": "job-1", "kind": "file", "path": "dist/app.zip",
-	}, downloadDir)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(path) != "app (1).zip" {
-		t.Fatalf("download path = %q", path)
+	if name != "app.zip" || picker.name != "app.zip" {
+		t.Fatalf("download name = %q, picker suggestion = %q", name, picker.name)
 	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	if writer.String() != "first-second" || !writer.closed || len(client.requests) != 2 {
+		t.Fatalf("download = %q, closed = %t, requests = %d", writer.String(), writer.closed, len(client.requests))
 	}
-	if string(content) != "first-second" || client.calls != 2 {
-		t.Fatalf("download = %q, calls = %d", content, client.calls)
+}
+
+func TestDownloadArtifactCancellationAbortsServerSession(t *testing.T) {
+	client := &artifactChunkClientStub{}
+	picker := &artifactPickerStub{err: explorer.ErrUserDecline}
+	_, err := downloadArtifactWithPicker(t.Context(), client, picker, map[string]string{
+		"jobExecutionId": "job-1", "kind": "all",
+	})
+	if err != errArtifactDownloadCancelled {
+		t.Fatalf("download error = %v", err)
 	}
-	existing, err := os.ReadFile(filepath.Join(downloadDir, "app.zip"))
-	if err != nil || string(existing) != "existing" {
-		t.Fatalf("existing download was overwritten: %q, %v", existing, err)
+	if len(client.requests) != 2 || !client.requests[1].GetCancel() || client.requests[1].GetToken() != "token" {
+		t.Fatalf("cancellation requests = %+v", client.requests)
 	}
 }

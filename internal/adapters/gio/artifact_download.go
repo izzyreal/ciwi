@@ -4,39 +4,43 @@ package gio
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"gioui.org/x/explorer"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
 )
+
+var errArtifactDownloadCancelled = errors.New("artifact download cancelled")
 
 type artifactDownloadResult struct {
 	path string
 	err  error
 }
 
-func downloadArtifact(ctx context.Context, client *cnpclient.Client, arguments map[string]string) (resultPath string, resultErr error) {
-	userHomePath, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("locate Downloads folder: %w", err)
-	}
-	downloadDir := filepath.Join(userHomePath, "Downloads")
-	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
-		return "", fmt.Errorf("prepare Downloads folder: %w", err)
-	}
-	return downloadArtifactToDir(ctx, client, arguments, downloadDir)
-}
-
 type artifactChunkClient interface {
 	DownloadArtifactChunk(context.Context, *cnpv1.ArtifactDownloadRequest) (*cnpv1.ArtifactDownloadChunk, error)
 }
 
-func downloadArtifactToDir(ctx context.Context, client artifactChunkClient, arguments map[string]string, downloadDir string) (resultPath string, resultErr error) {
+type artifactDestinationPicker interface {
+	CreateFile(string) (io.WriteCloser, error)
+}
+
+func downloadArtifact(ctx context.Context, client *cnpclient.Client, picker artifactDestinationPicker, arguments map[string]string) (string, error) {
+	return downloadArtifactWithPicker(ctx, client, picker, arguments)
+}
+
+func downloadArtifactWithPicker(ctx context.Context, client artifactChunkClient, picker artifactDestinationPicker, arguments map[string]string) (resultName string, resultErr error) {
 	if client == nil {
 		return "", fmt.Errorf("server is offline")
+	}
+	if picker == nil {
+		return "", fmt.Errorf("native save dialog is unavailable")
 	}
 	request := &cnpv1.ArtifactDownloadRequest{
 		JobExecutionId: strings.TrimSpace(arguments["jobExecutionId"]),
@@ -46,33 +50,44 @@ func downloadArtifactToDir(ctx context.Context, client artifactChunkClient, argu
 	if request.JobExecutionId == "" {
 		return "", fmt.Errorf("job execution id is required")
 	}
-	partial, err := os.CreateTemp(downloadDir, ".ciwi-download-*.part")
+
+	chunk, err := client.DownloadArtifactChunk(ctx, request)
 	if err != nil {
-		return "", fmt.Errorf("create partial download: %w", err)
+		return "", fmt.Errorf("download artifact: %w", err)
 	}
-	partialPath := partial.Name()
+	fileName := safeDownloadFileName(chunk.GetFileName())
+	activeToken := chunk.GetToken()
+	writer, err := picker.CreateFile(fileName)
+	if err != nil {
+		if !chunk.GetComplete() {
+			cancelArtifactDownload(client, chunk.GetToken())
+		}
+		if errors.Is(err, explorer.ErrUserDecline) {
+			return "", errArtifactDownloadCancelled
+		}
+		return "", fmt.Errorf("choose artifact destination: %w", err)
+	}
+	closed := false
+	complete := chunk.GetComplete()
 	defer func() {
-		_ = partial.Close()
-		if resultErr != nil {
-			_ = os.Remove(partialPath)
+		if !closed {
+			if closeErr := writer.Close(); resultErr == nil && closeErr != nil {
+				resultErr = fmt.Errorf("close artifact destination: %w", closeErr)
+			}
+		}
+		if resultErr != nil && !complete {
+			cancelArtifactDownload(client, activeToken)
 		}
 	}()
 
-	fileName := ""
 	for {
-		chunk, err := client.DownloadArtifactChunk(ctx, request)
-		if err != nil {
-			return "", fmt.Errorf("download artifact: %w", err)
-		}
-		if fileName == "" {
-			fileName = safeDownloadFileName(chunk.GetFileName())
-		}
 		if len(chunk.GetData()) > 0 {
-			if _, err := partial.Write(chunk.GetData()); err != nil {
+			if _, err := writer.Write(chunk.GetData()); err != nil {
 				return "", fmt.Errorf("write artifact: %w", err)
 			}
 		}
-		if chunk.GetComplete() {
+		complete = chunk.GetComplete()
+		if complete {
 			break
 		}
 		if chunk.GetToken() == "" || chunk.GetNextOffset() <= request.GetOffset() {
@@ -80,27 +95,27 @@ func downloadArtifactToDir(ctx context.Context, client artifactChunkClient, argu
 		}
 		request.Token = chunk.GetToken()
 		request.Offset = chunk.GetNextOffset()
-	}
-	if err := partial.Sync(); err != nil {
-		return "", fmt.Errorf("flush artifact: %w", err)
-	}
-	if err := partial.Close(); err != nil {
-		return "", fmt.Errorf("close artifact: %w", err)
-	}
-
-	for suffix := 0; ; suffix++ {
-		candidate := filepath.Join(downloadDir, downloadFileNameWithSuffix(fileName, suffix))
-		if err := os.Link(partialPath, candidate); err == nil {
-			if err := os.Remove(partialPath); err != nil {
-				return "", fmt.Errorf("finalize artifact: %w", err)
-			}
-			return candidate, nil
-		} else if os.IsExist(err) {
-			continue
-		} else {
-			return "", fmt.Errorf("finalize artifact: %w", err)
+		chunk, err = client.DownloadArtifactChunk(ctx, request)
+		if err != nil {
+			return "", fmt.Errorf("download artifact: %w", err)
 		}
+		activeToken = chunk.GetToken()
 	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("close artifact destination: %w", err)
+	}
+	closed = true
+	return fileName, nil
+}
+
+func cancelArtifactDownload(client artifactChunkClient, token string) {
+	token = strings.TrimSpace(token)
+	if client == nil || token == "" {
+		return
+	}
+	cancelCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _ = client.DownloadArtifactChunk(cancelCtx, &cnpv1.ArtifactDownloadRequest{Token: token, Cancel: true})
 }
 
 func safeDownloadFileName(raw string) string {
@@ -109,13 +124,4 @@ func safeDownloadFileName(raw string) string {
 		return "ciwi-artifact"
 	}
 	return name
-}
-
-func downloadFileNameWithSuffix(name string, suffix int) string {
-	if suffix <= 0 {
-		return name
-	}
-	extension := filepath.Ext(name)
-	base := strings.TrimSuffix(name, extension)
-	return fmt.Sprintf("%s (%d)%s", base, suffix, extension)
 }

@@ -8,6 +8,7 @@ type ArtifactDownloadRequest struct {
 	Path           string
 	Token          string
 	Offset         int64
+	Cancel         bool
 }
 
 type ArtifactDownloadChunk struct {

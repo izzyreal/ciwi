@@ -1707,15 +1707,11 @@ func treeEntryNode(node uidsl.Node, data any, key string) (uidsl.Node, error) {
 		summary = append(summary, uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: detail}, Style: uidsl.Style{Role: "detail-small", Tone: tone}})
 	}
 	if actionLabel != "" && len(node.Actions) > 0 {
-		summary = append(summary, uidsl.Node{Component: "button", Text: &uidsl.Text{Literal: actionLabel}, Actions: node.Actions})
+		summary = append(summary, uidsl.Node{Component: "button", Text: &uidsl.Text{Literal: actionLabel}, Style: uidsl.Style{Role: "tree-action"}, Actions: node.Actions})
 	}
 	children, _ := resolveItems(data, tree.Children)
 	if len(children) == 0 {
-		// A vertical leaf lets long artifact and coverage paths wrap within the
-		// report card. Gio's horizontal Flex measures rigid detail/action cells
-		// first, which can otherwise leave the flexible path label no width.
-		summary[0].Layout.Grow = false
-		return uidsl.Node{Component: "column", Layout: uidsl.Layout{Direction: "vertical", Gap: "small"}, Children: summary}, nil
+		return uidsl.Node{Component: "row", Style: uidsl.Style{Role: "tree-row"}, Layout: uidsl.Layout{Direction: "horizontal", Gap: "small", Align: "center"}, Children: summary}, nil
 	}
 	defaultExpanded := false
 	if tree.DefaultExpanded != "" {
@@ -1766,6 +1762,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	isProjectRow := node.Style.Role == "project-row"
 	isOutputGroup := node.Style.Role == "output-group"
 	isExecutionRow := node.Style.Role == "execution-row"
+	isTreeBranch := node.Style.Role == "tree-branch"
 	contentPadding := r.metrics.sectionPadding
 	if node.Layout.Padding != "" {
 		contentPadding = r.spacing(node.Layout.Padding)
@@ -1846,6 +1843,8 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				labelInset := unit.Dp(10)
 				if isProjectRow {
 					labelInset = 0
+				} else if isTreeBranch {
+					labelInset = 4
 				}
 				return layout.Inset{Left: labelInset, Right: labelInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					defer pointer.PassOp{}.Push(gtx.Ops).Pop()
@@ -1963,8 +1962,13 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				labelChild = layout.Rigid(labelWidget)
 			}
 			children := []layout.FlexChild{labelChild}
-			children = append(children, summaryChildren()...)
-			children = append(children, layout.Rigid(toggleWidget))
+			if isTreeBranch {
+				children = []layout.FlexChild{layout.Rigid(toggleWidget), labelChild}
+				children = append(children, summaryChildren()...)
+			} else {
+				children = append(children, summaryChildren()...)
+				children = append(children, layout.Rigid(toggleWidget))
+			}
 			layoutRow := func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 			}
@@ -2037,6 +2041,10 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		layout.Rigid(headerWidget),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			bodyInset := layout.Inset{Top: 12}
+			if isTreeBranch {
+				bodyInset.Top = r.metrics.spaceSmall
+				bodyInset.Left = r.metrics.spaceMedium
+			}
 			if isOutputGroup || isExecutionRow {
 				if isOutputGroup {
 					bodyInset.Top = contentPadding
@@ -2045,14 +2053,25 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				bodyInset.Bottom = contentPadding
 				bodyInset.Left = contentPadding
 			}
-			return bodyInset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				contentNode := node
-				contentNode.Layout.Padding = ""
-				if isOutputGroup {
-					contentNode.Children = withDefaultConsoleText(node.Children)
-				}
-				return r.layoutChildren(gtx, contentNode, data, path+"/content")
-			})
+			body := func(gtx layout.Context) layout.Dimensions {
+				return bodyInset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					contentNode := node
+					contentNode.Layout.Padding = ""
+					if isOutputGroup {
+						contentNode.Children = withDefaultConsoleText(node.Children)
+					}
+					return r.layoutChildren(gtx, contentNode, data, path+"/content")
+				})
+			}
+			if !isTreeBranch {
+				return body(gtx)
+			}
+			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				guideX := gtx.Dp(r.metrics.spaceMedium / 2)
+				guideWidth := max(1, gtx.Dp(1))
+				paint.FillShape(gtx.Ops, r.palette.border, clip.Rect(image.Rect(guideX, 0, guideX+guideWidth, gtx.Constraints.Min.Y)).Op())
+				return layout.Dimensions{Size: gtx.Constraints.Min}
+			}, body)
 		}),
 	)
 }
@@ -2399,6 +2418,9 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 			continue
 		}
 		widgetFn := func(gtx layout.Context) layout.Dimensions {
+			if node.Style.Role == "report-stack" && axis == layout.Vertical && gtx.Constraints.Max.X > 0 {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			}
 			return r.layoutNode(gtx, child, data, fmt.Sprintf("%s/%d", path, i))
 		}
 		if gridWeights != nil {

@@ -432,7 +432,7 @@ func TestDeclarativeRendererSupportsSharedReportsAndArtifactDownloads(t *testing
 			t.Errorf("declarative report renderer does not contain %q", expected)
 		}
 	}
-	for _, expected := range []string{".dsl-report-card", "overflow-wrap:anywhere", "word-break:break-word"} {
+	for _, expected := range []string{".dsl-report-card", ".dsl-report-stack", ".dsl-tree-children", "margin-left:20px", "overflow-wrap:anywhere", "word-break:break-word"} {
 		if !strings.Contains(styles, expected) {
 			t.Errorf("declarative report styles do not contain %q", expected)
 		}

@@ -64,6 +64,16 @@ func (s *artifactDownloadService) DownloadArtifact(_ context.Context, request ap
 
 	token := strings.TrimSpace(request.Token)
 	session, ok := s.sessions[token]
+	if request.Cancel {
+		if token == "" {
+			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorInvalidArgument, "artifact download token is required for cancellation", nil)
+		}
+		if !ok {
+			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorNotFound, "artifact download expired", nil)
+		}
+		s.finishLocked(token, session)
+		return application.ArtifactDownloadChunk{Token: token, Complete: true}, nil
+	}
 	if token == "" {
 		if request.Offset != 0 {
 			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorInvalidArgument, "new artifact downloads must start at offset zero", nil)

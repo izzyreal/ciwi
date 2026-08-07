@@ -351,6 +351,7 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 			Path:           operation.DownloadArtifact.GetPath(),
 			Token:          operation.DownloadArtifact.GetToken(),
 			Offset:         operation.DownloadArtifact.GetOffset(),
+			Cancel:         operation.DownloadArtifact.GetCancel(),
 		})
 		if err == nil {
 			response.Result = &cnpv1.Response_ArtifactDownload{ArtifactDownload: &cnpv1.ArtifactDownloadChunk{

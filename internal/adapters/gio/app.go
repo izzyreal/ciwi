@@ -13,6 +13,7 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/op"
+	"gioui.org/x/explorer"
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
@@ -390,6 +391,7 @@ func Run(options Options) error {
 	}
 	window := new(app.Window)
 	window.Option(app.Title("ciwi native"), app.Size(1180, 780))
+	fileExplorer := explorer.NewExplorer(window)
 	actionCatalog, err := sharedUI.LoadActionCatalog()
 	if err != nil {
 		return err
@@ -470,11 +472,13 @@ func Run(options Options) error {
 	})
 	renderer.SetInvalidate(window.Invalidate)
 	renderer.SetStatus("")
-	go runController(ctx, window, renderer, commands, screens, options, preferencesPath, preferences, coordinator, clientBroker, operationJournal)
+	go runController(ctx, window, renderer, commands, screens, options, preferencesPath, preferences, coordinator, clientBroker, operationJournal, fileExplorer)
 
 	var operations op.Ops
 	for {
-		switch event := window.Event().(type) {
+		event := window.Event()
+		fileExplorer.ListenEvents(event)
+		switch event := event.(type) {
 		case app.DestroyEvent:
 			return event.Err
 		case app.FrameEvent:
@@ -485,7 +489,7 @@ func Run(options Options) error {
 	}
 }
 
-func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal) {
+func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal, artifactPicker artifactDestinationPicker) {
 	screenCache := newNativeScreenCache()
 	pendingCancellations := map[string]bool{}
 	connectionSettings := nativeConnectionSettingsForLaunch(preferences, options.Address)
@@ -1044,10 +1048,12 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			window.Invalidate()
 		case result := <-artifactDownloads:
-			if result.err != nil {
+			if errors.Is(result.err, errArtifactDownloadCancelled) {
+				renderer.SetStatus("Artifact download cancelled")
+			} else if result.err != nil {
 				renderer.SetStatus("Artifact download failed: " + result.err.Error())
 			} else {
-				renderer.SetStatus("Downloaded artifact to " + result.path)
+				renderer.SetStatus("Downloaded artifact: " + result.path)
 			}
 			scheduleStatusExpiry()
 			window.Invalidate()
@@ -1222,7 +1228,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				arguments := command.arguments
 				renderer.SetStatus("Downloading artifact…")
 				go func() {
-					path, downloadErr := downloadArtifact(ctx, activeClient, arguments)
+					path, downloadErr := downloadArtifact(ctx, activeClient, artifactPicker, arguments)
 					select {
 					case artifactDownloads <- artifactDownloadResult{path: path, err: downloadErr}:
 					case <-ctx.Done():

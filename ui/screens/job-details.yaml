@@ -637,12 +637,13 @@ screen:
                         arguments:
                           prefix: "{{outputGroup.state_key}}"
                           expanded: "false"
-      - component: row
+      - component: column
         id: execution-reports
-        layout: {direction: horizontal, gap: medium, align: start, wrap: true}
+        layout: {direction: vertical, gap: medium, align: stretch}
+        style: {role: report-stack}
         children:
           - component: card
-            layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+            layout: {direction: vertical, gap: small, padding: medium}
             style: {role: report-card}
             children:
               - component: row
@@ -686,7 +687,7 @@ screen:
                     command: download-artifact
                     arguments: {jobExecutionId: "{{jobDetails.id}}", kind: "{{treeNode.action_kind}}", path: "{{treeNode.action_path}}"}
           - component: card
-            layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+            layout: {direction: vertical, gap: small, padding: medium}
             style: {role: report-card}
             children:
               - component: text
@@ -727,7 +728,7 @@ screen:
                   filter: jobDetails.test_report.filter
                   filterValues: treeNode.filter_values
           - component: card
-            layout: {direction: vertical, gap: small, padding: medium, grow: true, minWidth: "320"}
+            layout: {direction: vertical, gap: small, padding: medium}
             style: {role: report-card}
             children:
               - component: text

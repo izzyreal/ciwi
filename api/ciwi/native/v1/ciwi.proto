@@ -794,6 +794,7 @@ message ArtifactDownloadRequest {
   string path = 3;
   string token = 4;
   int64 offset = 5;
+  bool cancel = 6;
 }
 
 message ArtifactDownloadChunk {

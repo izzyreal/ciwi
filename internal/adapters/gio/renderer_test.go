@@ -2649,6 +2649,38 @@ func TestFlexAlignmentDefaultsColumnsToStartAndRowsToMiddle(t *testing.T) {
 	}
 }
 
+func TestTreeEntryNodeKeepsLeafActionsInCompactRows(t *testing.T) {
+	tree := &uidsl.TreeView{
+		StateKey: "artifacts", As: "treeNode", NodeKey: "treeNode.key",
+		NodeLabel: uidsl.Text{Binding: "treeNode.label"}, NodeDetail: uidsl.Text{Binding: "treeNode.detail"},
+		Children: "treeNode.children", ActionLabel: uidsl.Text{Binding: "treeNode.action_label"},
+	}
+	node := uidsl.Node{Component: "tree-view", TreeView: tree, Actions: []uidsl.Action{{On: "activate", Command: "download-artifact"}}}
+	leaf, err := treeEntryNode(node, map[string]any{"treeNode": map[string]any{
+		"key": "file", "label": "Ciwi.exe", "detail": "17.7 MB", "action_label": "Download", "children": []any{},
+	}}, "file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaf.Component != "row" || leaf.Style.Role != "tree-row" || len(leaf.Children) != 3 {
+		t.Fatalf("leaf node = %+v", leaf)
+	}
+	if !leaf.Children[0].Layout.Grow || leaf.Children[2].Style.Role != "tree-action" {
+		t.Fatalf("leaf layout = %+v", leaf.Children)
+	}
+
+	branch, err := treeEntryNode(node, map[string]any{"treeNode": map[string]any{
+		"key": "dist", "label": "dist", "detail": "", "action_label": "Download .zip",
+		"children": []any{map[string]any{"key": "file"}},
+	}}, "dist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if branch.Component != "disclosure" || branch.Style.Role != "tree-branch" || len(branch.Disclosure.Summary) != 1 || branch.Disclosure.Summary[0].Style.Role != "tree-action" {
+		t.Fatalf("branch node = %+v", branch)
+	}
+}
+
 func TestProjectStructureFilterIncludesChainsAndSurvivesRefresh(t *testing.T) {
 	renderer := &Renderer{}
 	data := map[string]any{"projectDetails": map[string]any{

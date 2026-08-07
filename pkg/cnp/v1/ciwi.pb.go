@@ -7879,6 +7879,7 @@ type ArtifactDownloadRequest struct {
 	Path           string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
 	Token          string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`
 	Offset         int64                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
+	Cancel         bool                   `protobuf:"varint,6,opt,name=cancel,proto3" json:"cancel,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -7946,6 +7947,13 @@ func (x *ArtifactDownloadRequest) GetOffset() int64 {
 		return x.Offset
 	}
 	return 0
+}
+
+func (x *ArtifactDownloadRequest) GetCancel() bool {
+	if x != nil {
+		return x.Cancel
+	}
+	return false
 }
 
 type ArtifactDownloadChunk struct {
@@ -9052,13 +9060,14 @@ const file_api_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x10default_expanded\x18\n" +
 	" \x01(\bR\x0fdefaultExpanded\x12#\n" +
 	"\rfilter_values\x18\v \x03(\tR\ffilterValues\x124\n" +
-	"\bchildren\x18\f \x03(\v2\x18.ciwi.native.v1.TreeNodeR\bchildrenJ\x04\b\x02\x10\x03\"\x99\x01\n" +
+	"\bchildren\x18\f \x03(\v2\x18.ciwi.native.v1.TreeNodeR\bchildrenJ\x04\b\x02\x10\x03\"\xb1\x01\n" +
 	"\x17ArtifactDownloadRequest\x12(\n" +
 	"\x10job_execution_id\x18\x01 \x01(\tR\x0ejobExecutionId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x14\n" +
 	"\x05token\x18\x04 \x01(\tR\x05token\x12\x16\n" +
-	"\x06offset\x18\x05 \x01(\x03R\x06offset\"\xdd\x01\n" +
+	"\x06offset\x18\x05 \x01(\x03R\x06offset\x12\x16\n" +
+	"\x06cancel\x18\x06 \x01(\bR\x06cancel\"\xdd\x01\n" +
 	"\x15ArtifactDownloadChunk\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1b\n" +
 	"\tfile_name\x18\x02 \x01(\tR\bfileName\x12!\n" +
