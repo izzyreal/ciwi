@@ -35,6 +35,7 @@ body { min-height: 100vh; }
 .dsl-definition-graph-node.selectable { cursor:pointer; }
 .dsl-definition-graph-node.selectable:hover { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 .dsl-definition-graph-node.selected { border-color:var(--focus-ring, var(--accent-strong)); box-shadow:0 2px 5px color-mix(in srgb, var(--ink) 9%, transparent), inset 0 0 0 1px var(--focus-ring, var(--accent-strong)); }
+.dsl-definition-graph-root { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .dsl-definition-graph-node:focus-visible { outline:3px solid var(--focus-ring, var(--accent-strong)); outline-offset:2px; }
 .dsl-definition-graph-node-copy { min-width:0; flex:1; }
 .dsl-definition-graph-node-title, .dsl-definition-graph-node-meta { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
@@ -109,6 +110,9 @@ a.dsl-tree-label { color:var(--accent); }
 .dsl-output-group[open] > summary { margin-bottom:var(--dsl-layout-padding, var(--ciwi-space-medium, 14px)); }
 .dsl-output-group .dsl-code { background:transparent; }
 .dsl-floating-collapse { position:sticky; top:8px; z-index:3; float:right; margin:2px 0 8px 10px; box-shadow:0 2px 8px var(--shadow); background:var(--console-surface); color:var(--console-ink); border-color:var(--console-line); }
+.dsl-floating-collapse[hidden] { display:none; }
+.ciwi-search-hit { padding:0 1px; border-radius:2px; background:var(--warn-bg); color:var(--warn); }
+.ciwi-search-hit-active { background:var(--console-yellow); color:#211800; outline:1px solid var(--warn); }
 .dsl-console-text { color:var(--console-ink); }
 .dsl-console-muted { color:var(--console-muted); }
 .dsl-console-accent { color:var(--console-accent); }

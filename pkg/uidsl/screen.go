@@ -123,15 +123,29 @@ type Disclosure struct {
 // own layout, selection, zoom, scrolling, and local view persistence while the
 // graph's data and actions remain renderer-neutral.
 type GraphView struct {
-	StateKey     string `yaml:"stateKey" json:"stateKey"`
-	DefaultMode  string `yaml:"defaultMode,omitempty" json:"defaultMode,omitempty"`
-	Nodes        string `yaml:"nodes" json:"nodes"`
-	As           string `yaml:"as" json:"as"`
-	NodeKey      string `yaml:"nodeKey" json:"nodeKey"`
-	NodeLabel    Text   `yaml:"nodeLabel" json:"nodeLabel"`
-	NodeMeta     Text   `yaml:"nodeMeta,omitempty" json:"nodeMeta,omitempty"`
-	Dependencies string `yaml:"dependencies" json:"dependencies"`
-	Details      []Node `yaml:"details,omitempty" json:"details,omitempty"`
+	StateKey     string     `yaml:"stateKey" json:"stateKey"`
+	DefaultMode  string     `yaml:"defaultMode,omitempty" json:"defaultMode,omitempty"`
+	Nodes        string     `yaml:"nodes" json:"nodes"`
+	As           string     `yaml:"as" json:"as"`
+	NodeKey      string     `yaml:"nodeKey" json:"nodeKey"`
+	NodeLabel    Text       `yaml:"nodeLabel" json:"nodeLabel"`
+	NodeMeta     Text       `yaml:"nodeMeta,omitempty" json:"nodeMeta,omitempty"`
+	Dependencies string     `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+	Root         *GraphRoot `yaml:"root,omitempty" json:"root,omitempty"`
+	Details      []Node     `yaml:"details,omitempty" json:"details,omitempty"`
+}
+
+// GraphRoot describes an optional aggregate node rendered before the ordinary
+// dependency nodes. It has its own data scope and actions and never participates
+// in ordinary graph selection or details.
+type GraphRoot struct {
+	Binding       string     `yaml:"binding" json:"binding"`
+	As            string     `yaml:"as" json:"as"`
+	Key           string     `yaml:"key" json:"key"`
+	Label         Text       `yaml:"label" json:"label"`
+	Meta          Text       `yaml:"meta,omitempty" json:"meta,omitempty"`
+	ActionVisible *Condition `yaml:"actionVisible,omitempty" json:"actionVisible,omitempty"`
+	Actions       []Action   `yaml:"actions,omitempty" json:"actions,omitempty"`
 }
 
 // TreeView describes recursive hierarchical data. Labels, details, links, and
@@ -224,7 +238,7 @@ var commands = map[string]bool{
 	"change-theme":         true,
 	"select-timeline-item": true, "change-output-search": true,
 	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
-	"set-report-filter": true, "download-artifact": true,
+	"set-report-filter": true, "download-artifact": true, "download-job-log": true,
 	"set-disclosures":              true,
 	"set-run-option":               true,
 	"set-agent-script-field":       true,
@@ -464,8 +478,8 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 			return fmt.Errorf("%s.graphView is only valid for the graph-view component", path)
 		}
 		graph := node.GraphView
-		if graph.StateKey == "" || graph.Nodes == "" || graph.NodeKey == "" || !textDefined(graph.NodeLabel) || graph.Dependencies == "" || !identifierPattern.MatchString(graph.As) {
-			return fmt.Errorf("%s.graphView requires stateKey, nodes, a valid as name, nodeKey, nodeLabel, and dependencies", path)
+		if graph.StateKey == "" || graph.Nodes == "" || graph.NodeKey == "" || !textDefined(graph.NodeLabel) || !identifierPattern.MatchString(graph.As) {
+			return fmt.Errorf("%s.graphView requires stateKey, nodes, a valid as name, nodeKey, and nodeLabel", path)
 		}
 		if graph.DefaultMode != "" && graph.DefaultMode != "graph" && graph.DefaultMode != "list" {
 			return fmt.Errorf("%s.graphView.defaultMode must be graph or list", path)
@@ -489,8 +503,50 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 				return fmt.Errorf("%s.graphView.nodeMeta: %w", path, err)
 			}
 		}
-		if err := validateBinding(graph.Dependencies, graphScope); err != nil {
-			return fmt.Errorf("%s.graphView.dependencies: %w", path, err)
+		if graph.Dependencies != "" {
+			if err := validateBinding(graph.Dependencies, graphScope); err != nil {
+				return fmt.Errorf("%s.graphView.dependencies: %w", path, err)
+			}
+		}
+		if graph.Root != nil {
+			root := graph.Root
+			if root.Binding == "" || root.Key == "" || !textDefined(root.Label) || !identifierPattern.MatchString(root.As) {
+				return fmt.Errorf("%s.graphView.root requires binding, a valid as name, key, and label", path)
+			}
+			if err := validateBinding(root.Binding, scope); err != nil {
+				return fmt.Errorf("%s.graphView.root.binding: %w", path, err)
+			}
+			rootScope := cloneScope(scope)
+			rootScope[root.As] = struct{}{}
+			if err := validateBinding(root.Key, rootScope); err != nil {
+				return fmt.Errorf("%s.graphView.root.key: %w", path, err)
+			}
+			if err := validateText(root.Label, rootScope); err != nil {
+				return fmt.Errorf("%s.graphView.root.label: %w", path, err)
+			}
+			if root.Meta != (Text{}) {
+				if err := validateText(root.Meta, rootScope); err != nil {
+					return fmt.Errorf("%s.graphView.root.meta: %w", path, err)
+				}
+			}
+			if root.ActionVisible != nil {
+				if err := validateBinding(root.ActionVisible.Binding, rootScope); err != nil {
+					return fmt.Errorf("%s.graphView.root.actionVisible.binding: %w", path, err)
+				}
+			}
+			for i, action := range root.Actions {
+				if action.On != "activate" {
+					return fmt.Errorf("%s.graphView.root.actions[%d].on must be activate", path, i)
+				}
+				if !commands[action.Command] {
+					return fmt.Errorf("%s.graphView.root.actions[%d].command %q is not supported", path, i, action.Command)
+				}
+				for name, value := range action.Arguments {
+					if err := validateTemplate(value, rootScope); err != nil {
+						return fmt.Errorf("%s.graphView.root.actions[%d].arguments[%s]: %w", path, i, name, err)
+					}
+				}
+			}
 		}
 		for i, detailNode := range graph.Details {
 			if err := validateNode(detailNode, fmt.Sprintf("%s.graphView.details[%d]", path, i), ids, graphScope); err != nil {

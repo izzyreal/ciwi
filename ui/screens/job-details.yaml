@@ -101,6 +101,7 @@ screen:
                 command: navigate
                 arguments:
                   route: /
+                  section: execution-history
       - component: column
         id: execution-details
         layout:
@@ -270,6 +271,12 @@ screen:
                   nodeLabel: {binding: runPipeline.pipeline_id}
                   nodeMeta: {binding: runPipeline.summary_label}
                   dependencies: runPipeline.depends_on
+                  root:
+                    binding: jobDetails.run_context
+                    as: runRoot
+                    key: runRoot.current_execution_id
+                    label: {binding: runRoot.scope_label}
+                    meta: {template: "Execution {{runRoot.current_execution_id}}"}
                   details:
                     - component: text
                       text: {template: "Pipeline: {{runPipeline.pipeline_id}}"}
@@ -285,6 +292,12 @@ screen:
                         nodeLabel: {binding: runJob.id}
                         nodeMeta: {binding: runJob.summary_label}
                         dependencies: runJob.needs
+                        root:
+                          binding: runPipeline
+                          as: runPipelineRoot
+                          key: runPipelineRoot.id
+                          label: {template: "Pipeline: {{runPipelineRoot.pipeline_id}}"}
+                          meta: {binding: runPipelineRoot.summary_label}
                         details:
                           - component: text
                             text: {template: "Job: {{runJob.id}}"}
@@ -334,14 +347,78 @@ screen:
             style:
               role: heading
               emphasis: strong
+          - component: column
+            id: execution-path
+            layout:
+              direction: vertical
+              gap: small
+            children:
+              - component: text
+                text:
+                  literal: Execution path
+                style:
+                  emphasis: strong
+                  tone: muted
+              - component: scroller
+                layout:
+                  direction: horizontal
+                  gap: small
+                  maxHeight: "118"
+                repeat:
+                  source: jobDetails.timeline
+                  as: item
+                  key: item.id
+                children:
+                  - component: card
+                    progress:
+                      binding: item.progress
+                    layout:
+                      direction: vertical
+                      gap: small
+                      padding: small
+                      minWidth: "235"
+                      maxWidth: "300"
+                      minHeight: "86"
+                    actions:
+                      - on: activate
+                        command: select-timeline-item
+                        arguments:
+                          id: "{{item.id}}"
+                    children:
+                      - component: text
+                        text:
+                          binding: item.title
+                        style:
+                          emphasis: strong
+                          truncate: true
+                      - component: badge
+                        text:
+                          binding: item.status_label
+                        style:
+                          toneBinding: item.status
           - component: row
             layout:
               direction: horizontal
               gap: small
               align: center
+              wrap: true
             style:
               role: compact-toolbar
             children:
+              - component: button
+                text: {literal: Clean Log}
+                icon: download
+                actions:
+                  - on: activate
+                    command: download-job-log
+                    arguments: {jobExecutionId: "{{jobDetails.id}}", format: clean}
+              - component: button
+                text: {literal: Raw Log}
+                icon: download
+                actions:
+                  - on: activate
+                    command: download-job-log
+                    arguments: {jobExecutionId: "{{jobDetails.id}}", format: raw}
               - component: button
                 text:
                   binding: jobDetails.tailing_label
@@ -404,55 +481,6 @@ screen:
                   binding: jobDetails.output_search_count
                 style:
                   tone: muted
-          - component: column
-            id: execution-path
-            layout:
-              direction: vertical
-              gap: small
-            children:
-              - component: text
-                text:
-                  literal: Execution path
-                style:
-                  emphasis: strong
-                  tone: muted
-              - component: scroller
-                layout:
-                  direction: horizontal
-                  gap: small
-                  maxHeight: "118"
-                repeat:
-                  source: jobDetails.timeline
-                  as: item
-                  key: item.id
-                children:
-                  - component: card
-                    progress:
-                      binding: item.progress
-                    layout:
-                      direction: vertical
-                      gap: small
-                      padding: small
-                      minWidth: "235"
-                      maxWidth: "300"
-                      minHeight: "86"
-                    actions:
-                      - on: activate
-                        command: select-timeline-item
-                        arguments:
-                          id: "{{item.id}}"
-                    children:
-                      - component: text
-                        text:
-                          binding: item.title
-                        style:
-                          emphasis: strong
-                          truncate: true
-                      - component: badge
-                        text:
-                          binding: item.status_label
-                        style:
-                          toneBinding: item.status
           - component: card
             id: job-output-system
             style:
@@ -484,7 +512,7 @@ screen:
             layout:
               direction: vertical
               gap: small
-              maxHeight: "720"
+              maxHeight: "660"
             repeat:
               source: jobDetails.output_groups
               as: outputGroup
@@ -506,6 +534,21 @@ screen:
                   role: output-group
                   toneBinding: outputGroup.status
                 children:
+                  - component: button
+                    text:
+                      literal: Collapse
+                    icon: arrow-up
+                    style:
+                      role: floating-collapse
+                    overrides:
+                      gio:
+                        hidden: true
+                    actions:
+                      - on: activate
+                        command: set-disclosures
+                        arguments:
+                          prefix: "{{outputGroup.state_key}}"
+                          expanded: "false"
                   - component: text
                     text: {literal: "Status: Not reached"}
                     visible: {binding: outputGroup.reached, equals: "false"}
@@ -622,21 +665,6 @@ screen:
                     style:
                       role: output-code
                       tone: console-muted
-                  - component: button
-                    text:
-                      literal: Collapse
-                    icon: arrow-up
-                    style:
-                      role: floating-collapse
-                    overrides:
-                      gio:
-                        hidden: true
-                    actions:
-                      - on: activate
-                        command: set-disclosures
-                        arguments:
-                          prefix: "{{outputGroup.state_key}}"
-                          expanded: "false"
       - component: column
         id: execution-reports
         layout: {direction: vertical, gap: medium, align: stretch}

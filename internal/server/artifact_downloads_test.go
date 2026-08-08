@@ -16,10 +16,20 @@ import (
 
 type artifactDownloadStoreStub struct {
 	artifacts []protocol.JobExecutionArtifact
+	job       protocol.JobExecution
+	events    []protocol.JobExecutionEvent
 }
 
 func (s artifactDownloadStoreStub) ListJobExecutionArtifacts(string) ([]protocol.JobExecutionArtifact, error) {
 	return append([]protocol.JobExecutionArtifact(nil), s.artifacts...), nil
+}
+
+func (s artifactDownloadStoreStub) GetJobExecution(string) (protocol.JobExecution, error) {
+	return s.job, nil
+}
+
+func (s artifactDownloadStoreStub) ListJobExecutionEvents(string) ([]protocol.JobExecutionEvent, error) {
+	return append([]protocol.JobExecutionEvent(nil), s.events...), nil
 }
 
 func TestArtifactDownloadServiceStreamsFilesAndPrefixArchives(t *testing.T) {
@@ -93,6 +103,30 @@ func TestArtifactDownloadServiceStreamsFilesAndPrefixArchives(t *testing.T) {
 	}
 	if len(entries) != 2 || entries["dist/readme.txt"] != "hello" || len(entries["dist/app.bin"]) != artifactDownloadChunkSize+37 {
 		t.Fatalf("archive entries = %#v", entries)
+	}
+}
+
+func TestArtifactDownloadServiceStreamsCleanAndRawJobLogs(t *testing.T) {
+	store := artifactDownloadStoreStub{
+		job: protocol.JobExecution{ID: "job-1", Status: protocol.JobExecutionStatusFailed},
+		events: []protocol.JobExecutionEvent{
+			{Type: protocol.JobExecutionEventTypeSystemMessage, Message: "\x1b[31mfailed\x1b[0m"},
+		},
+	}
+	service := newArtifactDownloadService(store, t.TempDir())
+	clean, err := service.DownloadArtifact(context.Background(), application.ArtifactDownloadRequest{JobExecutionID: "job-1", Kind: "log-clean"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean.FileName != "ciwi-job-1-clean.log" || !clean.Complete || bytes.Contains(clean.Data, []byte("\x1b[31m")) {
+		t.Fatalf("clean log chunk = %#v", clean)
+	}
+	raw, err := service.DownloadArtifact(context.Background(), application.ArtifactDownloadRequest{JobExecutionID: "job-1", Kind: "log-raw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw.FileName != "ciwi-job-1-raw.log" || !raw.Complete || !bytes.Contains(raw.Data, []byte("\x1b[31mfailed")) {
+		t.Fatalf("raw log chunk = %#v", raw)
 	}
 }
 

@@ -454,7 +454,7 @@ func Run(options Options) error {
 		if err := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
 			preferences.Disclosures = states
 		}); err != nil {
-			renderer.SetStatus("Disclosure state could not be saved: " + err.Error())
+			renderer.ShowNotice("Disclosure state could not be saved: "+err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 		}
 	})
 	renderer.SetViewStates(preferences.Views)
@@ -467,11 +467,10 @@ func Run(options Options) error {
 				preferences.Views[key] = mode
 			}
 		}); err != nil {
-			renderer.SetStatus("View preference could not be saved: " + err.Error())
+			renderer.ShowNotice("View preference could not be saved: "+err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 		}
 	})
 	renderer.SetInvalidate(window.Invalidate)
-	renderer.SetStatus("")
 	go runController(ctx, window, renderer, commands, screens, options, preferencesPath, preferences, coordinator, clientBroker, operationJournal, fileExplorer)
 
 	var operations op.Ops
@@ -548,7 +547,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		batches, errorsOut, streamErr := client.WatchJobOutput(streamCtx, jobID, 0)
 		if streamErr != nil {
 			cancelStream()
-			renderer.SetStatus("Output stream unavailable: " + streamErr.Error())
+			renderer.ShowNotice("Output stream unavailable: "+streamErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			return
 		}
 		outputCancel = cancelStream
@@ -606,7 +605,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			navigation = navigationState{screen: "front-page"}
 		}
 		if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint, sshSettings); err != nil {
-			renderer.SetStatus(err.Error())
+			renderer.ShowAlert("Screen unavailable", err.Error())
 		}
 		state := nativeConnectionState{connecting: true, status: "Server unavailable; reconnecting…"}
 		if initialHostKeyPending {
@@ -636,6 +635,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		data, loadErr := screenLoadingData(target, options.Version, renderer.ThemeName(), mode, endpoint, sshSettings)
 		if loadErr != nil {
 			return loadErr
+		}
+		if target.screen == "project-details" {
+			if frontPage, ok := screenCache.Get(navigationState{screen: "front-page"}); ok {
+				seedProjectDetailsLoadingData(data, frontPage, target.projectID)
+			}
 		}
 		if err := validateNativeBindings(screen, data); err != nil {
 			return err
@@ -674,6 +678,14 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			} else {
 				stopOutput()
 			}
+		} else if target.screen == "project-details" {
+			navigation = target
+			pending := target
+			pendingNavigation = &pending
+			if err := showScreenLoading(target); err != nil {
+				return err
+			}
+			stopOutput()
 		} else {
 			pending := target
 			pendingNavigation = &pending
@@ -683,53 +695,48 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		} else {
 			startScreenLoad(target)
 		}
-		if pendingNavigation != nil {
-			renderer.SetStatus(loadingScreenLabel(target.screen))
-		} else if isScreenLoadingStatus(renderer.status) {
-			renderer.SetStatus("")
-		}
 		return nil
 	}
 	beginNavigation := func(target navigationState) error { return beginNavigationWith(target, false) }
 	beginResyncNavigation := func(target navigationState) error { return beginNavigationWith(target, true) }
 	if client != nil {
 		if err := beginResyncNavigation(navigation); err != nil {
-			renderer.SetStatus("Could not load the initial screen: " + err.Error())
+			renderer.ShowAlert("Could not load the initial screen", err.Error())
 		}
 	}
 	window.Invalidate()
-	var statusTimer *time.Timer
-	var statusExpiry <-chan time.Time
-	scheduleStatusExpiry := func() {
-		expires := renderer.StatusExpiry()
+	var noticeTimer *time.Timer
+	var noticeExpiry <-chan time.Time
+	scheduleNoticeExpiry := func() {
+		expires := renderer.NoticeExpiry()
 		if expires.IsZero() {
-			if statusTimer != nil {
-				statusTimer.Stop()
+			if noticeTimer != nil {
+				noticeTimer.Stop()
 			}
-			statusExpiry = nil
+			noticeExpiry = nil
 			return
 		}
 		delay := time.Until(expires)
 		if delay < 0 {
 			delay = 0
 		}
-		if statusTimer == nil {
-			statusTimer = time.NewTimer(delay)
+		if noticeTimer == nil {
+			noticeTimer = time.NewTimer(delay)
 		} else {
-			if !statusTimer.Stop() {
+			if !noticeTimer.Stop() {
 				select {
-				case <-statusTimer.C:
+				case <-noticeTimer.C:
 				default:
 				}
 			}
-			statusTimer.Reset(delay)
+			noticeTimer.Reset(delay)
 		}
-		statusExpiry = statusTimer.C
+		noticeExpiry = noticeTimer.C
 	}
-	scheduleStatusExpiry()
+	scheduleNoticeExpiry()
 	defer func() {
-		if statusTimer != nil {
-			statusTimer.Stop()
+		if noticeTimer != nil {
+			noticeTimer.Stop()
 		}
 	}()
 	reconcileOperations := func() {
@@ -738,13 +745,13 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		}
 		resumed, message, reconcileErr := operationJournal.reconcile(ctx, client, coordinator)
 		if reconcileErr != nil {
-			renderer.SetStatus("Could not reconcile earlier actions: " + reconcileErr.Error())
+			renderer.ShowNotice("Could not reconcile earlier actions: "+reconcileErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			return
 		}
 		if resumed > 0 {
 			renderer.ShowNotice(fmt.Sprintf("Resumed %d interrupted action(s)", resumed), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 		} else if message != "" {
-			renderer.SetStatus(message)
+			renderer.ShowNotice(message, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 		}
 	}
 	if initialConnectErr == nil {
@@ -781,13 +788,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		}
 		reconnect = nil
 		applyNativeConnectionState(renderer, nativeConnectionState{status: status})
-		renderer.SetStatus("")
 		window.Invalidate()
 	}
 	scheduleReconnectAfter := func(status string, delay time.Duration) {
 		disconnect()
 		applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: status})
-		renderer.SetStatus("")
 		if reconnectTimer == nil {
 			reconnectTimer = time.NewTimer(delay)
 		} else {
@@ -881,11 +886,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		if effect.NavigateRoute != "" && client != nil {
 			next, parseErr := navigationForRoute(effect.NavigateRoute)
 			if parseErr != nil {
-				renderer.SetStatus(effect.Message + ", but navigation failed: " + parseErr.Error())
+				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+parseErr.Error())
 				return
 			}
 			if err := beginNavigation(next); err != nil {
-				renderer.SetStatus(effect.Message + ", but navigation failed: " + err.Error())
+				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+err.Error())
 				return
 			}
 		} else if effect.Refresh && client != nil {
@@ -908,12 +913,12 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-statusExpiry:
-			if renderer.ClearExpiredStatus(now) {
+		case now := <-noticeExpiry:
+			if renderer.ClearExpiredNotice(now) {
 				window.Invalidate()
 			}
-			statusExpiry = nil
-			scheduleStatusExpiry()
+			noticeExpiry = nil
+			scheduleNoticeExpiry()
 		case <-reconnect:
 			reconnect = nil
 			connected, connectErr := connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
@@ -940,7 +945,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			reconnectDelay = time.Second
 			if screenCache.SetServerInstallationID(client.Welcome().GetServerInstallationId()) {
 				if err := showScreenLoading(navigation); err != nil {
-					renderer.SetStatus(err.Error())
+					renderer.ShowAlert("Screen unavailable", err.Error())
 				}
 			}
 			startScreenLoad(navigation)
@@ -961,7 +966,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				startOutput(navigation.jobID)
 			}
 			reconcileOperations()
-			scheduleStatusExpiry()
+			scheduleNoticeExpiry()
 			window.Invalidate()
 		case change, ok := <-changes:
 			if !ok {
@@ -994,7 +999,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			}
 			if outputErr != nil {
-				renderer.SetStatus("Output stream stopped: " + outputErr.Error())
+				renderer.ShowNotice("Output stream stopped: "+outputErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 				window.Invalidate()
 			}
 			outputErrors = nil
@@ -1007,9 +1012,17 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			}
 			if result.err != nil {
+				if result.navigation.screen == "project-details" && navigation == result.navigation && pendingNavigation != nil {
+					pendingNavigation = nil
+					renderer.SetRootBinding("projectDetails", "loading", false)
+					renderer.SetRootBinding("projectDetails", "ready", false)
+					renderer.SetRootBinding("projectDetails", "load_error", result.err.Error())
+					window.Invalidate()
+					continue
+				}
 				if result.recoverMissingRoute && result.navigation.screen != "front-page" {
 					if err := beginResyncNavigation(navigationState{screen: "front-page"}); err != nil {
-						renderer.SetStatus("Loading failed: " + result.err.Error())
+						renderer.ShowAlert("Loading failed", result.err.Error())
 					}
 					window.Invalidate()
 					continue
@@ -1021,19 +1034,27 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 				if pendingNavigation != nil {
 					pendingNavigation = nil
-					renderer.SetStatus("Loading failed; showing the previous screen: " + result.err.Error())
+					renderer.ShowAlert("Loading failed", "Showing the previous screen: "+result.err.Error())
 				} else if screenCache.Has(navigation) {
-					renderer.SetStatus("Refresh failed; showing last known data: " + result.err.Error())
+					renderer.ShowNotice("Refresh failed; showing last known data: "+result.err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 				} else {
-					renderer.SetStatus("Loading failed: " + result.err.Error())
+					renderer.ShowAlert("Loading failed", result.err.Error())
 				}
 			} else {
 				if err := validateNativeBindings(screens[result.navigation.screen], result.data); err != nil {
+					if result.navigation.screen == "project-details" && navigation == result.navigation && pendingNavigation != nil {
+						pendingNavigation = nil
+						renderer.SetRootBinding("projectDetails", "loading", false)
+						renderer.SetRootBinding("projectDetails", "ready", false)
+						renderer.SetRootBinding("projectDetails", "load_error", err.Error())
+						window.Invalidate()
+						continue
+					}
 					if pendingNavigation != nil {
 						pendingNavigation = nil
-						renderer.SetStatus("Loading failed; showing the previous screen: " + err.Error())
+						renderer.ShowAlert("Loading failed", "Showing the previous screen: "+err.Error())
 					} else {
-						renderer.SetStatus("Loading failed: " + err.Error())
+						renderer.ShowAlert("Loading failed", err.Error())
 					}
 					window.Invalidate()
 					continue
@@ -1063,20 +1084,21 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				if navigation.screen == "job-details" {
 					outputBuffer.apply(renderer)
 				}
-				if isScreenLoadingStatus(renderer.status) || strings.HasPrefix(renderer.status, "Refresh failed; showing last known data:") {
-					renderer.SetStatus("")
-				}
 			}
 			window.Invalidate()
 		case result := <-artifactDownloads:
-			if errors.Is(result.err, errArtifactDownloadCancelled) {
-				renderer.SetStatus("Artifact download cancelled")
-			} else if result.err != nil {
-				renderer.SetStatus("Artifact download failed: " + result.err.Error())
-			} else {
-				renderer.SetStatus("Downloaded artifact: " + result.path)
+			label := strings.TrimSpace(result.label)
+			if label == "" {
+				label = "Artifact"
 			}
-			scheduleStatusExpiry()
+			if errors.Is(result.err, errArtifactDownloadCancelled) {
+				renderer.ShowNotice(label+" download cancelled", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+			} else if result.err != nil {
+				renderer.ShowNotice(label+" download failed: "+result.err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+			} else {
+				renderer.ShowNotice("Downloaded "+strings.ToLower(label)+": "+result.path, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+			}
+			scheduleNoticeExpiry()
 			window.Invalidate()
 		case <-coordinator.Changed():
 			snapshot := coordinator.Snapshot()
@@ -1089,10 +1111,26 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				coordinator.Forget(operation.ID)
 			}
 			renderer.SetOperations(coordinator.Snapshot())
-			scheduleStatusExpiry()
+			scheduleNoticeExpiry()
 			window.Invalidate()
 		case command := <-commands:
 			switch command.action.Command {
+			case "refresh":
+				if client == nil {
+					renderer.ShowAlert("Server offline", "Reconnect is in progress.")
+					window.Invalidate()
+					continue
+				}
+				if navigation.screen == "project-details" {
+					renderer.SetRootBinding("projectDetails", "loading", true)
+					renderer.SetRootBinding("projectDetails", "ready", false)
+					renderer.SetRootBinding("projectDetails", "load_error", "")
+					pending := navigation
+					pendingNavigation = &pending
+				}
+				startScreenLoad(navigation)
+				window.Invalidate()
+				continue
 			case "set-connection-field":
 				switch strings.TrimSpace(command.arguments["field"]) {
 				case "mode":
@@ -1118,7 +1156,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					generateErr = saveSSHDevicePrivateKey(preferencesPath, privateKey)
 				}
 				if generateErr != nil {
-					renderer.SetStatus("SSH device key could not be generated: " + generateErr.Error())
+					renderer.ShowAlert("SSH key generation failed", generateErr.Error())
 					window.Invalidate()
 					continue
 				}
@@ -1128,19 +1166,19 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				if saveErr := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
 					preferences.SSH.PublicKey = publicKey
 				}); saveErr != nil {
-					renderer.SetStatus("SSH public key preference could not be saved: " + saveErr.Error())
+					renderer.ShowAlert("SSH key preference could not be saved", saveErr.Error())
 					window.Invalidate()
 					continue
 				}
 				preferences.SSH.PublicKey = publicKey
 				applyConnectionBindings(renderer, navigation.screen, mode, endpoint, sshSettings)
-				renderer.SetStatus("Generated a device-specific SSH key. Add the restricted public key to the jump host.")
+				renderer.ShowNotice("Generated a device-specific SSH key. Add the restricted public key to the jump host.", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 				window.Invalidate()
 				continue
 			case "trust-ssh-host-key":
 				fingerprint := strings.TrimSpace(sshSettings.PendingFingerprint)
 				if fingerprint == "" {
-					renderer.SetStatus("Connect once to inspect the SSH host key")
+					renderer.ShowAlert("SSH host key unavailable", "Connect once to inspect the SSH host key.")
 					window.Invalidate()
 					continue
 				}
@@ -1150,7 +1188,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				if saveErr := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
 					preferences.SSH.HostKeyFingerprint = fingerprint
 				}); saveErr != nil {
-					renderer.SetStatus("SSH host key trust could not be saved: " + saveErr.Error())
+					renderer.ShowAlert("SSH host key trust could not be saved", saveErr.Error())
 					window.Invalidate()
 					continue
 				}
@@ -1161,7 +1199,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			case "reject-ssh-host-key":
 				if strings.TrimSpace(sshSettings.PendingFingerprint) == "" {
-					renderer.SetStatus("No pending SSH host key to reject")
+					renderer.ShowAlert("No pending SSH host key", "Connect first to inspect a host key.")
 					window.Invalidate()
 					continue
 				}
@@ -1174,7 +1212,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				mode = strings.TrimSpace(command.arguments["mode"])
 				endpoint = strings.TrimSpace(command.arguments["endpoint"])
 				if mode != connectionModeDiscover && mode != connectionModeExplicit && mode != connectionModeSSH {
-					renderer.SetStatus("Select a connection mode")
+					renderer.ShowAlert("Connection mode required", "Select a connection mode.")
 					if navigation.screen == "connection" {
 						renderer.SetRootBinding("connection", "status", "Select a connection mode")
 						renderer.SetRootBinding("connection", "status_tone", "danger")
@@ -1187,7 +1225,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					target, parseErr := cnpclient.ParseTarget(endpoint)
 					if parseErr != nil {
 						status := "Invalid native endpoint: " + parseErr.Error()
-						renderer.SetStatus(status)
+						renderer.ShowAlert("Invalid native endpoint", parseErr.Error())
 						if navigation.screen == "connection" {
 							renderer.SetRootBinding("connection", "status", status)
 							renderer.SetRootBinding("connection", "status_tone", "danger")
@@ -1203,12 +1241,12 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					connectionSettings.DiscoverFallback = true
 				} else {
 					if strings.TrimSpace(sshSettings.JumpAddress) == "" || strings.TrimSpace(sshSettings.Username) == "" || strings.TrimSpace(sshSettings.Destination) == "" {
-						renderer.SetStatus("Jump host, username, and destination are required for a remote server")
+						renderer.ShowAlert("Remote server details required", "Jump host, username, and destination are required.")
 						window.Invalidate()
 						continue
 					}
 					if len(sshSettings.PrivateKey) == 0 {
-						renderer.SetStatus("Generate this device's SSH key before connecting")
+						renderer.ShowAlert("SSH device key required", "Generate this device's SSH key before connecting.")
 						window.Invalidate()
 						continue
 					}
@@ -1222,7 +1260,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 						HostKeyFingerprint: sshSettings.HostKeyFingerprint,
 					}
 				}); saveErr != nil {
-					renderer.SetStatus("Connection preference could not be saved: " + saveErr.Error())
+					renderer.ShowAlert("Connection preference could not be saved", saveErr.Error())
 					window.Invalidate()
 					continue
 				}
@@ -1247,11 +1285,32 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			case "download-artifact":
 				activeClient := client
 				arguments := command.arguments
-				renderer.SetStatus("Downloading artifact…")
 				go func() {
 					path, downloadErr := downloadArtifact(ctx, activeClient, artifactPicker, arguments)
 					select {
-					case artifactDownloads <- artifactDownloadResult{path: path, err: downloadErr}:
+					case artifactDownloads <- artifactDownloadResult{path: path, label: "Artifact", err: downloadErr}:
+					case <-ctx.Done():
+					}
+				}()
+				window.Invalidate()
+				continue
+			case "download-job-log":
+				activeClient := client
+				format := strings.ToLower(strings.TrimSpace(command.arguments["format"]))
+				if format != "clean" && format != "raw" {
+					renderer.ShowAlert("Log download unavailable", "Log format must be clean or raw.")
+					window.Invalidate()
+					continue
+				}
+				arguments := map[string]string{
+					"jobExecutionId": command.arguments["jobExecutionId"],
+					"kind":           "log-" + format,
+				}
+				label := strings.ToUpper(format[:1]) + format[1:] + " log"
+				go func() {
+					path, downloadErr := downloadArtifact(ctx, activeClient, artifactPicker, arguments)
+					select {
+					case artifactDownloads <- artifactDownloadResult{path: path, label: label, err: downloadErr}:
 					case <-ctx.Done():
 					}
 				}()
@@ -1260,7 +1319,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			if command.action.Command == "open-url" {
 				if openErr := openExternalURL(command.arguments["url"]); openErr != nil {
-					renderer.SetStatus("Could not open link: " + openErr.Error())
+					renderer.ShowAlert("Could not open link", openErr.Error())
 				}
 				window.Invalidate()
 				continue
@@ -1268,7 +1327,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			if command.action.Command == "navigate" {
 				next, parseErr := navigationForRoute(command.arguments["route"])
 				if parseErr != nil {
-					renderer.SetStatus("Navigation failed: " + parseErr.Error())
+					renderer.ShowAlert("Navigation failed", parseErr.Error())
 					window.Invalidate()
 					continue
 				}
@@ -1280,27 +1339,27 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 				if client == nil {
 					if next.screen != "front-page" && next.screen != "settings" {
-						renderer.SetStatus("This screen needs a server connection")
+						renderer.ShowAlert("Server connection required", "This screen needs a server connection.")
 						window.Invalidate()
 						continue
 					}
 					navigation = next
 					stopOutput()
 					if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint, sshSettings); err != nil {
-						renderer.SetStatus(err.Error())
+						renderer.ShowAlert("Screen unavailable", err.Error())
 					}
 					applyNativeConnectionState(renderer, nativeConnectionState{connecting: reconnect != nil, status: "Server unavailable; reconnecting…"})
 					window.Invalidate()
 					continue
 				}
 				if err := beginNavigation(next); err != nil {
-					renderer.SetStatus("Navigation failed: " + err.Error())
+					renderer.ShowAlert("Navigation failed", err.Error())
 				}
 				window.Invalidate()
 				continue
 			}
 			if client == nil && command.action.Command != "change-theme" && command.action.Command != "set-project-import-field" {
-				renderer.SetStatus("Server is offline; reconnecting…")
+				renderer.ShowAlert("Server offline", "Reconnect is in progress.")
 				window.Invalidate()
 				continue
 			}
@@ -1309,7 +1368,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				value := strings.TrimSpace(command.arguments["value"])
 				refreshEligibility, selectionErr := applyRunOptionSelection(renderer, &navigation, field, value)
 				if selectionErr != nil {
-					renderer.SetStatus(selectionErr.Error())
+					renderer.ShowAlert("Invalid run option", selectionErr.Error())
 					window.Invalidate()
 					continue
 				}
@@ -1318,7 +1377,6 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					continue
 				}
 				renderer.SetRootBinding("runOptions", "target_kind", "loading")
-				renderer.SetStatus("Refreshing eligible agents…")
 				startScreenLoad(navigation)
 				window.Invalidate()
 				continue
@@ -1336,7 +1394,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					stopOutput()
 				}
 			}
-			scheduleStatusExpiry()
+			scheduleNoticeExpiry()
 			window.Invalidate()
 		}
 	}
@@ -1420,10 +1478,9 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 	case "set-project-structure-filter":
 		filter := strings.TrimSpace(command.arguments["value"])
 		if filter == "" || !renderer.SetProjectStructureFilter(filter) {
-			renderer.SetStatus("Project structure filter is unavailable")
+			renderer.ShowAlert("Project structure unavailable", "The selected project structure filter is unavailable.")
 			return
 		}
-		renderer.SetStatus("")
 	case "set-agent-script-field":
 		field := strings.TrimSpace(command.arguments["field"])
 		value := command.arguments["value"]
@@ -1437,25 +1494,25 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 			navigation.script = value
 			renderer.SetRootBinding("agentScript", "script", value)
 		default:
-			renderer.SetStatus("Unknown agent script field")
+			renderer.ShowAlert("Invalid action", "Unknown agent script field.")
 		}
 	case "set-project-import-field":
 		binding := map[string]string{"repoUrl": "import_repo_url", "repoRef": "import_repo_ref", "configFile": "import_config_file"}[strings.TrimSpace(command.arguments["field"])]
 		if binding == "" {
-			renderer.SetStatus("Unknown project import field")
+			renderer.ShowAlert("Invalid action", "Unknown project import field.")
 			return
 		}
 		renderer.SetRootBinding("settings", binding, command.arguments["value"])
 	case "set-managed-yaml-field":
 		if strings.TrimSpace(command.arguments["field"]) != "yaml" {
-			renderer.SetStatus("Unknown managed YAML field")
+			renderer.ShowAlert("Invalid action", "Unknown managed YAML field.")
 			return
 		}
 		renderer.SetRootBinding("managedYAML", "yaml", command.arguments["value"])
 	case "set-vault-field":
 		field := strings.TrimSpace(command.arguments["field"])
 		if field != "name" && field != "url" && field != "role_id" && field != "approle_mount" && field != "secret_id_env" {
-			renderer.SetStatus("Unknown Vault connection field")
+			renderer.ShowAlert("Invalid action", "Unknown Vault connection field.")
 			return
 		}
 		renderer.SetRootBinding("vault", field, command.arguments["value"])
@@ -1464,18 +1521,18 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 			"update": "selected_update_version", "rollback": "selected_rollback_version",
 		}[strings.TrimSpace(command.arguments["field"])]
 		if binding == "" {
-			renderer.SetStatus("Unknown server update option")
+			renderer.ShowAlert("Invalid action", "Unknown server update option.")
 			return
 		}
 		renderer.SetRootBinding("settings", binding, strings.TrimSpace(command.arguments["value"]))
 	case "change-theme":
 		theme, err := findTheme(command.arguments["theme"])
 		if err != nil {
-			renderer.SetStatus("Theme change failed: " + err.Error())
+			renderer.ShowAlert("Theme change failed", err.Error())
 			return
 		}
 		if err := renderer.SetTheme(theme); err != nil {
-			renderer.SetStatus("Theme change failed: " + err.Error())
+			renderer.ShowAlert("Theme change failed", err.Error())
 			return
 		}
 		renderer.SetRootBinding("settings", "selected_theme", theme.Metadata.Name)
@@ -1483,12 +1540,11 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 		if err := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
 			preferences.Theme = theme.Metadata.Name
 		}); err != nil {
-			renderer.SetStatus("Theme changed, but the preference could not be saved: " + err.Error())
+			renderer.ShowNotice("Theme changed, but the preference could not be saved: "+err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			return
 		}
-		renderer.SetStatus("")
 	default:
-		renderer.SetStatus("Unsupported native action: " + command.action.Command)
+		renderer.ShowAlert("Unsupported native action", command.action.Command)
 	}
 }
 
@@ -1795,9 +1851,22 @@ func screenLoadingData(navigation navigationState, clientVersion, themeName, mod
 	case "front-page":
 		return offlineFrontPageBindingData(clientVersion)
 	case "project-details":
-		return projectDetailsBindingData(&cnpv1.ProjectDetailsView{
+		data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
 			Project: &cnpv1.ProjectSummary{Id: navigation.projectID},
 		})
+		if err != nil {
+			return nil, err
+		}
+		root := data["projectDetails"].(map[string]any)
+		root["loading"] = true
+		root["ready"] = false
+		root["load_error"] = ""
+		root["show_chain_structure"] = false
+		root["show_pipeline_structure"] = false
+		if project, ok := root["project"].(map[string]any); ok {
+			project["name"] = "Project"
+		}
+		return data, nil
 	case "job-details":
 		return jobDetailsBindingData(&cnpv1.JobDetailsView{})
 	case "settings":
@@ -1824,19 +1893,24 @@ func screenLoadingData(navigation navigationState, clientVersion, themeName, mod
 	}
 }
 
-func loadingScreenLabel(screen string) string {
-	if screen == "run-options" {
-		return "Loading run options…"
-	}
-	return "Loading…"
-}
-
-func isScreenLoadingStatus(status string) bool {
-	switch strings.TrimSpace(status) {
-	case "Loading…", "Loading run options…", "Refreshing eligible agents…":
-		return true
-	default:
-		return false
+func seedProjectDetailsLoadingData(data, frontPage map[string]any, projectID int64) {
+	root, _ := data["projectDetails"].(map[string]any)
+	project, _ := root["project"].(map[string]any)
+	frontRoot, _ := frontPage["frontPage"].(map[string]any)
+	projects, _ := frontRoot["projects"].([]any)
+	for _, raw := range projects {
+		candidate, ok := raw.(map[string]any)
+		if !ok || int64(numberValue(candidate["id"])) != projectID {
+			continue
+		}
+		for _, key := range []string{
+			"id", "name", "project_icon", "project_icon_content_type", "repo_url", "repo_ref", "config_file",
+		} {
+			if value, exists := candidate[key]; exists {
+				project[key] = cloneBindingValue(value)
+			}
+		}
+		return
 	}
 }
 
@@ -2103,6 +2177,9 @@ func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, 
 }
 
 func decorateProjectDetails(root map[string]any) {
+	root["loading"] = false
+	root["ready"] = true
+	root["load_error"] = ""
 	if project, ok := root["project"].(map[string]any); ok {
 		if strings.TrimSpace(fmt.Sprint(project["project_icon"])) == "" {
 			project["project_icon"] = root["project_icon"]
@@ -2114,8 +2191,11 @@ func decorateProjectDetails(root map[string]any) {
 	}
 	pipelines, _ := root["pipelines"].([]any)
 	root["structure_filter"] = "all-pipelines"
+	root["show_chain_structure"] = false
+	root["show_pipeline_structure"] = true
 	root["structure_filters"] = projectStructureFilterOptions(root, pipelines)
 	root["visible_pipelines"] = append([]any(nil), pipelines...)
+	root["structure_root"] = projectStructureRoot(root, "all-pipelines", pipelines)
 	for _, rawPipeline := range pipelines {
 		pipeline, pipelineOK := rawPipeline.(map[string]any)
 		if !pipelineOK {
@@ -2150,6 +2230,41 @@ func decorateProjectDetails(root map[string]any) {
 				step["command"] = presentation.ProjectStepCommand(fmt.Sprint(step["command"]))
 			}
 		}
+	}
+}
+
+func projectStructureRoot(root map[string]any, filter string, visiblePipelines []any) map[string]any {
+	project, _ := root["project"].(map[string]any)
+	projectID := fmt.Sprint(project["id"])
+	projectName := strings.TrimSpace(fmt.Sprint(project["name"]))
+	chains, _ := project["pipeline_chains"].([]any)
+	if strings.HasPrefix(filter, "chain:") {
+		for _, raw := range chains {
+			chain, ok := raw.(map[string]any)
+			if !ok || "chain:"+fmt.Sprint(chain["id"]) != filter {
+				continue
+			}
+			name := strings.TrimSpace(fmt.Sprint(chain["name"]))
+			if name == "" {
+				name = strings.TrimSpace(fmt.Sprint(chain["id"]))
+			}
+			return map[string]any{
+				"id": "chain:" + fmt.Sprint(chain["id"]), "label": "Chain: " + name,
+				"meta": fmt.Sprint(chain["sequence_label"]), "runnable": true,
+				"project_id": projectID, "chain_id": fmt.Sprint(chain["id"]),
+			}
+		}
+	}
+	meta := presentation.PipelineCountLabel(len(visiblePipelines))
+	if filter == "all-chains" {
+		meta = fmt.Sprintf("%d pipeline chains", len(chains))
+		if len(chains) == 1 {
+			meta = "1 pipeline chain"
+		}
+	}
+	return map[string]any{
+		"id": "project:" + projectID + ":" + filter, "label": projectName,
+		"meta": "Project · " + meta, "runnable": false, "project_id": projectID, "chain_id": "",
 	}
 }
 
@@ -2215,7 +2330,10 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 			}
 		}
 		if root["run_context"] == nil {
-			root["run_context"] = map[string]any{"available": false, "scope_label": "", "pipelines": []any{}}
+			root["run_context"] = map[string]any{
+				"available": false, "scope_label": "", "current_execution_id": "loading", "current_pipeline_id": "",
+				"current_pipeline_job_id": "", "pipelines": []any{},
+			}
 		}
 		root["output"] = ""
 		root["system_output"] = ""

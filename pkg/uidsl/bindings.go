@@ -158,10 +158,49 @@ func validateNodeInstanceBindings(node Node, data, locals map[string]any, platfo
 		if err != nil {
 			return fmt.Errorf("%s.graphView.nodes: %w", location, err)
 		}
+		if root := node.GraphView.Root; root != nil {
+			rootValue, rootErr := resolveBindingValue(data, locals, root.Binding)
+			if rootErr != nil {
+				return fmt.Errorf("%s.graphView.root.binding: %w", location, rootErr)
+			}
+			rootLocals := cloneBindingLocals(locals)
+			rootLocals[root.As] = rootValue
+			for label, binding := range map[string]string{"key": root.Key, "actionVisible": nodeBinding(root.ActionVisible)} {
+				if binding != "" {
+					if _, rootErr := resolveBindingValue(data, rootLocals, binding); rootErr != nil {
+						return fmt.Errorf("%s.graphView.root.%s: %w", location, label, rootErr)
+					}
+				}
+			}
+			for label, text := range map[string]Text{"label": root.Label, "meta": root.Meta} {
+				if text.Binding != "" {
+					if _, rootErr := resolveBindingValue(data, rootLocals, text.Binding); rootErr != nil {
+						return fmt.Errorf("%s.graphView.root.%s: %w", location, label, rootErr)
+					}
+				}
+				for _, match := range templateBindingPattern.FindAllStringSubmatch(text.Template, -1) {
+					if _, rootErr := resolveBindingValue(data, rootLocals, strings.TrimSpace(match[1])); rootErr != nil {
+						return fmt.Errorf("%s.graphView.root.%s: %w", location, label, rootErr)
+					}
+				}
+			}
+			for actionIndex, action := range root.Actions {
+				for name, value := range action.Arguments {
+					for _, match := range templateBindingPattern.FindAllStringSubmatch(value, -1) {
+						if _, rootErr := resolveBindingValue(data, rootLocals, strings.TrimSpace(match[1])); rootErr != nil {
+							return fmt.Errorf("%s.graphView.root.actions[%d].arguments.%s: %w", location, actionIndex, name, rootErr)
+						}
+					}
+				}
+			}
+		}
 		for index, item := range items {
 			next := cloneBindingLocals(locals)
 			next[node.GraphView.As] = item
 			for label, binding := range map[string]string{"key": node.GraphView.NodeKey, "dependencies": node.GraphView.Dependencies} {
+				if binding == "" {
+					continue
+				}
 				if _, err := resolveBindingValue(data, next, binding); err != nil {
 					return fmt.Errorf("%s.graphView.nodes[%d].%s: %w", location, index, label, err)
 				}

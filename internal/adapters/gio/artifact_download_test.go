@@ -70,6 +70,21 @@ func TestDownloadArtifactUsesNativePickerAndStreamsContent(t *testing.T) {
 	}
 }
 
+func TestDownloadJobLogUsesSharedNativeDownloadTransport(t *testing.T) {
+	client := &artifactChunkClientStub{}
+	writer := &artifactWriter{}
+	picker := &artifactPickerStub{writer: writer}
+	_, err := downloadArtifactWithPicker(t.Context(), client, picker, map[string]string{
+		"jobExecutionId": "job-1", "kind": "log-clean",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.requests) == 0 || client.requests[0].GetKind() != "log-clean" {
+		t.Fatalf("log download requests = %+v", client.requests)
+	}
+}
+
 func TestDownloadArtifactCancellationAbortsServerSession(t *testing.T) {
 	client := &artifactChunkClientStub{}
 	picker := &artifactPickerStub{err: explorer.ErrUserDecline}

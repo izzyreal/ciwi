@@ -11,6 +11,7 @@ actions:
   - { command: toggle-output-tailing, class: local }
   - { command: set-report-filter, class: local }
   - { command: download-artifact, class: local }
+  - { command: download-job-log, class: local }
   - { command: set-disclosures, class: local }
   - { command: set-run-option, class: local }
   - { command: set-agent-script-field, class: local }

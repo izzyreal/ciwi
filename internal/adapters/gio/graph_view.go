@@ -208,6 +208,7 @@ type definitionGraphNode struct {
 	id, label, meta string
 	dependencies    []string
 	data            any
+	root            bool
 	level, row      int
 	x, y            int
 }
@@ -319,10 +320,16 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 	}
 	selectedID := r.graphSelections[stateKey]
 	selectedNode := definitionGraphNodeByID(nodes, selectedID)
+	if selectedNode != nil && selectedNode.root {
+		selectedNode = nil
+		selectedID = ""
+	}
 	if len(node.GraphView.Details) > 0 && selectedNode == nil {
 		selectedNode = defaultDefinitionGraphNode(nodes)
-		selectedID = selectedNode.id
-		r.graphSelections[stateKey] = selectedID
+		if selectedNode != nil {
+			selectedID = selectedNode.id
+			r.graphSelections[stateKey] = selectedID
+		}
 	}
 	nodeWidth, nodeHeight := gtx.Dp(210), gtx.Dp(76)
 	gapX, gapY, padding := gtx.Dp(58), gtx.Dp(24), gtx.Dp(16)
@@ -397,12 +404,15 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 			}
 			graphViewport.clamp(actualScale, contentWidth, contentHeight, size.X, size.Y)
 			stack := clip.Rect{Max: size}.Push(gtx.Ops)
-			event.Op(gtx.Ops, graphViewport)
 			offset := op.Offset(image.Pt(-int(math.Round(float64(graphViewport.offset.X))), -int(math.Round(float64(graphViewport.offset.Y))))).Push(gtx.Ops)
-			pass := pointer.PassOp{}.Push(gtx.Ops)
 			r.layoutScaledDefinitionGraph(gtx, node, nodes, data, path, stateKey, selectedID, contentWidth, contentHeight, actualScale, nodeWidth, nodeHeight)
-			pass.Pop()
 			offset.Pop()
+			// Keep the viewport above the graph content in hit-test order while
+			// passing ordinary taps through to node controls. This gives blank
+			// graph space the same two-touch gesture target as a node surface.
+			pass := pointer.PassOp{}.Push(gtx.Ops)
+			event.Op(gtx.Ops, graphViewport)
+			pass.Pop()
 			stack.Pop()
 			return layout.Dimensions{Size: size}
 		})
@@ -444,11 +454,26 @@ func definitionGraphNodeByID(nodes []*definitionGraphNode, id string) *definitio
 
 func defaultDefinitionGraphNode(nodes []*definitionGraphNode) *definitionGraphNode {
 	for _, node := range nodes {
-		if len(node.dependencies) == 0 {
+		if node.root {
+			continue
+		}
+		hasRegularDependency := false
+		for _, dependency := range node.dependencies {
+			if !strings.HasPrefix(dependency, "__root__:") {
+				hasRegularDependency = true
+				break
+			}
+		}
+		if !hasRegularDependency {
 			return node
 		}
 	}
-	return nodes[0]
+	for _, node := range nodes {
+		if !node.root {
+			return node
+		}
+	}
+	return nil
 }
 
 func (r *Renderer) layoutGraphDetails(gtx layout.Context, details []uidsl.Node, data any, path string) layout.Dimensions {
@@ -495,14 +520,62 @@ func resolveDefinitionGraphNodes(graph uidsl.GraphView, data any) ([]*definition
 				return nil, err
 			}
 		}
-		dependencies, dependencyErr := uidsl.Resolve(nodeData, graph.Dependencies)
-		if dependencyErr != nil {
-			return nil, dependencyErr
+		var dependencies any
+		if graph.Dependencies != "" {
+			dependencies, err = uidsl.Resolve(nodeData, graph.Dependencies)
+			if err != nil {
+				return nil, err
+			}
 		}
 		nodes = append(nodes, &definitionGraphNode{
 			id: strings.TrimSpace(fmt.Sprint(key)), label: label, meta: meta,
 			dependencies: stringSlice(dependencies), data: nodeData,
 		})
+	}
+	if graph.Root != nil {
+		rootValue, rootErr := uidsl.Resolve(data, graph.Root.Binding)
+		if rootErr != nil {
+			return nil, rootErr
+		}
+		rootData := mergeData(data, graph.Root.As, rootValue)
+		key, keyErr := uidsl.Resolve(rootData, graph.Root.Key)
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		keyText := strings.TrimSpace(fmt.Sprint(key))
+		if keyText == "" {
+			return nil, fmt.Errorf("graph root key %q resolved empty", graph.Root.Key)
+		}
+		label, labelErr := uidsl.RenderText(rootData, graph.Root.Label)
+		if labelErr != nil {
+			return nil, labelErr
+		}
+		meta := ""
+		if graph.Root.Meta != (uidsl.Text{}) {
+			meta, rootErr = uidsl.RenderText(rootData, graph.Root.Meta)
+			if rootErr != nil {
+				return nil, rootErr
+			}
+		}
+		rootID := "__root__:" + keyText
+		rootNode := &definitionGraphNode{id: rootID, label: label, meta: meta, data: rootData, root: true}
+		regularIDs := make(map[string]bool, len(nodes))
+		for _, regular := range nodes {
+			regularIDs[regular.id] = true
+		}
+		for _, regular := range nodes {
+			hasVisibleDependency := false
+			for _, dependency := range regular.dependencies {
+				if regularIDs[dependency] {
+					hasVisibleDependency = true
+					break
+				}
+			}
+			if !hasVisibleDependency {
+				regular.dependencies = append(regular.dependencies, rootID)
+			}
+		}
+		nodes = append([]*definitionGraphNode{rootNode}, nodes...)
 	}
 	return nodes, nil
 }
@@ -630,15 +703,22 @@ func (r *Renderer) drawDefinitionGraph(gtx layout.Context, owner uidsl.Node, nod
 }
 
 func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Node, graphNode *definitionGraphNode, data any, path, stateKey string, selected bool) layout.Dimensions {
-	selectable := len(owner.GraphView.Details) > 0
+	selectable := !graphNode.root && len(owner.GraphView.Details) > 0
 	selector := r.button(path + "/select")
 	play := r.button(path + "/run")
 	playActivated := false
-	if len(owner.Actions) > 0 {
+	actions := owner.Actions
+	if graphNode.root {
+		actions = owner.GraphView.Root.Actions
+		if !conditionEnabled(owner.GraphView.Root.ActionVisible, graphNode.data) {
+			actions = nil
+		}
+	}
+	if len(actions) > 0 {
 		for r.clicked(gtx, play) {
 			playActivated = true
 			r.markInteraction(path + "/run")
-			r.dispatch(owner.Actions[0], graphNode.data)
+			r.dispatch(actions[0], graphNode.data)
 		}
 	}
 	if selectable {
@@ -651,6 +731,10 @@ func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Nod
 		}
 	}
 	borderColor, background, borderWidth := definitionGraphNodeSurface(r.palette, selectable && selector.Hovered(), selected)
+	if graphNode.root {
+		borderColor = r.palette.accent
+		background = mixColorSRGB(r.palette.surface, r.palette.accent, 0.08)
+	}
 	content := func(gtx layout.Context) layout.Dimensions {
 		return r.layoutCachedBorder(gtx, borderColor, r.metrics.controlRadius, borderWidth, func(gtx layout.Context) layout.Dimensions {
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -672,7 +756,7 @@ func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Nod
 							}),
 						)
 					})}
-					if len(owner.Actions) > 0 {
+					if len(actions) > 0 {
 						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return r.layoutGraphPlayButton(gtx, play, "Run "+graphNode.label+" as a new execution. Existing queued and running work is not interrupted.")

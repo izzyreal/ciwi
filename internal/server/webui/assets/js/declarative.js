@@ -192,8 +192,35 @@
 	  ? String(currentData.projectDetails.structure_filter || 'all-pipelines')
 	  : 'all-pipelines';
 	project.project_icon = Number(project.id || 0) > 0 ? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon' : '';
+	view.loading = false;
+	view.ready = true;
+	view.load_error = '';
 	view.structure_filters = projectStructureFilterOptions(view);
 	applyProjectStructureFilter(view, previousFilter);
+  }
+
+  function projectDetailsLoadingBinding(projectID) {
+	const id = String(projectID || '');
+	const currentProject = currentData && currentData.projectDetails && currentData.projectDetails.project;
+	const frontProjects = currentData && currentData.frontPage && Array.isArray(currentData.frontPage.projects)
+	  ? currentData.frontPage.projects : [];
+	const source = (currentProject && String(currentProject.id || '') === id
+	  ? currentProject
+	  : frontProjects.find(project => String(project.id || '') === id)) || {};
+	const project = Object.assign({}, source, {
+	  id: source.id || Number(projectID || 0),
+	  name: String(source.name || 'Project'),
+	  project_icon: String(source.project_icon || ''),
+	  pipeline_chains: [], has_pipeline_chains: false,
+	});
+	return {
+	  project, pipelines: [], visible_pipelines: [],
+	  structure_filter: 'all-pipelines', structure_filters: [],
+	  structure_root: {id: 'project:' + id + ':loading', label: project.name, meta: '', runnable: false, project_id: id, chain_id: ''},
+	  show_chain_structure: false, show_pipeline_structure: false,
+	  history_executions: [], history_empty: true,
+	  loading: true, ready: false, load_error: '',
+	};
   }
 
   function decorateJobDetails(view) {
@@ -224,9 +251,11 @@
 	  ? view.project.pipeline_chains : [];
 	let filter = String(requestedFilter || 'all-pipelines').trim() || 'all-pipelines';
 	let visible = pipelines.slice();
-	if (filter === 'all-chains' || filter.startsWith('chain:')) {
-	  const matching = chains.filter(chain => filter === 'all-chains' || 'chain:' + String(chain.id || '') === filter);
-	  if (filter.startsWith('chain:') && matching.length === 0) {
+	if (filter === 'all-chains') {
+	  visible = [];
+	} else if (filter.startsWith('chain:')) {
+	  const matching = chains.filter(chain => 'chain:' + String(chain.id || '') === filter);
+	  if (matching.length === 0) {
 		filter = 'all-pipelines';
 	  } else {
 		const included = new Set();
@@ -236,6 +265,31 @@
 	}
 	view.structure_filter = filter;
 	view.visible_pipelines = visible;
+	view.show_chain_structure = filter === 'all-chains';
+	view.show_pipeline_structure = filter !== 'all-chains';
+	const project = (view && view.project) || {};
+	const selectedChain = filter.startsWith('chain:')
+	  ? chains.find(chain => 'chain:' + String(chain.id || '') === filter)
+	  : null;
+	if (selectedChain) {
+	  const chainID = String(selectedChain.id || '');
+	  const chainName = String(selectedChain.name || chainID).trim() || chainID;
+	  view.structure_root = {
+		id: 'chain:' + chainID, label: 'Chain: ' + chainName,
+		meta: String(selectedChain.sequence_label || ''), runnable: true,
+		project_id: String(project.id || ''), chain_id: chainID,
+	  };
+	} else {
+	  const count = filter === 'all-chains' ? chains.length : visible.length;
+	  const countLabel = filter === 'all-chains'
+		? count + ' pipeline chain' + (count === 1 ? '' : 's')
+		: count + ' pipeline' + (count === 1 ? '' : 's');
+	  view.structure_root = {
+		id: 'project:' + String(project.id || '') + ':' + filter,
+		label: String(project.name || ''), meta: 'Project · ' + countLabel,
+		runnable: false, project_id: String(project.id || ''), chain_id: '',
+	  };
+	}
   }
 
   function managedYAMLBinding(definition) {
@@ -437,13 +491,13 @@
         const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, actionData)]));
         if (!window.ciwiConfirmAction(action.confirm)) return;
         const execute = async runtime => {
-        if (action.command === 'navigate' && args.route) {
+		if (action.command === 'navigate' && args.route) {
 		  const previousDisabled = !!element.disabled;
 		  element.disabled = true;
 		  element.setAttribute('aria-busy', 'true');
 		  element.classList.add('ciwi-action-pending');
 		  try {
-			await navigateBrowser(args.route);
+			await navigateBrowser(args.route, {section: args.section || ''});
 		  } finally {
 			element.disabled = previousDisabled;
 			element.removeAttribute('aria-busy');
@@ -451,7 +505,7 @@
 		  }
         }
         else if (action.command === 'open-url' && args.url) window.open(args.url, '_blank', 'noopener,noreferrer');
-		else if (action.command === 'refresh') await refresh({throwOnError: true});
+		else if (action.command === 'refresh') await refresh({throwOnError: true, showLoading: true});
         else if (action.command === 'change-theme') {
           ciwiApplyTheme(args.theme);
           await refresh();
@@ -487,6 +541,16 @@
 		  anchor.click();
 		  anchor.remove();
 		}
+		else if (action.command === 'download-job-log') {
+		  const jobID = encodeURIComponent(args.jobExecutionId || '');
+		  const format = args.format === 'raw' ? 'raw' : 'clean';
+		  const anchor = document.createElement('a');
+		  anchor.href = '/api/v1/jobs/' + jobID + '/log?format=' + format;
+		  anchor.download = '';
+		  document.body.appendChild(anchor);
+		  anchor.click();
+		  anchor.remove();
+		}
         else if (action.command === 'select-timeline-item') {
           data.jobDetails.selected_timeline_item = data.item;
           renderCurrent();
@@ -511,12 +575,13 @@
 		  data.jobDetails.tailing_tone = data.jobDetails.output_tailing ? 'success' : 'warning';
           renderCurrent();
         }
-        else if (action.command === 'set-disclosures') {
+		else if (action.command === 'set-disclosures') {
           const expanded = args.expanded === 'true';
           document.querySelectorAll('[data-disclosure-key^="' + CSS.escape(args.prefix || '') + '"]').forEach(details => {
             details.open = expanded;
-            disclosureStates.set(details.dataset.disclosureKey, expanded);
-          });
+			disclosureStates.set(details.dataset.disclosureKey, expanded);
+		  });
+		  requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
         }
 		else if (action.command === 'set-run-option') {
 		  const options = currentData && currentData.runOptions;
@@ -838,9 +903,9 @@
 
   function definitionGraphNodes(graph, data) {
     const values = resolve(data, graph.nodes);
-    return (Array.isArray(values) ? values : []).map(value => {
+    const nodes = (Array.isArray(values) ? values : []).map(value => {
       const nodeData = Object.assign({}, data, {[graph.as]: value});
-      const dependencies = resolve(nodeData, graph.dependencies);
+      const dependencies = graph.dependencies ? resolve(nodeData, graph.dependencies) : [];
       return {
         id: String(resolve(nodeData, graph.nodeKey)),
         label: renderText(graph.nodeLabel, nodeData),
@@ -850,6 +915,31 @@
         level: 0,
       };
     });
+    if (!graph.root) return nodes;
+    const rootValue = resolve(data, graph.root.binding);
+    const rootData = Object.assign({}, data, {[graph.root.as]: rootValue});
+    const rootID = '__root__:' + String(resolve(rootData, graph.root.key));
+    const regularIDs = new Set(nodes.map(graphNode => graphNode.id));
+    nodes.forEach(graphNode => {
+      if (!graphNode.dependencies.some(dependency => regularIDs.has(dependency))) graphNode.dependencies.push(rootID);
+    });
+    nodes.unshift({
+      id: rootID,
+      label: renderText(graph.root.label, rootData),
+      meta: renderText(graph.root.meta, rootData),
+      dependencies: [], data: rootData, root: true, level: 0,
+    });
+    return nodes;
+  }
+
+  function graphRootActionVisible(root, data) {
+    const condition = root && root.actionVisible;
+    if (!condition) return true;
+    const value = resolve(data, condition.binding);
+    const equal = condition.empty
+      ? String(value ?? '') === ''
+      : String(value ?? '') === String(condition.equals || 'true');
+    return condition.not ? !equal : equal;
   }
 
   function layoutDefinitionGraph(nodes) {
@@ -903,8 +993,9 @@
       return empty;
     }
 	const details = Array.isArray(node.graphView.details) ? node.graphView.details : [];
-	if (details.length && !graphNodes.some(graphNode => graphNode.id === selection.value)) {
-		selection.value = (graphNodes.find(graphNode => !graphNode.dependencies.length) || graphNodes[0]).id;
+	if (details.length && !graphNodes.some(graphNode => !graphNode.root && graphNode.id === selection.value)) {
+		const regular = graphNodes.filter(graphNode => !graphNode.root);
+		selection.value = (regular.find(graphNode => !graphNode.dependencies.some(dependency => !dependency.startsWith('__root__:'))) || regular[0] || {}).id || '';
 	}
     const layout = layoutDefinitionGraph(graphNodes);
     const wrapper = document.createElement('div');
@@ -943,11 +1034,12 @@
     graphNodes.forEach(graphNode => {
       const card = document.createElement('div');
       card.className = 'dsl-definition-graph-node' + (graphNode.id === selection.value ? ' selected' : '');
+	  if (graphNode.root) card.classList.add('dsl-definition-graph-root');
       card.style.left = graphNode.x + 'px';
       card.style.top = graphNode.y + 'px';
       card.style.width = layout.nodeWidth + 'px';
       card.style.height = layout.nodeHeight + 'px';
-	  if (details.length) {
+	  if (details.length && !graphNode.root) {
 		card.classList.add('selectable');
 		card.tabIndex = 0;
 		card.setAttribute('role', 'button');
@@ -977,7 +1069,9 @@
       meta.title = graphNode.meta;
       copy.append(title, meta);
       card.appendChild(copy);
-      if ((node.actions || []).length) {
+      const actions = graphNode.root ? ((node.graphView.root && node.graphView.root.actions) || []) : (node.actions || []);
+      const actionsVisible = !graphNode.root || graphRootActionVisible(node.graphView.root, graphNode.data);
+      if (actions.length && actionsVisible) {
         const play = document.createElement('button');
         play.className = 'dsl-button dsl-icon-button dsl-definition-graph-node-play';
         const runHelp = 'Run ' + graphNode.label + ' as a new execution. Existing queued and running work is not interrupted.';
@@ -985,7 +1079,7 @@
         play.title = runHelp;
         play.appendChild(declarativeIcon('player-play'));
 		play.addEventListener('click', event => event.stopPropagation());
-        bindActions(play, node.actions, graphNode.data);
+        bindActions(play, actions, graphNode.data);
         card.appendChild(play);
       }
       stage.appendChild(card);
@@ -1026,7 +1120,7 @@
     );
 	wrapper.append(toolbar, viewport);
 	if (details.length) {
-		const selected = graphNodes.find(graphNode => graphNode.id === selection.value);
+		const selected = graphNodes.find(graphNode => !graphNode.root && graphNode.id === selection.value);
 		if (selected) {
 			const detail = document.createElement('div');
 			detail.className = 'dsl-definition-graph-details';
@@ -1188,6 +1282,7 @@
     if (node.id) element.id = node.id;
     const style = node.style || {};
     if (style.role) element.classList.add('dsl-' + style.role);
+	if (style.role === 'floating-collapse') element.hidden = true;
     const tone = style.toneBinding ? semanticTone(resolve(data, style.toneBinding)) : style.tone;
     if (tone) element.classList.add('dsl-' + tone);
     if (style.emphasis) element.classList.add('dsl-' + style.emphasis);
@@ -1250,6 +1345,7 @@
           element.open = disclosureStates.get(stateKey, node.disclosure.defaultExpanded);
           element.addEventListener('toggle', () => {
 			disclosureStates.set(stateKey, element.open);
+			requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
           });
         } else {
           element.open = !!node.disclosure.defaultExpanded;
@@ -1290,7 +1386,13 @@
       element.value = String(resolve(data, node.input.value) ?? '');
       element.placeholder = node.input.placeholder || '';
     } else if (node.text) {
-      element.textContent = renderText(node.text, data);
+      const text = renderText(node.text, data);
+      if ((node.id === 'job-output-system-text' || node.id === 'job-output-group-text') && data.jobDetails) {
+		const itemID = node.id === 'job-output-group-text' && data.outputGroup ? String(data.outputGroup.id || '') : '';
+		renderBrowserOutputText(element, text, itemID, data.jobDetails);
+	  } else {
+		element.textContent = text;
+	  }
     }
 	if (node.component === 'button' && style.role === 'icon-button') {
 	  const accessibleLabel = element.textContent || 'Action';
@@ -1324,6 +1426,7 @@
     const viewState = window.ciwiCaptureViewState(root);
     root.replaceChildren(renderNode(currentDocument.screen.root, currentData));
     window.ciwiRestoreViewState(root, viewState);
+	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
   }
 
   async function navigateBrowser(path, options = {}) {
@@ -1331,7 +1434,11 @@
 	const previousPath = currentPath || routePath();
 	if (!options.fromHistory) window.history.pushState({}, '', targetPath);
 	try {
-	  await refresh({throwOnError: true});
+	  await refresh({throwOnError: true, showLoading: true});
+	  if (options.section) {
+		const target = document.getElementById(String(options.section));
+		if (target) target.scrollIntoView({block: 'start'});
+	  }
 	} catch (error) {
 	  window.history.replaceState({}, '', previousPath);
 	  throw error;
@@ -1423,16 +1530,40 @@
     const match = matches[Number(view.output_match_index || 0)];
     if (!match) return;
     const disclosure = match.itemID ? revealBrowserOutputGroup(view, match.itemID) : null;
-    const target = disclosure
-      ? disclosure.querySelector('#job-output-group-text')
-      : document.getElementById('job-output-system-text');
-    if (!target || !target.firstChild) return;
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.setStart(target.firstChild, match[0]);
-    range.setEnd(target.firstChild, match[1]);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    const target = disclosure || document.getElementById('job-output-system');
+    const active = target && target.querySelector('.ciwi-search-hit-active');
+    if (active) active.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'});
+  }
+
+  function renderBrowserOutputText(element, text, itemID, view) {
+    const ranges = outputMatchRanges(text, view.output_search);
+    const active = groupedOutputMatches(view)[Number(view.output_match_index || 0)];
+    let cursor = 0;
+    ranges.forEach(range => {
+      if (range[0] > cursor) element.appendChild(document.createTextNode(text.slice(cursor, range[0])));
+      const mark = document.createElement('mark');
+      mark.className = 'ciwi-search-hit';
+      if (active && String(active.itemID) === String(itemID) && active.start === range[0] && active.end === range[1]) {
+        mark.classList.add('ciwi-search-hit-active');
+      }
+      mark.textContent = text.slice(range[0], range[1]);
+      element.appendChild(mark);
+      cursor = range[1];
+    });
+    if (cursor < text.length) element.appendChild(document.createTextNode(text.slice(cursor)));
+  }
+
+  function updateDeclarativeOutputCollapseButtons() {
+    const container = document.getElementById('job-output-groups');
+    if (!container) return;
+    const threshold = Math.max(480, container.clientHeight);
+    container.querySelectorAll('details.dsl-output-group').forEach(details => {
+      const button = details.querySelector(':scope > .dsl-floating-collapse');
+      if (!button) return;
+      const summary = details.querySelector(':scope > summary');
+      const contentHeight = details.open ? Math.max(0, details.scrollHeight - Number((summary && summary.offsetHeight) || 0)) : 0;
+      button.hidden = !details.open || contentHeight <= threshold;
+    });
   }
 
   function initializeJobOutputView(view, previousView) {
@@ -1577,6 +1708,7 @@
   async function refresh(options = {}) {
     const loadGeneration = ++routeLoadGeneration;
     const generation = outputWatchGeneration + 1;
+	let loadingCommitted = false;
     try {
 	  const nextRouteMatch = await resolveBrowserRoute();
 	  const routeName = nextRouteMatch.route.name;
@@ -1606,11 +1738,26 @@
 	  const viewPromise = viewURL
 		? fetch(viewURL)
 		: Promise.resolve(new Response('{}', {status: 200, headers: {'Content-Type': 'application/json'}}));
-	  const [documentContract, themes, viewResponse] = await Promise.all([
-		screenContract(screenName),
-		themeContracts(),
-		viewPromise,
-      ]);
+	  const documentPromise = screenContract(screenName);
+	  const themesPromise = themeContracts();
+	  const loadingView = options.showLoading && projectMatch
+		? projectDetailsLoadingBinding(nextRouteMatch.params.projectId) : null;
+	  if (loadingView) {
+		const [loadingDocument, loadingThemes] = await Promise.all([documentPromise, themesPromise]);
+		if (loadGeneration !== routeLoadGeneration) return false;
+		applyContractTheme(loadingThemes);
+		outputWatchGeneration = generation;
+		currentRouteMatch = nextRouteMatch;
+		currentPath = routePath();
+		currentDocument = loadingDocument;
+		currentData = {projectDetails: loadingView, client: {
+		  connected: true, connecting: false, offline: false, address: window.location.host,
+		  status: 'Connected through the browser', tone: 'success', progress: {state: 'none'},
+		}};
+		renderCurrent();
+		loadingCommitted = true;
+	  }
+	  const [documentContract, themes, viewResponse] = await Promise.all([documentPromise, themesPromise, viewPromise]);
 	  if (!viewResponse.ok) throw new Error(await viewResponse.text());
 	  const responseView = await viewResponse.json();
       applyContractTheme(themes);
@@ -1723,6 +1870,13 @@
         });
       }
     } catch (error) {
+	  if (loadingCommitted && loadGeneration === routeLoadGeneration && currentData && currentData.projectDetails) {
+		currentData.projectDetails.loading = false;
+		currentData.projectDetails.ready = false;
+		currentData.projectDetails.load_error = error.message || String(error);
+		renderCurrent();
+		return false;
+	  }
 	  if (options.throwOnError) throw error;
 	  if (currentDocument && currentData) {
 		console.error(error);
@@ -1740,5 +1894,5 @@
   window.addEventListener('popstate', () => {
 	navigateBrowser(routePath(), {fromHistory: true}).catch(error => window.alert(error.message || String(error)));
   });
-  refresh().finally(startChangeWatch);
+  refresh({showLoading: true}).finally(startChangeWatch);
 })();

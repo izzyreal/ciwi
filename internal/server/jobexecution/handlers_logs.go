@@ -57,26 +57,34 @@ func handleJobLog(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobI
 		return
 	}
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	body, fileName, renderErr := RenderJobLog(job, events, format)
+	if renderErr != nil {
+		http.Error(w, "format must be clean or raw", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
+	_, _ = w.Write([]byte(body))
+}
+
+// RenderJobLog generates the same downloadable log used by the HTTP and native clients.
+func RenderJobLog(job protocol.JobExecution, events []protocol.JobExecutionEvent, format string) (body, fileName string, err error) {
+	format = strings.ToLower(strings.TrimSpace(format))
 	if format == "" {
 		format = "clean"
 	}
-	var body string
 	switch format {
 	case "clean":
 		body = renderCleanJobLog(job, events)
 	case "raw":
 		body = renderRawJobLog(job, events)
 	default:
-		http.Error(w, "format must be clean or raw", http.StatusBadRequest)
-		return
+		return "", "", fmt.Errorf("format must be clean or raw")
 	}
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
-	filenameFormat := format
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="ciwi-%s-%s.log"`, sanitizeDownloadToken(jobID), filenameFormat))
-	_, _ = w.Write([]byte(body))
+	return body, fmt.Sprintf("ciwi-%s-%s.log", sanitizeDownloadToken(job.ID), format), nil
 }
 
 func renderRawJobLog(_ protocol.JobExecution, events []protocol.JobExecutionEvent) string {

@@ -50,7 +50,6 @@ type Renderer struct {
 	mu                      sync.RWMutex
 	screen                  *uidsl.ScreenDocument
 	data                    any
-	status                  string
 	theme                   *material.Theme
 	typography              uidsl.Typography
 	palette                 palette
@@ -88,8 +87,6 @@ type Renderer struct {
 	visualOps               *visualOpCache
 	loaderTextures          map[loaderTextureKey]*loaderTextureEntry
 	loaderTextureClock      uint64
-	statusText              widget.Editor
-	shownStatus             string
 	onAction                ActionHandler
 	invalidate              func()
 	pending                 *pendingConfirmation
@@ -228,7 +225,6 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		loaderTextures:     map[loaderTextureKey]*loaderTextureEntry{},
 		activeOperations:   map[string]operations.Operation{},
 	}
-	renderer.statusText.ReadOnly = true
 	return renderer, nil
 }
 
@@ -449,12 +445,6 @@ func structuredOutputPlainText(root map[string]any, groups []any, systemOutput s
 	return out.String()
 }
 
-func (r *Renderer) SetStatus(status string) {
-	r.mu.Lock()
-	r.status = status
-	r.mu.Unlock()
-}
-
 func (r *Renderer) ShowNotice(message, actionLabel string, action uidsl.Action, arguments map[string]string, duration time.Duration) {
 	message = strings.TrimSpace(message)
 	if message == "" {
@@ -556,7 +546,7 @@ func sameNativeNotice(left, right nativeNotice) bool {
 	return true
 }
 
-func (r *Renderer) StatusExpiry() time.Time {
+func (r *Renderer) NoticeExpiry() time.Time {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.notice != nil && !r.notice.expires.IsZero() {
@@ -565,7 +555,7 @@ func (r *Renderer) StatusExpiry() time.Time {
 	return time.Time{}
 }
 
-func (r *Renderer) ClearExpiredStatus(now time.Time) bool {
+func (r *Renderer) ClearExpiredNotice(now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.notice != nil && !r.notice.expires.IsZero() && !now.Before(r.notice.expires) {
@@ -702,7 +692,9 @@ func (r *Renderer) setProjectStructureFilterLocked(filter string) bool {
 	}
 	pipelines, _ := root["pipelines"].([]any)
 	visible := append([]any(nil), pipelines...)
-	if filter == "all-chains" || strings.HasPrefix(filter, "chain:") {
+	if filter == "all-chains" {
+		visible = visible[:0]
+	} else if strings.HasPrefix(filter, "chain:") {
 		project, _ := root["project"].(map[string]any)
 		chains, _ := project["pipeline_chains"].([]any)
 		included := map[string]bool{}
@@ -712,7 +704,7 @@ func (r *Renderer) setProjectStructureFilterLocked(filter string) bool {
 			if !chainOK {
 				continue
 			}
-			if strings.HasPrefix(filter, "chain:") && "chain:"+fmt.Sprint(chain["id"]) != filter {
+			if "chain:"+fmt.Sprint(chain["id"]) != filter {
 				continue
 			}
 			matchedChain = true
@@ -720,7 +712,7 @@ func (r *Renderer) setProjectStructureFilterLocked(filter string) bool {
 				included[pipelineID] = true
 			}
 		}
-		if strings.HasPrefix(filter, "chain:") && !matchedChain {
+		if !matchedChain {
 			filter = "all-pipelines"
 			visible = append([]any(nil), pipelines...)
 			included = nil
@@ -743,6 +735,9 @@ func (r *Renderer) setProjectStructureFilterLocked(filter string) bool {
 	}
 	nextRoot["structure_filter"] = filter
 	nextRoot["visible_pipelines"] = visible
+	nextRoot["show_chain_structure"] = filter == "all-chains"
+	nextRoot["show_pipeline_structure"] = filter != "all-chains"
+	nextRoot["structure_root"] = projectStructureRoot(nextRoot, filter, visible)
 	nextData := make(map[string]any, len(data))
 	for key, value := range data {
 		nextData[key] = value
@@ -811,7 +806,7 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 			icon.resetVisualCache()
 		}
 	}
-	screen, data, status, resetScroll := r.screen, r.data, r.status, r.resetScroll
+	screen, data, resetScroll := r.screen, r.data, r.resetScroll
 	pendingScrollSection := r.pendingScrollSection
 	var notice *nativeNotice
 	if r.notice != nil {
@@ -843,11 +838,8 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 	}
 	r.paintPageBackground(gtx)
 	if data == nil {
-		if status == "" {
-			status = "Loading…"
-		}
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return r.layoutLoadingState(gtx, status)
+			return r.layoutLoadingState(gtx)
 		})
 	}
 	root, _ := applyGioOverride(screen.Screen.Root, r.compact)
@@ -878,9 +870,9 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 			if pageWidth := gtx.Dp(r.metrics.pageWidth); pageWidth > 0 && gtx.Constraints.Max.X > pageWidth {
 				marginPixels := gtx.Constraints.Max.X - pageWidth
 				margin := unit.Dp(float32(marginPixels) / (2 * gtx.Metric.PxPerDp))
-				return layout.Inset{Left: margin, Right: margin}.Layout(gtx, r.layoutRootChildren(children, root, screen, data, status))
+				return layout.Inset{Left: margin, Right: margin}.Layout(gtx, r.layoutRootChildren(children, root, screen, data))
 			}
-			return r.layoutRootChildren(children, root, screen, data, status)(gtx)
+			return r.layoutRootChildren(children, root, screen, data)(gtx)
 		})
 	}
 	content := body
@@ -1210,25 +1202,16 @@ func (r *Renderer) clicked(gtx layout.Context, button *widget.Clickable) bool {
 	return clicked && !r.suppressTouchActivation
 }
 
-func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, screen *uidsl.ScreenDocument, data any, status string) layout.Widget {
+func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, screen *uidsl.ScreenDocument, data any) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		pageInset := r.pageInset()
-		hasStatus := status != ""
 		itemCount := len(children)
-		if hasStatus {
-			itemCount++
-		}
 		return r.layoutGuardedList(gtx, "root", &r.list, itemCount, func(gtx layout.Context, index int) layout.Dimensions {
-			if index == len(children) {
-				return layout.Inset{Top: 10, Bottom: pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return r.layoutStatus(gtx, status)
-				})
-			}
 			inset := layout.Inset{}
 			if index == 0 {
 				inset.Top = pageInset
 			}
-			if index < len(children)-1 || hasStatus {
+			if index < len(children)-1 {
 				inset.Bottom = r.spacing(root.Layout.Gap)
 			} else {
 				inset.Bottom = pageInset
@@ -1399,33 +1382,9 @@ func (r *Renderer) openCompactSheet(path, title string, node uidsl.Node, data an
 	r.requestFrame()
 }
 
-func (r *Renderer) layoutStatus(gtx layout.Context, status string) layout.Dimensions {
-	if status != r.shownStatus {
-		r.statusText.SetText(status)
-		r.shownStatus = status
-	}
-	style := material.Editor(r.theme, &r.statusText, "")
-	typography := r.nativeTextStyle("body", false)
-	style.Font = typography.font
-	style.TextSize = typography.size
-	style.LineHeightScale = typography.lineHeight
-	style.Color = r.palette.muted
-	return style.Layout(gtx)
-}
-
-func (r *Renderer) layoutLoadingState(gtx layout.Context, status string) layout.Dimensions {
-	semantic.DescriptionOp(status).Add(gtx.Ops)
-	return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return r.layoutGlyph(gtx, "loader-2", "accent", 28)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Spacer{Height: r.metrics.spaceMedium}.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return r.layoutStatus(gtx, status)
-		}),
-	)
+func (r *Renderer) layoutLoadingState(gtx layout.Context) layout.Dimensions {
+	semantic.DescriptionOp("Loading content").Add(gtx.Ops)
+	return r.layoutGlyph(gtx, "loader-2", "accent", 28)
 }
 
 func (r *Renderer) layoutSkeleton(gtx layout.Context) layout.Dimensions {
@@ -3978,14 +3937,14 @@ func (r *Renderer) surfaceWithBorderProgressColor(content layout.Widget, padding
 func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, data any) {
 	arguments, err := actionArguments(action, data)
 	if err != nil {
-		r.SetStatus(err.Error())
+		r.ShowAlert("Action unavailable", err.Error())
 		return
 	}
 	switch action.Command {
 	case "select-timeline-item":
 		items, resolveErr := resolveItems(data, "jobDetails.timeline")
 		if resolveErr != nil {
-			r.SetStatus(resolveErr.Error())
+			r.ShowAlert("Timeline unavailable", resolveErr.Error())
 			return
 		}
 		for _, item := range items {
@@ -4008,7 +3967,7 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 						break
 					}
 				}
-				r.SetStatus("Selected " + fmt.Sprint(itemMap["title"]))
+				r.ShowNotice("Selected "+fmt.Sprint(itemMap["title"]), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 				r.requestFrame()
 				return
 			}
@@ -4040,15 +3999,15 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 	case "copy-output":
 		output, resolveErr := uidsl.Resolve(data, "jobDetails.output")
 		if resolveErr != nil {
-			r.SetStatus(resolveErr.Error())
+			r.ShowAlert("Output unavailable", resolveErr.Error())
 			return
 		}
 		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(fmt.Sprint(output)))})
-		r.SetStatus("Output copied")
+		r.ShowNotice("Output copied", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 	case "copy-text":
 		text := arguments["text"]
 		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(text))})
-		r.SetStatus("Copied")
+		r.ShowNotice("Copied", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 	case "toggle-output-tailing":
 		r.outputTailing = !r.outputTailing
 		label := "Tailing: Off"
@@ -4067,7 +4026,7 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 		prefix := arguments["prefix"]
 		expanded, parseErr := strconv.ParseBool(arguments["expanded"])
 		if parseErr != nil || prefix == "" {
-			r.SetStatus("Invalid disclosure group")
+			r.ShowAlert("Action unavailable", "Invalid disclosure group")
 			return
 		}
 		for key := range r.persistentDisclosures {
@@ -4185,18 +4144,18 @@ func (r *Renderer) dispatch(action uidsl.Action, data any) {
 	}
 	arguments, err := actionArguments(action, data)
 	if err != nil {
-		r.SetStatus(err.Error())
+		r.ShowAlert("Action unavailable", err.Error())
 		return
 	}
 	if action.Confirm != nil {
 		title, err := uidsl.RenderText(data, uidsl.Text{Template: action.Confirm.Title})
 		if err != nil {
-			r.SetStatus(err.Error())
+			r.ShowAlert("Action unavailable", err.Error())
 			return
 		}
 		message, err := uidsl.RenderText(data, uidsl.Text{Template: action.Confirm.Message})
 		if err != nil {
-			r.SetStatus(err.Error())
+			r.ShowAlert("Action unavailable", err.Error())
 			return
 		}
 		r.pending = &pendingConfirmation{action: action, arguments: arguments, title: title, message: message}

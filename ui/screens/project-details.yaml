@@ -103,8 +103,77 @@ screen:
                 command: navigate
                 arguments:
                   route: /
+      - component: column
+        id: project-details-loading
+        visible:
+          binding: projectDetails.loading
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: row
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "14"}
+                style: {role: skeleton}
+          - component: row
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "14"}
+                style: {role: skeleton}
+          - component: card
+            layout:
+              direction: vertical
+              gap: medium
+              padding: medium
+            children:
+              - component: row
+                children:
+                  - component: row
+                    layout: {grow: true, minHeight: "18"}
+                    style: {role: skeleton}
+              - component: row
+                children:
+                  - component: spacer
+                    layout: {grow: true, minHeight: "160"}
+          - component: row
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "14"}
+                style: {role: skeleton}
+      - component: column
+        id: project-details-load-error
+        visible:
+          binding: projectDetails.load_error
+          empty: true
+          not: true
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text:
+              literal: Could not load project details
+            style:
+              role: heading
+              emphasis: strong
+              tone: danger
+          - component: text
+            text:
+              binding: projectDetails.load_error
+            style:
+              tone: danger
+          - component: button
+            text:
+              literal: Retry
+            icon: refresh
+            actions:
+              - on: activate
+                command: refresh
       - component: row
         id: project-structure-filter
+        visible:
+          binding: projectDetails.ready
         layout:
           direction: horizontal
           gap: small
@@ -130,9 +199,119 @@ screen:
                 arguments:
                   value: "{{selection.value}}"
       - component: graph-view
+        id: project-chains
+        text:
+          literal: Structure
+        visible:
+          binding: projectDetails.show_chain_structure
+        graphView:
+          stateKey: "project-chains:{{projectDetails.project.id}}"
+          defaultMode: graph
+          nodes: projectDetails.project.pipeline_chains
+          as: chain
+          nodeKey: chain.id
+          nodeLabel:
+            binding: chain.name
+          nodeMeta:
+            binding: chain.sequence_label
+          root:
+            binding: projectDetails.structure_root
+            as: structureRoot
+            key: structureRoot.id
+            label:
+              binding: structureRoot.label
+            meta:
+              binding: structureRoot.meta
+        actions:
+          - on: activate
+            command: run-chain
+            arguments:
+              projectId: "{{projectDetails.project.id}}"
+              chainId: "{{chain.id}}"
+            confirm:
+              title: Run pipeline chain
+              message: Queues every pipeline in this chain as one independent run. It does not interrupt jobs that are already queued or running.
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: list
+            layout:
+              direction: vertical
+              gap: small
+            repeat:
+              source: projectDetails.project.pipeline_chains
+              as: chain
+              key: chain.id
+            children:
+              - component: card
+                layout:
+                  direction: horizontal
+                  gap: medium
+                  align: center
+                  padding: medium
+                children:
+                  - component: column
+                    layout:
+                      direction: vertical
+                      gap: small
+                      grow: true
+                    children:
+                      - component: text
+                        text:
+                          template: "Chain: {{chain.name}}"
+                        style:
+                          emphasis: strong
+                      - component: text
+                        text:
+                          binding: chain.sequence_label
+                        style:
+                          role: code-inline
+                          tone: muted
+                  - component: button
+                    text:
+                      literal: Options
+                    icon: adjustments
+                    actions:
+                      - on: activate
+                        command: navigate
+                        arguments:
+                          route: /run-options/projects/{{projectDetails.project.id}}/chains/{{chain.id}}
+                  - component: button
+                    text:
+                      literal: Run Chain
+                    icon: player-play
+                    actions:
+                      - on: activate
+                        command: run-chain
+                        arguments:
+                          projectId: "{{projectDetails.project.id}}"
+                          chainId: "{{chain.id}}"
+                        confirm:
+                          title: Run pipeline chain
+                          message: Queues every pipeline in this chain as one independent run. It does not interrupt jobs that are already queued or running.
+                  - component: button
+                    text:
+                      literal: Dry Run
+                    icon: player-play
+                    visible:
+                      binding: chain.supports_dry_run
+                    actions:
+                      - on: activate
+                        command: run-chain
+                        arguments:
+                          projectId: "{{projectDetails.project.id}}"
+                          chainId: "{{chain.id}}"
+                          dryRun: "true"
+                        confirm:
+                          title: Dry-run pipeline chain
+                          message: Queues a dry-run execution of every pipeline in this chain. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
+      - component: graph-view
         id: project-structure
         text:
           literal: Structure
+        visible:
+          binding: projectDetails.show_pipeline_structure
         graphView:
           stateKey: "project-structure:{{projectDetails.project.id}}"
           defaultMode: graph
@@ -144,6 +323,25 @@ screen:
           nodeMeta:
             binding: pipeline.graph_summary_label
           dependencies: pipeline.depends_on
+          root:
+            binding: projectDetails.structure_root
+            as: structureRoot
+            key: structureRoot.id
+            label:
+              binding: structureRoot.label
+            meta:
+              binding: structureRoot.meta
+            actionVisible:
+              binding: structureRoot.runnable
+            actions:
+              - on: activate
+                command: run-chain
+                arguments:
+                  projectId: "{{structureRoot.project_id}}"
+                  chainId: "{{structureRoot.chain_id}}"
+                confirm:
+                  title: Run pipeline chain
+                  message: Queues every pipeline in this chain as one independent run. It does not interrupt jobs that are already queued or running.
           details:
             - component: row
               layout:
@@ -219,6 +417,22 @@ screen:
                 nodeMeta:
                   binding: job.summary_label
                 dependencies: job.needs
+                root:
+                  binding: pipeline
+                  as: pipelineRoot
+                  key: pipelineRoot.id
+                  label:
+                    template: "Pipeline: {{pipelineRoot.pipeline_id}}"
+                  meta:
+                    binding: pipelineRoot.graph_summary_label
+                  actions:
+                    - on: activate
+                      command: run-pipeline
+                      arguments:
+                        pipelineDbId: "{{pipelineRoot.id}}"
+                      confirm:
+                        title: Run pipeline
+                        message: This adds a new execution without interrupting jobs that are already queued or running.
                 details:
                   - component: row
                     layout:
@@ -414,84 +628,6 @@ screen:
           direction: vertical
           gap: medium
         children:
-          - component: text
-            text:
-              literal: Pipeline Chains
-            visible:
-              binding: projectDetails.project.has_pipeline_chains
-            style:
-              emphasis: strong
-          - component: list
-            layout:
-              direction: vertical
-              gap: small
-            repeat:
-              source: projectDetails.project.pipeline_chains
-              as: chain
-              key: chain.id
-            children:
-              - component: card
-                layout:
-                  direction: horizontal
-                  gap: medium
-                  align: center
-                  padding: medium
-                children:
-                  - component: column
-                    layout:
-                      direction: vertical
-                      gap: small
-                      grow: true
-                    children:
-                      - component: text
-                        text:
-                          template: "Chain: {{chain.name}}"
-                        style:
-                          emphasis: strong
-                      - component: text
-                        text:
-                          binding: chain.sequence_label
-                        style:
-                          role: code-inline
-                          tone: muted
-                  - component: button
-                    text:
-                      literal: Options
-                    icon: adjustments
-                    actions:
-                      - on: activate
-                        command: navigate
-                        arguments:
-                          route: /run-options/projects/{{projectDetails.project.id}}/chains/{{chain.id}}
-                  - component: button
-                    text:
-                      literal: Run Chain
-                    icon: player-play
-                    actions:
-                      - on: activate
-                        command: run-chain
-                        arguments:
-                          projectId: "{{projectDetails.project.id}}"
-                          chainId: "{{chain.id}}"
-                        confirm:
-                          title: Run pipeline chain
-                          message: Queues every pipeline in this chain as one independent run. It does not interrupt jobs that are already queued or running.
-                  - component: button
-                    text:
-                      literal: Dry Run
-                    icon: player-play
-                    visible:
-                      binding: chain.supports_dry_run
-                    actions:
-                      - on: activate
-                        command: run-chain
-                        arguments:
-                          projectId: "{{projectDetails.project.id}}"
-                          chainId: "{{chain.id}}"
-                          dryRun: "true"
-                        confirm:
-                          title: Dry-run pipeline chain
-                          message: Queues a dry-run execution of every pipeline in this chain. Steps marked to skip dry runs are not executed, and existing queued or running jobs are unaffected.
           - component: text
             text:
               literal: Pipelines
@@ -694,6 +830,8 @@ screen:
                                       tone: muted
       - component: section
         id: project-execution-history
+        visible:
+          binding: projectDetails.ready
         layout:
           direction: vertical
           gap: medium

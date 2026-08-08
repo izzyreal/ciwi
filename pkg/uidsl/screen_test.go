@@ -322,6 +322,21 @@ func TestParseScreenValidatesGraphViewBindingsAndNodeActionScope(t *testing.T) {
           nodeMeta:
             literal: Project
           dependencies: graphProject.pipeline_ids
+          root:
+            binding: frontPage.server
+            as: graphRoot
+            key: graphRoot.version
+            label:
+              template: "Server {{graphRoot.version}}"
+            actionVisible:
+              binding: graphRoot.version
+              empty: true
+              not: true
+            actions:
+              - on: activate
+                command: navigate
+                arguments:
+                  route: /server/{{graphRoot.version}}
           details:
             - component: text
               text:
@@ -339,6 +354,14 @@ func TestParseScreenValidatesGraphViewBindingsAndNodeActionScope(t *testing.T) {
 `, 1)
 	if _, err := ParseScreen([]byte(payload)); err != nil {
 		t.Fatalf("valid graph view: %v", err)
+	}
+	independent := strings.Replace(payload, "          dependencies: graphProject.pipeline_ids\n", "", 1)
+	if _, err := ParseScreen([]byte(independent)); err != nil {
+		t.Fatalf("independent graph nodes without dependencies: %v", err)
+	}
+	invalidRoot := strings.Replace(payload, "binding: frontPage.server", "binding: missing.server", 1)
+	if _, rootErr := ParseScreen([]byte(invalidRoot)); rootErr == nil || !strings.Contains(rootErr.Error(), "unknown root") {
+		t.Fatalf("invalid graph root binding error = %v", rootErr)
 	}
 	payload = strings.Replace(payload, "graphProject.pipeline_ids", "missing.pipeline_ids", 1)
 	_, err := ParseScreen([]byte(payload))

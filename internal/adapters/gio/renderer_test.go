@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"math"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -250,9 +251,6 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	}
 	if renderer.metrics.heroPadding != 16 || renderer.metrics.imageBrandWidth != 110 || renderer.metrics.imageBrandHeight != 91 {
 		t.Fatalf("native masthead metrics = padding %v image %vx%v, want browser 16 and 110x91", renderer.metrics.heroPadding, renderer.metrics.imageBrandWidth, renderer.metrics.imageBrandHeight)
-	}
-	if !renderer.statusText.ReadOnly {
-		t.Fatal("status text must remain selectable but read-only")
 	}
 	projectIcon, err := sharedUI.Read("assets/ciwi-logo.png")
 	if err != nil {
@@ -587,6 +585,86 @@ func TestGraphRunButtonConsumesGraphNodeSelection(t *testing.T) {
 	}
 }
 
+func TestGraphRootRunActionIsIndependentFromSelection(t *testing.T) {
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(&uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "graph-root-interaction"}}, theme, func(uidsl.Action, map[string]string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := uidsl.Node{GraphView: &uidsl.GraphView{
+		Details: []uidsl.Node{{Component: "text", Text: &uidsl.Text{Literal: "Details"}}},
+		Root: &uidsl.GraphRoot{
+			ActionVisible: &uidsl.Condition{Binding: "graphRoot.runnable"},
+			Actions: []uidsl.Action{{On: "activate", Command: "run-chain", Arguments: map[string]string{
+				"projectId": "{{graphRoot.project_id}}", "chainId": "{{graphRoot.chain_id}}",
+			}, Confirm: &uidsl.Confirmation{Title: "Run chain", Message: "Queue the chain."}}},
+		},
+	}}
+	graphNode := &definitionGraphNode{
+		id: "__root__:chain:release", label: "Chain: Release", root: true,
+		data: map[string]any{"graphRoot": map[string]any{"runnable": true, "project_id": "1", "chain_id": "release"}},
+	}
+	const path = "graph/node/__root__:chain:release"
+	renderer.button(path + "/run").Click()
+	renderer.layoutDefinitionGraphNode(
+		layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(240, 90))},
+		owner, graphNode, map[string]any{}, path, "project-1", false,
+	)
+	if renderer.pending == nil || renderer.pending.action.Command != "run-chain" || renderer.pending.arguments["projectId"] != "1" || renderer.pending.arguments["chainId"] != "release" {
+		t.Fatalf("graph root confirmation = %#v", renderer.pending)
+	}
+	if selected := renderer.graphSelections["project-1"]; selected != "" {
+		t.Fatalf("graph root action selected %q", selected)
+	}
+
+	renderer.pending = nil
+	graphNode.data.(map[string]any)["graphRoot"].(map[string]any)["runnable"] = false
+	renderer.button(path + "/run").Click()
+	renderer.layoutDefinitionGraphNode(
+		layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(240, 90))},
+		owner, graphNode, map[string]any{}, path, "project-1", false,
+	)
+	if renderer.pending != nil {
+		t.Fatal("informational graph root dispatched its hidden action")
+	}
+}
+
+func TestResolveDefinitionGraphNodesPrependsRootToVisibleEntries(t *testing.T) {
+	graph := uidsl.GraphView{
+		Nodes: "view.nodes", As: "item", NodeKey: "item.id", NodeLabel: uidsl.Text{Binding: "item.id"}, Dependencies: "item.needs",
+		Root: &uidsl.GraphRoot{Binding: "view.root", As: "graphRoot", Key: "graphRoot.id", Label: uidsl.Text{Binding: "graphRoot.label"}, Meta: uidsl.Text{Binding: "graphRoot.meta"}},
+	}
+	data := map[string]any{"view": map[string]any{
+		"root": map[string]any{"id": "pipeline:7", "label": "Pipeline: build", "meta": "2 jobs"},
+		"nodes": []any{
+			map[string]any{"id": "build", "needs": []any{}},
+			map[string]any{"id": "release", "needs": []any{"build"}},
+			map[string]any{"id": "detached", "needs": []any{"outside-filter"}},
+		},
+	}}
+	nodes, err := resolveDefinitionGraphNodes(graph, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 4 || !nodes[0].root || nodes[0].label != "Pipeline: build" {
+		t.Fatalf("resolved graph root = %#v", nodes)
+	}
+	rootID := nodes[0].id
+	if !slices.Contains(nodes[1].dependencies, rootID) || slices.Contains(nodes[2].dependencies, rootID) || !slices.Contains(nodes[3].dependencies, rootID) {
+		t.Fatalf("root dependencies = build %v, release %v, detached %v", nodes[1].dependencies, nodes[2].dependencies, nodes[3].dependencies)
+	}
+	if selected := defaultDefinitionGraphNode(nodes); selected == nil || selected.id != "build" {
+		t.Fatalf("default graph selection = %#v, want build", selected)
+	}
+	layoutDefinitionGraph(nodes, 210, 76, 58, 24, 16)
+	if nodes[0].level != 0 || nodes[1].level != 1 || nodes[2].level != 2 || nodes[3].level != 1 {
+		t.Fatalf("rooted graph levels = %d, %d, %d, %d", nodes[0].level, nodes[1].level, nodes[2].level, nodes[3].level)
+	}
+}
+
 func TestDefinitionGraphNodeSurfaceUsesSharedSelectionSemantics(t *testing.T) {
 	colors := palette{
 		surface: color.NRGBA{R: 10, G: 20, B: 30, A: 255},
@@ -763,16 +841,13 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	if len(renderer.dynamicImages) != 1 {
 		t.Fatalf("bound project images = %d, want 1", len(renderer.dynamicImages))
 	}
-	if got := len(renderer.buttons); got < 8 {
-		t.Fatalf("project details did not expose chain, pipeline, dry-run, and job controls: %d widgets", got)
+	if got := len(renderer.buttons); got < 5 {
+		t.Fatalf("project details did not expose pipeline, dry-run, and job controls: %d widgets", got)
 	}
-	var foundJob, foundChain, foundChainSequence, foundPipelineSummary, foundJobSummary bool
+	var foundJob, foundPipelineSummary, foundJobSummary bool
 	for _, selectable := range renderer.selectables {
 		if selectable.Text() == "Job: compile" {
 			foundJob = true
-		}
-		if selectable.Text() == "Chain: Build and release" {
-			foundChain = true
 		}
 		if selectable.Text() == "1 job · depends on: none" {
 			foundPipelineSummary = true
@@ -781,22 +856,8 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 			foundJobSummary = true
 		}
 	}
-	for _, editor := range renderer.textEditors {
-		if editor.Text() == "build → release" {
-			foundChainSequence = true
-			if editor.SingleLine {
-				t.Fatal("long monospace chain labels must remain wrap-capable")
-			}
-		}
-	}
 	if !foundJob {
 		t.Fatal("pipeline did not default to expanded")
-	}
-	if !foundChain {
-		t.Fatal("project pipeline chain was not rendered")
-	}
-	if !foundChainSequence {
-		t.Fatal("project pipeline sequence was not rendered through the monospace text path")
 	}
 	if !foundPipelineSummary || !foundJobSummary {
 		t.Fatalf("project summaries missing: pipeline=%v job=%v", foundPipelineSummary, foundJobSummary)
@@ -826,6 +887,31 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 	}
 	if !foundCommand || !foundEnvironment || !foundDryRunNotice {
 		t.Fatalf("configured step details missing: command=%v environment=%v dry-run=%v", foundCommand, foundEnvironment, foundDryRunNotice)
+	}
+	if !renderer.SetProjectStructureFilter("all-chains") {
+		t.Fatal("all-chains filter was rejected")
+	}
+	renderer.SetViewStates(map[string]string{"project-chains:1": "list"})
+	operations.Reset()
+	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(1100, 760))})
+	root := renderer.data.(map[string]any)["projectDetails"].(map[string]any)
+	if visible := root["visible_pipelines"].([]any); len(visible) != 0 {
+		t.Fatalf("all-chains retained pipeline graph nodes: %#v", visible)
+	}
+	var foundChain, foundChainSequence bool
+	for _, selectable := range renderer.selectables {
+		foundChain = foundChain || selectable.Text() == "Chain: Build and release"
+	}
+	for _, editor := range renderer.textEditors {
+		if editor.Text() == "build → release" {
+			foundChainSequence = true
+			if editor.SingleLine {
+				t.Fatal("long monospace chain labels must remain wrap-capable")
+			}
+		}
+	}
+	if !foundChain || !foundChainSequence {
+		t.Fatalf("chain list missing: chain=%v sequence=%v", foundChain, foundChainSequence)
 	}
 }
 
@@ -957,6 +1043,74 @@ func TestGraphViewportUsesTwoTouchesForPanAndZoom(t *testing.T) {
 	}
 	if scale <= 1 || state.offset == (f32.Point{}) {
 		t.Fatalf("two-touch transform = scale %.2f offset %+v", scale, state.offset)
+	}
+}
+
+func TestGraphViewportReceivesTwoTouchesOutsideNodeSurfaces(t *testing.T) {
+	screen := &uidsl.ScreenDocument{
+		Metadata: uidsl.Metadata{Name: "graph-viewport-hit-area"},
+		Screen: uidsl.Screen{Root: uidsl.Node{Component: "page", Children: []uidsl.Node{{
+			Component: "graph-view",
+			GraphView: &uidsl.GraphView{
+				StateKey: "gesture", DefaultMode: "graph", Nodes: "view.nodes", As: "graphNode", NodeKey: "graphNode.id",
+				NodeLabel: uidsl.Text{Binding: "graphNode.id"}, Details: []uidsl.Node{{Component: "text", Text: &uidsl.Text{Literal: "Details"}}},
+			},
+		}}}},
+	}
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(screen, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetData(map[string]any{"view": map[string]any{"nodes": []any{
+		map[string]any{"id": "one"}, map[string]any{"id": "two"}, map[string]any{"id": "three"},
+		map[string]any{"id": "four"}, map[string]any{"id": "five"},
+	}}})
+	var router input.Router
+	gtx := layout.Context{Ops: new(op.Ops), Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(390, 600))}
+	renderer.Layout(gtx)
+	router.Frame(gtx.Ops)
+	var nodeBounds image.Rectangle
+	var findNode func(input.SemanticNode)
+	findNode = func(node input.SemanticNode) {
+		if node.Desc.Description == "Select one" {
+			nodeBounds = node.Desc.Bounds
+		}
+		for _, child := range node.Children {
+			findNode(child)
+		}
+	}
+	for _, node := range router.AppendSemantics(nil) {
+		findNode(node)
+	}
+	if nodeBounds.Empty() {
+		t.Fatal("graph node semantics missing")
+	}
+	y := float32(nodeBounds.Min.Y + nodeBounds.Size().Y/2)
+	router.Queue(
+		pointer.Event{Source: pointer.Touch, Kind: pointer.Press, PointerID: 1, Position: f32.Pt(30, y)},
+		pointer.Event{Source: pointer.Touch, Kind: pointer.Press, PointerID: 2, Position: f32.Pt(70, y)},
+	)
+	gtx.Reset()
+	renderer.Layout(gtx)
+	router.Frame(gtx.Ops)
+	viewport := renderer.graphViewports["gesture"]
+	if viewport == nil || !viewport.gestureActive || len(viewport.touches) != 2 {
+		t.Fatalf("blank viewport touches did not start a graph gesture: %#v", viewport)
+	}
+	oldScale := renderer.graphScales["gesture"]
+	router.Queue(
+		pointer.Event{Source: pointer.Touch, Kind: pointer.Move, PointerID: 1, Position: f32.Pt(25, y+20)},
+		pointer.Event{Source: pointer.Touch, Kind: pointer.Move, PointerID: 2, Position: f32.Pt(95, y+20)},
+	)
+	gtx.Reset()
+	renderer.Layout(gtx)
+	router.Frame(gtx.Ops)
+	if scale := renderer.graphScales["gesture"]; scale == oldScale {
+		t.Fatalf("blank viewport pinch left graph scale unchanged at %.3f", scale)
 	}
 }
 
@@ -1365,8 +1519,8 @@ func TestRendererLaysOutSharedJobDetails(t *testing.T) {
 	if dimensions.Size != image.Pt(1100, 760) {
 		t.Fatalf("dimensions = %v", dimensions.Size)
 	}
-	if got := len(renderer.buttons); got != 8 {
-		t.Fatalf("job view created %d clickable widgets, want execution controls, Back, timeline selection, and output buttons", got)
+	if got := len(renderer.buttons); got != 10 {
+		t.Fatalf("job view created %d clickable widgets, want execution controls, Back, timeline selection, log downloads, and output buttons", got)
 	}
 	if len(renderer.scrollers) != 1 {
 		t.Fatalf("collapsed job view scrollers = %d, want only execution path", len(renderer.scrollers))
@@ -1784,6 +1938,37 @@ func TestAgentScriptRouteAndLoadingDataAreImmediate(t *testing.T) {
 	}
 }
 
+func TestProjectDetailsLoadingDataSeedsAnImmediateLocalShell(t *testing.T) {
+	navigation := navigationState{screen: "project-details", projectID: 41}
+	data, err := screenLoadingData(navigation, "v0.2.9", "default", connectionModeDiscover, "", sshConnectionSettings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := data["projectDetails"].(map[string]any)
+	project := root["project"].(map[string]any)
+	if root["loading"] != true || root["ready"] != false || root["load_error"] != "" {
+		t.Fatalf("project loading state = %#v", root)
+	}
+	if root["show_chain_structure"] != false || root["show_pipeline_structure"] != false || project["name"] != "Project" {
+		t.Fatalf("project loading shell = root %#v project %#v", root, project)
+	}
+	frontPage := map[string]any{"frontPage": map[string]any{"projects": []any{map[string]any{
+		"id": float64(41), "name": "ciwi", "project_icon": []byte("icon"), "project_icon_content_type": "image/png",
+		"repo_url": "https://example.invalid/ciwi", "repo_ref": "main", "config_file": "ciwi-project.yaml",
+	}}}}
+	seedProjectDetailsLoadingData(data, frontPage, 41)
+	if project["name"] != "ciwi" || string(project["project_icon"].([]byte)) != "icon" || project["repo_ref"] != "main" {
+		t.Fatalf("seeded project shell = %#v", project)
+	}
+	screen, err := sharedUI.LoadScreen("project-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateNativeBindings(screen, data); err != nil {
+		t.Fatalf("project loading shell bindings: %v", err)
+	}
+}
+
 func TestJobDetailsLoadingDataProvidesNestedRequirementSchemas(t *testing.T) {
 	navigation := navigationState{screen: "job-details", jobID: "job-1"}
 	data, err := screenLoadingData(navigation, "v0.2.9", "default", connectionModeDiscover, "", sshConnectionSettings{})
@@ -1863,7 +2048,6 @@ func TestReadScreensRenderStructuredLoadingStateWithoutBindingErrors(t *testing.
 			}
 			data["client"] = nativeConnectionState{connecting: true, status: "Trying to connect…"}.binding()
 			renderer.SetScreenAndData(screen, data)
-			renderer.SetStatus("Loading " + test.screen + "…")
 			renderer.Layout(layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(390, 844))})
 			if renderer.data == nil {
 				t.Fatal("structured loading data was discarded")
@@ -1925,19 +2109,18 @@ func TestInteractiveControlsDoNotReceiveGenericActionWrapper(t *testing.T) {
 	}
 }
 
-func TestActionableNoticeExpiresIndependentlyFromStatus(t *testing.T) {
+func TestActionableNoticeExpires(t *testing.T) {
 	renderer := &Renderer{}
-	renderer.SetStatus("Persistent connection state")
 	renderer.ShowNotice("Script queued", "Show job execution", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/jobs/job-1"}, time.Hour)
-	noticeExpiry := renderer.StatusExpiry()
+	noticeExpiry := renderer.NoticeExpiry()
 	if noticeExpiry.IsZero() || renderer.notice == nil || renderer.notice.arguments["route"] != "/jobs/job-1" {
 		t.Fatalf("notice state = %#v, expiry=%v", renderer.notice, noticeExpiry)
 	}
-	if !renderer.ClearExpiredStatus(noticeExpiry) || renderer.notice != nil {
+	if !renderer.ClearExpiredNotice(noticeExpiry) || renderer.notice != nil {
 		t.Fatalf("notice did not expire: %#v", renderer.notice)
 	}
-	if renderer.status != "Persistent connection state" || !renderer.StatusExpiry().IsZero() {
-		t.Fatalf("notice expiration disturbed status: status=%q expiry=%v", renderer.status, renderer.StatusExpiry())
+	if !renderer.NoticeExpiry().IsZero() {
+		t.Fatalf("expired notice retained expiry %v", renderer.NoticeExpiry())
 	}
 }
 
@@ -2044,7 +2227,7 @@ func TestNativeNoticesQueueDeduplicateAndAdvance(t *testing.T) {
 		t.Fatalf("notice state = %#v, queue=%#v", renderer.notice, renderer.noticeQueue)
 	}
 	firstExpiry := renderer.notice.expires
-	if !renderer.ClearExpiredStatus(firstExpiry) {
+	if !renderer.ClearExpiredNotice(firstExpiry) {
 		t.Fatal("first notice did not expire")
 	}
 	if renderer.notice == nil || renderer.notice.message != "Second" || len(renderer.noticeQueue) != 0 {
@@ -2093,13 +2276,13 @@ func TestNativeNoticePausesAndResumesExpiry(t *testing.T) {
 
 func TestNativeAlertUsesDedicatedModalState(t *testing.T) {
 	renderer := &Renderer{}
-	renderer.SetStatus("Persistent connection state")
+	renderer.ShowNotice("Background notice", "", uidsl.Action{}, nil, time.Hour)
 	renderer.ShowAlert("Action failed", "server rejected request")
 	if renderer.alert == nil || renderer.alert.title != "Action failed" || renderer.alert.message != "server rejected request" {
 		t.Fatalf("alert state = %#v", renderer.alert)
 	}
-	if renderer.status != "Persistent connection state" {
-		t.Fatalf("showing alert changed inline status to %q", renderer.status)
+	if renderer.notice == nil || renderer.notice.message != "Background notice" {
+		t.Fatalf("showing alert changed notice state to %#v", renderer.notice)
 	}
 }
 
@@ -2517,7 +2700,7 @@ func TestRootPageInsetsScrollWithFirstAndLastContent(t *testing.T) {
 		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
 	}
 	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(800, 120))}
-	dimensions := renderer.layoutRootChildren(children, root, screen, map[string]any{}, "")(gtx)
+	dimensions := renderer.layoutRootChildren(children, root, screen, map[string]any{})(gtx)
 	if dimensions.Size != image.Pt(800, 120) {
 		t.Fatalf("viewport dimensions = %v", dimensions.Size)
 	}
@@ -2864,18 +3047,34 @@ func TestTreeEntryNodeKeepsLeafActionsInCompactRows(t *testing.T) {
 func TestProjectStructureFilterIncludesChainsAndSurvivesRefresh(t *testing.T) {
 	renderer := &Renderer{}
 	data := map[string]any{"projectDetails": map[string]any{
-		"project": map[string]any{"pipeline_chains": []any{map[string]any{"id": "release", "pipelines": []any{"build", "release"}}}},
+		"project": map[string]any{"id": 1, "name": "ciwi", "pipeline_chains": []any{map[string]any{
+			"id": "release", "name": "Release", "sequence_label": "build → release", "pipelines": []any{"build", "release"},
+		}}},
 		"pipelines": []any{
 			map[string]any{"pipeline_id": "build"}, map[string]any{"pipeline_id": "lint"}, map[string]any{"pipeline_id": "release"},
 		},
 	}}
 	renderer.SetData(data)
+	if !renderer.SetProjectStructureFilter("all-chains") {
+		t.Fatal("all-chains filter was rejected")
+	}
+	root := renderer.data.(map[string]any)["projectDetails"].(map[string]any)
+	if visible := root["visible_pipelines"].([]any); len(visible) != 0 {
+		t.Fatalf("all-chains visible pipelines = %#v, want none", visible)
+	}
+	if structureRoot := root["structure_root"].(map[string]any); structureRoot["meta"] != "Project · 1 pipeline chain" || structureRoot["runnable"] != false {
+		t.Fatalf("all-chains structure root = %#v", structureRoot)
+	}
 	if !renderer.SetProjectStructureFilter("chain:release") {
 		t.Fatal("chain filter was rejected")
 	}
-	root := renderer.data.(map[string]any)["projectDetails"].(map[string]any)
+	root = renderer.data.(map[string]any)["projectDetails"].(map[string]any)
 	if visible := root["visible_pipelines"].([]any); len(visible) != 2 {
 		t.Fatalf("visible pipelines = %#v", visible)
+	}
+	structureRoot := root["structure_root"].(map[string]any)
+	if structureRoot["id"] != "chain:release" || structureRoot["runnable"] != true || structureRoot["chain_id"] != "release" {
+		t.Fatalf("chain structure root = %#v", structureRoot)
 	}
 	renderer.SetScreenAndData(&uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "project-details"}}, data)
 	root = renderer.data.(map[string]any)["projectDetails"].(map[string]any)

@@ -92,10 +92,13 @@ type jobTreeNodeResponse struct {
 }
 
 type jobRunContextResponse struct {
-	Available  bool                            `json:"available"`
-	Scope      string                          `json:"scope"`
-	ScopeLabel string                          `json:"scope_label"`
-	Pipelines  []jobRunContextPipelineResponse `json:"pipelines"`
+	Available            bool                            `json:"available"`
+	Scope                string                          `json:"scope"`
+	ScopeLabel           string                          `json:"scope_label"`
+	CurrentExecutionID   string                          `json:"current_execution_id"`
+	CurrentPipelineID    string                          `json:"current_pipeline_id"`
+	CurrentPipelineJobID string                          `json:"current_pipeline_job_id"`
+	Pipelines            []jobRunContextPipelineResponse `json:"pipelines"`
 }
 
 type jobRunContextPipelineResponse struct {
@@ -366,6 +369,8 @@ func jobRunContextToResponse(view protocol.JobExecutionGraphContext) jobRunConte
 		scopeLabel = strings.ToUpper(scopeLabel[:1]) + scopeLabel[1:] + " run"
 	}
 	return jobRunContextResponse{
-		Available: len(pipelines) > 0, Scope: view.Scope, ScopeLabel: scopeLabel, Pipelines: pipelines,
+		Available: len(pipelines) > 0, Scope: view.Scope, ScopeLabel: scopeLabel,
+		CurrentExecutionID: view.CurrentExecutionID, CurrentPipelineID: view.CurrentPipelineID,
+		CurrentPipelineJobID: view.CurrentPipelineJobID, Pipelines: pipelines,
 	}
 }

@@ -242,6 +242,35 @@ func TestAttachJobEstimatesPrefersExactAgentAndFallsBackAcrossAgents(t *testing.
 	}
 }
 
+func TestAttachJobEstimatesFallsBackToSameLogicalJobAfterPlanChange(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	oldStep := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	newStep := protocol.JobStepPlanItem{Index: 1, Script: "make --parallel 4", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", newStep)
+	history := completedProgressJob("history", base.Add(-time.Minute), "agent-a", oldStep, 8*time.Second)
+	jobs := []protocol.JobExecution{target, history}
+
+	New(nil).AttachJobEstimates(jobs)
+	if jobs[0].ExpectedDurationMS != 8000 {
+		t.Fatalf("expected logical-job fallback 8000ms, got %d", jobs[0].ExpectedDurationMS)
+	}
+}
+
+func TestAttachJobEstimatesPrefersSameAgentLogicalHistoryOverOtherAgentExactPlan(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	oldStep := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	newStep := protocol.JobStepPlanItem{Index: 1, Script: "make --parallel 4", Kind: "run"}
+	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", newStep)
+	sameAgent := completedProgressJob("same-agent", base.Add(-time.Minute), "agent-a", oldStep, 6*time.Second)
+	otherAgent := completedProgressJob("other-agent", base.Add(-2*time.Minute), "agent-b", newStep, 20*time.Second)
+	jobs := []protocol.JobExecution{target, sameAgent, otherAgent}
+
+	New(nil).AttachJobEstimates(jobs)
+	if jobs[0].ExpectedDurationMS != 6000 {
+		t.Fatalf("expected same-agent logical estimate 6000ms, got %d", jobs[0].ExpectedDurationMS)
+	}
+}
+
 func TestAttachJobEstimatesKeepsRequiredCapabilitiesSeparate(t *testing.T) {
 	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
 	step := protocol.JobStepPlanItem{Index: 1, Script: "make"}
@@ -255,6 +284,57 @@ func TestAttachJobEstimatesKeepsRequiredCapabilitiesSeparate(t *testing.T) {
 	New(nil).AttachJobEstimates(jobs)
 	if jobs[0].ExpectedDurationMS != 4000 {
 		t.Fatalf("expected only matching capability history, got %d", jobs[0].ExpectedDurationMS)
+	}
+}
+
+func TestAttachJobEstimatesKeepsLogicalJobDimensionsSeparate(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	oldStep := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	newStep := protocol.JobStepPlanItem{Index: 1, Script: "make --parallel 4", Kind: "run"}
+	tests := []struct {
+		name string
+		key  string
+	}{
+		{name: "project", key: "project"},
+		{name: "pipeline", key: "pipeline_id"},
+		{name: "pipeline job", key: "pipeline_job_id"},
+		{name: "matrix entry", key: "matrix_name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", newStep)
+			history := completedProgressJob("history", base.Add(-time.Minute), "agent-a", oldStep, 8*time.Second)
+			history.Metadata[tt.key] = "different"
+			jobs := []protocol.JobExecution{target, history}
+
+			New(nil).AttachJobEstimates(jobs)
+			if jobs[0].ExpectedDurationMS != 0 {
+				t.Fatalf("different %s must not share history, got %d", tt.name, jobs[0].ExpectedDurationMS)
+			}
+		})
+	}
+}
+
+func TestAttachJobEstimatesExcludesUnsuccessfulLogicalHistory(t *testing.T) {
+	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
+	oldStep := protocol.JobStepPlanItem{Index: 1, Script: "make", Kind: "run"}
+	newStep := protocol.JobStepPlanItem{Index: 1, Script: "make --parallel 4", Kind: "run"}
+	for _, status := range []string{
+		protocol.JobExecutionStatusFailed,
+		"cancelled",
+		protocol.JobExecutionStatusRunning,
+	} {
+		t.Run(status, func(t *testing.T) {
+			target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", newStep)
+			history := completedProgressJob("history", base.Add(-time.Minute), "agent-a", oldStep, 8*time.Second)
+			history.Status = status
+			jobs := []protocol.JobExecution{target, history}
+
+			New(nil).AttachJobEstimates(jobs)
+			if jobs[0].ExpectedDurationMS != 0 {
+				t.Fatalf("%s history must not provide a whole-job estimate, got %d", status, jobs[0].ExpectedDurationMS)
+			}
+		})
 	}
 }
 
@@ -334,8 +414,8 @@ func TestAttachDetailEstimateSharesExecutedUnitsAcrossDryRunModes(t *testing.T) 
 	if err := New(store).AttachDetailEstimate(&target); err != nil {
 		t.Fatalf("AttachDetailEstimate: %v", err)
 	}
-	if target.ExpectedDurationMS != 0 {
-		t.Fatalf("whole-job estimate must remain mode-specific, got %d", target.ExpectedDurationMS)
+	if target.ExpectedDurationMS != 9000 {
+		t.Fatalf("expected logical-job whole-duration fallback 9000ms, got %d", target.ExpectedDurationMS)
 	}
 	if got := target.StepExpectedDuration[1]; got != 1200 {
 		t.Fatalf("expected executed dry-run step sample to be shared, got %d", got)
@@ -527,7 +607,7 @@ func TestAttachJobEstimatesSharesIdenticalPlanAcrossDryRunModes(t *testing.T) {
 	}
 }
 
-func TestAttachJobEstimatesKeepsDifferentDryRunPlanSeparate(t *testing.T) {
+func TestAttachJobEstimatesUsesLogicalFallbackForDifferentDryRunPlan(t *testing.T) {
 	base := time.Date(2026, 7, 18, 20, 0, 0, 0, time.UTC)
 	ordinaryStep := protocol.JobStepPlanItem{Index: 1, Script: "publish-release", Kind: "run"}
 	target := progressJob("target", base, protocol.JobExecutionStatusRunning, "agent-a", ordinaryStep)
@@ -537,8 +617,8 @@ func TestAttachJobEstimatesKeepsDifferentDryRunPlanSeparate(t *testing.T) {
 	jobs := []protocol.JobExecution{target, dryRun}
 
 	New(nil).AttachJobEstimates(jobs)
-	if jobs[0].ExpectedDurationMS != 0 {
-		t.Fatalf("different executable dry-run plan must remain separate, got %d", jobs[0].ExpectedDurationMS)
+	if jobs[0].ExpectedDurationMS != 1000 {
+		t.Fatalf("expected logical-job fallback for different dry-run plan, got %d", jobs[0].ExpectedDurationMS)
 	}
 }
 

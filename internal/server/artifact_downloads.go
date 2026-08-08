@@ -25,6 +25,8 @@ const (
 
 type artifactDownloadStore interface {
 	ListJobExecutionArtifacts(string) ([]protocol.JobExecutionArtifact, error)
+	GetJobExecution(string) (protocol.JobExecution, error)
+	ListJobExecutionEvents(string) ([]protocol.JobExecutionEvent, error)
 }
 
 type artifactDownloadSession struct {
@@ -127,6 +129,10 @@ func (s *artifactDownloadService) startLocked(request application.ArtifactDownlo
 	if jobID == "" {
 		return "", artifactDownloadSession{}, application.NewError(application.ErrorInvalidArgument, "job execution id is required", nil)
 	}
+	kind := strings.ToLower(strings.TrimSpace(request.Kind))
+	if kind == "log-clean" || kind == "log-raw" {
+		return s.startJobLogLocked(jobID, strings.TrimPrefix(kind, "log-"))
+	}
 	artifacts, err := s.store.ListJobExecutionArtifacts(jobID)
 	if err != nil {
 		return "", artifactDownloadSession{}, application.WrapInternal("list job artifacts", err)
@@ -135,7 +141,7 @@ func (s *artifactDownloadService) startLocked(request application.ArtifactDownlo
 	artifacts = jobexecution.AppendSyntheticCoverageReportArtifact(s.artifactsDir, jobID, artifacts)
 
 	var session artifactDownloadSession
-	switch strings.ToLower(strings.TrimSpace(request.Kind)) {
+	switch kind {
 	case "file":
 		rel, valid := jobexecution.NormalizeRelativeArtifactPath(request.Path)
 		if !valid {
@@ -186,7 +192,7 @@ func (s *artifactDownloadService) startLocked(request application.ArtifactDownlo
 		session.contentType = "application/zip"
 		session.temporary = true
 	default:
-		return "", artifactDownloadSession{}, application.NewError(application.ErrorInvalidArgument, "artifact download kind must be file, prefix, or all", nil)
+		return "", artifactDownloadSession{}, application.NewError(application.ErrorInvalidArgument, "download kind must be file, prefix, all, log-clean, or log-raw", nil)
 	}
 	info, err := os.Stat(session.path)
 	if err != nil || info.IsDir() {
@@ -206,6 +212,47 @@ func (s *artifactDownloadService) startLocked(request application.ArtifactDownlo
 			_ = os.Remove(session.path)
 		}
 		return "", artifactDownloadSession{}, application.WrapInternal("create artifact download token", err)
+	}
+	s.sessions[token] = session
+	s.scheduleCleanup(token, artifactDownloadTTL)
+	return token, session, nil
+}
+
+func (s *artifactDownloadService) startJobLogLocked(jobID, format string) (string, artifactDownloadSession, error) {
+	job, err := s.store.GetJobExecution(jobID)
+	if err != nil {
+		return "", artifactDownloadSession{}, application.NewError(application.ErrorNotFound, "job not found", err)
+	}
+	events, err := s.store.ListJobExecutionEvents(jobID)
+	if err != nil {
+		return "", artifactDownloadSession{}, application.WrapInternal("list job log events", err)
+	}
+	body, fileName, err := jobexecution.RenderJobLog(job, events, format)
+	if err != nil {
+		return "", artifactDownloadSession{}, application.NewError(application.ErrorInvalidArgument, err.Error(), err)
+	}
+	file, err := os.CreateTemp("", "ciwi-job-log-*.log")
+	if err != nil {
+		return "", artifactDownloadSession{}, application.WrapInternal("create job log download", err)
+	}
+	path := file.Name()
+	if _, err = file.WriteString(body); err == nil {
+		err = file.Close()
+	} else {
+		_ = file.Close()
+	}
+	if err != nil {
+		_ = os.Remove(path)
+		return "", artifactDownloadSession{}, application.WrapInternal("write job log download", err)
+	}
+	session := artifactDownloadSession{
+		path: path, fileName: fileName, contentType: "text/plain; charset=utf-8", temporary: true,
+		totalSize: int64(len(body)), lastUsed: s.now(),
+	}
+	token, err := randomDownloadToken()
+	if err != nil {
+		_ = os.Remove(path)
+		return "", artifactDownloadSession{}, application.WrapInternal("create job log download token", err)
 	}
 	s.sessions[token] = session
 	s.scheduleCleanup(token, artifactDownloadTTL)

@@ -19,8 +19,9 @@ import (
 var errArtifactDownloadCancelled = errors.New("artifact download cancelled")
 
 type artifactDownloadResult struct {
-	path string
-	err  error
+	path  string
+	label string
+	err   error
 }
 
 type artifactChunkClient interface {
@@ -53,7 +54,7 @@ func downloadArtifactWithPicker(ctx context.Context, client artifactChunkClient,
 
 	chunk, err := client.DownloadArtifactChunk(ctx, request)
 	if err != nil {
-		return "", fmt.Errorf("download artifact: %w", err)
+		return "", fmt.Errorf("start download: %w", err)
 	}
 	fileName := safeDownloadFileName(chunk.GetFileName())
 	activeToken := chunk.GetToken()
@@ -97,7 +98,7 @@ func downloadArtifactWithPicker(ctx context.Context, client artifactChunkClient,
 		request.Offset = chunk.GetNextOffset()
 		chunk, err = client.DownloadArtifactChunk(ctx, request)
 		if err != nil {
-			return "", fmt.Errorf("download artifact: %w", err)
+			return "", fmt.Errorf("continue download: %w", err)
 		}
 		activeToken = chunk.GetToken()
 	}

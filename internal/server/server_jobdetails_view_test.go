@@ -62,6 +62,9 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if !view.RunContext.Available || len(view.RunContext.Pipelines) != 1 {
 		t.Fatalf("run context = %+v", view.RunContext)
 	}
+	if view.RunContext.CurrentExecutionID != job.ID || view.RunContext.CurrentPipelineID != "build" || view.RunContext.CurrentPipelineJobID != "unit-tests" {
+		t.Fatalf("run context current execution = %+v", view.RunContext)
+	}
 	if err := state.db.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
 		Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "Run tests"}, Output: "\x1b[32mok\x1b[0m\n",
 	}}); err != nil {

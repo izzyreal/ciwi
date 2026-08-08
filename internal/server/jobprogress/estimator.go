@@ -45,28 +45,44 @@ func New(store Store) *Estimator {
 // AttachJobEstimates uses only the already-loaded execution records. Queue
 // cards do not need the more expensive per-step event history.
 func (e *Estimator) AttachJobEstimates(jobs []protocol.JobExecution) {
-	exactHistory := make(map[string][]protocol.JobExecution)
-	provisionalHistory := make(map[string][]protocol.JobExecution)
+	exactAgentHistory := make(map[string][]protocol.JobExecution)
+	logicalAgentHistory := make(map[string][]protocol.JobExecution)
+	exactAnyAgentHistory := make(map[string][]protocol.JobExecution)
+	logicalAnyAgentHistory := make(map[string][]protocol.JobExecution)
 	completed := append([]protocol.JobExecution(nil), jobs...)
 	sort.Slice(completed, func(i, j int) bool { return completed[i].CreatedUTC.After(completed[j].CreatedUTC) })
 	for _, job := range completed {
 		if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusSucceeded || job.StartedUTC.IsZero() || job.FinishedUTC.IsZero() || !job.FinishedUTC.After(job.StartedUTC) {
 			continue
 		}
-		if key := e.comparableJobKey(job); key != "" && len(exactHistory[key]) < maxSamples {
-			exactHistory[key] = append(exactHistory[key], job)
+		if key := e.comparableJobKey(job); key != "" && len(exactAgentHistory[key]) < maxSamples {
+			exactAgentHistory[key] = append(exactAgentHistory[key], job)
 		}
-		if key := e.provisionalJobKey(job); key != "" && len(provisionalHistory[key]) < maxSamples {
-			provisionalHistory[key] = append(provisionalHistory[key], job)
+		if key := e.comparableExecutionUnitKey(job); key != "" && len(logicalAgentHistory[key]) < maxSamples {
+			logicalAgentHistory[key] = append(logicalAgentHistory[key], job)
+		}
+		if key := e.provisionalJobKey(job); key != "" && len(exactAnyAgentHistory[key]) < maxSamples {
+			exactAnyAgentHistory[key] = append(exactAnyAgentHistory[key], job)
+		}
+		if key := e.provisionalExecutionUnitKey(job); key != "" && len(logicalAnyAgentHistory[key]) < maxSamples {
+			logicalAnyAgentHistory[key] = append(logicalAnyAgentHistory[key], job)
 		}
 	}
 	for i := range jobs {
 		if !protocol.IsActiveJobExecutionStatus(jobs[i].Status) {
 			continue
 		}
-		previous := previousJobExecutions(exactHistory[e.comparableJobKey(jobs[i])], jobs[i].CreatedUTC)
-		if len(previous) == 0 {
-			previous = previousJobExecutions(provisionalHistory[e.provisionalJobKey(jobs[i])], jobs[i].CreatedUTC)
+		histories := [][]protocol.JobExecution{
+			exactAgentHistory[e.comparableJobKey(jobs[i])],
+			logicalAgentHistory[e.comparableExecutionUnitKey(jobs[i])],
+			exactAnyAgentHistory[e.provisionalJobKey(jobs[i])],
+			logicalAnyAgentHistory[e.provisionalExecutionUnitKey(jobs[i])],
+		}
+		var previous []protocol.JobExecution
+		for _, history := range histories {
+			if previous = previousJobExecutions(history, jobs[i].CreatedUTC); len(previous) > 0 {
+				break
+			}
 		}
 		jobs[i].ExpectedDurationMS = median(jobDurations(previous))
 	}
@@ -227,13 +243,21 @@ func timelineHasPhase(job protocol.JobExecution, phaseID string) bool {
 }
 
 func (e *Estimator) comparableSuccessfulJobs(target protocol.JobExecution, jobs []protocol.JobExecution) []protocol.JobExecution {
-	if key := e.comparableJobKey(target); key != "" {
-		if exact := e.comparableSuccessfulJobsByKey(target, jobs, key, e.comparableJobKey); len(exact) > 0 {
-			return exact
+	levels := []struct {
+		key    string
+		keyFor func(protocol.JobExecution) string
+	}{
+		{e.comparableJobKey(target), e.comparableJobKey},
+		{e.comparableExecutionUnitKey(target), e.comparableExecutionUnitKey},
+		{e.provisionalJobKey(target), e.provisionalJobKey},
+		{e.provisionalExecutionUnitKey(target), e.provisionalExecutionUnitKey},
+	}
+	for _, level := range levels {
+		if matches := e.comparableSuccessfulJobsByKey(target, jobs, level.key, level.keyFor); len(matches) > 0 {
+			return matches
 		}
 	}
-	key := e.provisionalJobKey(target)
-	return e.comparableSuccessfulJobsByKey(target, jobs, key, e.provisionalJobKey)
+	return nil
 }
 
 func (e *Estimator) comparableCompletedExecutionUnits(target protocol.JobExecution, jobs []protocol.JobExecution) ([]protocol.JobExecution, []protocol.JobExecution) {
@@ -319,8 +343,9 @@ func (e *Estimator) provisionalJobKey(job protocol.JobExecution) string {
 }
 
 // Execution-unit history intentionally omits dry-run mode and the complete job
-// plan. Individual step and phase fingerprints decide whether a sample is safe
-// to share, while aggregate job duration matching remains strict.
+// plan. It provides a rough whole-job fallback after definition changes, while
+// individual step and phase fingerprints decide whether unit samples are safe
+// to share.
 func (e *Estimator) provisionalExecutionUnitKey(job protocol.JobExecution) string {
 	m := job.Metadata
 	project := strings.TrimSpace(m["project"])

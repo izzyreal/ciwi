@@ -138,17 +138,45 @@ func TestProjectDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if screen.Metadata.Name != "project-details" {
 		t.Fatalf("screen = %#v", screen)
 	}
-	if len(screen.Screen.Root.Children) < 3 {
+	if len(screen.Screen.Root.Children) < 7 {
 		t.Fatalf("project screen children = %d", len(screen.Screen.Root.Children))
 	}
-	structure := screen.Screen.Root.Children[2]
+	loading := screen.Screen.Root.Children[1]
+	loadError := screen.Screen.Root.Children[2]
+	if loading.ID != "project-details-loading" || loading.Visible == nil || loading.Visible.Binding != "projectDetails.loading" {
+		t.Fatalf("project loading shell = %#v", loading)
+	}
+	loadingBody := loading.Children[2].Children[1].Children[0]
+	if loadingBody.Component != "spacer" || loadingBody.Layout.MinHeight != "160" || loadingBody.Style.Role != "" {
+		t.Fatalf("project loading body spacer = %#v", loadingBody)
+	}
+	if loadError.ID != "project-details-load-error" || loadError.Visible == nil || loadError.Visible.Binding != "projectDetails.load_error" {
+		t.Fatalf("project load error = %#v", loadError)
+	}
+	chains := screen.Screen.Root.Children[4]
+	if chains.Component != "graph-view" || chains.GraphView == nil || chains.Visible == nil || chains.Visible.Binding != "projectDetails.show_chain_structure" {
+		t.Fatalf("project chain structure = %#v", chains)
+	}
+	if chains.GraphView.Nodes != "projectDetails.project.pipeline_chains" || chains.GraphView.Dependencies != "" || len(chains.Actions) != 1 || chains.Actions[0].Command != "run-chain" {
+		t.Fatalf("project chain graph binding = %#v actions=%#v", chains.GraphView, chains.Actions)
+	}
+	if root := chains.GraphView.Root; root == nil || root.Binding != "projectDetails.structure_root" || len(root.Actions) != 0 {
+		t.Fatalf("project chain graph root = %#v", root)
+	}
+	structure := screen.Screen.Root.Children[5]
 	if structure.Component != "graph-view" || structure.GraphView == nil || structure.GraphView.DefaultMode != "graph" {
 		t.Fatalf("project structure = %#v", structure)
+	}
+	if structure.Visible == nil || structure.Visible.Binding != "projectDetails.show_pipeline_structure" {
+		t.Fatalf("project pipeline graph visibility = %#v", structure.Visible)
 	}
 	if structure.GraphView.Nodes != "projectDetails.visible_pipelines" || structure.GraphView.Dependencies != "pipeline.depends_on" {
 		t.Fatalf("project graph binding = %#v", structure.GraphView)
 	}
-	filter := screen.Screen.Root.Children[1]
+	if root := structure.GraphView.Root; root == nil || root.Binding != "projectDetails.structure_root" || len(root.Actions) != 1 || root.Actions[0].Command != "run-chain" {
+		t.Fatalf("project graph root = %#v", root)
+	}
+	filter := screen.Screen.Root.Children[3]
 	if webOverride, exists := filter.Overrides["web"]; filter.ID != "project-structure-filter" || (exists && webOverride.Hidden) {
 		t.Fatalf("project structure filter is not shared by both renderers: %#v", filter)
 	}
@@ -157,6 +185,8 @@ func TestProjectDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	}
 	if nested := structure.GraphView.Details[1].GraphView; nested.Nodes != "pipeline.jobs" || len(nested.Details) == 0 {
 		t.Fatalf("project job graph = %#v", nested)
+	} else if nested.Root == nil || nested.Root.Binding != "pipeline" || len(nested.Root.Actions) != 1 || nested.Root.Actions[0].Command != "run-pipeline" {
+		t.Fatalf("project job graph root = %#v", nested.Root)
 	}
 }
 
@@ -173,6 +203,27 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if screen.Metadata.Name != "job-details" {
 		t.Fatalf("screen = %#v", screen)
 	}
+	runContextGraph := screen.Screen.Root.Children[1].Children[3].Children[2]
+	if runContextGraph.GraphView == nil || runContextGraph.GraphView.Root == nil || len(runContextGraph.GraphView.Root.Actions) != 0 {
+		t.Fatalf("job run-context root = %#v", runContextGraph.GraphView)
+	}
+	nested := runContextGraph.GraphView.Details[1].GraphView
+	if nested == nil || nested.Root == nil || nested.Root.Binding != "runPipeline" || len(nested.Root.Actions) != 0 {
+		t.Fatalf("job pipeline root = %#v", nested)
+	}
+	back := screen.Screen.Root.Children[0].Children[4]
+	if len(back.Actions) != 1 || back.Actions[0].Command != "navigate" || back.Actions[0].Arguments["section"] != "execution-history" {
+		t.Fatalf("job back action = %#v", back.Actions)
+	}
+	output := screen.Screen.Root.Children[2]
+	toolbar := output.Children[2]
+	if toolbar.Style.Role != "compact-toolbar" || len(toolbar.Children) < 2 || toolbar.Children[0].Actions[0].Command != "download-job-log" || toolbar.Children[0].Actions[0].Arguments["format"] != "clean" || toolbar.Children[1].Actions[0].Arguments["format"] != "raw" {
+		t.Fatalf("job output toolbar = %#v", toolbar)
+	}
+	groups := output.Children[4]
+	if groups.ID != "job-output-groups" || groups.Layout.MaxHeight != "660" || groups.Children[0].Children[0].Style.Role != "floating-collapse" {
+		t.Fatalf("job output groups = %#v", groups)
+	}
 }
 
 func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
@@ -188,6 +239,8 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 		"view.project_icon = Number(view.project_id || 0) > 0",
 		"data.jobDetails.tailing_tone = data.jobDetails.output_tailing ? 'success' : 'warning'",
 		"['running', 'in progress', 'failed'].includes",
+		"renderBrowserOutputText", "ciwi-search-hit-active", "updateDeclarativeOutputCollapseButtons",
+		"/log?format=", "options.section", "scrollIntoView({block: 'start'})",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("browser job interaction state does not contain %q", expected)
@@ -552,16 +605,24 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 	}
 }
 
-func TestDeclarativeNavigationKeepsTheCurrentPageWhileLoading(t *testing.T) {
+func TestDeclarativeProjectNavigationCommitsTheLoadingShellBeforeRemoteData(t *testing.T) {
 	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, expected := range []string{"navigateBrowser", "window.history.pushState", "window.addEventListener('popstate'", "currentDocument && currentData", "aria-busy"} {
+	for _, expected := range []string{
+		"navigateBrowser", "window.history.pushState", "window.addEventListener('popstate'", "aria-busy",
+		"projectDetailsLoadingBinding", "loadingCommitted = true", "currentData.projectDetails.load_error", "showLoading: true",
+	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative navigation does not contain %q", expected)
 		}
+	}
+	loadingRender := strings.Index(script, "loadingCommitted = true")
+	remoteValidation := strings.Index(script, "if (!viewResponse.ok)")
+	if loadingRender < 0 || remoteValidation < 0 || loadingRender > remoteValidation {
+		t.Fatal("project loading shell is not committed before the remote response is validated")
 	}
 	if strings.Contains(script, "window.location.assign") {
 		t.Fatal("declarative navigation still performs full document reloads")
@@ -580,10 +641,10 @@ func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *tes
 	implementation := string(scriptPayload) + string(stylePayload)
 	for _, expected := range []string{
 		"ciwi.declarative.views.v1", "renderGraphView", "layoutDefinitionGraph", "renderDefinitionGraph",
-		"requestAnimationFrame(fit)", "bindActions(play, node.actions, graphNode.data)",
+		"requestAnimationFrame(fit)", "bindActions(play, actions, graphNode.data)",
 		"node.graphView.details", "selection.onChange(graphNode.id)", "dsl-definition-graph-viewport",
 		"dsl-definition-graph-node-play", "dsl-definition-graph-details", ".dsl-definition-graph-node.selectable:hover",
-		"applyProjectStructureFilter", "projectStructureFilterOptions",
+		"applyProjectStructureFilter", "projectStructureFilterOptions", "dsl-definition-graph-root", "graphRootActionVisible",
 	} {
 		if !strings.Contains(implementation, expected) {
 			t.Errorf("declarative graph renderer does not contain %q", expected)

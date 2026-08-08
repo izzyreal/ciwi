@@ -94,8 +94,8 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 		"has_release_summary":         true,
 		"release_summary":             []any{map[string]any{"label": "Version", "value": "v1", "tone": "success"}},
 		"run_context": map[string]any{
-			"available": true, "scope_label": "one pipeline", "pipelines": []any{map[string]any{
-				"pipeline_id": "build", "summary_label": "1 job", "depends_on": []any{}, "jobs": []any{map[string]any{
+			"available": true, "scope_label": "one pipeline", "current_execution_id": "job-1", "pipelines": []any{map[string]any{
+				"id": 7, "pipeline_id": "build", "summary_label": "1 job", "depends_on": []any{}, "jobs": []any{map[string]any{
 					"id": "test", "summary_label": "1 execution", "needs": []any{}, "executions": []any{map[string]any{
 						"id": "job-1", "matrix_label": "default", "status": "running", "attempt_label": "Attempt 1",
 					}},
@@ -125,7 +125,9 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 	fixtures := map[string]map[string]any{
 		"project-details": {"projectDetails": map[string]any{
 			"project": project, "pipelines": []any{pipeline}, "visible_pipelines": []any{pipeline},
+			"structure_root":   map[string]any{"id": "project:1:all-pipelines", "label": "example", "meta": "Project · 1 pipeline", "runnable": false, "project_id": "1", "chain_id": ""},
 			"structure_filter": "all-pipelines", "structure_filters": []any{map[string]any{"value": "all-pipelines", "label": "All Pipelines"}},
+			"loading": false, "ready": true, "load_error": "", "show_chain_structure": false, "show_pipeline_structure": true,
 			"history_empty": true, "history_executions": []any{},
 		}},
 		"job-details": {"jobDetails": jobDetails},
