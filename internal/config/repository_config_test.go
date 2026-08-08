@@ -73,6 +73,16 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	if !slices.Contains(githubRelease.DependsOn, "release-ios") {
 		t.Fatalf("GitHub release must wait for TestFlight upload: %+v", githubRelease.DependsOn)
 	}
+	coreRelease := pipelineByID("release-core")
+	coreReleaseJob := jobByID(coreRelease, "github-release")
+	if !slices.Equal(coreRelease.DependsOn, []string{"build", "codesign-macos-agents"}) {
+		t.Fatalf("core release dependencies = %+v", coreRelease.DependsOn)
+	}
+	for _, source := range coreReleaseJob.ArtifactSources {
+		if source.Pipeline == "build-desktop" || source.Pipeline == "package-macos" || source.Pipeline == "package-windows" || source.Pipeline == "package-linux" || source.Pipeline == "ios" || source.Pipeline == "release-ios" {
+			t.Fatalf("core release includes native-client artifact source: %+v", source)
+		}
+	}
 
 	wantDesktopChain := []string{"build-desktop", "codesign-desktop-macos", "package-macos", "package-windows", "package-linux"}
 	foundDesktopChain := false
@@ -90,6 +100,8 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 
 	wantIOSChain := []string{"ios", "release-ios"}
 	foundIOSChain := false
+	wantCoreReleaseChain := []string{"build", "codesign-macos-agents", "release-core"}
+	foundCoreReleaseChain := false
 	wantFullReleasePipelines := []string{"ios", "release-ios"}
 	for _, chain := range configuration.PipelineChains {
 		switch chain.Name {
@@ -104,9 +116,17 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 					t.Fatalf("full release chain does not include %q: %+v", pipelineID, chain.Pipelines)
 				}
 			}
+		case "Build and release without native clients":
+			foundCoreReleaseChain = true
+			if !slices.Equal(chain.Pipelines, wantCoreReleaseChain) {
+				t.Fatalf("core release chain = %+v, want %+v", chain.Pipelines, wantCoreReleaseChain)
+			}
 		}
 	}
 	if !foundIOSChain {
 		t.Fatal("Build and publish iOS client chain not found")
+	}
+	if !foundCoreReleaseChain {
+		t.Fatal("Build and release without native clients chain not found")
 	}
 }
