@@ -272,13 +272,19 @@ func TestSettingsProjectsMatchesAuthoritativeStructure(t *testing.T) {
 		t.Fatalf("project import controls use %q, want the web-style unboxed row", projects.Children[2].Component)
 	}
 	labels := map[string]bool{}
-	var projectRowFound bool
+	var projectRowFound, projectSummaryFound, redundantProjectLabelFound bool
 	walkNodes(*projects, func(node *uidsl.Node) {
 		if node.Component == "button" && node.Text != nil {
 			labels[node.Text.Literal] = true
 		}
+		if node.Component == "text" && node.Text != nil && node.Text.Literal == "Project:" {
+			redundantProjectLabelFound = true
+		}
 		if node.Style.Role == "settings-project-row" {
 			projectRowFound = true
+		}
+		if node.Style.Role == "settings-project-summary" {
+			projectSummaryFound = node.Component == "row" && node.Layout.Wrap
 		}
 	})
 	for _, label := range []string{"Add Repository Project", "Add Managed YAML", "Reload project definition from VCS", "Edit YAML", "Delete Project"} {
@@ -286,7 +292,7 @@ func TestSettingsProjectsMatchesAuthoritativeStructure(t *testing.T) {
 			t.Errorf("settings Projects section is missing %q", label)
 		}
 	}
-	if !projectRowFound || labels["View"] || labels["Reload from VCS"] || labels["Delete"] {
+	if !projectRowFound || !projectSummaryFound || redundantProjectLabelFound || labels["View"] || labels["Reload from VCS"] || labels["Delete"] {
 		t.Fatal("settings Projects rows no longer match the authoritative action set")
 	}
 	if _, err := LoadScreen("managed-yaml"); err != nil {

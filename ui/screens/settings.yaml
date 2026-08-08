@@ -490,10 +490,8 @@ screen:
                     children:
                       - component: row
                         layout: {direction: horizontal, gap: small, align: center, wrap: true}
+                        style: {role: settings-project-summary}
                         children:
-                          - component: text
-                            text: {literal: "Project:"}
-                            style: {emphasis: strong}
                           - component: text
                             text: {binding: project.name}
                             style: {emphasis: strong, tone: accent}

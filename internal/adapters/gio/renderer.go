@@ -1139,23 +1139,39 @@ func (r *Renderer) pageInset() unit.Dp {
 }
 
 type scrollGestureGuard struct {
-	position layout.Position
-	inertial bool
+	position       layout.Position
+	inertial       bool
+	guardedTouches map[pointer.ID]struct{}
 }
 
-func (g *scrollGestureGuard) consumedPresses(gtx layout.Context) []pointer.ID {
-	var consumed []pointer.ID
+func (g *scrollGestureGuard) suppressActivations(gtx layout.Context) bool {
+	suppress := len(g.guardedTouches) > 0
 	filter := pointer.Filter{Target: g, Kinds: pointer.Press | pointer.Release | pointer.Cancel}
 	for {
 		raw, ok := gtx.Event(filter)
 		if !ok {
-			return consumed
+			return suppress
 		}
 		e, ok := raw.(pointer.Event)
-		if !ok || e.Source != pointer.Touch || e.Kind != pointer.Press || !g.inertial {
+		if !ok || e.Source != pointer.Touch {
 			continue
 		}
-		consumed = append(consumed, e.PointerID)
+		switch e.Kind {
+		case pointer.Press:
+			if !g.inertial {
+				continue
+			}
+			if g.guardedTouches == nil {
+				g.guardedTouches = map[pointer.ID]struct{}{}
+			}
+			g.guardedTouches[e.PointerID] = struct{}{}
+			suppress = true
+		case pointer.Release, pointer.Cancel:
+			if _, guarded := g.guardedTouches[e.PointerID]; guarded {
+				delete(g.guardedTouches, e.PointerID)
+				suppress = true
+			}
+		}
 	}
 }
 
@@ -1175,18 +1191,15 @@ func (r *Renderer) layoutGuardedList(gtx layout.Context, key string, list *layou
 		guard = &scrollGestureGuard{position: list.Position}
 		r.scrollGuards[key] = guard
 	}
-	consumed := guard.consumedPresses(gtx)
-	if len(consumed) > 0 {
+	if guard.suppressActivations(gtx) {
 		r.suppressTouchActivation = true
 	}
 	macro := op.Record(gtx.Ops)
 	dimensions := list.Layout(gtx, length, element)
 	call := macro.Stop()
-	// The list has now received the press and stopped its fling. Grab the
-	// remaining sequence so its release cannot reach an underlying control.
-	for _, id := range consumed {
-		gtx.Execute(pointer.GrabCmd{Tag: guard, ID: id})
-	}
+	// The guard observes the touch without grabbing it. A tap that began during
+	// inertia is still prevented from activating a control, while a drag remains
+	// available to the list to take over scrolling and start a fresh fling.
 	guard.observe(list)
 	area := clip.Rect{Max: dimensions.Size}.Push(gtx.Ops)
 	call.Add(gtx.Ops)
@@ -2625,7 +2638,7 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 	if compact && node.ID == "project-header" {
 		return r.layoutCompactProjectHeader(gtx, node, data, path)
 	}
-	if axis == layout.Horizontal && node.Layout.Wrap && node.Style.Role == "project-header-metadata" {
+	if axis == layout.Horizontal && node.Layout.Wrap && (node.Style.Role == "project-header-metadata" || node.Style.Role == "settings-project-summary") {
 		return layout.Inset{
 			Top: r.spacing(node.Layout.Padding), Right: r.spacing(node.Layout.Padding),
 			Bottom: r.spacing(node.Layout.Padding), Left: r.spacing(node.Layout.Padding),
@@ -2671,6 +2684,9 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		row := func(gtx layout.Context) layout.Dimensions {
 			alignment := flexAlignment(axis, node.Layout.Align, gridWeights != nil)
+			if stackCompactRow && node.Style.Role == "settings-project-row" {
+				alignment = layout.Start
+			}
 			return layout.Flex{Axis: axis, Alignment: alignment, Gap: gtx.Dp(r.spacing(node.Layout.Gap))}.Layout(gtx, children...)
 		}
 		if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {

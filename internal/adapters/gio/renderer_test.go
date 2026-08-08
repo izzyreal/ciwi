@@ -15,10 +15,12 @@ import (
 
 	"gioui.org/f32"
 	"gioui.org/font"
+	"gioui.org/io/event"
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -1175,6 +1177,106 @@ func TestScrollGestureGuardOnlyArmsForInertialMovement(t *testing.T) {
 	}
 }
 
+func TestScrollGestureGuardSuppressesMomentumTapThroughRelease(t *testing.T) {
+	guard := &scrollGestureGuard{}
+	var router input.Router
+	var operations op.Ops
+	frame := func(events ...pointer.Event) bool {
+		if len(events) > 0 {
+			queued := make([]event.Event, len(events))
+			for index := range events {
+				queued[index] = events[index]
+			}
+			router.Queue(queued...)
+		}
+		operations.Reset()
+		gtx := layout.Context{Ops: &operations, Source: router.Source(), Constraints: layout.Exact(image.Pt(200, 200))}
+		suppressed := guard.suppressActivations(gtx)
+		area := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
+		pass := pointer.PassOp{}.Push(gtx.Ops)
+		event.Op(gtx.Ops, guard)
+		pass.Pop()
+		area.Pop()
+		router.Frame(gtx.Ops)
+		return suppressed
+	}
+
+	frame()
+	guard.inertial = true
+	if !frame(pointer.Event{Source: pointer.Touch, Kind: pointer.Press, PointerID: 7, Position: f32.Pt(50, 50)}) {
+		t.Fatal("touch beginning during inertia was not suppressed")
+	}
+	guard.inertial = false
+	if !frame(pointer.Event{Source: pointer.Touch, Kind: pointer.Release, PointerID: 7, Position: f32.Pt(50, 50)}) {
+		t.Fatal("momentum-stopping touch release was not suppressed")
+	}
+	if frame() || len(guard.guardedTouches) != 0 {
+		t.Fatal("completed momentum-stopping touch retained suppression")
+	}
+}
+
+func TestGuardedListTouchDuringInertiaCanStartFreshFling(t *testing.T) {
+	renderer := &Renderer{}
+	list := &layout.List{Axis: layout.Vertical}
+	var router input.Router
+	var operations op.Ops
+	base := time.Now()
+	frame := func(elapsed time.Duration, events ...pointer.Event) layout.Position {
+		if len(events) > 0 {
+			queued := make([]event.Event, len(events))
+			for index := range events {
+				queued[index] = events[index]
+			}
+			router.Queue(queued...)
+		}
+		operations.Reset()
+		gtx := layout.Context{
+			Ops: &operations, Source: router.Source(), Now: base.Add(elapsed),
+			Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(200, 240)),
+		}
+		renderer.suppressTouchActivation = false
+		renderer.layoutGuardedList(gtx, "test", list, 20, func(gtx layout.Context, _ int) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(200, 60)}
+		})
+		router.Frame(gtx.Ops)
+		return list.Position
+	}
+
+	frame(0)
+	renderer.scrollGuards["test"].inertial = true
+	frame(time.Millisecond, pointer.Event{
+		Source: pointer.Touch, Kind: pointer.Press, PointerID: 3,
+		Position: f32.Pt(100, 180), Time: time.Millisecond,
+	})
+	if !list.Dragging() || !renderer.suppressTouchActivation {
+		t.Fatal("touch during inertia neither took over the list nor suppressed activation")
+	}
+	frame(17*time.Millisecond, pointer.Event{
+		Source: pointer.Touch, Kind: pointer.Move, PointerID: 3,
+		Position: f32.Pt(100, 120), Time: 17 * time.Millisecond,
+	})
+	beforeDrag := list.Position
+	frame(33*time.Millisecond, pointer.Event{
+		Source: pointer.Touch, Kind: pointer.Move, PointerID: 3,
+		Position: f32.Pt(100, 60), Time: 33 * time.Millisecond,
+	})
+	if !list.Dragging() || list.Position == beforeDrag {
+		t.Fatal("drag beginning during inertia did not move the list")
+	}
+	frame(49*time.Millisecond, pointer.Event{
+		Source: pointer.Touch, Kind: pointer.Release, PointerID: 3,
+		Position: f32.Pt(100, 60), Time: 49 * time.Millisecond,
+	})
+	if list.Dragging() {
+		t.Fatal("released takeover drag remained active")
+	}
+	beforeFling := list.Position
+	frame(99 * time.Millisecond)
+	if list.Position == beforeFling {
+		t.Fatal("released takeover drag did not start a fresh fling")
+	}
+}
+
 func TestNativeProjectSummaryWrapsAtItsActualWidth(t *testing.T) {
 	theme, err := findTheme("default")
 	if err != nil {
@@ -1202,7 +1304,7 @@ func TestNativeProjectSummaryWrapsAtItsActualWidth(t *testing.T) {
 	}
 }
 
-func TestNativeProjectHeaderMetadataWrapsAtItsActualWidth(t *testing.T) {
+func TestNativeBadgeFlowsWrapAtTheirActualWidth(t *testing.T) {
 	theme, err := findTheme("default")
 	if err != nil {
 		t.Fatal(err)
@@ -1211,25 +1313,29 @@ func TestNativeProjectHeaderMetadataWrapsAtItsActualWidth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	node := uidsl.Node{
-		Component: "row",
-		Layout:    uidsl.Layout{Direction: "horizontal", Gap: "small", Wrap: true},
-		Style:     uidsl.Style{Role: "project-header-metadata"},
-		Children: []uidsl.Node{
-			{Component: "badge", Text: &uidsl.Text{Literal: "https://github.com/izzyreal/vmpc-juce"}, Style: uidsl.Style{Tone: "muted"}},
-			{Component: "badge", Text: &uidsl.Text{Literal: "branch:master"}, Style: uidsl.Style{Tone: "muted"}},
-			{Component: "badge", Text: &uidsl.Text{Literal: "ciwi-project.yaml"}, Style: uidsl.Style{Tone: "muted"}},
-		},
-	}
-	wideContext := layout.Context{Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(1000, 500)}}
-	wide := renderer.layoutWrappedNodeChildren(wideContext, node, map[string]any{}, "metadata")
-	narrowContext := layout.Context{Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(360, 500)}}
-	narrow := renderer.layoutWrappedNodeChildren(narrowContext, node, map[string]any{}, "metadata")
-	if narrow.Size.X > 360 {
-		t.Fatalf("wrapped metadata width = %d, want <= 360", narrow.Size.X)
-	}
-	if narrow.Size.Y <= wide.Size.Y {
-		t.Fatalf("narrow metadata height = %d, wide height = %d; want multiple rows", narrow.Size.Y, wide.Size.Y)
+	for _, role := range []string{"project-header-metadata", "settings-project-summary"} {
+		t.Run(role, func(t *testing.T) {
+			node := uidsl.Node{
+				Component: "row",
+				Layout:    uidsl.Layout{Direction: "horizontal", Gap: "small", Wrap: true},
+				Style:     uidsl.Style{Role: role},
+				Children: []uidsl.Node{
+					{Component: "badge", Text: &uidsl.Text{Literal: "https://github.com/izzyreal/vmpc-juce"}, Style: uidsl.Style{Tone: "muted"}},
+					{Component: "badge", Text: &uidsl.Text{Literal: "branch:master"}, Style: uidsl.Style{Tone: "muted"}},
+					{Component: "badge", Text: &uidsl.Text{Literal: "ciwi-project.yaml"}, Style: uidsl.Style{Tone: "muted"}},
+				},
+			}
+			wideContext := layout.Context{Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(1000, 500)}}
+			wide := renderer.layoutChildren(wideContext, node, map[string]any{}, role)
+			narrowContext := layout.Context{Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(360, 500)}}
+			narrow := renderer.layoutChildren(narrowContext, node, map[string]any{}, role)
+			if narrow.Size.X > 360 {
+				t.Fatalf("wrapped metadata width = %d, want <= 360", narrow.Size.X)
+			}
+			if narrow.Size.Y <= wide.Size.Y {
+				t.Fatalf("narrow metadata height = %d, wide height = %d; want multiple rows", narrow.Size.Y, wide.Size.Y)
+			}
+		})
 	}
 }
 
