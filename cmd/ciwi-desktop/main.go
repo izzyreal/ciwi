@@ -5,7 +5,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"runtime"
 	"strings"
 
 	"gioui.org/app"
@@ -20,13 +22,30 @@ func main() {
 	flag.Parse()
 	done := make(chan error, 1)
 	go func() {
-		done <- gioadapter.Run(gioadapter.Options{Address: *address, Theme: *theme, Version: version.Current(), Route: *route})
+		err := gioadapter.Run(gioadapter.Options{Address: *address, Theme: *theme, Version: version.Current(), Route: *route})
+		if finishDarwinRun(runtime.GOOS, err, os.Stderr, os.Exit) {
+			return
+		}
+		done <- err
 	}()
 	app.Main()
 	if err := <-done; err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func finishDarwinRun(goos string, err error, stderr io.Writer, exit func(int)) bool {
+	if goos != "darwin" {
+		return false
+	}
+	code := 0
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
+		code = 1
+	}
+	exit(code)
+	return true
 }
 
 func envOrDefault(key, fallback string) string {
