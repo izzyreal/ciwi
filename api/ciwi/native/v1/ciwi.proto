@@ -83,6 +83,17 @@ message ProjectSummary {
   repeated PipelineChainSummary pipeline_chains = 11;
   bytes project_icon = 12;
   string project_icon_content_type = 13;
+  string pipeline_count_label = 14;
+  string source_metadata = 15;
+  bool has_pipeline_chains = 16;
+  bool is_managed = 17;
+  bool can_reload = 18;
+  bool has_repo = 19;
+  string repo_ref_label = 20;
+  bool has_loaded_commit = 21;
+  string loaded_commit_short = 22;
+  string loaded_commit_url = 23;
+  string source_label = 24;
 }
 
 message ProjectList {
@@ -106,6 +117,25 @@ message ProjectDetailsView {
   repeated ExecutionCardSummary history_executions = 3;
   bytes project_icon = 4;
   string project_icon_content_type = 5;
+  repeated ProjectStructureFilter structure_filters = 6;
+}
+
+message ProjectStructureFilter {
+  string value = 1;
+  string label = 2;
+  repeated string pipeline_ids = 3;
+  ProjectStructureRoot root = 4;
+  bool show_chain_structure = 5;
+  bool show_pipeline_structure = 6;
+}
+
+message ProjectStructureRoot {
+  string id = 1;
+  string label = 2;
+  string meta = 3;
+  bool runnable = 4;
+  int64 project_id = 5;
+  string chain_id = 6;
 }
 
 message ProjectPipelineDetails {
@@ -117,6 +147,8 @@ message ProjectPipelineDetails {
   uint32 jobs_count = 6;
   bool supports_dry_run = 7;
   repeated ProjectJobDetails jobs = 8;
+  string summary_label = 9;
+  string graph_summary_label = 10;
 }
 
 message ProjectJobDetails {
@@ -130,6 +162,9 @@ message ProjectJobDetails {
   uint32 steps_count = 8;
   repeated ProjectStepDetails steps = 9;
   bool supports_dry_run = 10;
+  string summary_label = 11;
+  string timeout_label = 12;
+  string matrix_label = 13;
 }
 
 message ProjectStepDetails {
@@ -140,6 +175,7 @@ message ProjectStepDetails {
   string command = 5;
   bool skip_dry_run = 6;
   repeated string environment = 7;
+  string environment_label = 8;
 }
 
 message GetProjectDetailsRequest {
@@ -292,6 +328,10 @@ message ExecutionCardSummary {
   ExecutionSummary summary = 5;
   repeated ExecutionCardSection sections = 6;
   Progress progress = 7;
+  string status = 8;
+  string summary_tone = 9;
+  string summary_label = 10;
+  string job_execution_ids_csv = 11;
 }
 
 message ExecutionCardSection {
@@ -317,6 +357,8 @@ message ExecutionCardJob {
   string action = 13;
   Progress progress = 14;
   int64 project_id = 15;
+  string created_label = 16;
+  string duration_label = 17;
 }
 
 message Progress {

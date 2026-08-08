@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -45,7 +46,7 @@ func cloneProtocolJobCaches(in []protocol.JobCacheSpec) []protocol.JobCacheSpec 
 	return out
 }
 
-const artifactSourcesMetadataKey = "artifact_sources_json"
+const artifactSourcesMetadataKey = domain.ExecutionMetadataArtifactSourcesJSON
 
 func resolveDependencyArtifactJobIDs(sources []config.PipelineJobArtifactSource, depCtx pipelineDependencyContext) ([]string, error) {
 	if len(sources) == 0 {
@@ -99,8 +100,8 @@ func encodeArtifactSources(sources []config.PipelineJobArtifactSource) (string, 
 	return string(payload), nil
 }
 
-func decodeArtifactSources(metadata map[string]string) ([]config.PipelineJobArtifactSource, error) {
-	raw := strings.TrimSpace(metadata[artifactSourcesMetadataKey])
+func decodeArtifactSources(metadata domain.ExecutionMetadata) ([]config.PipelineJobArtifactSource, error) {
+	raw := metadata.Value(domain.ExecutionMetadataArtifactSourcesJSON)
 	if raw == "" {
 		return nil, nil
 	}

@@ -6,8 +6,8 @@ func (s *stateStore) setProjectIcon(projectID int64, contentType string, data []
 	if projectID <= 0 {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.projectIconMu.Lock()
+	defer s.projectIconMu.Unlock()
 	if len(data) == 0 || contentType == "" {
 		delete(s.projectIcons, projectID)
 		return
@@ -24,8 +24,8 @@ func (s *stateStore) getProjectIcon(projectID int64) (projectIconState, bool) {
 	if projectID <= 0 {
 		return projectIconState{}, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.projectIconMu.Lock()
+	defer s.projectIconMu.Unlock()
 	icon, ok := s.projectIcons[projectID]
 	if !ok || len(icon.Data) == 0 || icon.ContentType == "" {
 		return projectIconState{}, false

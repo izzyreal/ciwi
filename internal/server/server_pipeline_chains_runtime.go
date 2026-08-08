@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/application"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -16,7 +17,7 @@ func (s *stateStore) onJobExecutionUpdated(job protocol.JobExecution) {
 	if !protocol.IsTerminalJobExecutionStatus(status) {
 		return
 	}
-	if strings.TrimSpace(job.Metadata["pipeline_run_id"]) == "" && strings.TrimSpace(job.Metadata["chain_run_id"]) == "" {
+	if job.Metadata.Value(domain.ExecutionMetadataPipelineRunID) == "" && job.Metadata.Value(domain.ExecutionMetadataChainRunID) == "" {
 		return
 	}
 	if err := s.reconcileBlockedJobExecutions(); err != nil {
@@ -60,7 +61,7 @@ func (s *stateStore) reconcileOneBlockedJobExecution(all []protocol.JobExecution
 		if protocol.NormalizeJobExecutionStatus(candidate.Status) != protocol.JobExecutionStatusQueued {
 			continue
 		}
-		if strings.TrimSpace(candidate.Metadata["chain_blocked"]) == "1" {
+		if candidate.Metadata.Flag(domain.ExecutionMetadataChainBlocked) {
 			changed, waiting, err := s.reconcileChainBlockedJob(candidate, all)
 			if err != nil || changed {
 				return changed, err
@@ -69,7 +70,7 @@ func (s *stateStore) reconcileOneBlockedJobExecution(all []protocol.JobExecution
 				continue
 			}
 		}
-		if strings.TrimSpace(candidate.Metadata["needs_blocked"]) == "1" {
+		if candidate.Metadata.Flag(domain.ExecutionMetadataNeedsBlocked) {
 			changed, err := s.reconcileNeedsBlockedJob(candidate, all)
 			if err != nil || changed {
 				return changed, err
@@ -80,12 +81,12 @@ func (s *stateStore) reconcileOneBlockedJobExecution(all []protocol.JobExecution
 }
 
 func (s *stateStore) reconcileChainBlockedJob(candidate protocol.JobExecution, all []protocol.JobExecution) (changed, waiting bool, err error) {
-	deps := parseChainDependsOnPipelines(candidate.Metadata["chain_depends_on_pipelines"])
+	deps := candidate.Metadata.CSV(domain.ExecutionMetadataChainDependsOnPipelines)
 	if len(deps) == 0 {
-		_, err = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{"chain_blocked": ""})
+		_, err = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{domain.ExecutionMetadataChainBlocked: ""})
 		return err == nil, false, err
 	}
-	chainRunID := strings.TrimSpace(candidate.Metadata["chain_run_id"])
+	chainRunID := candidate.Metadata.Value(domain.ExecutionMetadataChainRunID)
 	for _, depID := range deps {
 		terminated, succeeded, exists := pipelineChainStatus(all, chainRunID, depID)
 		if !exists || !terminated {
@@ -94,19 +95,19 @@ func (s *stateStore) reconcileChainBlockedJob(candidate protocol.JobExecution, a
 		if !succeeded {
 			reason := "cancelled: upstream pipeline " + depID + " failed"
 			return true, false, s.failBlockedJob(candidate, "server-chain", "chain", reason, map[string]string{
-				"chain_cancelled": "1",
-				"chain_blocked":   "",
+				domain.ExecutionMetadataChainCancelled: "1",
+				domain.ExecutionMetadataChainBlocked:   "",
 			})
 		}
 	}
 	if err := s.bindQueuedChainJobDependencyArtifacts(candidate, all); err != nil {
 		reason := "cancelled: " + err.Error()
 		return true, false, s.failBlockedJob(candidate, "server-chain", "chain", reason, map[string]string{
-			"chain_cancelled": "1",
-			"chain_blocked":   "",
+			domain.ExecutionMetadataChainCancelled: "1",
+			domain.ExecutionMetadataChainBlocked:   "",
 		})
 	}
-	_, err = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{"chain_blocked": ""})
+	_, err = s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{domain.ExecutionMetadataChainBlocked: ""})
 	return err == nil, false, err
 }
 
@@ -144,10 +145,10 @@ func pipelineChainStatus(all []protocol.JobExecution, chainRunID, pipelineID str
 	terminated = true
 	succeeded = true
 	for _, j := range all {
-		if strings.TrimSpace(j.Metadata["chain_run_id"]) != chainRunID {
+		if j.Metadata.Value(domain.ExecutionMetadataChainRunID) != chainRunID {
 			continue
 		}
-		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
+		if j.Metadata.Value(domain.ExecutionMetadataPipelineID) != pipelineID {
 			continue
 		}
 		exists = true
@@ -169,23 +170,23 @@ func pipelineChainStatus(all []protocol.JobExecution, chainRunID, pipelineID str
 
 func (s *stateStore) reconcileNeedsBlockedJob(candidate protocol.JobExecution, all []protocol.JobExecution) (bool, error) {
 	all = protocol.LatestJobExecutionAttempts(all)
-	needs := parseNeedsJobIDs(candidate.Metadata["needs_job_ids"])
+	needs := candidate.Metadata.CSV(domain.ExecutionMetadataNeedsJobIDs)
 	if len(needs) == 0 {
-		_, err := s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{"needs_blocked": ""})
+		_, err := s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{domain.ExecutionMetadataNeedsBlocked: ""})
 		return err == nil, err
 	}
-	runID := strings.TrimSpace(candidate.Metadata["pipeline_run_id"])
-	projectID := strings.TrimSpace(candidate.Metadata["project_id"])
-	pipelineID := strings.TrimSpace(candidate.Metadata["pipeline_id"])
+	runID := candidate.Metadata.Value(domain.ExecutionMetadataPipelineRunID)
+	projectID := candidate.Metadata.Value(domain.ExecutionMetadataProjectID)
+	pipelineID := candidate.Metadata.Value(domain.ExecutionMetadataPipelineID)
 	for _, need := range needs {
 		found := false
 		allTerminal := true
 		allSucceeded := true
 		for _, possible := range all {
-			if strings.TrimSpace(possible.Metadata["pipeline_run_id"]) != runID ||
-				strings.TrimSpace(possible.Metadata["project_id"]) != projectID ||
-				strings.TrimSpace(possible.Metadata["pipeline_id"]) != pipelineID ||
-				strings.TrimSpace(possible.Metadata["pipeline_job_id"]) != need {
+			if possible.Metadata.Value(domain.ExecutionMetadataPipelineRunID) != runID ||
+				possible.Metadata.Value(domain.ExecutionMetadataProjectID) != projectID ||
+				possible.Metadata.Value(domain.ExecutionMetadataPipelineID) != pipelineID ||
+				possible.Metadata.Value(domain.ExecutionMetadataPipelineJobID) != need {
 				continue
 			}
 			found = true
@@ -204,10 +205,10 @@ func (s *stateStore) reconcileNeedsBlockedJob(candidate protocol.JobExecution, a
 		}
 		if !allSucceeded {
 			reason := "cancelled: required job " + need + " failed"
-			return true, s.failBlockedJob(candidate, "server-needs", "needs", reason, map[string]string{"needs_blocked": ""})
+			return true, s.failBlockedJob(candidate, "server-needs", "needs", reason, map[string]string{domain.ExecutionMetadataNeedsBlocked: ""})
 		}
 	}
-	_, err := s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{"needs_blocked": ""})
+	_, err := s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{domain.ExecutionMetadataNeedsBlocked: ""})
 	return err == nil, err
 }
 
@@ -254,9 +255,9 @@ func (s *stateStore) bindQueuedChainJobDependencyArtifacts(job protocol.JobExecu
 }
 
 func (s *stateStore) resolveChainJobDependencyContext(job protocol.JobExecution, all []protocol.JobExecution) ([]string, pipelineDependencyContext, error) {
-	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
-	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
-	if chainRunID == "" || strings.TrimSpace(job.Metadata["project_id"]) == "" || pipelineID == "" {
+	chainRunID := job.Metadata.Value(domain.ExecutionMetadataChainRunID)
+	pipelineID := job.Metadata.Value(domain.ExecutionMetadataPipelineID)
+	if chainRunID == "" || job.Metadata.Value(domain.ExecutionMetadataProjectID) == "" || pipelineID == "" {
 		return nil, pipelineDependencyContext{}, nil
 	}
 	p, err := s.getPipelineForJobExecution(job)

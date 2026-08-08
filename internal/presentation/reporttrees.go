@@ -72,7 +72,7 @@ func presentArtifactChildren(node *mutableTreeNode, depth int) []TreeNodeView {
 	return result
 }
 
-func presentTestTree(report *domain.JobTestReport, metadata map[string]string) []TreeNodeView {
+func presentTestTree(report *domain.JobTestReport, metadata domain.ExecutionMetadata) []TreeNodeView {
 	if report == nil {
 		return nil
 	}
@@ -236,11 +236,11 @@ func testStatusTone(status string) string {
 	}
 }
 
-func testCaseSourceURL(testCase domain.JobTestCase, metadata map[string]string) string {
-	repository := strings.TrimSpace(metadata["pipeline_source_repo"])
-	ref := strings.TrimSpace(metadata["pipeline_source_ref_resolved"])
+func testCaseSourceURL(testCase domain.JobTestCase, metadata domain.ExecutionMetadata) string {
+	repository := metadata.Value(domain.ExecutionMetadataPipelineSourceRepo)
+	ref := metadata.Value(domain.ExecutionMetadataPipelineSourceRefResolved)
 	if ref == "" {
-		ref = strings.TrimSpace(metadata["pipeline_source_ref"])
+		ref = metadata.Value(domain.ExecutionMetadataPipelineSourceRef)
 	}
 	host, repositoryPath := parseRepository(repository)
 	context := testSourceContext{host: host, repositoryPath: repositoryPath, ref: ref}

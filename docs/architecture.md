@@ -55,6 +55,21 @@ Architecture tests enforce the most important import boundaries. Interfaces
 are normally declared by the consuming application service, not collected in a
 generic global interfaces package.
 
+### Ownership and dependency rules
+
+| Area | Owns | Must not own |
+| --- | --- | --- |
+| Domain | Stable business concepts and state-transition vocabulary | Transport, persistence, rendering, or process lifecycle |
+| Application | Commands, queries, authorization points, idempotency, invalidations, and consumer-owned ports | HTTP/CNP DTOs, SQLite rows, or renderer state |
+| Presentation | Complete renderer-neutral labels and screen view models | Transport mapping, browser/Gio behavior, or persisted models |
+| Adapters | Protocol, persistence, repository, runner, and renderer integration | Business policy duplicated from application/presentation |
+| Server host | Process composition, listeners, lifecycle, and adapter registration | New business workflows or long-lived feature state |
+
+Boundary tests inspect transitive first-party dependencies, not only direct
+imports. New exceptions are not accepted silently: a dependency that cannot yet
+be moved inward must be documented as migration debt and kept out of the inner
+layers.
+
 ## High-level architecture
 
 ```mermaid
@@ -200,6 +215,11 @@ Primary persisted entities:
 - idempotent command receipts and the stable server installation ID
 - vault connections plus step-level and version auto-bump mappings from YAML
 
+SQLite schema changes are applied by ordered, transactional migrations recorded
+in `schema_migrations`. A server refuses to open a database written by a newer
+schema version. Migration compatibility applies to persisted production data
+even while internal Go and pre-1.0 protocol APIs continue to evolve.
+
 ## Design principles
 
 - Structured APIs over log scraping.
@@ -233,8 +253,14 @@ Primary persisted entities:
   `internal/server/webui`, while the shared screens, themes, action catalog,
   fonts, and canonical logo remain in `ui`; preserve the single-binary server
   deployment model.
-- Extract agent-registry and update-controller state from the server
-  composition root when those areas next require substantial changes.
+- Keep process-local agent snapshots, queued control requests, deactivation,
+  and update-rollout scheduling owned by the agent registry. Persistence, job
+  cancellation, and invalidation publication remain orchestration concerns at
+  the adapter boundary. Extract the still-separate server update controller
+  when that area next requires substantial changes.
+- Extend the agent-owned source-checkout and script-runner ports when a concrete
+  authenticated repository or new runner kind is implemented; do not introduce
+  a generic repository or runner framework ahead of those requirements.
 - Prefer focused packages and consumer-owned interfaces over generic model,
   service, or utility layers.
 - Continue moving renderer-independent labels, semantic state, and validation
@@ -258,3 +284,15 @@ Primary persisted entities:
   host with a pinned host-key fingerprint and a device key, while the inner CNP
   endpoint retains the same v1 limitation.
 - Credentials/secrets expected to be managed through Vault mappings or host environment discipline.
+
+## Planned extension boundaries
+
+- Human, device, agent, and system authentication belongs in transport
+  adapters. Authorization and audit decisions belong at application command
+  boundaries. Concrete identity providers are deferred until IAM is built.
+- Repository inspection and agent checkout use focused source-provider ports.
+  Credential references remain opaque to execution metadata and must never be
+  logged or persisted as resolved secrets.
+- Execution plans use typed step kinds and runner dispatch. Shell execution is
+  the initial driver; runner-specific policy must not leak into shared planning
+  or presentation models.

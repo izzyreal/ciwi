@@ -42,6 +42,9 @@ func TestProjectDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if view.Pipelines[0].SummaryLabel == "" || view.Pipelines[0].GraphSummaryLabel == "" || view.Pipelines[0].Jobs[0].SummaryLabel == "" {
 		t.Fatalf("declarative pipeline labels = %+v", view.Pipelines[0])
 	}
+	if len(view.StructureFilters) < 2 || view.StructureFilters[0].Root.ID == "" || !view.StructureFilters[0].ShowPipelineStructure {
+		t.Fatalf("authoritative structure filters = %+v", view.StructureFilters)
+	}
 	if !view.HistoryEmpty {
 		t.Fatalf("history_empty = false for an empty project history")
 	}

@@ -22,25 +22,15 @@ func (a agentRepositoryAdapter) ListAgents(ctx context.Context) ([]domain.Agent,
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	a.state.mu.Lock()
-	type snapshot struct {
-		id      string
-		state   agentState
-		pending string
-	}
-	snapshots := make([]snapshot, 0, len(a.state.agents))
-	for id, state := range a.state.agents {
-		snapshots = append(snapshots, snapshot{id: id, state: state, pending: strings.TrimSpace(a.state.agentUpdates[id])})
-	}
-	a.state.mu.Unlock()
+	snapshots := a.state.agentRegistry.snapshots()
 	serverVersion := currentVersion()
 	result := make([]domain.Agent, 0, len(snapshots))
 	for _, snapshot := range snapshots {
-		jobInProgress, err := a.state.agentJobExecutionStore().AgentHasActiveJobExecution(snapshot.id)
+		jobInProgress, err := a.state.agentJobExecutionStore().AgentHasActiveJobExecution(snapshot.ID)
 		if err != nil {
 			jobInProgress = false
 		}
-		view := agentViewFromState(snapshot.id, snapshot.state, snapshot.pending, serverVersion, jobInProgress)
+		view := agentViewFromState(snapshot.ID, snapshot.State, snapshot.PendingUpdate, serverVersion, jobInProgress)
 		result = append(result, domain.Agent{
 			ID: view.AgentID, Hostname: view.Hostname, OS: view.OS, Arch: view.Arch, Version: view.Version,
 			Authorized: view.Authorized, Deactivated: view.Deactivated, JobInProgress: view.JobInProgress,
@@ -90,7 +80,11 @@ func (a agentScriptMutatorAdapter) RunAgentScript(ctx context.Context, request a
 		Script:               request.Script,
 		RequiredCapabilities: map[string]string{"agent_id": request.AgentID, "executor": "script", "shell": request.Shell},
 		TimeoutSeconds:       request.TimeoutSeconds,
-		Metadata:             map[string]string{"adhoc": "1", "adhoc_agent_id": request.AgentID, "adhoc_shell": request.Shell},
+		Metadata: domain.ExecutionMetadata{
+			domain.ExecutionMetadataAdhoc:        "1",
+			domain.ExecutionMetadataAdhocAgentID: request.AgentID,
+			domain.ExecutionMetadataAdhocShell:   request.Shell,
+		},
 	})
 	if err != nil {
 		return application.RunAgentScriptResult{}, application.WrapInternal("queue agent script", err)

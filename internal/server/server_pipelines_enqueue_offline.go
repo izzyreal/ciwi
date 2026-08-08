@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -122,6 +123,7 @@ func (s *stateStore) preparePendingPipelineChainJobsOfflineCached(ch store.Persi
 	for _, p := range pipelines {
 		chainPipelineSet[strings.TrimSpace(p.PipelineID)] = struct{}{}
 	}
+	chainRunID := fmt.Sprintf("offline-chain-%d", time.Now().UTC().UnixNano())
 	all := make([]pendingJob, 0)
 	for i, p := range pipelines {
 		prevPipelineID := ""
@@ -129,16 +131,16 @@ func (s *stateStore) preparePendingPipelineChainJobsOfflineCached(ch store.Persi
 			prevPipelineID = strings.TrimSpace(pipelines[i-1].PipelineID)
 		}
 		chainDeps := deriveChainPipelineDependencies(p, chainPipelineSet, prevPipelineID)
-		meta := map[string]string{
-			"chain_run_id":            fmt.Sprintf("offline-chain-%d", time.Now().UTC().UnixNano()),
-			"pipeline_chain_id":       ch.ChainID,
-			"pipeline_chain_name":     ch.ChainName,
-			"pipeline_chain_index":    fmt.Sprintf("%d", i),
-			"pipeline_chain_position": fmt.Sprintf("%d", i+1),
-			"pipeline_chain_total":    fmt.Sprintf("%d", total),
+		meta := domain.ExecutionMetadata{
+			domain.ExecutionMetadataChainRunID:            chainRunID,
+			domain.ExecutionMetadataPipelineChainID:       ch.ChainID,
+			domain.ExecutionMetadataPipelineChainName:     ch.ChainName,
+			domain.ExecutionMetadataPipelineChainIndex:    fmt.Sprintf("%d", i),
+			domain.ExecutionMetadataPipelineChainPosition: fmt.Sprintf("%d", i+1),
+			domain.ExecutionMetadataPipelineChainTotal:    fmt.Sprintf("%d", total),
 		}
 		if len(chainDeps) > 0 {
-			meta["chain_depends_on_pipelines"] = strings.Join(chainDeps, ",")
+			meta.Set(domain.ExecutionMetadataChainDependsOnPipelines, strings.Join(chainDeps, ","))
 		}
 		opts := enqueuePipelineOptions{
 			metaPatch: meta,
@@ -159,7 +161,7 @@ func (s *stateStore) preparePendingPipelineChainJobsOfflineCached(ch store.Persi
 		if strings.TrimSpace(run.SourceRefRaw) != "" {
 			pCopy.SourceRef = strings.TrimSpace(run.SourceRefRaw)
 		}
-		pending, err := s.buildPendingPipelineJobs(pCopy, selection, opts, run, dep, fmt.Sprintf("offline-chain-%d-%d", time.Now().UTC().UnixNano(), i))
+		pending, err := s.buildPendingPipelineJobs(pCopy, selection, opts, run, dep, fmt.Sprintf("%s-%d", chainRunID, i))
 		if err != nil {
 			return nil, err
 		}

@@ -7,19 +7,64 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error) {
-	if strings.TrimSpace(req.Script) == "" {
-		return protocol.JobExecution{}, fmt.Errorf("script is required")
+	jobs, err := s.CreateJobExecutions([]protocol.CreateJobExecutionRequest{req})
+	if err != nil {
+		return protocol.JobExecution{}, err
 	}
-	if req.TimeoutSeconds < 0 {
-		return protocol.JobExecution{}, fmt.Errorf("timeout_seconds must be >= 0")
+	return jobs[0], nil
+}
+
+// CreateJobExecutions persists a complete planned execution batch atomically.
+// Validation is completed before the transaction, and any insert failure rolls
+// back every execution in the batch.
+func (s *Store) CreateJobExecutions(requests []protocol.CreateJobExecutionRequest) ([]protocol.JobExecution, error) {
+	for i, req := range requests {
+		if err := validateCreateJobExecutionRequest(req); err != nil {
+			return nil, fmt.Errorf("job %d: %w", i+1, err)
+		}
+	}
+	if len(requests) == 0 {
+		return nil, nil
 	}
 
-	now := time.Now().UTC()
-	jobID := fmt.Sprintf("job-%d", now.UnixNano())
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin job execution batch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	base := time.Now().UTC()
+	jobs := make([]protocol.JobExecution, 0, len(requests))
+	for i, req := range requests {
+		created := base.Add(time.Duration(i) * time.Nanosecond)
+		job, err := insertJobExecution(tx, req, fmt.Sprintf("job-%d", created.UnixNano()), created)
+		if err != nil {
+			return nil, fmt.Errorf("insert job %d: %w", i+1, err)
+		}
+		jobs = append(jobs, job)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit job execution batch: %w", err)
+	}
+	return jobs, nil
+}
+
+func validateCreateJobExecutionRequest(req protocol.CreateJobExecutionRequest) error {
+	if strings.TrimSpace(req.Script) == "" {
+		return fmt.Errorf("script is required")
+	}
+	if req.TimeoutSeconds < 0 {
+		return fmt.Errorf("timeout_seconds must be >= 0")
+	}
+	return nil
+}
+
+func insertJobExecution(tx *sql.Tx, req protocol.CreateJobExecutionRequest, jobID string, now time.Time) (protocol.JobExecution, error) {
 	dependencyArtifactJobIDs := normalizeDependencyArtifactJobIDs(req.DependencyArtifactJobIDs)
 
 	requiredJSON, _ := json.Marshal(req.RequiredCapabilities)
@@ -36,11 +81,11 @@ func (s *Store) CreateJobExecution(req protocol.CreateJobExecutionRequest) (prot
 		sourceRef = req.Source.Ref
 	}
 
-	if _, err := s.db.Exec(`
+	if _, err := tx.Exec(`
 		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json, status, created_utc)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(dependencyArtifactJobIDsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), string(stepPlanJSON), protocol.JobExecutionStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
-		return protocol.JobExecution{}, fmt.Errorf("insert job: %w", err)
+		return protocol.JobExecution{}, err
 	}
 
 	return protocol.JobExecution{
@@ -109,14 +154,14 @@ func (s *Store) LeaseJobExecution(agentID string, agentCaps map[string]string) (
 	}
 
 	for _, job := range jobs {
-		if strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" {
+		if job.Metadata.Flag(domain.ExecutionMetadataChainBlocked) {
 			continue
 		}
-		if strings.TrimSpace(job.Metadata["needs_blocked"]) == "1" {
+		if job.Metadata.Flag(domain.ExecutionMetadataNeedsBlocked) {
 			continue
 		}
-		if strings.TrimSpace(job.Metadata[protocol.JobSchedulingBlockedMetadataKey]) == "1" {
-			retryUTC, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(job.Metadata[protocol.JobSchedulingRetryUTCMetadataKey]))
+		if job.Metadata.Flag(protocol.JobSchedulingBlockedMetadataKey) {
+			retryUTC, parseErr := time.Parse(time.RFC3339Nano, job.Metadata.Value(protocol.JobSchedulingRetryUTCMetadataKey))
 			if parseErr != nil || time.Now().UTC().Before(retryUTC) {
 				continue
 			}

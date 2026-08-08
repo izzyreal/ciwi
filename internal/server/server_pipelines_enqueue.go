@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -12,7 +13,7 @@ import (
 type enqueuePipelineOptions struct {
 	forcedDep              *pipelineDependencyContext
 	forcedRun              *pipelineRunContext
-	metaPatch              map[string]string
+	metaPatch              domain.ExecutionMetadata
 	blocked                bool
 	dependencyBlocked      bool
 	allowSelectionNeedsGap bool
@@ -33,7 +34,7 @@ type pendingJob struct {
 	caches                   []protocol.JobCacheSpec
 	sourceRepo               string
 	sourceRef                string
-	metadata                 map[string]string
+	metadata                 domain.ExecutionMetadata
 	stepPlan                 []protocol.JobStepPlanItem
 }
 
@@ -135,10 +136,10 @@ func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selec
 			VaultSecrets:    autoBumpSecrets,
 		})
 		if next := buildAutoBumpNextVersion(runCtx.VersionRaw, runCtx.AutoBump); next != "" {
-			pending[0].metadata["next_version"] = next
+			pending[0].metadata.Set(domain.ExecutionMetadataNextVersion, next)
 		}
 		if branch := deriveAutoBumpBranch(strings.TrimSpace(p.SourceRef)); branch != "" {
-			pending[0].metadata["auto_bump_branch"] = branch
+			pending[0].metadata.Set(domain.ExecutionMetadataAutoBumpBranch, branch)
 		}
 		for i := range pending[0].stepPlan {
 			pending[0].stepPlan[i].Index = i + 1
@@ -164,13 +165,13 @@ func (s *stateStore) enqueuePersistedPipelineWithOptions(p store.PersistedPipeli
 }
 
 func (s *stateStore) persistPendingJobs(pending []pendingJob) ([]string, error) {
-	jobIDs := make([]string, 0)
+	requests := make([]protocol.CreateJobExecutionRequest, 0, len(pending))
 	for _, spec := range pending {
 		var source *protocol.SourceSpec
 		if strings.TrimSpace(spec.sourceRepo) != "" {
 			source = &protocol.SourceSpec{Repo: spec.sourceRepo, Ref: spec.sourceRef}
 		}
-		job, err := s.pipelineStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
+		requests = append(requests, protocol.CreateJobExecutionRequest{
 			Script:                   spec.script,
 			Env:                      cloneMap(spec.env),
 			RequiredCapabilities:     spec.requiredCaps,
@@ -182,9 +183,13 @@ func (s *stateStore) persistPendingJobs(pending []pendingJob) ([]string, error) 
 			Metadata:                 spec.metadata,
 			StepPlan:                 cloneJobStepPlan(spec.stepPlan),
 		})
-		if err != nil {
-			return nil, err
-		}
+	}
+	jobs, err := s.pipelineStore().CreateJobExecutions(requests)
+	if err != nil {
+		return nil, err
+	}
+	jobIDs := make([]string, 0, len(jobs))
+	for _, job := range jobs {
 		jobIDs = append(jobIDs, job.ID)
 	}
 	return jobIDs, nil

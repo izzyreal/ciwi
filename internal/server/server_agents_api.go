@@ -36,10 +36,7 @@ func (s *stateStore) agentDetailsHandler(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "agent id is required", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	agent, ok := s.agents[agentID]
-	pendingTarget := strings.TrimSpace(s.agentUpdates[agentID])
-	s.mu.Unlock()
+	snapshot, ok := s.agentRegistry.snapshot(agentID)
 	if !ok {
 		http.Error(w, "agent not found", http.StatusNotFound)
 		return
@@ -48,7 +45,7 @@ func (s *stateStore) agentDetailsHandler(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		jobInProgress = false
 	}
-	writeJSON(w, http.StatusOK, agentViewResponse{Agent: agentViewFromState(agentID, agent, pendingTarget, currentVersion(), jobInProgress)})
+	writeJSON(w, http.StatusOK, agentViewResponse{Agent: agentViewFromState(agentID, snapshot.State, snapshot.PendingUpdate, currentVersion(), jobInProgress)})
 }
 
 func (s *stateStore) agentActionHandler(w http.ResponseWriter, r *http.Request, agentID string) {

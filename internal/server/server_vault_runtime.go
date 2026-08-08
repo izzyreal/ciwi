@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	servervault "github.com/izzyreal/ciwi/internal/server/vault"
 )
@@ -157,9 +158,9 @@ func (s *stateStore) resolveJobSecrets(ctx context.Context, job *protocol.JobExe
 		return nil
 	}
 	if job.Metadata == nil {
-		job.Metadata = map[string]string{}
+		job.Metadata = domain.ExecutionMetadata{}
 	}
-	job.Metadata["has_secrets"] = "1"
+	job.Metadata.SetFlag(domain.ExecutionMetadataHasSecrets, true)
 	job.SensitiveValues = servervault.DedupeStrings(sensitive)
 	return nil
 }

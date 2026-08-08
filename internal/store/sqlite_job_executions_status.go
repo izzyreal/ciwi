@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -230,10 +231,10 @@ func (s *Store) RequeueLeasedJobExecution(jobID, agentID string, metadataPatch m
 		return protocol.JobExecution{}, fmt.Errorf("job is leased by another agent")
 	}
 
-	metadata := map[string]string{}
+	metadata := domain.ExecutionMetadata{}
 	_ = json.Unmarshal([]byte(metadataJSON), &metadata)
 	if metadata == nil {
-		metadata = map[string]string{}
+		metadata = domain.ExecutionMetadata{}
 	}
 	for key, value := range metadataPatch {
 		key = strings.TrimSpace(key)
@@ -439,7 +440,7 @@ func (s *Store) FlushJobExecutionHistoryByAgent(agentID string) ([]string, error
 			continue
 		}
 		leasedBy := strings.TrimSpace(job.LeasedByAgentID)
-		adhocAgent := strings.TrimSpace(job.Metadata["adhoc_agent_id"])
+		adhocAgent := job.Metadata.Value(domain.ExecutionMetadataAdhocAgentID)
 		if leasedBy == agentID || adhocAgent == agentID {
 			candidates = append(candidates, job.ID)
 		}

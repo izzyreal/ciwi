@@ -34,12 +34,7 @@ func (s *stateStore) runtimeStateHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *stateStore) computeRuntimeState(now time.Time) runtimeStateResponse {
-	s.mu.Lock()
-	agents := make(map[string]agentState, len(s.agents))
-	for id, a := range s.agents {
-		agents[id] = a
-	}
-	s.mu.Unlock()
+	agents := s.agentRegistry.stateMap()
 
 	var (
 		online, stale, offline int

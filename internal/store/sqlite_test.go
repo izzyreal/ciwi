@@ -117,6 +117,52 @@ func TestListJobExecutionsDeterministicOrderWhenTimestampsTie(t *testing.T) {
 	}
 }
 
+func TestCreateJobExecutionsIsAtomic(t *testing.T) {
+	s := openTestStore(t)
+	if _, err := s.db.Exec(`CREATE TRIGGER fail_injected_job
+		BEFORE INSERT ON job_executions
+		WHEN json_extract(NEW.metadata_json, '$.inject_failure') = '1'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected batch failure');
+		END`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	_, err := s.CreateJobExecutions([]protocol.CreateJobExecutionRequest{
+		{Script: "echo first"},
+		{Script: "echo second", Metadata: map[string]string{"inject_failure": "1"}},
+		{Script: "echo third"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "injected batch failure") {
+		t.Fatalf("expected injected batch failure, got %v", err)
+	}
+	jobs, err := s.ListJobExecutions()
+	if err != nil {
+		t.Fatalf("list jobs after rollback: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("failed batch persisted %d job(s)", len(jobs))
+	}
+}
+
+func TestCreateJobExecutionsValidatesBeforeWriting(t *testing.T) {
+	s := openTestStore(t)
+	_, err := s.CreateJobExecutions([]protocol.CreateJobExecutionRequest{
+		{Script: "echo valid"},
+		{Script: "  "},
+	})
+	if err == nil || !strings.Contains(err.Error(), "script is required") {
+		t.Fatalf("expected validation failure, got %v", err)
+	}
+	jobs, err := s.ListJobExecutions()
+	if err != nil {
+		t.Fatalf("list jobs after validation failure: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("invalid batch persisted %d job(s)", len(jobs))
+	}
+}
+
 func TestFlushJobExecutionHistoryCompactsDatabase(t *testing.T) {
 	s := openTestStore(t)
 	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo done"})

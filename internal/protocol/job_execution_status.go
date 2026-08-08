@@ -1,6 +1,10 @@
 package protocol
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/izzyreal/ciwi/internal/domain"
+)
 
 const (
 	JobExecutionStatusQueued    = "queued"
@@ -9,16 +13,16 @@ const (
 	JobExecutionStatusSucceeded = "succeeded"
 	JobExecutionStatusFailed    = "failed"
 
-	JobSchedulingBlockedMetadataKey       = "scheduling_blocked"
-	JobSchedulingBlockedReasonMetadataKey = "scheduling_blocked_reason"
-	JobSchedulingRetryUTCMetadataKey      = "scheduling_retry_utc"
+	JobSchedulingBlockedMetadataKey       = domain.ExecutionMetadataSchedulingBlocked
+	JobSchedulingBlockedReasonMetadataKey = domain.ExecutionMetadataSchedulingBlockedReason
+	JobSchedulingRetryUTCMetadataKey      = domain.ExecutionMetadataSchedulingRetryUTC
 )
 
 func JobSchedulingBlockedReason(job JobExecution) string {
-	if strings.TrimSpace(job.Metadata[JobSchedulingBlockedMetadataKey]) != "1" {
+	if !job.Metadata.Flag(JobSchedulingBlockedMetadataKey) {
 		return ""
 	}
-	return strings.TrimSpace(job.Metadata[JobSchedulingBlockedReasonMetadataKey])
+	return job.Metadata.Value(JobSchedulingBlockedReasonMetadataKey)
 }
 
 func NormalizeJobExecutionStatus(status string) string {

@@ -20,14 +20,8 @@ func TestHydrateAgentStateFromAppStateRestoresSnapshot(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	s1 := &stateStore{
-		agents:            make(map[string]agentState),
-		agentUpdates:      make(map[string]string),
-		agentToolRefresh:  make(map[string]bool),
-		agentRestarts:     make(map[string]bool),
-		agentCacheWipes:   make(map[string]bool),
-		agentHistoryWipes: make(map[string]bool),
-		agentDeactivated:  make(map[string]bool),
-		db:                db,
+		agentRegistry: newAgentRegistry(),
+		db:            db,
 	}
 
 	hbBody, _ := json.Marshal(map[string]any{
@@ -56,9 +50,8 @@ func TestHydrateAgentStateFromAppStateRestoresSnapshot(t *testing.T) {
 	}
 
 	s2 := &stateStore{
-		agents:           make(map[string]agentState),
-		agentDeactivated: make(map[string]bool),
-		db:               db,
+		agentRegistry: newAgentRegistry(),
+		db:            db,
 	}
 	s2.hydrateAgentStateFromAppState(appState)
 

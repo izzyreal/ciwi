@@ -18,7 +18,7 @@ func TestSchedulingDiagnosisMappings(t *testing.T) {
 	}
 	cards := executionCardsToProto([]domain.ExecutionCard{{Sections: []domain.ExecutionCardSection{{Jobs: []domain.ExecutionCardJob{{
 		ID: "job-1", SchedulingDiagnosis: diagnosis,
-	}}}}}})
+	}}}}}}, false)
 	if got := cards[0].Sections[0].Jobs[0].SchedulingDiagnosis; got == nil || got.Summary == "" || len(got.Agents) != 1 {
 		t.Fatalf("card diagnosis = %+v", got)
 	} else if got.Agents[0].Tone != "danger" {
@@ -36,13 +36,18 @@ func TestSchedulingDiagnosisMappings(t *testing.T) {
 
 func TestExecutionCardMappingCarriesTableMetadata(t *testing.T) {
 	created := time.Date(2026, 8, 4, 10, 11, 12, 0, time.UTC)
-	cards := executionCardsToProto([]domain.ExecutionCard{{Sections: []domain.ExecutionCardSection{{Jobs: []domain.ExecutionCardJob{{
-		ID: "job-1", ProjectID: 41, Label: "linux", Status: "queued", PipelineID: "build", BuildLabel: "v0.2.4 (linux-amd64)",
-		AgentID: "agent-1", CreatedUTC: created, Reason: "Waiting for pipeline package", Action: "remove",
-	}}}}}})
+	cards := executionCardsToProto([]domain.ExecutionCard{{
+		JobExecutionIDs: []string{"job-1"}, Summary: domain.ExecutionSummary{TotalJobs: 1, Waiting: 1},
+		Sections: []domain.ExecutionCardSection{{Jobs: []domain.ExecutionCardJob{{
+			ID: "job-1", ProjectID: 41, Label: "linux", Status: "queued", PipelineID: "build", BuildLabel: "v0.2.4 (linux-amd64)",
+			AgentID: "agent-1", CreatedUTC: created, Reason: "Waiting for pipeline package", Action: "remove",
+		}}}}}}, true)
 	job := cards[0].Sections[0].Jobs[0]
 	if job.ProjectId != 41 || job.PipelineId != "build" || job.BuildLabel == "" || job.AgentId != "agent-1" || job.CreatedUtc != created.Format(time.RFC3339Nano) || job.Reason == "" || job.Action != "remove" {
 		t.Fatalf("execution card job = %+v", job)
+	}
+	if cards[0].SummaryLabel != "0/1 successful, 1 waiting" || cards[0].Status != "waiting" || cards[0].JobExecutionIdsCsv != "job-1" || job.CreatedLabel == "" {
+		t.Fatalf("execution card presentation = %+v job=%+v", cards[0], job)
 	}
 }
 
@@ -53,7 +58,7 @@ func TestProgressMappingsPreserveSharedSemanticSnapshot(t *testing.T) {
 	cards := executionCardsToProto([]domain.ExecutionCard{{
 		Progress: progress,
 		Sections: []domain.ExecutionCardSection{{Progress: progress, Jobs: []domain.ExecutionCardJob{{Progress: progress}}}},
-	}})
+	}}, false)
 	if got := cards[0].Progress; got == nil || got.State != domain.ProgressDeterminate || got.Fraction != .42 || got.SnapshotUnixMs != 1234 || got.RatePerMs != .0002 {
 		t.Fatalf("card progress = %+v", got)
 	}

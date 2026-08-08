@@ -14,7 +14,6 @@ import (
 	"gioui.org/app"
 	"gioui.org/op"
 	"gioui.org/x/explorer"
-	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
@@ -1914,6 +1913,12 @@ func screenLoadingBindingData(navigation navigationState, clientVersion, themeNa
 		root["loading"] = true
 		root["ready"] = false
 		root["load_error"] = ""
+		root["structure_filter"] = "all-pipelines"
+		root["visible_pipelines"] = []any{}
+		root["structure_root"] = map[string]any{
+			"id": fmt.Sprintf("project:%d:loading", navigation.projectID), "label": "Project", "meta": "",
+			"runnable": false, "project_id": float64(navigation.projectID), "chain_id": "",
+		}
 		root["show_chain_structure"] = false
 		root["show_pipeline_structure"] = false
 		if project, ok := root["project"].(map[string]any); ok {
@@ -2037,49 +2042,10 @@ func decorateSettingsProjects(projects []any) {
 		if !ok {
 			continue
 		}
-		sourceKind := strings.TrimSpace(fmt.Sprint(project["source_kind"]))
-		managed := sourceKind == "managed_yaml"
-		project["is_managed"] = managed
-		project["can_reload"] = !managed
-		repoURL := strings.TrimSpace(fmt.Sprint(project["repo_url"]))
-		project["has_repo"] = repoURL != ""
-		ref := strings.TrimSpace(fmt.Sprint(project["repo_ref"]))
-		if ref == "" {
-			ref = "default"
-		}
-		project["repo_ref_label"] = ref
 		project["action_status"] = ""
 		project["action_tone"] = "muted"
-		commit := strings.TrimSpace(fmt.Sprint(project["loaded_commit"]))
-		shortCommit := commit
-		if len(shortCommit) > 8 {
-			shortCommit = shortCommit[:8]
-		}
-		project["loaded_commit_short"] = shortCommit
-		project["loaded_commit_url"] = loadedCommitURL(strings.TrimSpace(fmt.Sprint(project["repo_url"])), commit)
 		project["updated_label"] = formatLoadedProjectTime(project["updated_unix_ms"])
-		project["has_loaded_commit"] = commit != ""
-		if managed {
-			project["source_label"] = "Managed YAML stored in ciwi"
-			continue
-		}
-		label := repoURL
-		if ref != "default" {
-			label += " · " + ref
-		}
-		project["source_label"] = label
 	}
-}
-
-func loadedCommitURL(repoURL, commit string) string {
-	if repoURL == "" || commit == "" {
-		return ""
-	}
-	repoURL = strings.TrimSuffix(repoURL, ".git")
-	if strings.HasPrefix(repoURL, "https://") || strings.HasPrefix(repoURL, "http://") {
-		return strings.TrimRight(repoURL, "/") + "/commit/" + commit
-	}
-	return ""
 }
 
 func formatLoadedProjectTime(value any) string {
@@ -2111,9 +2077,8 @@ func frontPageBindingData(view *cnpv1.FrontPageView) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("front-page binding is malformed")
 	}
-	decorateFrontPageProjects(root["projects"])
-	decorateExecutionCards(root["queued_executions"], true)
-	decorateExecutionCards(root["history_executions"], false)
+	ensureExecutionCardBindings(root["queued_executions"])
+	ensureExecutionCardBindings(root["history_executions"])
 	queued, _ := root["queued_executions"].([]any)
 	history, _ := root["history_executions"].([]any)
 	root["queued_empty"] = len(queued) == 0
@@ -2122,48 +2087,16 @@ func frontPageBindingData(view *cnpv1.FrontPageView) (map[string]any, error) {
 	return data, nil
 }
 
-func decorateFrontPageProjects(value any) {
-	projects, ok := value.([]any)
-	if !ok {
-		return
-	}
-	for _, raw := range projects {
-		project, projectOK := raw.(map[string]any)
-		if !projectOK {
-			continue
-		}
-		pipelines, _ := project["pipelines"].([]any)
-		project["pipeline_count_label"] = presentation.PipelineCountLabel(len(pipelines))
-	}
-}
-
-func decorateExecutionCards(value any, queued bool) {
+func ensureExecutionCardBindings(value any) {
 	cards, ok := value.([]any)
 	if !ok {
 		return
 	}
 	for _, card := range cards {
 		entry, entryOK := card.(map[string]any)
-		summary, summaryOK := entry["summary"].(map[string]any)
-		if !entryOK || !summaryOK {
+		if !entryOK {
 			continue
 		}
-		card := domain.ExecutionCard{Summary: domain.ExecutionSummary{
-			TotalJobs: int(numberValue(summary["total_jobs"])), Succeeded: int(numberValue(summary["succeeded"])),
-			Failed: int(numberValue(summary["failed"])), InProgress: int(numberValue(summary["in_progress"])), Waiting: int(numberValue(summary["waiting"])),
-		}}
-		if ids, ok := entry["job_execution_ids"].([]any); ok {
-			parts := make([]string, 0, len(ids))
-			for _, id := range ids {
-				parts = append(parts, fmt.Sprint(id))
-			}
-			card.JobExecutionIDs = parts
-		}
-		display := presentation.PresentExecutionCard(card, queued)
-		entry["status"] = display.Status
-		entry["summary_tone"] = display.SummaryTone
-		entry["summary_label"] = display.SummaryLabel
-		entry["job_execution_ids_csv"] = display.JobExecutionIDsCSV
 		if sections, ok := entry["sections"].([]any); ok {
 			for _, rawSection := range sections {
 				section, _ := rawSection.(map[string]any)
@@ -2171,28 +2104,10 @@ func decorateExecutionCards(value any, queued bool) {
 				for _, rawJob := range jobs {
 					job, _ := rawJob.(map[string]any)
 					ensureSchedulingDiagnosisBinding(job)
-					decorateExecutionCardJob(job)
 				}
 			}
 		}
 	}
-}
-
-func decorateExecutionCardJob(job map[string]any) {
-	if job == nil {
-		return
-	}
-	display := presentation.PresentExecutionCardJob(domain.ExecutionCardJob{
-		Status: strings.TrimSpace(fmt.Sprint(job["status"])), CreatedUTC: parseExecutionCardTime(job["created_utc"]),
-		StartedUTC: parseExecutionCardTime(job["started_utc"]), FinishedUTC: parseExecutionCardTime(job["finished_utc"]),
-	}, time.Now())
-	job["created_label"] = display.CreatedLabel
-	job["duration_label"] = display.DurationLabel
-}
-
-func parseExecutionCardTime(value any) time.Time {
-	parsed, _ := time.Parse(time.RFC3339Nano, strings.TrimSpace(fmt.Sprint(value)))
-	return parsed
 }
 
 func ensureSchedulingDiagnosisBinding(value map[string]any) {
@@ -2213,6 +2128,11 @@ func numberValue(value any) float64 {
 	return number
 }
 
+func boolValue(value any) bool {
+	result, _ := value.(bool)
+	return result
+}
+
 func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, error) {
 	data, err := protobufBindingData("projectDetails", "project-details", view)
 	if err != nil {
@@ -2223,7 +2143,7 @@ func projectDetailsBindingData(view *cnpv1.ProjectDetailsView) (map[string]any, 
 		return nil, fmt.Errorf("project-details binding is malformed")
 	}
 	decorateProjectDetails(root)
-	decorateExecutionCards(root["history_executions"], false)
+	ensureExecutionCardBindings(root["history_executions"])
 	history, _ := root["history_executions"].([]any)
 	root["history_empty"] = len(history) == 0
 	return data, nil
@@ -2238,112 +2158,44 @@ func decorateProjectDetails(root map[string]any) {
 			project["project_icon"] = root["project_icon"]
 			project["project_icon_content_type"] = root["project_icon_content_type"]
 		}
-		project["source_metadata"] = presentation.ProjectSourceMetadata(fmt.Sprint(project["repo_ref"]), fmt.Sprint(project["config_file"]))
-		chains, _ := project["pipeline_chains"].([]any)
-		project["has_pipeline_chains"] = len(chains) > 0
+	}
+	applyProjectStructureFilter(root, "all-pipelines")
+}
+
+func applyProjectStructureFilter(root map[string]any, requested string) bool {
+	filters, _ := root["structure_filters"].([]any)
+	var selected map[string]any
+	for _, raw := range filters {
+		filter, ok := raw.(map[string]any)
+		if ok && strings.TrimSpace(fmt.Sprint(filter["value"])) == requested {
+			selected = filter
+			break
+		}
+	}
+	if selected == nil && requested != "all-pipelines" {
+		return applyProjectStructureFilter(root, "all-pipelines")
+	}
+	if selected == nil {
+		return false
+	}
+	included := map[string]bool{}
+	for _, pipelineID := range stringListValue(selected["pipeline_ids"]) {
+		included[pipelineID] = true
 	}
 	pipelines, _ := root["pipelines"].([]any)
-	root["structure_filter"] = "all-pipelines"
-	root["show_chain_structure"] = false
-	root["show_pipeline_structure"] = true
-	root["structure_filters"] = projectStructureFilterOptions(root, pipelines)
-	root["visible_pipelines"] = append([]any(nil), pipelines...)
-	root["structure_root"] = projectStructureRoot(root, "all-pipelines", pipelines)
-	for _, rawPipeline := range pipelines {
-		pipeline, pipelineOK := rawPipeline.(map[string]any)
-		if !pipelineOK {
-			continue
-		}
-		jobsCount := int(numberValue(pipeline["jobs_count"]))
-		dependencies := strings.TrimSpace(fmt.Sprint(pipeline["dependencies"]))
-		pipeline["summary_label"] = presentation.PipelineSummaryLabel(jobsCount, dependencies)
-		dependsOn, _ := pipeline["depends_on"].([]any)
-		pipeline["graph_summary_label"] = presentation.PipelineGraphSummaryLabel(jobsCount, len(dependsOn))
-		jobs, _ := pipeline["jobs"].([]any)
-		for _, rawJob := range jobs {
-			job, jobOK := rawJob.(map[string]any)
-			if !jobOK {
-				continue
-			}
-			stepsCount := int(numberValue(job["steps_count"]))
-			runsOn := presentation.DeclarativeDefaultLabel(fmt.Sprint(job["runs_on_label"]), "unspecified")
-			job["needs_label"] = presentation.DeclarativeDefaultLabel(fmt.Sprint(job["needs_label"]), "none")
-			job["tools_label"] = presentation.DeclarativeDefaultLabel(fmt.Sprint(job["tools_label"]), "none")
-			job["summary_label"] = presentation.ProjectJobSummaryLabel(stepsCount, runsOn)
-			job["timeout_label"] = presentation.ProjectJobTimeoutLabel(int(numberValue(job["timeout_seconds"])))
-			matrixCount := int(numberValue(job["matrix_count"]))
-			job["matrix_label"] = presentation.ProjectJobMatrixLabel(matrixCount)
-			steps, _ := job["steps"].([]any)
-			for _, rawStep := range steps {
-				step, stepOK := rawStep.(map[string]any)
-				if !stepOK {
-					continue
-				}
-				step["environment_label"] = presentation.ProjectStepEnvironmentLabel(stringListValue(step["environment"]))
-				step["command"] = presentation.ProjectStepCommand(fmt.Sprint(step["command"]))
-			}
+	visible := make([]any, 0, len(pipelines))
+	for _, raw := range pipelines {
+		pipeline, ok := raw.(map[string]any)
+		if ok && included[strings.TrimSpace(fmt.Sprint(pipeline["pipeline_id"]))] {
+			visible = append(visible, raw)
 		}
 	}
-}
-
-func projectStructureRoot(root map[string]any, filter string, visiblePipelines []any) map[string]any {
-	project, _ := root["project"].(map[string]any)
-	projectID := fmt.Sprint(project["id"])
-	projectName := strings.TrimSpace(fmt.Sprint(project["name"]))
-	chains, _ := project["pipeline_chains"].([]any)
-	if strings.HasPrefix(filter, "chain:") {
-		for _, raw := range chains {
-			chain, ok := raw.(map[string]any)
-			if !ok || "chain:"+fmt.Sprint(chain["id"]) != filter {
-				continue
-			}
-			name := strings.TrimSpace(fmt.Sprint(chain["name"]))
-			if name == "" {
-				name = strings.TrimSpace(fmt.Sprint(chain["id"]))
-			}
-			return map[string]any{
-				"id": "chain:" + fmt.Sprint(chain["id"]), "label": "Chain: " + name,
-				"meta": fmt.Sprint(chain["sequence_label"]), "runnable": true,
-				"project_id": projectID, "chain_id": fmt.Sprint(chain["id"]),
-			}
-		}
-	}
-	meta := presentation.PipelineCountLabel(len(visiblePipelines))
-	if filter == "all-chains" {
-		meta = fmt.Sprintf("%d pipeline chains", len(chains))
-		if len(chains) == 1 {
-			meta = "1 pipeline chain"
-		}
-	}
-	return map[string]any{
-		"id": "project:" + projectID + ":" + filter, "label": projectName,
-		"meta": "Project · " + meta, "runnable": false, "project_id": projectID, "chain_id": "",
-	}
-}
-
-func projectStructureFilterOptions(root map[string]any, pipelines []any) []any {
-	options := []any{
-		map[string]any{"value": "all-pipelines", "label": "All Pipelines"},
-		map[string]any{"value": "all-chains", "label": "All chains"},
-	}
-	project, _ := root["project"].(map[string]any)
-	chains, _ := project["pipeline_chains"].([]any)
-	for _, raw := range chains {
-		chain, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		id := strings.TrimSpace(fmt.Sprint(chain["id"]))
-		if id == "" {
-			continue
-		}
-		name := strings.TrimSpace(fmt.Sprint(chain["name"]))
-		if name == "" {
-			name = strings.TrimSpace(fmt.Sprint(chain["sequence_label"]))
-		}
-		options = append(options, map[string]any{"value": "chain:" + id, "label": name + " (chain)"})
-	}
-	return options
+	root["structure_filter"] = strings.TrimSpace(fmt.Sprint(selected["value"]))
+	root["visible_pipelines"] = visible
+	root["show_chain_structure"] = boolValue(selected["show_chain_structure"])
+	root["show_pipeline_structure"] = boolValue(selected["show_pipeline_structure"])
+	root["structure_root"] = selected["root"]
+	return true
 }
 
 func stringListValue(value any) []string {

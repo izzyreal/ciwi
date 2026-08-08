@@ -16,6 +16,8 @@
   let screenContractsPreloaded = false;
   let changeRefreshScheduler = null;
   const determinateProgressLimit = .999;
+  const indeterminateProgressCycleMs = 4000;
+  const overrunProgressCycleMs = 2000;
   const disclosureStates = window.ciwiDisclosureState;
   const viewStorageKey = 'ciwi.declarative.views.v1';
   const viewStates = loadViewStates();
@@ -35,12 +37,27 @@
     return {state, fraction};
   }
 
+  function semanticProgressAnimationDelay(state, nowMs) {
+    const cycle = state === 'indeterminate'
+      ? indeterminateProgressCycleMs
+      : (state === 'overrun' ? overrunProgressCycleMs : 0);
+    if (!cycle) return '';
+    const now = Math.max(0, Number(nowMs || Date.now()));
+    return String(-(now % cycle)) + 'ms';
+  }
+
   function updateSemanticProgress(element, nowMs) {
     const model = semanticProgressAt(element.__ciwiSemanticProgress, nowMs);
-    element.classList.remove('ciwi-progress-indeterminate', 'ciwi-progress-overrun', 'ciwi-progress-complete');
-    if (model.state === 'indeterminate') element.classList.add('ciwi-progress-indeterminate');
-    if (model.state === 'overrun') element.classList.add('ciwi-progress-overrun');
-    if (model.state === 'complete') element.classList.add('ciwi-progress-complete');
+	const previousState = element.__ciwiSemanticProgressState || '';
+	element.classList.toggle('ciwi-progress-indeterminate', model.state === 'indeterminate');
+	element.classList.toggle('ciwi-progress-overrun', model.state === 'overrun');
+	element.classList.toggle('ciwi-progress-complete', model.state === 'complete');
+	if (model.state !== previousState) {
+	  const delay = semanticProgressAnimationDelay(model.state, nowMs);
+	  if (delay) element.style.setProperty('--ciwi-progress-animation-delay', delay);
+	  else element.style.removeProperty('--ciwi-progress-animation-delay');
+	  element.__ciwiSemanticProgressState = model.state;
+	}
     if (model.state !== 'indeterminate') {
       const visible = model.state !== 'none' && model.state !== 'waiting';
       element.style.setProperty('--ciwi-progress-width', visible ? String(model.fraction * 100) + '%' : '0%');
@@ -217,7 +234,6 @@
 	view.loading = false;
 	view.ready = true;
 	view.load_error = '';
-	view.structure_filters = projectStructureFilterOptions(view);
 	applyProjectStructureFilter(view, previousFilter);
   }
 
@@ -298,67 +314,19 @@
 	  : '';
   }
 
-  function projectStructureFilterOptions(view) {
-	const options = [
-	  {value: 'all-pipelines', label: 'All Pipelines'},
-	  {value: 'all-chains', label: 'All chains'},
-	];
-	const chains = Array.isArray(view && view.project && view.project.pipeline_chains)
-	  ? view.project.pipeline_chains : [];
-	chains.forEach(chain => {
-	  const id = String(chain.id || '').trim();
-	  if (!id) return;
-	  const name = String(chain.name || chain.sequence_label || '').trim();
-	  options.push({value: 'chain:' + id, label: (name || id) + ' (chain)'});
-	});
-	return options;
-  }
-
   function applyProjectStructureFilter(view, requestedFilter) {
 	const pipelines = Array.isArray(view && view.pipelines) ? view.pipelines : [];
-	const chains = Array.isArray(view && view.project && view.project.pipeline_chains)
-	  ? view.project.pipeline_chains : [];
-	let filter = String(requestedFilter || 'all-pipelines').trim() || 'all-pipelines';
-	let visible = pipelines.slice();
-	if (filter === 'all-chains') {
-	  visible = [];
-	} else if (filter.startsWith('chain:')) {
-	  const matching = chains.filter(chain => 'chain:' + String(chain.id || '') === filter);
-	  if (matching.length === 0) {
-		filter = 'all-pipelines';
-	  } else {
-		const included = new Set();
-		matching.forEach(chain => (Array.isArray(chain.pipelines) ? chain.pipelines : []).forEach(id => included.add(String(id))));
-		visible = pipelines.filter(pipeline => included.has(String(pipeline.pipeline_id || '')));
-	  }
-	}
-	view.structure_filter = filter;
-	view.visible_pipelines = visible;
-	view.show_chain_structure = filter === 'all-chains';
-	view.show_pipeline_structure = filter !== 'all-chains';
-	const project = (view && view.project) || {};
-	const selectedChain = filter.startsWith('chain:')
-	  ? chains.find(chain => 'chain:' + String(chain.id || '') === filter)
-	  : null;
-	if (selectedChain) {
-	  const chainID = String(selectedChain.id || '');
-	  const chainName = String(selectedChain.name || chainID).trim() || chainID;
-	  view.structure_root = {
-		id: 'chain:' + chainID, label: 'Chain: ' + chainName,
-		meta: String(selectedChain.sequence_label || ''), runnable: true,
-		project_id: String(project.id || ''), chain_id: chainID,
-	  };
-	} else {
-	  const count = filter === 'all-chains' ? chains.length : visible.length;
-	  const countLabel = filter === 'all-chains'
-		? count + ' pipeline chain' + (count === 1 ? '' : 's')
-		: count + ' pipeline' + (count === 1 ? '' : 's');
-	  view.structure_root = {
-		id: 'project:' + String(project.id || '') + ':' + filter,
-		label: String(project.name || ''), meta: 'Project · ' + countLabel,
-		runnable: false, project_id: String(project.id || ''), chain_id: '',
-	  };
-	}
+	const filters = Array.isArray(view && view.structure_filters) ? view.structure_filters : [];
+	const requested = String(requestedFilter || 'all-pipelines').trim() || 'all-pipelines';
+	const selected = filters.find(filter => String(filter.value || '') === requested)
+	  || filters.find(filter => String(filter.value || '') === 'all-pipelines');
+	if (!selected) return;
+	const included = new Set((Array.isArray(selected.pipeline_ids) ? selected.pipeline_ids : []).map(String));
+	view.structure_filter = String(selected.value || 'all-pipelines');
+	view.visible_pipelines = pipelines.filter(pipeline => included.has(String(pipeline.pipeline_id || '')));
+	view.show_chain_structure = !!selected.show_chain_structure;
+	view.show_pipeline_structure = !!selected.show_pipeline_structure;
+	view.structure_root = Object.assign({}, selected.root || {});
   }
 
   function managedYAMLBinding(definition) {
@@ -1881,26 +1849,14 @@
 		const persistedUpdate = declarativePersistedUpdateBinding(updateStatus);
 		const projects = Array.isArray(projectsPayload.projects) ? projectsPayload.projects : [];
 		projects.forEach(project => {
-		  project.is_managed = String(project.source_kind || '') === 'managed_yaml';
-		  project.can_reload = !project.is_managed;
-		  project.has_repo = String(project.repo_url || '').trim() !== '';
-		  project.repo_ref_label = String(project.repo_ref || '').trim() || 'default';
 		  project.action_status = '';
 		  project.action_tone = 'muted';
-		  const loadedCommit = String(project.loaded_commit || '').trim();
-		  const repository = String(project.repo_url || '').trim().replace(/\.git$/, '').replace(/\/$/, '');
-		  project.loaded_commit_short = loadedCommit.slice(0, 8);
-		  project.loaded_commit_url = loadedCommit && /^https?:\/\//.test(repository) ? repository + '/commit/' + loadedCommit : '';
-		  project.has_loaded_commit = loadedCommit !== '';
 		  const updatedUTC = String(project.updated_utc || '').trim();
 		  const updatedMilliseconds = Number(project.updated_unix_ms || 0);
 		  const updatedLabel = updatedUTC
 			? declarativeExecutionTimestamp(updatedUTC)
 			: (updatedMilliseconds > 0 ? declarativeExecutionTimestamp(new Date(updatedMilliseconds).toISOString()) : '');
 		  project.updated_label = updatedLabel || 'Unknown';
-		  project.source_label = project.can_reload
-		    ? [project.repo_url || '', project.repo_ref || ''].filter(Boolean).join(' · ')
-		    : 'Managed YAML stored in ciwi';
 		});
 		view = {
 		  server: responseView, themes: themeOptions, projects,

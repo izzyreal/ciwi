@@ -345,29 +345,15 @@ func (s *stateStore) listAgentsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	s.mu.Lock()
-	type snapshot struct {
-		id      string
-		state   agentState
-		pending string
-	}
-	snapshots := make([]snapshot, 0, len(s.agents))
+	snapshots := s.agentRegistry.snapshots()
 	serverVersion := currentVersion()
-	for id, a := range s.agents {
-		snapshots = append(snapshots, snapshot{
-			id:      id,
-			state:   a,
-			pending: strings.TrimSpace(s.agentUpdates[id]),
-		})
-	}
-	s.mu.Unlock()
 	agents := make([]agentView, 0, len(snapshots))
 	for _, snap := range snapshots {
-		jobInProgress, err := s.agentJobExecutionStore().AgentHasActiveJobExecution(snap.id)
+		jobInProgress, err := s.agentJobExecutionStore().AgentHasActiveJobExecution(snap.ID)
 		if err != nil {
 			jobInProgress = false
 		}
-		agents = append(agents, agentViewFromState(snap.id, snap.state, snap.pending, serverVersion, jobInProgress))
+		agents = append(agents, agentViewFromState(snap.ID, snap.State, snap.PendingUpdate, serverVersion, jobInProgress))
 	}
 	writeJSON(w, http.StatusOK, agentsViewResponse{Agents: agents})
 }

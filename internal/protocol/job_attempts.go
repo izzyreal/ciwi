@@ -1,17 +1,21 @@
 package protocol
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/izzyreal/ciwi/internal/domain"
+)
 
 const (
-	JobMetadataAttemptRootJobID = "attempt_root_job_id"
-	JobMetadataRerunOfJobID     = "rerun_of_job_id"
+	JobMetadataAttemptRootJobID = domain.ExecutionMetadataAttemptRootJobID
+	JobMetadataRerunOfJobID     = domain.ExecutionMetadataRerunOfJobID
 )
 
 // JobExecutionAttemptRootID identifies executions that are attempts of the
 // same logical pipeline job. Executions created before attempt metadata was
 // introduced are their own roots.
 func JobExecutionAttemptRootID(job JobExecution) string {
-	if root := strings.TrimSpace(job.Metadata[JobMetadataAttemptRootJobID]); root != "" {
+	if root := job.Metadata.Value(JobMetadataAttemptRootJobID); root != "" {
 		return root
 	}
 	return strings.TrimSpace(job.ID)

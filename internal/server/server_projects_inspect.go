@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 	"gopkg.in/yaml.v3"
@@ -149,7 +150,7 @@ func (s *stateStore) renderInspectableSecretMappings(ctx context.Context, p stor
 
 	for _, spec := range pending {
 		jobLabel := strings.TrimSpace(spec.pipelineJobID)
-		if matrix := strings.TrimSpace(spec.metadata["matrix_name"]); matrix != "" {
+		if matrix := spec.metadata.Value(domain.ExecutionMetadataMatrixName); matrix != "" {
 			jobLabel += " / " + matrix
 		}
 		if jobLabel == "" {
@@ -410,7 +411,7 @@ func renderInspectableExecutorScript(pending []pendingJob) string {
 	parts := make([]string, 0, len(pending))
 	for _, spec := range pending {
 		name := strings.TrimSpace(spec.pipelineJobID)
-		if matrix := strings.TrimSpace(spec.metadata["matrix_name"]); matrix != "" {
+		if matrix := spec.metadata.Value(domain.ExecutionMetadataMatrixName); matrix != "" {
 			name += " / " + matrix
 		}
 		header := "# " + strings.TrimSpace(name)

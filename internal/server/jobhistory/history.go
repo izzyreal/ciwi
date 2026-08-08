@@ -106,7 +106,7 @@ type JobView struct {
 	ArtifactGlobs        []string                          `json:"artifact_globs,omitempty"`
 	Caches               []protocol.JobCacheSpec           `json:"caches,omitempty"`
 	Source               *protocol.SourceSpec              `json:"source,omitempty"`
-	Metadata             map[string]string                 `json:"metadata,omitempty"`
+	Metadata             domain.ExecutionMetadata          `json:"metadata,omitempty"`
 	StepPlan             []protocol.JobStepPlanItem        `json:"step_plan,omitempty"`
 	CurrentStep          string                            `json:"current_step,omitempty"`
 	CacheStats           []protocol.JobCacheStats          `json:"cache_stats,omitempty"`
@@ -548,7 +548,7 @@ func buildSections(jobs []protocol.JobExecution, card executionCard) []SectionVi
 		return []SectionView{{
 			Kind:  "pipeline",
 			Key:   "section:" + strings.TrimSpace(job.ID),
-			Label: strings.TrimSpace((job.Metadata)["pipeline_id"]),
+			Label: job.Metadata.Value(domain.ExecutionMetadataPipelineID),
 			Items: []ItemView{{Kind: "job", Job: jobView(job)}},
 		}}
 	default:
@@ -576,7 +576,7 @@ func buildPipelineSections(jobs []protocol.JobExecution, card executionCard) []S
 			byKey[sectionKey] = pos
 			ordered = append(ordered, sectionState{
 				key:   sectionKey,
-				label: strings.TrimSpace(job.Metadata["pipeline_id"]),
+				label: job.Metadata.Value(domain.ExecutionMetadataPipelineID),
 			})
 		}
 		ordered[pos].jobs = append(ordered[pos].jobs, job)
@@ -632,7 +632,7 @@ func buildSectionItems(jobs []protocol.JobExecution) []ItemView {
 			matrixPos[matrixKey] = pos
 			matrixOrder = append(matrixOrder, matrixState{
 				key:   matrixKey,
-				label: strings.TrimSpace(job.Metadata["pipeline_job_id"]),
+				label: job.Metadata.Value(domain.ExecutionMetadataPipelineJobID),
 			})
 		}
 		item := ItemView{Kind: "job", MatrixLabel: matrixEntryLabel(job), Job: jobView(job)}
@@ -644,10 +644,10 @@ func buildSectionItems(jobs []protocol.JobExecution) []ItemView {
 }
 
 func matrixEntryLabel(job protocol.JobExecution) string {
-	if name := strings.TrimSpace(job.Metadata["matrix_name"]); name != "" {
+	if name := job.Metadata.Value(domain.ExecutionMetadataMatrixName); name != "" {
 		return name
 	}
-	if idx := strings.TrimSpace(job.Metadata["matrix_index"]); idx != "" {
+	if idx := job.Metadata.Value(domain.ExecutionMetadataMatrixIndex); idx != "" {
 		return "idx-" + idx
 	}
 	return ""
@@ -658,15 +658,15 @@ func cardTitle(jobs []protocol.JobExecution, card executionCard) string {
 		return "job"
 	}
 	first := jobs[card.Indices[0]]
-	project := strings.TrimSpace(first.Metadata["project"])
+	project := first.Metadata.Value(domain.ExecutionMetadataProject)
 	label := ""
 	switch card.Kind {
 	case "chain":
-		label = strings.TrimSpace(first.Metadata["pipeline_chain_name"])
+		label = first.Metadata.Value(domain.ExecutionMetadataPipelineChainName)
 	case "pipeline":
-		label = strings.TrimSpace(first.Metadata["pipeline_id"])
+		label = first.Metadata.Value(domain.ExecutionMetadataPipelineID)
 	default:
-		label = strings.TrimSpace(first.Metadata["pipeline_job_id"])
+		label = first.Metadata.Value(domain.ExecutionMetadataPipelineJobID)
 		if label == "" {
 			label = "job"
 		}
@@ -676,7 +676,7 @@ func cardTitle(jobs []protocol.JobExecution, card executionCard) string {
 	for _, idx := range card.Indices {
 		job := jobs[idx]
 		if buildVersion == "" {
-			buildVersion = strings.TrimSpace(job.Metadata["build_version"])
+			buildVersion = job.Metadata.Value(domain.ExecutionMetadataBuildVersion)
 		}
 		ts := job.CreatedUTC.Format(time.RFC3339Nano)
 		if oldest == "" || ts < oldest {
@@ -708,7 +708,7 @@ func pipelineSectionKey(job protocol.JobExecution) string {
 	if group := pipelineCardKey(job); group != "" {
 		return "section:" + group
 	}
-	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	pipelineID := job.Metadata.Value(domain.ExecutionMetadataPipelineID)
 	if pipelineID == "" {
 		return ""
 	}
@@ -751,11 +751,11 @@ func isWaitingJobExecution(job protocol.JobExecution) bool {
 	if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusQueued {
 		return false
 	}
-	return strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" || strings.TrimSpace(job.Metadata["needs_blocked"]) == "1"
+	return job.Metadata.Flag(domain.ExecutionMetadataChainBlocked) || job.Metadata.Flag(domain.ExecutionMetadataNeedsBlocked)
 }
 
 func chainCardKey(job protocol.JobExecution) string {
-	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
+	chainRunID := job.Metadata.Value(domain.ExecutionMetadataChainRunID)
 	if chainRunID == "" {
 		return ""
 	}
@@ -763,22 +763,22 @@ func chainCardKey(job protocol.JobExecution) string {
 }
 
 func pipelineCardKey(job protocol.JobExecution) string {
-	runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
+	runID := job.Metadata.Value(domain.ExecutionMetadataPipelineRunID)
 	if runID == "" {
 		return ""
 	}
-	projectID := strings.TrimSpace(job.Metadata["project_id"])
-	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	projectID := job.Metadata.Value(domain.ExecutionMetadataProjectID)
+	pipelineID := job.Metadata.Value(domain.ExecutionMetadataPipelineID)
 	return "pipeline:" + runID + "|" + projectID + "|" + pipelineID
 }
 
 func matrixGroupKey(job protocol.JobExecution) string {
-	if strings.TrimSpace(job.Metadata["matrix_name"]) == "" && strings.TrimSpace(job.Metadata["matrix_index"]) == "" {
+	if job.Metadata.Value(domain.ExecutionMetadataMatrixName) == "" && job.Metadata.Value(domain.ExecutionMetadataMatrixIndex) == "" {
 		return ""
 	}
-	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
-	pipelineJobID := strings.TrimSpace(job.Metadata["pipeline_job_id"])
-	runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
+	pipelineID := job.Metadata.Value(domain.ExecutionMetadataPipelineID)
+	pipelineJobID := job.Metadata.Value(domain.ExecutionMetadataPipelineJobID)
+	runID := job.Metadata.Value(domain.ExecutionMetadataPipelineRunID)
 	if pipelineJobID == "" {
 		return ""
 	}

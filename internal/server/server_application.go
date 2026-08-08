@@ -257,6 +257,7 @@ func (a pipelineRunnerAdapter) RunPipeline(ctx context.Context, request applicat
 }
 
 func projectToProtocol(project domain.Project) protocol.ProjectSummary {
+	settings := presentation.PresentProjectSettings(project)
 	pipelines := make([]protocol.PipelineSummary, 0, len(project.Pipelines))
 	for _, pipeline := range project.Pipelines {
 		pipelines = append(pipelines, protocol.PipelineSummary{
@@ -277,5 +278,9 @@ func projectToProtocol(project domain.Project) protocol.ProjectSummary {
 		RepoURL: project.RepoURL, RepoRef: project.RepoRef, ConfigFile: project.ConfigFile,
 		LoadedCommit: project.LoadedCommit, UpdatedUTC: project.UpdatedUTC,
 		Pipelines: pipelines, PipelineChains: chains,
+		IsManaged: settings.IsManaged, CanReload: settings.CanReload, HasRepo: settings.HasRepository,
+		RepoRefLabel: settings.RepositoryRef, HasLoadedCommit: settings.HasLoadedCommit,
+		LoadedCommitShort: settings.LoadedCommitShort, LoadedCommitURL: settings.LoadedCommitURL,
+		SourceLabel: settings.SourceLabel,
 	}
 }

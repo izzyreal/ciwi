@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/application"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/httpx"
 )
@@ -140,16 +141,16 @@ func RerunJobExecution(store Store, jobID string, prepare func(protocol.JobExecu
 	if job.StartedUTC.IsZero() && !isDependencyBlockedJob(job) {
 		return protocol.JobExecution{}, fmt.Errorf("job has not started yet")
 	}
-	metadata := cloneStringMap(job.Metadata)
+	metadata := domain.ExecutionMetadata(cloneStringMap(job.Metadata))
 	if metadata == nil {
-		metadata = map[string]string{}
+		metadata = domain.ExecutionMetadata{}
 	}
 	rootID := protocol.JobExecutionAttemptRootID(job)
 	if rootID == "" {
 		rootID = job.ID
 	}
-	metadata[protocol.JobMetadataAttemptRootJobID] = rootID
-	metadata[protocol.JobMetadataRerunOfJobID] = job.ID
+	metadata.Set(protocol.JobMetadataAttemptRootJobID, rootID)
+	metadata.Set(protocol.JobMetadataRerunOfJobID, job.ID)
 	request := protocol.CreateJobExecutionRequest{
 		Script: job.Script, Env: cloneStringMap(job.Env), RequiredCapabilities: cloneStringMap(job.RequiredCapabilities),
 		TimeoutSeconds: job.TimeoutSeconds, ArtifactGlobs: append([]string(nil), job.ArtifactGlobs...),

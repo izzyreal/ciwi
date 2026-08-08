@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/application"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -233,16 +234,16 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 			prevPipelineID = strings.TrimSpace(pipelines[i-1].PipelineID)
 		}
 		chainDeps := deriveChainPipelineDependencies(p, chainPipelineSet, prevPipelineID)
-		meta := map[string]string{
-			"chain_run_id":            chainRunID,
-			"pipeline_chain_id":       ch.ChainID,
-			"pipeline_chain_name":     ch.ChainName,
-			"pipeline_chain_index":    strconv.Itoa(i),
-			"pipeline_chain_position": strconv.Itoa(i + 1),
-			"pipeline_chain_total":    strconv.Itoa(total),
+		meta := domain.ExecutionMetadata{
+			domain.ExecutionMetadataChainRunID:            chainRunID,
+			domain.ExecutionMetadataPipelineChainID:       ch.ChainID,
+			domain.ExecutionMetadataPipelineChainName:     ch.ChainName,
+			domain.ExecutionMetadataPipelineChainIndex:    strconv.Itoa(i),
+			domain.ExecutionMetadataPipelineChainPosition: strconv.Itoa(i + 1),
+			domain.ExecutionMetadataPipelineChainTotal:    strconv.Itoa(total),
 		}
 		if len(chainDeps) > 0 {
-			meta["chain_depends_on_pipelines"] = strings.Join(chainDeps, ",")
+			meta.Set(domain.ExecutionMetadataChainDependsOnPipelines, strings.Join(chainDeps, ","))
 		}
 		opts := enqueuePipelineOptions{
 			metaPatch:             meta,
@@ -272,12 +273,13 @@ func (s *stateStore) enqueuePersistedPipelineChain(ch store.PersistedPipelineCha
 		})
 	}
 
+	allPending := make([]pendingJob, 0)
 	for _, pp := range prepared {
-		jobIDs, err := s.persistPendingJobs(pp.pending)
-		if err != nil {
-			return protocol.RunPipelineResponse{}, err
-		}
-		allJobIDs = append(allJobIDs, jobIDs...)
+		allPending = append(allPending, pp.pending...)
+	}
+	allJobIDs, err = s.persistPendingJobs(allPending)
+	if err != nil {
+		return protocol.RunPipelineResponse{}, err
 	}
 	if selection != nil && len(allJobIDs) == 0 {
 		return protocol.RunPipelineResponse{}, fmt.Errorf("selection matched no matrix entries")

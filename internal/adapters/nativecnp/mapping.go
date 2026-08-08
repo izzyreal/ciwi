@@ -43,8 +43,8 @@ func projectDetailsToProto(view presentation.ProjectDetailsView) *cnpv1.ProjectD
 			for _, step := range job.Steps {
 				steps = append(steps, &cnpv1.ProjectStepDetails{
 					Index: uint32(step.Index), Position: uint32(step.Position), Name: step.Name,
-					Type: step.Type, Command: step.Command, SkipDryRun: step.SkipDryRun,
-					Environment: append([]string{}, step.Environment...),
+					Type: step.Type, Command: step.DisplayCommand, SkipDryRun: step.SkipDryRun,
+					Environment: append([]string{}, step.Environment...), EnvironmentLabel: step.EnvironmentLabel,
 				})
 			}
 			jobs = append(jobs, &cnpv1.ProjectJobDetails{
@@ -52,15 +52,33 @@ func projectDetailsToProto(view presentation.ProjectDetailsView) *cnpv1.ProjectD
 				RunsOnLabel: job.RunsOnLabel, ToolsLabel: job.ToolsLabel,
 				TimeoutSeconds: uint32(max(job.TimeoutSeconds, 0)), MatrixCount: uint32(max(job.MatrixCount, 0)),
 				StepsCount: uint32(max(job.StepsCount, 0)), SupportsDryRun: job.SupportsDryRun, Steps: steps,
+				SummaryLabel: job.SummaryLabel, TimeoutLabel: job.TimeoutLabel, MatrixLabel: job.MatrixLabel,
 			})
 		}
 		pipelines = append(pipelines, &cnpv1.ProjectPipelineDetails{
 			Id: pipeline.ID, PipelineId: pipeline.PipelineID, Trigger: pipeline.Trigger,
 			DependsOn: append([]string{}, pipeline.DependsOn...), Dependencies: pipeline.Dependencies,
 			JobsCount: uint32(max(pipeline.JobsCount, 0)), SupportsDryRun: pipeline.SupportsDryRun, Jobs: jobs,
+			SummaryLabel: pipeline.SummaryLabel, GraphSummaryLabel: pipeline.GraphSummary,
 		})
 	}
-	return &cnpv1.ProjectDetailsView{Project: project, Pipelines: pipelines, HistoryExecutions: executionCardsToProto(view.HistoryExecutions)}
+	filters := make([]*cnpv1.ProjectStructureFilter, 0, len(view.StructureFilters))
+	for _, filter := range view.StructureFilters {
+		filters = append(filters, &cnpv1.ProjectStructureFilter{
+			Value: filter.Value, Label: filter.Label, PipelineIds: append([]string(nil), filter.PipelineIDs...),
+			Root: &cnpv1.ProjectStructureRoot{
+				Id: filter.Root.ID, Label: filter.Root.Label, Meta: filter.Root.Meta, Runnable: filter.Root.Runnable,
+				ProjectId: filter.Root.ProjectID, ChainId: filter.Root.ChainID,
+			},
+			ShowChainStructure: filter.ShowChainStructure, ShowPipelineStructure: filter.ShowPipelineStructure,
+		})
+	}
+	if project != nil {
+		project.PipelineCountLabel = view.ProjectLabels.PipelineCount
+		project.SourceMetadata = view.ProjectLabels.SourceMetadata
+		project.HasPipelineChains = view.ProjectLabels.HasPipelineChains
+	}
+	return &cnpv1.ProjectDetailsView{Project: project, Pipelines: pipelines, StructureFilters: filters, HistoryExecutions: executionCardsToProto(view.HistoryExecutions, false)}
 }
 
 func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
@@ -199,6 +217,8 @@ func jobOutputToProto(view presentation.JobOutputView) *cnpv1.JobOutputBatch {
 func projectsToProto(projects []domain.Project) []*cnpv1.ProjectSummary {
 	out := make([]*cnpv1.ProjectSummary, 0, len(projects))
 	for _, project := range projects {
+		labels := presentation.PresentProjectLabels(project)
+		settings := presentation.PresentProjectSettings(project)
 		pipelines := make([]*cnpv1.PipelineSummary, 0, len(project.Pipelines))
 		for _, pipeline := range project.Pipelines {
 			pipelines = append(pipelines, &cnpv1.PipelineSummary{
@@ -223,14 +243,21 @@ func projectsToProto(projects []domain.Project) []*cnpv1.ProjectSummary {
 			Id: project.ID, Name: project.Name, SourceKind: project.SourceKind, ConfigPath: project.ConfigPath,
 			RepoUrl: project.RepoURL, RepoRef: project.RepoRef, ConfigFile: project.ConfigFile,
 			LoadedCommit: project.LoadedCommit, UpdatedUnixMs: updated, Pipelines: pipelines, PipelineChains: chains,
+			PipelineCountLabel: labels.PipelineCount, SourceMetadata: labels.SourceMetadata, HasPipelineChains: labels.HasPipelineChains,
+			IsManaged: settings.IsManaged, CanReload: settings.CanReload, HasRepo: settings.HasRepository,
+			RepoRefLabel: settings.RepositoryRef, HasLoadedCommit: settings.HasLoadedCommit,
+			LoadedCommitShort: settings.LoadedCommitShort, LoadedCommitUrl: settings.LoadedCommitURL,
+			SourceLabel: settings.SourceLabel,
 		})
 	}
 	return out
 }
 
-func executionCardsToProto(cards []domain.ExecutionCard) []*cnpv1.ExecutionCardSummary {
+func executionCardsToProto(cards []domain.ExecutionCard, queued bool) []*cnpv1.ExecutionCardSummary {
 	out := make([]*cnpv1.ExecutionCardSummary, 0, len(cards))
+	now := time.Now()
 	for _, card := range cards {
+		display := presentation.PresentExecutionCard(card, queued)
 		out = append(out, &cnpv1.ExecutionCardSummary{
 			Key: card.Key, Kind: card.Kind, Title: card.Title,
 			JobExecutionIds: append([]string(nil), card.JobExecutionIDs...),
@@ -239,23 +266,31 @@ func executionCardsToProto(cards []domain.ExecutionCard) []*cnpv1.ExecutionCardS
 				Failed: uint32(card.Summary.Failed), InProgress: uint32(card.Summary.InProgress),
 				Waiting: uint32(card.Summary.Waiting),
 			},
-			Sections: executionCardSectionsToProto(card.Sections), Progress: progressToProto(card.Progress),
+			Sections: executionCardSectionsToProto(card.Sections, now), Progress: progressToProto(card.Progress),
+			Status: display.Status, SummaryTone: display.SummaryTone, SummaryLabel: display.SummaryLabel,
+			JobExecutionIdsCsv: display.JobExecutionIDsCSV,
 		})
 	}
 	return out
 }
 
-func executionCardSectionsToProto(sections []domain.ExecutionCardSection) []*cnpv1.ExecutionCardSection {
+func executionCardSectionsToProto(sections []domain.ExecutionCardSection, now time.Time) []*cnpv1.ExecutionCardSection {
 	out := make([]*cnpv1.ExecutionCardSection, 0, len(sections))
 	for _, section := range sections {
 		jobs := make([]*cnpv1.ExecutionCardJob, 0, len(section.Jobs))
 		for _, job := range section.Jobs {
+			display := presentation.PresentExecutionCardJob(job, now)
+			diagnosis := schedulingDiagnosisToProto(job.SchedulingDiagnosis)
+			if diagnosis == nil {
+				diagnosis = &cnpv1.SchedulingDiagnosis{}
+			}
 			jobs = append(jobs, &cnpv1.ExecutionCardJob{
 				Id: job.ID, ProjectId: job.ProjectID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
 				PipelineId: job.PipelineID, BuildLabel: job.BuildLabel, AgentId: job.AgentID,
 				CreatedUtc: formatProtoTime(job.CreatedUTC), StartedUtc: formatProtoTime(job.StartedUTC),
 				FinishedUtc: formatProtoTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,
-				SchedulingDiagnosis: schedulingDiagnosisToProto(job.SchedulingDiagnosis), Progress: progressToProto(job.Progress),
+				SchedulingDiagnosis: diagnosis, Progress: progressToProto(job.Progress),
+				CreatedLabel: display.CreatedLabel, DurationLabel: display.DurationLabel,
 			})
 		}
 		out = append(out, &cnpv1.ExecutionCardSection{

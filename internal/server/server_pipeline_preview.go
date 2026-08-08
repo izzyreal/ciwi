@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -229,16 +230,16 @@ func (s *stateStore) previewPipelineChainDryRun(ch store.PersistedPipelineChain,
 			prevPipelineID = strings.TrimSpace(pipelines[i-1].PipelineID)
 		}
 		chainDeps := deriveChainPipelineDependencies(p, chainPipelineSet, prevPipelineID)
-		meta := map[string]string{
-			"chain_run_id":            "preview",
-			"pipeline_chain_id":       ch.ChainID,
-			"pipeline_chain_name":     ch.ChainName,
-			"pipeline_chain_index":    fmt.Sprintf("%d", i),
-			"pipeline_chain_position": fmt.Sprintf("%d", i+1),
-			"pipeline_chain_total":    fmt.Sprintf("%d", total),
+		meta := domain.ExecutionMetadata{
+			domain.ExecutionMetadataChainRunID:            "preview",
+			domain.ExecutionMetadataPipelineChainID:       ch.ChainID,
+			domain.ExecutionMetadataPipelineChainName:     ch.ChainName,
+			domain.ExecutionMetadataPipelineChainIndex:    fmt.Sprintf("%d", i),
+			domain.ExecutionMetadataPipelineChainPosition: fmt.Sprintf("%d", i+1),
+			domain.ExecutionMetadataPipelineChainTotal:    fmt.Sprintf("%d", total),
 		}
 		if len(chainDeps) > 0 {
-			meta["chain_depends_on_pipelines"] = strings.Join(chainDeps, ",")
+			meta.Set(domain.ExecutionMetadataChainDependsOnPipelines, strings.Join(chainDeps, ","))
 		}
 		opts := enqueuePipelineOptions{
 			metaPatch:              meta,
@@ -353,14 +354,14 @@ func toRunPreviewJobs(in []pendingJob) []runPreviewJobView {
 		steps := toRunPreviewSteps(p.stepPlan)
 		out = append(out, runPreviewJobView{
 			PipelineJobID:     strings.TrimSpace(p.pipelineJobID),
-			MatrixName:        strings.TrimSpace(p.metadata["matrix_name"]),
+			MatrixName:        p.metadata.Value(domain.ExecutionMetadataMatrixName),
 			RequiredCaps:      cloneMap(p.requiredCaps),
 			SourceRepo:        strings.TrimSpace(p.sourceRepo),
 			SourceRef:         strings.TrimSpace(p.sourceRef),
 			StepCount:         len(steps),
 			StepPlan:          steps,
 			ArtifactGlobs:     append([]string(nil), p.artifactGlobs...),
-			DependencyBlocked: strings.TrimSpace(p.metadata["dependency_blocked"]) == "1" || strings.TrimSpace(p.metadata["needs_blocked"]) == "1" || strings.TrimSpace(p.metadata["chain_blocked"]) == "1",
+			DependencyBlocked: p.metadata.Flag(domain.ExecutionMetadataDependencyBlocked) || p.metadata.Flag(domain.ExecutionMetadataNeedsBlocked) || p.metadata.Flag(domain.ExecutionMetadataChainBlocked),
 		})
 	}
 	return out

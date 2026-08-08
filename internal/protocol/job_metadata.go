@@ -1,20 +1,20 @@
 package protocol
 
-import "strings"
+import "github.com/izzyreal/ciwi/internal/domain"
 
 const (
-	JobMetadataProject       = "project"
-	JobMetadataProjectID     = "project_id"
-	JobMetadataPipelineID    = "pipeline_id"
-	JobMetadataPipelineJobID = "pipeline_job_id"
-	JobMetadataMatrixName    = "matrix_name"
-	JobMetadataDryRun        = "dry_run"
+	JobMetadataProject       = domain.ExecutionMetadataProject
+	JobMetadataProjectID     = domain.ExecutionMetadataProjectID
+	JobMetadataPipelineID    = domain.ExecutionMetadataPipelineID
+	JobMetadataPipelineJobID = domain.ExecutionMetadataPipelineJobID
+	JobMetadataMatrixName    = domain.ExecutionMetadataMatrixName
+	JobMetadataDryRun        = domain.ExecutionMetadataDryRun
 )
 
 func JobMetadataValue(job JobExecution, key string) string {
-	return strings.TrimSpace(job.Metadata[key])
+	return job.Metadata.Value(key)
 }
 
 func IsJobWaitingForPrerequisites(job JobExecution) bool {
-	return strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" || strings.TrimSpace(job.Metadata["needs_blocked"]) == "1"
+	return job.Metadata.Flag(domain.ExecutionMetadataChainBlocked) || job.Metadata.Flag(domain.ExecutionMetadataNeedsBlocked)
 }

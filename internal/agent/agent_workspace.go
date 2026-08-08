@@ -7,20 +7,21 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 func workspaceDirForJob(workDir string, job protocol.JobExecution) string {
 	meta := job.Metadata
-	projectID := strings.TrimSpace(meta["project_id"])
+	projectID := meta.Value(domain.ExecutionMetadataProjectID)
 	if projectID == "" {
 		projectID = "project-unknown"
 	}
-	projectName := strings.TrimSpace(meta["project"])
+	projectName := meta.Value(domain.ExecutionMetadataProject)
 	if projectName == "" {
 		projectName = "project-unknown"
 	}
-	pipelineJobID := strings.TrimSpace(meta["pipeline_job_id"])
+	pipelineJobID := meta.Value(domain.ExecutionMetadataPipelineJobID)
 	if pipelineJobID == "" {
 		pipelineJobID = strings.TrimSpace(job.ID)
 	}
@@ -46,11 +47,11 @@ func workspaceDirForJob(workDir string, job protocol.JobExecution) string {
 	return filepath.Join(workDir, "workspaces", name)
 }
 
-func workspaceMatrixIdentity(meta map[string]string) string {
-	if name := strings.TrimSpace(meta["matrix_name"]); name != "" {
+func workspaceMatrixIdentity(meta domain.ExecutionMetadata) string {
+	if name := meta.Value(domain.ExecutionMetadataMatrixName); name != "" {
 		return name
 	}
-	if idx := strings.TrimSpace(meta["matrix_index"]); idx != "" {
+	if idx := meta.Value(domain.ExecutionMetadataMatrixIndex); idx != "" {
 		return "idx-" + idx
 	}
 	return ""

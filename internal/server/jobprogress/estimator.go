@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -348,9 +349,9 @@ func (e *Estimator) provisionalJobKey(job protocol.JobExecution) string {
 // to share.
 func (e *Estimator) provisionalExecutionUnitKey(job protocol.JobExecution) string {
 	m := job.Metadata
-	project := strings.TrimSpace(m["project"])
-	pipeline := strings.TrimSpace(m["pipeline_id"])
-	pipelineJob := strings.TrimSpace(m["pipeline_job_id"])
+	project := m.Value(domain.ExecutionMetadataProject)
+	pipeline := m.Value(domain.ExecutionMetadataPipelineID)
+	pipelineJob := m.Value(domain.ExecutionMetadataPipelineJobID)
 	if project == "" && pipeline == "" && pipelineJob == "" {
 		return ""
 	}
@@ -359,8 +360,8 @@ func (e *Estimator) provisionalExecutionUnitKey(job protocol.JobExecution) strin
 		project,
 		pipeline,
 		pipelineJob,
-		strings.TrimSpace(m["matrix_name"]),
-		strings.TrimSpace(m["matrix_index"]),
+		m.Value(domain.ExecutionMetadataMatrixName),
+		m.Value(domain.ExecutionMetadataMatrixIndex),
 		string(requiredCapabilities),
 	}
 	return strings.Join(parts, "\x1f")

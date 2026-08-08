@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -183,7 +184,7 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, pipeline
 	type runState struct {
 		lastCreated time.Time
 		statuses    []string
-		metadata    map[string]string
+		metadata    domain.ExecutionMetadata
 		jobs        []protocol.JobExecution
 	}
 	byRun := map[string]runState{}
@@ -191,10 +192,10 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, pipeline
 		if !jobExecutionMatchesProject(j, projectID) {
 			continue
 		}
-		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
+		if j.Metadata.Value(domain.ExecutionMetadataPipelineID) != pipelineID {
 			continue
 		}
-		runID := strings.TrimSpace(j.Metadata["pipeline_run_id"])
+		runID := j.Metadata.Value(domain.ExecutionMetadataPipelineRunID)
 		if runID == "" {
 			runID = j.ID
 		}
@@ -205,7 +206,7 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, pipeline
 		st.statuses = append(st.statuses, protocol.NormalizeJobExecutionStatus(j.Status))
 		st.jobs = append(st.jobs, j)
 		if st.metadata == nil {
-			st.metadata = map[string]string{}
+			st.metadata = domain.ExecutionMetadata{}
 		}
 		for k, v := range j.Metadata {
 			if _, exists := st.metadata[k]; !exists && strings.TrimSpace(v) != "" {
@@ -234,8 +235,8 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, pipeline
 		}
 	}
 
-	targetVersionRaw := strings.TrimSpace(latestRun.metadata["pipeline_version_raw"])
-	targetVersion := strings.TrimSpace(latestRun.metadata["pipeline_version"])
+	targetVersionRaw := latestRun.metadata.Value(domain.ExecutionMetadataPipelineVersionRaw)
+	targetVersion := latestRun.metadata.Value(domain.ExecutionMetadataPipelineVersion)
 
 	selectedRunID := ""
 	selectedCreated := time.Time{}
@@ -259,16 +260,16 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, pipeline
 	artifactExecutions := make([]dependencyArtifactExecution, 0)
 	for _, j := range byRun[selectedRunID].jobs {
 		jobID := strings.TrimSpace(j.ID)
-		pipelineJobID := strings.TrimSpace(j.Metadata["pipeline_job_id"])
+		pipelineJobID := j.Metadata.Value(domain.ExecutionMetadataPipelineJobID)
 		if jobID == "" || pipelineJobID == "" || len(j.ArtifactGlobs) == 0 {
 			continue
 		}
 		matrix := map[string]string{}
-		if name := strings.TrimSpace(j.Metadata["matrix_name"]); name != "" {
+		if name := j.Metadata.Value(domain.ExecutionMetadataMatrixName); name != "" {
 			matrix["name"] = name
 		}
 		for key, value := range j.Metadata {
-			const prefix = "matrix_var."
+			const prefix = domain.ExecutionMetadataMatrixVariablePrefix
 			if !strings.HasPrefix(key, prefix) {
 				continue
 			}
@@ -292,18 +293,18 @@ func verifyDependencyRun(jobs []protocol.JobExecution, projectID int64, pipeline
 		return artifactExecutions[i].MatrixIndex < artifactExecutions[j].MatrixIndex
 	})
 	return pipelineDependencyContext{
-		VersionRaw:         strings.TrimSpace(meta["pipeline_version_raw"]),
-		Version:            strings.TrimSpace(meta["pipeline_version"]),
-		SourceRepo:         strings.TrimSpace(meta["pipeline_source_repo"]),
-		SourceRefRaw:       strings.TrimSpace(meta["pipeline_source_ref_raw"]),
-		SourceRefResolved:  strings.TrimSpace(meta["pipeline_source_ref_resolved"]),
+		VersionRaw:         meta.Value(domain.ExecutionMetadataPipelineVersionRaw),
+		Version:            meta.Value(domain.ExecutionMetadataPipelineVersion),
+		SourceRepo:         meta.Value(domain.ExecutionMetadataPipelineSourceRepo),
+		SourceRefRaw:       meta.Value(domain.ExecutionMetadataPipelineSourceRefRaw),
+		SourceRefResolved:  meta.Value(domain.ExecutionMetadataPipelineSourceRefResolved),
 		ArtifactExecutions: map[string][]dependencyArtifactExecution{pipelineID: artifactExecutions},
 	}, nil
 }
 
-func dependencyArtifactMatrixIndex(metadata map[string]string) int {
-	for _, key := range []string{"matrix_index", "pipeline_job_index"} {
-		if value, err := strconv.Atoi(strings.TrimSpace(metadata[key])); err == nil {
+func dependencyArtifactMatrixIndex(metadata domain.ExecutionMetadata) int {
+	for _, key := range []string{domain.ExecutionMetadataMatrixIndex, domain.ExecutionMetadataPipelineJobIndex} {
+		if value, err := strconv.Atoi(metadata.Value(key)); err == nil {
 			return value
 		}
 	}
@@ -328,9 +329,9 @@ func dependencyRunIsSuccessful(statuses []string) bool {
 	return true
 }
 
-func dependencyRunVersionMatches(meta map[string]string, targetVersionRaw, targetVersion string) bool {
-	runRaw := strings.TrimSpace(meta["pipeline_version_raw"])
-	runTagged := strings.TrimSpace(meta["pipeline_version"])
+func dependencyRunVersionMatches(meta domain.ExecutionMetadata, targetVersionRaw, targetVersion string) bool {
+	runRaw := meta.Value(domain.ExecutionMetadataPipelineVersionRaw)
+	runTagged := meta.Value(domain.ExecutionMetadataPipelineVersion)
 	targetVersionRaw = strings.TrimSpace(targetVersionRaw)
 	targetVersion = strings.TrimSpace(targetVersion)
 
@@ -353,10 +354,10 @@ func verifyDependencyRunInChain(jobs []protocol.JobExecution, chainRunID string,
 		if !jobExecutionMatchesProject(j, projectID) {
 			continue
 		}
-		if strings.TrimSpace(j.Metadata["pipeline_id"]) != pipelineID {
+		if j.Metadata.Value(domain.ExecutionMetadataPipelineID) != pipelineID {
 			continue
 		}
-		if strings.TrimSpace(j.Metadata["chain_run_id"]) != chainRunID {
+		if j.Metadata.Value(domain.ExecutionMetadataChainRunID) != chainRunID {
 			continue
 		}
 		filtered = append(filtered, j)

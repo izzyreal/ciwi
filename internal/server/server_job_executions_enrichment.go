@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/adapters/executiondiagnosis"
 	"github.com/izzyreal/ciwi/internal/protocol"
-	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
 func (s *stateStore) attachJobExecutionTestSummaries(jobs []protocol.JobExecution) {
@@ -22,14 +22,7 @@ func (s *stateStore) markAgentSeen(agentID string, ts time.Time) {
 	if ts.IsZero() {
 		ts = time.Now().UTC()
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	a, ok := s.agents[agentID]
-	if !ok {
-		return
-	}
-	a.LastSeenUTC = ts
-	s.agents[agentID] = a
+	s.agentRegistry.markSeen(agentID, ts)
 }
 
 func (s *stateStore) attachJobExecutionTestSummary(job *protocol.JobExecution) {
@@ -51,7 +44,7 @@ func (s *stateStore) attachJobExecutionTestSummary(job *protocol.JobExecution) {
 func (s *stateStore) attachJobExecutionSchedulingDiagnoses(jobs []protocol.JobExecution) {
 	agents := s.schedulingAgentSnapshots(time.Now().UTC())
 	for i := range jobs {
-		jobs[i].SchedulingDiagnosis = requirements.DiagnoseQueuedJob(jobs[i], agents)
+		jobs[i].SchedulingDiagnosis = executiondiagnosis.DiagnoseQueuedJob(jobs[i], agents)
 	}
 }
 
@@ -59,5 +52,5 @@ func (s *stateStore) attachJobExecutionSchedulingDiagnosis(job *protocol.JobExec
 	if job == nil {
 		return
 	}
-	job.SchedulingDiagnosis = requirements.DiagnoseQueuedJob(*job, s.schedulingAgentSnapshots(time.Now().UTC()))
+	job.SchedulingDiagnosis = executiondiagnosis.DiagnoseQueuedJob(*job, s.schedulingAgentSnapshots(time.Now().UTC()))
 }

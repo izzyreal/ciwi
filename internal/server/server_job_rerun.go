@@ -2,8 +2,8 @@ package server
 
 import (
 	"fmt"
-	"strings"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -11,8 +11,8 @@ func (s *stateStore) prepareJobExecutionRerun(original protocol.JobExecution, re
 	if req == nil {
 		return fmt.Errorf("rerun request is required")
 	}
-	projectID := strings.TrimSpace(original.Metadata["project_id"])
-	pipelineID := strings.TrimSpace(original.Metadata["pipeline_id"])
+	projectID := original.Metadata.Value(domain.ExecutionMetadataProjectID)
+	pipelineID := original.Metadata.Value(domain.ExecutionMetadataPipelineID)
 	if projectID == "" || pipelineID == "" {
 		return nil
 	}
@@ -34,7 +34,7 @@ func (s *stateStore) prepareJobExecutionRerun(original protocol.JobExecution, re
 
 	dependsOn := append([]string(nil), pipeline.DependsOn...)
 	var depCtx pipelineDependencyContext
-	if len(dependsOn) > 0 && strings.TrimSpace(original.Metadata["chain_run_id"]) != "" {
+	if len(dependsOn) > 0 && original.Metadata.Value(domain.ExecutionMetadataChainRunID) != "" {
 		dependsOn, depCtx, err = s.resolveChainJobDependencyContext(original, effective)
 	} else if len(dependsOn) > 0 {
 		depCtx, err = s.checkPipelineDependencies(pipeline)
@@ -43,7 +43,7 @@ func (s *stateStore) prepareJobExecutionRerun(original protocol.JobExecution, re
 		return fmt.Errorf("rerun dependencies are not satisfied: %w", err)
 	}
 	req.DependencyArtifactJobIDs = nil
-	for _, key := range []string{"chain_cancelled", "dependency_blocked", "needs_blocked"} {
+	for _, key := range []string{domain.ExecutionMetadataChainCancelled, domain.ExecutionMetadataDependencyBlocked, domain.ExecutionMetadataNeedsBlocked} {
 		delete(req.Metadata, key)
 	}
 	dependencyArtifactJobIDs, err := dependencyArtifactJobIDsForJob(original, depCtx)
@@ -55,20 +55,20 @@ func (s *stateStore) prepareJobExecutionRerun(original protocol.JobExecution, re
 }
 
 func validateRerunNeeds(job protocol.JobExecution, jobs []protocol.JobExecution) error {
-	needs := parseNeedsJobIDs(job.Metadata["needs_job_ids"])
+	needs := job.Metadata.CSV(domain.ExecutionMetadataNeedsJobIDs)
 	if len(needs) == 0 {
 		return nil
 	}
-	runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
-	projectID := strings.TrimSpace(job.Metadata["project_id"])
-	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	runID := job.Metadata.Value(domain.ExecutionMetadataPipelineRunID)
+	projectID := job.Metadata.Value(domain.ExecutionMetadataProjectID)
+	pipelineID := job.Metadata.Value(domain.ExecutionMetadataPipelineID)
 	for _, need := range needs {
 		found := false
 		for _, candidate := range jobs {
-			if strings.TrimSpace(candidate.Metadata["pipeline_run_id"]) != runID ||
-				strings.TrimSpace(candidate.Metadata["project_id"]) != projectID ||
-				strings.TrimSpace(candidate.Metadata["pipeline_id"]) != pipelineID ||
-				strings.TrimSpace(candidate.Metadata["pipeline_job_id"]) != need {
+			if candidate.Metadata.Value(domain.ExecutionMetadataPipelineRunID) != runID ||
+				candidate.Metadata.Value(domain.ExecutionMetadataProjectID) != projectID ||
+				candidate.Metadata.Value(domain.ExecutionMetadataPipelineID) != pipelineID ||
+				candidate.Metadata.Value(domain.ExecutionMetadataPipelineJobID) != need {
 				continue
 			}
 			found = true

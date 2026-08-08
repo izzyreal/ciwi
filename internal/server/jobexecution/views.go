@@ -17,7 +17,7 @@ type View struct {
 	DependencyArtifactJobIDs []string                            `json:"dependency_artifact_job_ids,omitempty"`
 	Caches                   []protocol.JobCacheSpec             `json:"caches,omitempty"`
 	Source                   *protocol.SourceSpec                `json:"source,omitempty"`
-	Metadata                 map[string]string                   `json:"metadata,omitempty"`
+	Metadata                 domain.ExecutionMetadata            `json:"metadata,omitempty"`
 	StepPlan                 []protocol.JobStepPlanItem          `json:"step_plan,omitempty"`
 	CurrentStep              string                              `json:"current_step,omitempty"`
 	CacheStats               []protocol.JobCacheStats            `json:"cache_stats,omitempty"`

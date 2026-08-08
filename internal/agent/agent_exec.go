@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -22,6 +23,11 @@ const (
 )
 
 func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.JobExecution) error {
+	return executeLeasedJobWithDependencies(ctx, client, serverURL, agentID, workDir, agentCapabilities, job, defaultExecutionDependencies())
+}
+
+func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.JobExecution, dependencies executionDependencies) error {
+	dependencies = dependencies.withDefaults()
 	slog.Info("job execution started",
 		"job_execution_id", job.ID,
 		"agent_id", agentID,
@@ -147,7 +153,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 			return fmt.Errorf("report checkout status: %w", err)
 		}
 		fmt.Fprintf(&output, "[checkout] repo=%s ref=%s\n", job.Source.Repo, job.Source.Ref)
-		checkoutOutput, checkoutErr := checkoutSource(runCtx, sourceDir, *job.Source)
+		checkoutOutput, checkoutErr := dependencies.sources.Checkout(runCtx, sourceDir, *job.Source)
 		output.WriteString(checkoutOutput)
 		fmt.Fprintf(&output, "[checkout] duration=%s\n", time.Since(checkoutStarted).Round(time.Millisecond))
 		if checkoutErr != nil {
@@ -173,7 +179,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	depJobIDs := dependencyArtifactJobIDs(job.DependencyArtifactJobIDs)
 	if len(depJobIDs) > 0 {
 		restoredBy := map[string]string{}
-		allowEmptyDependencyArtifacts := strings.TrimSpace(job.Metadata["dry_run"]) == "1"
+		allowEmptyDependencyArtifacts := job.Metadata.Flag(domain.ExecutionMetadataDryRun)
 		dependencyPhase := executionPhase(timeline, protocol.JobExecutionPhaseDependencies)
 		dependencyStarted := time.Now().UTC()
 		if err := reportPhaseUpdate(dependencyPhase, []protocol.JobExecutionEvent{phaseStartedEvent(dependencyPhase, dependencyStarted)}, nil); err != nil {
@@ -356,7 +362,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	verboseGo := boolEnv("CIWI_AGENT_GO_BUILD_VERBOSE", true)
 	if job.Metadata != nil {
 		// Keep ad-hoc runs readable and avoid leaking shell traces for secret-backed jobs.
-		if job.Metadata["has_secrets"] == "1" || job.Metadata["adhoc"] == "1" {
+		if job.Metadata.Flag(domain.ExecutionMetadataHasSecrets) || job.Metadata.Flag(domain.ExecutionMetadataAdhoc) {
 			traceShell = false
 		}
 	}
@@ -378,7 +384,12 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	}
 	runStart := time.Now()
 	if len(scriptSteps) == 0 {
-		err = runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, job.Script, execContainer, runEnv, &output, nil, progress, "Running job script", job.SensitiveValues, traceShell)
+		err = dependencies.scripts.Run(runCtx, scriptRunRequest{
+			Client: client, ServerURL: serverURL, AgentID: agentID, JobID: job.ID,
+			Shell: shell, ExecDir: execDir, Script: job.Script, Container: execContainer,
+			Environment: runEnv, Output: &output, Progress: progress,
+			DefaultCurrentStep: "Running job script", SensitiveValues: job.SensitiveValues, TraceShell: traceShell,
+		})
 	} else {
 		for _, step := range scriptSteps {
 			currentStep := formatCurrentStep(step.meta)
@@ -423,7 +434,12 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 				stepRunEnv = mergeEnv(runEnv, step.env)
 			}
 			stepEvent := jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript)
-			stepErr := runJobScript(runCtx, client, serverURL, agentID, job.ID, shell, execDir, step.script, execContainer, stepRunEnv, &output, stepEvent, progress, currentStep, job.SensitiveValues, traceShell)
+			stepErr := dependencies.scripts.Run(runCtx, scriptRunRequest{
+				Client: client, ServerURL: serverURL, AgentID: agentID, JobID: job.ID,
+				Shell: shell, ExecDir: execDir, Script: step.script, Container: execContainer,
+				Environment: stepRunEnv, Output: &output, StepEvent: stepEvent, Progress: progress,
+				DefaultCurrentStep: currentStep, SensitiveValues: job.SensitiveValues, TraceShell: traceShell,
+			})
 			stepEvents := []protocol.JobExecutionEvent(nil)
 			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
 				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)

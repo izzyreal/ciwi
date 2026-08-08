@@ -262,7 +262,8 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
 		Projects: []*cnpv1.ProjectSummary{{
 			Id: 1, Name: "ciwi", RepoUrl: "https://github.com/izzyreal/ciwi",
-			ProjectIcon: projectIcon, ProjectIconContentType: "image/png",
+			PipelineCountLabel: "1 pipeline",
+			ProjectIcon:        projectIcon, ProjectIconContentType: "image/png",
 			Pipelines:      []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build", SupportsDryRun: true}},
 			PipelineChains: []*cnpv1.PipelineChainSummary{{Id: "build+release", Name: "Build and release", SequenceLabel: "build → release", SupportsDryRun: true}},
 		}},
@@ -354,14 +355,12 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	}
 }
 
-func TestExecutionCardDecorationMatchesWebSummary(t *testing.T) {
+func TestExecutionCardBindingsPreserveServerSummary(t *testing.T) {
 	cards := []any{map[string]any{
-		"summary": map[string]any{
-			"total_jobs": float64(17), "succeeded": float64(12),
-			"failed": float64(0), "in_progress": float64(3), "waiting": float64(2),
-		},
+		"summary_label": "12/17 successful, 3 in progress, 2 waiting",
+		"status":        "running", "summary_tone": "warning",
 	}}
-	decorateExecutionCards(cards, true)
+	ensureExecutionCardBindings(cards)
 	card := cards[0].(map[string]any)
 	if got := card["summary_label"]; got != "12/17 successful, 3 in progress, 2 waiting" {
 		t.Fatalf("summary label = %q", got)
@@ -436,8 +435,9 @@ func TestRendererExpandsExecutionCardWithoutNavigating(t *testing.T) {
 		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
 		HistoryExecutions: []*cnpv1.ExecutionCardSummary{{
 			Key: "pipeline:build", Title: "ciwi build", Summary: &cnpv1.ExecutionSummary{TotalJobs: 1, Succeeded: 1},
-			JobExecutionIds: []string{"job-1", "job-2"},
-			Sections:        []*cnpv1.ExecutionCardSection{{Key: "build", Label: "build", Jobs: []*cnpv1.ExecutionCardJob{{Id: "job-1", Label: "linux", Status: "succeeded"}}}},
+			JobExecutionIds: []string{"job-1", "job-2"}, Status: "succeeded", SummaryTone: "success",
+			SummaryLabel: "1/1 successful", JobExecutionIdsCsv: "job-1,job-2",
+			Sections: []*cnpv1.ExecutionCardSection{{Key: "build", Label: "build", Jobs: []*cnpv1.ExecutionCardJob{{Id: "job-1", Label: "linux", Status: "succeeded"}}}},
 		}},
 	})
 	if err != nil {
@@ -722,7 +722,8 @@ func TestRendererPersistsProjectDisclosureAndBulkExecutionState(t *testing.T) {
 		Server: &cnpv1.ServerInfo{Version: "v0.2.0"},
 		Projects: []*cnpv1.ProjectSummary{{
 			Id: 1, Name: "ciwi", RepoUrl: "https://github.com/izzyreal/ciwi", RepoRef: "main", ConfigFile: "ciwi-project.yaml",
-			Pipelines: []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build"}},
+			PipelineCountLabel: "1 pipeline",
+			Pipelines:          []*cnpv1.PipelineSummary{{Id: 7, PipelineId: "build"}},
 		}},
 		HistoryExecutions: []*cnpv1.ExecutionCardSummary{{
 			Key: "pipeline:build", Title: "ciwi build", Summary: &cnpv1.ExecutionSummary{TotalJobs: 1, Succeeded: 1},
@@ -824,11 +825,18 @@ func TestRendererLaysOutSharedProjectDetails(t *testing.T) {
 		}}},
 		Pipelines: []*cnpv1.ProjectPipelineDetails{{
 			Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 1, SupportsDryRun: true,
+			SummaryLabel: "1 job · depends on: none", GraphSummaryLabel: "1 job · 0 dependencies",
 			Jobs: []*cnpv1.ProjectJobDetails{{
 				Id: "compile", StepsCount: 1, SupportsDryRun: true, RunsOnLabel: "darwin/arm64", ToolsLabel: "go=1.25", TimeoutSeconds: 600, MatrixCount: 1,
-				Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Compile", Type: "run", Command: "go build ./...", Environment: []string{"CGO_ENABLED=1"}, SkipDryRun: true}},
+				SummaryLabel: "1 step · runs on: darwin/arm64", TimeoutLabel: "10m 0s", MatrixLabel: "1 combination",
+				Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Compile", Type: "run", Command: "go build ./...", Environment: []string{"CGO_ENABLED=1"}, EnvironmentLabel: "CGO_ENABLED=1", SkipDryRun: true}},
 			}},
 		}},
+		StructureFilters: []*cnpv1.ProjectStructureFilter{
+			{Value: "all-pipelines", Label: "All Pipelines", PipelineIds: []string{"build"}, ShowPipelineStructure: true, Root: &cnpv1.ProjectStructureRoot{Id: "project:1:all-pipelines", Label: "ciwi", Meta: "Project · 1 pipeline", ProjectId: 1}},
+			{Value: "all-chains", Label: "All chains", ShowChainStructure: true, Root: &cnpv1.ProjectStructureRoot{Id: "project:1:all-chains", Label: "ciwi", Meta: "Project · 1 pipeline chain", ProjectId: 1}},
+			{Value: "chain:build+release", Label: "Build and release (chain)", PipelineIds: []string{"build", "release"}, ShowPipelineStructure: true, Root: &cnpv1.ProjectStructureRoot{Id: "chain:build+release", Label: "Chain: Build and release", Meta: "build → release", Runnable: true, ProjectId: 1, ChainId: "build+release"}},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -933,12 +941,16 @@ func TestRendererLaysOutPersistentProjectPipelineGraph(t *testing.T) {
 	data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
 		Project: &cnpv1.ProjectSummary{Id: 41, Name: "ciwi"},
 		Pipelines: []*cnpv1.ProjectPipelineDetails{
-			{Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 2, Jobs: []*cnpv1.ProjectJobDetails{
+			{Id: 7, PipelineId: "build", Dependencies: "none", JobsCount: 2, SummaryLabel: "2 jobs · depends on: none", GraphSummaryLabel: "2 jobs · 0 dependencies", Jobs: []*cnpv1.ProjectJobDetails{
 				{Id: "unit-tests", StepsCount: 1, Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Test", Type: "run", Command: "go test ./..."}}},
 				{Id: "package", Needs: []string{"unit-tests"}, StepsCount: 1, Steps: []*cnpv1.ProjectStepDetails{{Index: 0, Position: 1, Name: "Package", Type: "run", Command: "go build ./..."}}},
 			}},
-			{Id: 8, PipelineId: "release", DependsOn: []string{"build"}, Dependencies: "build", JobsCount: 1, Jobs: []*cnpv1.ProjectJobDetails{{Id: "publish", StepsCount: 1}}},
+			{Id: 8, PipelineId: "release", DependsOn: []string{"build"}, Dependencies: "build", JobsCount: 1, SummaryLabel: "1 job · depends on: build", GraphSummaryLabel: "1 job · 1 dependency", Jobs: []*cnpv1.ProjectJobDetails{{Id: "publish", StepsCount: 1}}},
 		},
+		StructureFilters: []*cnpv1.ProjectStructureFilter{{
+			Value: "all-pipelines", Label: "All Pipelines", PipelineIds: []string{"build", "release"}, ShowPipelineStructure: true,
+			Root: &cnpv1.ProjectStructureRoot{Id: "project:41:all-pipelines", Label: "ciwi", Meta: "Project · 2 pipelines", ProjectId: 41},
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -3162,6 +3174,11 @@ func TestProjectStructureFilterIncludesChainsAndSurvivesRefresh(t *testing.T) {
 		}}},
 		"pipelines": []any{
 			map[string]any{"pipeline_id": "build"}, map[string]any{"pipeline_id": "lint"}, map[string]any{"pipeline_id": "release"},
+		},
+		"structure_filters": []any{
+			map[string]any{"value": "all-pipelines", "label": "All Pipelines", "pipeline_ids": []any{"build", "lint", "release"}, "show_pipeline_structure": true, "root": map[string]any{"id": "project:1:all-pipelines", "label": "ciwi", "meta": "Project · 3 pipelines", "runnable": false}},
+			map[string]any{"value": "all-chains", "label": "All chains", "pipeline_ids": []any{}, "show_chain_structure": true, "root": map[string]any{"id": "project:1:all-chains", "label": "ciwi", "meta": "Project · 1 pipeline chain", "runnable": false}},
+			map[string]any{"value": "chain:release", "label": "Release (chain)", "pipeline_ids": []any{"build", "release"}, "show_pipeline_structure": true, "root": map[string]any{"id": "chain:release", "label": "Chain: Release", "meta": "build → release", "runnable": true, "project_id": float64(1), "chain_id": "release"}},
 		},
 	}}
 	renderer.SetData(data)

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/httpx"
 )
@@ -83,21 +84,21 @@ func findBlockedDependency(job protocol.JobExecution, all []protocol.JobExecutio
 }
 
 func findRequiredJobDependency(job protocol.JobExecution, all []protocol.JobExecution, requiredJobID string) *BlockedDependencyView {
-	runID := strings.TrimSpace(job.Metadata["pipeline_run_id"])
-	projectID := strings.TrimSpace(job.Metadata["project_id"])
-	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	runID := job.Metadata.Value(domain.ExecutionMetadataPipelineRunID)
+	projectID := job.Metadata.Value(domain.ExecutionMetadataProjectID)
+	pipelineID := job.Metadata.Value(domain.ExecutionMetadataPipelineID)
 	candidates := make([]protocol.JobExecution, 0)
 	for _, candidate := range all {
-		if strings.TrimSpace(candidate.Metadata["pipeline_job_id"]) != requiredJobID {
+		if candidate.Metadata.Value(domain.ExecutionMetadataPipelineJobID) != requiredJobID {
 			continue
 		}
-		if projectID != "" && strings.TrimSpace(candidate.Metadata["project_id"]) != projectID {
+		if projectID != "" && candidate.Metadata.Value(domain.ExecutionMetadataProjectID) != projectID {
 			continue
 		}
-		if pipelineID != "" && strings.TrimSpace(candidate.Metadata["pipeline_id"]) != pipelineID {
+		if pipelineID != "" && candidate.Metadata.Value(domain.ExecutionMetadataPipelineID) != pipelineID {
 			continue
 		}
-		if runID != "" && strings.TrimSpace(candidate.Metadata["pipeline_run_id"]) != runID {
+		if runID != "" && candidate.Metadata.Value(domain.ExecutionMetadataPipelineRunID) != runID {
 			continue
 		}
 		if !protocol.IsTerminalJobExecutionStatus(candidate.Status) {
@@ -112,17 +113,17 @@ func findRequiredJobDependency(job protocol.JobExecution, all []protocol.JobExec
 }
 
 func findUpstreamPipelineDependency(job protocol.JobExecution, all []protocol.JobExecution, upstreamPipelineID string) *BlockedDependencyView {
-	chainRunID := strings.TrimSpace(job.Metadata["chain_run_id"])
-	projectID := strings.TrimSpace(job.Metadata["project_id"])
+	chainRunID := job.Metadata.Value(domain.ExecutionMetadataChainRunID)
+	projectID := job.Metadata.Value(domain.ExecutionMetadataProjectID)
 	candidates := make([]protocol.JobExecution, 0)
 	for _, candidate := range all {
-		if strings.TrimSpace(candidate.Metadata["pipeline_id"]) != upstreamPipelineID {
+		if candidate.Metadata.Value(domain.ExecutionMetadataPipelineID) != upstreamPipelineID {
 			continue
 		}
-		if projectID != "" && strings.TrimSpace(candidate.Metadata["project_id"]) != projectID {
+		if projectID != "" && candidate.Metadata.Value(domain.ExecutionMetadataProjectID) != projectID {
 			continue
 		}
-		if chainRunID != "" && strings.TrimSpace(candidate.Metadata["chain_run_id"]) != chainRunID {
+		if chainRunID != "" && candidate.Metadata.Value(domain.ExecutionMetadataChainRunID) != chainRunID {
 			continue
 		}
 		if !protocol.IsTerminalJobExecutionStatus(candidate.Status) {
@@ -148,9 +149,9 @@ func buildBlockedDependencyFromBest(candidates []protocol.JobExecution, reason s
 	}
 	return &BlockedDependencyView{
 		JobExecutionID: strings.TrimSpace(best.ID),
-		PipelineID:     strings.TrimSpace(best.Metadata["pipeline_id"]),
-		PipelineJobID:  strings.TrimSpace(best.Metadata["pipeline_job_id"]),
-		MatrixName:     strings.TrimSpace(best.Metadata["matrix_name"]),
+		PipelineID:     best.Metadata.Value(domain.ExecutionMetadataPipelineID),
+		PipelineJobID:  best.Metadata.Value(domain.ExecutionMetadataPipelineJobID),
+		MatrixName:     best.Metadata.Value(domain.ExecutionMetadataMatrixName),
 		Reason:         reason,
 	}
 }

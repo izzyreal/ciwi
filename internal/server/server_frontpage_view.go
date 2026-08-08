@@ -123,6 +123,7 @@ func (s *stateStore) frontPageViewHandler(w http.ResponseWriter, r *http.Request
 func frontPageProjectsToResponse(projects []domain.Project) []frontPageProjectResponse {
 	out := make([]frontPageProjectResponse, 0, len(projects))
 	for _, project := range projects {
+		labels := presentation.PresentProjectLabels(project)
 		pipelines := make([]frontPagePipelineResponse, 0, len(project.Pipelines))
 		for _, pipeline := range project.Pipelines {
 			pipelines = append(pipelines, frontPagePipelineResponse{
@@ -148,9 +149,9 @@ func frontPageProjectsToResponse(projects []domain.Project) []frontPageProjectRe
 			RepoURL: project.RepoURL, RepoRef: project.RepoRef, ConfigFile: project.ConfigFile,
 			LoadedCommit: project.LoadedCommit, UpdatedUnixMS: updatedUnixMS,
 			Pipelines: pipelines, PipelineChains: chains,
-			PipelineCountLabel: presentation.PipelineCountLabel(len(pipelines)),
-			SourceMetadata:     presentation.ProjectSourceMetadata(project.RepoRef, project.ConfigFile),
-			HasPipelineChains:  len(chains) > 0,
+			PipelineCountLabel: labels.PipelineCount,
+			SourceMetadata:     labels.SourceMetadata,
+			HasPipelineChains:  labels.HasPipelineChains,
 		})
 	}
 	return out

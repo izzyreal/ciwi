@@ -417,11 +417,15 @@ func TestPublicSettingsRouteUsesSharedRenderer(t *testing.T) {
 	}
 	script := string(payload)
 	for _, field := range []string{
-		"project.is_managed =", "project.has_repo =", "project.repo_ref_label =",
 		"project.action_status = ''", "project.action_tone = 'muted'",
 	} {
 		if !strings.Contains(script, field) {
 			t.Errorf("settings preview does not initialize %q", field)
+		}
+	}
+	for _, duplicatedSemantic := range []string{"project.is_managed =", "project.repo_ref_label =", "project.source_label ="} {
+		if strings.Contains(script, duplicatedSemantic) {
+			t.Errorf("settings preview recomputes server-owned semantic %q", duplicatedSemantic)
 		}
 	}
 }
@@ -704,7 +708,7 @@ func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *tes
 		"requestAnimationFrame(fit)", "bindActions(play, actions, graphNode.data)",
 		"node.graphView.details", "selection.onChange(graphNode.id)", "dsl-definition-graph-viewport",
 		"dsl-definition-graph-node-play", "dsl-definition-graph-details", ".dsl-definition-graph-node.selectable:hover",
-		"applyProjectStructureFilter", "projectStructureFilterOptions", "dsl-definition-graph-root", "graphRootActionVisible",
+		"applyProjectStructureFilter", "selected.pipeline_ids", "selected.root", "dsl-definition-graph-root", "graphRootActionVisible",
 	} {
 		if !strings.Contains(implementation, expected) {
 			t.Errorf("declarative graph renderer does not contain %q", expected)

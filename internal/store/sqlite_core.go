@@ -66,7 +66,7 @@ func Open(path string) (*Store, error) {
 	db.SetMaxIdleConns(1)
 
 	s := &Store{db: db}
-	if err := s.initializeSchema(); err != nil {
+	if err := s.migrateSchema(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -77,11 +77,8 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) initializeSchema() error {
+func initializeCurrentSchema(tx *sql.Tx) error {
 	stmts := []string{
-		`PRAGMA journal_mode=WAL;`,
-		`PRAGMA busy_timeout=5000;`,
-		`PRAGMA foreign_keys=ON;`,
 		`CREATE TABLE IF NOT EXISTS projects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
@@ -207,8 +204,6 @@ func (s *Store) initializeSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_job_executions_status_created ON job_executions(status, created_utc);`,
 		`CREATE INDEX IF NOT EXISTS idx_job_execution_events_job_created ON job_execution_events(job_execution_id, created_utc);`,
 		`CREATE INDEX IF NOT EXISTS idx_job_execution_events_identity ON job_execution_events(job_execution_id, event_type, timestamp_utc);`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_managed_yaml_name ON projects(lower(name)) WHERE source_kind = 'managed_yaml';`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_managed_yaml_path ON projects(config_path) WHERE source_kind = 'managed_yaml';`,
 		`CREATE TABLE IF NOT EXISTS app_state (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -226,8 +221,8 @@ func (s *Store) initializeSchema() error {
 	}
 
 	for _, stmt := range stmts {
-		if _, err := s.db.Exec(stmt); err != nil {
-			return fmt.Errorf("initialize schema: %w", err)
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("create current schema: %w", err)
 		}
 	}
 	return nil

@@ -36,16 +36,16 @@ type JobCacheSpec struct {
 }
 
 type CreateJobExecutionRequest struct {
-	Script                   string            `json:"script"`
-	Env                      map[string]string `json:"env,omitempty"`
-	RequiredCapabilities     map[string]string `json:"required_capabilities"`
-	TimeoutSeconds           int               `json:"timeout_seconds"`
-	ArtifactGlobs            []string          `json:"artifact_globs,omitempty"`
-	DependencyArtifactJobIDs []string          `json:"dependency_artifact_job_ids,omitempty"`
-	Caches                   []JobCacheSpec    `json:"caches,omitempty"`
-	Source                   *SourceSpec       `json:"source,omitempty"`
-	Metadata                 map[string]string `json:"metadata,omitempty"`
-	StepPlan                 []JobStepPlanItem `json:"step_plan,omitempty"`
+	Script                   string                   `json:"script"`
+	Env                      map[string]string        `json:"env,omitempty"`
+	RequiredCapabilities     map[string]string        `json:"required_capabilities"`
+	TimeoutSeconds           int                      `json:"timeout_seconds"`
+	ArtifactGlobs            []string                 `json:"artifact_globs,omitempty"`
+	DependencyArtifactJobIDs []string                 `json:"dependency_artifact_job_ids,omitempty"`
+	Caches                   []JobCacheSpec           `json:"caches,omitempty"`
+	Source                   *SourceSpec              `json:"source,omitempty"`
+	Metadata                 domain.ExecutionMetadata `json:"metadata,omitempty"`
+	StepPlan                 []JobStepPlanItem        `json:"step_plan,omitempty"`
 }
 
 type JobExecution struct {
@@ -58,7 +58,7 @@ type JobExecution struct {
 	DependencyArtifactJobIDs []string                    `json:"dependency_artifact_job_ids,omitempty"`
 	Caches                   []JobCacheSpec              `json:"caches,omitempty"`
 	Source                   *SourceSpec                 `json:"source,omitempty"`
-	Metadata                 map[string]string           `json:"metadata,omitempty"`
+	Metadata                 domain.ExecutionMetadata    `json:"metadata,omitempty"`
 	StepPlan                 []JobStepPlanItem           `json:"step_plan,omitempty"`
 	CurrentStep              string                      `json:"current_step,omitempty"`
 	CacheStats               []JobCacheStats             `json:"cache_stats,omitempty"`
@@ -119,17 +119,25 @@ type LoadConfigResponse struct {
 }
 
 type ProjectSummary struct {
-	ID             int64                  `json:"id"`
-	Name           string                 `json:"name"`
-	SourceKind     string                 `json:"source_kind"`
-	ConfigPath     string                 `json:"config_path,omitempty"`
-	RepoURL        string                 `json:"repo_url,omitempty"`
-	RepoRef        string                 `json:"repo_ref,omitempty"`
-	ConfigFile     string                 `json:"config_file,omitempty"`
-	LoadedCommit   string                 `json:"loaded_commit,omitempty"`
-	UpdatedUTC     time.Time              `json:"updated_utc,omitempty"`
-	Pipelines      []PipelineSummary      `json:"pipelines"`
-	PipelineChains []PipelineChainSummary `json:"pipeline_chains,omitempty"`
+	ID                int64                  `json:"id"`
+	Name              string                 `json:"name"`
+	SourceKind        string                 `json:"source_kind"`
+	ConfigPath        string                 `json:"config_path,omitempty"`
+	RepoURL           string                 `json:"repo_url,omitempty"`
+	RepoRef           string                 `json:"repo_ref,omitempty"`
+	ConfigFile        string                 `json:"config_file,omitempty"`
+	LoadedCommit      string                 `json:"loaded_commit,omitempty"`
+	UpdatedUTC        time.Time              `json:"updated_utc,omitempty"`
+	Pipelines         []PipelineSummary      `json:"pipelines"`
+	PipelineChains    []PipelineChainSummary `json:"pipeline_chains,omitempty"`
+	IsManaged         bool                   `json:"is_managed"`
+	CanReload         bool                   `json:"can_reload"`
+	HasRepo           bool                   `json:"has_repo"`
+	RepoRefLabel      string                 `json:"repo_ref_label"`
+	HasLoadedCommit   bool                   `json:"has_loaded_commit"`
+	LoadedCommitShort string                 `json:"loaded_commit_short,omitempty"`
+	LoadedCommitURL   string                 `json:"loaded_commit_url,omitempty"`
+	SourceLabel       string                 `json:"source_label,omitempty"`
 }
 
 type PipelineSummary struct {

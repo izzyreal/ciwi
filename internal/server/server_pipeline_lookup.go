@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -23,7 +24,7 @@ func (s *stateStore) loadPipelineChainPipelines(ch store.PersistedPipelineChain)
 }
 
 func (s *stateStore) getPipelineForJobExecution(job protocol.JobExecution) (store.PersistedPipeline, error) {
-	pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+	pipelineID := job.Metadata.Value(domain.ExecutionMetadataPipelineID)
 	if pipelineID == "" {
 		return store.PersistedPipeline{}, fmt.Errorf("pipeline id is required")
 	}
@@ -35,7 +36,7 @@ func (s *stateStore) getPipelineForJobExecution(job protocol.JobExecution) (stor
 }
 
 func jobExecutionProjectID(job protocol.JobExecution) (int64, error) {
-	raw := strings.TrimSpace(job.Metadata["project_id"])
+	raw := job.Metadata.Value(domain.ExecutionMetadataProjectID)
 	if raw == "" {
 		return 0, fmt.Errorf("project id is required")
 	}
@@ -47,5 +48,5 @@ func jobExecutionProjectID(job protocol.JobExecution) (int64, error) {
 }
 
 func jobExecutionMatchesProject(job protocol.JobExecution, projectID int64) bool {
-	return strings.TrimSpace(job.Metadata["project_id"]) == strconv.FormatInt(projectID, 10)
+	return job.Metadata.Value(domain.ExecutionMetadataProjectID) == strconv.FormatInt(projectID, 10)
 }

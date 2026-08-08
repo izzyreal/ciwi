@@ -66,10 +66,9 @@ func isServerRunningAsService() bool {
 }
 
 func (s *stateStore) listAgentsBlockedOnNonServiceSelfUpdate() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]string, 0, len(s.agents))
-	for agentID, state := range s.agents {
+	agents := s.agentRegistry.stateMap()
+	out := make([]string, 0, len(agents))
+	for agentID, state := range agents {
 		errText := strings.TrimSpace(state.UpdateLastError)
 		if errText == "" {
 			continue

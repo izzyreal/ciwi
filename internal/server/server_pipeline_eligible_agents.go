@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/application"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/requirements"
 	"github.com/izzyreal/ciwi/internal/store"
@@ -123,16 +124,16 @@ func (s *stateStore) preparePendingPipelineChainJobs(ch store.PersistedPipelineC
 			prevPipelineID = strings.TrimSpace(pipelines[i-1].PipelineID)
 		}
 		chainDeps := deriveChainPipelineDependencies(p, chainPipelineSet, prevPipelineID)
-		meta := map[string]string{
-			"chain_run_id":            "eligible-preview",
-			"pipeline_chain_id":       ch.ChainID,
-			"pipeline_chain_name":     ch.ChainName,
-			"pipeline_chain_index":    strconv.Itoa(i),
-			"pipeline_chain_position": strconv.Itoa(i + 1),
-			"pipeline_chain_total":    strconv.Itoa(total),
+		meta := domain.ExecutionMetadata{
+			domain.ExecutionMetadataChainRunID:            "eligible-preview",
+			domain.ExecutionMetadataPipelineChainID:       ch.ChainID,
+			domain.ExecutionMetadataPipelineChainName:     ch.ChainName,
+			domain.ExecutionMetadataPipelineChainIndex:    strconv.Itoa(i),
+			domain.ExecutionMetadataPipelineChainPosition: strconv.Itoa(i + 1),
+			domain.ExecutionMetadataPipelineChainTotal:    strconv.Itoa(total),
 		}
 		if len(chainDeps) > 0 {
-			meta["chain_depends_on_pipelines"] = strings.Join(chainDeps, ",")
+			meta.Set(domain.ExecutionMetadataChainDependsOnPipelines, strings.Join(chainDeps, ","))
 		}
 		opts := enqueuePipelineOptions{
 			metaPatch:              meta,
@@ -169,12 +170,7 @@ func (s *stateStore) eligibleAgentsForPendingJobs(pending []pendingJob) []string
 	if len(pending) == 0 {
 		return nil
 	}
-	s.mu.Lock()
-	agents := make(map[string]agentState, len(s.agents))
-	for id, a := range s.agents {
-		agents[id] = a
-	}
-	s.mu.Unlock()
+	agents := s.agentRegistry.stateMap()
 
 	eligible := make([]string, 0, len(agents))
 	for agentID, agent := range agents {

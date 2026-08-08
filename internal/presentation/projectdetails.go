@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/domain"
@@ -11,8 +12,34 @@ import (
 
 type ProjectDetailsView struct {
 	Project           domain.Project
+	ProjectLabels     ProjectLabels
 	Pipelines         []ProjectPipelineView
+	StructureFilters  []ProjectStructureFilterView
 	HistoryExecutions []domain.ExecutionCard
+}
+
+type ProjectLabels struct {
+	PipelineCount     string
+	SourceMetadata    string
+	HasPipelineChains bool
+}
+
+type ProjectStructureFilterView struct {
+	Value                 string
+	Label                 string
+	PipelineIDs           []string
+	Root                  ProjectStructureRootView
+	ShowChainStructure    bool
+	ShowPipelineStructure bool
+}
+
+type ProjectStructureRootView struct {
+	ID        string
+	Label     string
+	Meta      string
+	Runnable  bool
+	ProjectID int64
+	ChainID   string
 }
 
 type ProjectPipelineView struct {
@@ -24,6 +51,8 @@ type ProjectPipelineView struct {
 	JobsCount      int
 	SupportsDryRun bool
 	Jobs           []ProjectJobView
+	SummaryLabel   string
+	GraphSummary   string
 }
 
 type ProjectJobView struct {
@@ -37,16 +66,21 @@ type ProjectJobView struct {
 	StepsCount     int
 	SupportsDryRun bool
 	Steps          []ProjectStepView
+	SummaryLabel   string
+	TimeoutLabel   string
+	MatrixLabel    string
 }
 
 type ProjectStepView struct {
-	Index       int
-	Position    int
-	Name        string
-	Type        string
-	Command     string
-	SkipDryRun  bool
-	Environment []string
+	Index            int
+	Position         int
+	Name             string
+	Type             string
+	Command          string
+	SkipDryRun       bool
+	Environment      []string
+	DisplayCommand   string
+	EnvironmentLabel string
 }
 
 type ProjectDetailsQueries struct {
@@ -98,13 +132,20 @@ func (q *ProjectDetailsQueries) GetProjectDetailsView(ctx context.Context, proje
 					Index: step.Index, Position: step.Index + 1, Name: name,
 					Type: defaultValue(step.Type, "run"), Command: step.Command,
 					SkipDryRun: step.SkipDryRun, Environment: sortedKeys(step.Environment),
+					DisplayCommand: ProjectStepCommand(step.Command), EnvironmentLabel: ProjectStepEnvironmentLabel(sortedKeys(step.Environment)),
 				})
 			}
+			runsOn := keyValueLabel(job.RunsOn)
+			needsLabel := strings.Join(job.Needs, ", ")
+			if needsLabel == "" {
+				needsLabel = "none"
+			}
 			jobs = append(jobs, ProjectJobView{
-				ID: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: strings.Join(job.Needs, ", "),
-				RunsOnLabel: keyValueLabel(job.RunsOn), ToolsLabel: keyValueLabel(job.RequiresTools),
+				ID: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: needsLabel,
+				RunsOnLabel: runsOn, ToolsLabel: keyValueLabel(job.RequiresTools),
 				TimeoutSeconds: job.TimeoutSeconds, MatrixCount: job.MatrixCount,
 				StepsCount: len(steps), SupportsDryRun: supportsDryRun, Steps: steps,
+				SummaryLabel: ProjectJobSummaryLabel(len(steps), runsOn), TimeoutLabel: ProjectJobTimeoutLabel(job.TimeoutSeconds), MatrixLabel: ProjectJobMatrixLabel(job.MatrixCount),
 			})
 		}
 		dependencies := strings.Join(pipeline.DependsOn, ", ")
@@ -115,6 +156,7 @@ func (q *ProjectDetailsQueries) GetProjectDetailsView(ctx context.Context, proje
 			ID: pipeline.ID, PipelineID: pipeline.PipelineID, Trigger: pipeline.Trigger,
 			DependsOn: append([]string{}, pipeline.DependsOn...), Dependencies: dependencies,
 			JobsCount: len(jobs), SupportsDryRun: pipelineSupport[pipeline.PipelineID], Jobs: jobs,
+			SummaryLabel: PipelineSummaryLabel(len(jobs), dependencies), GraphSummary: PipelineGraphSummaryLabel(len(jobs), len(pipeline.DependsOn)),
 		})
 	}
 	history := []domain.ExecutionCard{}
@@ -125,7 +167,57 @@ func (q *ProjectDetailsQueries) GetProjectDetailsView(ctx context.Context, proje
 		}
 		history = projectExecutionCards(allHistory, projectID)
 	}
-	return ProjectDetailsView{Project: details.Project, Pipelines: pipelines, HistoryExecutions: history}, nil
+	return ProjectDetailsView{
+		Project: details.Project, ProjectLabels: PresentProjectLabels(details.Project), Pipelines: pipelines,
+		StructureFilters: PresentProjectStructureFilters(details.Project, pipelines), HistoryExecutions: history,
+	}, nil
+}
+
+func PresentProjectLabels(project domain.Project) ProjectLabels {
+	return ProjectLabels{
+		PipelineCount:     PipelineCountLabel(len(project.Pipelines)),
+		SourceMetadata:    ProjectSourceMetadata(project.RepoRef, project.ConfigFile),
+		HasPipelineChains: len(project.PipelineChains) > 0,
+	}
+}
+
+func PresentProjectStructureFilters(project domain.Project, pipelines []ProjectPipelineView) []ProjectStructureFilterView {
+	projectID := strconv.FormatInt(project.ID, 10)
+	pipelineIDs := make([]string, 0, len(pipelines))
+	for _, pipeline := range pipelines {
+		pipelineIDs = append(pipelineIDs, pipeline.PipelineID)
+	}
+	filters := []ProjectStructureFilterView{
+		{
+			Value: "all-pipelines", Label: "All Pipelines", PipelineIDs: pipelineIDs, ShowPipelineStructure: true,
+			Root: ProjectStructureRootView{ID: "project:" + projectID + ":all-pipelines", Label: project.Name, Meta: "Project · " + PipelineCountLabel(len(pipelines)), ProjectID: project.ID},
+		},
+		{
+			Value: "all-chains", Label: "All chains", ShowChainStructure: true,
+			Root: ProjectStructureRootView{ID: "project:" + projectID + ":all-chains", Label: project.Name, Meta: "Project · " + pipelineChainCountLabel(len(project.PipelineChains)), ProjectID: project.ID},
+		},
+	}
+	for _, chain := range project.PipelineChains {
+		name := strings.TrimSpace(chain.Name)
+		if name == "" {
+			name = strings.TrimSpace(chain.ID)
+		}
+		filters = append(filters, ProjectStructureFilterView{
+			Value: "chain:" + chain.ID, Label: name + " (chain)", PipelineIDs: append([]string(nil), chain.Pipelines...), ShowPipelineStructure: true,
+			Root: ProjectStructureRootView{
+				ID: "chain:" + chain.ID, Label: "Chain: " + name, Meta: PipelineChainSequenceLabel(chain.Pipelines),
+				Runnable: true, ProjectID: project.ID, ChainID: chain.ID,
+			},
+		})
+	}
+	return filters
+}
+
+func pipelineChainCountLabel(count int) string {
+	if count == 1 {
+		return "1 pipeline chain"
+	}
+	return fmt.Sprintf("%d pipeline chains", count)
 }
 
 func projectExecutionCards(cards []domain.ExecutionCard, projectID int64) []domain.ExecutionCard {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -227,27 +228,27 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 			stepPlan[stepIndex].Name = fmt.Sprintf("step %d", stepIndex+1)
 		}
 	}
-	metadata := map[string]string{
-		"project":            p.ProjectName,
-		"project_id":         strconv.FormatInt(p.ProjectID, 10),
-		"pipeline_id":        p.PipelineID,
-		"pipeline_run_id":    runID,
-		"pipeline_job_id":    pipelineJobID,
-		"pipeline_job_index": strconv.Itoa(matrixIndex),
+	metadata := domain.ExecutionMetadata{
+		domain.ExecutionMetadataProject:          p.ProjectName,
+		domain.ExecutionMetadataProjectID:        strconv.FormatInt(p.ProjectID, 10),
+		domain.ExecutionMetadataPipelineID:       p.PipelineID,
+		domain.ExecutionMetadataPipelineRunID:    runID,
+		domain.ExecutionMetadataPipelineJobID:    pipelineJobID,
+		domain.ExecutionMetadataPipelineJobIndex: strconv.Itoa(matrixIndex),
 	}
 	if len(originalMatrixEntries) > 0 {
-		metadata["matrix_index"] = strconv.Itoa(matrixIndex)
+		metadata.Set(domain.ExecutionMetadataMatrixIndex, strconv.Itoa(matrixIndex))
 	}
 	if selection != nil && selection.DryRun {
-		metadata["dry_run"] = "1"
+		metadata.SetFlag(domain.ExecutionMetadataDryRun, true)
 	}
 	if name := matrixVars["name"]; name != "" {
-		metadata["matrix_name"] = name
-		metadata["build_target"] = name
+		metadata.Set(domain.ExecutionMetadataMatrixName, name)
+		metadata.Set(domain.ExecutionMetadataBuildTarget, name)
 	}
 	for key, value := range matrixVars {
 		if key = strings.TrimSpace(key); key != "" {
-			metadata["matrix_var."+key] = value
+			metadata.Set(domain.ExecutionMetadataMatrixVariablePrefix+key, value)
 		}
 	}
 	artifactSourcesJSON, err := encodeArtifactSources(artifactSources)
@@ -255,22 +256,22 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		return nil, fmt.Errorf("pipeline job %q: %w", pipelineJobID, err)
 	}
 	if artifactSourcesJSON != "" {
-		metadata[artifactSourcesMetadataKey] = artifactSourcesJSON
+		metadata.Set(domain.ExecutionMetadataArtifactSourcesJSON, artifactSourcesJSON)
 	}
 	if runCtx.VersionRaw != "" {
-		metadata["pipeline_version_raw"] = runCtx.VersionRaw
+		metadata.Set(domain.ExecutionMetadataPipelineVersionRaw, runCtx.VersionRaw)
 	}
 	if runCtx.Version != "" {
-		metadata["pipeline_version"] = runCtx.Version
-		metadata["build_version"] = runCtx.Version
+		metadata.Set(domain.ExecutionMetadataPipelineVersion, runCtx.Version)
+		metadata.Set(domain.ExecutionMetadataBuildVersion, runCtx.Version)
 	}
 	if runCtx.SourceRefResolved != "" {
-		metadata["pipeline_source_ref_resolved"] = runCtx.SourceRefResolved
+		metadata.Set(domain.ExecutionMetadataPipelineSourceRefResolved, runCtx.SourceRefResolved)
 	}
 	if strings.TrimSpace(runCtx.SourceRefRaw) != "" {
-		metadata["pipeline_source_ref_raw"] = strings.TrimSpace(runCtx.SourceRefRaw)
+		metadata.Set(domain.ExecutionMetadataPipelineSourceRefRaw, strings.TrimSpace(runCtx.SourceRefRaw))
 	}
-	metadata["pipeline_source_repo"] = p.SourceRepo
+	metadata.Set(domain.ExecutionMetadataPipelineSourceRepo, p.SourceRepo)
 	for k, v := range opts.metaPatch {
 		if strings.TrimSpace(k) == "" {
 			continue
@@ -278,17 +279,17 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		metadata[k] = strings.TrimSpace(v)
 	}
 	if opts.blocked {
-		metadata["chain_blocked"] = "1"
+		metadata.SetFlag(domain.ExecutionMetadataChainBlocked, true)
 	}
 	if opts.dependencyBlocked {
-		metadata["dependency_blocked"] = "1"
+		metadata.SetFlag(domain.ExecutionMetadataDependencyBlocked, true)
 	}
 	if len(needs) > 0 {
-		metadata["needs_job_ids"] = strings.Join(needs, ",")
-		metadata["needs_blocked"] = "1"
+		metadata.Set(domain.ExecutionMetadataNeedsJobIDs, strings.Join(needs, ","))
+		metadata.SetFlag(domain.ExecutionMetadataNeedsBlocked, true)
 	}
 	if len(missingNeeds) > 0 {
-		metadata["missing_needs_job_ids"] = strings.Join(missingNeeds, ",")
+		metadata.Set(domain.ExecutionMetadataMissingNeedsJobIDs, strings.Join(missingNeeds, ","))
 	}
 	if selection != nil && selection.DryRun {
 		env["CIWI_DRY_RUN"] = "1"
@@ -322,19 +323,19 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		dependencyArtifactJobIDs = depJobIDs
 	}
 	if containerImage := strings.TrimSpace(runsOn["container_image"]); containerImage != "" {
-		metadata["runtime_probe.container_image"] = containerImage
+		metadata.Set(domain.ExecutionMetadataRuntimeContainerImage, containerImage)
 	}
 	if containerWorkdir := strings.TrimSpace(runsOn["container_workdir"]); containerWorkdir != "" {
-		metadata["runtime_exec.container_workdir"] = containerWorkdir
+		metadata.Set(domain.ExecutionMetadataRuntimeContainerWorkdir, containerWorkdir)
 	}
 	if containerUser := strings.TrimSpace(runsOn["container_user"]); containerUser != "" {
-		metadata["runtime_exec.container_user"] = containerUser
+		metadata.Set(domain.ExecutionMetadataRuntimeContainerUser, containerUser)
 	}
 	if containerDevices := strings.TrimSpace(runsOn["container_devices"]); containerDevices != "" {
-		metadata["runtime_exec.container_devices"] = containerDevices
+		metadata.Set(domain.ExecutionMetadataRuntimeContainerDevices, containerDevices)
 	}
 	if containerGroups := strings.TrimSpace(runsOn["container_groups"]); containerGroups != "" {
-		metadata["runtime_exec.container_groups"] = containerGroups
+		metadata.Set(domain.ExecutionMetadataRuntimeContainerGroups, containerGroups)
 	}
 
 	requiredCaps := cloneMap(runsOn)

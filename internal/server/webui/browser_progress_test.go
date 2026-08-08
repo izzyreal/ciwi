@@ -19,7 +19,7 @@ func TestBrowserProgressInterpolationKeepsServerSemanticState(t *testing.T) {
 	if constantStart < 0 || functionStart < 0 {
 		t.Fatal("browser semantic progress implementation is unavailable")
 	}
-	constantEnd := strings.Index(script[constantStart:], "\n")
+	constantEnd := strings.Index(script[constantStart:], "\n  const disclosureStates")
 	functionEnd := strings.Index(script[functionStart:], "\n  function updateSemanticProgress")
 	if constantEnd < 0 || functionEnd < 0 {
 		t.Fatal("browser semantic progress implementation is incomplete")
@@ -49,4 +49,37 @@ func TestBrowserProgressInterpolationKeepsServerSemanticState(t *testing.T) {
 	assertProgress("semanticProgressAt({state:'determinate',fraction:.2,snapshot_unix_ms:1000,rate_per_ms:.0001},4000)", "determinate", .5)
 	assertProgress("semanticProgressAt({state:'determinate',fraction:.9,snapshot_unix_ms:1000,rate_per_ms:.0001},4000)", "determinate", .999)
 	assertProgress("semanticProgressAt({state:'overrun',fraction:1,snapshot_unix_ms:1000,rate_per_ms:0},4000)", "overrun", 1)
+
+	assertDelay := func(expression, want string) {
+		t.Helper()
+		value, err := runtime.RunString(expression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := value.String(); got != want {
+			t.Fatalf("delay = %q, want %q", got, want)
+		}
+	}
+	assertDelay("semanticProgressAnimationDelay('indeterminate', 4500)", "-500ms")
+	assertDelay("semanticProgressAnimationDelay('overrun', 4500)", "-500ms")
+	assertDelay("semanticProgressAnimationDelay('determinate', 4500)", "")
+}
+
+func TestBrowserProgressUpdatesDoNotRestartAnimationClasses(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	if strings.Contains(script, "classList.remove('ciwi-progress-indeterminate'") {
+		t.Fatal("semantic progress removes an active animation class during periodic updates")
+	}
+	for _, expected := range []string{
+		"classList.toggle('ciwi-progress-indeterminate', model.state === 'indeterminate')",
+		"semanticProgressAnimationDelay(model.state, nowMs)",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("browser progress continuity is missing %q", expected)
+		}
+	}
 }

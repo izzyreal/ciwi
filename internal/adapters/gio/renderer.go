@@ -690,54 +690,13 @@ func (r *Renderer) setProjectStructureFilterLocked(filter string) bool {
 	if !ok {
 		return false
 	}
-	pipelines, _ := root["pipelines"].([]any)
-	visible := append([]any(nil), pipelines...)
-	if filter == "all-chains" {
-		visible = visible[:0]
-	} else if strings.HasPrefix(filter, "chain:") {
-		project, _ := root["project"].(map[string]any)
-		chains, _ := project["pipeline_chains"].([]any)
-		included := map[string]bool{}
-		matchedChain := false
-		for _, raw := range chains {
-			chain, chainOK := raw.(map[string]any)
-			if !chainOK {
-				continue
-			}
-			if "chain:"+fmt.Sprint(chain["id"]) != filter {
-				continue
-			}
-			matchedChain = true
-			for _, pipelineID := range stringSlice(chain["pipelines"]) {
-				included[pipelineID] = true
-			}
-		}
-		if !matchedChain {
-			filter = "all-pipelines"
-			visible = append([]any(nil), pipelines...)
-			included = nil
-		}
-		visible = visible[:0]
-		if included == nil {
-			visible = append(visible, pipelines...)
-		} else {
-			for _, raw := range pipelines {
-				pipeline, pipelineOK := raw.(map[string]any)
-				if pipelineOK && included[fmt.Sprint(pipeline["pipeline_id"])] {
-					visible = append(visible, raw)
-				}
-			}
-		}
-	}
 	nextRoot := make(map[string]any, len(root)+2)
 	for key, value := range root {
 		nextRoot[key] = value
 	}
-	nextRoot["structure_filter"] = filter
-	nextRoot["visible_pipelines"] = visible
-	nextRoot["show_chain_structure"] = filter == "all-chains"
-	nextRoot["show_pipeline_structure"] = filter != "all-chains"
-	nextRoot["structure_root"] = projectStructureRoot(nextRoot, filter, visible)
+	if !applyProjectStructureFilter(nextRoot, filter) {
+		return false
+	}
 	nextData := make(map[string]any, len(data))
 	for key, value := range data {
 		nextData[key] = value

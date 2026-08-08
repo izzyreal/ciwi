@@ -80,7 +80,7 @@ type JobExecutionDetails struct {
 	Waiting              bool
 	Progress             Progress
 	SchedulingDiagnosis  *SchedulingDiagnosis
-	Metadata             map[string]string
+	Metadata             ExecutionMetadata
 	RequiredCapabilities map[string]string
 	RuntimeCapabilities  map[string]string
 	CacheStats           []JobCacheStatistics

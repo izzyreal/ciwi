@@ -12,8 +12,27 @@ import (
 type projectDetailsViewResponse struct {
 	Project           frontPageProjectResponse         `json:"project"`
 	Pipelines         []projectPipelineDetailsResponse `json:"pipelines"`
+	StructureFilters  []projectStructureFilterResponse `json:"structure_filters"`
 	HistoryExecutions []executionCardResponse          `json:"history_executions"`
 	HistoryEmpty      bool                             `json:"history_empty"`
+}
+
+type projectStructureFilterResponse struct {
+	Value                 string                       `json:"value"`
+	Label                 string                       `json:"label"`
+	PipelineIDs           []string                     `json:"pipeline_ids"`
+	Root                  projectStructureRootResponse `json:"root"`
+	ShowChainStructure    bool                         `json:"show_chain_structure"`
+	ShowPipelineStructure bool                         `json:"show_pipeline_structure"`
+}
+
+type projectStructureRootResponse struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Meta      string `json:"meta"`
+	Runnable  bool   `json:"runnable"`
+	ProjectID int64  `json:"project_id"`
+	ChainID   string `json:"chain_id"`
 }
 
 type projectPipelineDetailsResponse struct {
@@ -76,6 +95,9 @@ func projectDetailsToResponse(view presentation.ProjectDetailsView) projectDetai
 	var project frontPageProjectResponse
 	if len(projects) > 0 {
 		project = projects[0]
+		project.PipelineCountLabel = view.ProjectLabels.PipelineCount
+		project.SourceMetadata = view.ProjectLabels.SourceMetadata
+		project.HasPipelineChains = view.ProjectLabels.HasPipelineChains
 	}
 	pipelines := make([]projectPipelineDetailsResponse, 0, len(view.Pipelines))
 	for _, pipeline := range view.Pipelines {
@@ -85,29 +107,40 @@ func projectDetailsToResponse(view presentation.ProjectDetailsView) projectDetai
 			for _, step := range job.Steps {
 				steps = append(steps, projectStepDetailsResponse{
 					Index: step.Index, Position: step.Position, Name: step.Name, Type: step.Type,
-					Command: presentation.ProjectStepCommand(step.Command), SkipDryRun: step.SkipDryRun,
+					Command: step.DisplayCommand, SkipDryRun: step.SkipDryRun,
 					Environment:      append([]string{}, step.Environment...),
-					EnvironmentLabel: presentation.ProjectStepEnvironmentLabel(step.Environment),
+					EnvironmentLabel: step.EnvironmentLabel,
 				})
 			}
-			runsOn := presentation.DeclarativeDefaultLabel(job.RunsOnLabel, "unspecified")
+			runsOn := job.RunsOnLabel
 			jobs = append(jobs, projectJobDetailsResponse{
-				ID: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: presentation.DeclarativeDefaultLabel(job.NeedsLabel, "none"),
-				RunsOnLabel: runsOn, ToolsLabel: presentation.DeclarativeDefaultLabel(job.ToolsLabel, "none"),
+				ID: job.ID, Needs: append([]string{}, job.Needs...), NeedsLabel: job.NeedsLabel,
+				RunsOnLabel: runsOn, ToolsLabel: job.ToolsLabel,
 				TimeoutSeconds: job.TimeoutSeconds, MatrixCount: job.MatrixCount,
 				StepsCount: job.StepsCount, SupportsDryRun: job.SupportsDryRun, Steps: steps,
-				SummaryLabel: presentation.ProjectJobSummaryLabel(job.StepsCount, runsOn),
-				TimeoutLabel: presentation.ProjectJobTimeoutLabel(job.TimeoutSeconds), MatrixLabel: presentation.ProjectJobMatrixLabel(job.MatrixCount),
+				SummaryLabel: job.SummaryLabel,
+				TimeoutLabel: job.TimeoutLabel, MatrixLabel: job.MatrixLabel,
 			})
 		}
 		pipelines = append(pipelines, projectPipelineDetailsResponse{
 			ID: pipeline.ID, PipelineID: pipeline.PipelineID, Trigger: pipeline.Trigger,
 			DependsOn: append([]string{}, pipeline.DependsOn...), Dependencies: pipeline.Dependencies,
 			JobsCount: pipeline.JobsCount, SupportsDryRun: pipeline.SupportsDryRun, Jobs: jobs,
-			SummaryLabel:      presentation.PipelineSummaryLabel(pipeline.JobsCount, pipeline.Dependencies),
-			GraphSummaryLabel: presentation.PipelineGraphSummaryLabel(pipeline.JobsCount, len(pipeline.DependsOn)),
+			SummaryLabel:      pipeline.SummaryLabel,
+			GraphSummaryLabel: pipeline.GraphSummary,
+		})
+	}
+	structureFilters := make([]projectStructureFilterResponse, 0, len(view.StructureFilters))
+	for _, filter := range view.StructureFilters {
+		structureFilters = append(structureFilters, projectStructureFilterResponse{
+			Value: filter.Value, Label: filter.Label, PipelineIDs: append([]string(nil), filter.PipelineIDs...),
+			Root: projectStructureRootResponse{
+				ID: filter.Root.ID, Label: filter.Root.Label, Meta: filter.Root.Meta, Runnable: filter.Root.Runnable,
+				ProjectID: filter.Root.ProjectID, ChainID: filter.Root.ChainID,
+			},
+			ShowChainStructure: filter.ShowChainStructure, ShowPipelineStructure: filter.ShowPipelineStructure,
 		})
 	}
 	history := executionCardsToResponse(view.HistoryExecutions, false)
-	return projectDetailsViewResponse{Project: project, Pipelines: pipelines, HistoryExecutions: history, HistoryEmpty: len(history) == 0}
+	return projectDetailsViewResponse{Project: project, Pipelines: pipelines, StructureFilters: structureFilters, HistoryExecutions: history, HistoryEmpty: len(history) == 0}
 }

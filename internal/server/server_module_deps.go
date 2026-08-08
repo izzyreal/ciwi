@@ -46,6 +46,7 @@ type pipelineStore interface {
 	GetPipelineChain(projectID int64, chainID string) (store.PersistedPipelineChain, error)
 	ListJobExecutions() ([]protocol.JobExecution, error)
 	CreateJobExecution(req protocol.CreateJobExecutionRequest) (protocol.JobExecution, error)
+	CreateJobExecutions(reqs []protocol.CreateJobExecutionRequest) ([]protocol.JobExecution, error)
 	SetJobExecutionDependencyArtifactJobIDs(jobID string, ids []string) ([]string, error)
 	MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error)
 	UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)

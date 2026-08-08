@@ -19,54 +19,20 @@ import (
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
-type agentState struct {
-	Hostname             string            `json:"hostname"`
-	OS                   string            `json:"os"`
-	Arch                 string            `json:"arch"`
-	Version              string            `json:"version,omitempty"`
-	Authorized           bool              `json:"authorized"`
-	Deactivated          bool              `json:"deactivated,omitempty"`
-	Capabilities         map[string]string `json:"capabilities"`
-	LastSeenUTC          time.Time         `json:"last_seen_utc"`
-	RecentLog            []string          `json:"recent_log,omitempty"`
-	UpdateTarget         string            `json:"update_target,omitempty"`
-	UpdateSource         string            `json:"update_source,omitempty"`
-	UpdateAttempts       int               `json:"update_attempts,omitempty"`
-	UpdateInProgress     bool              `json:"update_in_progress,omitempty"`
-	UpdateLastRequestUTC time.Time         `json:"update_last_request_utc,omitempty"`
-	UpdateNextRetryUTC   time.Time         `json:"update_next_retry_utc,omitempty"`
-	UpdateLastError      string            `json:"update_last_error,omitempty"`
-	UpdateLastErrorUTC   time.Time         `json:"update_last_error_utc,omitempty"`
-}
-
-type agentUpdateRolloutState struct {
-	Target     string
-	StartedUTC time.Time
-	NextSlot   int
-	Slots      map[string]int
-}
-
 type stateStore struct {
-	mu                sync.Mutex
-	applicationOnce   sync.Once
-	application       *serverApplication
-	dependencyMu      sync.Mutex
-	agents            map[string]agentState
-	agentUpdates      map[string]string
-	agentToolRefresh  map[string]bool
-	agentRestarts     map[string]bool
-	agentCacheWipes   map[string]bool
-	agentHistoryWipes map[string]bool
-	agentDeactivated  map[string]bool
-	agentRollout      agentUpdateRolloutState
-	projectIcons      map[int64]projectIconState
-	db                *store.Store
-	artifactsDir      string
-	vaultTokens       *servervault.TokenCache
-	jobProgress       *jobprogress.Estimator
-	update            updateState
-	restartServerFn   func()
-	installationID    string
+	agentRegistry
+	applicationOnce sync.Once
+	application     *serverApplication
+	dependencyMu    sync.Mutex
+	projectIconMu   sync.Mutex
+	projectIcons    map[int64]projectIconState
+	db              *store.Store
+	artifactsDir    string
+	vaultTokens     *servervault.TokenCache
+	jobProgress     *jobprogress.Estimator
+	update          updateState
+	restartServerFn func()
+	installationID  string
 }
 
 type projectIconState struct {
@@ -97,21 +63,12 @@ func Run(ctx context.Context) error {
 	}
 
 	s := &stateStore{
-		agents:            make(map[string]agentState),
-		agentUpdates:      make(map[string]string),
-		agentToolRefresh:  make(map[string]bool),
-		agentRestarts:     make(map[string]bool),
-		agentCacheWipes:   make(map[string]bool),
-		agentHistoryWipes: make(map[string]bool),
-		agentDeactivated:  make(map[string]bool),
-		agentRollout: agentUpdateRolloutState{
-			Slots: make(map[string]int),
-		},
-		projectIcons: make(map[int64]projectIconState),
-		db:           db,
-		artifactsDir: artifactsDir,
-		vaultTokens:  servervault.NewTokenCache(),
-		jobProgress:  jobprogress.New(db),
+		agentRegistry: newAgentRegistry(),
+		projectIcons:  make(map[int64]projectIconState),
+		db:            db,
+		artifactsDir:  artifactsDir,
+		vaultTokens:   servervault.NewTokenCache(),
+		jobProgress:   jobprogress.New(db),
 		restartServerFn: func() {
 			os.Exit(0)
 		},

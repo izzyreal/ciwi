@@ -288,7 +288,7 @@ func presentArtifacts(artifacts []domain.JobArtifact) ReportDetailsView {
 	}
 }
 
-func presentTestReport(report *domain.JobTestReport, metadata map[string]string) ReportDetailsView {
+func presentTestReport(report *domain.JobTestReport, metadata domain.ExecutionMetadata) ReportDetailsView {
 	if report == nil {
 		return ReportDetailsView{EmptyLabel: "No parsed test report"}
 	}
@@ -354,7 +354,7 @@ func jobHeaderTitle(details domain.JobExecutionDetails) string {
 	if project := strings.TrimSpace(details.ProjectName); project != "" {
 		parts = append(parts, project)
 	}
-	if strings.TrimSpace(details.Metadata["adhoc"]) == "1" {
+	if details.Metadata.Flag(domain.ExecutionMetadataAdhoc) {
 		parts = append(parts, "Adhoc script")
 	} else {
 		for _, value := range []string{details.PipelineID, details.PipelineJobID, details.MatrixName} {
@@ -378,8 +378,8 @@ func jobHeaderContext(details domain.JobExecutionDetails) string {
 }
 
 func presentJobProperties(details domain.JobExecutionDetails, view JobDetailsView) []JobDetailRowView {
-	build := strings.TrimSpace(details.Metadata["build_version"])
-	if target := strings.TrimSpace(details.Metadata["build_target"]); build != "" && target != "" {
+	build := details.Metadata.Value(domain.ExecutionMetadataBuildVersion)
+	if target := details.Metadata.Value(domain.ExecutionMetadataBuildTarget); build != "" && target != "" {
 		build += " (" + target + ")"
 	}
 	rows := []JobDetailRowView{
@@ -490,11 +490,11 @@ func presentReleaseSummary(details domain.JobExecutionDetails) ([]JobDetailRowVi
 	}
 	rows := []JobDetailRowView{{Label: "Mode", Value: mode}}
 	for _, field := range []struct{ key, label string }{
-		{"version", "Version"}, {"pipeline_version_raw", "Version"},
-		{"tag", "Tag"}, {"pipeline_version", "Tag"}, {"artifacts", "Assets"},
-		{"next_version", "Next version"}, {"auto_bump_branch", "Auto bump branch"},
+		{domain.ExecutionMetadataVersion, "Version"}, {domain.ExecutionMetadataPipelineVersionRaw, "Version"},
+		{domain.ExecutionMetadataTag, "Tag"}, {domain.ExecutionMetadataPipelineVersion, "Tag"}, {domain.ExecutionMetadataArtifacts, "Assets"},
+		{domain.ExecutionMetadataNextVersion, "Next version"}, {domain.ExecutionMetadataAutoBumpBranch, "Auto bump branch"},
 	} {
-		value := strings.TrimSpace(details.Metadata[field.key])
+		value := details.Metadata.Value(field.key)
 		if value == "" {
 			continue
 		}

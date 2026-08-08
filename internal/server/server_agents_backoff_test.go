@@ -30,14 +30,9 @@ func newAgentUpdateTestStateStore(t *testing.T) *stateStore {
 		t.Fatalf("create artifacts dir: %v", err)
 	}
 	return &stateStore{
-		agents:           make(map[string]agentState),
-		agentUpdates:     make(map[string]string),
-		agentToolRefresh: make(map[string]bool),
-		agentRollout: agentUpdateRolloutState{
-			Slots: make(map[string]int),
-		},
-		db:           db,
-		artifactsDir: artifactsDir,
+		agentRegistry: newAgentRegistry(),
+		db:            db,
+		artifactsDir:  artifactsDir,
 	}
 }
 

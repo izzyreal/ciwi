@@ -286,8 +286,8 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		if err == nil {
 			result := &cnpv1.FrontPageView{
 				Server: serverInfoToProto(view.Server), Projects: projectsToProto(view.Projects),
-				QueuedExecutions:  executionCardsToProto(view.QueuedExecutions),
-				HistoryExecutions: executionCardsToProto(view.HistoryExecutions),
+				QueuedExecutions:  executionCardsToProto(view.QueuedExecutions, true),
+				HistoryExecutions: executionCardsToProto(view.HistoryExecutions, false),
 			}
 			err = s.populateProjectIcons(ctx, result.Projects, operation.GetFrontPageView.GetIncludeProjectIconIds())
 			if err == nil {

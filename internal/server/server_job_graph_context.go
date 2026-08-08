@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -48,7 +49,7 @@ func (s *stateStore) jobExecutionGraphContextForTarget(ctx context.Context, targ
 		return protocol.JobExecutionGraphContext{}, err
 	}
 	pipelineDBIDs := map[string]int64{}
-	if projectID, parseErr := strconv.ParseInt(strings.TrimSpace(target.Metadata["project_id"]), 10, 64); parseErr == nil && projectID > 0 {
+	if projectID, ok := target.Metadata.Int64(domain.ExecutionMetadataProjectID); ok && projectID > 0 {
 		if detail, detailErr := s.projectStore().GetProjectDetail(projectID); detailErr == nil {
 			for _, pipeline := range detail.Pipelines {
 				pipelineDBIDs[strings.TrimSpace(pipeline.PipelineID)] = pipeline.ID
@@ -60,10 +61,10 @@ func (s *stateStore) jobExecutionGraphContextForTarget(ctx context.Context, targ
 
 func buildJobExecutionGraphContext(target protocol.JobExecution, jobs []protocol.JobExecution, pipelineDBIDs map[string]int64) protocol.JobExecutionGraphContext {
 	meta := target.Metadata
-	chainRunID := strings.TrimSpace(meta["chain_run_id"])
-	pipelineRunID := strings.TrimSpace(meta["pipeline_run_id"])
-	projectID := strings.TrimSpace(meta["project_id"])
-	currentPipelineID := strings.TrimSpace(meta["pipeline_id"])
+	chainRunID := meta.Value(domain.ExecutionMetadataChainRunID)
+	pipelineRunID := meta.Value(domain.ExecutionMetadataPipelineRunID)
+	projectID := meta.Value(domain.ExecutionMetadataProjectID)
+	currentPipelineID := meta.Value(domain.ExecutionMetadataPipelineID)
 	scope := "job"
 	if chainRunID != "" {
 		scope = "chain"
@@ -75,14 +76,14 @@ func buildJobExecutionGraphContext(target protocol.JobExecution, jobs []protocol
 	for _, job := range jobs {
 		candidate := job.Metadata
 		if chainRunID != "" {
-			if strings.TrimSpace(candidate["chain_run_id"]) != chainRunID {
+			if candidate.Value(domain.ExecutionMetadataChainRunID) != chainRunID {
 				continue
 			}
 		} else if pipelineRunID != "" {
-			if strings.TrimSpace(candidate["pipeline_run_id"]) != pipelineRunID || strings.TrimSpace(candidate["pipeline_id"]) != currentPipelineID {
+			if candidate.Value(domain.ExecutionMetadataPipelineRunID) != pipelineRunID || candidate.Value(domain.ExecutionMetadataPipelineID) != currentPipelineID {
 				continue
 			}
-			if strings.TrimSpace(candidate["project_id"]) != projectID {
+			if candidate.Value(domain.ExecutionMetadataProjectID) != projectID {
 				continue
 			}
 		} else if job.ID != target.ID {
@@ -104,19 +105,19 @@ func buildJobExecutionGraphContext(target protocol.JobExecution, jobs []protocol
 	groups := map[string]*pipelineGroup{}
 	ordered := make([]*pipelineGroup, 0)
 	for _, job := range selected {
-		pipelineID := strings.TrimSpace(job.Metadata["pipeline_id"])
+		pipelineID := job.Metadata.Value(domain.ExecutionMetadataPipelineID)
 		if pipelineID == "" {
 			pipelineID = "job"
 		}
 		group := groups[pipelineID]
 		if group == nil {
-			index, _ := strconv.Atoi(strings.TrimSpace(job.Metadata["pipeline_chain_index"]))
-			group = &pipelineGroup{id: pipelineID, runID: strings.TrimSpace(job.Metadata["pipeline_run_id"]), index: index}
+			index, _ := strconv.Atoi(job.Metadata.Value(domain.ExecutionMetadataPipelineChainIndex))
+			group = &pipelineGroup{id: pipelineID, runID: job.Metadata.Value(domain.ExecutionMetadataPipelineRunID), index: index}
 			groups[pipelineID] = group
 			ordered = append(ordered, group)
 		}
 		group.jobs = append(group.jobs, job)
-		group.dependsOn = appendUniqueStrings(group.dependsOn, splitGraphIDs(job.Metadata["chain_depends_on_pipelines"])...)
+		group.dependsOn = appendUniqueStrings(group.dependsOn, job.Metadata.CSV(domain.ExecutionMetadataChainDependsOnPipelines)...)
 	}
 	sort.SliceStable(ordered, func(i, j int) bool {
 		if ordered[i].index != ordered[j].index {
@@ -130,9 +131,9 @@ func buildJobExecutionGraphContext(target protocol.JobExecution, jobs []protocol
 		CurrentExecutionID:   target.ID,
 		CurrentPipelineID:    currentPipelineID,
 		CurrentPipelineRunID: pipelineRunID,
-		CurrentPipelineJobID: strings.TrimSpace(meta["pipeline_job_id"]),
+		CurrentPipelineJobID: meta.Value(domain.ExecutionMetadataPipelineJobID),
 		CurrentChainRunID:    chainRunID,
-		CurrentPipelineChain: strings.TrimSpace(meta["pipeline_chain_name"]),
+		CurrentPipelineChain: meta.Value(domain.ExecutionMetadataPipelineChainName),
 		Pipelines:            make([]protocol.JobExecutionGraphPipeline, 0, len(ordered)),
 	}
 	for _, group := range ordered {
@@ -163,7 +164,7 @@ func buildJobExecutionGraphJobs(jobs []protocol.JobExecution) []protocol.JobExec
 	groups := map[string]*logicalGroup{}
 	ordered := make([]*logicalGroup, 0)
 	for _, job := range jobs {
-		id := strings.TrimSpace(job.Metadata["pipeline_job_id"])
+		id := job.Metadata.Value(domain.ExecutionMetadataPipelineJobID)
 		if id == "" {
 			id = strings.TrimSpace(job.ID)
 		}
@@ -177,7 +178,7 @@ func buildJobExecutionGraphJobs(jobs []protocol.JobExecution) []protocol.JobExec
 		if group.createdKey == "" || createdKey < group.createdKey {
 			group.createdKey = createdKey
 		}
-		group.needs = appendUniqueStrings(group.needs, splitGraphIDs(job.Metadata["needs_job_ids"])...)
+		group.needs = appendUniqueStrings(group.needs, job.Metadata.CSV(domain.ExecutionMetadataNeedsJobIDs)...)
 		group.executions = append(group.executions, job)
 	}
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -207,10 +208,10 @@ func buildJobExecutionGraphJobs(jobs []protocol.JobExecution) []protocol.JobExec
 			executions = append(executions, protocol.JobExecutionGraphExecution{
 				ID:            job.ID,
 				Status:        graphExecutionStatus(job),
-				MatrixIndex:   strings.TrimSpace(job.Metadata["matrix_index"]),
-				MatrixName:    strings.TrimSpace(job.Metadata["matrix_name"]),
+				MatrixIndex:   job.Metadata.Value(domain.ExecutionMetadataMatrixIndex),
+				MatrixName:    job.Metadata.Value(domain.ExecutionMetadataMatrixName),
 				AttemptRootID: protocol.JobExecutionAttemptRootID(job),
-				RerunOfJobID:  strings.TrimSpace(job.Metadata[protocol.JobMetadataRerunOfJobID]),
+				RerunOfJobID:  job.Metadata.Value(protocol.JobMetadataRerunOfJobID),
 				LatestAttempt: isLatest,
 				CreatedUTC:    job.CreatedUTC,
 				StartedUTC:    job.StartedUTC,
@@ -231,7 +232,7 @@ const timeSortLayout = "2006-01-02T15:04:05.999999999Z07:00"
 
 func graphExecutionStatus(job protocol.JobExecution) string {
 	status := protocol.NormalizeJobExecutionStatus(job.Status)
-	if status == protocol.JobExecutionStatusQueued && (strings.TrimSpace(job.Metadata["chain_blocked"]) == "1" || strings.TrimSpace(job.Metadata["needs_blocked"]) == "1" || strings.TrimSpace(job.Metadata["dependency_blocked"]) == "1") {
+	if status == protocol.JobExecutionStatusQueued && (job.Metadata.Flag(domain.ExecutionMetadataChainBlocked) || job.Metadata.Flag(domain.ExecutionMetadataNeedsBlocked) || job.Metadata.Flag(domain.ExecutionMetadataDependencyBlocked)) {
 		return "waiting"
 	}
 	return status
