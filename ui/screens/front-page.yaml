@@ -216,7 +216,7 @@ screen:
                 disclosure:
                   defaultExpanded: true
                   stateKey: "front-project:{{project.id}}"
-                  compactPresentation: sheet
+                  compactPresentation: navigate
                   summary:
                     - component: text
                       text:

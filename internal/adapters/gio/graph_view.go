@@ -29,10 +29,11 @@ const (
 )
 
 type graphViewportState struct {
-	offset       f32.Point
-	touches      map[pointer.ID]f32.Point
-	lastCentroid f32.Point
-	lastDistance float32
+	offset        f32.Point
+	touches       map[pointer.ID]f32.Point
+	gestureActive bool
+	lastCentroid  f32.Point
+	lastDistance  float32
 }
 
 func (s *graphViewportState) update(gtx layout.Context, scale *float32, minScale, maxScale float32, contentWidth, contentHeight, viewportWidth, viewportHeight int) bool {
@@ -69,34 +70,80 @@ func (s *graphViewportState) update(gtx layout.Context, scale *float32, minScale
 		}
 		switch e.Kind {
 		case pointer.Press:
-			s.touches[e.PointerID] = e.Position
-			if len(s.touches) == 2 {
+			if s.pressTouch(e.PointerID, e.Position) {
 				for id := range s.touches {
 					gtx.Execute(pointer.GrabCmd{Tag: s, ID: id})
 				}
-				s.lastCentroid, s.lastDistance = graphTouchGeometry(s.touches)
 			}
 		case pointer.Drag:
-			if _, tracked := s.touches[e.PointerID]; !tracked {
-				continue
-			}
-			s.touches[e.PointerID] = e.Position
-			if len(s.touches) != 2 {
-				continue
-			}
-			centroid, distance := graphTouchGeometry(s.touches)
-			changed = s.transformTouch(scale, centroid, distance, minScale, maxScale) || changed
-			s.lastCentroid, s.lastDistance = centroid, distance
+			changed = s.dragTouch(e.PointerID, e.Position, scale, minScale, maxScale) || changed
 		case pointer.Release, pointer.Cancel:
-			delete(s.touches, e.PointerID)
-			s.lastDistance = 0
-			if len(s.touches) == 2 {
-				s.lastCentroid, s.lastDistance = graphTouchGeometry(s.touches)
-			}
+			s.endTouch(e.PointerID)
 		}
 	}
 	s.clamp(*scale, contentWidth, contentHeight, viewportWidth, viewportHeight)
 	return changed
+}
+
+func (s *graphViewportState) pressTouch(id pointer.ID, position f32.Point) bool {
+	if s.touches == nil {
+		s.touches = map[pointer.ID]f32.Point{}
+	}
+	if _, reused := s.touches[id]; reused {
+		// iOS may reuse pointer IDs after ending one member of a multi-touch
+		// sequence. A duplicate press marks the retained state as stale.
+		s.resetTouches()
+	}
+	if len(s.touches) >= 2 {
+		return false
+	}
+	s.touches[id] = position
+	if len(s.touches) != 2 {
+		return false
+	}
+	s.gestureActive = true
+	s.lastCentroid, s.lastDistance = graphTouchGeometry(s.touches)
+	return true
+}
+
+func (s *graphViewportState) dragTouch(id pointer.ID, position f32.Point, scale *float32, minScale, maxScale float32) bool {
+	if !s.gestureActive {
+		return false
+	}
+	if _, tracked := s.touches[id]; !tracked {
+		return false
+	}
+	s.touches[id] = position
+	if len(s.touches) != 2 {
+		s.resetTouches()
+		return false
+	}
+	centroid, distance := graphTouchGeometry(s.touches)
+	changed := s.transformTouch(scale, centroid, distance, minScale, maxScale)
+	s.lastCentroid, s.lastDistance = centroid, distance
+	return changed
+}
+
+func (s *graphViewportState) endTouch(id pointer.ID) {
+	if _, tracked := s.touches[id]; !tracked {
+		return
+	}
+	if s.gestureActive {
+		// A pinch is one atomic gesture. Keeping the other participant around
+		// lets reused iOS pointer IDs turn a later one-finger drag into a pinch.
+		s.resetTouches()
+		return
+	}
+	delete(s.touches, id)
+	s.lastCentroid = f32.Point{}
+	s.lastDistance = 0
+}
+
+func (s *graphViewportState) resetTouches() {
+	clear(s.touches)
+	s.gestureActive = false
+	s.lastCentroid = f32.Point{}
+	s.lastDistance = 0
 }
 
 func (s *graphViewportState) transformTouch(scale *float32, centroid f32.Point, distance, minScale, maxScale float32) bool {

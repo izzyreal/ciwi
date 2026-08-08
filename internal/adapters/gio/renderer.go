@@ -1803,6 +1803,20 @@ func treeEntryNode(node uidsl.Node, data any, key string) (uidsl.Node, error) {
 	}, nil
 }
 
+func disclosureNavigationAction(disclosure *uidsl.Disclosure) (uidsl.Action, bool) {
+	if disclosure == nil {
+		return uidsl.Action{}, false
+	}
+	for _, summaryNode := range disclosure.Summary {
+		for _, action := range summaryNode.Actions {
+			if action.On == "activate" && action.Command == "navigate" {
+				return action, true
+			}
+		}
+	}
+	return uidsl.Action{}, false
+}
+
 func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
 	label := "Details"
 	if node.Text != nil {
@@ -1813,21 +1827,27 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		label = resolved
 	}
 	sheetPresentation := r.compact && node.Disclosure != nil && node.Disclosure.CompactPresentation == "sheet"
+	navigatePresentation := r.compact && node.Disclosure != nil && node.Disclosure.CompactPresentation == "navigate"
+	navigateAction, hasNavigateAction := disclosureNavigationAction(node.Disclosure)
 	sheetTitle := compactSheetTitle(node, data, label)
 	stateKey, persistent := r.disclosureStateKey(node, data, path)
 	if sheetPresentation && r.activeSheet != nil && r.activeSheet.path == path {
 		r.openCompactSheet(path, sheetTitle, node, data, stateKey, persistent)
 	}
-	expanded, exists := r.disclosures[stateKey]
-	if !exists {
-		expanded = node.Disclosure != nil && node.Disclosure.DefaultExpanded
-		r.disclosures[stateKey] = expanded
-	}
-	if persistent {
-		r.persistentDisclosures[stateKey] = true
-	}
-	if sheetPresentation {
-		expanded = false
+	expanded := false
+	if !navigatePresentation {
+		var exists bool
+		expanded, exists = r.disclosures[stateKey]
+		if !exists {
+			expanded = node.Disclosure != nil && node.Disclosure.DefaultExpanded
+			r.disclosures[stateKey] = expanded
+		}
+		if persistent {
+			r.persistentDisclosures[stateKey] = true
+		}
+		if sheetPresentation {
+			expanded = false
+		}
 	}
 	iconName := "chevron-right"
 	if expanded {
@@ -1853,7 +1873,9 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		labelToggleActivated = true
 		r.markInteraction(path + "/disclosure-label")
 		if r.selectable(path+"/label").SelectionLen() == 0 {
-			if sheetPresentation {
+			if navigatePresentation && hasNavigateAction {
+				r.dispatchFromLayout(gtx, navigateAction, data)
+			} else if sheetPresentation {
 				r.setDisclosureState(stateKey, true, persistent)
 				r.openCompactSheet(path, sheetTitle, node, data, stateKey, persistent)
 			} else {
@@ -1892,7 +1914,9 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	for r.clicked(gtx, headerToggle) {
 		r.markInteraction(headerToggleKey)
 		if !summaryActionActivated && !labelToggleActivated && !r.disclosureHeaderHasSelection(path) {
-			if sheetPresentation {
+			if navigatePresentation && hasNavigateAction {
+				r.dispatchFromLayout(gtx, navigateAction, data)
+			} else if sheetPresentation {
 				r.setDisclosureState(stateKey, true, persistent)
 				r.openCompactSheet(path, sheetTitle, node, data, stateKey, persistent)
 			} else {
@@ -2008,7 +2032,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				}
 			}
 			description := "Expand " + label
-			if sheetPresentation {
+			if sheetPresentation || navigatePresentation {
 				description = "Open " + label
 			}
 			if expanded {
@@ -2033,7 +2057,9 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		if node.Style.Role != "execution-row" {
 			if isProjectRow {
 				description := "Expand " + label
-				if expanded {
+				if navigatePresentation {
+					description = "Open " + label
+				} else if expanded {
 					description = "Collapse " + label
 				}
 				return headerToggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -2545,6 +2571,78 @@ func (r *Renderer) notifyDisclosureChange() {
 	r.onDisclosureChange(states)
 }
 
+type recordedFlowItem struct {
+	size image.Point
+	call op.CallOp
+}
+
+func (r *Renderer) layoutWrappedNodeChildren(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	maxWidth := max(1, gtx.Constraints.Max.X)
+	gap := gtx.Dp(r.spacing(node.Layout.Gap))
+	type flowRow struct {
+		items  []recordedFlowItem
+		width  int
+		height int
+	}
+	rows := make([]flowRow, 0, 2)
+	current := flowRow{}
+	finishRow := func() {
+		if len(current.items) == 0 {
+			return
+		}
+		rows = append(rows, current)
+		current = flowRow{}
+	}
+	for index := range node.Children {
+		child := node.Children[index]
+		if !r.nodeOccupiesLayout(child, data) {
+			continue
+		}
+		macro := op.Record(gtx.Ops)
+		itemContext := gtx
+		itemContext.Constraints.Min = image.Point{}
+		itemContext.Constraints.Max.X = maxWidth
+		dimensions := r.layoutNode(itemContext, child, data, fmt.Sprintf("%s/%d", path, index))
+		call := macro.Stop()
+		if dimensions.Size.X <= 0 || dimensions.Size.Y <= 0 {
+			continue
+		}
+		dimensions.Size.X = min(dimensions.Size.X, maxWidth)
+		nextWidth := dimensions.Size.X
+		if len(current.items) > 0 {
+			nextWidth += current.width + gap
+		}
+		if len(current.items) > 0 && nextWidth > maxWidth {
+			finishRow()
+			nextWidth = dimensions.Size.X
+		}
+		current.items = append(current.items, recordedFlowItem{size: dimensions.Size, call: call})
+		current.width = nextWidth
+		current.height = max(current.height, dimensions.Size.Y)
+	}
+	finishRow()
+
+	y, usedWidth := 0, 0
+	for rowIndex, row := range rows {
+		x := 0
+		for itemIndex, item := range row.items {
+			if itemIndex > 0 {
+				x += gap
+			}
+			offset := op.Offset(image.Pt(x, y+(row.height-item.size.Y)/2)).Push(gtx.Ops)
+			item.call.Add(gtx.Ops)
+			offset.Pop()
+			x += item.size.X
+		}
+		usedWidth = max(usedWidth, row.width)
+		y += row.height
+		if rowIndex < len(rows)-1 {
+			y += gap
+		}
+	}
+	return layout.Dimensions{Size: gtx.Constraints.Constrain(image.Pt(usedWidth, y))}
+}
+
 func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
 	axis := layout.Vertical
 	if node.Component == "row" || node.Layout.Direction == "horizontal" {
@@ -2567,6 +2665,14 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 	}
 	if compact && node.ID == "project-header" {
 		return r.layoutCompactProjectHeader(gtx, node, data, path)
+	}
+	if axis == layout.Horizontal && node.Layout.Wrap && node.Style.Role == "project-header-metadata" {
+		return layout.Inset{
+			Top: r.spacing(node.Layout.Padding), Right: r.spacing(node.Layout.Padding),
+			Bottom: r.spacing(node.Layout.Padding), Left: r.spacing(node.Layout.Padding),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return r.layoutWrappedNodeChildren(gtx, node, data, path)
+		})
 	}
 	stackCompactRow := compact && axis == layout.Horizontal && (node.Style.Role == "hero" || node.Layout.Wrap || compactRowNeedsStack(node.Children) ||
 		node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row")
@@ -2649,18 +2755,16 @@ func (r *Renderer) layoutCompactProjectHeader(gtx layout.Context, node uidsl.Nod
 	back := node.Children[backIndex]
 	back.Style.Role = "icon-button"
 	top := func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(72))
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(r.metrics.spaceMedium)}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		return layoutCompactProjectHeaderRow(gtx, gtx.Dp(r.metrics.spaceMedium),
+			func(gtx layout.Context) layout.Dimensions {
 				return r.layoutNode(gtx, back, data, fmt.Sprintf("%s/%d", path, backIndex))
-			}),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Min.X = 0
+			},
+			func(gtx layout.Context) layout.Dimensions {
 				return r.layoutNode(gtx, title, data, fmt.Sprintf("%s/%d/%d", path, copyIndex, titleIndex))
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			},
+			func(gtx layout.Context) layout.Dimensions {
 				return r.layoutNode(gtx, logo, data, fmt.Sprintf("%s/%d", path, logoIndex))
-			}),
+			},
 		)
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -2670,6 +2774,20 @@ func (r *Renderer) layoutCompactProjectHeader(gtx layout.Context, node uidsl.Nod
 				return r.layoutNode(gtx, metadata, data, fmt.Sprintf("%s/%d/%d", path, copyIndex, metadataIndex))
 			})
 		}),
+	)
+}
+
+func layoutCompactProjectHeaderRow(gtx layout.Context, gap int, back, title, logo layout.Widget) layout.Dimensions {
+	// Let the 72dp logo establish the row height. Forcing that minimum onto
+	// every child top-aligns text inside an artificially tall text box.
+	gtx.Constraints.Min.Y = 0
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gap}.Layout(gtx,
+		layout.Rigid(back),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X = 0
+			return title(gtx)
+		}),
+		layout.Rigid(logo),
 	)
 }
 

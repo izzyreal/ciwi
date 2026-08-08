@@ -130,6 +130,8 @@ a.dsl-tree-label { color:var(--accent); }
 @media (prefers-reduced-motion: reduce) { .dsl-skeleton { animation:none; opacity:.62; } }
 .dsl-image { width: var(--ciwi-image-brand-width, 132px); height: var(--ciwi-image-brand-height, 110px); object-fit: contain; image-rendering: pixelated; }
 .dsl-image.dsl-project-icon { width:72px; height:72px; }
+.dsl-project-header-metadata { min-width:0; max-width:100%; }
+.dsl-project-header-metadata > .dsl-badge { box-sizing:border-box; max-width:100%; overflow-wrap:anywhere; }
 .dsl-image.dsl-job-header-icon { width:100px; height:100px; }
 .dsl-icon { display:inline-flex; width:21px; height:21px; color:var(--accent); }
 .dsl-icon.dsl-danger { color:var(--bad); }

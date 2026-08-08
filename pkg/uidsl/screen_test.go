@@ -261,6 +261,38 @@ func TestParseScreenValidatesDisclosureSummary(t *testing.T) {
 	}
 }
 
+func TestParseScreenValidatesCompactNavigateDisclosure(t *testing.T) {
+	payload := strings.Replace(validScreen, "          - component: card\n", `          - component: disclosure
+            disclosure:
+              compactPresentation: navigate
+              summary:
+                - component: text
+                  text:
+                    binding: project.name
+                  actions:
+                    - on: activate
+                      command: navigate
+                      arguments:
+                        route: /projects/{{project.id}}
+`, 1)
+	if _, err := ParseScreen([]byte(payload)); err != nil {
+		t.Fatalf("valid compact navigate disclosure: %v", err)
+	}
+
+	withoutNavigation := strings.Replace(payload, "                      command: navigate", "                      command: refresh", 1)
+	if _, err := ParseScreen([]byte(withoutNavigation)); err == nil || !strings.Contains(err.Error(), "requires exactly one") {
+		t.Fatalf("missing compact navigation action error = %v", err)
+	}
+
+	withTwoNavigationActions := strings.Replace(payload, "                    - on: activate\n                      command: navigate", `                    - on: activate
+                      command: navigate
+                    - on: activate
+                      command: navigate`, 1)
+	if _, err := ParseScreen([]byte(withTwoNavigationActions)); err == nil || !strings.Contains(err.Error(), "requires exactly one") {
+		t.Fatalf("duplicate compact navigation action error = %v", err)
+	}
+}
+
 func TestParseScreenValidatesBoundImages(t *testing.T) {
 	payload := strings.Replace(validScreen, "          - component: card\n", `          - component: image
             image:

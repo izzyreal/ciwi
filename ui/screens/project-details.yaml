@@ -63,11 +63,7 @@ screen:
                   direction: horizontal
                   gap: small
                   align: center
-                overrides:
-                  compact:
-                    layout:
-                      direction: vertical
-                      align: start
+                  wrap: true
                 children:
                   - component: badge
                     text:

@@ -542,16 +542,26 @@ func TestProjectDetailsHeaderDeclaresCompactPartsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	roles := map[string]int{}
+	var metadata *uidsl.Node
 	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
 		switch node.Style.Role {
 		case "project-icon", "project-header-copy", "project-header-metadata", "project-header-back":
 			roles[node.Style.Role]++
+		}
+		if node.Style.Role == "project-header-metadata" {
+			metadata = node
 		}
 	})
 	for _, role := range []string{"project-icon", "project-header-copy", "project-header-metadata", "project-header-back"} {
 		if roles[role] != 1 {
 			t.Errorf("project details role %q occurs %d times, want one shared declaration", role, roles[role])
 		}
+	}
+	if metadata == nil || metadata.Layout.Direction != "horizontal" || !metadata.Layout.Wrap {
+		t.Fatalf("project metadata must declare one shared wrapping row: %#v", metadata)
+	}
+	if _, hasCompactOverride := metadata.Overrides["compact"]; hasCompactOverride {
+		t.Fatalf("project metadata duplicates compact layout policy: %#v", metadata.Overrides)
 	}
 }
 

@@ -960,6 +960,53 @@ func TestGraphViewportUsesTwoTouchesForPanAndZoom(t *testing.T) {
 	}
 }
 
+func TestGraphViewportEndsWholeGestureWhenEitherTouchEnds(t *testing.T) {
+	state := &graphViewportState{}
+	if state.pressTouch(1, f32.Pt(100, 100)) {
+		t.Fatal("one touch started a graph gesture")
+	}
+	if !state.pressTouch(2, f32.Pt(200, 100)) {
+		t.Fatal("two touches did not start a graph gesture")
+	}
+	scale := float32(1)
+	if !state.dragTouch(2, f32.Pt(240, 100), &scale, definitionGraphMinScale, definitionGraphMaxScale) {
+		t.Fatal("active two-touch gesture did not transform the graph")
+	}
+	state.endTouch(1)
+	if state.gestureActive || len(state.touches) != 0 || state.lastDistance != 0 {
+		t.Fatalf("ending one participant retained gesture state: %+v", state)
+	}
+	oldScale, oldOffset := scale, state.offset
+	if state.dragTouch(2, f32.Pt(280, 100), &scale, definitionGraphMinScale, definitionGraphMaxScale) {
+		t.Fatal("remaining finger continued the ended gesture")
+	}
+	if scale != oldScale || state.offset != oldOffset {
+		t.Fatalf("one-finger movement changed ended gesture: scale=%v offset=%+v", scale, state.offset)
+	}
+	if state.pressTouch(1, f32.Pt(100, 100)) || !state.pressTouch(2, f32.Pt(200, 100)) {
+		t.Fatal("fresh two-finger gesture did not start after cleanup")
+	}
+}
+
+func TestGraphViewportResetsReusedTouchID(t *testing.T) {
+	state := &graphViewportState{}
+	state.pressTouch(1, f32.Pt(100, 100))
+	state.pressTouch(2, f32.Pt(200, 100))
+	if !state.gestureActive {
+		t.Fatal("test setup did not start a gesture")
+	}
+	if state.pressTouch(1, f32.Pt(120, 100)) {
+		t.Fatal("reused touch ID retained a stale second participant")
+	}
+	if state.gestureActive || len(state.touches) != 1 {
+		t.Fatalf("reused touch ID state = active %v, touches %v", state.gestureActive, state.touches)
+	}
+	scale := float32(1)
+	if state.dragTouch(1, f32.Pt(160, 100), &scale, definitionGraphMinScale, definitionGraphMaxScale) || scale != 1 {
+		t.Fatal("reused single touch transformed the graph")
+	}
+}
+
 func TestScrollGestureGuardOnlyArmsForInertialMovement(t *testing.T) {
 	guard := &scrollGestureGuard{}
 	list := &layout.List{}
@@ -998,6 +1045,62 @@ func TestNativeProjectSummaryWrapsAtItsActualWidth(t *testing.T) {
 	})
 	if dimensions.Size.Y < 60 {
 		t.Fatalf("narrow project summary height = %d, want multiple packed rows", dimensions.Size.Y)
+	}
+}
+
+func TestNativeProjectHeaderMetadataWrapsAtItsActualWidth(t *testing.T) {
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(&uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "project-header-wrap"}}, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := uidsl.Node{
+		Component: "row",
+		Layout:    uidsl.Layout{Direction: "horizontal", Gap: "small", Wrap: true},
+		Style:     uidsl.Style{Role: "project-header-metadata"},
+		Children: []uidsl.Node{
+			{Component: "badge", Text: &uidsl.Text{Literal: "https://github.com/izzyreal/vmpc-juce"}, Style: uidsl.Style{Tone: "muted"}},
+			{Component: "badge", Text: &uidsl.Text{Literal: "branch:master"}, Style: uidsl.Style{Tone: "muted"}},
+			{Component: "badge", Text: &uidsl.Text{Literal: "ciwi-project.yaml"}, Style: uidsl.Style{Tone: "muted"}},
+		},
+	}
+	wideContext := layout.Context{Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(1000, 500)}}
+	wide := renderer.layoutWrappedNodeChildren(wideContext, node, map[string]any{}, "metadata")
+	narrowContext := layout.Context{Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(360, 500)}}
+	narrow := renderer.layoutWrappedNodeChildren(narrowContext, node, map[string]any{}, "metadata")
+	if narrow.Size.X > 360 {
+		t.Fatalf("wrapped metadata width = %d, want <= 360", narrow.Size.X)
+	}
+	if narrow.Size.Y <= wide.Size.Y {
+		t.Fatalf("narrow metadata height = %d, wide height = %d; want multiple rows", narrow.Size.Y, wide.Size.Y)
+	}
+}
+
+func TestCompactProjectHeaderRowCentersNaturalHeightChildren(t *testing.T) {
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(390, 200))}
+	var backMinY, titleMinY, logoMinY int
+	dimensions := layoutCompactProjectHeaderRow(gtx, 12,
+		func(gtx layout.Context) layout.Dimensions {
+			backMinY = gtx.Constraints.Min.Y
+			return layout.Dimensions{Size: image.Pt(40, 40)}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			titleMinY = gtx.Constraints.Min.Y
+			return layout.Dimensions{Size: image.Pt(180, 42)}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			logoMinY = gtx.Constraints.Min.Y
+			return layout.Dimensions{Size: image.Pt(72, 72)}
+		},
+	)
+	if dimensions.Size.Y != 72 {
+		t.Fatalf("compact header height = %d, want logo height 72", dimensions.Size.Y)
+	}
+	if backMinY != 0 || titleMinY != 0 || logoMinY != 0 {
+		t.Fatalf("compact header forced child heights: back=%d title=%d logo=%d", backMinY, titleMinY, logoMinY)
 	}
 }
 
@@ -2631,7 +2734,7 @@ func TestCompactFrontPageContentRemainsBounded(t *testing.T) {
 	}
 }
 
-func TestCompactProjectDisclosureOpensAndClosesSheet(t *testing.T) {
+func TestCompactProjectDisclosureNavigatesWithoutOpeningSheet(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("front-page")
 	if err != nil {
 		t.Fatal(err)
@@ -2655,6 +2758,14 @@ func TestCompactProjectDisclosureOpensAndClosesSheet(t *testing.T) {
 		t.Fatal(err)
 	}
 	renderer.SetData(data)
+	navigationCount := 0
+	navigatedRoute := ""
+	renderer.onAction = func(action uidsl.Action, arguments map[string]string) {
+		if action.Command == "navigate" {
+			navigationCount++
+			navigatedRoute = arguments["route"]
+		}
+	}
 	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(390, 844))}
 	renderer.Layout(gtx)
 	for _, selectable := range renderer.selectables {
@@ -2675,51 +2786,31 @@ func TestCompactProjectDisclosureOpensAndClosesSheet(t *testing.T) {
 	projectHeader.Click()
 	gtx.Ops.Reset()
 	renderer.Layout(gtx)
-	if renderer.activeSheet == nil || renderer.activeSheet.title != "ciwi" {
-		t.Fatalf("active compact sheet = %#v", renderer.activeSheet)
+	if navigationCount != 1 || navigatedRoute != "/projects/1" {
+		t.Fatalf("project header navigation = (%d, %q), want (1, /projects/1)", navigationCount, navigatedRoute)
 	}
-	gtx.Ops.Reset()
-	renderer.Layout(gtx)
-	if title := renderer.selectable("compact-sheet/title").Text(); title != "ciwi" {
-		t.Fatalf("compact sheet title = %q", title)
+	if renderer.activeSheet != nil {
+		t.Fatalf("compact project header opened a sheet: %#v", renderer.activeSheet)
 	}
-	foundPipeline := false
-	for _, selectable := range renderer.selectables {
-		if selectable.Text() == "build" {
-			foundPipeline = true
+	if _, exists := renderer.disclosures["front-project:1"]; exists {
+		t.Fatalf("compact project navigation mutated disclosure state: %v", renderer.disclosures)
+	}
+
+	var projectName *widget.Clickable
+	for path, button := range renderer.buttons {
+		if strings.HasSuffix(path, "/summary/0") {
+			projectName = button
 			break
 		}
 	}
-	if !foundPipeline {
-		t.Fatal("compact project sheet did not render pipeline details")
+	if projectName == nil {
+		t.Fatal("compact project-name navigation action was not created")
 	}
-	stateKey := renderer.activeSheet.stateKey
-	if !renderer.disclosures[stateKey] {
-		t.Fatalf("compact sheet did not mark disclosure %q expanded", stateKey)
-	}
-	// A resize/orientation change reuses the same screen and refreshed binding
-	// data. The logical disclosure and compact sheet must survive both.
-	renderer.SetScreenAndData(screen, data)
-	gtx.Constraints = layout.Exact(image.Pt(844, 390))
+	projectName.Click()
 	gtx.Ops.Reset()
 	renderer.Layout(gtx)
-	if renderer.activeSheet == nil || !renderer.disclosures[stateKey] {
-		t.Fatalf("orientation change reset compact disclosure: sheet=%#v state=%v", renderer.activeSheet, renderer.disclosures[stateKey])
-	}
-	gtx.Constraints = layout.Exact(image.Pt(390, 844))
-	gtx.Ops.Reset()
-	renderer.Layout(gtx)
-	if renderer.activeSheet == nil || !renderer.activeSheet.seen {
-		t.Fatalf("compact sheet was not restored after returning to portrait: %#v", renderer.activeSheet)
-	}
-	renderer.button("compact-sheet/close").Click()
-	gtx.Ops.Reset()
-	renderer.Layout(gtx)
-	if renderer.activeSheet != nil {
-		t.Fatal("compact sheet did not close")
-	}
-	if renderer.disclosures[stateKey] {
-		t.Fatalf("closing compact sheet left disclosure %q expanded", stateKey)
+	if navigationCount != 2 || navigatedRoute != "/projects/1" {
+		t.Fatalf("project-name navigation = (%d, %q), want one additional navigation", navigationCount, navigatedRoute)
 	}
 }
 
