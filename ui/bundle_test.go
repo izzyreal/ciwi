@@ -8,6 +8,14 @@ import (
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
+func TestEmbeddedResourceRevisionIsStable(t *testing.T) {
+	first := Revision()
+	second := Revision()
+	if first == "" || first == "unavailable" || first != second {
+		t.Fatalf("Revision() = %q then %q", first, second)
+	}
+}
+
 func TestEmbeddedUIBundle(t *testing.T) {
 	routes, err := LoadRoutes()
 	if err != nil {

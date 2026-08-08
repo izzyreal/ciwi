@@ -70,13 +70,14 @@ resolveRefresh();
 	}
 }
 
-func TestBrowserChangeRefreshSchedulerAssetIsNotCached(t *testing.T) {
+func TestBrowserChangeRefreshSchedulerAssetUsesImmutableVersionedCache(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	Handler(recorder, httptest.NewRequest(http.MethodGet, "/ui/change-refresh.js", nil))
+	path := "/ui/change-refresh.js?v=" + currentBrowserUIRevision()
+	Handler(recorder, httptest.NewRequest(http.MethodGet, path, nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
 	}
-	if cacheControl := recorder.Header().Get("Cache-Control"); cacheControl != "no-store" {
-		t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
+	if cacheControl := recorder.Header().Get("Cache-Control"); cacheControl != "public, max-age=31536000, immutable" {
+		t.Fatalf("Cache-Control = %q, want immutable versioned caching", cacheControl)
 	}
 }

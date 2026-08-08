@@ -86,8 +86,8 @@ func TestHeartbeatTimingContractAndAssetsStayShared(t *testing.T) {
 		t.Fatalf("browser CSS heartbeat duration = %v, want %v", duration, protocol.AgentHeartbeatFadeDuration)
 	}
 	for name, page := range map[string]string{"declarative": declarativeHTML} {
-		heartbeatAt := strings.Index(page, `src="/ui/heartbeat.js"`)
-		clientAt := strings.Index(page, `src="/ui/`+name+`.js"`)
+		heartbeatAt := strings.Index(page, `src="/ui/heartbeat.js`)
+		clientAt := strings.Index(page, `src="/ui/`+name+`.js`)
 		if heartbeatAt < 0 || clientAt < 0 || heartbeatAt > clientAt {
 			t.Fatalf("%s page must load heartbeat.js before its client script", name)
 		}

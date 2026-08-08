@@ -3,18 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="ciwi-ui-revision" content="__CIWI_UI_REVISION__" />
   <title>ciwi</title>
-  <link rel="icon" type="image/png" href="/ciwi-favicon.png" />
-  <script src="/ui/theme.js?v=2"></script>
-  <link rel="stylesheet" href="/ui/css/chrome.css?v=2" />
-  <link rel="stylesheet" href="/ui/css/declarative.css" />
+  <script>
+    window.ciwiUIRevision = '__CIWI_UI_REVISION__';
+    window.ciwiUIResourceURL = path => path + (path.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(window.ciwiUIRevision);
+  </script>
+  <link rel="icon" type="image/png" href="/ciwi-favicon.png?v=__CIWI_UI_REVISION__" />
+  <script src="/ui/theme.js?v=__CIWI_UI_REVISION__"></script>
+  <link rel="stylesheet" href="/ui/css/typography.css?v=__CIWI_UI_REVISION__" />
+  <link rel="stylesheet" href="/ui/css/chrome.css?v=__CIWI_UI_REVISION__" />
+  <link rel="stylesheet" href="/ui/css/declarative.css?v=__CIWI_UI_REVISION__" />
 </head>
 <body>
-  <div id="declarativeRoot" aria-live="polite"><p>Loading ciwi…</p></div>
-  <script src="/ui/actions.js"></script>
-  <script src="/ui/view-state.js"></script>
-  <script src="/ui/heartbeat.js"></script>
-  <script src="/ui/change-refresh.js"></script>
-  <script src="/ui/declarative.js"></script>
+  <div id="declarativeRoot" aria-live="polite">
+    <main class="dsl-page ciwi-bootstrap-shell" aria-busy="true">
+      <section class="dsl-hero ciwi-bootstrap-hero">
+        <div class="dsl-skeleton ciwi-bootstrap-logo"></div>
+        <div class="ciwi-bootstrap-copy">
+          <div class="dsl-skeleton ciwi-bootstrap-title"></div>
+          <div class="dsl-skeleton ciwi-bootstrap-subtitle"></div>
+        </div>
+      </section>
+      <section class="dsl-section ciwi-bootstrap-section">
+        <div class="dsl-skeleton ciwi-bootstrap-heading"></div>
+        <div class="dsl-skeleton"></div>
+        <div class="dsl-skeleton"></div>
+      </section>
+      <section class="dsl-section ciwi-bootstrap-section">
+        <div class="dsl-skeleton ciwi-bootstrap-heading"></div>
+        <div class="dsl-skeleton"></div>
+        <div class="dsl-skeleton"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/ui/actions.js?v=__CIWI_UI_REVISION__"></script>
+  <script src="/ui/view-state.js?v=__CIWI_UI_REVISION__"></script>
+  <script src="/ui/heartbeat.js?v=__CIWI_UI_REVISION__"></script>
+  <script src="/ui/change-refresh.js?v=__CIWI_UI_REVISION__"></script>
+  <script src="/ui/declarative.js?v=__CIWI_UI_REVISION__"></script>
 </body>
 </html>

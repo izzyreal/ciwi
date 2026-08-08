@@ -5,6 +5,10 @@
   const activeByScope = new Map();
   let catalogPromise;
 
+  function uiResourceURL(path) {
+    return typeof window.ciwiUIResourceURL === 'function' ? window.ciwiUIResourceURL(path) : path;
+  }
+
   function newActionID() {
     if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
       return globalThis.crypto.randomUUID();
@@ -26,7 +30,7 @@
 
   function catalog() {
     if (!catalogPromise) {
-      catalogPromise = fetch('/ui/contracts/actions.json', { cache: 'no-store' })
+      catalogPromise = fetch(uiResourceURL('/ui/contracts/actions.json'))
         .then(async response => {
           if (!response.ok) throw new Error(await response.text());
           const document = await response.json();

@@ -73,6 +73,39 @@ func TestDeclarativePageReferencesOnlyServedUIAssets(t *testing.T) {
 	}
 }
 
+func TestDeclarativePageBootstrapsFromVersionedCachedResources(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("page status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	revision := currentBrowserUIRevision()
+	if strings.Contains(body, "__CIWI_UI_REVISION__") || !strings.Contains(body, "?v="+revision) {
+		t.Fatal("page does not reference the current browser UI revision")
+	}
+	if strings.Contains(body, "Loading ciwi") || !strings.Contains(body, "ciwi-bootstrap-shell") {
+		t.Fatal("page does not provide an immediate skeleton bootstrap shell")
+	}
+
+	for _, path := range []string{
+		"/ui/declarative.js?v=" + revision,
+		"/ui/contracts/screens/front-page.json?v=" + revision,
+		"/ui/contracts/themes.json?v=" + revision,
+	} {
+		assetRecorder := httptest.NewRecorder()
+		Handler(assetRecorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := assetRecorder.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+			t.Errorf("%s Cache-Control = %q, want immutable caching", path, got)
+		}
+	}
+	unversionedRecorder := httptest.NewRecorder()
+	Handler(unversionedRecorder, httptest.NewRequest(http.MethodGet, "/ui/declarative.js", nil))
+	if got := unversionedRecorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("unversioned asset Cache-Control = %q, want no-store", got)
+	}
+}
+
 func TestMissingEmbeddedAssetReturnsNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	serveEmbeddedAsset(rec, embeddedAsset{path: "assets/missing.js", contentType: "application/javascript"})

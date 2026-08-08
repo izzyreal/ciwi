@@ -23,52 +23,52 @@ func loadRouteContract() (*uidsl.RouteDocument, error) {
 	return routeContract, routeContractErr
 }
 
-func serveScreenContract(w http.ResponseWriter, name string) {
+func serveScreenContract(w http.ResponseWriter, r *http.Request, name string) {
 	screen, err := sharedUI.LoadScreen(name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	serveJSON(w, screen)
+	serveJSON(w, r, screen)
 }
 
-func serveThemeContracts(w http.ResponseWriter) {
+func serveThemeContracts(w http.ResponseWriter, r *http.Request) {
 	themes, err := sharedUI.LoadThemes()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	serveJSON(w, themes)
+	serveJSON(w, r, themes)
 }
 
-func serveActionContract(w http.ResponseWriter) {
+func serveActionContract(w http.ResponseWriter, r *http.Request) {
 	catalog, err := sharedUI.LoadActionCatalog()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	serveJSON(w, catalog)
+	serveJSON(w, r, catalog)
 }
 
-func serveRouteContract(w http.ResponseWriter) {
+func serveRouteContract(w http.ResponseWriter, r *http.Request) {
 	routes, err := loadRouteContract()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	serveJSON(w, routes)
+	serveJSON(w, r, routes)
 }
 
-func serveTypographyContract(w http.ResponseWriter) {
+func serveTypographyContract(w http.ResponseWriter, r *http.Request) {
 	typography, err := sharedUI.LoadTypography()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	serveJSON(w, typography)
+	serveJSON(w, r, typography)
 }
 
-func serveTypographyCSS(w http.ResponseWriter) {
+func serveTypographyCSS(w http.ResponseWriter, r *http.Request) {
 	document, err := sharedUI.LoadTypography()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -99,7 +99,7 @@ func serveTypographyCSS(w http.ResponseWriter) {
 	}
 	css.WriteString("}\n")
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
+	cacheVersionedUIResource(w, r)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(css.String()))
 }
@@ -113,14 +113,14 @@ func sortedMapKeys[V any](values map[string]V) []string {
 	return keys
 }
 
-func serveJSON(w http.ResponseWriter, value any) {
+func serveJSON(w http.ResponseWriter, r *http.Request, value any) {
 	payload, err := json.Marshal(value)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
+	cacheVersionedUIResource(w, r)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(payload)
 }

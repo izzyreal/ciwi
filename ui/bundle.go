@@ -4,17 +4,56 @@
 package ui
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
 //go:embed actions.yaml routes.yaml typography.yaml assets/* screens/*.yaml themes/*.yaml
 var resources embed.FS
+
+var (
+	revisionOnce sync.Once
+	revision     string
+)
+
+// Revision identifies the exact set of renderer-neutral resources embedded in
+// this binary. Browser clients use it to cache immutable UI contracts safely.
+func Revision() string {
+	revisionOnce.Do(func() {
+		hash := sha256.New()
+		err := fs.WalkDir(resources, ".", func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			payload, err := resources.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			_, _ = hash.Write([]byte(path))
+			_, _ = hash.Write([]byte{0})
+			_, _ = hash.Write(payload)
+			_, _ = hash.Write([]byte{0})
+			return nil
+		})
+		if err != nil {
+			revision = "unavailable"
+			return
+		}
+		revision = hex.EncodeToString(hash.Sum(nil))[:16]
+	})
+	return revision
+}
 
 func Read(path string) ([]byte, error) {
 	clean := strings.TrimPrefix(path, "/")

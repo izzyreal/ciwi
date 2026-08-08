@@ -1,5 +1,17 @@
 body { min-height: 100vh; }
 #declarativeRoot { min-height: 100vh; overflow-anchor:none; }
+.ciwi-bootstrap-shell { pointer-events:none; }
+.ciwi-bootstrap-hero { display:flex; align-items:center; gap:var(--ciwi-space-medium, 14px); }
+.ciwi-bootstrap-logo { width:var(--ciwi-image-brand-width, 132px); height:var(--ciwi-image-brand-height, 110px); flex:0 0 auto; border-radius:var(--ciwi-control-radius, 8px); }
+.ciwi-bootstrap-copy { width:min(440px, 65%); display:flex; flex-direction:column; gap:var(--ciwi-space-medium, 14px); }
+.ciwi-bootstrap-title { width:62%; min-height:28px; }
+.ciwi-bootstrap-subtitle { width:100%; }
+.ciwi-bootstrap-section { display:flex; flex-direction:column; gap:var(--ciwi-space-medium, 14px); }
+.ciwi-bootstrap-heading { width:min(220px, 42%); min-height:20px; }
+@media (max-width:720px) {
+  .ciwi-bootstrap-logo { width:72px; height:72px; }
+  .ciwi-bootstrap-copy { width:calc(100% - 86px); }
+}
 .dsl-page {
   width: min(var(--ciwi-page-max, 1600px), calc(100% - var(--ciwi-page-inset, 16px) - var(--ciwi-page-inset, 16px)));
   margin: var(--ciwi-page-inset, 16px) auto;

@@ -32,9 +32,13 @@ const ciwiDarkThemeNames = new Set([
 ]);
 let ciwiThemeContractsPromise;
 
+function ciwiVersionedUIResource(path) {
+  return typeof window.ciwiUIResourceURL === 'function' ? window.ciwiUIResourceURL(path) : path;
+}
+
 function ciwiThemeContracts() {
   if (!ciwiThemeContractsPromise) {
-    ciwiThemeContractsPromise = fetch('/ui/contracts/themes.json', {cache: 'no-store'})
+    ciwiThemeContractsPromise = fetch(ciwiVersionedUIResource('/ui/contracts/themes.json'))
       .then(response => response.ok ? response.json() : Promise.reject(new Error('theme contracts unavailable')))
       .catch(() => []);
   }

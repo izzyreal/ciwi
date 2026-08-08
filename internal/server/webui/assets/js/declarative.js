@@ -20,6 +20,10 @@
   const viewStorageKey = 'ciwi.declarative.views.v1';
   const viewStates = loadViewStates();
 
+  function uiResourceURL(path) {
+	return typeof window.ciwiUIResourceURL === 'function' ? window.ciwiUIResourceURL(path) : path;
+  }
+
   function semanticProgressAt(progress, nowMs) {
     const model = progress && typeof progress === 'object' ? progress : {};
     let state = String(model.state || 'none');
@@ -482,7 +486,7 @@
 
   async function resolveBrowserRoute(path = routePath()) {
 	if (!routeContractPromise) {
-	  routeContractPromise = fetch('/ui/contracts/routes.json', {cache: 'no-store'}).then(async response => {
+	  routeContractPromise = fetch(uiResourceURL('/ui/contracts/routes.json')).then(async response => {
 		if (!response.ok) throw new Error(await response.text());
 		return response.json();
 	  });
@@ -504,7 +508,7 @@
 
   function screenContract(name) {
 	if (!screenContractPromises.has(name)) {
-	  screenContractPromises.set(name, fetch('/ui/contracts/screens/' + encodeURIComponent(name) + '.json').then(async response => {
+	  screenContractPromises.set(name, fetch(uiResourceURL('/ui/contracts/screens/' + encodeURIComponent(name) + '.json')).then(async response => {
 		if (!response.ok) throw new Error(await response.text());
 		return response.json();
 	  }));
@@ -514,7 +518,7 @@
 
   function themeContracts() {
 	if (!themeContractPromise) {
-	  themeContractPromise = fetch('/ui/contracts/themes.json').then(async response => {
+	  themeContractPromise = fetch(uiResourceURL('/ui/contracts/themes.json')).then(async response => {
 		if (!response.ok) throw new Error(await response.text());
 		return response.json();
 	  });
@@ -968,7 +972,7 @@
     icon.classList.add('dsl-icon');
     icon.setAttribute('aria-hidden', 'true');
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', '/ui/icons.svg?v=declarative-4#icon-' + name);
+    use.setAttribute('href', uiResourceURL('/ui/icons.svg') + '#icon-' + name);
     icon.appendChild(use);
     return icon;
   }
@@ -1379,7 +1383,7 @@
 	  if (style.role === 'execution-row' && node.image) {
 	    const image = document.createElement('img');
 	    image.className = 'dsl-execution-row-image';
-	    image.src = node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset;
+	    image.src = node.image.asset === 'ciwi-logo' ? uiResourceURL('/ciwi-logo.png') : node.image.asset;
 	    image.alt = node.image.description || '';
 	    summary.appendChild(image);
 		const statusTone = semanticTone(resolve(data, node.style.toneBinding));
@@ -1394,7 +1398,7 @@
 		if (node.image) {
 		  const imageSource = node.image.binding
 			? String(resolve(data, node.image.binding) || '')
-			: (node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset);
+			: (node.image.asset === 'ciwi-logo' ? uiResourceURL('/ciwi-logo.png') : node.image.asset);
 		  if (imageSource) {
 			const image = document.createElement('img');
 			image.className = 'dsl-disclosure-image';
@@ -1432,7 +1436,7 @@
     } else if (node.component === 'image' && node.image) {
 	  const imageSource = node.image.binding
 		? String(resolve(data, node.image.binding) || '')
-		: (node.image.asset === 'ciwi-logo' ? '/ciwi-logo.png' : node.image.asset);
+		: (node.image.asset === 'ciwi-logo' ? uiResourceURL('/ciwi-logo.png') : node.image.asset);
 	  if (!imageSource) return document.createDocumentFragment();
 	  element.src = imageSource;
       element.alt = node.image.description || '';
