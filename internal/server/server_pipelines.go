@@ -11,11 +11,17 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
 type resolveStepReporter func(step, status, message string)
+
+type pipelineRunResponse struct {
+	protocol.RunPipelineResponse
+	Notice presentation.TransientNotice `json:"notice"`
+}
 
 type pipelineDependencyContext struct {
 	VersionRaw         string
@@ -116,10 +122,16 @@ func (s *stateStore) pipelineByIDHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 		return
 	}
-	writeJSON(w, http.StatusCreated, protocol.RunPipelineResponse{
-		ProjectName: resp.ProjectName, PipelineID: resp.PipelineID, Enqueued: resp.Enqueued,
-		JobExecutionIDs: append([]string(nil), resp.JobExecutionIDs...),
-	})
+	result := pipelineRunResponse{
+		RunPipelineResponse: protocol.RunPipelineResponse{
+			ProjectName: resp.ProjectName, PipelineID: resp.PipelineID, Enqueued: resp.Enqueued,
+			JobExecutionIDs: append([]string(nil), resp.JobExecutionIDs...),
+		},
+	}
+	result.Notice = presentation.QueuedPipelineNotice(
+		resp.ProjectName, resp.PipelineID, req.PipelineJobID, resp.Enqueued, req.DryRun, resp.JobExecutionIDs,
+	)
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (s *stateStore) pipelineChainActionHandler(w http.ResponseWriter, r *http.Request, projectID int64, chainID, action string) {
@@ -147,10 +159,14 @@ func (s *stateStore) pipelineChainActionHandler(w http.ResponseWriter, r *http.R
 			http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 			return
 		}
-		writeJSON(w, http.StatusCreated, protocol.RunPipelineResponse{
-			ProjectName: resp.ProjectName, PipelineChainID: resp.ChainID, PipelineChainName: resp.ChainName, Enqueued: resp.Enqueued,
-			JobExecutionIDs: append([]string(nil), resp.JobExecutionIDs...),
-		})
+		result := pipelineRunResponse{
+			RunPipelineResponse: protocol.RunPipelineResponse{
+				ProjectName: resp.ProjectName, PipelineChainID: resp.ChainID, PipelineChainName: resp.ChainName, Enqueued: resp.Enqueued,
+				JobExecutionIDs: append([]string(nil), resp.JobExecutionIDs...),
+			},
+		}
+		result.Notice = presentation.QueuedChainNotice(resp.ProjectName, resp.ChainName, resp.Enqueued, req.DryRun)
+		writeJSON(w, http.StatusCreated, result)
 		return
 	}
 	ch, err := s.pipelineStore().GetPipelineChain(projectID, chainID)

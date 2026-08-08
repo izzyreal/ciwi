@@ -1,0 +1,24 @@
+apiVersion: ciwi.ui/v1
+kind: Controls
+controls:
+  button:
+    iconPosition: leading
+    iconSize: 19
+    iconGap: 8
+  select:
+    chevronPosition: trailing
+    chevronSize: 19
+    chevronGap: 12
+    minimumHeight: 44
+    menuGap: 6
+    menuPadding: 6
+    menuItemGap: 2
+    menuMinimumWidth: 120
+    menuMinimumHeight: 120
+    menuMaximumHeight: 420
+    viewportInset: 8
+    optionGap: 8
+    optionPaddingX: 10
+    optionPaddingY: 7
+    optionMinimumHeight: 40
+    selectionIndicatorWidth: 20

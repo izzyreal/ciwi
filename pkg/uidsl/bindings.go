@@ -114,6 +114,11 @@ func validateNodeInstanceBindings(node Node, data, locals map[string]any, platfo
 		}
 	}
 	if node.Disclosure != nil {
+		if node.Disclosure.DefaultExpandedBinding != "" {
+			if err := check("disclosure.defaultExpandedBinding", node.Disclosure.DefaultExpandedBinding); err != nil {
+				return err
+			}
+		}
 		if err := checkTemplate("disclosure.stateKey", node.Disclosure.StateKey, false); err != nil {
 			return err
 		}

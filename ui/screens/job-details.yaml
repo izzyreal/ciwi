@@ -565,6 +565,7 @@ screen:
                   binding: outputGroup.title
                 disclosure:
                   defaultExpanded: false
+                  defaultExpandedBinding: outputGroup.default_expanded
                   stateKey: "{{outputGroup.state_key}}"
                 layout:
                   direction: vertical

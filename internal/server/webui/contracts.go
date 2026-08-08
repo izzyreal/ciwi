@@ -68,6 +68,15 @@ func serveTypographyContract(w http.ResponseWriter, r *http.Request) {
 	serveJSON(w, r, typography)
 }
 
+func serveControlsContract(w http.ResponseWriter, r *http.Request) {
+	controls, err := sharedUI.LoadControls()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	serveJSON(w, r, controls)
+}
+
 func serveTypographyCSS(w http.ResponseWriter, r *http.Request) {
 	document, err := sharedUI.LoadTypography()
 	if err != nil {

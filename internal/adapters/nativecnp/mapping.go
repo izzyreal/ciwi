@@ -98,7 +98,8 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 			Reached: group.Reached, Started: group.Started, Duration: group.Duration,
 			ExitCode: group.ExitCode, Error: group.Error, Details: group.Details,
 			YamlLiteral: group.YAMLLiteral, ExpandedCommand: group.ExpandedCommand,
-			Progress: progressToProto(group.Progress),
+			DefaultExpanded: group.DefaultExpanded,
+			Progress:        progressToProto(group.Progress),
 		})
 	}
 	return &cnpv1.JobDetailsView{

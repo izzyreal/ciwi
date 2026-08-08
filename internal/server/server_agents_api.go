@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/application"
+	"github.com/izzyreal/ciwi/internal/presentation"
 )
 
 func (s *stateStore) agentByIDHandler(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +85,7 @@ func (s *stateStore) agentActionHandler(w http.ResponseWriter, r *http.Request, 
 		writeJSON(w, http.StatusCreated, agentRunScriptResponse{
 			Queued: result.Queued, AgentID: result.AgentID, JobExecutionID: result.JobExecutionID,
 			Shell: result.Shell, TimeoutSeconds: result.TimeoutSeconds,
+			Notice: presentation.QueuedJobNotice("Queued ad-hoc script on "+result.AgentID, result.JobExecutionID),
 		})
 		return
 	}

@@ -288,6 +288,7 @@ message JobOutputGroup {
   string yaml_literal = 14;
   string expanded_command = 15;
   Progress progress = 16;
+  bool default_expanded = 17;
 }
 
 message WatchJobOutputRequest {

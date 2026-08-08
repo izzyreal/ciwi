@@ -48,11 +48,12 @@ type agentActionResponse struct {
 }
 
 type agentRunScriptResponse struct {
-	Queued         bool   `json:"queued"`
-	AgentID        string `json:"agent_id"`
-	JobExecutionID string `json:"job_execution_id"`
-	Shell          string `json:"shell"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
+	Queued         bool                         `json:"queued"`
+	AgentID        string                       `json:"agent_id"`
+	JobExecutionID string                       `json:"job_execution_id"`
+	Shell          string                       `json:"shell"`
+	TimeoutSeconds int                          `json:"timeout_seconds"`
+	Notice         presentation.TransientNotice `json:"notice"`
 }
 
 func agentViewFromState(agentID string, state agentState, pendingTarget, serverVersion string, jobInProgress bool) agentView {

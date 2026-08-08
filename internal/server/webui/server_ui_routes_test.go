@@ -90,7 +90,9 @@ func TestDeclarativePageBootstrapsFromVersionedCachedResources(t *testing.T) {
 
 	for _, path := range []string{
 		"/ui/declarative.js?v=" + revision,
+		"/ui/notices.js?v=" + revision,
 		"/ui/contracts/screens/front-page.json?v=" + revision,
+		"/ui/contracts/controls.json?v=" + revision,
 		"/ui/contracts/themes.json?v=" + revision,
 	} {
 		assetRecorder := httptest.NewRecorder()

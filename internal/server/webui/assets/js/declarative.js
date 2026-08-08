@@ -11,10 +11,13 @@
   let currentPath = '';
   let routeContractPromise = null;
   let themeContractPromise = null;
+  let controlsContractPromise = null;
+  let activeControls = null;
   const screenContractPromises = new Map();
   const browserViewCache = new Map();
   let screenContractsPreloaded = false;
   let changeRefreshScheduler = null;
+  let activeBrowserSelect = null;
   const determinateProgressLimit = .999;
   const indeterminateProgressCycleMs = 4000;
   const overrunProgressCycleMs = 2000;
@@ -90,20 +93,6 @@
     document.querySelectorAll('.dsl-pulse').forEach(element => updateTimestampPulse(element, Date.now()));
   }, 250);
 
-  const dimensionVariables = {
-    small: '--ciwi-space-small', medium: '--ciwi-space-medium', large: '--ciwi-space-large',
-    page: '--ciwi-page-max', 'page-inset': '--ciwi-page-inset',
-    'section-padding': '--ciwi-section-padding', 'card-padding': '--ciwi-card-padding',
-    'hero-padding': '--ciwi-hero-padding', 'surface-radius': '--ciwi-surface-radius',
-    'control-radius': '--ciwi-control-radius', 'control-padding-x': '--ciwi-control-padding-x',
-    'control-padding-y': '--ciwi-control-padding-y', 'text-body': '--ciwi-text-body',
-    'text-control': '--ciwi-text-control',
-    'text-code': '--ciwi-text-code', 'text-badge': '--ciwi-text-badge',
-    'text-subtitle': '--ciwi-text-subtitle', 'text-heading': '--ciwi-text-heading',
-    'text-title': '--ciwi-text-title', 'image-brand-width': '--ciwi-image-brand-width',
-    'image-brand-height': '--ciwi-image-brand-height',
-  };
-
   function loadViewStates() {
     try {
       const parsed = JSON.parse(localStorage.getItem(viewStorageKey) || '{}');
@@ -124,43 +113,43 @@
   }
 
   function applyContractTheme(documents) {
-    const selected = document.documentElement.getAttribute('data-ciwi-theme') || 'default';
-    const documentTheme = (documents || []).find(item => item && item.metadata && item.metadata.name === selected)
-      || (documents || []).find(item => item && item.metadata && item.metadata.name === 'default');
-    if (!documentTheme) return;
-    const theme = documentTheme.theme || {};
-    const colors = theme.colors || {};
-	const dimensions = theme.dimensions || {};
-    const style = document.documentElement.style;
-    const mapping = {
-      background: '--bg', surface: '--surface', 'surface-subtle': '--surface-subtle',
-      'surface-raised': '--surface-raised', 'surface-glow': '--card-glow',
-      'background-start': '--bg2', 'background-end': '--bg3',
-      'background-glow-a': '--bg-glow-a', 'background-glow-b': '--bg-glow-b',
-      'pill-background': '--pill-bg', 'pill-text': '--pill-ink',
-      'notice-background': '--snackbar-bg', 'notice-text': '--snackbar-ink', 'notice-border': '--snackbar-line',
-      text: '--ink', 'text-muted': '--muted', accent: '--accent', 'accent-strong': '--accent-strong',
-      border: '--line', success: '--ok', warning: '--warn', danger: '--bad', focus: '--focus-ring',
-      'console-background': '--console-bg', 'console-surface': '--console-surface',
-      'console-border': '--console-line', 'console-text': '--console-ink',
-      'console-muted': '--console-muted', 'console-accent': '--console-accent',
-      'console-success': '--console-green',
-    };
-    Object.entries(mapping).forEach(([token, variable]) => { if (colors[token]) style.setProperty(variable, colors[token]); });
-	Object.entries(dimensionVariables).forEach(([token, variable]) => {
-	  if (dimensions[token] !== undefined) style.setProperty(variable, String(dimensions[token]) + 'px');
-	});
-    const page = gradientCSS(theme.gradients && theme.gradients.page);
-    const hero = gradientCSS(theme.gradients && theme.gradients.hero);
-    if (page) style.setProperty('--page-background', page);
-    if (hero) style.setProperty('--chrome-card-bg', hero);
-    if (colors['background-start'] && colors['background-end'] && colors['background-glow-a'] && colors['background-glow-b']) {
-      style.setProperty('--page-background', 'radial-gradient(circle at 12% -10%, color-mix(in srgb, var(--bg-glow-a) 86%, transparent) 0%, transparent 38%), radial-gradient(circle at 90% 8%, color-mix(in srgb, var(--bg-glow-b) 82%, transparent) 0%, transparent 34%), linear-gradient(145deg, var(--bg2) 0%, var(--bg) 48%, var(--bg3) 100%)');
+    if (typeof window.ciwiApplyContractThemeDocuments === 'function') {
+      window.ciwiApplyContractThemeDocuments(documents || []);
     }
-    if (colors['surface-glow']) {
-      style.setProperty('--ciwi-card-background', 'radial-gradient(circle at 100% 0%, var(--card-glow) 0%, transparent 38%), linear-gradient(145deg, var(--surface) 0%, var(--surface-subtle) 100%)');
-      style.setProperty('--chrome-card-bg', 'var(--ciwi-card-background)');
-    }
+  }
+
+  function controlsContract() {
+	if (!controlsContractPromise) {
+	  controlsContractPromise = fetch(uiResourceURL('/ui/contracts/controls.json')).then(async response => {
+		if (!response.ok) throw new Error(await response.text());
+		return response.json();
+	  });
+	}
+	return controlsContractPromise;
+  }
+
+  function applyControlsContract(documentContract) {
+	activeControls = documentContract && documentContract.controls;
+	if (!activeControls) return;
+	const style = document.documentElement.style;
+	const metric = (variable, value) => style.setProperty(variable, String(value) + 'px');
+	metric('--ciwi-button-icon-size', activeControls.button.iconSize);
+	metric('--ciwi-button-icon-gap', activeControls.button.iconGap);
+	metric('--ciwi-select-chevron-size', activeControls.select.chevronSize);
+	metric('--ciwi-select-chevron-gap', activeControls.select.chevronGap);
+	metric('--ciwi-select-min-height', activeControls.select.minimumHeight);
+	metric('--ciwi-select-menu-padding', activeControls.select.menuPadding);
+	metric('--ciwi-select-menu-item-gap', activeControls.select.menuItemGap);
+	metric('--ciwi-select-option-gap', activeControls.select.optionGap);
+	metric('--ciwi-select-option-padding-x', activeControls.select.optionPaddingX);
+	metric('--ciwi-select-option-padding-y', activeControls.select.optionPaddingY);
+	metric('--ciwi-select-option-min-height', activeControls.select.optionMinimumHeight);
+	metric('--ciwi-select-indicator-width', activeControls.select.selectionIndicatorWidth);
+  }
+
+  function appendPositionedIcon(element, label, icon, position) {
+	if (position === 'trailing') element.append(label, icon);
+	else element.append(icon, label);
   }
 
   function resolve(data, path) {
@@ -411,6 +400,8 @@
     if (layout.grow) {
       element.style.flexGrow = '1';
       element.style.flexBasis = '0';
+	  element.style.alignSelf = 'stretch';
+	  element.style.width = 'auto';
     }
     if (layout.minWidth) element.style.minWidth = /^\d+$/.test(layout.minWidth) ? layout.minWidth + 'px' : layout.minWidth;
     if (layout.maxWidth && layout.maxWidth !== 'page') element.style.maxWidth = /^\d+$/.test(layout.maxWidth) ? layout.maxWidth + 'px' : layout.maxWidth;
@@ -426,6 +417,12 @@
       agent_id: args.agentId || '',
       execution_mode: args.executionMode || '',
     };
+  }
+
+  function showResponseNotice(result) {
+    if (result && result.notice && typeof window.ciwiShowNotice === 'function') {
+      window.ciwiShowNotice(result.notice);
+    }
   }
 
   function routePath() {
@@ -513,13 +510,135 @@
       case 'card': return document.createElement('article');
       case 'disclosure': return document.createElement('details');
       case 'button': return document.createElement('button');
-      case 'select': return document.createElement('select');
+      case 'select': return document.createElement('button');
       case 'input': return document.createElement(node.input && node.input.multiline ? 'textarea' : 'input');
       case 'image': return document.createElement('img');
       case 'divider': return document.createElement('hr');
       case 'spacer': return document.createElement('span');
       default: return document.createElement('div');
     }
+  }
+
+  function closeBrowserSelect() {
+    if (!activeBrowserSelect) return;
+    const {trigger, menu, onDocumentPointer, onWindowChange} = activeBrowserSelect;
+    if (menu && menu.parentNode) menu.remove();
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', onDocumentPointer, true);
+    window.removeEventListener('resize', onWindowChange);
+    window.removeEventListener('scroll', onWindowChange, true);
+    activeBrowserSelect = null;
+  }
+
+  function layoutBrowserSelectMenu(trigger, menu) {
+    const rect = trigger.getBoundingClientRect();
+	const visuals = activeControls.select;
+    const inset = visuals.viewportInset;
+	const menuGap = visuals.menuGap;
+    const availableWidth = Math.max(visuals.menuMinimumWidth, window.innerWidth - inset * 2);
+    menu.style.maxWidth = availableWidth + 'px';
+    menu.style.minWidth = Math.min(availableWidth, rect.width) + 'px';
+    menu.style.left = Math.min(Math.max(inset, rect.left), Math.max(inset, window.innerWidth - inset - menu.offsetWidth)) + 'px';
+    const below = window.innerHeight - rect.bottom - inset;
+    const above = rect.top - inset;
+    const placeAbove = menu.offsetHeight > below && above > below;
+	const availableHeight = placeAbove ? above : below;
+	menu.style.maxHeight = Math.max(visuals.menuMinimumHeight, Math.min(visuals.menuMaximumHeight, availableHeight)) + 'px';
+    menu.style.top = (placeAbove ? Math.max(inset, rect.top - menu.offsetHeight - menuGap) : rect.bottom + menuGap) + 'px';
+  }
+
+  function configureBrowserSelect(trigger, options, selectedValue) {
+    trigger.type = 'button';
+    trigger.classList.add('dsl-select');
+    trigger.value = selectedValue;
+    const selected = options.find(option => option.value === selectedValue) || options[0] || {label: selectedValue};
+    trigger.dataset.selectedLabel = selected.label;
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    const label = document.createElement('span');
+    label.className = 'dsl-select-label';
+    label.textContent = selected.label;
+	appendPositionedIcon(trigger, label, declarativeIcon('chevron-down'), activeControls.select.chevronPosition);
+
+    const updateIntrinsicWidth = () => {
+      if (!document.body.contains(trigger)) return;
+      const context = document.createElement('canvas').getContext('2d');
+      const computed = window.getComputedStyle(trigger);
+      context.font = computed.font;
+      const widest = options.reduce((width, option) => Math.max(width, context.measureText(option.label).width), 0);
+	  const padding = parseFloat(computed.paddingLeft) + parseFloat(computed.paddingRight);
+	  const visuals = activeControls.select;
+	  const contentWidth = widest + padding + visuals.chevronSize + visuals.chevronGap;
+      trigger.style.width = 'min(100%, ' + String(Math.ceil(contentWidth)) + 'px)';
+    };
+    requestAnimationFrame(updateIntrinsicWidth);
+
+    const open = () => {
+      if (activeBrowserSelect && activeBrowserSelect.trigger === trigger) {
+        closeBrowserSelect();
+        return;
+      }
+      closeBrowserSelect();
+      const menu = document.createElement('div');
+      menu.className = 'dsl-select-menu';
+      menu.setAttribute('role', 'listbox');
+      menu.setAttribute('aria-label', trigger.getAttribute('aria-label') || 'Options');
+      let activeIndex = Math.max(0, options.findIndex(option => option.value === trigger.value));
+      const choices = options.map((option, index) => {
+        const choice = document.createElement('button');
+        choice.type = 'button';
+        choice.className = 'dsl-select-option';
+        choice.setAttribute('role', 'option');
+        choice.setAttribute('aria-selected', String(option.value === trigger.value));
+        const check = document.createElement('span');
+        check.className = 'dsl-select-check';
+        check.textContent = option.value === trigger.value ? '✓' : '';
+        const copy = document.createElement('span');
+        copy.textContent = option.label;
+        choice.append(check, copy);
+        choice.addEventListener('click', () => {
+          trigger.value = option.value;
+          trigger.dataset.selectedLabel = option.label;
+          label.textContent = option.label;
+          closeBrowserSelect();
+          trigger.dispatchEvent(new Event('change', {bubbles: true}));
+          trigger.focus();
+        });
+        choice.addEventListener('focus', () => { activeIndex = index; });
+        menu.appendChild(choice);
+        return choice;
+      });
+      const focusAt = index => {
+        activeIndex = (index + choices.length) % choices.length;
+        choices[activeIndex].focus();
+      };
+      menu.addEventListener('keydown', event => {
+        if (event.key === 'ArrowDown') { event.preventDefault(); focusAt(activeIndex + 1); }
+        if (event.key === 'ArrowUp') { event.preventDefault(); focusAt(activeIndex - 1); }
+        if (event.key === 'Home') { event.preventDefault(); focusAt(0); }
+        if (event.key === 'End') { event.preventDefault(); focusAt(choices.length - 1); }
+        if (event.key === 'Escape') { event.preventDefault(); closeBrowserSelect(); trigger.focus(); }
+      });
+      document.body.appendChild(menu);
+      const onDocumentPointer = event => {
+        if (!menu.contains(event.target) && event.target !== trigger && !trigger.contains(event.target)) closeBrowserSelect();
+      };
+      const onWindowChange = () => layoutBrowserSelectMenu(trigger, menu);
+      activeBrowserSelect = {trigger, menu, onDocumentPointer, onWindowChange};
+      trigger.setAttribute('aria-expanded', 'true');
+      layoutBrowserSelectMenu(trigger, menu);
+      document.addEventListener('pointerdown', onDocumentPointer, true);
+      window.addEventListener('resize', onWindowChange);
+      window.addEventListener('scroll', onWindowChange, true);
+      choices[activeIndex] && choices[activeIndex].focus();
+    };
+    trigger.addEventListener('click', open);
+    trigger.addEventListener('keydown', event => {
+      if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
+        event.preventDefault();
+        open();
+      }
+    });
   }
 
   function elementContainsTextSelection(element) {
@@ -549,9 +668,17 @@
         }
         else if (action.command === 'open-url' && args.url) window.open(args.url, '_blank', 'noopener,noreferrer');
 		else if (action.command === 'refresh') await refresh({throwOnError: true, showLoading: true});
-        else if (action.command === 'change-theme') {
-          ciwiApplyTheme(args.theme);
-          await refresh();
+		else if (action.command === 'change-theme') {
+		  const selectedTheme = ciwiApplyTheme(args.theme);
+		  const settings = currentData && currentData.settings;
+		  if (settings) {
+			settings.selected_theme = selectedTheme;
+			const selected = (settings.themes || []).find(theme => theme.name === selectedTheme);
+			settings.selected_theme_description = selected ? selected.description : '';
+			document.querySelectorAll('[data-ciwi-binding="settings.selected_theme_description"]').forEach(target => {
+			  target.textContent = settings.selected_theme_description;
+			});
+		  }
         }
 		else if (action.command === 'set-project-structure-filter') {
 		  const details = currentData && currentData.projectDetails;
@@ -702,6 +829,7 @@
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
 		  if (!result.job_execution_id) throw new Error('Script response did not include a job identifier');
+		  showResponseNotice(result);
 		  await navigateBrowser('/jobs/' + encodeURIComponent(result.job_execution_id));
 		}
 		else if (action.command === 'set-vault-field') {
@@ -746,7 +874,8 @@
             signal: runtime.signal,
           });
           if (!response.ok) throw new Error(await response.text());
-          element.textContent = 'Queued';
+		  const result = await response.json();
+		  showResponseNotice(result);
         }
 		else if (action.command === 'run-chain') {
 		  const path = '/api/v1/projects/' + encodeURIComponent(args.projectId) + '/pipeline-chains/' + encodeURIComponent(args.chainId) + '/run';
@@ -756,7 +885,8 @@
 		    signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
-		  element.textContent = 'Queued';
+		  const result = await response.json();
+		  showResponseNotice(result);
 		}
 		else if (action.command === 'agent-action') {
 		  const response = await fetch('/api/v1/agents/' + encodeURIComponent(args.agentId) + '/actions', {
@@ -898,6 +1028,7 @@
 		  const result = await response.json();
 		  const rerunID = result && result.job_execution && result.job_execution.id;
 		  if (!rerunID) throw new Error('Rerun response did not include an execution identifier');
+		  showResponseNotice(result);
 		  await navigateBrowser('/jobs/' + encodeURIComponent(rerunID));
 		}
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
@@ -928,7 +1059,7 @@
           const selected = element.options && element.selectedIndex >= 0 ? element.options[element.selectedIndex] : null;
           const actionData = element.tagName === 'INPUT' || element.tagName === 'TEXTAREA'
             ? Object.assign({}, data, {input: {value: element.value}})
-            : Object.assign({}, data, {selection: {value: element.value, label: selected ? selected.textContent : element.value}});
+            : Object.assign({}, data, {selection: {value: element.value, label: selected ? selected.textContent : (element.dataset.selectedLabel || element.value)}});
           invoke(actionData).catch(error => window.alert(error.message || String(error)));
         });
       }
@@ -1384,15 +1515,18 @@
       element.appendChild(summary);
       if (node.disclosure) {
         const stateKey = node.disclosure.stateKey ? renderText({template: node.disclosure.stateKey}, data) : '';
+		const defaultExpanded = node.disclosure.defaultExpandedBinding
+		  ? !!resolve(data, node.disclosure.defaultExpandedBinding)
+		  : !!node.disclosure.defaultExpanded;
         if (stateKey) {
           element.dataset.disclosureKey = stateKey;
-          element.open = disclosureStates.get(stateKey, node.disclosure.defaultExpanded);
+          element.open = disclosureStates.get(stateKey, defaultExpanded);
           element.addEventListener('toggle', () => {
 			disclosureStates.set(stateKey, element.open);
 			requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
           });
         } else {
-          element.open = !!node.disclosure.defaultExpanded;
+          element.open = defaultExpanded;
         }
 		(node.disclosure.summary || []).forEach(summaryNode => summary.appendChild(renderNode(summaryNode, data)));
       }
@@ -1412,14 +1546,14 @@
     } else if (node.component === 'select' && node.select) {
       const options = resolve(data, node.select.options);
       const current = String(resolve(data, node.select.value));
-      (Array.isArray(options) ? options : []).forEach(item => {
+	  const renderedOptions = (Array.isArray(options) ? options : []).map(item => {
         const optionData = Object.assign({}, data, {[node.select.as]: item});
-        const option = document.createElement('option');
-        option.value = String(resolve(optionData, node.select.optionValue));
-        option.textContent = String(resolve(optionData, node.select.optionLabel));
-        option.selected = option.value === current;
-        element.appendChild(option);
+		return {
+		  value: String(resolve(optionData, node.select.optionValue)),
+		  label: String(resolve(optionData, node.select.optionLabel)),
+		};
       });
+	  configureBrowserSelect(element, renderedOptions, current);
     } else if (node.component === 'input' && node.input) {
 	  if (!node.input.multiline) element.type = 'text';
 	  if (node.input.minLines) {
@@ -1431,6 +1565,7 @@
       element.placeholder = node.input.placeholder || '';
     } else if (node.text) {
       const text = renderText(node.text, data);
+	  if (node.text.binding) element.dataset.ciwiBinding = node.text.binding;
       if ((node.id === 'job-output-system-text' || node.id === 'job-output-group-text') && data.jobDetails) {
 		const itemID = node.id === 'job-output-group-text' && data.outputGroup ? String(data.outputGroup.id || '') : '';
 		renderBrowserOutputText(element, text, itemID, data.jobDetails);
@@ -1438,14 +1573,25 @@
 		element.textContent = text;
 	  }
     }
-	if (node.component === 'button' && style.role === 'icon-button') {
+    if (node.component === 'button' && style.role === 'icon-button') {
 	  const accessibleLabel = element.textContent || 'Action';
 	  element.setAttribute('aria-label', accessibleLabel);
 	  element.title = accessibleLabel;
 	  element.textContent = '';
 	}
+	if (node.component === 'button' && style.role !== 'icon-button' && style.role !== 'tailing-toggle') {
+	  const copy = element.textContent;
+	  element.textContent = '';
+	  const label = document.createElement('span');
+	  label.className = 'dsl-button-label';
+	  label.textContent = copy;
+	  element.appendChild(label);
+	}
     if (node.component === 'button' && node.icon) {
-	  element.prepend(declarativeIcon(node.icon));
+	  const icon = declarativeIcon(node.icon);
+	  const label = element.querySelector('.dsl-button-label');
+	  if (label) appendPositionedIcon(element, label, icon, activeControls.button.iconPosition);
+	  else element.prepend(icon);
     }
     bindActions(element, node.actions, data);
 	const childrenTarget = element;
@@ -1467,6 +1613,7 @@
 
   function renderCurrent() {
     if (!currentDocument || !currentData) return;
+    closeBrowserSelect();
     const viewState = window.ciwiCaptureViewState(root);
     root.replaceChildren(renderNode(currentDocument.screen.root, currentData));
     window.ciwiRestoreViewState(root, viewState);
@@ -1488,6 +1635,8 @@
 	  throw error;
 	}
   }
+
+  window.ciwiNavigate = navigateBrowser;
 
   function declarativeVersionOptions(versions, emptyLabel) {
 	const values = (Array.isArray(versions) ? versions : []).map(value => String(value || '').trim()).filter(Boolean);
@@ -1797,6 +1946,7 @@
 	  const settingsUpdateStatusPromise = settingsMatch ? fetch('/api/v1/update/status') : null;
 	  const documentPromise = screenContract(screenName);
 	  const themesPromise = themeContracts();
+	  const controlsPromise = controlsContract();
 	  const cacheKey = routePath();
 	  const cachedView = browserViewCache.get(cacheKey);
 	  if (cachedView) {
@@ -1806,9 +1956,10 @@
 	  }
 	  const loadingView = options.showLoading ? (cachedView || browserLoadingBinding(nextRouteMatch)) : null;
 	  if (loadingView) {
-		const [loadingDocument, loadingThemes] = await Promise.all([documentPromise, themesPromise]);
+		const [loadingDocument, loadingThemes, loadingControls] = await Promise.all([documentPromise, themesPromise, controlsPromise]);
 		if (loadGeneration !== routeLoadGeneration) return false;
 		applyContractTheme(loadingThemes);
+		applyControlsContract(loadingControls);
 		outputWatchGeneration = generation;
 		currentRouteMatch = nextRouteMatch;
 		currentPath = routePath();
@@ -1817,10 +1968,11 @@
 		renderCurrent();
 		loadingCommitted = true;
 	  }
-	  const [documentContract, themes, viewResponse] = await Promise.all([documentPromise, themesPromise, viewPromise]);
+	  const [documentContract, themes, controls, viewResponse] = await Promise.all([documentPromise, themesPromise, controlsPromise, viewPromise]);
 	  if (!viewResponse.ok) throw new Error(await viewResponse.text());
 	  const responseView = await viewResponse.json();
       applyContractTheme(themes);
+	  applyControlsContract(controls);
       let view = responseView;
 	  if (managedYAMLMatch) view = managedYAMLBinding(responseView);
 	  if (agentScriptMatch) view = agentScriptBinding(responseView, nextRouteMatch.params.agentId);

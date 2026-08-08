@@ -40,6 +40,24 @@ func TestDeclarativeRouteContract(t *testing.T) {
 	}
 }
 
+func TestDeclarativeControlsContract(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler(recorder, httptest.NewRequest("GET", "/ui/contracts/controls.json", nil))
+	if recorder.Code != 200 {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var controls uidsl.ControlsDocument
+	if err := json.Unmarshal(recorder.Body.Bytes(), &controls); err != nil {
+		t.Fatal(err)
+	}
+	if err := controls.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if controls.Controls.Button.IconPosition != "leading" || controls.Controls.Select.ChevronPosition != "trailing" {
+		t.Fatalf("controls = %#v", controls.Controls)
+	}
+}
+
 func TestEveryWebCommandHasABrowserAdapter(t *testing.T) {
 	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {
@@ -609,12 +627,18 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	themePayload, err := uiAssets.ReadFile("assets/js/theme.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	script := string(scriptPayload)
 	style := string(stylePayload)
+	combined := script + style + string(themePayload)
 	for _, expected := range []string{
-		"dimensionVariables", "--ciwi-page-max", "node.disclosure.summary", "dsl-icon-button",
-		"element.textContent = ''", "element.prepend(declarativeIcon(node.icon))", ".dsl-disclosure > summary::after", ".dsl-code-inline",
+		"ThemeDimensionVariables", "--ciwi-page-max", "node.disclosure.summary", "dsl-icon-button",
+		"element.textContent = ''", "appendPositionedIcon(element, label, icon, activeControls.button.iconPosition)", ".dsl-disclosure > summary::after", ".dsl-code-inline",
 		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted", "cssLength(layout.gap)",
+		"/ui/contracts/controls.json", "activeControls.select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-select-chevron-gap",
 		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) 18%",
 		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", ".dsl-output-group:not([open]) > summary",
 		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-output-group > summary { color:var(--console-accent)",
@@ -626,7 +650,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		".dsl-execution-row:not([open]) > summary.ciwi-progress-surface", "border-radius:var(--ciwi-surface-radius",
 		".dsl-execution-section-header", ".dsl-agent-header,.dsl-agent-record { display:grid !important;",
 	} {
-		if !strings.Contains(script+style, expected) {
+		if !strings.Contains(combined, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
 		}
 	}

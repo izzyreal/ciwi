@@ -112,10 +112,11 @@ type Pulse struct {
 }
 
 type Disclosure struct {
-	DefaultExpanded     bool   `yaml:"defaultExpanded,omitempty" json:"defaultExpanded,omitempty"`
-	StateKey            string `yaml:"stateKey,omitempty" json:"stateKey,omitempty"`
-	CompactPresentation string `yaml:"compactPresentation,omitempty" json:"compactPresentation,omitempty"`
-	Summary             []Node `yaml:"summary,omitempty" json:"summary,omitempty"`
+	DefaultExpanded        bool   `yaml:"defaultExpanded,omitempty" json:"defaultExpanded,omitempty"`
+	DefaultExpandedBinding string `yaml:"defaultExpandedBinding,omitempty" json:"defaultExpandedBinding,omitempty"`
+	StateKey               string `yaml:"stateKey,omitempty" json:"stateKey,omitempty"`
+	CompactPresentation    string `yaml:"compactPresentation,omitempty" json:"compactPresentation,omitempty"`
+	Summary                []Node `yaml:"summary,omitempty" json:"summary,omitempty"`
 }
 
 // GraphView describes one definition graph. The node's children are its list

@@ -40,10 +40,17 @@ func TestAgentRunScriptQueuesTargetedJobExecution(t *testing.T) {
 	var runPayload struct {
 		Queued         bool   `json:"queued"`
 		JobExecutionID string `json:"job_execution_id"`
+		Notice         struct {
+			Message string `json:"message"`
+			Route   string `json:"route"`
+		} `json:"notice"`
 	}
 	decodeJSONBody(t, runResp, &runPayload)
 	if !runPayload.Queued || strings.TrimSpace(runPayload.JobExecutionID) == "" {
 		t.Fatalf("unexpected run-script payload: %+v", runPayload)
+	}
+	if runPayload.Notice.Message == "" || runPayload.Notice.Route != "/jobs/"+runPayload.JobExecutionID {
+		t.Fatalf("unexpected run-script notice: %+v", runPayload.Notice)
 	}
 
 	jobResp := mustJSONRequest(t, client, http.MethodGet, ts.URL+"/api/v1/jobs/"+runPayload.JobExecutionID, nil)
@@ -52,9 +59,10 @@ func TestAgentRunScriptQueuesTargetedJobExecution(t *testing.T) {
 	}
 	var jobPayload struct {
 		Job struct {
-			ID                   string            `json:"id"`
-			RequiredCapabilities map[string]string `json:"required_capabilities"`
-			Metadata             map[string]string `json:"metadata"`
+			ID                   string                     `json:"id"`
+			RequiredCapabilities map[string]string          `json:"required_capabilities"`
+			Metadata             map[string]string          `json:"metadata"`
+			StepPlan             []protocol.JobStepPlanItem `json:"step_plan"`
 		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, jobResp, &jobPayload)
@@ -66,6 +74,9 @@ func TestAgentRunScriptQueuesTargetedJobExecution(t *testing.T) {
 	}
 	if jobPayload.Job.Metadata["adhoc"] != "1" {
 		t.Fatalf("expected adhoc metadata, got %+v", jobPayload.Job.Metadata)
+	}
+	if len(jobPayload.Job.StepPlan) != 1 || jobPayload.Job.StepPlan[0].Name != "Ad-hoc script" || jobPayload.Job.StepPlan[0].Script == "" {
+		t.Fatalf("expected one executable ad-hoc step, got %+v", jobPayload.Job.StepPlan)
 	}
 
 	leaseOther := mustJSONRequest(t, client, http.MethodPost, ts.URL+"/api/v1/agent/lease", map[string]any{

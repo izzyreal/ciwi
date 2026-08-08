@@ -70,7 +70,20 @@
       element.disabled = true;
       element.setAttribute('aria-busy', 'true');
       element.classList.add('ciwi-action-pending');
-      if (operation.spec.pending) element.textContent = operation.spec.pending;
+	  const label = element.querySelector && element.querySelector('.dsl-button-label');
+	  if (operation.spec.pending && label) {
+		const computed = window.getComputedStyle ? window.getComputedStyle(element) : null;
+		if (computed && document && document.createElement) {
+		  const context = document.createElement('canvas').getContext('2d');
+		  context.font = computed.font;
+		  const normalWidth = context.measureText(label.textContent || '').width;
+		  const pendingWidth = context.measureText(operation.spec.pending).width;
+		  if (pendingWidth > normalWidth) element.style.minWidth = Math.ceil(element.getBoundingClientRect().width + pendingWidth - normalWidth) + 'px';
+		}
+		label.textContent = operation.spec.pending;
+	  } else if (operation.spec.pending) {
+		element.textContent = operation.spec.pending;
+	  }
     } else {
       element.disabled = operation.elementState ? operation.elementState.disabled : false;
       element.removeAttribute('aria-busy');

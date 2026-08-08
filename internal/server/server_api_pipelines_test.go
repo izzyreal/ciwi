@@ -109,10 +109,18 @@ pipelines:
 	}
 	var runPayload struct {
 		Enqueued int `json:"enqueued"`
+		Notice   struct {
+			Message string `json:"message"`
+			Route   string `json:"route"`
+			Section string `json:"section"`
+		} `json:"notice"`
 	}
 	decodeJSONBody(t, runResp, &runPayload)
 	if runPayload.Enqueued <= 0 {
 		t.Fatalf("expected at least one enqueued job, got %+v", runPayload)
+	}
+	if runPayload.Notice.Message == "" || runPayload.Notice.Route != "/" || runPayload.Notice.Section != "queued-executions" {
+		t.Fatalf("unexpected pipeline notice: %+v", runPayload.Notice)
 	}
 
 	versionMethodGuard := mustJSONRequest(t, ts.Client(), http.MethodPost, ts.URL+"/api/v1/pipelines/"+int64ToString(pipelineID)+"/version-resolve", map[string]any{})
@@ -213,10 +221,17 @@ pipeline_chains:
 		PipelineID        string `json:"pipeline_id"`
 		PipelineChainID   string `json:"pipeline_chain_id"`
 		PipelineChainName string `json:"pipeline_chain_name"`
+		Notice            struct {
+			Message string `json:"message"`
+			Route   string `json:"route"`
+		} `json:"notice"`
 	}
 	decodeJSONBody(t, runResp, &runPayload)
 	if runPayload.Enqueued <= 0 {
 		t.Fatalf("expected chain run to enqueue jobs, got %+v", runPayload)
+	}
+	if runPayload.Notice.Message == "" || runPayload.Notice.Route != "/" {
+		t.Fatalf("unexpected chain notice: %+v", runPayload.Notice)
 	}
 	if runPayload.PipelineID != "" || runPayload.PipelineChainID != chainID || runPayload.PipelineChainName != "Test chain" {
 		t.Fatalf("unexpected chain identity response: %+v", runPayload)

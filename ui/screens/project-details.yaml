@@ -190,7 +190,6 @@ screen:
               tone: muted
           - component: select
             layout:
-              minWidth: "220"
             select:
               value: projectDetails.structure_filter
               options: projectDetails.structure_filters

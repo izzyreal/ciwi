@@ -77,7 +77,10 @@ func (a agentScriptMutatorAdapter) RunAgentScript(ctx context.Context, request a
 	}
 	s.mu.Unlock()
 	job, err := s.agentJobExecutionStore().CreateJobExecution(protocol.CreateJobExecutionRequest{
-		Script:               request.Script,
+		Script: request.Script,
+		StepPlan: []protocol.JobStepPlanItem{{
+			Index: 1, Total: 1, Name: "Ad-hoc script", Kind: "run", Script: request.Script,
+		}},
 		RequiredCapabilities: map[string]string{"agent_id": request.AgentID, "executor": "script", "shell": request.Shell},
 		TimeoutSeconds:       request.TimeoutSeconds,
 		Metadata: domain.ExecutionMetadata{

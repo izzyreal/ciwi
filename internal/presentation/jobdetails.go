@@ -133,6 +133,7 @@ type JobOutputGroupView struct {
 	Details         string
 	YAMLLiteral     string
 	ExpandedCommand string
+	DefaultExpanded bool
 	Progress        domain.Progress
 }
 
@@ -270,7 +271,8 @@ func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 			StatusLabel: humanStatus(item.Status), Reached: reached, Started: formatTimestamp(item.StartedUTC),
 			Duration: formatDurationMS(item.DurationMS), ExitCode: formatExitCode(item.ExitCode), Error: item.Error,
 			Details: item.Description, YAMLLiteral: item.YAMLLiteral, ExpandedCommand: item.Command,
-			Progress: itemProgress,
+			DefaultExpanded: details.Metadata.Flag(domain.ExecutionMetadataAdhoc) && item.Kind != "phase",
+			Progress:        itemProgress,
 		})
 	}
 	return view

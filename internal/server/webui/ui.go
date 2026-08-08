@@ -32,6 +32,7 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/heartbeat.js":                {"assets/js/heartbeat.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/actions.js":                  {"assets/js/actions.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/notices.js":                  {"assets/js/notices.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/view-state.js":               {"assets/js/view-state.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/change-refresh.js":           {"assets/js/change-refresh.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/declarative.js":              {"assets/js/declarative.js", "application/javascript; charset=utf-8", true, true},
@@ -94,6 +95,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/ui/contracts/typography.json" {
 		serveTypographyContract(w, r)
+		return
+	}
+	if r.URL.Path == "/ui/contracts/controls.json" {
+		serveControlsContract(w, r)
 		return
 	}
 	if r.URL.Path == "/ui/contracts/actions.json" {

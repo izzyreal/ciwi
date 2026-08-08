@@ -153,7 +153,7 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 		{command: "cancel-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "cancel-execution", wantCancel: "job-1"},
 		{command: "rerun-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "rerun-execution", wantNotice: "/jobs/job-1-rerun", wantNoticeEnabled: true},
 		{command: "agent-action", arguments: map[string]string{"agentId": "agent-1", "action": "restart"}, wantCall: "agent-action", wantNoticeEnabled: true},
-		{command: "run-agent-script", arguments: map[string]string{"agentId": "agent-1", "shell": "posix", "script": "uname -a"}, wantCall: "run-agent-script", wantNotice: "/jobs/job-script", wantNoticeEnabled: true},
+		{command: "run-agent-script", arguments: map[string]string{"agentId": "agent-1", "shell": "posix", "script": "uname -a"}, wantCall: "run-agent-script", wantRoute: "/jobs/job-script", wantNotice: "/jobs/job-script", wantNoticeEnabled: true},
 		{command: "project-action", arguments: map[string]string{"projectId": "2", "action": "reload"}, wantCall: "project-action"},
 		{command: "import-project", arguments: map[string]string{"repoUrl": "https://example.com/ciwi.git"}, wantCall: "import-project"},
 		{command: "save-vault-connection", arguments: map[string]string{"name": "home-vault", "url": "https://vault.example", "roleId": "role", "secretIdEnv": "CIWI_VAULT_SECRET_ID"}, wantCall: "save-vault-connection", wantNoticeEnabled: true},

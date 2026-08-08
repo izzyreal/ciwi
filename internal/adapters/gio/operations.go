@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
@@ -75,6 +76,13 @@ type nativeOperationEffect struct {
 	NoticeSection string
 	CancelledJob  string
 	Value         any
+}
+
+func noticeEffect(notice presentation.TransientNotice) nativeOperationEffect {
+	return nativeOperationEffect{
+		Message: notice.Message, Notice: true, NoticeRoute: notice.Route,
+		NoticeLabel: notice.ActionLabel, NoticeSection: notice.Section,
+	}
 }
 
 // nativeActionClient is the narrow command surface used by the presentation
@@ -217,15 +225,10 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("run pipeline: %w", err)
 		}
-		target := strings.TrimSpace(result.PipelineId)
-		if jobID := strings.TrimSpace(arguments["pipelineJobId"]); jobID != "" {
-			target += " / " + jobID
-		}
-		kind := "execution(s)"
-		if arguments["dryRun"] == "true" {
-			kind = "dry-run execution(s)"
-		}
-		return nativeOperationEffect{Message: fmt.Sprintf("Queued %d %s for %s", result.Enqueued, kind, target), Notice: true, NoticeRoute: "/", NoticeLabel: "Show queued jobs", NoticeSection: "queued-executions"}, nil
+		return noticeEffect(presentation.QueuedPipelineNotice(
+			result.ProjectName, result.PipelineId, arguments["pipelineJobId"], int(result.Enqueued),
+			arguments["dryRun"] == "true", result.JobExecutionIds,
+		)), nil
 	case "run-chain":
 		projectID, err := positiveInt64(arguments["projectId"], "project identifier")
 		chainID := strings.TrimSpace(arguments["chainId"])
@@ -244,11 +247,9 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if label == "" {
 			label = strings.TrimSpace(result.ChainId)
 		}
-		kind := "execution(s)"
-		if arguments["dryRun"] == "true" {
-			kind = "dry-run execution(s)"
-		}
-		return nativeOperationEffect{Message: fmt.Sprintf("Queued %d %s for chain %s", result.Enqueued, kind, label), Notice: true, NoticeRoute: "/", NoticeLabel: "Show queued jobs", NoticeSection: "queued-executions"}, nil
+		return noticeEffect(presentation.QueuedChainNotice(
+			result.ProjectName, label, int(result.Enqueued), arguments["dryRun"] == "true",
+		)), nil
 	case "clear-queue":
 		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
@@ -307,7 +308,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("rerun execution: %w", err)
 		}
-		return nativeOperationEffect{Message: "Queued rerun " + result.JobExecutionId, Notice: true, NoticeRoute: "/jobs/" + result.JobExecutionId, NoticeLabel: "Show job execution"}, nil
+		return noticeEffect(presentation.QueuedJobNotice("Queued rerun "+result.JobExecutionId, result.JobExecutionId)), nil
 	case "agent-action":
 		agentID, action := strings.TrimSpace(arguments["agentId"]), strings.TrimSpace(arguments["action"])
 		if agentID == "" || action == "" {
@@ -336,12 +337,9 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("run agent script: %w", err)
 		}
-		return nativeOperationEffect{
-			Message:     "Queued ad-hoc script on " + result.AgentId,
-			Notice:      true,
-			NoticeRoute: "/jobs/" + result.JobExecutionId,
-			NoticeLabel: "Show job execution",
-		}, nil
+		effect := noticeEffect(presentation.QueuedJobNotice("Queued ad-hoc script on "+result.AgentId, result.JobExecutionId))
+		effect.NavigateRoute = "/jobs/" + result.JobExecutionId
+		return effect, nil
 	case "project-action":
 		projectID, err := positiveInt64(arguments["projectId"], "project identifier")
 		action := strings.TrimSpace(arguments["action"])

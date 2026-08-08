@@ -107,7 +107,8 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 		"timeline":      []any{map[string]any{"id": "step:0", "title": "Compile", "status": "running", "status_label": "Running", "progress": progress}},
 		"system_output": "starting", "output_groups": []any{map[string]any{
 			"id": "step:0", "title": "Compile", "state_key": "job-output:job-1:step:0", "status": "running", "progress": progress,
-			"reached": true, "started": "now", "duration": "1s", "exit_code": "", "error": "", "is_phase": false, "is_step": true,
+			"default_expanded": false,
+			"reached":          true, "started": "now", "duration": "1s", "exit_code": "", "error": "", "is_phase": false, "is_step": true,
 			"details": "details", "yaml_literal": "run: go test", "expanded_command": "go test ./...", "output": "ok", "empty_output_label": "",
 		}},
 		"artifacts": map[string]any{

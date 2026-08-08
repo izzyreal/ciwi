@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -40,7 +41,8 @@ type View struct {
 }
 
 type CreateViewResponse struct {
-	JobExecution View `json:"job_execution"`
+	JobExecution View                         `json:"job_execution"`
+	Notice       presentation.TransientNotice `json:"notice,omitempty"`
 }
 
 type PagedViewResponse struct {

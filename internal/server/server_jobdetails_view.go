@@ -169,6 +169,7 @@ type jobOutputGroupViewResponse struct {
 	Details         string          `json:"details"`
 	YAMLLiteral     string          `json:"yaml_literal"`
 	ExpandedCommand string          `json:"expanded_command"`
+	DefaultExpanded bool            `json:"default_expanded"`
 	Progress        domain.Progress `json:"progress"`
 }
 
@@ -262,7 +263,8 @@ func jobDetailsToResponse(view presentation.JobDetailsView, runContext protocol.
 			CommandSummary: group.CommandSummary, Status: group.Status, StatusLabel: group.StatusLabel,
 			Reached: group.Reached, Started: group.Started, Duration: group.Duration, ExitCode: group.ExitCode,
 			Error: group.Error, Details: group.Details, YAMLLiteral: group.YAMLLiteral, ExpandedCommand: group.ExpandedCommand,
-			Progress: group.Progress,
+			DefaultExpanded: group.DefaultExpanded,
+			Progress:        group.Progress,
 		})
 	}
 	response := jobDetailsViewResponse{

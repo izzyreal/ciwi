@@ -91,6 +91,13 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if got := typography.Typography.Roles["cache-statistics"]; got.Family != "body" || got.Size != 12 {
 		t.Fatalf("cache-statistics typography = %+v, want shared 12px body role", got)
 	}
+	controls, err := LoadControls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if controls.Controls.Button.IconPosition != "leading" || controls.Controls.Select.ChevronPosition != "trailing" {
+		t.Fatalf("shared controls = %#v", controls.Controls)
+	}
 	if len(themes) != 23 {
 		t.Fatalf("theme count = %d, want 23", len(themes))
 	}

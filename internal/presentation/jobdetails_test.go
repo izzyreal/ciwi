@@ -71,6 +71,19 @@ func TestJobDetailsViewExposesEligibleControls(t *testing.T) {
 	}
 }
 
+func TestAdhocJobDetailsDefaultItsScriptOutputOpen(t *testing.T) {
+	view := presentJobDetails(domain.JobExecutionDetails{
+		ID: "adhoc-1", Status: "running", Metadata: domain.ExecutionMetadata{domain.ExecutionMetadataAdhoc: "1"},
+		Timeline: []domain.JobTimelineItem{
+			{ID: "system.workspace", Kind: "phase", Name: "Prepare workspace", Reached: true},
+			{ID: "step:1", Kind: "step", Name: "Ad-hoc script", Reached: true},
+		},
+	})
+	if len(view.OutputGroups) != 2 || view.OutputGroups[0].DefaultExpanded || !view.OutputGroups[1].DefaultExpanded {
+		t.Fatalf("ad-hoc output defaults = %+v", view.OutputGroups)
+	}
+}
+
 func TestJobStepDurationMatchesBrowserClockFormat(t *testing.T) {
 	if got := formatDurationMS(568); got != "00m 00s" {
 		t.Fatalf("568ms step duration = %q, want browser format %q", got, "00m 00s")

@@ -171,7 +171,6 @@ screen:
                   emphasis: strong
               - component: select
                 layout:
-                  minWidth: "220"
                 select:
                   value: settings.selected_theme
                   options: settings.themes
@@ -631,7 +630,6 @@ screen:
                       - component: select
                         layout:
                           grow: true
-                          minWidth: "210"
                         enabled:
                           binding: settings.update_supported
                         select:
@@ -729,7 +727,6 @@ screen:
                       - component: select
                         layout:
                           grow: true
-                          minWidth: "210"
                         enabled:
                           binding: settings.update_supported
                         select:

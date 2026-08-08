@@ -52,6 +52,7 @@ type Renderer struct {
 	data                    any
 	theme                   *material.Theme
 	typography              uidsl.Typography
+	controls                uidsl.Controls
 	palette                 palette
 	metrics                 visualMetrics
 	themeName               string
@@ -75,6 +76,8 @@ type Renderer struct {
 	textEditors             map[string]*widget.Editor
 	inputEditors            map[string]*widget.Editor
 	selectOpen              map[string]bool
+	selectDismiss           map[string]*widget.Clickable
+	selectLists             map[string]*layout.List
 	scrollers               map[string]*layout.List
 	scrollGuards            map[string]*scrollGestureGuard
 	icons                   map[string]nativeIcon
@@ -101,6 +104,7 @@ type Renderer struct {
 	pendingOutputSelection  *outputSelection
 	renderedJobID           string
 	activeOperations        map[string]operations.Operation
+	actionCatalog           *uidsl.ActionCatalogDocument
 	notice                  *nativeNotice
 	noticeQueue             []nativeNotice
 	pendingScrollSection    string
@@ -202,6 +206,10 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	if err != nil {
 		return nil, err
 	}
+	controlsDocument, err := sharedUI.LoadControls()
+	if err != nil {
+		return nil, err
+	}
 	materialTheme, colors, err := rendererTheme(theme, typographyDocument.Typography)
 	if err != nil {
 		return nil, err
@@ -212,13 +220,13 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		return nil, err
 	}
 	renderer := &Renderer{
-		screen: screen, theme: materialTheme, typography: typographyDocument.Typography, palette: colors,
+		screen: screen, theme: materialTheme, typography: typographyDocument.Typography, controls: controlsDocument.Controls, palette: colors,
 		metrics: metricsFromTheme(theme.Theme, typographyDocument.Typography), themeName: theme.Metadata.Name, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
 		persistentDisclosures: map[string]bool{},
 		viewModes:             map[string]string{}, persistentViews: map[string]bool{}, graphScales: map[string]float32{}, graphSelections: map[string]string{}, graphViewports: map[string]*graphViewportState{},
 		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
-		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{}, scrollGuards: map[string]*scrollGestureGuard{}, outputEditors: map[string]*widget.Editor{},
+		selectOpen: map[string]bool{}, selectDismiss: map[string]*widget.Clickable{}, selectLists: map[string]*layout.List{}, scrollers: map[string]*layout.List{}, scrollGuards: map[string]*scrollGestureGuard{}, outputEditors: map[string]*widget.Editor{},
 		icons: iconSet, images: imageSet, dynamicImages: map[string]dynamicImage{},
 		surfaceBackgrounds: map[backgroundTextureKey]paint.ImageOp{},
 		visualOps:          newVisualOpCache(maxVisualOpCacheEntries),
@@ -240,6 +248,12 @@ func (r *Renderer) SetOperations(snapshot []operations.Operation) {
 	}
 	r.mu.Lock()
 	r.activeOperations = active
+	r.mu.Unlock()
+}
+
+func (r *Renderer) SetActionCatalog(catalog *uidsl.ActionCatalogDocument) {
+	r.mu.Lock()
+	r.actionCatalog = catalog
 	r.mu.Unlock()
 }
 
@@ -1530,6 +1544,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 			if node.Style.Role == "output-group" || node.Style.Role == "execution-row" {
 				padding = 0
 			}
+			if node.Style.Role == "project-row" {
+				padding = 0
+			}
 		}
 		if node.Style.Role == "hero" {
 			padding = r.metrics.heroPadding
@@ -1770,7 +1787,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 		var exists bool
 		expanded, exists = r.disclosures[stateKey]
 		if !exists {
-			expanded = node.Disclosure != nil && node.Disclosure.DefaultExpanded
+			expanded = disclosureDefaultExpanded(node.Disclosure, data)
 			r.disclosures[stateKey] = expanded
 		}
 		if persistent {
@@ -1996,7 +2013,9 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				return headerToggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					semantic.DescriptionOp(description).Add(gtx.Ops)
 					defer pointer.PassOp{}.Push(gtx.Ops).Pop()
-					return r.layoutWrappedProjectSummary(gtx, node, data, path, toggleWidget)
+					return layout.UniformInset(contentPadding).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return r.layoutWrappedProjectSummary(gtx, node, data, path, toggleWidget)
+					})
 				})
 			}
 			labelChild := layout.Flexed(1, labelWidget)
@@ -2092,6 +2111,12 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				bodyInset.Bottom = contentPadding
 				bodyInset.Left = contentPadding
 			}
+			if isProjectRow {
+				bodyInset.Top = r.metrics.spaceSmall
+				bodyInset.Right = contentPadding
+				bodyInset.Bottom = contentPadding
+				bodyInset.Left = contentPadding
+			}
 			body := func(gtx layout.Context) layout.Dimensions {
 				return bodyInset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					contentNode := node
@@ -2113,6 +2138,19 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			}, body)
 		}),
 	)
+}
+
+func disclosureDefaultExpanded(disclosure *uidsl.Disclosure, data any) bool {
+	if disclosure == nil {
+		return false
+	}
+	if binding := strings.TrimSpace(disclosure.DefaultExpandedBinding); binding != "" {
+		value, err := uidsl.Resolve(data, binding)
+		if err == nil {
+			return boolValue(value)
+		}
+	}
+	return disclosure.DefaultExpanded
 }
 
 type recordedProjectSummaryItem struct {
@@ -3283,6 +3321,9 @@ func (r *Renderer) layoutGlyph(gtx layout.Context, iconName, tone string, size u
 }
 
 func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	if !node.Layout.Grow {
+		gtx.Constraints.Min.X = 0
+	}
 	label, enabled := r.buttonNodeState(&node, data)
 	r.handleButtonClicks(gtx, node, data, path, enabled)
 	button := r.button(path)
@@ -3299,7 +3340,28 @@ func (r *Renderer) layoutButton(gtx layout.Context, node uidsl.Node, data any, p
 		opacity.Pop()
 		return dimensions
 	}
-	return r.layoutControlButton(gtx, button, label, node.Icon, enabled)
+	return r.layoutControlButtonReserved(gtx, button, label, r.longestButtonLabel(node, data, label), node.Icon, enabled)
+}
+
+func (r *Renderer) longestButtonLabel(node uidsl.Node, data any, displayed string) string {
+	longest := displayed
+	if node.Text != nil {
+		if ordinary, err := uidsl.RenderText(data, *node.Text); err == nil && utf8.RuneCountInString(ordinary) > utf8.RuneCountInString(longest) {
+			longest = ordinary
+		}
+	}
+	if len(node.Actions) == 0 {
+		return longest
+	}
+	r.mu.RLock()
+	catalog := r.actionCatalog
+	r.mu.RUnlock()
+	if catalog != nil {
+		if spec, ok := catalog.Spec(node.Actions[0].Command); ok && utf8.RuneCountInString(spec.Pending) > utf8.RuneCountInString(longest) {
+			longest = spec.Pending
+		}
+	}
+	return longest
 }
 
 func (r *Renderer) buttonNodeState(node *uidsl.Node, data any) (string, bool) {
@@ -3532,9 +3594,14 @@ func (r *Renderer) visibleOutputGroupState(items []any, index int) (string, bool
 	return stateKey, r.disclosures[stateKey]
 }
 
+type nativeSelectOption struct{ value, label string }
+
 func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
 	if node.Select == nil {
 		return r.errorLabel(gtx, fmt.Errorf("select configuration is missing"))
+	}
+	if !node.Layout.Grow {
+		gtx.Constraints.Min.X = 0
 	}
 	enabled := conditionEnabled(node.Enabled, data)
 	value, err := uidsl.Resolve(data, node.Select.Value)
@@ -3545,8 +3612,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 	if err != nil {
 		return r.errorLabel(gtx, err)
 	}
-	type option struct{ value, label string }
-	options := make([]option, 0, len(items))
+	options := make([]nativeSelectOption, 0, len(items))
 	selectedValue := fmt.Sprint(value)
 	selectedLabel := selectedValue
 	for _, item := range items {
@@ -3559,10 +3625,22 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 		if labelErr != nil {
 			return r.errorLabel(gtx, labelErr)
 		}
-		entry := option{value: fmt.Sprint(optionValue), label: fmt.Sprint(optionLabel)}
+		entry := nativeSelectOption{value: fmt.Sprint(optionValue), label: fmt.Sprint(optionLabel)}
 		options = append(options, entry)
 		if entry.value == selectedValue {
 			selectedLabel = entry.label
+		}
+	}
+	for _, entry := range options {
+		choice := r.button(path + "/option/" + entry.value)
+		for r.clicked(gtx, choice) {
+			r.markInteraction(path + "/option/" + entry.value)
+			r.selectOpen[path] = false
+			if len(node.Actions) > 0 && entry.value != selectedValue {
+				selectionData := mergeData(data, "selection", map[string]any{"value": entry.value, "label": entry.label})
+				r.dispatch(node.Actions[0], selectionData)
+			}
+			r.requestFrame()
 		}
 	}
 	toggle := r.button(path + "/select-toggle")
@@ -3576,50 +3654,131 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 	if !enabled {
 		r.selectOpen[path] = false
 	}
+	dismiss := r.selectDismiss[path]
+	if dismiss == nil {
+		dismiss = new(widget.Clickable)
+		r.selectDismiss[path] = dismiss
+	}
+	for r.clicked(gtx, dismiss) {
+		r.selectOpen[path] = false
+		r.requestFrame()
+	}
+	widest := r.selectControlWidth(gtx, options, selectedLabel)
 	header := func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, widest)
 		icon := "chevron-down"
 		if r.selectOpen[path] {
 			icon = "chevron-up"
 		}
-		return r.layoutControlButton(gtx, toggle, selectedLabel, icon, enabled)
+		visuals := r.controls.Select
+		return r.layoutControlButtonPositioned(gtx, toggle, selectedLabel, selectedLabel, icon, enabled,
+			visuals.ChevronPosition, unit.Dp(visuals.ChevronSize), unit.Dp(visuals.ChevronGap), unit.Dp(visuals.MinimumHeight))
 	}
 	if !r.selectOpen[path] {
 		return header(gtx)
 	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(header),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: 8}.Layout(gtx, r.surface(func(gtx layout.Context) layout.Dimensions {
-				children := make([]layout.FlexChild, 0, len(options))
-				for optionIndex := range options {
-					entry := options[optionIndex]
-					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						choice := r.button(path + "/option/" + entry.value)
-						for r.clicked(gtx, choice) {
-							r.markInteraction(path + "/option/" + entry.value)
-							r.selectOpen[path] = false
-							if len(node.Actions) > 0 && entry.value != selectedValue {
-								selectionData := mergeData(data, "selection", map[string]any{"value": entry.value, "label": entry.label})
-								r.dispatch(node.Actions[0], selectionData)
-							}
-							r.requestFrame()
-						}
-						icon := ""
-						if entry.value == selectedValue {
-							icon = "check"
-						}
-						return layout.Inset{Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return r.layoutControlButton(gtx, choice, entry.label, icon, true)
-						})
-					}))
-				}
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
-			}, 10, false, nil))
-		}),
-	)
+	headerMacro := op.Record(gtx.Ops)
+	headerDims := header(gtx)
+	headerCall := headerMacro.Stop()
+	overlayMacro := op.Record(gtx.Ops)
+	// A deferred transparent scrim makes an outside tap dismiss the menu while
+	// keeping the menu independent of surrounding layout.
+	scrimContext := gtx
+	scrimContext.Constraints = layout.Exact(gtx.Constraints.Max)
+	dismiss.Layout(scrimContext, func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: gtx.Constraints.Min}
+	})
+	menuMacro := op.Record(gtx.Ops)
+	menuContext := gtx
+	menuContext.Constraints.Min = image.Point{}
+	menuContext.Constraints.Max.X = min(menuContext.Constraints.Max.X, widest)
+	menuContext.Constraints.Min.X = menuContext.Constraints.Max.X
+	menuContext.Constraints.Max.Y = min(max(menuContext.Constraints.Max.Y, gtx.Dp(unit.Dp(r.controls.Select.MenuMinimumHeight))), gtx.Dp(unit.Dp(r.controls.Select.MenuMaximumHeight)))
+	optionList := r.selectLists[path]
+	if optionList == nil {
+		optionList = &layout.List{Axis: layout.Vertical}
+		r.selectLists[path] = optionList
+	}
+	menu := r.surface(func(gtx layout.Context) layout.Dimensions {
+		return optionList.Layout(gtx, len(options), func(gtx layout.Context, optionIndex int) layout.Dimensions {
+			entry := options[optionIndex]
+			choice := r.button(path + "/option/" + entry.value)
+			bottom := unit.Dp(0)
+			if optionIndex < len(options)-1 {
+				bottom = unit.Dp(r.controls.Select.MenuItemGap)
+			}
+			return layout.Inset{Bottom: bottom}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return r.layoutSelectOption(gtx, choice, entry.label, entry.value == selectedValue)
+			})
+		})
+	}, unit.Dp(r.controls.Select.MenuPadding), false, nil)
+	menuDims := menu(menuContext)
+	menuCall := menuMacro.Stop()
+	menuGap := gtx.Dp(unit.Dp(r.controls.Select.MenuGap))
+	menuY := headerDims.Size.Y + menuGap
+	if menuY+menuDims.Size.Y > gtx.Constraints.Max.Y && menuDims.Size.Y+menuGap < gtx.Constraints.Max.Y {
+		menuY = -menuDims.Size.Y - menuGap
+	}
+	op.Offset(image.Pt(0, menuY)).Add(gtx.Ops)
+	menuCall.Add(gtx.Ops)
+	overlayCall := overlayMacro.Stop()
+	op.Defer(gtx.Ops, overlayCall)
+	headerCall.Add(gtx.Ops)
+	return headerDims
+}
+
+func (r *Renderer) selectControlWidth(gtx layout.Context, options []nativeSelectOption, selected string) int {
+	labels := make([]string, 0, len(options)+1)
+	labels = append(labels, selected)
+	for _, option := range options {
+		labels = append(labels, option.label)
+	}
+	maxWidth := 0
+	var measureOps op.Ops
+	measureContext := gtx
+	measureContext.Ops = &measureOps
+	measureContext.Constraints.Min = image.Point{}
+	for _, label := range labels {
+		style := r.materialTextLabel(label, "control", false)
+		style.MaxLines = 1
+		if width := style.Layout(measureContext).Size.X; width > maxWidth {
+			maxWidth = width
+		}
+	}
+	visuals := r.controls.Select
+	width := maxWidth + gtx.Dp(r.metrics.controlPaddingX*2) + gtx.Dp(unit.Dp(visuals.ChevronSize+visuals.ChevronGap))
+	width = max(width, gtx.Dp(unit.Dp(visuals.MenuMinimumWidth)))
+	return min(gtx.Constraints.Max.X, width)
 }
 
 func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clickable, label, iconName string, enabled bool) layout.Dimensions {
+	return r.layoutControlButtonReserved(gtx, button, label, label, iconName, enabled)
+}
+
+func (r *Renderer) layoutControlButtonReserved(gtx layout.Context, button *widget.Clickable, label, reservedLabel, iconName string, enabled bool) layout.Dimensions {
+	visuals := r.controls.Button
+	return r.layoutControlButtonPositioned(gtx, button, label, reservedLabel, iconName, enabled,
+		visuals.IconPosition, unit.Dp(visuals.IconSize), unit.Dp(visuals.IconGap), 0)
+}
+
+func (r *Renderer) layoutControlButtonPositioned(gtx layout.Context, button *widget.Clickable, label, reservedLabel, iconName string, enabled bool, iconPosition string, iconSize, iconGap, minimumHeight unit.Dp) layout.Dimensions {
+	iconTrailing := iconPosition == "trailing"
+	if reservedLabel != "" {
+		var measureOps op.Ops
+		measureContext := gtx
+		measureContext.Ops = &measureOps
+		measureContext.Constraints.Min = image.Point{}
+		style := r.materialTextLabel(reservedLabel, "control", false)
+		style.MaxLines = 1
+		minimum := style.Layout(measureContext).Size.X + gtx.Dp(r.metrics.controlPaddingX*2)
+		if iconName != "" {
+			minimum += gtx.Dp(iconSize + iconGap)
+		}
+		gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, max(gtx.Constraints.Min.X, minimum))
+	}
+	if minimumHeight > 0 {
+		gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(minimumHeight)))
+	}
 	background := r.palette.surface
 	borderColor := r.palette.border
 	if enabled && button.Hovered() {
@@ -3649,9 +3808,12 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 					})
 					icon := r.icons[iconName]
 					iconWidget := layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						inset := layout.Inset{Right: 8}
+						inset := layout.Inset{Right: iconGap}
+						if iconTrailing {
+							inset = layout.Inset{Left: iconGap}
+						}
 						return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(19), gtx.Dp(19)))
+							gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(iconSize), gtx.Dp(iconSize)))
 							iconColor := r.palette.accent
 							if !enabled {
 								iconColor = r.palette.muted
@@ -3663,11 +3825,74 @@ func (r *Renderer) layoutControlButton(gtx layout.Context, button *widget.Clicka
 						})
 					})
 					if icon != nil {
-						children = append(children, iconWidget, labelWidget)
+						if iconTrailing {
+							children = append(children, labelWidget, iconWidget)
+						} else {
+							children = append(children, iconWidget, labelWidget)
+						}
 					} else {
 						children = append(children, labelWidget)
 					}
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+				})
+			})
+		})
+	})
+}
+
+func (r *Renderer) layoutSelectOption(gtx layout.Context, button *widget.Clickable, label string, selected bool) layout.Dimensions {
+	visuals := r.controls.Select
+	gtx.Constraints.Min.X = gtx.Constraints.Max.X
+	gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(unit.Dp(visuals.OptionMinimumHeight))))
+	background := color.NRGBA{}
+	borderColor := color.NRGBA{}
+	if button.Hovered() || gtx.Focused(button) {
+		background = r.palette.subtle
+		borderColor = r.palette.accent
+	}
+	radius := max(unit.Dp(0), r.metrics.controlRadius-2)
+	return r.layoutCachedBorder(gtx, borderColor, radius, 1, func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if background.A != 0 {
+				r.paintCachedRoundedFill(gtx, gtx.Constraints.Min, radius, background)
+			}
+			return layout.Dimensions{Size: gtx.Constraints.Min}
+		}, func(gtx layout.Context) layout.Dimensions {
+			return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{
+					Top: unit.Dp(visuals.OptionPaddingY), Right: unit.Dp(visuals.OptionPaddingX),
+					Bottom: unit.Dp(visuals.OptionPaddingY), Left: unit.Dp(visuals.OptionPaddingX),
+				}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					indicator := layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						width := gtx.Dp(unit.Dp(visuals.SelectionIndicatorWidth))
+						gtx.Constraints = layout.Exact(image.Pt(width, gtx.Dp(unit.Dp(visuals.ChevronSize))))
+						if !selected {
+							return layout.Dimensions{Size: gtx.Constraints.Min}
+						}
+						icon := r.icons["check"]
+						if icon == nil {
+							return layout.Dimensions{Size: gtx.Constraints.Min}
+						}
+						return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							size := min(width, gtx.Dp(unit.Dp(visuals.ChevronSize)))
+							gtx.Constraints = layout.Exact(image.Pt(size, size))
+							return icon.Layout(gtx, r.palette.accent)
+						})
+					})
+					copy := layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						style := r.materialTextLabel(label, "control", false)
+						style.MaxLines = 1
+						style.Color = r.palette.text
+						if selected {
+							style.Color = r.palette.accent
+						}
+						return style.Layout(gtx)
+					})
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceStart}.Layout(gtx,
+						indicator,
+						layout.Rigid(layout.Spacer{Width: unit.Dp(visuals.OptionGap)}.Layout),
+						copy,
+					)
 				})
 			})
 		})

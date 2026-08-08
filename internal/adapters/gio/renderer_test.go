@@ -196,6 +196,13 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	controls, err := sharedUI.LoadControls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renderer.controls != controls.Controls {
+		t.Fatalf("native controls = %#v, want shared contract %#v", renderer.controls, controls.Controls)
+	}
 	if logo, ok := renderer.images["ciwi-logo"]; !ok || logo.Filter != paint.FilterNearest {
 		t.Fatal("ciwi logo must use nearest-neighbor filtering")
 	}

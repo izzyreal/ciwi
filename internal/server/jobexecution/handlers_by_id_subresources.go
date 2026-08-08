@@ -12,6 +12,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/application"
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/httpx"
 )
@@ -69,7 +70,10 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(clone)})
+		httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{
+			JobExecution: ViewFromProtocol(clone),
+			Notice:       presentation.QueuedJobNotice("Queued rerun "+clone.ID, clone.ID),
+		})
 		return
 	}
 	clone, err := RerunJobExecution(deps.Store, jobID, deps.PrepareRerun)
@@ -83,7 +87,10 @@ func handleJobRerun(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 		http.Error(w, err.Error(), status)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{JobExecution: ViewFromProtocol(clone)})
+	httpx.WriteJSON(w, http.StatusCreated, CreateViewResponse{
+		JobExecution: ViewFromProtocol(clone),
+		Notice:       presentation.QueuedJobNotice("Queued rerun "+clone.ID, clone.ID),
+	})
 }
 
 func writeApplicationError(w http.ResponseWriter, err error) {
