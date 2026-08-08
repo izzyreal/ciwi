@@ -14,7 +14,7 @@
   const screenContractPromises = new Map();
   const browserViewCache = new Map();
   let screenContractsPreloaded = false;
-  let changeRefreshTimer = 0;
+  let changeRefreshScheduler = null;
   const determinateProgressLimit = .999;
   const disclosureStates = window.ciwiDisclosureState;
   const viewStorageKey = 'ciwi.declarative.views.v1';
@@ -1770,11 +1770,7 @@
   }
 
   function scheduleChangeRefresh() {
-	if (changeRefreshTimer) window.clearTimeout(changeRefreshTimer);
-	changeRefreshTimer = window.setTimeout(() => {
-	  changeRefreshTimer = 0;
-	  refresh();
-	}, 100);
+	if (changeRefreshScheduler) changeRefreshScheduler.schedule();
   }
 
   function startChangeWatch() {
@@ -1790,6 +1786,9 @@
   }
 
   async function refresh(options = {}) {
+    const scheduler = changeRefreshScheduler;
+    if (scheduler) scheduler.beginRefresh();
+    try {
     const loadGeneration = ++routeLoadGeneration;
     const generation = outputWatchGeneration + 1;
 	let loadingCommitted = false;
@@ -1984,10 +1983,14 @@
 	  return false;
     }
 	return true;
+    } finally {
+	  if (scheduler) scheduler.endRefresh();
+	}
   }
 
   window.addEventListener('popstate', () => {
 	navigateBrowser(routePath(), {fromHistory: true}).catch(error => window.alert(error.message || String(error)));
   });
+  changeRefreshScheduler = window.ciwiCreateChangeRefreshScheduler({refresh: () => refresh(), delay: 100});
   refresh({showLoading: true}).finally(startChangeWatch);
 })();
