@@ -24,6 +24,7 @@ import (
 	"gioui.org/font/gofont"
 	"gioui.org/font/opentype"
 	"gioui.org/io/clipboard"
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
@@ -46,67 +47,71 @@ import (
 type ActionHandler func(uidsl.Action, map[string]string)
 
 type Renderer struct {
-	mu                     sync.RWMutex
-	screen                 *uidsl.ScreenDocument
-	data                   any
-	status                 string
-	theme                  *material.Theme
-	typography             uidsl.Typography
-	palette                palette
-	metrics                visualMetrics
-	themeName              string
-	pendingTheme           *material.Theme
-	pendingPalette         *palette
-	pendingMetrics         *visualMetrics
-	pendingThemeName       string
-	list                   layout.List
-	buttons                map[string]*widget.Clickable
-	disclosures            map[string]bool
-	persistentDisclosures  map[string]bool
-	onDisclosureChange     func(map[string]bool)
-	viewModes              map[string]string
-	persistentViews        map[string]bool
-	graphScales            map[string]float32
-	graphSelections        map[string]string
-	projectStructureFilter string
-	onViewChange           func(map[string]string)
-	selectables            map[string]*widget.Selectable
-	textEditors            map[string]*widget.Editor
-	inputEditors           map[string]*widget.Editor
-	selectOpen             map[string]bool
-	scrollers              map[string]*layout.List
-	icons                  map[string]nativeIcon
-	images                 map[string]paint.ImageOp
-	dynamicImages          map[string]dynamicImage
-	pageBackgroundSize     image.Point
-	pageBackground         paint.ImageOp
-	pageBackgroundReady    bool
-	surfaceBackgrounds     map[backgroundTextureKey]paint.ImageOp
-	visualOps              *visualOpCache
-	loaderTextures         map[loaderTextureKey]*loaderTextureEntry
-	loaderTextureClock     uint64
-	statusText             widget.Editor
-	shownStatus            string
-	onAction               ActionHandler
-	invalidate             func()
-	pending                *pendingConfirmation
-	alert                  *nativeAlert
-	activeSheet            *activeSheet
-	resetScroll            bool
-	outputTailing          bool
-	outputSearch           string
-	outputMatch            int
-	outputEditors          map[string]*widget.Editor
-	outputScroller         *layout.List
-	pendingOutputSelection *outputSelection
-	renderedJobID          string
-	activeOperations       map[string]operations.Operation
-	notice                 *nativeNotice
-	noticeQueue            []nativeNotice
-	pendingScrollSection   string
-	activatedInteractions  map[string]bool
-	pendingNodeActivations []pendingNodeActivation
-	compact                bool
+	mu                      sync.RWMutex
+	screen                  *uidsl.ScreenDocument
+	data                    any
+	status                  string
+	theme                   *material.Theme
+	typography              uidsl.Typography
+	palette                 palette
+	metrics                 visualMetrics
+	themeName               string
+	pendingTheme            *material.Theme
+	pendingPalette          *palette
+	pendingMetrics          *visualMetrics
+	pendingThemeName        string
+	list                    layout.List
+	buttons                 map[string]*widget.Clickable
+	disclosures             map[string]bool
+	persistentDisclosures   map[string]bool
+	onDisclosureChange      func(map[string]bool)
+	viewModes               map[string]string
+	persistentViews         map[string]bool
+	graphScales             map[string]float32
+	graphSelections         map[string]string
+	graphViewports          map[string]*graphViewportState
+	projectStructureFilter  string
+	onViewChange            func(map[string]string)
+	selectables             map[string]*widget.Selectable
+	textEditors             map[string]*widget.Editor
+	inputEditors            map[string]*widget.Editor
+	selectOpen              map[string]bool
+	scrollers               map[string]*layout.List
+	scrollGuards            map[string]*scrollGestureGuard
+	icons                   map[string]nativeIcon
+	images                  map[string]paint.ImageOp
+	dynamicImages           map[string]dynamicImage
+	pageBackgroundSize      image.Point
+	pageBackground          paint.ImageOp
+	pageBackgroundReady     bool
+	surfaceBackgrounds      map[backgroundTextureKey]paint.ImageOp
+	visualOps               *visualOpCache
+	loaderTextures          map[loaderTextureKey]*loaderTextureEntry
+	loaderTextureClock      uint64
+	statusText              widget.Editor
+	shownStatus             string
+	onAction                ActionHandler
+	invalidate              func()
+	pending                 *pendingConfirmation
+	alert                   *nativeAlert
+	activeSheet             *activeSheet
+	resetScroll             bool
+	outputTailing           bool
+	outputSearch            string
+	outputMatch             int
+	outputEditors           map[string]*widget.Editor
+	outputScroller          *layout.List
+	pendingOutputSelection  *outputSelection
+	renderedJobID           string
+	activeOperations        map[string]operations.Operation
+	notice                  *nativeNotice
+	noticeQueue             []nativeNotice
+	pendingScrollSection    string
+	activatedInteractions   map[string]bool
+	pendingNodeActivations  []pendingNodeActivation
+	compact                 bool
+	viewportSize            image.Point
+	suppressTouchActivation bool
 }
 
 type outputSelection struct {
@@ -214,9 +219,9 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		metrics: metricsFromTheme(theme.Theme, typographyDocument.Typography), themeName: theme.Metadata.Name, onAction: onAction,
 		list: layout.List{Axis: layout.Vertical}, buttons: map[string]*widget.Clickable{}, disclosures: map[string]bool{},
 		persistentDisclosures: map[string]bool{},
-		viewModes:             map[string]string{}, persistentViews: map[string]bool{}, graphScales: map[string]float32{}, graphSelections: map[string]string{},
+		viewModes:             map[string]string{}, persistentViews: map[string]bool{}, graphScales: map[string]float32{}, graphSelections: map[string]string{}, graphViewports: map[string]*graphViewportState{},
 		selectables: map[string]*widget.Selectable{}, textEditors: map[string]*widget.Editor{}, inputEditors: map[string]*widget.Editor{},
-		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{}, outputEditors: map[string]*widget.Editor{},
+		selectOpen: map[string]bool{}, scrollers: map[string]*layout.List{}, scrollGuards: map[string]*scrollGestureGuard{}, outputEditors: map[string]*widget.Editor{},
 		icons: iconSet, images: imageSet, dynamicImages: map[string]dynamicImage{},
 		surfaceBackgrounds: map[backgroundTextureKey]paint.ImageOp{},
 		visualOps:          newVisualOpCache(maxVisualOpCacheEntries),
@@ -780,6 +785,8 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout.Dimensions {
+	r.viewportSize = gtx.Constraints.Max
+	r.suppressTouchActivation = false
 	r.compact = compactLayoutForPlatform(gtx, platform)
 	r.activatedInteractions = map[string]bool{}
 	r.pendingNodeActivations = nil
@@ -1139,6 +1146,70 @@ func (r *Renderer) pageInset() unit.Dp {
 	return max(unit.Dp(2), r.metrics.pageInset*.2)
 }
 
+type scrollGestureGuard struct {
+	position layout.Position
+	inertial bool
+}
+
+func (g *scrollGestureGuard) consumedPresses(gtx layout.Context) []pointer.ID {
+	var consumed []pointer.ID
+	filter := pointer.Filter{Target: g, Kinds: pointer.Press | pointer.Release | pointer.Cancel}
+	for {
+		raw, ok := gtx.Event(filter)
+		if !ok {
+			return consumed
+		}
+		e, ok := raw.(pointer.Event)
+		if !ok || e.Source != pointer.Touch || e.Kind != pointer.Press || !g.inertial {
+			continue
+		}
+		consumed = append(consumed, e.PointerID)
+	}
+}
+
+func (g *scrollGestureGuard) observe(list *layout.List) {
+	position := list.Position
+	moved := position.First != g.position.First || position.Offset != g.position.Offset
+	g.inertial = moved && !list.Dragging()
+	g.position = position
+}
+
+func (r *Renderer) layoutGuardedList(gtx layout.Context, key string, list *layout.List, length int, element layout.ListElement) layout.Dimensions {
+	if r.scrollGuards == nil {
+		r.scrollGuards = map[string]*scrollGestureGuard{}
+	}
+	guard := r.scrollGuards[key]
+	if guard == nil {
+		guard = &scrollGestureGuard{position: list.Position}
+		r.scrollGuards[key] = guard
+	}
+	consumed := guard.consumedPresses(gtx)
+	if len(consumed) > 0 {
+		r.suppressTouchActivation = true
+	}
+	macro := op.Record(gtx.Ops)
+	dimensions := list.Layout(gtx, length, element)
+	call := macro.Stop()
+	// The list has now received the press and stopped its fling. Grab the
+	// remaining sequence so its release cannot reach an underlying control.
+	for _, id := range consumed {
+		gtx.Execute(pointer.GrabCmd{Tag: guard, ID: id})
+	}
+	guard.observe(list)
+	area := clip.Rect{Max: dimensions.Size}.Push(gtx.Ops)
+	call.Add(gtx.Ops)
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	event.Op(gtx.Ops, guard)
+	pass.Pop()
+	area.Pop()
+	return dimensions
+}
+
+func (r *Renderer) clicked(gtx layout.Context, button *widget.Clickable) bool {
+	clicked := button.Clicked(gtx)
+	return clicked && !r.suppressTouchActivation
+}
+
 func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, screen *uidsl.ScreenDocument, data any, status string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		pageInset := r.pageInset()
@@ -1147,7 +1218,7 @@ func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, sc
 		if hasStatus {
 			itemCount++
 		}
-		return r.list.Layout(gtx, itemCount, func(gtx layout.Context, index int) layout.Dimensions {
+		return r.layoutGuardedList(gtx, "root", &r.list, itemCount, func(gtx layout.Context, index int) layout.Dimensions {
 			if index == len(children) {
 				return layout.Inset{Top: 10, Bottom: pageInset}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return r.layoutStatus(gtx, status)
@@ -1196,13 +1267,13 @@ func (r *Renderer) layoutNoticeOverlay(gtx layout.Context, body layout.Widget, n
 	actionButton := r.button("native-notice/action")
 	dismissButton := r.button("native-notice/dismiss")
 	r.setNoticePaused(actionButton.Hovered() || dismissButton.Hovered() || actionButton.Pressed() || dismissButton.Pressed(), gtx.Now)
-	for actionButton.Clicked(gtx) {
+	for r.clicked(gtx, actionButton) {
 		r.dismissNotice()
 		if r.onAction != nil && strings.TrimSpace(notice.action.Command) != "" {
 			r.onAction(notice.action, cloneStringMap(notice.arguments))
 		}
 	}
-	for dismissButton.Clicked(gtx) {
+	for r.clicked(gtx, dismissButton) {
 		r.dismissNotice()
 	}
 	return layout.Stack{Alignment: layout.SE}.Layout(gtx,
@@ -1266,7 +1337,7 @@ func (r *Renderer) layoutSheetOverlay(gtx layout.Context, body layout.Widget) la
 
 func (r *Renderer) layoutFullScreenSheet(gtx layout.Context, sheet *activeSheet) layout.Dimensions {
 	closeButton := r.button("compact-sheet/close")
-	for closeButton.Clicked(gtx) {
+	for r.clicked(gtx, closeButton) {
 		r.setDisclosureState(sheet.stateKey, false, sheet.persistent)
 		r.activeSheet = nil
 		r.requestFrame()
@@ -1280,7 +1351,7 @@ func (r *Renderer) layoutFullScreenSheet(gtx layout.Context, sheet *activeSheet)
 			if sheet.node.Image != nil {
 				imageItems = 1
 			}
-			return sheet.list.Layout(gtx, len(sheet.node.Children)+1+imageItems, func(gtx layout.Context, index int) layout.Dimensions {
+			return r.layoutGuardedList(gtx, "sheet:"+sheet.path, &sheet.list, len(sheet.node.Children)+1+imageItems, func(gtx layout.Context, index int) layout.Dimensions {
 				if index == 0 {
 					return layout.Inset{Bottom: r.metrics.spaceMedium}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						title := r.materialTextLabel(sheet.title, "heading", false)
@@ -1565,7 +1636,7 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 	widgetFn := content
 	if len(node.Actions) > 0 && !componentHandlesOwnActions(node.Component) {
 		button := r.button(path)
-		for button.Clicked(gtx) {
+		for r.clicked(gtx, button) {
 			if !r.nodeHasSelection(path) {
 				r.queueNodeActivation(path, node.Actions[0], data)
 			}
@@ -1778,7 +1849,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 	labelToggle := r.button(path + "/disclosure-label")
 	summaryActionActivated := false
 	labelToggleActivated := false
-	for labelToggle.Clicked(gtx) {
+	for r.clicked(gtx, labelToggle) {
 		labelToggleActivated = true
 		r.markInteraction(path + "/disclosure-label")
 		if r.selectable(path+"/label").SelectionLen() == 0 {
@@ -1809,7 +1880,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 				continue
 			}
 			actionButton := r.button(summaryPath)
-			for actionButton.Clicked(gtx) {
+			for r.clicked(gtx, actionButton) {
 				summaryActionActivated = true
 				r.markInteraction(summaryPath)
 				if !r.nodeHasSelection(summaryPath) {
@@ -1818,7 +1889,7 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			}
 		}
 	}
-	for headerToggle.Clicked(gtx) {
+	for r.clicked(gtx, headerToggle) {
 		r.markInteraction(headerToggleKey)
 		if !summaryActionActivated && !labelToggleActivated && !r.disclosureHeaderHasSelection(path) {
 			if sheetPresentation {
@@ -1960,11 +2031,19 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			})
 		}
 		if node.Style.Role != "execution-row" {
+			if isProjectRow {
+				description := "Expand " + label
+				if expanded {
+					description = "Collapse " + label
+				}
+				return headerToggle.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					semantic.DescriptionOp(description).Add(gtx.Ops)
+					defer pointer.PassOp{}.Push(gtx.Ops).Pop()
+					return r.layoutWrappedProjectSummary(gtx, node, data, path, toggleWidget)
+				})
+			}
 			labelChild := layout.Flexed(1, labelWidget)
 			children := []layout.FlexChild{labelChild}
-			if isProjectRow {
-				children = nil
-			}
 			if isTreeBranch {
 				children = []layout.FlexChild{layout.Rigid(toggleWidget), labelChild}
 				children = append(children, summaryChildren()...)
@@ -2077,6 +2156,87 @@ func (r *Renderer) layoutDisclosure(gtx layout.Context, node uidsl.Node, data an
 			}, body)
 		}),
 	)
+}
+
+type recordedProjectSummaryItem struct {
+	size     image.Point
+	call     op.CallOp
+	trailing bool
+}
+
+func (r *Renderer) layoutWrappedProjectSummary(gtx layout.Context, node uidsl.Node, data any, path string, toggle layout.Widget) layout.Dimensions {
+	const itemGap = 8
+	maxWidth := max(1, gtx.Constraints.Max.X)
+	items := make([]recordedProjectSummaryItem, 0, len(node.Disclosure.Summary)+1)
+	trailing := false
+	record := func(widget layout.Widget, trailing bool) {
+		macro := op.Record(gtx.Ops)
+		itemContext := gtx
+		itemContext.Constraints.Min = image.Point{}
+		itemContext.Constraints.Max.X = maxWidth
+		dimensions := widget(itemContext)
+		items = append(items, recordedProjectSummaryItem{size: dimensions.Size, call: macro.Stop(), trailing: trailing})
+	}
+	for index := range node.Disclosure.Summary {
+		summaryNode := node.Disclosure.Summary[index]
+		if summaryNode.Component == "spacer" {
+			trailing = true
+			continue
+		}
+		record(func(gtx layout.Context) layout.Dimensions {
+			return r.layoutNode(gtx, summaryNode, data, fmt.Sprintf("%s/summary/%d", path, index))
+		}, trailing)
+	}
+	record(toggle, true)
+
+	type positionedItem struct {
+		item recordedProjectSummaryItem
+		x, y int
+	}
+	positioned := make([]positionedItem, 0, len(items))
+	x, y, rowHeight, rowStart := 0, 0, 0, 0
+	finishRow := func(end int) {
+		firstTrailing := -1
+		for index := rowStart; index < end; index++ {
+			if positioned[index].item.trailing {
+				firstTrailing = index
+				break
+			}
+		}
+		if firstTrailing >= 0 {
+			used := 0
+			if end > rowStart {
+				last := positioned[end-1]
+				used = last.x + last.item.size.X
+			}
+			shift := max(0, maxWidth-used)
+			for index := firstTrailing; index < end; index++ {
+				positioned[index].x += shift
+			}
+		}
+	}
+	for _, item := range items {
+		width := min(item.size.X, maxWidth)
+		if x > 0 && x+itemGap+width > maxWidth {
+			finishRow(len(positioned))
+			y += rowHeight + itemGap
+			x, rowHeight, rowStart = 0, 0, len(positioned)
+		}
+		if x > 0 {
+			x += itemGap
+		}
+		item.size.X = width
+		positioned = append(positioned, positionedItem{item: item, x: x, y: y})
+		x += width
+		rowHeight = max(rowHeight, item.size.Y)
+	}
+	finishRow(len(positioned))
+	for _, positionedItem := range positioned {
+		offset := op.Offset(image.Pt(positionedItem.x, positionedItem.y)).Push(gtx.Ops)
+		positionedItem.item.call.Add(gtx.Ops)
+		offset.Pop()
+	}
+	return layout.Dimensions{Size: image.Pt(maxWidth, y+rowHeight)}
 }
 
 func withDefaultConsoleText(children []uidsl.Node) []uidsl.Node {
@@ -2405,6 +2565,9 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 	if compact && node.Style.Role == "compact-action-row" {
 		return r.layoutCompactActionRow(gtx, node, data, path)
 	}
+	if compact && node.ID == "project-header" {
+		return r.layoutCompactProjectHeader(gtx, node, data, path)
+	}
 	stackCompactRow := compact && axis == layout.Horizontal && (node.Style.Role == "hero" || node.Layout.Wrap || compactRowNeedsStack(node.Children) ||
 		node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row")
 	if node.Style.Role == "compact-toolbar" {
@@ -2450,6 +2613,64 @@ func (r *Renderer) layoutChildren(gtx layout.Context, node uidsl.Node, data any,
 		}
 		return row(gtx)
 	})
+}
+
+func (r *Renderer) layoutCompactProjectHeader(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {
+	logoIndex, copyIndex, backIndex := -1, -1, -1
+	for index := range node.Children {
+		switch node.Children[index].Style.Role {
+		case "project-icon":
+			logoIndex = index
+		case "project-header-copy":
+			copyIndex = index
+		case "project-header-back":
+			backIndex = index
+		}
+	}
+	if logoIndex < 0 || copyIndex < 0 || backIndex < 0 {
+		return r.errorLabel(gtx, fmt.Errorf("compact project header roles are incomplete"))
+	}
+	logo := node.Children[logoIndex]
+	copy := node.Children[copyIndex]
+	titleIndex, metadataIndex := -1, -1
+	for index := range copy.Children {
+		switch copy.Children[index].Style.Role {
+		case "title":
+			titleIndex = index
+		case "project-header-metadata":
+			metadataIndex = index
+		}
+	}
+	if titleIndex < 0 || metadataIndex < 0 {
+		return r.errorLabel(gtx, fmt.Errorf("compact project header content roles are incomplete"))
+	}
+	title := copy.Children[titleIndex]
+	metadata := copy.Children[metadataIndex]
+	back := node.Children[backIndex]
+	back.Style.Role = "icon-button"
+	top := func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(72))
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(r.metrics.spaceMedium)}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return r.layoutNode(gtx, back, data, fmt.Sprintf("%s/%d", path, backIndex))
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = 0
+				return r.layoutNode(gtx, title, data, fmt.Sprintf("%s/%d/%d", path, copyIndex, titleIndex))
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return r.layoutNode(gtx, logo, data, fmt.Sprintf("%s/%d", path, logoIndex))
+			}),
+		)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(top),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: r.metrics.spaceSmall}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return r.layoutNode(gtx, metadata, data, fmt.Sprintf("%s/%d/%d", path, copyIndex, metadataIndex))
+			})
+		}),
+	)
 }
 
 func (r *Renderer) nodeOccupiesLayout(raw uidsl.Node, data any) bool {
@@ -3059,7 +3280,7 @@ func (r *Renderer) buttonNodeState(node *uidsl.Node, data any) (string, bool) {
 func (r *Renderer) handleButtonClicks(gtx layout.Context, node uidsl.Node, data any, path string, enabled bool) bool {
 	button := r.button(path)
 	clicked := false
-	for button.Clicked(gtx) {
+	for r.clicked(gtx, button) {
 		clicked = true
 		r.markInteraction(path)
 		if enabled && len(node.Actions) > 0 {
@@ -3157,7 +3378,7 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 		list.ScrollToEnd = r.outputTailing && list.Position.Length > gtx.Constraints.Max.Y
 	}
 	content := func(gtx layout.Context) layout.Dimensions {
-		return list.Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
+		return r.layoutGuardedList(gtx, "scroller:"+path, list, len(items), func(gtx layout.Context, index int) layout.Dimensions {
 			if list.Axis == layout.Vertical {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 			}
@@ -3189,7 +3410,7 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 		return content(gtx)
 	}
 	collapse := r.button(path + "/floating-collapse")
-	for collapse.Clicked(gtx) {
+	for r.clicked(gtx, collapse) {
 		r.markInteraction(path + "/floating-collapse")
 		r.setDisclosureState(stateKey, false, true)
 	}
@@ -3288,7 +3509,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 		}
 	}
 	toggle := r.button(path + "/select-toggle")
-	for toggle.Clicked(gtx) {
+	for r.clicked(gtx, toggle) {
 		r.markInteraction(path + "/select-toggle")
 		if enabled {
 			r.selectOpen[path] = !r.selectOpen[path]
@@ -3317,7 +3538,7 @@ func (r *Renderer) layoutSelect(gtx layout.Context, node uidsl.Node, data any, p
 					entry := options[optionIndex]
 					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						choice := r.button(path + "/option/" + entry.value)
-						for choice.Clicked(gtx) {
+						for r.clicked(gtx, choice) {
 							r.markInteraction(path + "/option/" + entry.value)
 							r.selectOpen[path] = false
 							if len(node.Actions) > 0 && entry.value != selectedValue {
@@ -3890,11 +4111,11 @@ func (r *Renderer) layoutConfirmation(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min = image.Point{}
 	confirm := r.button("confirmation/confirm")
 	cancel := r.button("confirmation/cancel")
-	for cancel.Clicked(gtx) {
+	for r.clicked(gtx, cancel) {
 		r.pending = nil
 		r.requestFrame()
 	}
-	for confirm.Clicked(gtx) {
+	for r.clicked(gtx, confirm) {
 		r.pending = nil
 		r.onAction(pending.action, pending.arguments)
 		r.requestFrame()
@@ -3939,7 +4160,7 @@ func (r *Renderer) layoutAlert(gtx layout.Context) layout.Dimensions {
 	}
 	gtx.Constraints.Min = image.Point{}
 	ok := r.button("alert/ok")
-	for ok.Clicked(gtx) {
+	for r.clicked(gtx, ok) {
 		r.mu.Lock()
 		r.alert = nil
 		r.mu.Unlock()

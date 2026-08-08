@@ -802,7 +802,12 @@
         element.tabIndex = element.tabIndex >= 0 ? element.tabIndex : 0;
         element.setAttribute('role', element.tagName === 'BUTTON' ? 'button' : 'link');
         element.addEventListener('click', event => {
-          if (element.tagName === 'BUTTON' || element.closest('summary')) event.stopPropagation();
+		  const summary = element.closest('summary');
+		  if (element.tagName === 'BUTTON' || summary) event.stopPropagation();
+		  // A click on any descendant of <summary> performs the summary's
+		  // built-in toggle even when propagation is stopped. Child actions own
+		  // the gesture, so suppress that default before invoking the action.
+		  if (summary) event.preventDefault();
 		  if (element.tagName !== 'BUTTON' && elementContainsTextSelection(element)) return;
           invoke(data).catch(error => window.alert(error.message || String(error)));
         });

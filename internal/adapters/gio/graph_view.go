@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"sort"
 	"strings"
 
 	"gioui.org/f32"
+	"gioui.org/io/event"
+	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -24,6 +27,135 @@ const (
 	definitionGraphMinScale = float32(0.45)
 	definitionGraphMaxScale = float32(1.5)
 )
+
+type graphViewportState struct {
+	offset       f32.Point
+	touches      map[pointer.ID]f32.Point
+	lastCentroid f32.Point
+	lastDistance float32
+}
+
+func (s *graphViewportState) update(gtx layout.Context, scale *float32, minScale, maxScale float32, contentWidth, contentHeight, viewportWidth, viewportHeight int) bool {
+	if s.touches == nil {
+		s.touches = map[pointer.ID]f32.Point{}
+	}
+	changed := false
+	scaledWidth := int(float32(contentWidth)**scale + 0.5)
+	scaledHeight := int(float32(contentHeight)**scale + 0.5)
+	xRange := graphScrollRange(s.offset.X, scaledWidth, viewportWidth)
+	yRange := graphScrollRange(s.offset.Y, scaledHeight, viewportHeight)
+	filter := pointer.Filter{
+		Target:  s,
+		Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel | pointer.Scroll,
+		ScrollX: xRange, ScrollY: yRange,
+	}
+	for {
+		raw, ok := gtx.Event(filter)
+		if !ok {
+			break
+		}
+		e, ok := raw.(pointer.Event)
+		if !ok {
+			continue
+		}
+		if e.Kind == pointer.Scroll {
+			s.offset.X += e.Scroll.X
+			s.offset.Y += e.Scroll.Y
+			changed = changed || e.Scroll.X != 0 || e.Scroll.Y != 0
+			continue
+		}
+		if e.Source != pointer.Touch {
+			continue
+		}
+		switch e.Kind {
+		case pointer.Press:
+			s.touches[e.PointerID] = e.Position
+			if len(s.touches) == 2 {
+				for id := range s.touches {
+					gtx.Execute(pointer.GrabCmd{Tag: s, ID: id})
+				}
+				s.lastCentroid, s.lastDistance = graphTouchGeometry(s.touches)
+			}
+		case pointer.Drag:
+			if _, tracked := s.touches[e.PointerID]; !tracked {
+				continue
+			}
+			s.touches[e.PointerID] = e.Position
+			if len(s.touches) != 2 {
+				continue
+			}
+			centroid, distance := graphTouchGeometry(s.touches)
+			changed = s.transformTouch(scale, centroid, distance, minScale, maxScale) || changed
+			s.lastCentroid, s.lastDistance = centroid, distance
+		case pointer.Release, pointer.Cancel:
+			delete(s.touches, e.PointerID)
+			s.lastDistance = 0
+			if len(s.touches) == 2 {
+				s.lastCentroid, s.lastDistance = graphTouchGeometry(s.touches)
+			}
+		}
+	}
+	s.clamp(*scale, contentWidth, contentHeight, viewportWidth, viewportHeight)
+	return changed
+}
+
+func (s *graphViewportState) transformTouch(scale *float32, centroid f32.Point, distance, minScale, maxScale float32) bool {
+	if s.lastDistance <= 0 || distance <= 0 {
+		return false
+	}
+	oldScale := *scale
+	nextScale := min(maxScale, max(minScale, oldScale*distance/s.lastDistance))
+	contentPoint := f32.Pt(
+		(s.lastCentroid.X+s.offset.X)/oldScale,
+		(s.lastCentroid.Y+s.offset.Y)/oldScale,
+	)
+	s.offset = f32.Pt(contentPoint.X*nextScale-centroid.X, contentPoint.Y*nextScale-centroid.Y)
+	*scale = nextScale
+	return true
+}
+
+func graphTouchGeometry(touches map[pointer.ID]f32.Point) (f32.Point, float32) {
+	points := make([]f32.Point, 0, 2)
+	for _, point := range touches {
+		points = append(points, point)
+		if len(points) == 2 {
+			break
+		}
+	}
+	if len(points) != 2 {
+		return f32.Point{}, 0
+	}
+	centroid := f32.Pt((points[0].X+points[1].X)/2, (points[0].Y+points[1].Y)/2)
+	dx, dy := points[0].X-points[1].X, points[0].Y-points[1].Y
+	return centroid, float32(math.Hypot(float64(dx), float64(dy)))
+}
+
+func graphScrollRange(offset float32, content, viewport int) pointer.ScrollRange {
+	if content <= viewport {
+		return pointer.ScrollRange{}
+	}
+	return pointer.ScrollRange{Min: int(-offset), Max: int(float32(content-viewport) - offset)}
+}
+
+func (s *graphViewportState) clamp(scale float32, contentWidth, contentHeight, viewportWidth, viewportHeight int) {
+	s.offset.X = clampGraphOffset(s.offset.X, float32(contentWidth)*scale, float32(viewportWidth))
+	s.offset.Y = clampGraphOffset(s.offset.Y, float32(contentHeight)*scale, float32(viewportHeight))
+}
+
+func clampGraphOffset(offset, content, viewport float32) float32 {
+	if content <= viewport {
+		return -(viewport - content) / 2
+	}
+	return min(content-viewport, max(0, offset))
+}
+
+func (s *graphViewportState) center(scale float32, contentWidth, contentHeight, viewportWidth, viewportHeight int) {
+	s.offset = f32.Pt(
+		(float32(contentWidth)*scale-float32(viewportWidth))/2,
+		(float32(contentHeight)*scale-float32(viewportHeight))/2,
+	)
+	s.clamp(scale, contentWidth, contentHeight, viewportWidth, viewportHeight)
+}
 
 type definitionGraphNode struct {
 	id, label, meta string
@@ -70,11 +202,11 @@ func (r *Renderer) layoutGraphView(gtx layout.Context, node uidsl.Node, data any
 	}
 	graphButton := r.button(path + "/mode/graph")
 	listButton := r.button(path + "/mode/list")
-	for graphButton.Clicked(gtx) {
+	for r.clicked(gtx, graphButton) {
 		r.markInteraction(path + "/mode/graph")
 		setMode("graph")
 	}
-	for listButton.Clicked(gtx) {
+	for r.clicked(gtx, listButton) {
 		r.markInteraction(path + "/mode/list")
 		setMode("list")
 	}
@@ -148,44 +280,45 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 	nodeWidth, nodeHeight := gtx.Dp(210), gtx.Dp(76)
 	gapX, gapY, padding := gtx.Dp(58), gtx.Dp(24), gtx.Dp(16)
 	contentWidth, contentHeight := layoutDefinitionGraph(nodes, nodeWidth, nodeHeight, gapX, gapY, padding)
-	availableWidth := max(1, gtx.Constraints.Max.X-2*padding)
-	availableFitHeight := max(1, gtx.Dp(420)-2*padding)
-	fitScale := clampGraphScale(min(
-		float32(availableWidth)/float32(max(1, contentWidth)),
-		float32(availableFitHeight)/float32(max(1, contentHeight)),
-	))
+	viewportWidth := max(1, gtx.Constraints.Max.X)
+	viewportHeight := gtx.Dp(420)
+	if r.viewportSize.Y > 0 {
+		viewportHeight = min(viewportHeight, max(gtx.Dp(180), r.viewportSize.Y-gtx.Dp(220)))
+	}
+	if gtx.Constraints.Max.Y > 0 && gtx.Constraints.Max.Y < 1_000_000 {
+		viewportHeight = min(viewportHeight, gtx.Constraints.Max.Y)
+	}
+	viewportHeight = max(1, viewportHeight)
+	fitScale := definitionGraphFitScale(viewportWidth, viewportHeight, contentWidth, contentHeight, padding)
+	minimumScale := min(definitionGraphMinScale, fitScale)
 	requestedScale, exists := r.graphScales[stateKey]
 	actualScale := requestedScale
 	if !exists || requestedScale <= 0 {
 		actualScale = fitScale
 	}
+	graphViewport := r.graphViewports[stateKey]
+	if graphViewport == nil {
+		graphViewport = &graphViewportState{touches: map[pointer.ID]f32.Point{}}
+		r.graphViewports[stateKey] = graphViewport
+	}
+	if !exists || requestedScale <= 0 {
+		graphViewport.center(actualScale, contentWidth, contentHeight, viewportWidth, viewportHeight)
+	}
 
 	fitButton := r.button(path + "/fit")
 	resetButton := r.button(path + "/reset")
-	zoomOutButton := r.button(path + "/zoom-out")
-	zoomInButton := r.button(path + "/zoom-in")
-	for fitButton.Clicked(gtx) {
+	for r.clicked(gtx, fitButton) {
 		r.markInteraction(path + "/fit")
 		r.graphScales[stateKey] = 0
 		actualScale = fitScale
+		graphViewport.center(actualScale, contentWidth, contentHeight, viewportWidth, viewportHeight)
 		r.requestFrame()
 	}
-	for resetButton.Clicked(gtx) {
+	for r.clicked(gtx, resetButton) {
 		r.markInteraction(path + "/reset")
 		r.graphScales[stateKey] = 1
 		actualScale = 1
-		r.requestFrame()
-	}
-	for zoomOutButton.Clicked(gtx) {
-		r.markInteraction(path + "/zoom-out")
-		actualScale = clampGraphScale(actualScale - 0.1)
-		r.graphScales[stateKey] = actualScale
-		r.requestFrame()
-	}
-	for zoomInButton.Clicked(gtx) {
-		r.markInteraction(path + "/zoom-in")
-		actualScale = clampGraphScale(actualScale + 0.1)
-		r.graphScales[stateKey] = actualScale
+		graphViewport.center(actualScale, contentWidth, contentHeight, viewportWidth, viewportHeight)
 		r.requestFrame()
 	}
 	controls := func(gtx layout.Context) layout.Dimensions {
@@ -201,56 +334,30 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: r.metrics.spaceSmall}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return r.layoutIconButton(gtx, zoomOutButton, "zoom-out", "Zoom out")
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: r.metrics.spaceSmall}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					textNode := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: percent}, Style: uidsl.Style{Tone: "muted"}}
 					return r.layoutText(gtx, textNode, data, path+"/scale")
-				})
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: r.metrics.spaceSmall}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return r.layoutIconButton(gtx, zoomInButton, "zoom-in", "Zoom in")
 				})
 			}),
 		)
 	}
 	viewport := func(gtx layout.Context) layout.Dimensions {
-		scaledWidth := int(float32(contentWidth)*actualScale + 0.5)
-		scaledHeight := int(float32(contentHeight)*actualScale + 0.5)
-		viewportHeight := min(gtx.Dp(420), max(gtx.Dp(180), scaledHeight+2*padding))
-		viewportHeight = min(viewportHeight, gtx.Constraints.Max.Y)
-		verticalScroller := r.scrollers[path+"/vertical"]
-		if verticalScroller == nil {
-			verticalScroller = &layout.List{Axis: layout.Vertical}
-			r.scrollers[path+"/vertical"] = verticalScroller
-		}
-		horizontalScroller := r.scrollers[path+"/horizontal"]
-		if horizontalScroller == nil {
-			horizontalScroller = &layout.List{Axis: layout.Horizontal}
-			r.scrollers[path+"/horizontal"] = horizontalScroller
-		}
 		return r.layoutCachedBorder(gtx, r.palette.border, r.metrics.controlRadius, 1, func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.Y = viewportHeight
-			gtx.Constraints.Max.Y = viewportHeight
-			viewportWidth := gtx.Constraints.Max.X
-			itemHeight := max(viewportHeight, scaledHeight)
-			return verticalScroller.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-				gtx.Constraints = layout.Exact(image.Pt(viewportWidth, itemHeight))
-				return horizontalScroller.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-					itemWidth := max(viewportWidth, scaledWidth)
-					return layout.Stack{Alignment: layout.Center}.Layout(gtx,
-						layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-							return layout.Dimensions{Size: image.Pt(itemWidth, itemHeight)}
-						}),
-						layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-							return r.layoutScaledDefinitionGraph(gtx, node, nodes, data, path, stateKey, selectedID, contentWidth, contentHeight, actualScale, nodeWidth, nodeHeight)
-						}),
-					)
-				})
-			})
+			size := image.Pt(gtx.Constraints.Max.X, viewportHeight)
+			gtx.Constraints = layout.Exact(size)
+			if graphViewport.update(gtx, &actualScale, minimumScale, definitionGraphMaxScale, contentWidth, contentHeight, size.X, size.Y) {
+				r.graphScales[stateKey] = actualScale
+				r.requestFrame()
+			}
+			graphViewport.clamp(actualScale, contentWidth, contentHeight, size.X, size.Y)
+			stack := clip.Rect{Max: size}.Push(gtx.Ops)
+			event.Op(gtx.Ops, graphViewport)
+			offset := op.Offset(image.Pt(-int(math.Round(float64(graphViewport.offset.X))), -int(math.Round(float64(graphViewport.offset.Y))))).Push(gtx.Ops)
+			pass := pointer.PassOp{}.Push(gtx.Ops)
+			r.layoutScaledDefinitionGraph(gtx, node, nodes, data, path, stateKey, selectedID, contentWidth, contentHeight, actualScale, nodeWidth, nodeHeight)
+			pass.Pop()
+			offset.Pop()
+			stack.Pop()
+			return layout.Dimensions{Size: size}
 		})
 	}
 	children := []layout.FlexChild{
@@ -269,6 +376,14 @@ func (r *Renderer) layoutDefinitionGraph(gtx layout.Context, node uidsl.Node, da
 		}))
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
+func definitionGraphFitScale(viewportWidth, viewportHeight, contentWidth, contentHeight, padding int) float32 {
+	scale := min(
+		float32(max(1, viewportWidth-2*padding))/float32(max(1, contentWidth)),
+		float32(max(1, viewportHeight-2*padding))/float32(max(1, contentHeight)),
+	)
+	return min(definitionGraphMaxScale, max(0.01, scale))
 }
 
 func definitionGraphNodeByID(nodes []*definitionGraphNode, id string) *definitionGraphNode {
@@ -473,14 +588,14 @@ func (r *Renderer) layoutDefinitionGraphNode(gtx layout.Context, owner uidsl.Nod
 	play := r.button(path + "/run")
 	playActivated := false
 	if len(owner.Actions) > 0 {
-		for play.Clicked(gtx) {
+		for r.clicked(gtx, play) {
 			playActivated = true
 			r.markInteraction(path + "/run")
 			r.dispatch(owner.Actions[0], graphNode.data)
 		}
 	}
 	if selectable {
-		for selector.Clicked(gtx) {
+		for r.clicked(gtx, selector) {
 			r.markInteraction(path + "/select")
 			if !playActivated {
 				r.graphSelections[stateKey] = graphNode.id

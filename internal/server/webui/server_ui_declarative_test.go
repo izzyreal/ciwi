@@ -538,6 +538,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
 		".dsl-project-row > summary > .dsl-disclosure-label",
+		"if (summary) event.preventDefault()", "flex-wrap:wrap", "touch-action:pan-x pan-y", "overscroll-behavior:contain",
 		".dsl-execution-row:not([open]) > summary.ciwi-progress-surface", "border-radius:var(--ciwi-surface-radius",
 		".dsl-execution-section-header", ".dsl-agent-header,.dsl-agent-record { display:grid !important;",
 	} {

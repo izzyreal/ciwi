@@ -536,6 +536,25 @@ func TestFrontPageProjectBodyUsesOrdinaryDeclarativeNodes(t *testing.T) {
 	}
 }
 
+func TestProjectDetailsHeaderDeclaresCompactPartsOnce(t *testing.T) {
+	screen, err := LoadScreen("project-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := map[string]int{}
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		switch node.Style.Role {
+		case "project-icon", "project-header-copy", "project-header-metadata", "project-header-back":
+			roles[node.Style.Role]++
+		}
+	})
+	for _, role := range []string{"project-icon", "project-header-copy", "project-header-metadata", "project-header-back"} {
+		if roles[role] != 1 {
+			t.Errorf("project details role %q occurs %d times, want one shared declaration", role, roles[role])
+		}
+	}
+}
+
 func TestAgentsTableUsesOneCenteredTightLayout(t *testing.T) {
 	screen, err := LoadScreen("agents")
 	if err != nil {

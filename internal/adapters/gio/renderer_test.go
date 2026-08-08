@@ -903,6 +903,11 @@ func TestRendererLaysOutPersistentProjectPipelineGraph(t *testing.T) {
 	if !buildSelect || !releaseSelect || !unitSelect {
 		t.Fatalf("selectable graph nodes missing: build=%v release=%v unit=%v", buildSelect, releaseSelect, unitSelect)
 	}
+	for path := range renderer.buttons {
+		if strings.HasSuffix(path, "/zoom-in") || strings.HasSuffix(path, "/zoom-out") {
+			t.Fatalf("native graph retained a discrete zoom button at %q", path)
+		}
+	}
 	if selected := renderer.graphSelections["project-jobs:41:7"]; selected != "unit-tests" {
 		t.Fatalf("default selected job = %q, want unit-tests", selected)
 	}
@@ -918,6 +923,90 @@ func TestRendererLaysOutPersistentProjectPipelineGraph(t *testing.T) {
 	}
 	if width <= 3*210 || height < 76 {
 		t.Fatalf("graph dimensions = %dx%d", width, height)
+	}
+}
+
+func TestDefinitionGraphFitCanScaleBelowManualZoomFloor(t *testing.T) {
+	scale := definitionGraphFitScale(320, 420, 1200, 700, 16)
+	if scale >= definitionGraphMinScale {
+		t.Fatalf("portrait fit scale = %.3f, want below the %.2f manual floor", scale, definitionGraphMinScale)
+	}
+	if gotWidth := float32(1200) * scale; gotWidth > 320-32+0.01 {
+		t.Fatalf("fitted graph width = %.2f, viewport content width = %d", gotWidth, 320-32)
+	}
+}
+
+func TestGraphViewportCentersAndClampsBothAxes(t *testing.T) {
+	state := &graphViewportState{}
+	state.center(.5, 400, 200, 320, 240)
+	if state.offset.X != -60 || state.offset.Y != -70 {
+		t.Fatalf("centered offset = %+v, want (-60,-70)", state.offset)
+	}
+	state.offset = f32.Pt(1000, -1000)
+	state.clamp(1, 500, 600, 320, 240)
+	if state.offset != f32.Pt(180, 0) {
+		t.Fatalf("clamped offset = %+v, want (180,0)", state.offset)
+	}
+}
+
+func TestGraphViewportUsesTwoTouchesForPanAndZoom(t *testing.T) {
+	state := &graphViewportState{lastCentroid: f32.Pt(150, 100), lastDistance: 100}
+	scale := float32(1)
+	if !state.transformTouch(&scale, f32.Pt(160, 110), 140, .45, 1.5) {
+		t.Fatal("two-touch graph gesture did not report a viewport change")
+	}
+	if scale <= 1 || state.offset == (f32.Point{}) {
+		t.Fatalf("two-touch transform = scale %.2f offset %+v", scale, state.offset)
+	}
+}
+
+func TestScrollGestureGuardOnlyArmsForInertialMovement(t *testing.T) {
+	guard := &scrollGestureGuard{}
+	list := &layout.List{}
+	guard.observe(list)
+	if guard.inertial {
+		t.Fatal("stationary list armed the momentum tap guard")
+	}
+	list.Position.Offset = 12
+	guard.observe(list)
+	if !guard.inertial {
+		t.Fatal("moving non-dragged list did not arm the momentum tap guard")
+	}
+}
+
+func TestNativeProjectSummaryWrapsAtItsActualWidth(t *testing.T) {
+	theme, err := findTheme("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := NewRenderer(&uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "project-summary-wrap"}}, theme, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := []uidsl.Node{{Component: "text", Text: &uidsl.Text{Literal: "A project with a name"}, Style: uidsl.Style{Role: "link"}}}
+	for _, label := range []string{"Managed YAML", "repository", "branch:main", "ciwi-project.yaml"} {
+		summary = append(summary, uidsl.Node{Component: "badge", Text: &uidsl.Text{Literal: label}, Style: uidsl.Style{Tone: "muted"}})
+	}
+	summary = append(summary,
+		uidsl.Node{Component: "spacer", Layout: uidsl.Layout{Grow: true}},
+		uidsl.Node{Component: "badge", Text: &uidsl.Text{Literal: "4 pipelines"}, Style: uidsl.Style{Tone: "muted"}},
+	)
+	node := uidsl.Node{Component: "disclosure", Disclosure: &uidsl.Disclosure{Summary: summary}, Style: uidsl.Style{Role: "project-row"}}
+	gtx := layout.Context{Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Constraints{Max: image.Pt(220, 500)}}
+	dimensions := renderer.layoutWrappedProjectSummary(gtx, node, map[string]any{}, "project", func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: image.Pt(14, 14)}
+	})
+	if dimensions.Size.Y < 60 {
+		t.Fatalf("narrow project summary height = %d, want multiple packed rows", dimensions.Size.Y)
+	}
+}
+
+func TestConsumedMomentumTouchSuppressesClickableActivation(t *testing.T) {
+	renderer := &Renderer{suppressTouchActivation: true}
+	button := new(widget.Clickable)
+	button.Click()
+	if renderer.clicked(layout.Context{Ops: new(op.Ops)}, button) {
+		t.Fatal("consumed momentum-stopping touch activated its underlying control")
 	}
 }
 
