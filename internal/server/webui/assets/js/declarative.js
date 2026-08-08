@@ -1522,18 +1522,38 @@
 	return values.length ? values.map(value => ({value, label: value})) : [{value: '', label: emptyLabel}];
   }
 
-  function isDeclarativeLowerVersion(candidate, current) {
+  function compareDeclarativeVersions(candidate, current) {
 	const parse = value => {
 	  const match = String(value || '').trim().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)/);
 	  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
 	};
 	const left = parse(candidate);
 	const right = parse(current);
-	if (!left || !right) return false;
+	if (!left || !right) return null;
 	for (let index = 0; index < 3; index += 1) {
-	  if (left[index] !== right[index]) return left[index] < right[index];
+	  if (left[index] !== right[index]) return left[index] < right[index] ? -1 : 1;
 	}
-	return false;
+	return 0;
+  }
+
+  function isDeclarativeLowerVersion(candidate, current) {
+	return compareDeclarativeVersions(candidate, current) === -1;
+  }
+
+  function declarativePersistedUpdateBinding(status) {
+	const source = status && typeof status === 'object' ? status : {};
+	const current = String(source.update_current_version || '').trim();
+	const latest = String(source.update_latest_version || '').trim();
+	const message = String(source.update_message || '').trim();
+	const checked = String(source.update_last_checked_utc || '').trim() !== '';
+	const available = String(source.update_available || '') === '1' && compareDeclarativeVersions(latest, current) === 1;
+	const upToDate = checked && message.toLowerCase() === 'already up to date';
+	const versions = available ? [latest] : [];
+	return {
+	  updateVersions: declarativeVersionOptions(versions, upToDate ? 'No newer versions available' : 'Check for updates'),
+	  selectedUpdateVersion: available ? latest : '',
+	  updateResult: available ? 'Update available: ' + current + ' → ' + latest : (upToDate ? 'Up to date (' + current + ')' : ''),
+	};
   }
 
   function outputMatchRanges(output, query) {
@@ -1855,6 +1875,7 @@
 		const projectsPayload = await projectsResponse.json();
 		const updateStatusPayload = await updateStatusResponse.json();
 		const updateStatus = updateStatusPayload.status || {};
+		const persistedUpdate = declarativePersistedUpdateBinding(updateStatus);
 		const projects = Array.isArray(projectsPayload.projects) ? projectsPayload.projects : [];
 		projects.forEach(project => {
 		  project.is_managed = String(project.source_kind || '') === 'managed_yaml';
@@ -1887,9 +1908,10 @@
 		  update_capability_notice: updateStatus.update_server_mode === 'dev' ? 'Running in dev mode. Updates disabled.' : (updateStatus.update_server_self_update_reason || ''),
 		  update_status_label: ['Current: ' + (updateStatus.update_current_version || ''), updateStatus.update_message ? 'Message: ' + updateStatus.update_message : ''].filter(Boolean).join(' · '),
 		  blocked_agent_notice: updateStatus.update_agent_non_service_agents ? 'Agents requiring manual update: ' + updateStatus.update_agent_non_service_agents : '',
-		  update_versions: declarativeVersionOptions([], 'Check for updates'), selected_update_version: '',
+		  update_versions: persistedUpdate.updateVersions, selected_update_version: persistedUpdate.selectedUpdateVersion,
 		  rollback_versions: declarativeVersionOptions([], 'Refresh versions'), selected_rollback_version: '',
-		  update_result: '', update_result_tone: 'muted', rollback_result: '', rollback_result_tone: 'muted',
+		  update_result: persistedUpdate.updateResult, update_result_tone: persistedUpdate.updateResult ? 'success' : 'muted',
+		  rollback_result: '', rollback_result_tone: 'muted',
 		  connection_mode: 'discover', connection_endpoint: '', connection_explicit: false,
 		  connection_modes: [{value: 'discover', label: 'Automatic discovery'}, {value: 'explicit', label: 'Explicit endpoint'}],
 		};

@@ -73,8 +73,9 @@ screen:
                 icon: arrow-left
                 actions: [{on: activate, command: navigate, arguments: {route: /}}]
       - component: card
+        id: agents-table
         visible: {binding: agents.ready}
-        layout: {direction: vertical, gap: small, padding: medium}
+        layout: {direction: vertical, gap: medium, padding: medium}
         children:
           - component: row
             layout: {direction: horizontal, gap: medium, align: center, wrap: true}

@@ -571,14 +571,17 @@ func TestProjectDetailsHeaderDeclaresCompactPartsOnce(t *testing.T) {
 	}
 }
 
-func TestAgentsTableUsesOneCenteredTightLayout(t *testing.T) {
+func TestAgentsTableUsesOneCenteredLayout(t *testing.T) {
 	screen, err := LoadScreen("agents")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var header, record *uidsl.Node
+	var table, header, record *uidsl.Node
 	dividers := 0
 	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.ID == "agents-table" {
+			table = node
+		}
 		switch node.Style.Role {
 		case "agent-header":
 			header = node
@@ -594,6 +597,9 @@ func TestAgentsTableUsesOneCenteredTightLayout(t *testing.T) {
 	}
 	if record == nil || record.Layout.Align != "center" {
 		t.Fatalf("agent record = %#v, want centered shared row", record)
+	}
+	if table == nil || table.Layout.Gap != "medium" {
+		t.Fatalf("agent table = %#v, want medium header-to-list spacing", table)
 	}
 	if dividers != 0 {
 		t.Fatalf("agent table dividers = %d, want none", dividers)
