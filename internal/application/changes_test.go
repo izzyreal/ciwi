@@ -41,6 +41,14 @@ func TestChangeHubSlowSubscriberGetsResync(t *testing.T) {
 	}
 }
 
+func TestChangeHubPublishesScopedJobInvalidation(t *testing.T) {
+	hub := NewChangeHub()
+	change := hub.PublishForJobExecutions([]string{" job-2 ", "job-1", "job-2", ""}, ChangeHistory, ChangeJobOutput)
+	if len(change.JobExecutionIDs) != 2 || change.JobExecutionIDs[0] != "job-2" || change.JobExecutionIDs[1] != "job-1" {
+		t.Fatalf("job execution ids = %v", change.JobExecutionIDs)
+	}
+}
+
 func TestChangeHubClosesSubscription(t *testing.T) {
 	hub := NewChangeHub()
 	ctx, cancel := context.WithCancel(context.Background())

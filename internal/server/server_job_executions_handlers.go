@@ -25,11 +25,17 @@ func (s *stateStore) jobExecutionHandlerDeps() jobexecution.HandlerDeps {
 		AttachSchedulingDiagnosis: s.attachJobExecutionSchedulingDiagnosis,
 		MarkAgentSeen:             s.markAgentSeen,
 		OnJobUpdated:              s.onJobExecutionUpdated,
+		OnJobStateChanged: func(job protocol.JobExecution) {
+			s.app().changes.PublishForJobExecution(job.ID, application.ChangeQueue, application.ChangeHistory)
+		},
 		OnQueueChanged: func() {
 			s.app().changes.Publish(application.ChangeQueue)
 		},
 		OnHistoryChanged: func() {
 			s.app().changes.Publish(application.ChangeHistory)
+		},
+		OnJobHistoryChanged: func(jobExecutionID string) {
+			s.app().changes.PublishForJobExecution(jobExecutionID, application.ChangeHistory)
 		},
 		PrepareRerun:   s.prepareJobExecutionRerun,
 		AttachProgress: attachProgress,

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -59,9 +60,12 @@ type screenLoadResult struct {
 }
 
 type jobOutputBuffer struct {
-	jobID   string
-	events  []*cnpv1.JobOutputEvent
-	omitted map[string]bool
+	jobID    string
+	events   []*cnpv1.JobOutputEvent
+	omitted  map[string]bool
+	bytes    int
+	snapshot jobOutputSnapshot
+	dirty    bool
 }
 
 const (
@@ -251,6 +255,9 @@ func (b *jobOutputBuffer) reset(jobID string) {
 	b.jobID = jobID
 	b.events = nil
 	b.omitted = map[string]bool{}
+	b.bytes = 0
+	b.snapshot = jobOutputSnapshot{Outputs: map[string]string{}, Errors: map[string]string{}, ExitCodes: map[string]string{}}
+	b.dirty = true
 }
 
 func (b *jobOutputBuffer) append(batch *cnpv1.JobOutputBatch) {
@@ -266,33 +273,45 @@ func (b *jobOutputBuffer) append(batch *cnpv1.JobOutputBatch) {
 			eventCopy.Text = strings.ToValidUTF8(eventCopy.Text[len(eventCopy.Text)-maxNativeOutputBytes:], "")
 			b.omitted[eventCopy.ItemId] = true
 		}
-		b.events = append(b.events, eventCopy)
+		switch eventCopy.Type {
+		case "system-message":
+			b.snapshot.System += eventCopy.Text
+		case "output":
+			b.snapshot.Outputs[eventCopy.ItemId] += eventCopy.Text
+		case "finished":
+			if eventCopy.Error != "" {
+				b.snapshot.Errors[eventCopy.ItemId] = eventCopy.Error
+			}
+			if eventCopy.ExitCode != "" {
+				b.snapshot.ExitCodes[eventCopy.ItemId] = eventCopy.ExitCode
+			}
+		}
+		if eventCopy.Text != "" {
+			b.events = append(b.events, eventCopy)
+			b.bytes += len(eventCopy.Text)
+		}
+		b.dirty = true
 	}
-	for bufferedOutputBytes(b.events) > maxNativeOutputBytes && len(b.events) > 1 {
+	for b.bytes > maxNativeOutputBytes && len(b.events) > 0 {
 		removed := b.events[0]
 		b.events = b.events[1:]
-		if removed.Text != "" {
-			b.omitted[removed.ItemId] = true
+		b.bytes -= len(removed.Text)
+		b.omitted[removed.ItemId] = true
+		if removed.Type == "system-message" {
+			b.snapshot.System = strings.TrimPrefix(b.snapshot.System, removed.Text)
+		} else if removed.Type == "output" {
+			b.snapshot.Outputs[removed.ItemId] = strings.TrimPrefix(b.snapshot.Outputs[removed.ItemId], removed.Text)
 		}
 	}
 }
 
 func (b *jobOutputBuffer) apply(renderer *Renderer) {
-	snapshot := jobOutputSnapshot{Outputs: map[string]string{}, Errors: map[string]string{}, ExitCodes: map[string]string{}}
-	for _, event := range b.events {
-		switch event.Type {
-		case "system-message":
-			snapshot.System += event.Text
-		case "output":
-			snapshot.Outputs[event.ItemId] += event.Text
-		case "finished":
-			if event.Error != "" {
-				snapshot.Errors[event.ItemId] = event.Error
-			}
-			if event.ExitCode != "" {
-				snapshot.ExitCodes[event.ItemId] = event.ExitCode
-			}
-		}
+	if !b.dirty {
+		return
+	}
+	snapshot := jobOutputSnapshot{
+		System:  b.snapshot.System,
+		Outputs: maps.Clone(b.snapshot.Outputs), Errors: maps.Clone(b.snapshot.Errors), ExitCodes: maps.Clone(b.snapshot.ExitCodes),
 	}
 	const omitted = "[ciwi native: earlier output omitted]\n"
 	for itemID := range b.omitted {
@@ -303,16 +322,7 @@ func (b *jobOutputBuffer) apply(renderer *Renderer) {
 		}
 	}
 	renderer.ApplyJobOutput(snapshot)
-}
-
-func bufferedOutputBytes(events []*cnpv1.JobOutputEvent) int {
-	total := 0
-	for _, event := range events {
-		if event != nil {
-			total += len(event.Text)
-		}
-	}
-	return total
+	b.dirty = false
 }
 
 func Run(options Options) error {
@@ -528,6 +538,16 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	var outputErrors <-chan error
 	var outputCancel context.CancelFunc
 	outputBuffer := &jobOutputBuffer{}
+	var outputApplyTimer *time.Timer
+	var outputApply <-chan time.Time
+	terminalOutputRefreshedJobID := ""
+	stopOutputApplyTimer := func() {
+		if outputApplyTimer != nil {
+			outputApplyTimer.Stop()
+		}
+		outputApplyTimer = nil
+		outputApply = nil
+	}
 	stopOutput := func() {
 		if outputCancel != nil {
 			outputCancel()
@@ -535,9 +555,13 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		outputCancel = nil
 		outputBatches = nil
 		outputErrors = nil
+		stopOutputApplyTimer()
 	}
 	startOutput := func(jobID string) {
 		stopOutput()
+		if outputBuffer.jobID != jobID {
+			terminalOutputRefreshedJobID = ""
+		}
 		outputBuffer.reset(jobID)
 		outputBuffer.apply(renderer)
 		if client == nil {
@@ -1012,6 +1036,21 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			}
 			outputBuffer.append(batch)
+			if batch.GetTerminal() && !batch.GetHasMore() {
+				stopOutputApplyTimer()
+				outputBuffer.apply(renderer)
+				if navigation.screen == "job-details" && navigation.jobID == batch.GetJobExecutionId() && terminalOutputRefreshedJobID != navigation.jobID {
+					terminalOutputRefreshedJobID = navigation.jobID
+					requestScreenLoad(navigation)
+				}
+				window.Invalidate()
+			} else if outputApplyTimer == nil {
+				outputApplyTimer = time.NewTimer(33 * time.Millisecond)
+				outputApply = outputApplyTimer.C
+			}
+		case <-outputApply:
+			outputApplyTimer = nil
+			outputApply = nil
 			outputBuffer.apply(renderer)
 			window.Invalidate()
 		case outputErr, ok := <-outputErrors:
@@ -1103,12 +1142,16 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 						}
 					}
 				}
+				preserveOutput := navigation.screen == "job-details" && result.navigation.screen == "job-details" &&
+					navigation.jobID == result.navigation.jobID && outputBuffer.jobID == result.navigation.jobID
 				navigation = result.navigation
 				pendingNavigation = nil
 				screenCache.Put(navigation, result.data)
 				renderer.SetScreenAndData(screens[navigation.screen], result.data)
 				if navigation.screen == "job-details" {
-					startOutput(navigation.jobID)
+					if !preserveOutput {
+						startOutput(navigation.jobID)
+					}
 				} else {
 					stopOutput()
 				}
@@ -1117,6 +1160,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					renderer.SetRootBinding("settings", "client_version", options.Version)
 				}
 				if navigation.screen == "job-details" {
+					outputBuffer.dirty = true
 					outputBuffer.apply(renderer)
 				}
 			}
@@ -2467,6 +2511,26 @@ func nativeTargets(ctx context.Context, explicit string) ([]string, error) {
 }
 
 func relevantScreenChange(navigation navigationState, change *cnpv1.ChangeEvent) bool {
+	if navigation.screen == "job-details" {
+		for _, topic := range change.Topics {
+			if topic == cnpv1.ChangeTopic_CHANGE_TOPIC_JOB_OUTPUT {
+				return false
+			}
+		}
+		if len(change.GetJobExecutionIds()) == 0 {
+			return false
+		}
+		matched := false
+		for _, jobID := range change.GetJobExecutionIds() {
+			if jobID == navigation.jobID {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
 	for _, topic := range change.Topics {
 		if navigation.screen == "project-details" && topic == cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS {
 			return true

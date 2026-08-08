@@ -3,6 +3,9 @@
 
   const root = document.getElementById('declarativeRoot');
   let outputWatchGeneration = 0;
+  let outputEventSource = null;
+  let completedOutputJobID = '';
+  let programmaticOutputScroll = false;
   let routeLoadGeneration = 0;
   const maxOutputCharacters = 1024 * 1024;
   let currentDocument = null;
@@ -729,21 +732,19 @@
         else if (action.command === 'change-output-search') {
           data.jobDetails.output_search = args.query || '';
           updateOutputSearch(data.jobDetails, 0);
-          renderCurrent();
+		  patchJobOutputRegion(data.jobDetails);
         }
         else if (action.command === 'find-output') {
           updateOutputSearch(data.jobDetails, args.direction === 'previous' ? -1 : 1);
-          renderCurrent();
+		  patchJobOutputRegion(data.jobDetails);
           selectBrowserOutputMatch(data.jobDetails);
         }
         else if (action.command === 'copy-output') {
           await navigator.clipboard.writeText(String(data.jobDetails.output || ''));
         }
         else if (action.command === 'toggle-output-tailing') {
-          data.jobDetails.output_tailing = !data.jobDetails.output_tailing;
-          data.jobDetails.tailing_label = data.jobDetails.output_tailing ? 'Tailing: On' : 'Tailing: Off';
-		  data.jobDetails.tailing_tone = data.jobDetails.output_tailing ? 'success' : 'warning';
-          renderCurrent();
+		  setOutputTailing(data.jobDetails, !data.jobDetails.output_tailing);
+		  if (data.jobDetails.output_tailing) scrollJobOutputToEnd(document.getElementById('job-output-groups'));
         }
 		else if (action.command === 'set-disclosures') {
           const expanded = args.expanded === 'true';
@@ -1055,7 +1056,8 @@
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); invoke(data).catch(error => window.alert(error.message || String(error))); }
         });
       } else if (action.on === 'change') {
-        element.addEventListener('change', () => {
+		const eventName = element.id === 'job-output-search' ? 'input' : 'change';
+		element.addEventListener(eventName, () => {
           const selected = element.options && element.selectedIndex >= 0 ? element.options[element.selectedIndex] : null;
           const actionData = element.tagName === 'INPUT' || element.tagName === 'TEXTAREA'
             ? Object.assign({}, data, {input: {value: element.value}})
@@ -1616,7 +1618,8 @@
     closeBrowserSelect();
     const viewState = window.ciwiCaptureViewState(root);
     root.replaceChildren(renderNode(currentDocument.screen.root, currentData));
-    window.ciwiRestoreViewState(root, viewState);
+	window.ciwiRestoreViewState(root, viewState);
+	if (currentData.jobDetails) bindJobOutputScrollIntent(currentData.jobDetails);
 	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
   }
 
@@ -1779,6 +1782,100 @@
     });
   }
 
+  function findDeclarativeNodeByID(node, id) {
+	if (!node || typeof node !== 'object') return null;
+	if (node.id === id) return node;
+	for (const child of (node.children || [])) {
+	  const found = findDeclarativeNodeByID(child, id);
+	  if (found) return found;
+	}
+	return null;
+  }
+
+  function outputIsAtBottom(element) {
+	return !element || element.scrollHeight - element.clientHeight - element.scrollTop <= 3;
+  }
+
+  function setOutputTailing(view, enabled) {
+	view.output_tailing = !!enabled;
+	view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
+	view.tailing_tone = view.output_tailing ? 'success' : 'warning';
+	const button = document.getElementById('job-output-tailing-toggle');
+	if (button) {
+	  button.classList.toggle('dsl-success', view.output_tailing);
+	  button.classList.toggle('dsl-warning', !view.output_tailing);
+	  const label = button.querySelector('.dsl-button-label');
+	  if (label) label.textContent = view.tailing_label;
+	}
+  }
+
+  function bindJobOutputScrollIntent(view) {
+	const container = document.getElementById('job-output-groups');
+	if (!container || container.dataset.ciwiScrollIntent === '1') return;
+	container.dataset.ciwiScrollIntent = '1';
+	container.addEventListener('scroll', () => {
+	  if (programmaticOutputScroll || !view.output_tailing || outputIsAtBottom(container)) return;
+	  setOutputTailing(view, false);
+	}, {passive: true});
+  }
+
+  function scrollJobOutputToEnd(element) {
+	if (!element) return;
+	programmaticOutputScroll = true;
+	element.scrollTop = element.scrollHeight;
+	requestAnimationFrame(() => { programmaticOutputScroll = false; });
+  }
+
+  function updateJobOutputSearchCount(view) {
+	const count = document.getElementById('job-output-search-count');
+	if (count) count.textContent = String(view.output_search_count || '0/0');
+  }
+
+  function patchJobOutputRegion(view) {
+	const contractRoot = currentDocument && currentDocument.screen && currentDocument.screen.root;
+	const systemNode = findDeclarativeNodeByID(contractRoot, 'job-output-system');
+	const groupsNode = findDeclarativeNodeByID(contractRoot, 'job-output-groups');
+	const previousScroller = document.getElementById('job-output-groups');
+	if (!systemNode || !groupsNode || !previousScroller) {
+	  renderCurrent();
+	  return;
+	}
+	const nextScroller = renderNode(groupsNode, currentData);
+	if (!nextScroller || nextScroller.nodeType !== Node.ELEMENT_NODE) {
+	  renderCurrent();
+	  return;
+	}
+	const previousSystem = document.getElementById('job-output-system');
+	const renderedSystem = renderNode(systemNode, currentData);
+	const nextSystem = renderedSystem && renderedSystem.nodeType === Node.ELEMENT_NODE ? renderedSystem : null;
+	if (previousSystem && nextSystem) previousSystem.replaceWith(nextSystem);
+	else if (previousSystem) previousSystem.remove();
+	else if (nextSystem) previousScroller.before(nextSystem);
+
+	const previousGroups = new Map(Array.from(previousScroller.children).map(group => [String(group.dataset.disclosureKey || ''), group]));
+	const retained = new Set();
+	Array.from(nextScroller.children).forEach(nextGroup => {
+	  const key = String(nextGroup.dataset.disclosureKey || '');
+	  const previousGroup = previousGroups.get(key);
+	  if (!key || !previousGroup || previousGroup.tagName !== nextGroup.tagName) {
+		previousScroller.appendChild(nextGroup);
+		return;
+	  }
+	  retained.add(previousGroup);
+	  previousGroup.className = nextGroup.className;
+	  previousGroup.style.cssText = nextGroup.style.cssText;
+	  previousGroup.__ciwiSemanticProgress = nextGroup.__ciwiSemanticProgress;
+	  previousGroup.replaceChildren(...Array.from(nextGroup.childNodes));
+	});
+	previousGroups.forEach(group => {
+	  if (!retained.has(group)) group.remove();
+	});
+	bindJobOutputScrollIntent(view);
+	if (view.output_tailing) scrollJobOutputToEnd(previousScroller);
+	updateJobOutputSearchCount(view);
+	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
+  }
+
   function initializeJobOutputView(view, previousView) {
 	const previousGroups = new Map((Array.isArray(previousView && previousView.output_groups) ? previousView.output_groups : [])
 	  .map(group => [String(group.id || ''), group]));
@@ -1847,38 +1944,64 @@
 	return true;
   }
 
-  async function watchJobOutput(jobID, generation) {
+  function stopJobOutputWatch() {
+	if (outputEventSource) outputEventSource.close();
+	outputEventSource = null;
+  }
+
+  function setOutputWatchGeneration(generation) {
+	stopJobOutputWatch();
+	outputWatchGeneration = generation;
+  }
+
+  function watchJobOutput(jobID, generation) {
 	const activeJob = currentData && currentData.jobDetails;
 	let afterEventID = activeJob && String(activeJob.id || '') === String(jobID)
 	  ? Number(activeJob.output_after_event_id || 0) : 0;
 	if (!Number.isFinite(afterEventID) || afterEventID < 0) afterEventID = 0;
-    while (generation === outputWatchGeneration) {
-      const response = await fetch('/api/v1/views/jobs/' + encodeURIComponent(jobID) + '/output?after_event_id=' + String(afterEventID));
-      if (generation !== outputWatchGeneration) return;
-	  if (!response.ok) {
-		const message = await response.text();
-		if (generation !== outputWatchGeneration) return;
-		throw new Error(message);
+	if (typeof window.EventSource !== 'function') throw new Error('Live output requires EventSource support');
+	stopJobOutputWatch();
+	const source = new EventSource('/api/v1/views/jobs/' + encodeURIComponent(jobID) + '/output/stream?after_event_id=' + String(afterEventID));
+	outputEventSource = source;
+	const currentJob = () => {
+	  if (generation !== outputWatchGeneration) return null;
+	  const view = currentData && currentData.jobDetails;
+	  return view && String(view.id || '') === String(jobID) ? view : null;
+	};
+	source.addEventListener('output', event => {
+	  const view = currentJob();
+	  if (!view) { source.close(); return; }
+	  try {
+		const batch = JSON.parse(event.data || '{}');
+		const nextEventID = Number(batch.next_event_id || event.lastEventId || afterEventID);
+		if (Number.isFinite(nextEventID) && nextEventID >= afterEventID) {
+		  afterEventID = nextEventID;
+		  view.output_after_event_id = nextEventID;
+		}
+		if (mergeJobOutputBatch(view, batch)) patchJobOutputRegion(view);
+	  } catch (error) {
+		console.error('Invalid job output event', error);
 	  }
-      const batch = await response.json();
-	  if (generation !== outputWatchGeneration) return;
-	  const currentJob = currentData && currentData.jobDetails;
-	  if (!currentJob || String(currentJob.id || '') !== String(jobID)) return;
-	  const nextEventID = Number(batch.next_event_id || afterEventID);
-	  if (Number.isFinite(nextEventID) && nextEventID >= afterEventID) {
-		afterEventID = nextEventID;
-		currentJob.output_after_event_id = nextEventID;
+	});
+	source.addEventListener('complete', () => {
+	  if (currentJob()) {
+		completedOutputJobID = String(jobID);
+		scheduleChangeRefresh();
 	  }
-	  if (mergeJobOutputBatch(currentJob, batch)) {
-		renderCurrent();
-		if (currentJob.output_tailing) {
-          const outputElement = document.getElementById('job-output-groups');
-          if (outputElement) outputElement.scrollTop = outputElement.scrollHeight;
-        }
-      }
-      if (batch.terminal && !batch.has_more) return;
-      if (!batch.has_more) await new Promise(resolve => window.setTimeout(resolve, 500));
-    }
+	  source.close();
+	  if (outputEventSource === source) outputEventSource = null;
+	});
+	source.addEventListener('stream-error', event => {
+	  const view = currentJob();
+	  if (!view) return;
+	  let message = 'Output stream failed';
+	  try { message = JSON.parse(event.data || '{}').message || message; } catch (_) {}
+	  appendBoundedOutput(view, '', message + '\n');
+	  rebuildJobOutputText(view);
+	  patchJobOutputRegion(view);
+	  source.close();
+	  if (outputEventSource === source) outputEventSource = null;
+	});
   }
 
   function activeWatchTopics() {
@@ -1901,7 +2024,21 @@
 	  try {
 		const change = JSON.parse(event.data || '{}');
 		const watched = activeWatchTopics();
-		if (change.resync_required || (change.topics || []).some(topic => watched.has(String(topic)))) scheduleChangeRefresh();
+		if (change.resync_required) {
+		  scheduleChangeRefresh();
+		  return;
+		}
+		const topics = (change.topics || []).map(String);
+		if (currentRouteMatch && currentRouteMatch.route.name === 'job-details') {
+		  const view = currentData && currentData.jobDetails;
+		  const jobID = String(view && view.id || currentRouteMatch.params.jobId || '');
+		  const changedIDs = (change.job_execution_ids || []).map(String);
+		  if (changedIDs.length && !changedIDs.includes(jobID)) return;
+		  if (topics.includes('job-output')) return;
+		  if (!changedIDs.length && topics.some(topic => topic === 'queue' || topic === 'history')) return;
+		  if (topics.includes('agent-eligibility') && String(view && view.status || '') !== 'queued') return;
+		}
+		if (topics.some(topic => watched.has(topic))) scheduleChangeRefresh();
 	  } catch (_) {}
 	};
   }
@@ -1960,7 +2097,7 @@
 		if (loadGeneration !== routeLoadGeneration) return false;
 		applyContractTheme(loadingThemes);
 		applyControlsContract(loadingControls);
-		outputWatchGeneration = generation;
+		setOutputWatchGeneration(generation);
 		currentRouteMatch = nextRouteMatch;
 		currentPath = routePath();
 		currentDocument = loadingDocument;
@@ -2037,6 +2174,7 @@
       if (jobMatch) {
 		const previousJob = currentData && currentData.jobDetails;
 		const sameJob = previousJob && String(previousJob.id || '') === String(view.id || '');
+		if (!sameJob) completedOutputJobID = '';
 		decorateJobDetails(view);
 		view.output_search = sameJob ? String(previousJob.output_search || '') : '';
 		view.output_match_index = sameJob ? Number(previousJob.output_match_index || 0) : 0;
@@ -2053,9 +2191,10 @@
 		  || timeline[0]
 		  || {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
       }
+	  if (!jobMatch) completedOutputJobID = '';
 	  if (loadGeneration !== routeLoadGeneration) return false;
 	  markBrowserViewReady(view);
-	  outputWatchGeneration = generation;
+	  setOutputWatchGeneration(generation);
 	  currentRouteMatch = nextRouteMatch;
 	  currentPath = routePath();
 	  currentDocument = documentContract;
@@ -2064,14 +2203,16 @@
       renderCurrent();
       if (jobMatch) {
 		const jobID = nextRouteMatch.params.jobId;
-        watchJobOutput(jobID, generation).catch(error => {
+		if (completedOutputJobID !== String(jobID)) try {
+		  watchJobOutput(jobID, generation);
+		} catch (error) {
           if (generation !== outputWatchGeneration) return;
           if (currentData && currentData.jobDetails) {
             appendBoundedOutput(currentData.jobDetails, '', 'Output stream failed: ' + (error.message || String(error)) + '\n');
             rebuildJobOutputText(currentData.jobDetails);
-            renderCurrent();
+			patchJobOutputRegion(currentData.jobDetails);
           }
-        });
+		}
       }
     } catch (error) {
 	  if (loadingCommitted && loadGeneration === routeLoadGeneration && currentData) {

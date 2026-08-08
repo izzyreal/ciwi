@@ -190,6 +190,7 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 		http.Error(w, "status must be running, succeeded or failed", http.StatusBadRequest)
 		return
 	}
+	previousJob, _ := deps.Store.GetJobExecution(jobID)
 	job, err := deps.Store.UpdateJobExecutionStatus(jobID, req)
 	if err != nil {
 		if strings.Contains(err.Error(), "another agent") {
@@ -219,6 +220,9 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 	}
 	if deps.OnJobUpdated != nil {
 		deps.OnJobUpdated(job)
+	}
+	if deps.OnJobStateChanged != nil && protocol.NormalizeJobExecutionStatus(previousJob.Status) != protocol.NormalizeJobExecutionStatus(job.Status) {
+		deps.OnJobStateChanged(job)
 	}
 	httpx.WriteJSON(w, http.StatusOK, SingleViewResponse{JobExecution: ViewFromProtocol(job)})
 }
@@ -281,9 +285,7 @@ func handleJobArtifactsUploadZIP(w http.ResponseWriter, r *http.Request, deps Ha
 	if deps.MarkAgentSeen != nil {
 		deps.MarkAgentSeen(agentID, nowUTC(deps))
 	}
-	if deps.OnHistoryChanged != nil {
-		deps.OnHistoryChanged()
-	}
+	notifyJobHistoryChanged(deps, jobID)
 	httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionArtifactsResponse{Artifacts: artifacts})
 }
 
@@ -384,9 +386,7 @@ func handleJobTests(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jo
 		if deps.MarkAgentSeen != nil {
 			deps.MarkAgentSeen(req.AgentID, nowUTC(deps))
 		}
-		if deps.OnHistoryChanged != nil {
-			deps.OnHistoryChanged()
-		}
+		notifyJobHistoryChanged(deps, jobID)
 		httpx.WriteJSON(w, http.StatusOK, protocol.JobExecutionTestReportResponse{Report: req.Report})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

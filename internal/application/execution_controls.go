@@ -54,7 +54,7 @@ func (c *ExecutionControlCommands) Cancel(ctx context.Context, request Execution
 			return CancelExecutionResult{}, err
 		}
 		if c.changes != nil {
-			c.changes.Publish(ChangeQueue, ChangeHistory)
+			c.changes.PublishForJobExecution(jobID, ChangeQueue, ChangeHistory, ChangeJobOutput)
 		}
 		return result, nil
 	}

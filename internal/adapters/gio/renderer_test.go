@@ -1827,6 +1827,24 @@ func TestNativeJobOutputBufferKeepsBoundedTail(t *testing.T) {
 	}
 }
 
+func TestNativeJobOutputBufferMaintainsIncrementalSnapshot(t *testing.T) {
+	buffer := &jobOutputBuffer{}
+	buffer.reset("job-1")
+	first := strings.Repeat("a", 600*1024)
+	second := strings.Repeat("b", 600*1024)
+	buffer.append(&cnpv1.JobOutputBatch{JobExecutionId: "job-1", Events: []*cnpv1.JobOutputEvent{
+		{Type: "output", ItemId: "step:1", Text: first},
+		{Type: "output", ItemId: "step:1", Text: second},
+		{Type: "finished", ItemId: "step:1", Error: "failed", ExitCode: "1"},
+	}})
+	if buffer.bytes != len(second) || buffer.snapshot.Outputs["step:1"] != second || !buffer.omitted["step:1"] {
+		t.Fatalf("incremental output snapshot bytes=%d output=%d omitted=%v", buffer.bytes, len(buffer.snapshot.Outputs["step:1"]), buffer.omitted)
+	}
+	if buffer.snapshot.Errors["step:1"] != "failed" || buffer.snapshot.ExitCodes["step:1"] != "1" || !buffer.dirty {
+		t.Fatalf("incremental finish snapshot = %#v", buffer.snapshot)
+	}
+}
+
 func TestSemanticToneUsesSharedStatusCategories(t *testing.T) {
 	tests := map[string]string{
 		"succeeded": "success", "failed": "danger", "queued": "warning",

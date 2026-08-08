@@ -101,3 +101,25 @@ func TestRunOptionsIgnoresHeartbeatOnlyAgentInvalidations(t *testing.T) {
 		t.Fatal("agent eligibility change did not invalidate run options")
 	}
 }
+
+func TestJobDetailsOnlyRefreshesForScopedNonOutputChanges(t *testing.T) {
+	navigation := navigationState{screen: "job-details", jobID: "job-1"}
+	if relevantScreenChange(navigation, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY}}) {
+		t.Fatal("unscoped history invalidation refreshed job details")
+	}
+	if relevantScreenChange(navigation, &cnpv1.ChangeEvent{
+		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY}, JobExecutionIds: []string{"job-2"},
+	}) {
+		t.Fatal("another execution refreshed job details")
+	}
+	if !relevantScreenChange(navigation, &cnpv1.ChangeEvent{
+		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY}, JobExecutionIds: []string{"job-1"},
+	}) {
+		t.Fatal("current execution history change did not refresh job details")
+	}
+	if relevantScreenChange(navigation, &cnpv1.ChangeEvent{
+		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY, cnpv1.ChangeTopic_CHANGE_TOPIC_JOB_OUTPUT}, JobExecutionIds: []string{"job-1"},
+	}) {
+		t.Fatal("stream-owned output change refreshed job details")
+	}
+}

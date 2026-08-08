@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,14 +20,16 @@ const (
 	ChangeUpdates          ChangeTopic = "updates"
 	ChangeVault            ChangeTopic = "vault"
 	ChangeAgentEligibility ChangeTopic = "agent-eligibility"
+	ChangeJobOutput        ChangeTopic = "job-output"
 )
 
 type Change struct {
-	InstanceID string
-	Revision   uint64
-	Topics     []ChangeTopic
-	OccurredAt time.Time
-	Resync     bool
+	InstanceID      string
+	Revision        uint64
+	Topics          []ChangeTopic
+	JobExecutionIDs []string
+	OccurredAt      time.Time
+	Resync          bool
 }
 
 // ChangeHub broadcasts coalescible invalidations. Publishers never block on a
@@ -55,14 +58,23 @@ func (h *ChangeHub) Snapshot() Change {
 }
 
 func (h *ChangeHub) Publish(topics ...ChangeTopic) Change {
+	return h.PublishForJobExecutions(nil, topics...)
+}
+
+func (h *ChangeHub) PublishForJobExecution(jobExecutionID string, topics ...ChangeTopic) Change {
+	return h.PublishForJobExecutions([]string{jobExecutionID}, topics...)
+}
+
+func (h *ChangeHub) PublishForJobExecutions(jobExecutionIDs []string, topics ...ChangeTopic) Change {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.revision++
 	change := Change{
-		InstanceID: h.instanceID,
-		Revision:   h.revision,
-		Topics:     uniqueTopics(topics),
-		OccurredAt: h.now(),
+		InstanceID:      h.instanceID,
+		Revision:        h.revision,
+		Topics:          uniqueTopics(topics),
+		JobExecutionIDs: uniqueStrings(jobExecutionIDs),
+		OccurredAt:      h.now(),
 	}
 	for _, subscriber := range h.subscribers {
 		select {
@@ -74,6 +86,7 @@ func (h *ChangeHub) Publish(topics ...ChangeTopic) Change {
 			}
 			resync := change
 			resync.Topics = nil
+			resync.JobExecutionIDs = nil
 			resync.Resync = true
 			select {
 			case subscriber <- resync:
@@ -82,6 +95,23 @@ func (h *ChangeHub) Publish(topics ...ChangeTopic) Change {
 		}
 	}
 	return change
+}
+
+func uniqueStrings(input []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(input))
+	for _, value := range input {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func (h *ChangeHub) Watch(ctx context.Context) <-chan Change {

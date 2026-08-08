@@ -495,6 +495,7 @@ func changeToProto(change application.Change) *cnpv1.ChangeEvent {
 	return &cnpv1.ChangeEvent{
 		ServerInstanceId: change.InstanceID, Revision: change.Revision, Topics: topics,
 		OccurredUnixMs: change.OccurredAt.UnixMilli(), ResyncRequired: change.Resync,
+		JobExecutionIds: append([]string(nil), change.JobExecutionIDs...),
 	}
 }
 
@@ -516,6 +517,8 @@ func changeTopicToProto(topic application.ChangeTopic) cnpv1.ChangeTopic {
 		return cnpv1.ChangeTopic_CHANGE_TOPIC_VAULT
 	case application.ChangeAgentEligibility:
 		return cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY
+	case application.ChangeJobOutput:
+		return cnpv1.ChangeTopic_CHANGE_TOPIC_JOB_OUTPUT
 	default:
 		return cnpv1.ChangeTopic_CHANGE_TOPIC_UNSPECIFIED
 	}

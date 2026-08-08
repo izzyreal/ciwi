@@ -55,10 +55,22 @@ type HandlerDeps struct {
 	AttachProgress            func(*protocol.JobExecution)
 	MarkAgentSeen             func(agentID string, ts time.Time)
 	OnJobUpdated              func(job protocol.JobExecution)
+	OnJobStateChanged         func(job protocol.JobExecution)
 	OnQueueChanged            func()
 	OnHistoryChanged          func()
+	OnJobHistoryChanged       func(jobExecutionID string)
 	PrepareRerun              func(original protocol.JobExecution, request *protocol.CreateJobExecutionRequest) error
 	Now                       func() time.Time
+}
+
+func notifyJobHistoryChanged(deps HandlerDeps, jobID string) {
+	if deps.OnJobHistoryChanged != nil {
+		deps.OnJobHistoryChanged(jobID)
+		return
+	}
+	if deps.OnHistoryChanged != nil {
+		deps.OnHistoryChanged()
+	}
 }
 
 func HandleCollection(w http.ResponseWriter, r *http.Request, deps HandlerDeps) {

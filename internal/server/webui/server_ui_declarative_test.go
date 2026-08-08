@@ -250,6 +250,9 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if toolbar.Style.Role != "compact-toolbar" || len(toolbar.Children) < 2 || toolbar.Children[0].Actions[0].Command != "download-job-log" || toolbar.Children[0].Actions[0].Arguments["format"] != "clean" || toolbar.Children[1].Actions[0].Arguments["format"] != "raw" {
 		t.Fatalf("job output toolbar = %#v", toolbar)
 	}
+	if toolbar.Children[2].ID != "job-output-tailing-toggle" || toolbar.Children[4].ID != "job-output-search" || toolbar.Children[7].ID != "job-output-search-count" {
+		t.Fatalf("stable job output controls = %#v", toolbar.Children)
+	}
 	groups := output.Children[4]
 	if groups.ID != "job-output-groups" || groups.Layout.MaxHeight != "660" || groups.Children[0].Children[0].Style.Role != "floating-collapse" {
 		t.Fatalf("job output groups = %#v", groups)
@@ -267,9 +270,10 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 		"sameJob ? !!previousJob.output_tailing : true",
 		"decorateJobDetails(view)",
 		"view.project_icon = Number(view.project_id || 0) > 0",
-		"data.jobDetails.tailing_tone = data.jobDetails.output_tailing ? 'success' : 'warning'",
+		"setOutputTailing(data.jobDetails, !data.jobDetails.output_tailing)",
 		"['running', 'in progress', 'failed'].includes",
 		"renderBrowserOutputText", "ciwi-search-hit-active", "updateDeclarativeOutputCollapseButtons",
+		"patchJobOutputRegion", "outputIsAtBottom", "element.id === 'job-output-search' ? 'input' : 'change'",
 		"/log?format=", "options.section", "scrollIntoView({block: 'start'})",
 	} {
 		if !strings.Contains(script, expected) {
@@ -284,7 +288,7 @@ func TestDeclarativeBrowserProcessesInitialChangeStreamResync(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(scriptPayload)
-	if !strings.Contains(script, "if (change.resync_required ||") {
+	if !strings.Contains(script, "if (change.resync_required) {") {
 		t.Fatal("browser change stream does not refresh for resync markers")
 	}
 	if strings.Contains(script, "if (!initialized)") {
@@ -454,10 +458,13 @@ func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, expected := range []string{"/api/v1/views/jobs/", "/output?after_event_id=", "maxOutputCharacters"} {
+	for _, expected := range []string{"/api/v1/views/jobs/", "/output/stream?after_event_id=", "maxOutputCharacters", "new EventSource"} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
 		}
+	}
+	if strings.Contains(script, "setTimeout(resolve, 500)") {
+		t.Fatal("declarative renderer still polls job output")
 	}
 }
 
@@ -472,9 +479,9 @@ func TestDeclarativeJobOutputRefreshPreservesStreamState(t *testing.T) {
 		"previousView.system_output",
 		"previousView.output_after_event_id",
 		"previousGroups.get(String(group.id || ''))",
-		"currentJob.output_after_event_id = nextEventID",
-		"if (generation !== outputWatchGeneration) return",
-		"if (mergeJobOutputBatch(currentJob, batch))",
+		"view.output_after_event_id = nextEventID",
+		"if (generation !== outputWatchGeneration) return null",
+		"if (mergeJobOutputBatch(view, batch)) patchJobOutputRegion(view)",
 		"if (!changed) return false",
 		"window.ciwiCaptureViewState(root)",
 		"window.ciwiRestoreViewState(root, viewState)",
@@ -645,7 +652,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
 		".dsl-project-row > summary > .dsl-disclosure-label",
-		"if (summary) event.preventDefault()", "flex-wrap:wrap", "touch-action:pan-x pan-y", "overscroll-behavior:contain",
+		"if (summary) event.preventDefault()", "flex-wrap:wrap", "touch-action:pan-x pan-y", "overscroll-behavior-y:auto",
 		".dsl-project-header-metadata", "overflow-wrap:anywhere",
 		".dsl-execution-row:not([open]) > summary.ciwi-progress-surface", "border-radius:var(--ciwi-surface-radius",
 		".dsl-execution-section-header", ".dsl-agent-header,.dsl-agent-record { display:grid !important;",

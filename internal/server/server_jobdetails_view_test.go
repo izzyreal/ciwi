@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/domain"
@@ -81,6 +83,43 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	}
 	if output.NextEventID <= 0 || output.Terminal || len(output.Events) != 1 || output.Events[0].Text != "ok\n" {
 		t.Fatalf("output = %+v", output)
+	}
+}
+
+func TestJobOutputSSEStreamsCursorBatch(t *testing.T) {
+	server, state := newTestHTTPServerWithState(t)
+	defer server.Close()
+	job, err := state.db.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "printf streamed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.db.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
+		Type: protocol.JobExecutionEventTypeSystemMessage, Output: "streamed\n",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := server.Client().Get(server.URL + "/api/v1/views/jobs/" + job.ID + "/output/stream?after_event_id=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("stream response = %d %q", response.StatusCode, response.Header.Get("Content-Type"))
+	}
+	reader := bufio.NewReader(response.Body)
+	var event strings.Builder
+	for {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		event.WriteString(line)
+		if strings.Contains(event.String(), "event: output\n") && line == "\n" {
+			break
+		}
+	}
+	if body := event.String(); !strings.Contains(body, `"text":"streamed\n"`) || !strings.Contains(body, "id: 1\n") {
+		t.Fatalf("stream event = %q", body)
 	}
 }
 

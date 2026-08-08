@@ -8,7 +8,7 @@ screen:
   dataSources:
     - name: jobDetails
       query: get-job-details
-      watchTopics: [agents, agent-eligibility, queue, history]
+      watchTopics: [agent-eligibility, queue, history]
   root:
     component: page
     id: job-details
@@ -460,6 +460,7 @@ screen:
                     command: download-job-log
                     arguments: {jobExecutionId: "{{jobDetails.id}}", format: raw}
               - component: button
+                id: job-output-tailing-toggle
                 text:
                   binding: jobDetails.tailing_label
                 icon: arrow-bar-to-down
@@ -481,6 +482,7 @@ screen:
                   - on: activate
                     command: copy-output
               - component: input
+                id: job-output-search
                 layout:
                   grow: true
                   minWidth: "90"
@@ -517,6 +519,7 @@ screen:
                       query: "{{jobDetails.output_search}}"
                       direction: next
               - component: text
+                id: job-output-search-count
                 text:
                   binding: jobDetails.output_search_count
                 style:

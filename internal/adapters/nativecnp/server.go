@@ -231,20 +231,20 @@ func (s *Handler) writeJobOutput(ctx context.Context, stream cnp.Stream, request
 		if view.HasMore {
 			continue
 		}
-		if !waitForExecutionChange(ctx, peerDone, changes) {
+		if !waitForExecutionChange(ctx, peerDone, changes, request.GetJobExecutionId()) {
 			return
 		}
 	}
 }
 
-func waitForExecutionChange(ctx context.Context, peerDone <-chan struct{}, changes <-chan application.Change) bool {
+func waitForExecutionChange(ctx context.Context, peerDone <-chan struct{}, changes <-chan application.Change, jobID string) bool {
 	for {
 		select {
 		case change, ok := <-changes:
 			if !ok {
 				return false
 			}
-			if change.Resync || hasExecutionChange(change.Topics) {
+			if change.Resync || (hasExecutionChange(change.Topics) && changeIncludesJob(change, jobID)) {
 				return true
 			}
 		case <-ctx.Done():
@@ -257,7 +257,19 @@ func waitForExecutionChange(ctx context.Context, peerDone <-chan struct{}, chang
 
 func hasExecutionChange(topics []application.ChangeTopic) bool {
 	for _, topic := range topics {
-		if topic == application.ChangeQueue || topic == application.ChangeHistory {
+		if topic == application.ChangeJobOutput {
+			return true
+		}
+	}
+	return false
+}
+
+func changeIncludesJob(change application.Change, jobID string) bool {
+	if len(change.JobExecutionIDs) == 0 {
+		return true
+	}
+	for _, changedJobID := range change.JobExecutionIDs {
+		if changedJobID == jobID {
 			return true
 		}
 	}

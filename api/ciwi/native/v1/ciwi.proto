@@ -681,6 +681,7 @@ enum ChangeTopic {
   CHANGE_TOPIC_UPDATES = 6;
   CHANGE_TOPIC_VAULT = 7;
   CHANGE_TOPIC_AGENT_ELIGIBILITY = 8;
+  CHANGE_TOPIC_JOB_OUTPUT = 9;
 }
 
 message WatchChangesRequest {}
@@ -691,6 +692,7 @@ message ChangeEvent {
   repeated ChangeTopic topics = 3;
   int64 occurred_unix_ms = 4;
   bool resync_required = 5;
+  repeated string job_execution_ids = 6;
 }
 
 message Request {

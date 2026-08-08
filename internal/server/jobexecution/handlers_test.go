@@ -260,6 +260,10 @@ func TestHandleByIDStatusUpdatesAndCallbacks(t *testing.T) {
 	var appendCalled bool
 	var seenCalled bool
 	var updatedCalled bool
+	var stateChangedCalled bool
+	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
+		return protocol.JobExecution{ID: id, Status: protocol.JobExecutionStatusQueued}, nil
+	}
 	store.updateJobExecutionStatusFn = func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error) {
 		return protocol.JobExecution{
 			ID:              id,
@@ -285,12 +289,15 @@ func TestHandleByIDStatusUpdatesAndCallbacks(t *testing.T) {
 		OnJobUpdated: func(job protocol.JobExecution) {
 			updatedCalled = true
 		},
+		OnJobStateChanged: func(job protocol.JobExecution) {
+			stateChangedCalled = true
+		},
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !appendCalled || !seenCalled || !updatedCalled {
-		t.Fatalf("expected callbacks called append=%v seen=%v updated=%v", appendCalled, seenCalled, updatedCalled)
+	if !appendCalled || !seenCalled || !updatedCalled || !stateChangedCalled {
+		t.Fatalf("expected callbacks called append=%v seen=%v updated=%v stateChanged=%v", appendCalled, seenCalled, updatedCalled, stateChangedCalled)
 	}
 }
 

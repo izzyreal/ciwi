@@ -12,7 +12,7 @@ import (
 )
 
 func (s *stateStore) onJobExecutionUpdated(job protocol.JobExecution) {
-	s.app().changes.Publish(application.ChangeQueue, application.ChangeHistory)
+	s.app().changes.PublishForJobExecution(job.ID, application.ChangeQueue, application.ChangeHistory, application.ChangeJobOutput)
 	status := protocol.NormalizeJobExecutionStatus(job.Status)
 	if !protocol.IsTerminalJobExecutionStatus(status) {
 		return

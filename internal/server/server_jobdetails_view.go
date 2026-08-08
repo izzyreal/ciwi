@@ -193,11 +193,19 @@ type jobOutputEventViewResponse struct {
 func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Request) {
 	relative := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/views/jobs/"), "/")
 	parts := strings.Split(relative, "/")
-	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" || len(parts) > 2 {
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" || len(parts) > 3 {
 		http.Error(w, "invalid job execution id", http.StatusBadRequest)
 		return
 	}
 	jobID := strings.TrimSpace(parts[0])
+	if len(parts) == 3 {
+		if parts[1] != "output" || parts[2] != "stream" {
+			http.NotFound(w, r)
+			return
+		}
+		s.jobOutputStreamHandler(w, r, jobID)
+		return
+	}
 	if len(parts) == 2 {
 		if parts[1] != "output" {
 			http.NotFound(w, r)
@@ -234,6 +242,10 @@ func (s *stateStore) jobOutputViewHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 		return
 	}
+	writeJSON(w, http.StatusOK, jobOutputToResponse(view))
+}
+
+func jobOutputToResponse(view presentation.JobOutputView) jobOutputViewResponse {
 	events := make([]jobOutputEventViewResponse, 0, len(view.Events))
 	for _, event := range view.Events {
 		events = append(events, jobOutputEventViewResponse{
@@ -241,10 +253,10 @@ func (s *stateStore) jobOutputViewHandler(w http.ResponseWriter, r *http.Request
 			Error: event.Error, ExitCode: event.ExitCode,
 		})
 	}
-	writeJSON(w, http.StatusOK, jobOutputViewResponse{
+	return jobOutputViewResponse{
 		JobExecutionID: view.JobExecutionID, Events: events, NextEventID: view.NextEventID,
 		HasMore: view.HasMore, Terminal: view.Terminal,
-	})
+	}
 }
 
 func jobDetailsToResponse(view presentation.JobDetailsView, runContext protocol.JobExecutionGraphContext) jobDetailsViewResponse {

@@ -37,7 +37,7 @@ body { min-height: 100vh; }
 .dsl-definition-graph { min-width:0; }
 .dsl-definition-graph-toolbar { display:flex; justify-content:flex-end; align-items:center; gap:var(--ciwi-space-small, 8px); margin-bottom:var(--ciwi-space-small, 8px); }
 .dsl-definition-graph-scale { min-width:44px; color:var(--muted); text-align:center; font-variant-numeric:tabular-nums; }
-.dsl-definition-graph-viewport { min-height:180px; max-height:420px; overflow:auto; overscroll-behavior:contain; touch-action:pan-x pan-y; padding:16px; box-sizing:border-box; border:1px solid var(--line); border-radius:var(--ciwi-control-radius, 8px); background:var(--surface-subtle); }
+.dsl-definition-graph-viewport { min-height:180px; max-height:420px; overflow:auto; overscroll-behavior-x:contain; overscroll-behavior-y:auto; touch-action:pan-x pan-y; padding:16px; box-sizing:border-box; border:1px solid var(--line); border-radius:var(--ciwi-control-radius, 8px); background:var(--surface-subtle); }
 .dsl-definition-graph-scaler { position:relative; margin:0 auto; }
 .dsl-definition-graph-stage { position:absolute; inset:0 auto auto 0; transform-origin:top left; }
 .dsl-definition-graph-edges { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }

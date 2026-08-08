@@ -430,7 +430,7 @@ func TestWatchJobOutputStreamsAfterExecutionInvalidation(t *testing.T) {
 		t.Fatalf("initial output = %#v", initial)
 	}
 	jobDetails.setReady()
-	changes.Publish(application.ChangeQueue)
+	changes.PublishForJobExecution("job-running", application.ChangeJobOutput)
 	next := receiveOutput(t, batches, errorsOut)
 	if !next.Terminal || next.NextEventId != 2 || len(next.Events) != 1 || next.Events[0].Text != "next\n" {
 		t.Fatalf("next output = %#v", next)

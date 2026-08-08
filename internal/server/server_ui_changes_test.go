@@ -60,7 +60,7 @@ func TestBrowserUIChangeStreamSendsResyncAndTopicInvalidations(t *testing.T) {
 		}
 	}
 	waitFlush()
-	state.app().changes.Publish(application.ChangeVault)
+	state.app().changes.PublishForJobExecution("job-1", application.ChangeVault)
 	waitFlush()
 	cancel()
 	select {
@@ -72,7 +72,7 @@ func TestBrowserUIChangeStreamSendsResyncAndTopicInvalidations(t *testing.T) {
 		t.Fatalf("content type = %q", contentType)
 	}
 	body := recorder.String()
-	if !strings.Contains(body, `"resync_required":true`) || !strings.Contains(body, `"topics":["vault"]`) {
+	if !strings.Contains(body, `"resync_required":true`) || !strings.Contains(body, `"topics":["vault"]`) || !strings.Contains(body, `"job_execution_ids":["job-1"]`) {
 		t.Fatalf("stream body = %q", body)
 	}
 }
