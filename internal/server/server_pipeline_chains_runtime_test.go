@@ -22,12 +22,16 @@ func openPipelineChainRuntimeStore(t *testing.T) *store.Store {
 }
 
 func enqueueSingleChain(t *testing.T, s *stateStore, yaml string) {
+	enqueueSingleChainFromRepo(t, s, yaml, "https://github.com/izzyreal/ciwi.git")
+}
+
+func enqueueSingleChainFromRepo(t *testing.T, s *stateStore, yaml, repoURL string) {
 	t.Helper()
 	cfg, err := config.Parse([]byte(yaml), "chain-runtime")
 	if err != nil {
 		t.Fatalf("parse config: %v", err)
 	}
-	if err := s.db.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+	if err := s.db.LoadConfig(cfg, "ciwi-project.yaml", repoURL, "main", "ciwi-project.yaml"); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
 	project, err := s.db.GetProjectByName("ciwi")
@@ -200,8 +204,6 @@ project:
   name: ciwi
 pipelines:
   - id: build
-    vcs_source:
-      repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: compile
         runs_on:
@@ -537,7 +539,7 @@ pipeline_chains:
 
 func TestPipelineChainDAGFanOutAndConverge(t *testing.T) {
 	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
-	enqueueSingleChain(t, s, `
+	enqueueSingleChainFromRepo(t, s, `
 version: 1
 project:
   name: ciwi
@@ -555,8 +557,6 @@ pipelines:
   - id: sign
     depends_on:
       - build
-    vcs_source:
-      repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: sign-job
         runs_on:
@@ -567,8 +567,6 @@ pipelines:
   - id: package-macos
     depends_on:
       - sign
-    vcs_source:
-      repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: package-macos-job
         runs_on:
@@ -579,8 +577,6 @@ pipelines:
   - id: package-windows
     depends_on:
       - sign
-    vcs_source:
-      repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: package-windows-job
         runs_on:
@@ -591,8 +587,6 @@ pipelines:
   - id: package-linux
     depends_on:
       - sign
-    vcs_source:
-      repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: package-linux-job
         runs_on:
@@ -605,8 +599,6 @@ pipelines:
       - package-macos
       - package-windows
       - package-linux
-    vcs_source:
-      repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: release-job
         runs_on:
@@ -623,7 +615,7 @@ pipeline_chains:
       - package-windows
       - package-linux
       - release
-`)
+`, "")
 
 	signJob := findPipelineJobExecution(t, s, "sign")
 	if strings.TrimSpace(signJob.Metadata["chain_blocked"]) != "1" {
@@ -707,6 +699,6 @@ pipeline_chains:
 		t.Fatalf("expected release to unblock after all package pipelines succeed")
 	}
 	if protocol.NormalizeJobExecutionStatus(releaseAfterPackages.Status) != protocol.JobExecutionStatusQueued {
-		t.Fatalf("expected release to stay queued after unblocking, got %q", releaseAfterPackages.Status)
+		t.Fatalf("expected release to stay queued after unblocking, got status=%q error=%q metadata=%v", releaseAfterPackages.Status, releaseAfterPackages.Error, releaseAfterPackages.Metadata)
 	}
 }

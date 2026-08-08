@@ -40,6 +40,12 @@ func resolvePipelineRunContextWithReporter(p store.PersistedPipeline, dep pipeli
 			ctx.TagPrefix = "v"
 		}
 	}
+	if sameSourceRepo(dep.SourceRepo, p.SourceRepo) && strings.TrimSpace(dep.SourceRefResolved) != "" {
+		if raw := strings.TrimSpace(dep.SourceRefRaw); raw != "" {
+			ctx.SourceRefRaw = raw
+		}
+		ctx.SourceRefResolved = strings.TrimSpace(dep.SourceRefResolved)
+	}
 
 	if dep.Version != "" {
 		if report != nil {
@@ -47,12 +53,6 @@ func resolvePipelineRunContextWithReporter(p store.PersistedPipeline, dep pipeli
 		}
 		ctx.Version = dep.Version
 		ctx.VersionRaw = dep.VersionRaw
-		if sameSourceRepo(dep.SourceRepo, p.SourceRepo) {
-			if raw := strings.TrimSpace(dep.SourceRefRaw); raw != "" {
-				ctx.SourceRefRaw = raw
-			}
-			ctx.SourceRefResolved = dep.SourceRefResolved
-		}
 		return ctx, nil
 	}
 	if !versioningEnabled {

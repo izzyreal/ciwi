@@ -104,7 +104,7 @@ func (s *stateStore) preparePendingPipelineChainJobs(ch store.PersistedPipelineC
 	if err != nil {
 		return nil, err
 	}
-	if firstRun.SourceRefResolved == "" && overrideSourceRef != "" && shouldApplySourceRefOverride(firstVersionPipeline.SourceRepo, overrideRepo) {
+	if firstRun.SourceRefResolved == "" && strings.TrimSpace(firstVersionPipeline.SourceRepo) != "" {
 		resolved, err := resolveSourceRefFromRepo(strings.TrimSpace(firstVersionPipeline.SourceRepo), strings.TrimSpace(firstVersionPipeline.SourceRef))
 		if err != nil {
 			return nil, err
@@ -141,7 +141,10 @@ func (s *stateStore) preparePendingPipelineChainJobs(ch store.PersistedPipelineC
 			sourceRefOverride:      overrideSourceRef,
 			sourceRefOverrideRepo:  overrideRepo,
 		}
-		if i > 0 {
+		if i == 0 {
+			opts.forcedDep = &firstDep
+			opts.forcedRun = &firstRun
+		} else {
 			opts.forcedDep = &pipelineDependencyContext{
 				VersionRaw:        firstRun.VersionRaw,
 				Version:           firstRun.Version,

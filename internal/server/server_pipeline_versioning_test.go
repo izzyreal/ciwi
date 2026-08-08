@@ -57,6 +57,35 @@ func TestResolvePipelineRunContextUsesInheritedVersionAndMatchingSource(t *testi
 	}
 }
 
+func TestResolvePipelineRunContextInheritsMatchingSourceWithoutVersioning(t *testing.T) {
+	pipeline := store.PersistedPipeline{
+		SourceRepo: "https://example.test/repo.git",
+		SourceRef:  "main",
+	}
+	dependency := pipelineDependencyContext{
+		SourceRepo:        "https://example.test/repo.git",
+		SourceRefRaw:      "release",
+		SourceRefResolved: "0123456789abcdef0123456789abcdef01234567",
+	}
+
+	got, err := resolvePipelineRunContext(pipeline, dependency)
+	if err != nil {
+		t.Fatalf("resolve inherited source: %v", err)
+	}
+	if got.SourceRefRaw != "release" || got.SourceRefResolved != dependency.SourceRefResolved {
+		t.Fatalf("unversioned pipeline did not inherit pinned source: %+v", got)
+	}
+
+	pipeline.SourceRepo = "https://example.test/other.git"
+	got, err = resolvePipelineRunContext(pipeline, dependency)
+	if err != nil {
+		t.Fatalf("resolve source from other repo: %v", err)
+	}
+	if got.SourceRefRaw != "main" || got.SourceRefResolved != "" {
+		t.Fatalf("source ref must not cross repository boundaries: %+v", got)
+	}
+}
+
 func TestResolvePipelineRunContextOptionalAndRequiredFailures(t *testing.T) {
 	var reports []string
 	report := func(step, status, message string) {
