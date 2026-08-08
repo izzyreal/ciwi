@@ -94,7 +94,7 @@ func TestJobOutputSSEStreamsCursorBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := state.db.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
-		Type: protocol.JobExecutionEventTypeSystemMessage, Output: "streamed\n",
+		Type: protocol.JobExecutionEventTypeSystemMessage, Message: "streamed\n",
 	}}); err != nil {
 		t.Fatal(err)
 	}
