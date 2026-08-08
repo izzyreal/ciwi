@@ -31,12 +31,12 @@ actions:
   - { command: refresh-rollback-versions, class: query, scope: "server:rollback-versions", pending: "Refreshing versions…" }
   - { command: retry-connection, class: local }
   - { command: save-connection, class: local }
-  - { command: run-pipeline, class: mutation, scope: "pipeline:{{pipelineDbId}}", pending: "Queuing pipeline…" }
-  - { command: run-chain, class: mutation, scope: "chain:{{projectId}}:{{chainId}}", pending: "Queuing chain…" }
-  - { command: clear-queue, class: mutation, scope: "execution-queue", pending: "Clearing queue…" }
+  - { command: run-pipeline, class: mutation, scope: "pipeline:{{pipelineDbId}}", pending: "Queuing pipeline…", refreshOnSuccess: true }
+  - { command: run-chain, class: mutation, scope: "chain:{{projectId}}:{{chainId}}", pending: "Queuing chain…", refreshOnSuccess: true }
+  - { command: clear-queue, class: mutation, scope: "execution-queue", pending: "Clearing queue…", refreshOnSuccess: true }
   - { command: flush-history, class: mutation, scope: "execution-history", pending: "Flushing history…" }
   - { command: delete-execution, class: mutation, scope: "execution:{{jobExecutionIds}}", pending: "Deleting execution…" }
-  - { command: remove-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Removing execution…" }
+  - { command: remove-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Removing execution…", refreshOnSuccess: true }
   - { command: cancel-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Cancelling execution…" }
   - { command: rerun-execution, class: mutation, scope: "execution:{{jobExecutionId}}", pending: "Queuing rerun…" }
   - { command: agent-action, class: mutation, scope: "agent:{{agentId}}", pending: "Updating agent…" }

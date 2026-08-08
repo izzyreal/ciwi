@@ -22,7 +22,7 @@ func newBrowserActionHarness(t *testing.T) *browserActionHarness {
 	}
 	runtime := goja.New()
 	actions := []map[string]any{
-		{"command": "mutate", "class": "mutation", "scope": "resource:{{id}}", "pending": "Working…"},
+		{"command": "mutate", "class": "mutation", "scope": "resource:{{id}}", "pending": "Working…", "refreshOnSuccess": true},
 		{"command": "other-mutation", "class": "mutation", "scope": "resource:{{id}}", "pending": "Other work…"},
 		{"command": "query-a", "class": "query", "scope": "screen"},
 		{"command": "query-b", "class": "query", "scope": "screen"},
@@ -168,9 +168,11 @@ globalThis.probeButton = ciwiTestElement();
 globalThis.probeGate = ciwiTestDeferred();
 globalThis.probeExecutions = 0;
 globalThis.probeKey = '';
+globalThis.probeRefreshOnSuccess = false;
 globalThis.probeFirst = window.ciwiRunAction('mutate', { id: 7 }, probeButton, runtime => {
   probeExecutions += 1;
   probeKey = runtime.idempotencyKey;
+  probeRefreshOnSuccess = runtime.refreshOnSuccess;
   return probeGate.promise;
 });
 globalThis.probeSecond = window.ciwiRunAction('mutate', { id: 7 }, probeButton, () => {
@@ -190,6 +192,7 @@ globalThis.probeSecond = window.ciwiRunAction('mutate', { id: 7 }, probeButton, 
 			"probeButton.classList.contains('ciwi-action-pending')": true,
 			"probeButton.textContent === 'Working…'":                true,
 			"window.ciwiActiveOperations().length === 1":            true,
+			"probeRefreshOnSuccess":                                 true,
 		} {
 			if actual := harness.value(t, expression).ToBoolean(); actual != expected {
 				t.Errorf("%s = %v, want %v", expression, actual, expected)

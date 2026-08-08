@@ -10,6 +10,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
+	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
 type recordingNativeActionClient struct {
@@ -193,6 +194,22 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 				t.Fatalf("cancelled job = %q, want %q", effect.CancelledJob, test.wantCancel)
 			}
 		})
+	}
+}
+
+func TestShouldRefreshAfterNativeOperationUsesSharedActionSemantics(t *testing.T) {
+	catalog := &uidsl.ActionCatalogDocument{Actions: []uidsl.ActionSpec{
+		{Command: "run-chain", RefreshOnSuccess: true},
+		{Command: "run-pipeline"},
+	}}
+	if !shouldRefreshAfterNativeOperation(catalog, operations.Operation{Command: "run-chain"}, nativeOperationEffect{}) {
+		t.Fatal("shared run-chain refresh policy was ignored")
+	}
+	if shouldRefreshAfterNativeOperation(catalog, operations.Operation{Command: "run-pipeline"}, nativeOperationEffect{}) {
+		t.Fatal("operation refreshed without shared or adapter policy")
+	}
+	if !shouldRefreshAfterNativeOperation(catalog, operations.Operation{Command: "run-pipeline"}, nativeOperationEffect{Refresh: true}) {
+		t.Fatal("adapter-specific refresh policy was ignored")
 	}
 }
 

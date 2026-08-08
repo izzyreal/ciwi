@@ -17,12 +17,13 @@ type ActionCatalogDocument struct {
 }
 
 type ActionSpec struct {
-	Command     string `yaml:"command" json:"command"`
-	Class       string `yaml:"class" json:"class"`
-	Scope       string `yaml:"scope,omitempty" json:"scope,omitempty"`
-	Pending     string `yaml:"pending,omitempty" json:"pending,omitempty"`
-	Persistence string `yaml:"persistence,omitempty" json:"persistence,omitempty"`
-	Navigation  string `yaml:"navigation,omitempty" json:"navigation,omitempty"`
+	Command          string `yaml:"command" json:"command"`
+	Class            string `yaml:"class" json:"class"`
+	Scope            string `yaml:"scope,omitempty" json:"scope,omitempty"`
+	Pending          string `yaml:"pending,omitempty" json:"pending,omitempty"`
+	Persistence      string `yaml:"persistence,omitempty" json:"persistence,omitempty"`
+	Navigation       string `yaml:"navigation,omitempty" json:"navigation,omitempty"`
+	RefreshOnSuccess bool   `yaml:"refreshOnSuccess,omitempty" json:"refreshOnSuccess,omitempty"`
 }
 
 const (
@@ -94,6 +95,9 @@ func (d *ActionCatalogDocument) Validate() error {
 			}
 		default:
 			return fmt.Errorf("actions[%d].class %q is not supported", index, spec.Class)
+		}
+		if spec.RefreshOnSuccess && spec.Class != ActionClassMutation {
+			return fmt.Errorf("actions[%d].refreshOnSuccess requires a mutation action", index)
 		}
 		if spec.Persistence != ActionPersistenceNone && spec.Persistence != ActionPersistenceSafe && spec.Persistence != ActionPersistenceReceipt {
 			return fmt.Errorf("actions[%d].persistence %q is not supported", index, spec.Persistence)

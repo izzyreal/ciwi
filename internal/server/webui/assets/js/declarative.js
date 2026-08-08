@@ -826,12 +826,10 @@
 		else if (action.command === 'clear-queue') {
 		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}), body: '{}', signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
-		  await refresh();
 		}
 		else if (action.command === 'remove-execution') {
 		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(args.jobExecutionId), {method: 'DELETE', headers: ciwiActionHeaders(runtime), signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
-		  await refresh();
 		}
 		else if (action.command === 'flush-history' || action.command === 'delete-execution') {
 		  const ids = action.command === 'delete-execution'
@@ -858,6 +856,7 @@
 		  await navigateBrowser('/jobs/' + encodeURIComponent(rerunID));
 		}
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
+		if (runtime.refreshOnSuccess) await refresh({throwOnError: true});
         };
         if (typeof window.ciwiRunAction === 'function') return window.ciwiRunAction(action.command, args, element, execute);
         const idempotencyKey = typeof window.ciwiActionID === 'function' ? window.ciwiActionID() : '';
@@ -1688,17 +1687,9 @@
   function startChangeWatch() {
 	if (typeof window.EventSource !== 'function') return;
 	const source = new EventSource('/api/v1/ui/changes');
-	let initialized = false;
 	source.onmessage = event => {
 	  try {
 		const change = JSON.parse(event.data || '{}');
-		// Every new stream starts with a resync snapshot. The page refresh that
-		// opened this stream already supplies that snapshot, so rendering it again
-		// only replaces the complete declarative tree and causes a visible reflow.
-		if (!initialized) {
-		  initialized = true;
-		  return;
-		}
 		const watched = activeWatchTopics();
 		if (change.resync_required || (change.topics || []).some(topic => watched.has(String(topic)))) scheduleChangeRefresh();
 	  } catch (_) {}

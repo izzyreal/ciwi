@@ -117,7 +117,11 @@
     activeByScope.set(scope, operation);
     notify();
     operation.promise = Promise.resolve()
-      .then(() => execute({ signal: controller.signal, idempotencyKey: operation.idempotencyKey }))
+      .then(() => execute({
+        signal: controller.signal,
+        idempotencyKey: operation.idempotencyKey,
+        refreshOnSuccess: !!operation.spec.refreshOnSuccess,
+      }))
       .finally(() => {
         if (activeByFingerprint.get(key) === operation) activeByFingerprint.delete(key);
         if (activeByScope.get(scope) === operation) activeByScope.delete(scope);

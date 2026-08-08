@@ -31,6 +31,7 @@ func TestActionCatalogValidationDefaultsAndLookup(t *testing.T) {
 		case "run-pipeline":
 			spec.Class = ActionClassMutation
 			spec.Scope = "pipeline:{{pipelineDbId}}"
+			spec.RefreshOnSuccess = true
 		}
 	}
 	if err := document.Validate(); err != nil {
@@ -41,7 +42,7 @@ func TestActionCatalogValidationDefaultsAndLookup(t *testing.T) {
 		t.Fatalf("query defaults = %#v, %v", query, ok)
 	}
 	mutation, ok := document.Spec("run-pipeline")
-	if !ok || mutation.Navigation != ActionNavigationContinue || mutation.Persistence != ActionPersistenceSafe {
+	if !ok || mutation.Navigation != ActionNavigationContinue || mutation.Persistence != ActionPersistenceSafe || !mutation.RefreshOnSuccess {
 		t.Fatalf("mutation defaults = %#v, %v", mutation, ok)
 	}
 	if _, ok := document.Spec("does-not-exist"); ok {
@@ -66,6 +67,7 @@ func TestActionCatalogValidationRejectsInvalidSemantics(t *testing.T) {
 		{name: "mutation scope", edit: func(d *ActionCatalogDocument) { d.Actions[0].Class = ActionClassMutation }, want: "scope"},
 		{name: "persistence", edit: func(d *ActionCatalogDocument) { d.Actions[0].Persistence = "forever" }, want: "persistence"},
 		{name: "navigation", edit: func(d *ActionCatalogDocument) { d.Actions[0].Navigation = "detach" }, want: "navigation"},
+		{name: "local refresh", edit: func(d *ActionCatalogDocument) { d.Actions[0].RefreshOnSuccess = true }, want: "refreshOnSuccess"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

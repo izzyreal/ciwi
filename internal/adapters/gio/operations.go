@@ -256,7 +256,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("clear queue: %w", err)
 		}
-		return nativeOperationEffect{Message: fmt.Sprintf("Cleared %d queued execution(s)", result.Cleared), Refresh: true}, nil
+		return nativeOperationEffect{Message: fmt.Sprintf("Cleared %d queued execution(s)", result.Cleared)}, nil
 	case "remove-execution":
 		jobID := strings.TrimSpace(arguments["jobExecutionId"])
 		if jobID == "" {
@@ -268,7 +268,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("remove execution: %w", err)
 		}
-		return nativeOperationEffect{Message: "Removed queued execution " + result.JobExecutionId, Refresh: true}, nil
+		return nativeOperationEffect{Message: "Removed queued execution " + result.JobExecutionId}, nil
 	case "flush-history", "delete-execution":
 		request := &cnpv1.FlushExecutionHistoryRequest{All: operation.Command == "flush-history"}
 		if !request.All {

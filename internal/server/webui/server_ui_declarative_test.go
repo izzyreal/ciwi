@@ -109,8 +109,13 @@ func TestActionCatalogContractAndBrowserRunnerRoutes(t *testing.T) {
 	if err := catalog.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if spec, ok := catalog.Spec("run-pipeline"); !ok || spec.Class != uidsl.ActionClassMutation || spec.Scope == "" {
+	if spec, ok := catalog.Spec("run-pipeline"); !ok || spec.Class != uidsl.ActionClassMutation || spec.Scope == "" || !spec.RefreshOnSuccess {
 		t.Fatalf("run-pipeline action = %#v, %v", spec, ok)
+	}
+	for _, command := range []string{"run-chain", "clear-queue", "remove-execution"} {
+		if spec, ok := catalog.Spec(command); !ok || !spec.RefreshOnSuccess {
+			t.Errorf("%s must refresh its active view after success: %#v, %v", command, spec, ok)
+		}
 	}
 
 	recorder = httptest.NewRecorder()
@@ -122,6 +127,13 @@ func TestActionCatalogContractAndBrowserRunnerRoutes(t *testing.T) {
 		if !strings.Contains(recorder.Body.String(), expected) {
 			t.Errorf("browser action runner does not contain %q", expected)
 		}
+	}
+	declarative, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(declarative), "if (runtime.refreshOnSuccess) await refresh({throwOnError: true})") {
+		t.Fatal("declarative renderer does not honor shared post-success refresh semantics")
 	}
 }
 
@@ -245,6 +257,20 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 		if !strings.Contains(script, expected) {
 			t.Errorf("browser job interaction state does not contain %q", expected)
 		}
+	}
+}
+
+func TestDeclarativeBrowserProcessesInitialChangeStreamResync(t *testing.T) {
+	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptPayload)
+	if !strings.Contains(script, "if (change.resync_required ||") {
+		t.Fatal("browser change stream does not refresh for resync markers")
+	}
+	if strings.Contains(script, "if (!initialized)") {
+		t.Fatal("browser still discards the first change event unconditionally")
 	}
 }
 

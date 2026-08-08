@@ -471,7 +471,7 @@ func Run(options Options) error {
 		}
 	})
 	renderer.SetInvalidate(window.Invalidate)
-	go runController(ctx, window, renderer, commands, screens, options, preferencesPath, preferences, coordinator, clientBroker, operationJournal, fileExplorer)
+	go runController(ctx, window, renderer, commands, screens, actionCatalog, options, preferencesPath, preferences, coordinator, clientBroker, operationJournal, fileExplorer)
 
 	var operations op.Ops
 	for {
@@ -488,7 +488,7 @@ func Run(options Options) error {
 	}
 }
 
-func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, options Options, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal, artifactPicker artifactDestinationPicker) {
+func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, actionCatalog *uidsl.ActionCatalogDocument, options Options, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal, artifactPicker artifactDestinationPicker) {
 	screenCache := newNativeScreenCache()
 	pendingCancellations := map[string]bool{}
 	connectionSettings := nativeConnectionSettingsForLaunch(preferences, options.Address)
@@ -893,7 +893,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+err.Error())
 				return
 			}
-		} else if effect.Refresh && client != nil {
+		} else if client != nil && shouldRefreshAfterNativeOperation(actionCatalog, operation, effect) {
 			startResyncLoad(navigation)
 		}
 		if effect.Notice && effect.Message != "" {
@@ -1398,6 +1398,14 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			window.Invalidate()
 		}
 	}
+}
+
+func shouldRefreshAfterNativeOperation(catalog *uidsl.ActionCatalogDocument, operation operations.Operation, effect nativeOperationEffect) bool {
+	if effect.Refresh {
+		return true
+	}
+	spec, ok := catalog.Spec(operation.Command)
+	return ok && spec.RefreshOnSuccess
 }
 
 func openExternalURL(raw string) error {
