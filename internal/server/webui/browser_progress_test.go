@@ -1,0 +1,52 @@
+package webui
+
+import (
+	"math"
+	"strings"
+	"testing"
+
+	"github.com/dop251/goja"
+)
+
+func TestBrowserProgressInterpolationKeepsServerSemanticState(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	constantStart := strings.Index(script, "  const determinateProgressLimit")
+	functionStart := strings.Index(script, "  function semanticProgressAt")
+	if constantStart < 0 || functionStart < 0 {
+		t.Fatal("browser semantic progress implementation is unavailable")
+	}
+	constantEnd := strings.Index(script[constantStart:], "\n")
+	functionEnd := strings.Index(script[functionStart:], "\n  function updateSemanticProgress")
+	if constantEnd < 0 || functionEnd < 0 {
+		t.Fatal("browser semantic progress implementation is incomplete")
+	}
+	constant := script[constantStart : constantStart+constantEnd]
+	function := script[functionStart : functionStart+functionEnd]
+	runtime := goja.New()
+	if _, err := runtime.RunString(constant + "\n" + function); err != nil {
+		t.Fatal(err)
+	}
+
+	assertProgress := func(expression, wantState string, wantFraction float64) {
+		t.Helper()
+		value, err := runtime.RunString(expression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		model := value.ToObject(runtime)
+		if state := model.Get("state").String(); state != wantState {
+			t.Fatalf("state = %q, want %q", state, wantState)
+		}
+		if fraction := model.Get("fraction").ToFloat(); math.Abs(fraction-wantFraction) > .000001 {
+			t.Fatalf("fraction = %g, want %g", fraction, wantFraction)
+		}
+	}
+
+	assertProgress("semanticProgressAt({state:'determinate',fraction:.2,snapshot_unix_ms:1000,rate_per_ms:.0001},4000)", "determinate", .5)
+	assertProgress("semanticProgressAt({state:'determinate',fraction:.9,snapshot_unix_ms:1000,rate_per_ms:.0001},4000)", "determinate", .999)
+	assertProgress("semanticProgressAt({state:'overrun',fraction:1,snapshot_unix_ms:1000,rate_per_ms:0},4000)", "overrun", 1)
+}

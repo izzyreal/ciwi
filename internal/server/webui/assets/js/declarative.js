@@ -15,6 +15,7 @@
   const browserViewCache = new Map();
   let screenContractsPreloaded = false;
   let changeRefreshTimer = 0;
+  const determinateProgressLimit = .999;
   const disclosureStates = window.ciwiDisclosureState;
   const viewStorageKey = 'ciwi.declarative.views.v1';
   const viewStates = loadViewStates();
@@ -25,8 +26,7 @@
     let fraction = Math.max(0, Math.min(1, Number(model.fraction || 0)));
     if (state === 'determinate') {
       const elapsed = Math.max(0, Number(nowMs || Date.now()) - Number(model.snapshot_unix_ms || 0));
-      fraction = Math.max(0, Math.min(1, fraction + elapsed * Math.max(0, Number(model.rate_per_ms || 0))));
-      if (fraction >= .999999 && Number(model.rate_per_ms || 0) > 0) state = 'overrun';
+      fraction = Math.max(0, Math.min(determinateProgressLimit, fraction + elapsed * Math.max(0, Number(model.rate_per_ms || 0))));
     }
     return {state, fraction};
   }

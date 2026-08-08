@@ -2287,6 +2287,7 @@ type semanticProgress struct {
 
 const (
 	progressFrameInterval         = time.Second / 60
+	determinateProgressLimit      = .999
 	indeterminateProgressDuration = 4 * time.Second
 	connectionPulseDuration       = 4 * time.Second
 	connectionPulseMinimum        = .58
@@ -2474,12 +2475,16 @@ func resolveSemanticProgress(data any, binding *uidsl.Progress) (semanticProgres
 func evaluateSemanticProgress(progress semanticProgress, now time.Time) (string, float64) {
 	state := progress.state
 	fraction := max(0, min(progress.fraction, 1))
-	if state == "determinate" && progress.ratePerMS > 0 {
-		elapsed := max(int64(0), now.UnixMilli()-progress.snapshotUnixMS)
-		fraction = max(0, min(1, fraction+float64(elapsed)*progress.ratePerMS))
-		if fraction >= .999999 {
-			state = "overrun"
+	if state == "determinate" {
+		if progress.ratePerMS > 0 {
+			elapsed := max(int64(0), now.UnixMilli()-progress.snapshotUnixMS)
+			fraction += float64(elapsed) * progress.ratePerMS
 		}
+		// The server owns semantic state because it knows whether an aggregate
+		// still contains unfinished jobs. Local interpolation must not turn a
+		// determinate aggregate into an overrun pulse merely by reaching its
+		// estimated duration between snapshots.
+		fraction = max(0, min(determinateProgressLimit, fraction))
 	}
 	return state, fraction
 }

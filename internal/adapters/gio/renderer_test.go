@@ -2433,8 +2433,12 @@ func TestEvaluateSemanticProgressAdvancesFromServerSnapshot(t *testing.T) {
 	state, fraction = evaluateSemanticProgress(semanticProgress{
 		state: "determinate", fraction: .9, snapshotUnixMS: snapshot.UnixMilli(), ratePerMS: .0001,
 	}, snapshot.Add(3*time.Second))
-	if state != "overrun" || fraction != 1 {
+	if state != "determinate" || fraction != determinateProgressLimit {
 		t.Fatalf("state=%q fraction=%g", state, fraction)
+	}
+	state, fraction = evaluateSemanticProgress(semanticProgress{state: "overrun", fraction: 1}, snapshot)
+	if state != "overrun" || fraction != 1 {
+		t.Fatalf("explicit server overrun state=%q fraction=%g", state, fraction)
 	}
 }
 
