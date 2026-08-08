@@ -1491,6 +1491,10 @@
 		const statusIcon = {success: 'circle-check', danger: 'circle-x', warning: 'clock', accent: 'loader-2'}[statusTone] || 'clock';
 	    const status = declarativeIcon(statusIcon);
 	    status.classList.add('dsl-execution-row-status', 'dsl-status-' + statusTone);
+	    const disclosureKey = node.disclosure && node.disclosure.stateKey
+	      ? renderText({template: node.disclosure.stateKey}, data)
+	      : '';
+	    if (disclosureKey) status.dataset.ciwiStableKey = 'execution-status:' + disclosureKey + ':' + statusIcon;
 	    summary.appendChild(status);
 	    const label = document.createElement('span');
 	    label.textContent = renderText(node.text, data) || 'Details';
@@ -1617,10 +1621,25 @@
     if (!currentDocument || !currentData) return;
     closeBrowserSelect();
     const viewState = window.ciwiCaptureViewState(root);
-    root.replaceChildren(renderNode(currentDocument.screen.root, currentData));
+	const nextRoot = renderNode(currentDocument.screen.root, currentData);
+	preserveStableElements(nextRoot);
+    root.replaceChildren(nextRoot);
 	window.ciwiRestoreViewState(root, viewState);
 	if (currentData.jobDetails) bindJobOutputScrollIntent(currentData.jobDetails);
 	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
+  }
+
+  function preserveStableElements(nextRoot) {
+	if (!nextRoot || typeof nextRoot.querySelectorAll !== 'function') return;
+	const previous = new Map();
+	root.querySelectorAll('[data-ciwi-stable-key]').forEach(element => {
+	  previous.set(String(element.dataset.ciwiStableKey || ''), element);
+	});
+	nextRoot.querySelectorAll('[data-ciwi-stable-key]').forEach(element => {
+	  const key = String(element.dataset.ciwiStableKey || '');
+	  const retained = previous.get(key);
+	  if (key && retained && retained.tagName === element.tagName) element.replaceWith(retained);
+	});
   }
 
   async function navigateBrowser(path, options = {}) {

@@ -83,3 +83,19 @@ func TestBrowserProgressUpdatesDoNotRestartAnimationClasses(t *testing.T) {
 		}
 	}
 }
+
+func TestBrowserStatusSpinnerKeepsDOMIdentityAcrossRenders(t *testing.T) {
+	javascript, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"status.dataset.ciwiStableKey = 'execution-status:' + disclosureKey + ':' + statusIcon",
+		"preserveStableElements(nextRoot)",
+		"element.replaceWith(retained)",
+	} {
+		if !strings.Contains(string(javascript), expected) {
+			t.Fatalf("browser status spinner continuity is missing %q", expected)
+		}
+	}
+}
