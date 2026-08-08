@@ -564,9 +564,12 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	artifactDownloads := make(chan artifactDownloadResult, 4)
 	var screenLoadCancel context.CancelFunc
 	var screenLoadGeneration uint64
-	queueScreenLoad := func(target navigationState, recoverMissingRoute bool) {
+	var screenRefreshes screenRefreshCoordinator
+	launchScreenLoad := func(target navigationState, recoverMissingRoute bool) {
 		if screenLoadCancel != nil {
-			screenLoadCancel()
+			// launchScreenLoad is only called after the previous load completed or
+			// after its cancellation was explicitly requested by navigation.
+			screenLoadCancel = nil
 		}
 		loadCtx, cancelLoad := context.WithCancel(ctx)
 		screenLoadCancel = cancelLoad
@@ -575,6 +578,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		activeClient := client
 		themeName := renderer.ThemeName()
 		go func() {
+			defer cancelLoad()
 			if activeClient == nil {
 				return
 			}
@@ -588,8 +592,23 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 		}()
 	}
+	queueScreenLoad := func(target navigationState, recoverMissingRoute bool) {
+		if screenLoadCancel != nil {
+			screenLoadCancel()
+			screenLoadCancel = nil
+		}
+		screenRefreshes.supersede()
+		launchScreenLoad(target, recoverMissingRoute)
+	}
+	requestScreenRefresh := func(target navigationState, recoverMissingRoute bool) {
+		if screenRefreshes.request(recoverMissingRoute) {
+			launchScreenLoad(target, recoverMissingRoute)
+		}
+	}
 	startScreenLoad := func(target navigationState) { queueScreenLoad(target, false) }
 	startResyncLoad := func(target navigationState) { queueScreenLoad(target, true) }
+	requestScreenLoad := func(target navigationState) { requestScreenRefresh(target, false) }
+	requestResyncLoad := func(target navigationState) { requestScreenRefresh(target, true) }
 	var pendingNavigation *navigationState
 	defer func() {
 		if screenLoadCancel != nil {
@@ -776,6 +795,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			screenLoadCancel = nil
 			screenLoadGeneration++
 		}
+		screenRefreshes.cancel()
 	}
 	pauseReconnect := func(status string) {
 		disconnect()
@@ -895,7 +915,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				return
 			}
 		} else if client != nil && shouldRefreshAfterNativeOperation(actionCatalog, operation, effect) {
-			startResyncLoad(navigation)
+			requestResyncLoad(navigation)
 		}
 		if effect.Notice && effect.Message != "" {
 			action := uidsl.Action{}
@@ -975,7 +995,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			}
 			if change.ResyncRequired || relevantScreenChange(navigation, change) {
-				startScreenLoad(navigation)
+				requestScreenLoad(navigation)
 				window.Invalidate()
 			}
 		case watchErr, ok := <-watchErrors:
@@ -1011,6 +1031,10 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			if expectedNavigation != result.navigation || result.generation != screenLoadGeneration {
 				continue
+			}
+			screenLoadCancel = nil
+			if startTrailing, recoverMissingRoute := screenRefreshes.complete(); startTrailing && client != nil {
+				launchScreenLoad(result.navigation, recoverMissingRoute)
 			}
 			if result.err != nil {
 				if result.recoverMissingRoute && result.navigation.screen != "front-page" {
@@ -1139,7 +1163,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					pending := navigation
 					pendingNavigation = &pending
 				}
-				startScreenLoad(navigation)
+				requestScreenLoad(navigation)
 				window.Invalidate()
 				continue
 			case "set-connection-field":
