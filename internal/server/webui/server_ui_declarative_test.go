@@ -656,6 +656,19 @@ func TestDeclarativeNavigationCommitsTargetBeforeRemoteData(t *testing.T) {
 	}
 }
 
+func TestDeclarativeSettingsUsesRESTProjectUpdateTimestamp(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	updatedUTC := strings.Index(script, "project.updated_utc")
+	updatedMilliseconds := strings.Index(script, "project.updated_unix_ms")
+	if updatedUTC < 0 || updatedMilliseconds < 0 || updatedUTC > updatedMilliseconds {
+		t.Fatal("Settings does not prefer the REST updated_utc field with an updated_unix_ms fallback")
+	}
+}
+
 func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *testing.T) {
 	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {

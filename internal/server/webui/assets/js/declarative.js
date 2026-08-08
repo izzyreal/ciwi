@@ -1868,8 +1868,12 @@
 		  project.loaded_commit_short = loadedCommit.slice(0, 8);
 		  project.loaded_commit_url = loadedCommit && /^https?:\/\//.test(repository) ? repository + '/commit/' + loadedCommit : '';
 		  project.has_loaded_commit = loadedCommit !== '';
+		  const updatedUTC = String(project.updated_utc || '').trim();
 		  const updatedMilliseconds = Number(project.updated_unix_ms || 0);
-		  project.updated_label = updatedMilliseconds > 0 ? declarativeExecutionTimestamp(new Date(updatedMilliseconds).toISOString()) : 'Unknown';
+		  const updatedLabel = updatedUTC
+			? declarativeExecutionTimestamp(updatedUTC)
+			: (updatedMilliseconds > 0 ? declarativeExecutionTimestamp(new Date(updatedMilliseconds).toISOString()) : '');
+		  project.updated_label = updatedLabel || 'Unknown';
 		  project.source_label = project.can_reload
 		    ? [project.repo_url || '', project.repo_ref || ''].filter(Boolean).join(' · ')
 		    : 'Managed YAML stored in ciwi';
