@@ -2311,8 +2311,8 @@ func TestNativeNoticeCanTargetFrontPageSection(t *testing.T) {
 	if renderer.pendingScrollSection != "" {
 		t.Fatalf("pending section target was not consumed: %q", renderer.pendingScrollSection)
 	}
-	if renderer.list.Position.First != 2 {
-		t.Fatalf("front-page list first item = %d, want queued section index 2", renderer.list.Position.First)
+	if renderer.list.Position.First != 3 {
+		t.Fatalf("front-page list first item = %d, want queued section index 3", renderer.list.Position.First)
 	}
 }
 

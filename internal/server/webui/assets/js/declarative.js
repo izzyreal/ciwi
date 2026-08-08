@@ -12,6 +12,8 @@
   let routeContractPromise = null;
   let themeContractPromise = null;
   const screenContractPromises = new Map();
+  const browserViewCache = new Map();
+  let screenContractsPreloaded = false;
   let changeRefreshTimer = 0;
   const disclosureStates = window.ciwiDisclosureState;
   const viewStorageKey = 'ciwi.declarative.views.v1';
@@ -143,10 +145,26 @@
   function resolve(data, path) {
     return String(path || '').split('.').reduce((current, part) => {
       if (current === null || current === undefined || !(part in Object(current))) {
+        const rootName = String(path || '').split('.')[0];
+        const rootBinding = data && data[rootName];
+        if (rootBinding && rootBinding.ready === false) return emptyLoadingBindingValue(path);
         throw new Error('Binding not found: ' + path);
       }
       return current[part];
     }, data);
+  }
+
+  function emptyLoadingBindingValue(path) {
+	const field = String(path || '').split('.').pop() || '';
+	if (['projects', 'queued_executions', 'history_executions', 'pipelines', 'visible_pipelines', 'pipeline_chains',
+	  'structure_filters', 'timeline', 'job_properties', 'cache_statistics', 'release_summary', 'output_groups',
+	  'rows', 'nodes', 'filters', 'children', 'issues', 'agents', 'requirements', 'executions', 'sections', 'jobs',
+	  'steps', 'depends_on', 'needs', 'themes', 'connection_modes', 'modes', 'source_refs', 'eligible_agents',
+	  'shells', 'connections', 'update_versions', 'rollback_versions'].includes(field)) return [];
+	if (['progress', 'server', 'project', 'agent', 'selected_timeline_item', 'scheduling_diagnosis',
+	  'host_tool_requirements', 'container_tool_requirements', 'run_context', 'artifacts', 'test_report',
+	  'coverage_report', 'structure_root'].includes(field)) return {};
+	return '';
   }
 
   function renderText(text, data) {
@@ -221,6 +239,53 @@
 	  history_executions: [], history_empty: true,
 	  loading: true, ready: false, load_error: '',
 	};
+  }
+
+  function browserClientBinding() {
+	return {
+	  connected: true, connecting: false, offline: false, address: window.location.host,
+	  status: 'Connected through the browser', tone: 'success', progress: {state: 'none'},
+	};
+  }
+
+  function markBrowserViewReady(view) {
+	if (!view || typeof view !== 'object') return view;
+	view.loading = false;
+	view.ready = true;
+	view.load_error = '';
+	return view;
+  }
+
+  function browserLoadingBinding(routeMatch) {
+	const routeName = routeMatch.route.name;
+	const params = routeMatch.params || {};
+	if (routeName === 'project-details') return projectDetailsLoadingBinding(params.projectId);
+	const loading = {loading: true, ready: false, load_error: ''};
+	if (routeName === 'front-page') return Object.assign(loading, {
+	  server: {version: ''}, projects: [], queued_executions: [], history_executions: [],
+	  queued_empty: false, history_empty: false,
+	});
+	if (routeName === 'job-details') return Object.assign(loading, {
+	  id: String(params.jobId || ''), title: 'Job execution', project_icon: '', progress: {state: 'none'},
+	  status: '', status_label: '', current_step: '', can_rerun: false, can_cancel: false,
+	});
+	if (routeName === 'settings') return Object.assign(loading, {server_version: '', themes: [], projects: []});
+	if (routeName === 'agents') return Object.assign(loading, {summary: '', agents: []});
+	if (routeName === 'agent-details') return Object.assign(loading, {agent: {id: String(params.agentId || '')}});
+	if (routeName === 'agent-script') return Object.assign(loading, {
+	  agent_id: String(params.agentId || ''), agent_label: 'Agent', shells: [], selected_shell: '', script: '', can_run: false,
+	});
+	if (routeName === 'managed-yaml' || routeName === 'managed-yaml-new') return Object.assign(loading, {
+	  title: routeName === 'managed-yaml-new' ? 'Add Managed YAML' : 'Managed YAML',
+	  project_id: Number(params.projectId || 0), project_name: '', yaml: '', revision: '', editing: false,
+	});
+	if (routeName === 'vault') return Object.assign(loading, {connections: []});
+	if (routeName.includes('run-options')) return Object.assign(loading, {
+	  project_id: Number(params.projectId || 0), pipeline_db_id: Number(params.pipelineId || 0),
+	  chain_id: String(params.chainId || ''), target_label: 'Run options', target_kind: 'loading',
+	  source_refs: [], eligible_agents: [], selected_source_ref: '', selected_agent_id: '',
+	});
+	return loading;
   }
 
   function decorateJobDetails(view) {
@@ -423,6 +488,12 @@
 	  });
 	}
 	const documentContract = await routeContractPromise;
+	if (!screenContractsPreloaded) {
+	  screenContractsPreloaded = true;
+	  (documentContract.routes || []).forEach(route => {
+		if ((route.platforms || []).includes('web')) screenContract(route.screen).catch(() => {});
+	  });
+	}
 	for (const route of (documentContract.routes || [])) {
 	  if (!(route.platforms || []).includes('web')) continue;
 	  const match = matchRoutePattern(route, path);
@@ -598,7 +669,9 @@
 		  }
 		  const response = await fetch(runOptionsViewURL(options.selected_source_ref, options.selected_agent_id), {signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
-		  currentData = {runOptions: await response.json()};
+		  const refreshedOptions = markBrowserViewReady(await response.json());
+		  currentData = {runOptions: refreshedOptions, client: browserClientBinding()};
+		  browserViewCache.set(routePath(), refreshedOptions);
 		  renderCurrent();
 		}
 		else if (action.command === 'set-managed-yaml-field') {
@@ -1729,10 +1802,18 @@
 	  const viewPromise = viewURL
 		? fetch(viewURL)
 		: Promise.resolve(new Response('{}', {status: 200, headers: {'Content-Type': 'application/json'}}));
+	  const settingsProjectsPromise = settingsMatch ? fetch('/api/v1/projects') : null;
+	  const settingsUpdateStatusPromise = settingsMatch ? fetch('/api/v1/update/status') : null;
 	  const documentPromise = screenContract(screenName);
 	  const themesPromise = themeContracts();
-	  const loadingView = options.showLoading && projectMatch
-		? projectDetailsLoadingBinding(nextRouteMatch.params.projectId) : null;
+	  const cacheKey = routePath();
+	  const cachedView = browserViewCache.get(cacheKey);
+	  if (cachedView) {
+		cachedView.loading = false;
+		cachedView.ready = true;
+		cachedView.load_error = '';
+	  }
+	  const loadingView = options.showLoading ? (cachedView || browserLoadingBinding(nextRouteMatch)) : null;
 	  if (loadingView) {
 		const [loadingDocument, loadingThemes] = await Promise.all([documentPromise, themesPromise]);
 		if (loadGeneration !== routeLoadGeneration) return false;
@@ -1741,10 +1822,7 @@
 		currentRouteMatch = nextRouteMatch;
 		currentPath = routePath();
 		currentDocument = loadingDocument;
-		currentData = {projectDetails: loadingView, client: {
-		  connected: true, connecting: false, offline: false, address: window.location.host,
-		  status: 'Connected through the browser', tone: 'success', progress: {state: 'none'},
-		}};
+		currentData = {[bindingRoot]: loadingView, client: browserClientBinding()};
 		renderCurrent();
 		loadingCommitted = true;
 	  }
@@ -1770,9 +1848,9 @@
           description: theme.metadata.description || '',
         }));
         const selected = themeOptions.find(theme => theme.name === selectedTheme);
-		const projectsResponse = await fetch('/api/v1/projects');
+		const projectsResponse = await settingsProjectsPromise;
 		if (!projectsResponse.ok) throw new Error(await projectsResponse.text());
-		const updateStatusResponse = await fetch('/api/v1/update/status');
+		const updateStatusResponse = await settingsUpdateStatusPromise;
 		if (!updateStatusResponse.ok) throw new Error(await updateStatusResponse.text());
 		const projectsPayload = await projectsResponse.json();
 		const updateStatusPayload = await updateStatusResponse.json();
@@ -1839,15 +1917,13 @@
 		  || {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
       }
 	  if (loadGeneration !== routeLoadGeneration) return false;
+	  markBrowserViewReady(view);
 	  outputWatchGeneration = generation;
 	  currentRouteMatch = nextRouteMatch;
 	  currentPath = routePath();
 	  currentDocument = documentContract;
-	  const browserClientState = {
-		connected: true, connecting: false, offline: false, address: window.location.host,
-		status: 'Connected through the browser', tone: 'success', progress: {state: 'none'},
-	  };
-	  currentData = { [bindingRoot]: view, client: browserClientState };
+	  currentData = { [bindingRoot]: view, client: browserClientBinding() };
+	  browserViewCache.set(cacheKey, view);
       renderCurrent();
       if (jobMatch) {
 		const jobID = nextRouteMatch.params.jobId;
@@ -1861,10 +1937,12 @@
         });
       }
     } catch (error) {
-	  if (loadingCommitted && loadGeneration === routeLoadGeneration && currentData && currentData.projectDetails) {
-		currentData.projectDetails.loading = false;
-		currentData.projectDetails.ready = false;
-		currentData.projectDetails.load_error = error.message || String(error);
+	  if (loadingCommitted && loadGeneration === routeLoadGeneration && currentData) {
+		const rootName = currentRouteMatch && currentRouteMatch.route.bindingRoot;
+		const loadingRoot = rootName && currentData[rootName];
+		if (!loadingRoot) throw error;
+		loadingRoot.loading = false;
+		loadingRoot.load_error = error.message || String(error);
 		renderCurrent();
 		return false;
 	  }

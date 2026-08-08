@@ -33,7 +33,46 @@ screen:
             text: {literal: Back to Agents}
             icon: arrow-left
             actions: [{on: activate, command: navigate, arguments: {route: /agents}}]
+      - component: column
+        id: agent-details-loading
+        visible: {binding: agentDetails.loading}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: row
+            layout: {grow: true, minHeight: "14"}
+            style: {role: skeleton}
+          - component: card
+            layout: {direction: vertical, gap: medium, padding: large}
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "18"}
+                style: {role: skeleton}
+              - component: spacer
+                layout: {grow: true, minHeight: "120"}
+      - component: column
+        id: agent-details-load-error
+        visible: {binding: agentDetails.load_error, empty: true, not: true}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: text
+            text: {literal: Could not load Agent Details}
+            style: {role: heading, emphasis: strong, tone: danger}
+          - component: text
+            text: {binding: agentDetails.load_error}
+            style: {tone: danger}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Retry}
+                icon: refresh
+                actions: [{on: activate, command: refresh}]
+              - component: button
+                text: {literal: Back to Agents}
+                icon: arrow-left
+                actions: [{on: activate, command: navigate, arguments: {route: /agents}}]
       - component: card
+        visible: {binding: agentDetails.ready}
         layout: {direction: vertical, gap: medium, padding: large}
         children:
           - component: row
@@ -131,6 +170,7 @@ screen:
                     arguments: {agentId: "{{agentDetails.agent.id}}", action: delete}
                     confirm: {title: "Delete agent record?", message: "Removes the stored record. It does not uninstall or stop the agent."}
       - component: section
+        visible: {binding: agentDetails.ready}
         layout: {direction: vertical, gap: medium, padding: medium}
         children:
           - component: text

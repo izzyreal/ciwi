@@ -669,7 +669,8 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	beginNavigationWith := func(target navigationState, recoverMissingRoute bool) error {
 		if cached, ok := screenCache.Get(target); ok {
 			navigation = target
-			pendingNavigation = nil
+			pending := target
+			pendingNavigation = &pending
 			if err := showScreenData(target, cached); err != nil {
 				return err
 			}
@@ -678,7 +679,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			} else {
 				stopOutput()
 			}
-		} else if target.screen == "project-details" {
+		} else if target.screen != "connection" {
 			navigation = target
 			pending := target
 			pendingNavigation = &pending
@@ -1012,14 +1013,6 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			}
 			if result.err != nil {
-				if result.navigation.screen == "project-details" && navigation == result.navigation && pendingNavigation != nil {
-					pendingNavigation = nil
-					renderer.SetRootBinding("projectDetails", "loading", false)
-					renderer.SetRootBinding("projectDetails", "ready", false)
-					renderer.SetRootBinding("projectDetails", "load_error", result.err.Error())
-					window.Invalidate()
-					continue
-				}
 				if result.recoverMissingRoute && result.navigation.screen != "front-page" {
 					if err := beginResyncNavigation(navigationState{screen: "front-page"}); err != nil {
 						renderer.ShowAlert("Loading failed", result.err.Error())
@@ -1032,6 +1025,19 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					scheduleReconnect("resynchronize: " + result.err.Error())
 					continue
 				}
+				if navigation == result.navigation && pendingNavigation != nil {
+					pendingNavigation = nil
+					rootName := screenBindingRoot(result.navigation.screen)
+					ready := screenCache.Has(result.navigation)
+					renderer.SetRootBinding(rootName, "loading", false)
+					renderer.SetRootBinding(rootName, "ready", ready)
+					renderer.SetRootBinding(rootName, "load_error", result.err.Error())
+					if ready {
+						screenCache.SetRootBinding(result.navigation, rootName, "load_error", result.err.Error())
+					}
+					window.Invalidate()
+					continue
+				}
 				if pendingNavigation != nil {
 					pendingNavigation = nil
 					renderer.ShowAlert("Loading failed", "Showing the previous screen: "+result.err.Error())
@@ -1042,11 +1048,16 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 			} else {
 				if err := validateNativeBindings(screens[result.navigation.screen], result.data); err != nil {
-					if result.navigation.screen == "project-details" && navigation == result.navigation && pendingNavigation != nil {
+					if navigation == result.navigation && pendingNavigation != nil {
 						pendingNavigation = nil
-						renderer.SetRootBinding("projectDetails", "loading", false)
-						renderer.SetRootBinding("projectDetails", "ready", false)
-						renderer.SetRootBinding("projectDetails", "load_error", err.Error())
+						rootName := screenBindingRoot(result.navigation.screen)
+						ready := screenCache.Has(result.navigation)
+						renderer.SetRootBinding(rootName, "loading", false)
+						renderer.SetRootBinding(rootName, "ready", ready)
+						renderer.SetRootBinding(rootName, "load_error", err.Error())
+						if ready {
+							screenCache.SetRootBinding(result.navigation, rootName, "load_error", err.Error())
+						}
 						window.Invalidate()
 						continue
 					}
@@ -1725,7 +1736,7 @@ func managedYAMLBindingData(definition *cnpv1.ManagedYAMLDefinition) map[string]
 	}
 	return map[string]any{"managedYAML": map[string]any{
 		"title": title, "project_id": projectID, "project_name": name, "yaml": raw, "revision": revision, "editing": editing,
-		"result": "", "result_tone": "muted",
+		"result": "", "result_tone": "muted", "loading": false, "ready": true, "load_error": "",
 	}}
 }
 
@@ -1793,6 +1804,7 @@ func loadAgentScriptData(ctx context.Context, client *cnpclient.Client, navigati
 		"agent_id": navigation.agentScriptID, "agent_label": view.GetAgent().GetHostname(),
 		"shells": shells, "selected_shell": selectedShell, "script": script,
 		"can_run": view.GetAgent().GetCanRunScript() && selectedShell != "", "result": "", "result_tone": "muted",
+		"loading": false, "ready": true, "load_error": "",
 	}}, nil
 }
 
@@ -1855,6 +1867,15 @@ func runOptionsLoadingData(navigation navigationState) map[string]any {
 }
 
 func screenLoadingData(navigation navigationState, clientVersion, themeName, mode, endpoint string, sshSettings sshConnectionSettings) (map[string]any, error) {
+	data, err := screenLoadingBindingData(navigation, clientVersion, themeName, mode, endpoint, sshSettings)
+	if err != nil {
+		return nil, err
+	}
+	setScreenLifecycle(data, navigation.screen, true, false, "")
+	return data, nil
+}
+
+func screenLoadingBindingData(navigation navigationState, clientVersion, themeName, mode, endpoint string, sshSettings sshConnectionSettings) (map[string]any, error) {
 	switch navigation.screen {
 	case "front-page":
 		return offlineFrontPageBindingData(clientVersion)
@@ -2431,6 +2452,7 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 		"update_versions": versionOptions(nil, "Check for updates"), "selected_update_version": "",
 		"rollback_versions": versionOptions(nil, "Refresh versions"), "selected_rollback_version": "",
 		"update_result": "", "update_result_tone": "muted", "rollback_result": "", "rollback_result_tone": "muted",
+		"loading": false, "ready": true, "load_error": "",
 	}}, nil
 }
 
@@ -2518,7 +2540,28 @@ func protobufBindingData(root, description string, message proto.Message) (map[s
 	if err := json.Unmarshal(payload, &normalized); err != nil {
 		return nil, fmt.Errorf("decode %s binding data: %w", description, err)
 	}
+	normalized["loading"] = false
+	normalized["ready"] = true
+	normalized["load_error"] = ""
 	return map[string]any{root: normalized}, nil
+}
+
+func setScreenLifecycle(data map[string]any, screen string, loading, ready bool, loadError string) {
+	root, _ := data[screenBindingRoot(screen)].(map[string]any)
+	if root == nil {
+		return
+	}
+	root["loading"] = loading
+	root["ready"] = ready
+	root["load_error"] = loadError
+}
+
+func screenBindingRoot(screen string) string {
+	return map[string]string{
+		"front-page": "frontPage", "project-details": "projectDetails", "job-details": "jobDetails",
+		"settings": "settings", "managed-yaml": "managedYAML", "run-options": "runOptions", "agents": "agents",
+		"agent-details": "agentDetails", "agent-script": "agentScript", "vault": "vault", "connection": "connection",
+	}[screen]
 }
 
 func nativeTargets(ctx context.Context, explicit string) ([]string, error) {

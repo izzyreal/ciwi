@@ -98,8 +98,50 @@ screen:
                 confirm:
                   title: Restart Server
                   message: Restart ciwi server now? The native client will reconnect automatically.
+      - component: column
+        id: settings-loading
+        visible: {binding: settings.loading}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: row
+            layout: {grow: true, minHeight: "14"}
+            style: {role: skeleton}
+          - component: card
+            layout: {direction: vertical, gap: medium, padding: large}
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "18"}
+                style: {role: skeleton}
+              - component: spacer
+                layout: {grow: true, minHeight: "120"}
+          - component: row
+            layout: {grow: true, minHeight: "14"}
+            style: {role: skeleton}
+      - component: column
+        id: settings-load-error
+        visible: {binding: settings.load_error, empty: true, not: true}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: text
+            text: {literal: Could not load Global Settings}
+            style: {role: heading, emphasis: strong, tone: danger}
+          - component: text
+            text: {binding: settings.load_error}
+            style: {tone: danger}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Retry}
+                icon: refresh
+                actions: [{on: activate, command: refresh}]
+              - component: button
+                text: {literal: Back to Main}
+                icon: arrow-left
+                actions: [{on: activate, command: navigate, arguments: {route: /}}]
       - component: section
         id: appearance
+        visible: {binding: settings.ready}
         layout:
           direction: vertical
           gap: medium
@@ -148,6 +190,7 @@ screen:
                   tone: muted
       - component: section
         id: native-connection
+        visible: {binding: settings.ready}
         overrides:
           web: {hidden: true}
         layout:
@@ -349,6 +392,7 @@ screen:
                       mode: "{{settings.connection_mode}}"
                       endpoint: "{{settings.connection_endpoint}}"
       - component: section
+        visible: {binding: settings.ready}
         id: projects
         layout:
           direction: vertical
@@ -543,6 +587,7 @@ screen:
                     style:
                       toneBinding: project.action_tone
       - component: row
+        visible: {binding: settings.ready}
         id: server-version-management
         layout:
           direction: horizontal
@@ -745,6 +790,7 @@ screen:
                     style:
                       tone: muted
       - component: section
+        visible: {binding: settings.ready}
         id: connection
         layout:
           direction: vertical

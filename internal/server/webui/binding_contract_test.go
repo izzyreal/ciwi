@@ -20,7 +20,7 @@ func TestBrowserFrontPageViewModelSatisfiesSharedBindings(t *testing.T) {
 				"pipeline_chains": []any{}, "pipelines": []any{},
 			}},
 			"queued_executions": []any{}, "history_executions": []any{},
-			"loading": false, "queued_empty": true, "history_empty": true,
+			"loading": false, "ready": true, "load_error": "", "queued_empty": true, "history_empty": true,
 		},
 		"client": browserClientBindingFixture(),
 	}
@@ -48,6 +48,7 @@ func TestBrowserSettingsViewModelSatisfiesWebOverrides(t *testing.T) {
 		"update_supported": false, "update_capability_notice": "", "update_status_label": "", "blocked_agent_notice": "",
 		"update_versions": []any{}, "selected_update_version": "", "update_result": "", "update_result_tone": "muted",
 		"rollback_versions": []any{}, "selected_rollback_version": "", "rollback_result": "", "rollback_result_tone": "muted",
+		"loading": false, "ready": true, "load_error": "",
 	}
 	if err := uidsl.ValidateBindings(screen, map[string]any{"settings": settings, "client": browserClientBindingFixture()}, "web"); err != nil {
 		t.Fatal(err)
@@ -161,6 +162,13 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 		}},
 	}
 	for screenName, data := range fixtures {
+		for _, rawRoot := range data {
+			if root, ok := rawRoot.(map[string]any); ok {
+				root["loading"] = false
+				root["ready"] = true
+				root["load_error"] = ""
+			}
+		}
 		screen, err := sharedui.LoadScreen(screenName)
 		if err != nil {
 			t.Fatal(err)

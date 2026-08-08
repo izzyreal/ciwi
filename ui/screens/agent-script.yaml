@@ -29,7 +29,46 @@ screen:
             text: {literal: Back to Agent}
             icon: arrow-left
             actions: [{on: activate, command: navigate, arguments: {route: "/agents/{{agentScript.agent_id}}"}}]
+      - component: column
+        id: agent-script-loading
+        visible: {binding: agentScript.loading}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: row
+            layout: {grow: true, minHeight: "14"}
+            style: {role: skeleton}
+          - component: card
+            layout: {direction: vertical, gap: medium, padding: large}
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "18"}
+                style: {role: skeleton}
+              - component: spacer
+                layout: {grow: true, minHeight: "150"}
+      - component: column
+        id: agent-script-load-error
+        visible: {binding: agentScript.load_error, empty: true, not: true}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: text
+            text: {literal: Could not load Agent Script}
+            style: {role: heading, emphasis: strong, tone: danger}
+          - component: text
+            text: {binding: agentScript.load_error}
+            style: {tone: danger}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Retry}
+                icon: refresh
+                actions: [{on: activate, command: refresh}]
+              - component: button
+                text: {literal: Back to Agent}
+                icon: arrow-left
+                actions: [{on: activate, command: navigate, arguments: {route: "/agents/{{agentScript.agent_id}}"}}]
       - component: card
+        visible: {binding: agentScript.ready}
         layout: {direction: vertical, gap: medium, padding: large}
         children:
           - component: text

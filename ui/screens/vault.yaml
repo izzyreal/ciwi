@@ -25,7 +25,46 @@ screen:
             text: {literal: Back to Global Settings}
             icon: arrow-left
             actions: [{on: activate, command: navigate, arguments: {route: /settings}}]
+      - component: column
+        id: vault-loading
+        visible: {binding: vault.loading}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: row
+            layout: {grow: true, minHeight: "14"}
+            style: {role: skeleton}
+          - component: card
+            layout: {direction: vertical, gap: medium, padding: large}
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "18"}
+                style: {role: skeleton}
+              - component: spacer
+                layout: {grow: true, minHeight: "120"}
+      - component: column
+        id: vault-load-error
+        visible: {binding: vault.load_error, empty: true, not: true}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: text
+            text: {literal: Could not load Vault Connections}
+            style: {role: heading, emphasis: strong, tone: danger}
+          - component: text
+            text: {binding: vault.load_error}
+            style: {tone: danger}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Retry}
+                icon: refresh
+                actions: [{on: activate, command: refresh}]
+              - component: button
+                text: {literal: Back to Global Settings}
+                icon: arrow-left
+                actions: [{on: activate, command: navigate, arguments: {route: /settings}}]
       - component: card
+        visible: {binding: vault.ready}
         layout: {direction: vertical, gap: medium, padding: large}
         children:
           - component: text
@@ -68,6 +107,7 @@ screen:
             style: {toneBinding: vault.result_tone}
             visible: {binding: vault.result, empty: true, not: true}
       - component: card
+        visible: {binding: vault.ready}
         layout: {direction: vertical, gap: medium, padding: large}
         children:
           - component: text

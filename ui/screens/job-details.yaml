@@ -103,7 +103,46 @@ screen:
                   route: /
                   section: execution-history
       - component: column
+        id: job-details-loading
+        visible: {binding: jobDetails.loading}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: row
+            layout: {grow: true, minHeight: "14"}
+            style: {role: skeleton}
+          - component: card
+            layout: {direction: vertical, gap: medium, padding: large}
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "18"}
+                style: {role: skeleton}
+              - component: spacer
+                layout: {grow: true, minHeight: "140"}
+      - component: column
+        id: job-details-load-error
+        visible: {binding: jobDetails.load_error, empty: true, not: true}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: text
+            text: {literal: Could not load Job Details}
+            style: {role: heading, emphasis: strong, tone: danger}
+          - component: text
+            text: {binding: jobDetails.load_error}
+            style: {tone: danger}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Retry}
+                icon: refresh
+                actions: [{on: activate, command: refresh}]
+              - component: button
+                text: {literal: Back to Job Executions}
+                icon: arrow-left
+                actions: [{on: activate, command: navigate, arguments: {route: /, section: execution-history}}]
+      - component: column
         id: execution-details
+        visible: {binding: jobDetails.ready}
         layout:
           direction: vertical
           gap: medium
@@ -336,6 +375,7 @@ screen:
                         text: {template: "{{runPipeline.pipeline_id}} · {{runPipeline.summary_label}}"}
                         style: {role: detail}
       - component: section
+        visible: {binding: jobDetails.ready}
         id: execution-output
         layout:
           direction: vertical
@@ -666,6 +706,7 @@ screen:
                       role: output-code
                       tone: console-muted
       - component: column
+        visible: {binding: jobDetails.ready}
         id: execution-reports
         layout: {direction: vertical, gap: medium, align: stretch}
         style: {role: report-stack}

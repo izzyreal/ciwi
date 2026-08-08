@@ -170,6 +170,10 @@ screen:
             actions:
               - on: activate
                 command: refresh
+          - component: button
+            text: {literal: Back to Projects}
+            icon: arrow-left
+            actions: [{on: activate, command: navigate, arguments: {route: /}}]
       - component: row
         id: project-structure-filter
         visible:

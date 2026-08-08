@@ -139,6 +139,21 @@ screen:
                     command: navigate
                     arguments:
                       route: /settings
+      - component: column
+        id: front-page-load-error
+        visible: {binding: frontPage.load_error, empty: true, not: true}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: text
+            text: {literal: Could not load the main screen}
+            style: {role: heading, emphasis: strong, tone: danger}
+          - component: text
+            text: {binding: frontPage.load_error}
+            style: {tone: danger}
+          - component: button
+            text: {literal: Retry}
+            icon: refresh
+            actions: [{on: activate, command: refresh}]
       - component: section
         id: projects
         layout:

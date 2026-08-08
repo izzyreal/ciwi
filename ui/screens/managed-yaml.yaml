@@ -25,7 +25,46 @@ screen:
             text: {literal: Back to Global Settings}
             icon: arrow-left
             actions: [{on: activate, command: navigate, arguments: {route: /settings}}]
+      - component: column
+        id: managed-yaml-loading
+        visible: {binding: managedYAML.loading}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: row
+            layout: {grow: true, minHeight: "14"}
+            style: {role: skeleton}
+          - component: card
+            layout: {direction: vertical, gap: medium, padding: large}
+            children:
+              - component: row
+                layout: {grow: true, minHeight: "18"}
+                style: {role: skeleton}
+              - component: spacer
+                layout: {grow: true, minHeight: "180"}
+      - component: column
+        id: managed-yaml-load-error
+        visible: {binding: managedYAML.load_error, empty: true, not: true}
+        layout: {direction: vertical, gap: medium}
+        children:
+          - component: text
+            text: {literal: Could not load Managed YAML}
+            style: {role: heading, emphasis: strong, tone: danger}
+          - component: text
+            text: {binding: managedYAML.load_error}
+            style: {tone: danger}
+          - component: row
+            layout: {direction: horizontal, gap: small, wrap: true}
+            children:
+              - component: button
+                text: {literal: Retry}
+                icon: refresh
+                actions: [{on: activate, command: refresh}]
+              - component: button
+                text: {literal: Back to Global Settings}
+                icon: arrow-left
+                actions: [{on: activate, command: navigate, arguments: {route: /settings}}]
       - component: card
+        visible: {binding: managedYAML.ready}
         layout: {direction: vertical, gap: medium, padding: large}
         children:
           - component: text

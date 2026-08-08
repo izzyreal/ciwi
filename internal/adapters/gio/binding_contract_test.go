@@ -34,6 +34,10 @@ func TestLoadingViewModelsSatisfySharedScreenBindings(t *testing.T) {
 			if err := validateNativeBindings(screen, data); err != nil {
 				t.Fatal(err)
 			}
+			root, _ := data[screenBindingRoot(navigation.screen)].(map[string]any)
+			if root["loading"] != true || root["ready"] != false || root["load_error"] != "" {
+				t.Fatalf("loading lifecycle = %#v", root)
+			}
 		})
 	}
 }

@@ -215,7 +215,7 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if screen.Metadata.Name != "job-details" {
 		t.Fatalf("screen = %#v", screen)
 	}
-	runContextGraph := screen.Screen.Root.Children[1].Children[3].Children[2]
+	runContextGraph := screen.Screen.Root.Children[3].Children[3].Children[2]
 	if runContextGraph.GraphView == nil || runContextGraph.GraphView.Root == nil || len(runContextGraph.GraphView.Root.Actions) != 0 {
 		t.Fatalf("job run-context root = %#v", runContextGraph.GraphView)
 	}
@@ -227,7 +227,7 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if len(back.Actions) != 1 || back.Actions[0].Command != "navigate" || back.Actions[0].Arguments["section"] != "execution-history" {
 		t.Fatalf("job back action = %#v", back.Actions)
 	}
-	output := screen.Screen.Root.Children[2]
+	output := screen.Screen.Root.Children[4]
 	toolbar := output.Children[2]
 	if toolbar.Style.Role != "compact-toolbar" || len(toolbar.Children) < 2 || toolbar.Children[0].Actions[0].Command != "download-job-log" || toolbar.Children[0].Actions[0].Arguments["format"] != "clean" || toolbar.Children[1].Actions[0].Arguments["format"] != "raw" {
 		t.Fatalf("job output toolbar = %#v", toolbar)
@@ -631,7 +631,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 	}
 }
 
-func TestDeclarativeProjectNavigationCommitsTheLoadingShellBeforeRemoteData(t *testing.T) {
+func TestDeclarativeNavigationCommitsTargetBeforeRemoteData(t *testing.T) {
 	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {
 		t.Fatal(err)
@@ -639,7 +639,8 @@ func TestDeclarativeProjectNavigationCommitsTheLoadingShellBeforeRemoteData(t *t
 	script := string(payload)
 	for _, expected := range []string{
 		"navigateBrowser", "window.history.pushState", "window.addEventListener('popstate'", "aria-busy",
-		"projectDetailsLoadingBinding", "loadingCommitted = true", "currentData.projectDetails.load_error", "showLoading: true",
+		"browserLoadingBinding", "browserViewCache", "loadingCommitted = true", "loadingRoot.load_error", "showLoading: true",
+		"settingsProjectsPromise", "settingsUpdateStatusPromise",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative navigation does not contain %q", expected)
@@ -648,7 +649,7 @@ func TestDeclarativeProjectNavigationCommitsTheLoadingShellBeforeRemoteData(t *t
 	loadingRender := strings.Index(script, "loadingCommitted = true")
 	remoteValidation := strings.Index(script, "if (!viewResponse.ok)")
 	if loadingRender < 0 || remoteValidation < 0 || loadingRender > remoteValidation {
-		t.Fatal("project loading shell is not committed before the remote response is validated")
+		t.Fatal("target loading shell is not committed before the remote response is validated")
 	}
 	if strings.Contains(script, "window.location.assign") {
 		t.Fatal("declarative navigation still performs full document reloads")
