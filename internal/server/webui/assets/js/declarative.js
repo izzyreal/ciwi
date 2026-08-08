@@ -1339,7 +1339,7 @@
 	    : String(resolve(data, node.visible.binding)) === String(node.visible.equals || 'true');
       if (node.visible.not ? equal : !equal) return document.createDocumentFragment();
     }
-    if (node.repeat && node.component !== 'scroller') {
+    if (node.repeat && node.component !== 'list' && node.component !== 'scroller') {
       const list = resolve(data, node.repeat.source);
       const fragment = document.createDocumentFragment();
       (Array.isArray(list) ? list : []).forEach(item => {
@@ -1477,7 +1477,7 @@
     }
     bindActions(element, node.actions, data);
 	const childrenTarget = element;
-    if (node.component === 'scroller' && node.repeat) {
+    if ((node.component === 'list' || node.component === 'scroller') && node.repeat) {
       const list = resolve(data, node.repeat.source);
       (Array.isArray(list) ? list : []).forEach(item => {
         const itemData = Object.assign({}, data, {[node.repeat.as]: item});

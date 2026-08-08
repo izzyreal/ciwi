@@ -631,6 +631,26 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 	}
 }
 
+func TestDeclarativeRepeatedListsPreserveTheirLayoutContainer(t *testing.T) {
+	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(payload)
+	for _, expected := range []string{
+		"node.repeat && node.component !== 'list' && node.component !== 'scroller'",
+		"(node.component === 'list' || node.component === 'scroller') && node.repeat",
+		"(node.children || []).forEach(child => childrenTarget.appendChild(renderNode(child, itemData)))",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Errorf("declarative repeated-list renderer does not contain %q", expected)
+		}
+	}
+	if strings.Contains(script, "node.repeat && node.component !== 'scroller')") {
+		t.Fatal("repeated lists are still expanded into separate one-item containers")
+	}
+}
+
 func TestDeclarativeNavigationCommitsTargetBeforeRemoteData(t *testing.T) {
 	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {
