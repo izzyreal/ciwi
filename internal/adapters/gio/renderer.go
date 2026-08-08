@@ -1408,13 +1408,6 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 		}
 	}
 	if node.Component == "scroller" {
-		if r.compact && node.ID == "job-output-groups" {
-			// A vertical output list nested inside the page's vertical list makes
-			// touch-drag ownership ambiguous. Phones use the page as the sole
-			// vertical scroll owner so expanded output and following steps remain
-			// reachable with one continuous gesture.
-			node.Layout.MaxHeight = ""
-		}
 		content := func(gtx layout.Context) layout.Dimensions {
 			return r.layoutScroller(gtx, node, data, path)
 		}
@@ -3477,7 +3470,10 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	if err != nil {
 		return r.errorLabel(gtx, err)
 	}
-	if node.ID == "job-output-groups" && (r.compact || !r.anyOutputGroupExpanded(items)) {
+	// Keep output groups in their own vertical list on every native layout.
+	// The shared maxHeight then bounds expanded output while the same viewport
+	// remains scrollable when all disclosures are collapsed.
+	if node.ID == "job-output-groups" && len(items) == 0 {
 		r.outputScroller = nil
 		return r.layoutInlineScrollerItems(gtx, node, data, path, items)
 	}
@@ -3541,20 +3537,6 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 			})
 		}),
 	)
-}
-
-func (r *Renderer) anyOutputGroupExpanded(items []any) bool {
-	for _, raw := range items {
-		item, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		stateKey := strings.TrimSpace(fmt.Sprint(item["state_key"]))
-		if stateKey != "" && r.disclosures[stateKey] {
-			return true
-		}
-	}
-	return false
 }
 
 func (r *Renderer) layoutInlineScrollerItems(gtx layout.Context, node uidsl.Node, data any, path string, items []any) layout.Dimensions {

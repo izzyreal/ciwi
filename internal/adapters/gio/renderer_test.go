@@ -2731,7 +2731,7 @@ func TestOutputTailingUsesCompactStatefulIconToggle(t *testing.T) {
 	}
 }
 
-func TestCompactJobDetailsUsesPageScrollForExpandedOutputGroups(t *testing.T) {
+func TestCompactJobDetailsKeepsExpandedOutputInBoundedScroller(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
@@ -2766,33 +2766,30 @@ func TestCompactJobDetailsUsesPageScrollForExpandedOutputGroups(t *testing.T) {
 	var operations op.Ops
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(390, 844))})
 
-	if renderer.outputScroller != nil {
-		t.Fatal("compact output groups installed a nested vertical scroller")
-	}
-	for path := range renderer.scrollers {
-		if strings.Contains(path, "job-output-groups") {
-			t.Fatalf("compact output-group scroller retained at %q", path)
-		}
-	}
-	if renderer.list.Position.Length <= 844 {
-		t.Fatalf("page scroll length = %d, want expanded output beyond the phone viewport", renderer.list.Position.Length)
+	if renderer.outputScroller == nil {
+		t.Fatal("compact output groups did not install their bounded vertical scroller")
 	}
 	if renderer.outputEditors["step:1"] == nil {
 		t.Fatal("expanded step output was not laid out")
 	}
-	foundFollowingStep := false
-	for path := range renderer.buttons {
-		if strings.Contains(path, "step:2") && strings.HasSuffix(path, "/disclosure-toggle") {
-			foundFollowingStep = true
-			break
-		}
+	if renderer.outputScroller.Position.Length <= 660 {
+		t.Fatalf("output scroll length = %d, want expanded output larger than its 660dp viewport", renderer.outputScroller.Position.Length)
 	}
-	if !foundFollowingStep {
-		t.Fatal("step following a large expanded output was not laid out into the page scroll")
+	outputGroups, found := screenNodeByID(screen.Screen.Root, "job-output-groups")
+	if !found {
+		t.Fatal("job output groups node is missing")
+	}
+	dimensions := renderer.layoutNode(layout.Context{
+		Ops:         new(op.Ops),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(390, 10_000)},
+	}, outputGroups, renderer.data, "test/compact-job-output-groups")
+	if dimensions.Size.Y != 660 {
+		t.Fatalf("expanded compact output viewport height = %d, want bounded 660dp", dimensions.Size.Y)
 	}
 }
 
-func TestCollapsedDesktopOutputGroupsShrinkWrapWithoutNestedScroller(t *testing.T) {
+func TestCollapsedDesktopOutputGroupsUseBoundedScroller(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
@@ -2819,20 +2816,38 @@ func TestCollapsedDesktopOutputGroupsShrinkWrapWithoutNestedScroller(t *testing.
 	renderer.list.ScrollTo(2)
 	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(1400, 900))}
 	renderer.Layout(gtx)
-	if renderer.outputScroller != nil {
-		t.Fatal("collapsed desktop output groups retained the bottom-aligning nested scroller")
+	if renderer.outputScroller == nil {
+		t.Fatal("collapsed desktop output groups did not install their bounded scroller")
 	}
-	for path := range renderer.scrollers {
-		if strings.Contains(path, "job-output-groups") {
-			t.Fatalf("collapsed desktop output groups retained scroller at %q", path)
-		}
+	outputGroups, found := screenNodeByID(screen.Screen.Root, "job-output-groups")
+	if !found {
+		t.Fatal("job output groups node is missing")
 	}
-
+	dimensions := renderer.layoutNode(layout.Context{
+		Ops:         new(op.Ops),
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(1000, 10_000)},
+	}, outputGroups, data, "test/job-output-groups")
+	if dimensions.Size.Y <= 0 || dimensions.Size.Y > 660 {
+		t.Fatalf("collapsed output viewport height = %d, want content-sized up to 660dp", dimensions.Size.Y)
+	}
 	renderer.SetDisclosureStates(map[string]bool{"job-output:job-1:phase:1": true})
 	renderer.Layout(gtx)
 	if renderer.outputScroller == nil {
-		t.Fatal("expanded desktop output group did not restore its bounded scroller")
+		t.Fatal("expanded desktop output group lost its bounded scroller")
 	}
+}
+
+func screenNodeByID(node uidsl.Node, id string) (uidsl.Node, bool) {
+	if node.ID == id {
+		return node, true
+	}
+	for _, child := range node.Children {
+		if found, ok := screenNodeByID(child, id); ok {
+			return found, true
+		}
+	}
+	return uidsl.Node{}, false
 }
 
 func TestRootPageInsetsScrollWithFirstAndLastContent(t *testing.T) {
@@ -2922,13 +2937,8 @@ func TestIPhoneLandscapeCompactModeSurvivesPageListConstraints(t *testing.T) {
 	if !renderer.compact {
 		t.Fatal("iPhone landscape viewport was not classified as compact")
 	}
-	if renderer.outputScroller != nil {
-		t.Fatal("nested job output reverted to desktop layout inside the page list")
-	}
-	for path := range renderer.scrollers {
-		if strings.Contains(path, "job-output-groups") {
-			t.Fatalf("nested job output retained a desktop scroller at %q", path)
-		}
+	if renderer.outputScroller == nil {
+		t.Fatal("iPhone landscape output did not retain its bounded scroller")
 	}
 }
 
