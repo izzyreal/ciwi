@@ -818,9 +818,9 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 	root, _ := applyGioOverride(screen.Screen.Root, r.compact)
 	children := root.Children
 	if pendingScrollSection != "" {
-		for visibleIndex, childIndex := range r.visibleRootChildIndices(children, data) {
-			if children[childIndex].ID == pendingScrollSection {
-				r.list.ScrollTo(visibleIndex)
+		for index := range children {
+			if children[index].ID == pendingScrollSection {
+				r.list.ScrollTo(index)
 				// layout.List applies a programmatic scroll over its current and
 				// following layout pass. Guarantee that follow-up pass even when
 				// navigating to a section on the screen that is already visible.
@@ -1235,21 +1235,19 @@ func (r *Renderer) clicked(gtx layout.Context, button *widget.Clickable) bool {
 func (r *Renderer) layoutRootChildren(children []uidsl.Node, root uidsl.Node, screen *uidsl.ScreenDocument, data any) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		pageInset := r.pageInset()
-		indices := r.visibleRootChildIndices(children, data)
-		itemCount := len(indices)
+		itemCount := len(children)
 		return r.layoutGuardedList(gtx, "root", &r.list, itemCount, func(gtx layout.Context, index int) layout.Dimensions {
-			childIndex := indices[index]
 			inset := layout.Inset{}
 			if index == 0 {
 				inset.Top = pageInset
 			}
-			if index < itemCount-1 {
+			if index < len(children)-1 {
 				inset.Bottom = r.spacing(root.Layout.Gap)
 			} else {
 				inset.Bottom = pageInset
 			}
 			return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return r.layoutNode(gtx, children[childIndex], data, fmt.Sprintf("%s/root/%d", screen.Metadata.Name, childIndex))
+				return r.layoutNode(gtx, children[index], data, fmt.Sprintf("%s/root/%d", screen.Metadata.Name, index))
 			})
 		})
 	}
@@ -2825,16 +2823,6 @@ func (r *Renderer) nodeOccupiesLayout(raw uidsl.Node, data any) bool {
 	}
 	equal := conditionEqual(node.Visible, value)
 	return (node.Visible.Not && !equal) || (!node.Visible.Not && equal)
-}
-
-func (r *Renderer) visibleRootChildIndices(children []uidsl.Node, data any) []int {
-	indices := make([]int, 0, len(children))
-	for index := range children {
-		if r.nodeOccupiesLayout(children[index], data) {
-			indices = append(indices, index)
-		}
-	}
-	return indices
 }
 
 func (r *Renderer) layoutCompactActionRow(gtx layout.Context, node uidsl.Node, data any, path string) layout.Dimensions {

@@ -2569,9 +2569,8 @@ func TestNativeNoticeCanTargetFrontPageSection(t *testing.T) {
 	if renderer.pendingScrollSection != "" {
 		t.Fatalf("pending section target was not consumed: %q", renderer.pendingScrollSection)
 	}
-	visible := renderer.visibleRootChildIndices(screen.Screen.Root.Children, renderer.data)
-	if renderer.list.Position.First >= len(visible) || screen.Screen.Root.Children[visible[renderer.list.Position.First]].ID != "queued-executions" {
-		t.Fatalf("front-page list first item = %d (%v), want queued section", renderer.list.Position.First, visible)
+	if renderer.list.Position.First != 3 {
+		t.Fatalf("front-page list first item = %d, want queued section index 3", renderer.list.Position.First)
 	}
 }
 
@@ -2984,27 +2983,6 @@ func TestRootPageInsetsScrollWithFirstAndLastContent(t *testing.T) {
 	}
 	if renderer.list.Position.Length != 244 {
 		t.Fatalf("scroll content length = %d, want top 16 + children 200 + gap 12 + bottom 16 = 244", renderer.list.Position.Length)
-	}
-}
-
-func TestInvisibleRootChildrenDoNotAddPageGaps(t *testing.T) {
-	renderer := &Renderer{
-		list:    layout.List{Axis: layout.Vertical},
-		metrics: visualMetrics{pageInset: 16, spaceMedium: 12},
-	}
-	screen := &uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "root-gap-test"}}
-	root := uidsl.Node{Layout: uidsl.Layout{Gap: "medium"}}
-	children := []uidsl.Node{
-		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
-		{Component: "spacer", Visible: &uidsl.Condition{Binding: "state.loading"}, Layout: uidsl.Layout{MinHeight: "100"}},
-		{Component: "spacer", Visible: &uidsl.Condition{Binding: "state.error"}, Layout: uidsl.Layout{MinHeight: "100"}},
-		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
-	}
-	data := map[string]any{"state": map[string]any{"loading": false, "error": false}}
-	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(800, 120))}
-	renderer.layoutRootChildren(children, root, screen, data)(gtx)
-	if renderer.list.Position.Length != 244 {
-		t.Fatalf("root length with hidden lifecycle nodes = %d, want two visible children, one gap, and page insets", renderer.list.Position.Length)
 	}
 }
 
