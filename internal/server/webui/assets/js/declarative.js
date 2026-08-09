@@ -27,6 +27,7 @@
   const disclosureStates = window.ciwiDisclosureState;
   const viewStorageKey = 'ciwi.declarative.views.v1';
   const viewStates = loadViewStates();
+  const graphRuntimeStates = new Map();
   let committedActionBindings = new Map();
   let committedRenderSignature = '';
 
@@ -612,96 +613,144 @@
     menu.style.top = (placeAbove ? Math.max(inset, rect.top - menu.offsetHeight - menuGap) : rect.bottom + menuGap) + 'px';
   }
 
+  function selectedBrowserOption(trigger) {
+	const state = trigger.__ciwiSelectState || {options: [], selectedValue: ''};
+	return state.options.find(option => option.value === state.selectedValue)
+	  || state.options[0]
+	  || {value: state.selectedValue, label: state.selectedValue};
+  }
+
+  function updateBrowserSelectTrigger(trigger) {
+	const state = trigger.__ciwiSelectState;
+	if (!state) return;
+	const selected = selectedBrowserOption(trigger);
+	trigger.value = state.selectedValue;
+	trigger.dataset.selectedLabel = selected.label;
+	const label = trigger.querySelector(':scope > .dsl-select-label');
+	if (label) label.textContent = selected.label;
+	trigger.setAttribute('aria-expanded', String(!!activeBrowserSelect && activeBrowserSelect.trigger === trigger));
+	requestAnimationFrame(() => {
+	  if (!document.body.contains(trigger)) return;
+	  const context = document.createElement('canvas').getContext('2d');
+	  const computed = window.getComputedStyle(trigger);
+	  context.font = computed.font;
+	  const widest = state.options.reduce((width, option) => Math.max(width, context.measureText(option.label).width), 0);
+	  const padding = parseFloat(computed.paddingLeft) + parseFloat(computed.paddingRight);
+	  const visuals = activeControls.select;
+	  const contentWidth = widest + padding + visuals.chevronSize + visuals.chevronGap;
+	  trigger.style.width = 'min(100%, ' + String(Math.ceil(contentWidth)) + 'px)';
+	});
+  }
+
+  function syncBrowserSelectMenu(active) {
+	if (!active || !active.menu || !active.trigger.__ciwiSelectState) return;
+	const {trigger, menu} = active;
+	const state = trigger.__ciwiSelectState;
+	const previousFocus = document.activeElement && document.activeElement.closest
+	  ? document.activeElement.closest('.dsl-select-option')
+	  : null;
+	const focusedValue = previousFocus && menu.contains(previousFocus) ? String(previousFocus.dataset.value || '') : '';
+	const existing = new Map(Array.from(menu.querySelectorAll(':scope > .dsl-select-option')).map(choice => [
+	  String(choice.dataset.value || ''),
+	  choice,
+	]));
+	state.options.forEach(option => {
+	  let choice = existing.get(option.value);
+	  if (!choice) {
+		choice = document.createElement('button');
+		choice.type = 'button';
+		choice.className = 'dsl-select-option';
+		choice.setAttribute('role', 'option');
+		const check = document.createElement('span');
+		check.className = 'dsl-select-check';
+		const copy = document.createElement('span');
+		choice.append(check, copy);
+	  }
+	  choice.dataset.value = option.value;
+	  choice.setAttribute('aria-selected', String(option.value === state.selectedValue));
+	  choice.querySelector('.dsl-select-check').textContent = option.value === state.selectedValue ? '✓' : '';
+	  choice.lastElementChild.textContent = option.label;
+	  menu.appendChild(choice);
+	  existing.delete(option.value);
+	});
+	existing.forEach(choice => choice.remove());
+	if (focusedValue) {
+	  const retainedFocus = Array.from(menu.children).find(choice => choice.dataset.value === focusedValue);
+	  if (retainedFocus && document.activeElement !== retainedFocus) retainedFocus.focus({preventScroll: true});
+	}
+  }
+
+  function chooseBrowserSelectOption(trigger, value) {
+	const state = trigger.__ciwiSelectState;
+	if (!state) return;
+	const option = state.options.find(candidate => candidate.value === value);
+	if (!option) return;
+	state.selectedValue = option.value;
+	updateBrowserSelectTrigger(trigger);
+	closeBrowserSelect();
+	trigger.dispatchEvent(new Event('change', {bubbles: true}));
+	trigger.focus();
+  }
+
+  function openBrowserSelect(trigger) {
+	if (activeBrowserSelect && activeBrowserSelect.trigger === trigger) {
+	  closeBrowserSelect();
+	  return;
+	}
+	closeBrowserSelect();
+	const menu = document.createElement('div');
+	menu.className = 'dsl-select-menu';
+	menu.setAttribute('role', 'listbox');
+	menu.setAttribute('aria-label', trigger.getAttribute('aria-label') || 'Options');
+	menu.addEventListener('click', event => {
+	  const choice = event.target.closest('.dsl-select-option');
+	  if (choice && menu.contains(choice)) chooseBrowserSelectOption(trigger, String(choice.dataset.value || ''));
+	});
+	menu.addEventListener('keydown', event => {
+	  const choices = Array.from(menu.querySelectorAll(':scope > .dsl-select-option'));
+	  if (!choices.length) return;
+	  const selectedIndex = Math.max(0, choices.findIndex(choice => choice.dataset.value === trigger.value));
+	  const currentIndex = choices.indexOf(document.activeElement);
+	  const activeIndex = currentIndex >= 0 ? currentIndex : selectedIndex;
+	  const focusAt = index => choices[(index + choices.length) % choices.length].focus();
+	  if (event.key === 'ArrowDown') { event.preventDefault(); focusAt(activeIndex + 1); }
+	  if (event.key === 'ArrowUp') { event.preventDefault(); focusAt(activeIndex - 1); }
+	  if (event.key === 'Home') { event.preventDefault(); focusAt(0); }
+	  if (event.key === 'End') { event.preventDefault(); focusAt(choices.length - 1); }
+	  if (event.key === 'Escape') { event.preventDefault(); closeBrowserSelect(); trigger.focus(); }
+	});
+	document.body.appendChild(menu);
+	const onDocumentPointer = event => {
+	  if (!menu.contains(event.target) && event.target !== trigger && !trigger.contains(event.target)) closeBrowserSelect();
+	};
+	const onWindowChange = () => layoutBrowserSelectMenu(trigger, menu);
+	activeBrowserSelect = {trigger, menu, onDocumentPointer, onWindowChange};
+	trigger.setAttribute('aria-expanded', 'true');
+	syncBrowserSelectMenu(activeBrowserSelect);
+	layoutBrowserSelectMenu(trigger, menu);
+	document.addEventListener('pointerdown', onDocumentPointer, true);
+	window.addEventListener('resize', onWindowChange);
+	window.addEventListener('scroll', onWindowChange, true);
+	const choices = Array.from(menu.querySelectorAll(':scope > .dsl-select-option'));
+	const selectedIndex = Math.max(0, choices.findIndex(choice => choice.dataset.value === trigger.value));
+	choices[selectedIndex] && choices[selectedIndex].focus();
+  }
+
   function configureBrowserSelect(trigger, options, selectedValue) {
     trigger.type = 'button';
     trigger.classList.add('dsl-select');
-    trigger.value = selectedValue;
-    const selected = options.find(option => option.value === selectedValue) || options[0] || {label: selectedValue};
-    trigger.dataset.selectedLabel = selected.label;
+	trigger.__ciwiSelectState = {options: options.map(option => ({...option})), selectedValue};
     trigger.setAttribute('aria-haspopup', 'listbox');
     trigger.setAttribute('aria-expanded', 'false');
     const label = document.createElement('span');
     label.className = 'dsl-select-label';
-    label.textContent = selected.label;
 	appendPositionedIcon(trigger, label, declarativeIcon('chevron-down'), activeControls.select.chevronPosition);
-
-    const updateIntrinsicWidth = () => {
-      if (!document.body.contains(trigger)) return;
-      const context = document.createElement('canvas').getContext('2d');
-      const computed = window.getComputedStyle(trigger);
-      context.font = computed.font;
-      const widest = options.reduce((width, option) => Math.max(width, context.measureText(option.label).width), 0);
-	  const padding = parseFloat(computed.paddingLeft) + parseFloat(computed.paddingRight);
-	  const visuals = activeControls.select;
-	  const contentWidth = widest + padding + visuals.chevronSize + visuals.chevronGap;
-      trigger.style.width = 'min(100%, ' + String(Math.ceil(contentWidth)) + 'px)';
-    };
-    requestAnimationFrame(updateIntrinsicWidth);
-
-    const open = () => {
-      if (activeBrowserSelect && activeBrowserSelect.trigger === trigger) {
-        closeBrowserSelect();
-        return;
-      }
-      closeBrowserSelect();
-      const menu = document.createElement('div');
-      menu.className = 'dsl-select-menu';
-      menu.setAttribute('role', 'listbox');
-      menu.setAttribute('aria-label', trigger.getAttribute('aria-label') || 'Options');
-      let activeIndex = Math.max(0, options.findIndex(option => option.value === trigger.value));
-      const choices = options.map((option, index) => {
-        const choice = document.createElement('button');
-        choice.type = 'button';
-        choice.className = 'dsl-select-option';
-        choice.setAttribute('role', 'option');
-        choice.setAttribute('aria-selected', String(option.value === trigger.value));
-        const check = document.createElement('span');
-        check.className = 'dsl-select-check';
-        check.textContent = option.value === trigger.value ? '✓' : '';
-        const copy = document.createElement('span');
-        copy.textContent = option.label;
-        choice.append(check, copy);
-        choice.addEventListener('click', () => {
-          trigger.value = option.value;
-          trigger.dataset.selectedLabel = option.label;
-          label.textContent = option.label;
-          closeBrowserSelect();
-          trigger.dispatchEvent(new Event('change', {bubbles: true}));
-          trigger.focus();
-        });
-        choice.addEventListener('focus', () => { activeIndex = index; });
-        menu.appendChild(choice);
-        return choice;
-      });
-      const focusAt = index => {
-        activeIndex = (index + choices.length) % choices.length;
-        choices[activeIndex].focus();
-      };
-      menu.addEventListener('keydown', event => {
-        if (event.key === 'ArrowDown') { event.preventDefault(); focusAt(activeIndex + 1); }
-        if (event.key === 'ArrowUp') { event.preventDefault(); focusAt(activeIndex - 1); }
-        if (event.key === 'Home') { event.preventDefault(); focusAt(0); }
-        if (event.key === 'End') { event.preventDefault(); focusAt(choices.length - 1); }
-        if (event.key === 'Escape') { event.preventDefault(); closeBrowserSelect(); trigger.focus(); }
-      });
-      document.body.appendChild(menu);
-      const onDocumentPointer = event => {
-        if (!menu.contains(event.target) && event.target !== trigger && !trigger.contains(event.target)) closeBrowserSelect();
-      };
-      const onWindowChange = () => layoutBrowserSelectMenu(trigger, menu);
-      activeBrowserSelect = {trigger, menu, onDocumentPointer, onWindowChange};
-      trigger.setAttribute('aria-expanded', 'true');
-      layoutBrowserSelectMenu(trigger, menu);
-      document.addEventListener('pointerdown', onDocumentPointer, true);
-      window.addEventListener('resize', onWindowChange);
-      window.addEventListener('scroll', onWindowChange, true);
-      choices[activeIndex] && choices[activeIndex].focus();
-    };
-    trigger.addEventListener('click', open);
+	updateBrowserSelectTrigger(trigger);
+    trigger.addEventListener('click', () => openBrowserSelect(trigger));
     trigger.addEventListener('keydown', event => {
       if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
         event.preventDefault();
-        open();
+		openBrowserSelect(trigger);
       }
     });
   }
@@ -1200,6 +1249,12 @@
         level: 0,
       };
     });
+	const seen = new Set();
+	nodes.forEach(node => {
+	  if (!node.id.trim()) throw new Error('Empty graph node key');
+	  if (seen.has(node.id)) throw new Error('Duplicate graph node key "' + node.id + '"');
+	  seen.add(node.id);
+	});
     if (!graph.root) return nodes;
     const rootValue = resolve(data, graph.root.binding);
     const rootData = Object.assign({}, data, {[graph.root.as]: rootValue});
@@ -1269,7 +1324,7 @@
     };
   }
 
-  function renderDefinitionGraph(node, data, selection, context) {
+  function renderDefinitionGraph(node, data, selection, context, viewportState) {
     const graphNodes = definitionGraphNodes(node.graphView, data);
     if (!graphNodes.length) {
       const empty = document.createElement('div');
@@ -1281,6 +1336,7 @@
 	if (details.length && !graphNodes.some(graphNode => !graphNode.root && graphNode.id === selection.value)) {
 		const regular = graphNodes.filter(graphNode => !graphNode.root);
 		selection.value = (regular.find(graphNode => !graphNode.dependencies.some(dependency => !dependency.startsWith('__root__:'))) || regular[0] || {}).id || '';
+		selection.remember(selection.value);
 	}
     const layout = layoutDefinitionGraph(graphNodes);
     const wrapper = document.createElement('div');
@@ -1332,6 +1388,7 @@
 		const select = () => {
 			if (selection.value === graphNode.id) return;
 			selection.value = graphNode.id;
+			selection.remember(graphNode.id);
 			selection.onChange(graphNode.id);
 		};
 		card.addEventListener('click', select);
@@ -1373,12 +1430,13 @@
     });
     scaler.appendChild(stage);
     viewport.appendChild(scaler);
-    let scale = 1;
+    let scale = Number(viewportState.scale || 1);
     const clamp = value => Math.min(1.5, Math.max(0.45, value));
     const scaleLabel = document.createElement('span');
     scaleLabel.className = 'dsl-definition-graph-scale';
     const applyScale = next => {
       scale = clamp(next);
+	  viewportState.scale = scale;
       scaler.style.width = Math.round(layout.width * scale) + 'px';
       scaler.style.height = Math.round(layout.height * scale) + 'px';
       stage.style.transform = 'scale(' + scale + ')';
@@ -1419,12 +1477,38 @@
 			wrapper.appendChild(detail);
 		}
 	}
-    requestAnimationFrame(fit);
+    const rememberViewportScroll = () => {
+	  viewportState.scrollLeft = viewport.scrollLeft;
+	  viewportState.scrollTop = viewport.scrollTop;
+	};
+    viewport.addEventListener('scroll', rememberViewportScroll, {passive: true});
+    const layoutFrame = requestAnimationFrame(() => {
+	  if (!viewportState.initialized) {
+		fit();
+		viewportState.initialized = true;
+	  } else {
+		applyScale(viewportState.scale);
+		viewport.scrollLeft = Number(viewportState.scrollLeft || 0);
+		viewport.scrollTop = Number(viewportState.scrollTop || 0);
+	  }
+	});
+	wrapper.__ciwiDispose = () => {
+	  cancelAnimationFrame(layoutFrame);
+	  viewport.removeEventListener('scroll', rememberViewportScroll);
+	};
     return wrapper;
   }
 
   function renderGraphView(element, node, data, context) {
     const stateKey = renderText({template: node.graphView.stateKey}, data);
+	const runtimeKey = context.session.screenName + ':' + stateKey;
+	let runtime = graphRuntimeStates.get(runtimeKey);
+	if (!runtime) {
+	  runtime = {selectedID: '', scale: 1, scrollLeft: 0, scrollTop: 0, initialized: false};
+	  graphRuntimeStates.set(runtimeKey, runtime);
+	}
+	element.__ciwiStatefulContents = 'graph-view';
+	element.__ciwiGraphRuntime = runtime;
     let mode = viewStates[stateKey];
     if (mode !== 'graph' && mode !== 'list') mode = node.graphView.defaultMode === 'list' ? 'list' : 'graph';
     const header = document.createElement('div');
@@ -1436,16 +1520,22 @@
     modes.className = 'dsl-graph-view-modes';
     const body = document.createElement('div');
     body.className = 'dsl-graph-view-body';
-	let selectedID = '';
+	let selectedID = runtime.selectedID;
     const renderBody = () => {
+	  disposeRenderedNode(body);
       body.replaceChildren();
 	  if (mode === 'graph') body.appendChild(renderDefinitionGraph(node, data, {
 		value: selectedID,
+		remember: id => {
+		  selectedID = id;
+		  runtime.selectedID = id;
+		},
 		onChange: id => {
 			selectedID = id;
+			runtime.selectedID = id;
 			renderBody();
 		},
-	  }, context));
+	  }, context, runtime));
       else (node.children || []).forEach((child, index) => body.appendChild(renderNode(
 		child,
 		data,
@@ -1479,19 +1569,30 @@
 	function prepared(raw, depth) {
 	  const itemData = Object.assign({}, data, {[tree.as]: raw});
 	  const rawChildren = resolve(itemData, tree.children);
-	  const children = (Array.isArray(rawChildren) ? rawChildren : []).map(child => prepared(child, depth + 1)).filter(Boolean);
+	  const children = preparedList(rawChildren, depth + 1);
 	  const filterValues = tree.filterValues ? resolve(itemData, tree.filterValues) : [];
 	  const values = Array.isArray(filterValues) ? filterValues.map(String) : [];
 	  if (filter && filter !== 'all' && values.length && !values.includes(filter)) return null;
 	  if (filter && filter !== 'all' && Array.isArray(rawChildren) && rawChildren.length && children.length === 0) return null;
-	  return {raw, itemData, children, depth};
+	  const key = String(resolve(itemData, tree.nodeKey) ?? '').trim();
+	  if (!key) throw new Error('Empty tree node key at ' + context.path);
+	  return {raw, itemData, children, depth, key};
 	}
 
-	function renderEntry(entry) {
+	function preparedList(values, depth) {
+	  const entries = (Array.isArray(values) ? values : []).map(item => prepared(item, depth)).filter(Boolean);
+	  const seen = new Set();
+	  entries.forEach(entry => {
+		if (seen.has(entry.key)) throw new Error('Duplicate tree node key "' + entry.key + '" at ' + context.path);
+		seen.add(entry.key);
+	  });
+	  return entries;
+	}
+
+  function renderEntry(entry, parentIdentity = context.identity) {
 	  const itemData = entry.itemData;
-	  const entryKey = String(resolve(itemData, tree.nodeKey) ?? '').trim();
-	  if (!entryKey) throw new Error('Empty tree node key at ' + context.path);
-	  const entryIdentity = context.identity + '/tree-node:' + rendererKeyPart(entryKey);
+	  const entryKey = entry.key;
+	  const entryIdentity = parentIdentity + '/tree-node:' + rendererKeyPart(entryKey);
 	  const row = document.createElement('div');
 	  row.className = 'dsl-tree-row';
 	  annotateRendererElement(row, 'tree-row', entryIdentity + '/row');
@@ -1539,6 +1640,7 @@
 	  if (!entry.children.length) return row;
 	  const details = document.createElement('details');
 	  details.className = 'dsl-tree-branch';
+	  annotateRendererElement(details, 'tree-branch', entryIdentity);
 	  const key = entryKey;
 	  const stateKey = String(tree.stateKey || '') + ':' + key;
 	  const fallback = tree.defaultExpanded ? !!resolve(itemData, tree.defaultExpanded) : false;
@@ -1550,12 +1652,12 @@
 	  details.appendChild(summary);
 	  const children = document.createElement('div');
 	  children.className = 'dsl-tree-children';
-	  entry.children.forEach(child => children.appendChild(renderEntry(child)));
+	  entry.children.forEach(child => children.appendChild(renderEntry(child, entryIdentity)));
 	  details.appendChild(children);
 	  return details;
 	}
 
-	const preparedNodes = (Array.isArray(source) ? source : []).map(item => prepared(item, 0)).filter(Boolean);
+	const preparedNodes = preparedList(source, 0);
 	preparedNodes.forEach(entry => element.appendChild(renderEntry(entry)));
   }
 
@@ -1759,8 +1861,6 @@
     return element;
   }
 
-  const replaceOnRefreshComponents = new Set(['graph-view', 'tree-view', 'select']);
-
   function rendererNodeKey(node) {
 	return node && node.nodeType === Node.ELEMENT_NODE ? String(node.dataset.ciwiNodeKey || '') : '';
   }
@@ -1776,7 +1876,6 @@
 	const currentComponent = String(current.dataset.ciwiComponent || '');
 	const nextComponent = String(next.dataset.ciwiComponent || '');
 	if ((currentComponent || nextComponent) && currentComponent !== nextComponent) return false;
-	if (replaceOnRefreshComponents.has(nextComponent)) return false;
 	const currentIcon = String(current.dataset.ciwiIcon || '');
 	const nextIcon = String(next.dataset.ciwiIcon || '');
 	return !((currentIcon || nextIcon) && currentIcon !== nextIcon);
@@ -1818,6 +1917,53 @@
 	if (Object.prototype.hasOwnProperty.call(next, '__ciwiPulseTimestamp')) {
 	  current.__ciwiPulseTimestamp = next.__ciwiPulseTimestamp;
 	}
+	if (Object.prototype.hasOwnProperty.call(next, '__ciwiSelectState')) {
+	  current.__ciwiSelectState = {
+		options: next.__ciwiSelectState.options.map(option => ({...option})),
+		selectedValue: next.__ciwiSelectState.selectedValue,
+	  };
+	  updateBrowserSelectTrigger(current);
+	  if (activeBrowserSelect && activeBrowserSelect.trigger === current) {
+		syncBrowserSelectMenu(activeBrowserSelect);
+		requestAnimationFrame(() => {
+		  if (activeBrowserSelect && activeBrowserSelect.trigger === current) {
+			layoutBrowserSelectMenu(current, activeBrowserSelect.menu);
+		  }
+		});
+	  }
+	}
+  }
+
+  function disposeRenderedNode(node) {
+	if (!node) return;
+	if (activeBrowserSelect && (
+	  node === activeBrowserSelect.trigger
+	  || (node.nodeType === Node.ELEMENT_NODE && node.contains(activeBrowserSelect.trigger))
+	)) closeBrowserSelect();
+	if (node.nodeType !== Node.ELEMENT_NODE) return;
+	const disposables = [node, ...node.querySelectorAll('*')].reverse();
+	disposables.forEach(element => {
+	  if (typeof element.__ciwiDispose !== 'function') return;
+	  const dispose = element.__ciwiDispose;
+	  element.__ciwiDispose = null;
+	  dispose();
+	});
+  }
+
+  function updateStatefulRenderedElement(current, next) {
+	if (next.__ciwiStatefulContents === 'graph-view') {
+	  const viewport = current.querySelector('.dsl-definition-graph-viewport');
+	  const runtime = next.__ciwiGraphRuntime;
+	  if (viewport && runtime) {
+		runtime.scrollLeft = viewport.scrollLeft;
+		runtime.scrollTop = viewport.scrollTop;
+	  }
+	}
+	patchRenderedAttributes(current, next);
+	Array.from(current.childNodes).forEach(disposeRenderedNode);
+	current.replaceChildren(...Array.from(next.childNodes));
+	current.__ciwiStatefulContents = next.__ciwiStatefulContents;
+	current.__ciwiGraphRuntime = next.__ciwiGraphRuntime;
   }
 
   function reconcileRenderedChildren(current, next) {
@@ -1825,7 +1971,10 @@
 	const keyedChildren = new Map(previousChildren.map(child => [rendererNodeKey(child), child]).filter(([key]) => key));
 	const nextKeys = new Set(Array.from(next.childNodes).map(rendererNodeKey).filter(Boolean));
 	keyedChildren.forEach((child, key) => {
-	  if (!nextKeys.has(key)) child.remove();
+	  if (!nextKeys.has(key)) {
+		disposeRenderedNode(child);
+		child.remove();
+	  }
 	});
 	const retained = new Set();
 	Array.from(next.childNodes).forEach((nextChild, index) => {
@@ -1838,23 +1987,47 @@
 		committedChild = reconcileRenderedNode(candidate, nextChild);
 		retained.add(candidate);
 	  } else if (candidate && candidate.parentNode === current) {
+		disposeRenderedNode(candidate);
 		candidate.replaceWith(nextChild);
 	  }
 	  const reference = current.childNodes[index] || null;
 	  if (committedChild !== reference) current.insertBefore(committedChild, reference);
 	});
 	previousChildren.forEach(child => {
-	  if (!retained.has(child) && child.parentNode === current) child.remove();
+	  if (!retained.has(child) && child.parentNode === current) {
+		disposeRenderedNode(child);
+		child.remove();
+	  }
 	});
   }
 
   function reconcileRenderedNode(current, next) {
 	if (!compatibleRenderedNodes(current, next)) {
+	  disposeRenderedNode(current);
 	  current.replaceWith(next);
 	  return next;
 	}
 	if (current.nodeType === Node.TEXT_NODE || current.nodeType === Node.COMMENT_NODE) {
-	  if (current.data !== next.data) current.data = next.data;
+	  if (current.data !== next.data) {
+		const selection = current.nodeType === Node.TEXT_NODE && window.getSelection ? window.getSelection() : null;
+		const selectionTouchesCurrent = selection && (selection.anchorNode === current || selection.focusNode === current);
+		const anchorNode = selectionTouchesCurrent ? selection.anchorNode : null;
+		const focusNode = selectionTouchesCurrent ? selection.focusNode : null;
+		const anchorOffset = selectionTouchesCurrent ? selection.anchorOffset : 0;
+		const focusOffset = selectionTouchesCurrent ? selection.focusOffset : 0;
+		current.data = next.data;
+		if (selectionTouchesCurrent && selection.setBaseAndExtent) {
+		  const boundedOffset = (node, offset) => node === current ? Math.min(offset, current.data.length) : offset;
+		  selection.setBaseAndExtent(
+			anchorNode, boundedOffset(anchorNode, anchorOffset),
+			focusNode, boundedOffset(focusNode, focusOffset),
+		  );
+		}
+	  }
+	  return current;
+	}
+	if (next.__ciwiStatefulContents) {
+	  updateStatefulRenderedElement(current, next);
 	  return current;
 	}
 	patchRenderedElement(current, next);
@@ -1864,7 +2037,6 @@
 
   function renderCurrent() {
     if (!currentDocument || !currentData) return;
-    closeBrowserSelect();
 	const session = createRenderSession(currentDocument.metadata && currentDocument.metadata.name);
 	const nextRoot = renderNode(currentDocument.screen.root, currentData, rootRenderContext(session));
 	const nextSignature = session.screenName + ':' + currentPath;
@@ -1872,7 +2044,10 @@
 	const reconcile = committedRenderSignature === nextSignature && compatibleRenderedNodes(previousRoot, nextRoot);
 	const viewState = reconcile ? null : window.ciwiCaptureViewState(root);
 	if (reconcile) reconcileRenderedNode(previousRoot, nextRoot);
-	else root.replaceChildren(nextRoot);
+	else {
+	  disposeRenderedNode(root);
+	  root.replaceChildren(nextRoot);
+	}
 	committedActionBindings = session.actionBindings;
 	committedRenderSignature = nextSignature;
 	if (viewState) window.ciwiRestoreViewState(root, viewState);
@@ -2039,16 +2214,6 @@
     });
   }
 
-  function findDeclarativeNodeByID(node, id, path = 'root') {
-	if (!node || typeof node !== 'object') return null;
-	if (node.id === id) return {node, path};
-	for (let index = 0; index < (node.children || []).length; index += 1) {
-	  const found = findDeclarativeNodeByID(node.children[index], id, path + '/children:' + String(index));
-	  if (found) return found;
-	}
-	return null;
-  }
-
   function outputIsAtBottom(element) {
 	return !element || element.scrollHeight - element.clientHeight - element.scrollTop <= 3;
   }
@@ -2068,11 +2233,14 @@
 
   function bindJobOutputScrollIntent(view) {
 	const container = document.getElementById('job-output-groups');
-	if (!container || container.dataset.ciwiScrollIntent === '1') return;
+	if (!container) return;
+	container.__ciwiOutputView = view;
+	if (container.dataset.ciwiScrollIntent === '1') return;
 	container.dataset.ciwiScrollIntent = '1';
 	container.addEventListener('scroll', () => {
-	  if (programmaticOutputScroll || !view.output_tailing || outputIsAtBottom(container)) return;
-	  setOutputTailing(view, false);
+	  const currentView = container.__ciwiOutputView;
+	  if (!currentView || programmaticOutputScroll || !currentView.output_tailing || outputIsAtBottom(container)) return;
+	  setOutputTailing(currentView, false);
 	}, {passive: true});
   }
 
@@ -2089,67 +2257,10 @@
   }
 
   function patchJobOutputRegion(view) {
-	const contractRoot = currentDocument && currentDocument.screen && currentDocument.screen.root;
-	const systemMatch = findDeclarativeNodeByID(contractRoot, 'job-output-system');
-	const groupsMatch = findDeclarativeNodeByID(contractRoot, 'job-output-groups');
-	const previousScroller = document.getElementById('job-output-groups');
-	if (!systemMatch || !groupsMatch || !previousScroller) {
-	  renderCurrent();
-	  return;
-	}
-	const session = createRenderSession(
-	  currentDocument.metadata && currentDocument.metadata.name,
-	  new Map(committedActionBindings),
-	);
-	const screenScope = 'screen:' + session.screenName;
-	const subtreeActionPrefixes = [systemMatch, groupsMatch].map(match => (
-	  screenScope + '/id:' + rendererKeyPart(match.node.id)
-	));
-	session.actionBindings.forEach((_, key) => {
-	  if (subtreeActionPrefixes.some(prefix => key === prefix || key.startsWith(prefix + '/'))) {
-		session.actionBindings.delete(key);
-	  }
-	});
-	const contextForMatch = match => ({
-	  session,
-	  path: screenScope + '/' + match.path,
-	  parentScope: screenScope + '/' + match.path.substring(0, Math.max(0, match.path.lastIndexOf('/'))),
-	  repeatIdentity: '',
-	  inRepeat: false,
-	});
-	const nextScroller = renderNode(groupsMatch.node, currentData, contextForMatch(groupsMatch));
-	if (!nextScroller || nextScroller.nodeType !== Node.ELEMENT_NODE) {
-	  renderCurrent();
-	  return;
-	}
-	const previousSystem = document.getElementById('job-output-system');
-	const renderedSystem = renderNode(systemMatch.node, currentData, contextForMatch(systemMatch));
-	const nextSystem = renderedSystem && renderedSystem.nodeType === Node.ELEMENT_NODE ? renderedSystem : null;
-	if (previousSystem && nextSystem) previousSystem.replaceWith(nextSystem);
-	else if (previousSystem) previousSystem.remove();
-	else if (nextSystem) previousScroller.before(nextSystem);
-
-	const previousGroups = new Map(Array.from(previousScroller.children).map(group => [String(group.dataset.disclosureKey || ''), group]));
-	const retained = new Set();
-	Array.from(nextScroller.children).forEach(nextGroup => {
-	  const key = String(nextGroup.dataset.disclosureKey || '');
-	  const previousGroup = previousGroups.get(key);
-	  if (!key || !previousGroup || previousGroup.tagName !== nextGroup.tagName) {
-		previousScroller.appendChild(nextGroup);
-		return;
-	  }
-	  retained.add(previousGroup);
-	  previousGroup.className = nextGroup.className;
-	  previousGroup.style.cssText = nextGroup.style.cssText;
-	  previousGroup.__ciwiSemanticProgress = nextGroup.__ciwiSemanticProgress;
-	  previousGroup.replaceChildren(...Array.from(nextGroup.childNodes));
-	});
-	previousGroups.forEach(group => {
-	  if (!retained.has(group)) group.remove();
-	});
-	committedActionBindings = session.actionBindings;
+	renderCurrent();
+	const currentScroller = document.getElementById('job-output-groups');
 	bindJobOutputScrollIntent(view);
-	if (view.output_tailing) scrollJobOutputToEnd(previousScroller);
+	if (view.output_tailing) scrollJobOutputToEnd(currentScroller);
 	updateJobOutputSearchCount(view);
 	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
   }
@@ -2508,9 +2619,11 @@
 		return false;
 	  }
       const message = document.createElement('div');
-      message.className = 'dsl-error';
-      message.textContent = error.message || String(error);
+	  message.className = 'dsl-error';
+	  message.textContent = error.message || String(error);
 	  committedRenderSignature = '';
+	  committedActionBindings = new Map();
+	  disposeRenderedNode(root);
       root.replaceChildren(message);
 	  return false;
     }

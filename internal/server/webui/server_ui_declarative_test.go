@@ -705,7 +705,9 @@ func TestDeclarativeRendererBuildsIdentityAndFreshActionRegistries(t *testing.T)
 		"const bindings = committedActionBindings.get(key) || []",
 		"committedRenderSignature === nextSignature",
 		"reconcileRenderedNode(previousRoot, nextRoot)",
-		"const replaceOnRefreshComponents = new Set(['graph-view', 'tree-view', 'select'])",
+		"syncBrowserSelectMenu(activeBrowserSelect)",
+		"disposeRenderedNode(root)",
+		"next.__ciwiStatefulContents",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative stable-DOM foundation does not contain %q", expected)
@@ -763,7 +765,7 @@ func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *tes
 	implementation := string(scriptPayload) + string(stylePayload)
 	for _, expected := range []string{
 		"ciwi.declarative.views.v1", "renderGraphView", "layoutDefinitionGraph", "renderDefinitionGraph",
-		"requestAnimationFrame(fit)", "bindActions(play, actions, graphNode.data, {session: context.session, identity: actionIdentity})",
+		"const layoutFrame = requestAnimationFrame", "bindActions(play, actions, graphNode.data, {session: context.session, identity: actionIdentity})",
 		"node.graphView.details", "selection.onChange(graphNode.id)", "dsl-definition-graph-viewport",
 		"dsl-definition-graph-node-play", "dsl-definition-graph-details", ".dsl-definition-graph-node.selectable:hover",
 		"applyProjectStructureFilter", "selected.pipeline_ids", "selected.root", "dsl-definition-graph-root", "graphRootActionVisible",

@@ -35,12 +35,34 @@ const screen = {
           {component: 'input', id: 'probe-input', input: {value: 'probe.input', placeholder: 'Edit'}},
           {
             component: 'select', id: 'probe-select',
+            visible: {binding: 'probe.select_visible'},
             select: {options: 'probe.options', value: 'probe.selected', as: 'option', optionValue: 'option.value', optionLabel: 'option.label'},
           },
           {
             component: 'disclosure', id: 'probe-disclosure', text: {literal: 'Disclosure'},
             disclosure: {defaultExpanded: true, stateKey: 'probe-disclosure'},
             children: [{component: 'text', text: {binding: 'probe.detail'}}],
+          },
+          {
+            component: 'graph-view', id: 'probe-graph', text: {literal: 'Graph'},
+            visible: {binding: 'probe.graph_visible'},
+            graphView: {
+              stateKey: 'probe-graph', defaultMode: 'graph', nodes: 'probe.graph_nodes', as: 'graphNode',
+              nodeKey: 'graphNode.id', nodeLabel: {binding: 'graphNode.label'}, nodeMeta: {binding: 'graphNode.meta'},
+              dependencies: 'graphNode.dependencies',
+              details: [{component: 'text', text: {binding: 'graphNode.meta'}}],
+            },
+          },
+          {
+            component: 'tree-view', id: 'probe-tree', visible: {binding: 'probe.tree_visible'},
+            treeView: {
+              stateKey: 'probe-tree', nodes: 'probe.tree_nodes', as: 'treeNode', nodeKey: 'treeNode.key',
+              nodeLabel: {binding: 'treeNode.label'}, children: 'treeNode.children', defaultExpanded: 'treeNode.default_expanded',
+            },
+          },
+          {
+            component: 'scroller', id: 'probe-output', visible: {binding: 'probe.output_visible'},
+            children: [{component: 'text', id: 'probe-output-text', text: {binding: 'probe.output'}}],
           },
           {
             component: 'list', id: 'probe-rows', repeat: {source: 'probe.rows', as: 'row', key: 'row.key'},
@@ -66,7 +88,8 @@ const screen = {
 
 function model(overrides = {}) {
   return Object.assign({
-    version: 'one', input: 'draft', detail: 'details', selected: 'a', action_id: '1', action_visible: true,
+    version: 'one', input: 'draft', detail: 'details', selected: 'a', select_visible: true, action_id: '1', action_visible: true,
+    graph_visible: false, graph_nodes: [], tree_visible: false, tree_nodes: [], output_visible: false, output: '',
     options: [{value: 'a', label: 'Alpha'}, {value: 'b', label: 'Beta'}],
     rows: [{key: 'a', label: 'Execution A', status: 'running'}, {key: 'b', label: 'Execution B', status: 'waiting'}],
   }, overrides);
@@ -81,6 +104,8 @@ async function installFixture(page, models) {
       await route.fulfill({contentType: 'text/html', body: `<!doctype html>
         <html><head><style>
           .dsl-execution-row-status.dsl-status-accent { animation: ciwi-test-spin 10s linear infinite; }
+          #probe-graph .dsl-definition-graph-viewport { width: 180px; height: 110px; overflow: auto; }
+          #probe-output { display: block; width: 220px; height: 40px; overflow: auto; white-space: pre; }
           @keyframes ciwi-test-spin { to { transform: rotate(360deg); } }
         </style></head><body><div id="declarativeRoot"></div>
         <script>
@@ -260,14 +285,40 @@ test('input edits survive unchanged backing data and authoritative changes still
   await expect(page.locator('#probe-input')).toHaveValue('server replacement');
 });
 
-test('[expected failure: slice 4] open custom select survives an unrelated refresh', async ({page}) => {
-  test.fail(true, 'Stateful component reconciliation is delivery slice 4');
-  await installFixture(page, [model(), model({version: 'two', detail: 'updated'})]);
+test('open custom select and its option identities survive a compatible refresh', async ({page}) => {
+  await installFixture(page, [model(), model({
+    version: 'two', detail: 'updated',
+    options: [{value: 'a', label: 'Alpha updated'}, {value: 'b', label: 'Beta'}, {value: 'c', label: 'Gamma'}],
+  })]);
   await page.locator('#probe-select').click();
-  await expect(page.locator('.ciwi-select-menu')).toBeVisible();
+  await expect(page.locator('.dsl-select-menu')).toBeVisible();
+  await page.evaluate(() => {
+    window.previousSelect = document.getElementById('probe-select');
+    window.previousSelectMenu = document.querySelector('.dsl-select-menu');
+    window.previousAlphaOption = document.querySelector('.dsl-select-option[data-value="a"]');
+  });
   await page.locator('#probe-refresh').evaluate(element => element.click());
   await expect(page.locator('#probe-version')).toHaveText('two');
-  await expect(page.locator('.ciwi-select-menu')).toBeVisible();
+  await expect(page.locator('.dsl-select-menu')).toBeVisible();
+  expect(await page.evaluate(() => window.previousSelect === document.getElementById('probe-select'))).toBe(true);
+  expect(await page.evaluate(() => window.previousSelectMenu === document.querySelector('.dsl-select-menu'))).toBe(true);
+  expect(await page.evaluate(() => window.previousAlphaOption === document.querySelector('.dsl-select-option[data-value="a"]'))).toBe(true);
+  await expect(page.locator('#probe-select')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#probe-select .dsl-select-label')).toHaveText('Alpha updated');
+  await expect(page.locator('.dsl-select-option')).toHaveCount(3);
+  await expect(page.locator('.dsl-select-option[data-value="c"]')).toHaveText('Gamma');
+});
+
+test('removing an open custom select disposes its portal', async ({page}) => {
+  await installFixture(page, [model(), model({version: 'two', select_visible: false})]);
+  await page.locator('#probe-select').click();
+  await expect(page.locator('.dsl-select-menu')).toBeVisible();
+  const oldTrigger = await page.locator('#probe-select').elementHandle();
+  await page.locator('#probe-refresh').evaluate(element => element.click());
+  await expect(page.locator('#probe-version')).toHaveText('two');
+  await expect(page.locator('#probe-select')).toHaveCount(0);
+  await expect(page.locator('.dsl-select-menu')).toHaveCount(0);
+  expect(await page.evaluate(trigger => trigger.getAttribute('aria-expanded'), oldTrigger)).toBe('false');
 });
 
 test('expanded disclosure mounted identity survives a same-route refresh', async ({page}) => {
@@ -287,4 +338,81 @@ test('keyed row mounted identity survives sibling insertion and reorder', async 
   await page.evaluate(() => { window.previousRow = document.querySelector('[data-disclosure-key="execution:b"]'); });
   await refreshTo(page, 'two');
   expect(await page.evaluate(() => window.previousRow === document.querySelector('[data-disclosure-key="execution:b"]'))).toBe(true);
+});
+
+test('tree branches retain identity and disclosure state across keyed updates', async ({page}) => {
+  const folder = {key: 'folder', label: 'Folder', default_expanded: true, children: [{key: 'leaf', label: 'Leaf', children: []}]};
+  await installFixture(page, [
+    model({tree_visible: true, tree_nodes: [folder]}),
+    model({version: 'two', tree_visible: true, tree_nodes: [
+      {key: 'new', label: 'New root', children: []},
+      {...folder, label: 'Folder updated'},
+    ]}),
+  ]);
+  const branch = page.locator('#probe-tree [data-ciwi-component="tree-branch"]').first();
+  await expect(branch).toHaveAttribute('open', '');
+  await page.evaluate(() => { window.previousTreeBranch = document.querySelector('#probe-tree [data-ciwi-component="tree-branch"]'); });
+  await refreshTo(page, 'two');
+  expect(await page.evaluate(() => window.previousTreeBranch === document.querySelector('#probe-tree [data-ciwi-component="tree-branch"]'))).toBe(true);
+  await expect(page.locator('#probe-tree [data-ciwi-component="tree-branch"]')).toHaveAttribute('open', '');
+  await expect(page.locator('#probe-tree')).toContainText('Folder updated');
+});
+
+test('graph root keeps identity while zoom and viewport survive data changes', async ({page}) => {
+  const graphNodes = [
+    {id: 'a', label: 'A', meta: 'one', dependencies: []},
+    {id: 'b', label: 'B', meta: 'two', dependencies: ['a']},
+    {id: 'c', label: 'C', meta: 'three', dependencies: ['b']},
+  ];
+  await installFixture(page, [
+    model({graph_visible: true, graph_nodes: graphNodes}),
+    model({version: 'two', graph_visible: true, graph_nodes: [
+      ...graphNodes.map(item => item.id === 'b' ? {...item, meta: 'updated'} : item),
+      {id: 'd', label: 'D', meta: 'four', dependencies: ['c']},
+    ]}),
+  ]);
+  await page.locator('.dsl-definition-graph-node', {hasText: 'B'}).click();
+  await expect(page.locator('.dsl-definition-graph-node.selected')).toContainText('B');
+  await page.getByRole('button', {name: 'Reset'}).click();
+  await page.getByRole('button', {name: 'Zoom in'}).click();
+  await expect(page.locator('.dsl-definition-graph-scale')).toHaveText('110%');
+  await page.locator('.dsl-definition-graph-viewport').evaluate(viewport => {
+    viewport.scrollLeft = 35;
+    viewport.scrollTop = 12;
+    viewport.dispatchEvent(new Event('scroll'));
+    window.previousGraph = document.getElementById('probe-graph');
+  });
+  await refreshTo(page, 'two');
+  expect(await page.evaluate(() => window.previousGraph === document.getElementById('probe-graph'))).toBe(true);
+  await expect(page.locator('.dsl-definition-graph-scale')).toHaveText('110%');
+  await expect.poll(() => page.locator('.dsl-definition-graph-viewport').evaluate(viewport => viewport.scrollLeft)).toBe(35);
+  await expect(page.locator('.dsl-definition-graph-node.selected')).toContainText('B');
+  await expect(page.locator('.dsl-definition-graph-details')).toContainText('updated');
+  await expect(page.locator('#probe-graph')).toContainText('updated');
+});
+
+test('output scroller, text selection, and scroll position survive appended text', async ({page}) => {
+  const initial = Array.from({length: 20}, (_, index) => 'line ' + String(index)).join('\n');
+  await installFixture(page, [
+    model({output_visible: true, output: initial}),
+    model({version: 'two', output_visible: true, output: initial + '\nappended'}),
+  ]);
+  await page.locator('#probe-output').evaluate(scroller => {
+    scroller.scrollTop = 30;
+    const text = document.getElementById('probe-output-text').firstChild;
+    const selection = window.getSelection();
+    selection.setBaseAndExtent(text, 2, text, 5);
+    window.previousOutputScroller = scroller;
+    window.previousOutputText = text;
+  });
+  await refreshTo(page, 'two');
+  expect(await page.evaluate(() => window.previousOutputScroller === document.getElementById('probe-output'))).toBe(true);
+  expect(await page.evaluate(() => window.previousOutputText === document.getElementById('probe-output-text').firstChild)).toBe(true);
+  expect(await page.locator('#probe-output').evaluate(scroller => scroller.scrollTop)).toBe(30);
+  expect(await page.evaluate(() => {
+    const selection = window.getSelection();
+    return selection.anchorNode === window.previousOutputText && selection.focusNode === window.previousOutputText
+      ? [selection.anchorOffset, selection.focusOffset]
+      : null;
+  })).toEqual([2, 5]);
 });

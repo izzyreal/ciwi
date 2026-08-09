@@ -1,6 +1,10 @@
 # Handoff: A fully stable browser DOM
 
-Status: proposed
+Status: implemented
+
+The browser-DOM characterization suite is intentionally isolated under
+`integration/browser-dom`; the committed Go unit-test suite does not require
+Node, npm, Playwright, or a browser.
 
 ## Objective
 
