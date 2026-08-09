@@ -1109,7 +1109,7 @@
 		  const path = args.action === 'restart' ? '/api/v1/server/restart' : (args.action === 'rollback' ? '/api/v1/update/rollback' : '/api/v1/update/apply');
 		  const settings = currentData.settings;
 		  if (args.action === 'apply') {
-			settings.update_versions = declarativeVersionOptions([], 'Click check for updates');
+			settings.update_versions = declarativeVersionOptions([], 'Click "Check for updates"');
 			settings.selected_update_version = '';
 			renderCurrent();
 		  }
@@ -2183,7 +2183,7 @@
 	const upToDate = checked && message.toLowerCase() === 'already up to date';
 	const versions = available ? [latest] : [];
 	return {
-	  updateVersions: declarativeVersionOptions(versions, upToDate ? 'No newer versions available' : 'Click check for updates'),
+	  updateVersions: declarativeVersionOptions(versions, upToDate ? 'No newer versions available' : 'Click "Check for updates"'),
 	  selectedUpdateVersion: available ? latest : '',
 	  updateResult: available ? 'Update available: ' + current + ' → ' + latest : (upToDate ? 'Up to date (' + current + ')' : ''),
 	};

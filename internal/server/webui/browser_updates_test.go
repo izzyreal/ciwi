@@ -36,7 +36,7 @@ func TestBrowserSettingsRestoresPersistedUpdateCheck(t *testing.T) {
 			&& value.selectedUpdateVersion === '' && value.updateResult === 'Up to date (v0.2.26)'; })()`,
 		`(() => { const value = declarativePersistedUpdateBinding({
 			update_current_version:'v0.2.27', update_latest_version:'v0.2.26', update_available:'1'
-		}); return value.updateVersions[0].label === 'Click check for updates'
+		}); return value.updateVersions[0].label === 'Click "Check for updates""'
 			&& value.selectedUpdateVersion === '' && value.updateResult === ''; })()`,
 	}
 	for _, assertion := range assertions {

@@ -649,7 +649,7 @@ test('confirmed server update interpolates its version and resets controls befor
   await expect.poll(() => page.evaluate(() => window.confirmations)).toEqual([
     'Update server and agents to v1.1.0 and restart ciwi?',
   ]);
-  await expect(page.locator('#settings-update-select .dsl-select-label')).toHaveText('Click check for updates');
+  await expect(page.locator('#settings-update-select .dsl-select-label')).toHaveText('Click "Check for updates"');
   await expect(page.locator('#settings-update-action')).toBeDisabled();
   await expect.poll(() => fixture.updateBodies).toEqual([{target_version: 'v1.1.0'}]);
   fixture.releaseUpdate();
