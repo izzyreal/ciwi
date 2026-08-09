@@ -1205,7 +1205,7 @@ func TestScrollGestureGuardOnlyArmsAfterTouchDrag(t *testing.T) {
 	}
 }
 
-func TestScrollGestureGuardSuppressesMomentumTapThroughRelease(t *testing.T) {
+func TestScrollGestureGuardAllowsStationaryMomentumStoppingTap(t *testing.T) {
 	guard := &scrollGestureGuard{}
 	var router input.Router
 	var operations op.Ops
@@ -1235,11 +1235,105 @@ func TestScrollGestureGuardSuppressesMomentumTapThroughRelease(t *testing.T) {
 		t.Fatal("touch beginning during inertia was not suppressed")
 	}
 	guard.inertial = false
-	if !frame(pointer.Event{Source: pointer.Touch, Kind: pointer.Release, PointerID: 7, Position: f32.Pt(50, 50)}) {
-		t.Fatal("momentum-stopping touch release was not suppressed")
+	if frame(pointer.Event{Source: pointer.Touch, Kind: pointer.Release, PointerID: 7, Position: f32.Pt(50, 50)}) {
+		t.Fatal("stationary momentum-stopping tap release was suppressed")
 	}
 	if frame() || len(guard.guardedTouches) != 0 {
 		t.Fatal("completed momentum-stopping touch retained suppression")
+	}
+}
+
+func TestGuardedListStationaryMomentumStoppingTapActivatesRow(t *testing.T) {
+	renderer := &Renderer{}
+	list := &layout.List{Axis: layout.Vertical}
+	row := new(widget.Clickable)
+	var router input.Router
+	var operations op.Ops
+	base := time.Now()
+	activated := false
+	frame := func(elapsed time.Duration, events ...pointer.Event) {
+		if len(events) > 0 {
+			queued := make([]event.Event, len(events))
+			for index := range events {
+				queued[index] = events[index]
+			}
+			router.Queue(queued...)
+		}
+		operations.Reset()
+		gtx := layout.Context{
+			Ops: &operations, Source: router.Source(), Now: base.Add(elapsed),
+			Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(200, 200)),
+		}
+		renderer.suppressTouchActivation = false
+		renderer.layoutGuardedList(gtx, "tap", list, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+			for renderer.clicked(gtx, row) {
+				activated = true
+			}
+			return row.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Dimensions{Size: image.Pt(200, 80)}
+			})
+		})
+		router.Frame(gtx.Ops)
+	}
+
+	frame(0)
+	renderer.scrollGuards["tap"].inertial = true
+	frame(time.Millisecond, pointer.Event{
+		Source: pointer.Touch, Kind: pointer.Press, PointerID: 9,
+		Position: f32.Pt(100, 40), Time: time.Millisecond,
+	})
+	if activated {
+		t.Fatal("row activated on momentum-stopping press")
+	}
+	frame(17*time.Millisecond, pointer.Event{
+		Source: pointer.Touch, Kind: pointer.Release, PointerID: 9,
+		Position: f32.Pt(100, 40), Time: 17 * time.Millisecond,
+	})
+	if !activated {
+		t.Fatal("stationary momentum-stopping tap did not activate row")
+	}
+}
+
+func TestScrollGestureGuardSuppressesMovedMomentumStoppingTouch(t *testing.T) {
+	guard := &scrollGestureGuard{inertial: true}
+	var router input.Router
+	var operations op.Ops
+	frame := func(events ...pointer.Event) bool {
+		if len(events) > 0 {
+			queued := make([]event.Event, len(events))
+			for index := range events {
+				queued[index] = events[index]
+			}
+			router.Queue(queued...)
+		}
+		operations.Reset()
+		gtx := layout.Context{
+			Ops: &operations, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Constraints: layout.Exact(image.Pt(200, 200)),
+		}
+		suppressed := guard.suppressActivations(gtx)
+		area := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
+		pass := pointer.PassOp{}.Push(gtx.Ops)
+		event.Op(gtx.Ops, guard)
+		pass.Pop()
+		area.Pop()
+		router.Frame(gtx.Ops)
+		return suppressed
+	}
+
+	frame()
+	if !frame(pointer.Event{Source: pointer.Touch, Kind: pointer.Press, PointerID: 8, Position: f32.Pt(50, 50)}) {
+		t.Fatal("touch beginning during inertia was not suppressed")
+	}
+	guard.inertial = false
+	if !frame(pointer.Event{Source: pointer.Touch, Kind: pointer.Move, PointerID: 8, Position: f32.Pt(50, 70)}) {
+		t.Fatal("moved momentum-stopping touch was not suppressed")
+	}
+	if !frame(pointer.Event{Source: pointer.Touch, Kind: pointer.Release, PointerID: 8, Position: f32.Pt(50, 70)}) {
+		t.Fatal("moved momentum-stopping touch release was not suppressed")
+	}
+	if frame() || len(guard.guardedTouches) != 0 {
+		t.Fatal("completed moved touch retained suppression")
 	}
 }
 

@@ -1117,12 +1117,17 @@ type scrollGestureGuard struct {
 	wasDragging      bool
 	dragMoved        bool
 	inertiaCandidate bool
-	guardedTouches   map[pointer.ID]struct{}
+	guardedTouches   map[pointer.ID]guardedTouch
+}
+
+type guardedTouch struct {
+	origin f32.Point
+	moved  bool
 }
 
 func (g *scrollGestureGuard) suppressActivations(gtx layout.Context) bool {
 	suppress := len(g.guardedTouches) > 0
-	filter := pointer.Filter{Target: g, Kinds: pointer.Press | pointer.Release | pointer.Cancel}
+	filter := pointer.Filter{Target: g, Kinds: pointer.Press | pointer.Move | pointer.Release | pointer.Cancel}
 	for {
 		raw, ok := gtx.Event(filter)
 		if !ok {
@@ -1138,17 +1143,37 @@ func (g *scrollGestureGuard) suppressActivations(gtx layout.Context) bool {
 				continue
 			}
 			if g.guardedTouches == nil {
-				g.guardedTouches = map[pointer.ID]struct{}{}
+				g.guardedTouches = map[pointer.ID]guardedTouch{}
 			}
-			g.guardedTouches[e.PointerID] = struct{}{}
+			g.guardedTouches[e.PointerID] = guardedTouch{origin: e.Position}
 			suppress = true
-		case pointer.Release, pointer.Cancel:
+		case pointer.Move:
+			if touch, guarded := g.guardedTouches[e.PointerID]; guarded {
+				touch.moved = touch.moved || touchMovedBeyondSlop(gtx, touch.origin, e.Position)
+				g.guardedTouches[e.PointerID] = touch
+				suppress = true
+			}
+		case pointer.Release:
+			if touch, guarded := g.guardedTouches[e.PointerID]; guarded {
+				delete(g.guardedTouches, e.PointerID)
+				touch.moved = touch.moved || touchMovedBeyondSlop(gtx, touch.origin, e.Position)
+				// A stationary tap may stop the fling and activate its target in
+				// one gesture. A moved touch remains exclusively a scroll gesture.
+				suppress = touch.moved || len(g.guardedTouches) > 0
+			}
+		case pointer.Cancel:
 			if _, guarded := g.guardedTouches[e.PointerID]; guarded {
 				delete(g.guardedTouches, e.PointerID)
 				suppress = true
 			}
 		}
 	}
+}
+
+func touchMovedBeyondSlop(gtx layout.Context, origin, current f32.Point) bool {
+	slop := float32(gtx.Dp(8))
+	delta := current.Sub(origin)
+	return delta.X*delta.X+delta.Y*delta.Y > slop*slop
 }
 
 func (g *scrollGestureGuard) observe(list *layout.List) {
@@ -1189,9 +1214,9 @@ func (r *Renderer) layoutGuardedList(gtx layout.Context, key string, list *layou
 	macro := op.Record(gtx.Ops)
 	dimensions := list.Layout(gtx, length, element)
 	call := macro.Stop()
-	// The guard observes the touch without grabbing it. A tap that began during
-	// inertia is still prevented from activating a control, while a drag remains
-	// available to the list to take over scrolling and start a fresh fling.
+	// The guard observes the touch without grabbing it. A stationary tap can stop
+	// inertia and activate its target, while a drag remains available to the list
+	// to take over scrolling and start a fresh fling without activating a control.
 	guard.observe(list)
 	area := clip.Rect{Max: dimensions.Size}.Push(gtx.Ops)
 	call.Add(gtx.Ops)
