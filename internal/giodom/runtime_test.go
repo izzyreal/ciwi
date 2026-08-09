@@ -1,0 +1,153 @@
+package giodom
+
+import (
+	"fmt"
+	"image"
+	"image/color"
+	"strings"
+	"testing"
+	"time"
+
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/unit"
+)
+
+func TestKeyedStateSurvivesReorderAndRemovedStateIsSwept(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	first := dynamicColumn(1, "a", "b", "c")
+	runtime.Layout(testContext(320, 240), first)
+	aState := stateValueWithPath(t, runtime, "/key:a/state:selectable")
+	bState := stateValueWithPath(t, runtime, "/key:b/state:selectable")
+
+	second := dynamicColumn(2, "c", "a")
+	runtime.Layout(testContext(320, 240), second)
+	if got := stateValueWithPath(t, runtime, "/key:a/state:selectable"); got != aState {
+		t.Fatal("state for key a changed after reordering")
+	}
+	for path, entry := range runtime.states {
+		if entry.value == bState || strings.Contains(path, "/key:b/") {
+			t.Fatalf("removed key b retained state at %q", path)
+		}
+	}
+}
+
+func TestDynamicChildrenRejectEmptyAndDuplicateKeys(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	root := Element{
+		Kind: KindFlex,
+		Key:  "root",
+		Flex: FlexProps{Axis: layout.Vertical},
+		Children: Keyed(1,
+			Text("same", "first", 14, color.NRGBA{}),
+			Text("same", "second", 14, color.NRGBA{}),
+			Text("", "empty", 14, color.NRGBA{}),
+		),
+	}
+	runtime.Layout(testContext(320, 240), root)
+	stats := runtime.Stats()
+	if stats.Errors < 2 {
+		t.Fatalf("errors = %d, want at least duplicate and empty-key errors", stats.Errors)
+	}
+	if !strings.Contains(stats.LastError, "empty key") {
+		t.Fatalf("last error = %q, want empty-key error", stats.LastError)
+	}
+}
+
+func TestKeyIdentityPreservesWhitespace(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	runtime.Layout(testContext(320, 240), dynamicColumn(1, "a", " a"))
+	if stats := runtime.Stats(); stats.Errors != 0 {
+		t.Fatalf("errors = %d: %s", stats.Errors, stats.LastError)
+	}
+	selectables := 0
+	for _, entry := range runtime.states {
+		if entry.kind == KindText {
+			selectables++
+		}
+	}
+	if selectables != 2 {
+		t.Fatalf("text states = %d, want two distinct exact keys", selectables)
+	}
+}
+
+func TestStateTableHonorsHardLimit(t *testing.T) {
+	const limit = 16
+	runtime := NewRuntime(nil, Options{MaxStateSlots: limit})
+	elements := make([]Element, 100)
+	for index := range elements {
+		elements[index] = Text(Key(fmt.Sprintf("text-%d", index)), "value", 14, color.NRGBA{})
+	}
+	root := Element{Kind: KindFlex, Key: "root", Flex: FlexProps{Axis: layout.Vertical}, Children: Keyed(1, elements...)}
+	runtime.Layout(testContext(320, 1200), root)
+	if got := len(runtime.states); got > limit {
+		t.Fatalf("state slots = %d, want <= %d", got, limit)
+	}
+}
+
+func TestColumnGapHasNoPhantomChildren(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	root := Column("column", 10,
+		Spacer("first", 10, 20),
+		Spacer("second", 10, 30),
+	)
+	dimensions := runtime.Layout(testLooseContext(100, 100), root)
+	if got, want := dimensions.Size.Y, 60; got != want {
+		t.Fatalf("height = %d, want %d", got, want)
+	}
+}
+
+func TestGeometryGuardRejectsOutOfRangeValues(t *testing.T) {
+	runtime := NewRuntime(nil, Options{MaxGeometryPixels: 100})
+	runtime.frame++
+	if !runtime.rejectGeometry("test", 101) {
+		t.Fatal("oversized geometry was accepted")
+	}
+	if got := runtime.stats.GeometryRejects; got != 1 {
+		t.Fatalf("geometry rejects = %d, want 1", got)
+	}
+}
+
+func BenchmarkKeyedRuntimeReorder(b *testing.B) {
+	runtime := NewRuntime(nil, Options{})
+	for iteration := 0; iteration < b.N; iteration++ {
+		keys := []string{"a", "b", "c", "d", "e", "f"}
+		if iteration%2 != 0 {
+			keys[0], keys[5] = keys[5], keys[0]
+		}
+		runtime.Layout(testContext(390, 844), dynamicColumn(uint64(iteration+1), keys...))
+	}
+}
+
+func dynamicColumn(revision uint64, keys ...string) Element {
+	elements := make([]Element, len(keys))
+	for index, key := range keys {
+		elements[index] = Text(Key(key), key, 14, color.NRGBA{})
+	}
+	return Element{Kind: KindFlex, Key: "root", Flex: FlexProps{Axis: layout.Vertical}, Children: Keyed(revision, elements...)}
+}
+
+func stateValueWithPath(t *testing.T, runtime *Runtime, suffix string) any {
+	t.Helper()
+	for path, entry := range runtime.states {
+		if strings.HasSuffix(path, suffix) {
+			return entry.value
+		}
+	}
+	t.Fatalf("state ending in %q not found", suffix)
+	return nil
+}
+
+func testContext(width, height int) layout.Context {
+	operations := new(op.Ops)
+	return layout.Context{
+		Ops: operations, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Now: time.Unix(1_800_000_000, 0), Constraints: layout.Exact(image.Pt(width, height)),
+	}
+}
+
+func testLooseContext(width, height int) layout.Context {
+	gtx := testContext(width, height)
+	gtx.Constraints.Min = image.Point{}
+	return gtx
+}

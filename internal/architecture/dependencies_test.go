@@ -54,6 +54,15 @@ func TestLayerImportBoundaries(t *testing.T) {
 	}
 }
 
+func TestGioDOMStandaloneBoundary(t *testing.T) {
+	graph := loadRepositoryImportGraph(t, repositoryRoot(t))
+	allowedPrefix := modulePath + "/internal/giodom"
+	for _, packagePath := range packagesAtOrBelow(graph, allowedPrefix) {
+		assertModuleImportsStayWithin(t, graph, packagePath, allowedPrefix)
+	}
+	assertModuleImportsStayWithin(t, graph, modulePath+"/cmd/giodom-lab", allowedPrefix)
+}
+
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
@@ -148,6 +157,31 @@ func assertNoForbiddenTransitiveImports(t *testing.T, graph map[string][]string,
 					t.Errorf("forbidden dependency from %s via %s", start, formatImportChain(chain))
 					return
 				}
+			}
+			if !seen[imported] {
+				seen[imported] = true
+				queue = append(queue, visit{packagePath: imported, chain: chain})
+			}
+		}
+	}
+}
+
+func assertModuleImportsStayWithin(t *testing.T, graph map[string][]string, start, allowedPrefix string) {
+	t.Helper()
+	type visit struct {
+		packagePath string
+		chain       []string
+	}
+	queue := []visit{{packagePath: start, chain: []string{start}}}
+	seen := map[string]bool{start: true}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, imported := range graph[current.packagePath] {
+			chain := append(append([]string(nil), current.chain...), imported)
+			if imported != allowedPrefix && !strings.HasPrefix(imported, allowedPrefix+"/") {
+				t.Errorf("standalone package %s crossed the ciwi boundary via %s", start, formatImportChain(chain))
+				return
 			}
 			if !seen[imported] {
 				seen[imported] = true
