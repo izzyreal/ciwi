@@ -84,24 +84,31 @@ screen:
               - component: text
                 text: {literal: Agent ID}
                 layout: {grow: true}
+                style: {role: table-header, emphasis: strong}
               - component: text
                 text: {literal: Host}
                 layout: {grow: true}
+                style: {role: table-header, emphasis: strong}
               - component: text
                 text: {literal: Platform}
                 layout: {grow: true}
+                style: {role: table-header, emphasis: strong}
               - component: text
                 text: {literal: Version}
                 layout: {grow: true}
+                style: {role: table-header, emphasis: strong}
               - component: text
                 text: {literal: Heartbeat}
                 layout: {grow: true}
+                style: {role: table-header, emphasis: strong}
               - component: text
                 text: {literal: Health}
                 layout: {grow: true}
+                style: {role: table-header, emphasis: strong}
               - component: text
                 text: {literal: Run mode}
                 layout: {grow: true}
+                style: {role: table-header, emphasis: strong}
           - component: list
             layout: {direction: vertical, gap: small}
             repeat: {source: agents.agents, as: agent, key: agent.id}
@@ -143,7 +150,6 @@ screen:
                             style: {role: detail-small, tone: muted}
                       - component: badge
                         text: {binding: agent.status_label}
-                        layout: {grow: true}
                         style: {toneBinding: agent.status}
                       - component: text
                         text: {binding: agent.run_mode}

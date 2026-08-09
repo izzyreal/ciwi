@@ -969,7 +969,7 @@ screen:
                                 layout:
                                   direction: horizontal
                                   gap: small
-                                  align: start
+                                  align: center
                                 style:
                                   role: history-execution-job-row
                                 actions:

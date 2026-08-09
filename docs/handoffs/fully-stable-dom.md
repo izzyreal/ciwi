@@ -6,6 +6,13 @@ The browser-DOM characterization suite is intentionally isolated under
 `integration/browser-dom`; the committed Go unit-test suite does not require
 Node, npm, Playwright, or a browser.
 
+The final follow-up also retains the literal graph viewport element (including
+nested graph viewports) while rebuilding graph data beneath it. Viewport scroll
+is left to the mounted DOM rather than copied into renderer state. The isolated
+suite additionally covers periodically refreshed agent-log scroll, selections
+that span multiple rendered elements, shared table/badge/control metrics, and
+the server-update confirmation/reset flow.
+
 ## Objective
 
 Make live view-model updates patch the existing browser UI in place. A semantic

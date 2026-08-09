@@ -233,7 +233,11 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if screen.Metadata.Name != "job-details" {
 		t.Fatalf("screen = %#v", screen)
 	}
-	runContextGraph := screen.Screen.Root.Children[3].Children[3].Children[2]
+	last := screen.Screen.Root.Children[len(screen.Screen.Root.Children)-1]
+	if last.ID != "job-run-context" {
+		t.Fatalf("last job-details card = %q, want job-run-context", last.ID)
+	}
+	runContextGraph := last.Children[2]
 	if runContextGraph.GraphView == nil || runContextGraph.GraphView.Root == nil || len(runContextGraph.GraphView.Root.Actions) != 0 {
 		t.Fatalf("job run-context root = %#v", runContextGraph.GraphView)
 	}
@@ -765,7 +769,8 @@ func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *tes
 	implementation := string(scriptPayload) + string(stylePayload)
 	for _, expected := range []string{
 		"ciwi.declarative.views.v1", "renderGraphView", "layoutDefinitionGraph", "renderDefinitionGraph",
-		"const layoutFrame = requestAnimationFrame", "bindActions(play, actions, graphNode.data, {session: context.session, identity: actionIdentity})",
+		"data-ciwi-graph-viewport-key", "__ciwiAdoptGraphViewport", "commitGraphSubtree(current, next)",
+		"bindActions(play, actions, graphNode.data, {session: context.session, identity: actionIdentity})",
 		"node.graphView.details", "selection.onChange(graphNode.id)", "dsl-definition-graph-viewport",
 		"dsl-definition-graph-node-play", "dsl-definition-graph-details", ".dsl-definition-graph-node.selectable:hover",
 		"applyProjectStructureFilter", "selected.pipeline_ids", "selected.root", "dsl-definition-graph-root", "graphRootActionVisible",

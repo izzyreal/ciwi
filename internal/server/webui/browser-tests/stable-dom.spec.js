@@ -6,12 +6,13 @@ const path = require('node:path');
 
 const repositoryRoot = path.resolve(__dirname, '../../../..');
 const scriptDirectory = path.join(repositoryRoot, 'internal/server/webui/assets/js');
+const cssDirectory = path.join(repositoryRoot, 'internal/server/webui/assets/css');
 
 const controls = {
   controls: {
     button: {iconSize: 16, iconGap: 6, iconPosition: 'leading'},
     select: {
-      chevronSize: 16, chevronGap: 6, minimumHeight: 32, menuPadding: 4,
+      chevronSize: 16, chevronGap: 6, minimumHeight: 44, menuPadding: 4,
       menuItemGap: 2, optionGap: 6, optionPaddingX: 8, optionPaddingY: 6,
       optionMinimumHeight: 28, selectionIndicatorWidth: 16,
       viewportInset: 8, menuGap: 4, menuMinimumWidth: 120,
@@ -50,7 +51,17 @@ const screen = {
               stateKey: 'probe-graph', defaultMode: 'graph', nodes: 'probe.graph_nodes', as: 'graphNode',
               nodeKey: 'graphNode.id', nodeLabel: {binding: 'graphNode.label'}, nodeMeta: {binding: 'graphNode.meta'},
               dependencies: 'graphNode.dependencies',
-              details: [{component: 'text', text: {binding: 'graphNode.meta'}}],
+              details: [
+                {component: 'text', text: {binding: 'graphNode.meta'}},
+                {
+                  component: 'graph-view', id: 'probe-nested-graph', text: {literal: 'Nested graph'},
+                  graphView: {
+                    stateKey: 'probe-nested-graph:{{graphNode.id}}', defaultMode: 'graph', nodes: 'graphNode.nested', as: 'nestedNode',
+                    nodeKey: 'nestedNode.id', nodeLabel: {binding: 'nestedNode.label'}, nodeMeta: {binding: 'nestedNode.meta'},
+                    dependencies: 'nestedNode.dependencies',
+                  },
+                },
+              ],
             },
           },
           {
@@ -63,6 +74,20 @@ const screen = {
           {
             component: 'scroller', id: 'probe-output', visible: {binding: 'probe.output_visible'},
             children: [{component: 'text', id: 'probe-output-text', text: {binding: 'probe.output'}}],
+          },
+          {component: 'text', id: 'probe-log', visible: {binding: 'probe.log_visible'}, text: {binding: 'probe.log'}, style: {role: 'code'}},
+          {component: 'text', id: 'probe-selection-start', text: {binding: 'probe.selection_start'}},
+          {component: 'text', id: 'probe-selection-end', text: {binding: 'probe.selection_end'}},
+          {
+            component: 'row', id: 'probe-table-header', style: {role: 'agent-header'},
+            children: [{component: 'text', text: {literal: 'Agent'}}, {component: 'text', text: {literal: 'Health'}}],
+          },
+          {
+            component: 'row', id: 'probe-table-row', style: {role: 'agent-record'}, layout: {align: 'center'},
+            children: [
+              {component: 'text', text: {literal: 'Agent one'}},
+              {component: 'badge', id: 'probe-badge', text: {literal: 'Healthy'}, layout: {grow: true}},
+            ],
           },
           {
             component: 'list', id: 'probe-rows', repeat: {source: 'probe.rows', as: 'row', key: 'row.key'},
@@ -86,10 +111,46 @@ const screen = {
   },
 };
 
+const settingsScreen = {
+  apiVersion: 'ciwi.ui/v1',
+  kind: 'Screen',
+  metadata: {name: 'settings-test'},
+  screen: {
+    dataSources: [{name: 'settings'}],
+    root: {
+      component: 'page',
+      children: [{
+        component: 'column', visible: {binding: 'settings.ready'},
+        children: [
+          {
+            component: 'select', id: 'settings-update-select', enabled: {binding: 'settings.update_supported'},
+            select: {
+              value: 'settings.selected_update_version', options: 'settings.update_versions', as: 'versionOption',
+              optionValue: 'versionOption.value', optionLabel: 'versionOption.label',
+            },
+            actions: [{on: 'change', command: 'set-server-update-option', arguments: {field: 'update', value: '{{selection.value}}'}}],
+          },
+          {
+            component: 'button', id: 'settings-update-action', text: {literal: 'Update now'},
+            enabled: {binding: 'settings.selected_update_version', empty: true, not: true},
+            actions: [{
+              on: 'activate', command: 'server-update-action',
+              arguments: {action: 'apply', targetVersion: '{{settings.selected_update_version}}'},
+              confirm: {title: 'Apply Update', message: 'Update server and agents to {{settings.selected_update_version}} and restart ciwi?'},
+            }],
+          },
+          {component: 'text', id: 'settings-update-result', text: {binding: 'settings.update_result'}},
+        ],
+      }],
+    },
+  },
+};
+
 function model(overrides = {}) {
   return Object.assign({
     version: 'one', input: 'draft', detail: 'details', selected: 'a', select_visible: true, action_id: '1', action_visible: true,
     graph_visible: false, graph_nodes: [], tree_visible: false, tree_nodes: [], output_visible: false, output: '',
+    log_visible: false, log: '', selection_start: 'Select from here', selection_end: 'through here',
     options: [{value: 'a', label: 'Alpha'}, {value: 'b', label: 'Beta'}],
     rows: [{key: 'a', label: 'Execution A', status: 'running'}, {key: 'b', label: 'Execution B', status: 'waiting'}],
   }, overrides);
@@ -102,10 +163,12 @@ async function installFixture(page, models) {
     const url = new URL(route.request().url());
     if (url.pathname === '/') {
       await route.fulfill({contentType: 'text/html', body: `<!doctype html>
-        <html><head><style>
+        <html><head><link rel="stylesheet" href="/ui/declarative.css"><style>
           .dsl-execution-row-status.dsl-status-accent { animation: ciwi-test-spin 10s linear infinite; }
           #probe-graph .dsl-definition-graph-viewport { width: 180px; height: 110px; overflow: auto; }
+          #probe-nested-graph .dsl-definition-graph-viewport { width: 160px; height: 100px; }
           #probe-output { display: block; width: 220px; height: 40px; overflow: auto; white-space: pre; }
+          #probe-log { display: block; width: 220px; height: 40px; overflow: auto; white-space: pre; }
           @keyframes ciwi-test-spin { to { transform: rotate(360deg); } }
         </style></head><body><div id="declarativeRoot"></div>
         <script>
@@ -129,6 +192,10 @@ async function installFixture(page, models) {
     if (url.pathname.startsWith('/ui/') && url.pathname.endsWith('.js')) {
       const filename = path.basename(url.pathname);
       await route.fulfill({contentType: 'application/javascript', body: fs.readFileSync(path.join(scriptDirectory, filename), 'utf8')});
+      return;
+    }
+    if (url.pathname === '/ui/declarative.css') {
+      await route.fulfill({contentType: 'text/css', body: fs.readFileSync(path.join(cssDirectory, 'declarative.css'), 'utf8')});
       return;
     }
     if (url.pathname === '/ui/contracts/routes.json') {
@@ -171,6 +238,90 @@ async function installFixture(page, models) {
   await page.goto('http://ciwi.test/');
   await expect(page.locator('#probe-version')).toHaveText(models[0].version);
   return {actionRequests};
+}
+
+async function installSettingsFixture(page) {
+  let releaseUpdate;
+  const updateGate = new Promise(resolve => { releaseUpdate = resolve; });
+  const updateBodies = [];
+  await page.route('http://ciwi-settings.test/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/') {
+      await route.fulfill({contentType: 'text/html', body: `<!doctype html>
+        <html><head><link rel="stylesheet" href="/ui/declarative.css"></head><body><div id="declarativeRoot"></div>
+        <script>
+          window.ciwiUIResourceURL = path => path;
+          window.confirmations = [];
+          window.confirm = message => { window.confirmations.push(String(message)); return true; };
+          window.alert = () => {};
+          window.EventSource = class EventSource { addEventListener() {} close() {} };
+        </script>
+        <script src="/ui/theme.js"></script><script src="/ui/actions.js"></script>
+        <script src="/ui/view-state.js"></script><script src="/ui/heartbeat.js"></script>
+        <script src="/ui/change-refresh.js"></script><script src="/ui/declarative.js"></script>
+      </body></html>`});
+      return;
+    }
+    if (url.pathname.startsWith('/ui/') && url.pathname.endsWith('.js')) {
+      await route.fulfill({contentType: 'application/javascript', body: fs.readFileSync(path.join(scriptDirectory, path.basename(url.pathname)), 'utf8')});
+      return;
+    }
+    if (url.pathname === '/ui/declarative.css') {
+      await route.fulfill({contentType: 'text/css', body: fs.readFileSync(path.join(cssDirectory, 'declarative.css'), 'utf8')});
+      return;
+    }
+    if (url.pathname === '/ui/contracts/routes.json') {
+      await route.fulfill({json: {routes: [{name: 'settings', pattern: '/', screen: 'settings-test', bindingRoot: 'settings', platforms: ['web']}]}});
+      return;
+    }
+    if (url.pathname === '/ui/contracts/screens/settings-test.json') {
+      await route.fulfill({json: settingsScreen});
+      return;
+    }
+    if (url.pathname === '/ui/contracts/themes.json') {
+      await route.fulfill({json: []});
+      return;
+    }
+    if (url.pathname === '/ui/contracts/controls.json') {
+      await route.fulfill({json: controls});
+      return;
+    }
+    if (url.pathname === '/ui/contracts/actions.json') {
+      await route.fulfill({json: {actions: [{
+        command: 'server-update-action', class: 'mutation', scope: 'server-update', pending: 'Updating…', refreshOnSuccess: false,
+      }]}});
+      return;
+    }
+    if (url.pathname === '/api/v1/server-info') {
+      await route.fulfill({json: {version: 'v1.0.0'}});
+      return;
+    }
+    if (url.pathname === '/api/v1/projects') {
+      await route.fulfill({json: {projects: []}});
+      return;
+    }
+    if (url.pathname === '/api/v1/update/status') {
+      await route.fulfill({json: {status: {
+        update_current_version: 'v1.0.0', update_latest_version: 'v1.1.0', update_available: '1',
+        update_last_checked_utc: '2026-08-09T10:00:00Z', update_server_self_update_supported: '1', update_server_mode: 'release',
+      }}});
+      return;
+    }
+    if (url.pathname === '/api/v1/update/apply') {
+      updateBodies.push(JSON.parse(route.request().postData() || '{}'));
+      await updateGate;
+      await route.fulfill({json: {message: 'Update accepted'}});
+      return;
+    }
+    if (url.pathname === '/ciwi-logo.png' || url.pathname === '/ui/icons.svg') {
+      await route.fulfill({status: 204, body: ''});
+      return;
+    }
+    await route.fulfill({status: 404, body: 'not found'});
+  });
+  await page.goto('http://ciwi-settings.test/');
+  await expect(page.locator('#settings-update-select .dsl-select-label')).toHaveText('v1.1.0');
+  return {releaseUpdate, updateBodies};
 }
 
 async function refreshTo(page, version) {
@@ -360,34 +511,50 @@ test('tree branches retain identity and disclosure state across keyed updates', 
 
 test('graph root keeps identity while zoom and viewport survive data changes', async ({page}) => {
   const graphNodes = [
-    {id: 'a', label: 'A', meta: 'one', dependencies: []},
-    {id: 'b', label: 'B', meta: 'two', dependencies: ['a']},
-    {id: 'c', label: 'C', meta: 'three', dependencies: ['b']},
+    {id: 'a', label: 'A', meta: 'one', dependencies: [], nested: []},
+    {id: 'b', label: 'B', meta: 'two', dependencies: ['a'], nested: [
+      {id: 'b-1', label: 'Nested one', meta: 'first', dependencies: []},
+      {id: 'b-2', label: 'Nested two', meta: 'second', dependencies: ['b-1']},
+    ]},
+    {id: 'c', label: 'C', meta: 'three', dependencies: ['b'], nested: []},
   ];
   await installFixture(page, [
     model({graph_visible: true, graph_nodes: graphNodes}),
     model({version: 'two', graph_visible: true, graph_nodes: [
-      ...graphNodes.map(item => item.id === 'b' ? {...item, meta: 'updated'} : item),
+      ...graphNodes.map(item => item.id === 'b' ? {...item, meta: 'updated', nested: [
+        ...item.nested.map(nested => nested.id === 'b-2' ? {...nested, meta: 'nested updated'} : nested),
+        {id: 'b-3', label: 'Nested three', meta: 'third', dependencies: ['b-2']},
+      ]} : item),
       {id: 'd', label: 'D', meta: 'four', dependencies: ['c']},
     ]}),
   ]);
   await page.locator('.dsl-definition-graph-node', {hasText: 'B'}).click();
-  await expect(page.locator('.dsl-definition-graph-node.selected')).toContainText('B');
-  await page.getByRole('button', {name: 'Reset'}).click();
-  await page.getByRole('button', {name: 'Zoom in'}).click();
-  await expect(page.locator('.dsl-definition-graph-scale')).toHaveText('110%');
-  await page.locator('.dsl-definition-graph-viewport').evaluate(viewport => {
+  const outerGraph = page.locator('#probe-graph > .dsl-graph-view-body > .dsl-definition-graph');
+  const outerToolbar = outerGraph.locator(':scope > .dsl-definition-graph-toolbar');
+  await expect(outerGraph.locator('.dsl-definition-graph-node.selected')).toContainText('B');
+  await outerToolbar.getByRole('button', {name: 'Reset', exact: true}).click();
+  await outerToolbar.getByRole('button', {name: 'Zoom in', exact: true}).click();
+  await expect(outerToolbar.locator('.dsl-definition-graph-scale')).toHaveText('110%');
+  await expect(page.locator('.dsl-definition-graph-viewport')).toHaveCount(2);
+  await page.locator('.dsl-definition-graph-viewport').first().evaluate(viewport => {
     viewport.scrollLeft = 35;
     viewport.scrollTop = 12;
-    viewport.dispatchEvent(new Event('scroll'));
     window.previousGraph = document.getElementById('probe-graph');
+    window.previousGraphViewports = Array.from(document.querySelectorAll('.dsl-definition-graph-viewport'));
+    window.previousGraphViewports[1].scrollLeft = 20;
   });
   await refreshTo(page, 'two');
   expect(await page.evaluate(() => window.previousGraph === document.getElementById('probe-graph'))).toBe(true);
-  await expect(page.locator('.dsl-definition-graph-scale')).toHaveText('110%');
-  await expect.poll(() => page.locator('.dsl-definition-graph-viewport').evaluate(viewport => viewport.scrollLeft)).toBe(35);
-  await expect(page.locator('.dsl-definition-graph-node.selected')).toContainText('B');
+  expect(await page.evaluate(() => {
+    const current = Array.from(document.querySelectorAll('.dsl-definition-graph-viewport'));
+    return current.length === 2 && current.every((viewport, index) => viewport === window.previousGraphViewports[index]);
+  })).toBe(true);
+  await expect(outerToolbar.locator('.dsl-definition-graph-scale')).toHaveText('110%');
+  await expect.poll(() => page.locator('.dsl-definition-graph-viewport').first().evaluate(viewport => viewport.scrollLeft)).toBe(35);
+  await expect.poll(() => page.locator('.dsl-definition-graph-viewport').nth(1).evaluate(viewport => viewport.scrollLeft)).toBe(20);
+  await expect(outerGraph.locator('.dsl-definition-graph-node.selected').first()).toContainText('B');
   await expect(page.locator('.dsl-definition-graph-details')).toContainText('updated');
+  await expect(page.locator('#probe-nested-graph')).toContainText('nested updated');
   await expect(page.locator('#probe-graph')).toContainText('updated');
 });
 
@@ -415,4 +582,76 @@ test('output scroller, text selection, and scroll position survive appended text
       ? [selection.anchorOffset, selection.focusOffset]
       : null;
   })).toEqual([2, 5]);
+});
+
+test('agent-style log scrolling survives periodic appended text', async ({page}) => {
+  const initial = Array.from({length: 30}, (_, index) => 'agent line ' + String(index)).join('\n');
+  await installFixture(page, [
+    model({log_visible: true, log: initial}),
+    model({version: 'two', log_visible: true, log: initial + '\nnew agent line'}),
+  ]);
+  await page.locator('#probe-log').evaluate(log => {
+    log.scrollTop = 45;
+    window.previousLog = log;
+  });
+  await refreshTo(page, 'two');
+  expect(await page.evaluate(() => window.previousLog === document.getElementById('probe-log'))).toBe(true);
+  expect(await page.locator('#probe-log').evaluate(log => log.scrollTop)).toBe(45);
+  await expect(page.locator('#probe-log')).toContainText('new agent line');
+});
+
+test('a selection spanning multiple rendered elements survives refresh', async ({page}) => {
+  await installFixture(page, [
+    model(),
+    model({version: 'two', selection_start: 'Select from here updated', selection_end: 'through here updated'}),
+  ]);
+  await page.evaluate(() => {
+    const start = document.getElementById('probe-selection-start').firstChild;
+    const end = document.getElementById('probe-selection-end').firstChild;
+    window.getSelection().setBaseAndExtent(start, 2, end, 7);
+    window.previousSelectionStart = start;
+    window.previousSelectionEnd = end;
+  });
+  await refreshTo(page, 'two');
+  expect(await page.evaluate(() => {
+    const selection = window.getSelection();
+    return selection.anchorNode === window.previousSelectionStart && selection.focusNode === window.previousSelectionEnd
+      ? [selection.anchorOffset, selection.focusOffset, selection.isCollapsed]
+      : null;
+  })).toEqual([2, 7, false]);
+});
+
+test('shared table, badge, and control sizing contracts are intrinsic and aligned', async ({page}) => {
+  await installFixture(page, [model()]);
+  const metrics = await page.evaluate(() => {
+    const bounds = id => document.getElementById(id).getBoundingClientRect();
+    const header = document.getElementById('probe-table-header');
+    const row = document.getElementById('probe-table-row');
+    return {
+      headerFontSize: getComputedStyle(header).fontSize,
+      headerAlign: getComputedStyle(header).alignItems,
+      rowAlign: getComputedStyle(row).alignItems,
+      badgeWidth: bounds('probe-badge').width,
+      rowWidth: bounds('probe-table-row').width,
+      heights: [bounds('probe-input').height, bounds('probe-select').height, bounds('probe-refresh').height],
+    };
+  });
+  expect(metrics.headerFontSize).toBe('16px');
+  expect(metrics.headerAlign).toBe('center');
+  expect(metrics.rowAlign).toBe('center');
+  expect(metrics.badgeWidth).toBeLessThan(metrics.rowWidth / 2);
+  expect(metrics.heights).toEqual([44, 44, 44]);
+});
+
+test('confirmed server update interpolates its version and resets controls before the request completes', async ({page}) => {
+  const fixture = await installSettingsFixture(page);
+  await page.locator('#settings-update-action').click();
+  await expect.poll(() => page.evaluate(() => window.confirmations)).toEqual([
+    'Update server and agents to v1.1.0 and restart ciwi?',
+  ]);
+  await expect(page.locator('#settings-update-select .dsl-select-label')).toHaveText('Click check for updates');
+  await expect(page.locator('#settings-update-action')).toBeDisabled();
+  await expect.poll(() => fixture.updateBodies).toEqual([{target_version: 'v1.1.0'}]);
+  fixture.releaseUpdate();
+  await expect(page.locator('#settings-update-result')).toHaveText('Update accepted');
 });

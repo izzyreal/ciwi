@@ -177,5 +177,6 @@ screen:
             text: {literal: Recent Agent Log}
             style: {role: heading, emphasis: strong}
           - component: text
+            id: agent-recent-log
             text: {binding: agentDetails.agent.recent_log}
             style: {role: code}

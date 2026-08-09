@@ -63,35 +63,31 @@
     if (active) {
       if (!operation.elementState) {
         operation.elementState = {
-          html: element.innerHTML,
           disabled: !!element.disabled,
         };
       }
-      element.disabled = true;
-      element.setAttribute('aria-busy', 'true');
-      element.classList.add('ciwi-action-pending');
-	  const label = element.querySelector && element.querySelector('.dsl-button-label');
-	  if (operation.spec.pending && label) {
-		const computed = window.getComputedStyle ? window.getComputedStyle(element) : null;
-		if (computed && document && document.createElement) {
-		  const context = document.createElement('canvas').getContext('2d');
-		  context.font = computed.font;
-		  const normalWidth = context.measureText(label.textContent || '').width;
-		  const pendingWidth = context.measureText(operation.spec.pending).width;
-		  if (pendingWidth > normalWidth) element.style.minWidth = Math.ceil(element.getBoundingClientRect().width + pendingWidth - normalWidth) + 'px';
-		}
-		label.textContent = operation.spec.pending;
-	  } else if (operation.spec.pending) {
-		element.textContent = operation.spec.pending;
-	  }
+      element.__ciwiActionOperation = operation;
+      syncActionElement(element);
     } else {
-      element.disabled = operation.elementState ? operation.elementState.disabled : false;
+      if (element.__ciwiActionOperation === operation) element.__ciwiActionOperation = null;
+      const renderedDisabled = Object.prototype.hasOwnProperty.call(element, '__ciwiRenderedDisabled')
+        ? !!element.__ciwiRenderedDisabled
+        : !!(operation.elementState && operation.elementState.disabled);
+      element.disabled = renderedDisabled;
       element.removeAttribute('aria-busy');
       element.classList.remove('ciwi-action-pending');
-      if (operation.elementState) {
-        element.innerHTML = operation.elementState.html;
-      }
+	  element.removeAttribute('data-ciwi-pending-label');
     }
+  }
+
+  function syncActionElement(element) {
+    if (!element) return;
+    const operation = element.__ciwiActionOperation;
+    if (!operation) return;
+    element.disabled = true;
+    element.setAttribute('aria-busy', 'true');
+    element.classList.add('ciwi-action-pending');
+    if (operation.spec.pending) element.setAttribute('data-ciwi-pending-label', operation.spec.pending);
   }
 
   function notify() {
@@ -163,6 +159,7 @@
   window.ciwiActionHeaders = actionHeaders;
   window.ciwiActionID = newActionID;
   window.ciwiConfirmAction = confirmAction;
+  window.ciwiSyncActionElement = syncActionElement;
   window.ciwiActiveOperations = () => Array.from(activeByFingerprint.values());
   // Warm the shared contract so the first user action receives immediate
   // feedback without waiting for a catalog round trip.

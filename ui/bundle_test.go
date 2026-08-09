@@ -88,6 +88,9 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if got := typography.Typography.Roles["empty-state"].Size; got != 13 {
 		t.Fatalf("empty-state size = %v, want browser size 13", got)
 	}
+	if got := typography.Typography.Roles["table-header"].Size; got != 16 {
+		t.Fatalf("table-header size = %v, want body-sized 16", got)
+	}
 	if got := typography.Typography.Roles["cache-statistics"]; got.Family != "body" || got.Size != 12 {
 		t.Fatalf("cache-statistics typography = %+v, want shared 12px body role", got)
 	}
@@ -612,6 +615,16 @@ func TestAgentsTableUsesOneCenteredLayout(t *testing.T) {
 	}
 	if record == nil || record.Layout.Align != "center" {
 		t.Fatalf("agent record = %#v, want centered shared row", record)
+	}
+	for _, child := range header.Children {
+		if child.Style.Role != "table-header" {
+			t.Errorf("agent table heading role = %q, want shared table-header", child.Style.Role)
+		}
+	}
+	for _, child := range record.Children {
+		if child.Component == "badge" && child.Layout.Grow {
+			t.Error("agent health badge must keep intrinsic width")
+		}
 	}
 	if table == nil || table.Layout.Gap != "medium" {
 		t.Fatalf("agent table = %#v, want medium header-to-list spacing", table)

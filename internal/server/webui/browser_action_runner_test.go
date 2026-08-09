@@ -161,7 +161,7 @@ window.ciwiCancelledConfirmation = window.ciwiConfirmAction({title: 'Cancel this
 		}
 	})
 
-	t.Run("mutation coalesces duplicates and restores its element", func(t *testing.T) {
+	t.Run("mutation coalesces duplicates without replacing or restoring rendered children", func(t *testing.T) {
 		harness := newBrowserActionHarness(t)
 		harness.run(t, `
 globalThis.probeButton = ciwiTestElement();
@@ -187,25 +187,33 @@ globalThis.probeSecond = window.ciwiRunAction('mutate', { id: 7 }, probeButton, 
 			t.Fatalf("idempotency key = %q", key)
 		}
 		for expression, expected := range map[string]bool{
-			"probeButton.disabled":                                  true,
-			"probeButton.getAttribute('aria-busy') === 'true'":      true,
-			"probeButton.classList.contains('ciwi-action-pending')": true,
-			"probeButton.textContent === 'Working…'":                true,
-			"window.ciwiActiveOperations().length === 1":            true,
-			"probeRefreshOnSuccess":                                 true,
+			"probeButton.disabled":                                               true,
+			"probeButton.getAttribute('aria-busy') === 'true'":                   true,
+			"probeButton.classList.contains('ciwi-action-pending')":              true,
+			"probeButton.textContent === 'Run'":                                  true,
+			"probeButton.innerHTML === '<span>Run</span>'":                       true,
+			"probeButton.getAttribute('data-ciwi-pending-label') === 'Working…'": true,
+			"window.ciwiActiveOperations().length === 1":                         true,
+			"probeRefreshOnSuccess":                                              true,
 		} {
 			if actual := harness.value(t, expression).ToBoolean(); actual != expected {
 				t.Errorf("%s = %v, want %v", expression, actual, expected)
 			}
 		}
-		harness.run(t, `probeGate.resolve('done')`)
+		harness.run(t, `
+probeButton.innerHTML = '<span>Updated by render</span>';
+probeButton.textContent = 'Updated by render';
+probeButton.__ciwiRenderedDisabled = true;
+probeGate.resolve('done');
+`)
 		requireBrowserPromise(t, harness.promise(t, "probeFirst"), goja.PromiseStateFulfilled, "done")
 		requireBrowserPromise(t, harness.promise(t, "probeSecond"), goja.PromiseStateFulfilled, "done")
 		for _, expression := range []string{
-			"probeButton.disabled === false",
+			"probeButton.disabled === true",
 			"probeButton.getAttribute('aria-busy') === undefined",
 			"!probeButton.classList.contains('ciwi-action-pending')",
-			"probeButton.innerHTML === '<span>Run</span>'",
+			"probeButton.getAttribute('data-ciwi-pending-label') === undefined",
+			"probeButton.innerHTML === '<span>Updated by render</span>'",
 			"window.ciwiActiveOperations().length === 0",
 		} {
 			if !harness.value(t, expression).ToBoolean() {

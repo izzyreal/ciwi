@@ -21,7 +21,7 @@ typography:
     detail: {family: body, size: 14, weight: regular, lineHeight: 1.2}
     detail-small: {family: body, size: 12, weight: regular, lineHeight: 1.2}
     cache-statistics: {family: body, size: 12, weight: regular, lineHeight: 1.2}
-    table-header: {family: body, size: 12, weight: strong, lineHeight: 1.2}
+    table-header: {family: body, size: 16, weight: strong, lineHeight: 1.2}
     code: {family: mono, size: 13, weight: regular, lineHeight: 1.45}
     code-inline: {family: mono, size: 13, weight: regular, lineHeight: 1.45}
     output-summary: {family: mono, size: 12, weight: strong, lineHeight: 1.35}

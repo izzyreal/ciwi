@@ -201,6 +201,7 @@
 	const metric = (variable, value) => style.setProperty(variable, String(value) + 'px');
 	metric('--ciwi-button-icon-size', activeControls.button.iconSize);
 	metric('--ciwi-button-icon-gap', activeControls.button.iconGap);
+	metric('--ciwi-control-min-height', activeControls.select.minimumHeight);
 	metric('--ciwi-select-chevron-size', activeControls.select.chevronSize);
 	metric('--ciwi-select-chevron-gap', activeControls.select.chevronGap);
 	metric('--ciwi-select-min-height', activeControls.select.minimumHeight);
@@ -761,12 +762,20 @@
     return element.contains(selection.anchorNode) || element.contains(selection.focusNode);
   }
 
+  function renderActionConfirmation(confirmation, data) {
+	if (!confirmation) return null;
+	return Object.fromEntries(Object.entries(confirmation).map(([key, value]) => [
+	  key,
+	  typeof value === 'string' ? renderText({template: value}, data) : value,
+	]));
+  }
+
   function bindActions(element, actions, data, context) {
 	const bindings = [];
     (actions || []).forEach(action => {
       const invoke = async (actionData, actionElement) => {
         const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, actionData)]));
-        if (!window.ciwiConfirmAction(action.confirm)) return;
+        if (!window.ciwiConfirmAction(renderActionConfirmation(action.confirm, actionData))) return;
         const execute = async runtime => {
 		if (action.command === 'navigate' && args.route) {
 		  const previousDisabled = !!actionElement.disabled;
@@ -1098,6 +1107,12 @@
 		}
 		else if (action.command === 'server-update-action') {
 		  const path = args.action === 'restart' ? '/api/v1/server/restart' : (args.action === 'rollback' ? '/api/v1/update/rollback' : '/api/v1/update/apply');
+		  const settings = currentData.settings;
+		  if (args.action === 'apply') {
+			settings.update_versions = declarativeVersionOptions([], 'Click check for updates');
+			settings.selected_update_version = '';
+			renderCurrent();
+		  }
 		  const response = await fetch(path, {
 		    method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}),
 		    body: JSON.stringify(args.action === 'restart' ? {} : {target_version: args.targetVersion || ''}),
@@ -1105,7 +1120,6 @@
 		  });
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
-		  const settings = currentData.settings;
 		  const field = args.action === 'rollback' ? 'rollback_result' : 'update_result';
 		  settings[field] = result.message || 'Request accepted';
 		  settings[field + '_tone'] = 'success';
@@ -1345,6 +1359,7 @@
     toolbar.className = 'dsl-definition-graph-toolbar';
     const viewport = document.createElement('div');
     viewport.className = 'dsl-definition-graph-viewport';
+	viewport.dataset.ciwiGraphViewportKey = context.identity;
     const scaler = document.createElement('div');
     scaler.className = 'dsl-definition-graph-scaler';
     const stage = document.createElement('div');
@@ -1430,6 +1445,8 @@
     });
     scaler.appendChild(stage);
     viewport.appendChild(scaler);
+	let mountedScaler = scaler;
+	let mountedStage = stage;
     let scale = Number(viewportState.scale || 1);
     const clamp = value => Math.min(1.5, Math.max(0.45, value));
     const scaleLabel = document.createElement('span');
@@ -1437,11 +1454,12 @@
     const applyScale = next => {
       scale = clamp(next);
 	  viewportState.scale = scale;
-      scaler.style.width = Math.round(layout.width * scale) + 'px';
-      scaler.style.height = Math.round(layout.height * scale) + 'px';
-      stage.style.transform = 'scale(' + scale + ')';
+	  mountedScaler.style.width = Math.round(layout.width * scale) + 'px';
+	  mountedScaler.style.height = Math.round(layout.height * scale) + 'px';
+	  mountedStage.style.transform = 'scale(' + scale + ')';
       scaleLabel.textContent = Math.round(scale * 100) + '%';
     };
+	applyScale(scale);
     const control = (label, icon, action) => {
       const button = document.createElement('button');
       button.className = 'dsl-button' + (icon ? ' dsl-icon-button' : '');
@@ -1452,10 +1470,12 @@
       button.addEventListener('click', action);
       return button;
     };
-    const fit = () => applyScale(Math.min(
-      (Math.max(1, viewport.clientWidth) - 32) / layout.width,
-      388 / layout.height,
+	let mountedViewport = viewport;
+    const fitViewport = target => applyScale(Math.min(
+	  (Math.max(1, target.clientWidth) - 32) / layout.width,
+	  388 / layout.height,
     ));
+	const fit = () => fitViewport(mountedViewport);
     toolbar.append(
       control('Fit', '', fit),
       control('Reset', '', () => applyScale(1)),
@@ -1477,25 +1497,27 @@
 			wrapper.appendChild(detail);
 		}
 	}
-    const rememberViewportScroll = () => {
-	  viewportState.scrollLeft = viewport.scrollLeft;
-	  viewportState.scrollTop = viewport.scrollTop;
+	let layoutFrame = 0;
+	const disposeViewport = () => {
+	  if (layoutFrame) cancelAnimationFrame(layoutFrame);
+	  layoutFrame = 0;
 	};
-    viewport.addEventListener('scroll', rememberViewportScroll, {passive: true});
-    const layoutFrame = requestAnimationFrame(() => {
+	const mountViewport = (target, adoptedScaler = mountedScaler, adoptedStage = mountedStage) => {
+	  disposeViewport();
+	  mountedViewport = target;
+	  mountedScaler = adoptedScaler;
+	  mountedStage = adoptedStage;
+	  target.__ciwiDispose = disposeViewport;
+	  target.__ciwiAdoptGraphViewport = mountViewport;
 	  if (!viewportState.initialized) {
-		fit();
-		viewportState.initialized = true;
-	  } else {
-		applyScale(viewportState.scale);
-		viewport.scrollLeft = Number(viewportState.scrollLeft || 0);
-		viewport.scrollTop = Number(viewportState.scrollTop || 0);
+		layoutFrame = requestAnimationFrame(() => {
+		  layoutFrame = 0;
+		  fitViewport(target);
+		  viewportState.initialized = true;
+		});
 	  }
-	});
-	wrapper.__ciwiDispose = () => {
-	  cancelAnimationFrame(layoutFrame);
-	  viewport.removeEventListener('scroll', rememberViewportScroll);
 	};
+	mountViewport(viewport);
     return wrapper;
   }
 
@@ -1504,7 +1526,7 @@
 	const runtimeKey = context.session.screenName + ':' + stateKey;
 	let runtime = graphRuntimeStates.get(runtimeKey);
 	if (!runtime) {
-	  runtime = {selectedID: '', scale: 1, scrollLeft: 0, scrollTop: 0, initialized: false};
+	  runtime = {selectedID: '', scale: 1, initialized: false};
 	  graphRuntimeStates.set(runtimeKey, runtime);
 	}
 	element.__ciwiStatefulContents = 'graph-view';
@@ -1713,6 +1735,7 @@
 	    : String(resolve(data, node.enabled.binding)) === String(node.enabled.equals || 'true');
 	  element.disabled = node.enabled.not ? equal : !equal;
 	}
+	if ('disabled' in element) element.__ciwiRenderedDisabled = !!element.disabled;
     if (node.component === 'disclosure') {
       const summary = document.createElement('summary');
 	  if (style.role === 'execution-row' && node.image) {
@@ -1910,6 +1933,10 @@
 	  }
 	  current.__ciwiRenderedValue = nextValue;
 	}
+	if (Object.prototype.hasOwnProperty.call(next, '__ciwiRenderedDisabled')) {
+	  current.__ciwiRenderedDisabled = !!next.__ciwiRenderedDisabled;
+	  current.disabled = current.__ciwiRenderedDisabled;
+	}
 	if (Object.prototype.hasOwnProperty.call(next, '__ciwiSemanticProgress')) {
 	  current.__ciwiSemanticProgress = next.__ciwiSemanticProgress;
 	  current.__ciwiSemanticProgressState = preserveProgressAnimation ? previousProgressState : nextProgressState;
@@ -1952,16 +1979,65 @@
 
   function updateStatefulRenderedElement(current, next) {
 	if (next.__ciwiStatefulContents === 'graph-view') {
-	  const viewport = current.querySelector('.dsl-definition-graph-viewport');
-	  const runtime = next.__ciwiGraphRuntime;
-	  if (viewport && runtime) {
-		runtime.scrollLeft = viewport.scrollLeft;
-		runtime.scrollTop = viewport.scrollTop;
-	  }
+	  const mountedViewports = new Map(Array.from(current.querySelectorAll('[data-ciwi-graph-viewport-key]')).map(viewport => [
+		String(viewport.dataset.ciwiGraphViewportKey || ''),
+		viewport,
+	  ]));
+	  const viewportKeys = node => {
+		if (!node || node.nodeType !== Node.ELEMENT_NODE) return [];
+		const result = node.matches('[data-ciwi-graph-viewport-key]') ? [node] : [];
+		return result.concat(Array.from(node.querySelectorAll('[data-ciwi-graph-viewport-key]')))
+		  .map(viewport => String(viewport.dataset.ciwiGraphViewportKey || ''));
+	  };
+	  const adoptViewport = nextViewport => {
+		const mountedViewport = mountedViewports.get(String(nextViewport.dataset.ciwiGraphViewportKey || ''));
+		if (!mountedViewport || typeof nextViewport.__ciwiAdoptGraphViewport !== 'function') return nextViewport;
+		const mountedScaler = mountedViewport.querySelector(':scope > .dsl-definition-graph-scaler');
+		const nextScaler = nextViewport.querySelector(':scope > .dsl-definition-graph-scaler');
+		const mountedStage = mountedScaler && mountedScaler.querySelector(':scope > .dsl-definition-graph-stage');
+		const nextStage = nextScaler && nextScaler.querySelector(':scope > .dsl-definition-graph-stage');
+		if (!mountedScaler || !nextScaler || !mountedStage || !nextStage) return nextViewport;
+		if (typeof mountedViewport.__ciwiDispose === 'function') mountedViewport.__ciwiDispose();
+		patchRenderedAttributes(mountedScaler, nextScaler);
+		patchRenderedAttributes(mountedStage, nextStage);
+		Array.from(mountedStage.childNodes).forEach(disposeRenderedNode);
+		mountedStage.replaceChildren(...Array.from(nextStage.childNodes));
+		patchRenderedAttributes(mountedViewport, nextViewport);
+		const adopt = nextViewport.__ciwiAdoptGraphViewport;
+		nextViewport.__ciwiDispose = null;
+		nextViewport.__ciwiAdoptGraphViewport = null;
+		adopt(mountedViewport, mountedScaler, mountedStage);
+		return mountedViewport;
+	  };
+	  const commitGraphSubtree = (mountedNode, nextNode) => {
+		if (nextNode.matches('[data-ciwi-graph-viewport-key]')) return adoptViewport(nextNode);
+		patchRenderedAttributes(mountedNode, nextNode);
+		const previousChildren = Array.from(mountedNode.childNodes);
+		const retained = new Set();
+		const desiredChildren = Array.from(nextNode.childNodes).map(nextChild => {
+		  const keys = viewportKeys(nextChild);
+		  if (!keys.length) return nextChild;
+		  const candidate = previousChildren.find(child => !retained.has(child) && viewportKeys(child).some(key => keys.includes(key)));
+		  if (!candidate || candidate.nodeType !== Node.ELEMENT_NODE || nextChild.nodeType !== Node.ELEMENT_NODE) return nextChild;
+		  retained.add(candidate);
+		  return commitGraphSubtree(candidate, nextChild);
+		});
+		previousChildren.forEach(child => {
+		  if (retained.has(child) || child.parentNode !== mountedNode) return;
+		  disposeRenderedNode(child);
+		  child.remove();
+		});
+		desiredChildren.forEach((child, index) => {
+		  const reference = mountedNode.childNodes[index] || null;
+		  if (child !== reference) mountedNode.insertBefore(child, reference);
+		});
+		return mountedNode;
+	  };
+	  commitGraphSubtree(current, next);
+	} else {
+	  Array.from(current.childNodes).forEach(disposeRenderedNode);
+	  current.replaceChildren(...Array.from(next.childNodes));
 	}
-	patchRenderedAttributes(current, next);
-	Array.from(current.childNodes).forEach(disposeRenderedNode);
-	current.replaceChildren(...Array.from(next.childNodes));
 	current.__ciwiStatefulContents = next.__ciwiStatefulContents;
 	current.__ciwiGraphRuntime = next.__ciwiGraphRuntime;
   }
@@ -2032,6 +2108,7 @@
 	}
 	patchRenderedElement(current, next);
 	reconcileRenderedChildren(current, next);
+	if (typeof window.ciwiSyncActionElement === 'function') window.ciwiSyncActionElement(current);
 	return current;
   }
 
@@ -2106,7 +2183,7 @@
 	const upToDate = checked && message.toLowerCase() === 'already up to date';
 	const versions = available ? [latest] : [];
 	return {
-	  updateVersions: declarativeVersionOptions(versions, upToDate ? 'No newer versions available' : 'Check for updates'),
+	  updateVersions: declarativeVersionOptions(versions, upToDate ? 'No newer versions available' : 'Click check for updates'),
 	  selectedUpdateVersion: available ? latest : '',
 	  updateResult: available ? 'Update available: ' + current + ' → ' + latest : (upToDate ? 'Up to date (' + current + ')' : ''),
 	};

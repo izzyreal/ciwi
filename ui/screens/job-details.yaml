@@ -289,91 +289,6 @@ screen:
                       - component: text
                         text: {binding: releaseRow.value}
                         style: {role: detail, toneBinding: releaseRow.tone}
-          - component: card
-            visible: {binding: jobDetails.run_context.available}
-            layout: {direction: vertical, gap: medium, padding: medium}
-            children:
-              - component: text
-                text: {literal: Run Context}
-                style: {role: heading, emphasis: strong}
-              - component: text
-                text: {binding: jobDetails.run_context.scope_label}
-                style: {role: detail, tone: muted}
-              - component: graph-view
-                text: {literal: Pipelines}
-                graphView:
-                  stateKey: "job-run-context:{{jobDetails.id}}"
-                  defaultMode: graph
-                  nodes: jobDetails.run_context.pipelines
-                  as: runPipeline
-                  nodeKey: runPipeline.pipeline_id
-                  nodeLabel: {binding: runPipeline.pipeline_id}
-                  nodeMeta: {binding: runPipeline.summary_label}
-                  dependencies: runPipeline.depends_on
-                  root:
-                    binding: jobDetails.run_context
-                    as: runRoot
-                    key: runRoot.current_execution_id
-                    label: {binding: runRoot.scope_label}
-                    meta: {template: "Execution {{runRoot.current_execution_id}}"}
-                  details:
-                    - component: text
-                      text: {template: "Pipeline: {{runPipeline.pipeline_id}}"}
-                      style: {role: heading, emphasis: strong}
-                    - component: graph-view
-                      text: {literal: Jobs}
-                      graphView:
-                        stateKey: "job-run-context-jobs:{{jobDetails.id}}:{{runPipeline.pipeline_id}}"
-                        defaultMode: graph
-                        nodes: runPipeline.jobs
-                        as: runJob
-                        nodeKey: runJob.id
-                        nodeLabel: {binding: runJob.id}
-                        nodeMeta: {binding: runJob.summary_label}
-                        dependencies: runJob.needs
-                        root:
-                          binding: runPipeline
-                          as: runPipelineRoot
-                          key: runPipelineRoot.id
-                          label: {template: "Pipeline: {{runPipelineRoot.pipeline_id}}"}
-                          meta: {binding: runPipelineRoot.summary_label}
-                        details:
-                          - component: text
-                            text: {template: "Job: {{runJob.id}}"}
-                            style: {role: heading, emphasis: strong}
-                          - component: list
-                            layout: {direction: vertical, gap: small}
-                            repeat: {source: runJob.executions, as: runExecution, key: runExecution.id}
-                            children:
-                              - component: row
-                                layout: {direction: horizontal, gap: small, align: center}
-                                children:
-                                  - component: button
-                                    text: {binding: runExecution.matrix_label}
-                                    actions:
-                                      - on: activate
-                                        command: navigate
-                                        arguments: {route: "/jobs/{{runExecution.id}}"}
-                                  - component: badge
-                                    text: {binding: runExecution.status}
-                                    style: {toneBinding: runExecution.status}
-                                  - component: text
-                                    text: {binding: runExecution.attempt_label}
-                                    style: {role: detail-small, tone: muted}
-                      children:
-                        - component: list
-                          repeat: {source: runPipeline.jobs, as: runJob, key: runJob.id}
-                          children:
-                            - component: text
-                              text: {template: "{{runJob.id}} · {{runJob.summary_label}}"}
-                              style: {role: detail}
-                children:
-                  - component: list
-                    repeat: {source: jobDetails.run_context.pipelines, as: runPipeline, key: runPipeline.pipeline_id}
-                    children:
-                      - component: text
-                        text: {template: "{{runPipeline.pipeline_id}} · {{runPipeline.summary_label}}"}
-                        style: {role: detail}
       - component: section
         visible: {binding: jobDetails.ready}
         id: execution-output
@@ -826,3 +741,89 @@ screen:
                   nodeTone: treeNode.tone
                   children: treeNode.children
                   defaultExpanded: treeNode.default_expanded
+      - component: card
+        id: job-run-context
+        visible: {binding: jobDetails.run_context.available}
+        layout: {direction: vertical, gap: medium, padding: medium}
+        children:
+          - component: text
+            text: {literal: Run Context}
+            style: {role: heading, emphasis: strong}
+          - component: text
+            text: {binding: jobDetails.run_context.scope_label}
+            style: {role: detail, tone: muted}
+          - component: graph-view
+            text: {literal: Pipelines}
+            graphView:
+              stateKey: "job-run-context:{{jobDetails.id}}"
+              defaultMode: graph
+              nodes: jobDetails.run_context.pipelines
+              as: runPipeline
+              nodeKey: runPipeline.pipeline_id
+              nodeLabel: {binding: runPipeline.pipeline_id}
+              nodeMeta: {binding: runPipeline.summary_label}
+              dependencies: runPipeline.depends_on
+              root:
+                binding: jobDetails.run_context
+                as: runRoot
+                key: runRoot.current_execution_id
+                label: {binding: runRoot.scope_label}
+                meta: {template: "Execution {{runRoot.current_execution_id}}"}
+              details:
+                - component: text
+                  text: {template: "Pipeline: {{runPipeline.pipeline_id}}"}
+                  style: {role: heading, emphasis: strong}
+                - component: graph-view
+                  text: {literal: Jobs}
+                  graphView:
+                    stateKey: "job-run-context-jobs:{{jobDetails.id}}:{{runPipeline.pipeline_id}}"
+                    defaultMode: graph
+                    nodes: runPipeline.jobs
+                    as: runJob
+                    nodeKey: runJob.id
+                    nodeLabel: {binding: runJob.id}
+                    nodeMeta: {binding: runJob.summary_label}
+                    dependencies: runJob.needs
+                    root:
+                      binding: runPipeline
+                      as: runPipelineRoot
+                      key: runPipelineRoot.id
+                      label: {template: "Pipeline: {{runPipelineRoot.pipeline_id}}"}
+                      meta: {binding: runPipelineRoot.summary_label}
+                    details:
+                      - component: text
+                        text: {template: "Job: {{runJob.id}}"}
+                        style: {role: heading, emphasis: strong}
+                      - component: list
+                        layout: {direction: vertical, gap: small}
+                        repeat: {source: runJob.executions, as: runExecution, key: runExecution.id}
+                        children:
+                          - component: row
+                            layout: {direction: horizontal, gap: small, align: center}
+                            children:
+                              - component: button
+                                text: {binding: runExecution.matrix_label}
+                                actions:
+                                  - on: activate
+                                    command: navigate
+                                    arguments: {route: "/jobs/{{runExecution.id}}"}
+                              - component: badge
+                                text: {binding: runExecution.status}
+                                style: {toneBinding: runExecution.status}
+                              - component: text
+                                text: {binding: runExecution.attempt_label}
+                                style: {role: detail-small, tone: muted}
+                  children:
+                    - component: list
+                      repeat: {source: runPipeline.jobs, as: runJob, key: runJob.id}
+                      children:
+                        - component: text
+                          text: {template: "{{runJob.id}} · {{runJob.summary_label}}"}
+                          style: {role: detail}
+            children:
+              - component: list
+                repeat: {source: jobDetails.run_context.pipelines, as: runPipeline, key: runPipeline.pipeline_id}
+                children:
+                  - component: text
+                    text: {template: "{{runPipeline.pipeline_id}} · {{runPipeline.summary_label}}"}
+                    style: {role: detail}
