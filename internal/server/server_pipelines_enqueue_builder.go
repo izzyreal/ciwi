@@ -74,6 +74,7 @@ func (s *stateStore) buildPendingPipelineJobs(
 				pj.Artifacts,
 				pj.ArtifactSources,
 				pj.Caches,
+				pj.Position,
 				index,
 				vars,
 				originalMatrixEntries,
@@ -108,6 +109,7 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	artifacts []string,
 	artifactSources []config.PipelineJobArtifactSource,
 	caches []config.PipelineJobCacheSpec,
+	pipelineJobIndex int,
 	matrixIndex int,
 	matrixVars map[string]string,
 	originalMatrixEntries []map[string]string,
@@ -234,7 +236,7 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		domain.ExecutionMetadataPipelineID:       p.PipelineID,
 		domain.ExecutionMetadataPipelineRunID:    runID,
 		domain.ExecutionMetadataPipelineJobID:    pipelineJobID,
-		domain.ExecutionMetadataPipelineJobIndex: strconv.Itoa(matrixIndex),
+		domain.ExecutionMetadataPipelineJobIndex: strconv.Itoa(pipelineJobIndex),
 	}
 	if len(originalMatrixEntries) > 0 {
 		metadata.Set(domain.ExecutionMetadataMatrixIndex, strconv.Itoa(matrixIndex))

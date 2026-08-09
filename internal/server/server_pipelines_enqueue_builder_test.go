@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/config"
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
 )
@@ -54,6 +55,52 @@ pipelines:
 	}
 	if !strings.Contains(job.Script, "linux-arm64") {
 		t.Fatalf("expected rendered script to include selected matrix value, script=%q", job.Script)
+	}
+}
+
+func TestPendingJobsRecordLogicalJobAndMatrixPlanIndices(t *testing.T) {
+	s, pipeline := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project:
+  name: ciwi
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on: {os: linux}
+        matrix:
+          include:
+            - name: amd64
+            - name: arm64
+        timeout_seconds: 30
+        steps:
+          - run: echo {{name}}
+      - id: package
+        runs_on: {os: linux}
+        timeout_seconds: 30
+        steps:
+          - run: echo package
+`), "plan-indices")
+
+	_, pending, err := s.preparePendingPipelineJobs(pipeline, nil, enqueuePipelineOptions{
+		forcedRun: &pipelineRunContext{},
+		forcedDep: &pipelineDependencyContext{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 3 {
+		t.Fatalf("pending jobs = %d, want 3", len(pending))
+	}
+	wantJobIndices := []string{"0", "0", "1"}
+	wantMatrixIndices := []string{"0", "1", ""}
+	for index := range pending {
+		if got := pending[index].metadata.Value(domain.ExecutionMetadataPipelineJobIndex); got != wantJobIndices[index] {
+			t.Errorf("pending[%d] pipeline job index = %q, want %q", index, got, wantJobIndices[index])
+		}
+		if got := pending[index].metadata.Value(domain.ExecutionMetadataMatrixIndex); got != wantMatrixIndices[index] {
+			t.Errorf("pending[%d] matrix index = %q, want %q", index, got, wantMatrixIndices[index])
+		}
 	}
 }
 

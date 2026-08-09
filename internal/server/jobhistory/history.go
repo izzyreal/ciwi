@@ -562,9 +562,26 @@ func buildPipelineSections(jobs []protocol.JobExecution, card executionCard) []S
 		label string
 		jobs  []protocol.JobExecution
 	}
+	indices := append([]int(nil), card.VisibleIndices...)
+	sort.SliceStable(indices, func(i, j int) bool {
+		left := jobs[indices[i]].Metadata
+		right := jobs[indices[j]].Metadata
+		for _, key := range []string{
+			domain.ExecutionMetadataPipelineChainIndex,
+			domain.ExecutionMetadataPipelineJobIndex,
+			domain.ExecutionMetadataMatrixIndex,
+		} {
+			leftIndex, leftOK := left.Int64(key)
+			rightIndex, rightOK := right.Int64(key)
+			if leftOK && rightOK && leftIndex != rightIndex {
+				return leftIndex > rightIndex
+			}
+		}
+		return false
+	})
 	ordered := make([]sectionState, 0)
 	byKey := map[string]int{}
-	for _, idx := range card.VisibleIndices {
+	for _, idx := range indices {
 		job := jobs[idx]
 		sectionKey := pipelineSectionKey(job)
 		if sectionKey == "" {

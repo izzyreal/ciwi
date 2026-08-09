@@ -30,9 +30,30 @@ pipelines:
               report: dist/go-unit.json
               coverage_format: go-coverprofile
               coverage_report: dist/go-unit.cover
+      - id: integration-tests
+        runs_on:
+          executor: script
+          shell: posix
+          os: linux
+          arch: amd64
+        requires:
+          tools:
+            git: "*"
+            docker: "*"
+        timeout_seconds: 600
+        artifacts:
+          - dist/browser-dom-junit.xml
+        steps:
+          - name: Run browser DOM integration tests
+            test:
+              name: browser-dom-integration
+              command: mkdir -p dist && docker run --rm --ipc=host -e CI=1 -e CIWI_JUNIT_REPORT=/work/dist/browser-dom-junit.xml -v "$PWD:/work" -v /work/integration/browser-dom/node_modules -w /work/integration/browser-dom mcr.microsoft.com/playwright:v1.62.1-noble bash -lc 'npm ci && npm test'
+              format: junit-xml
+              report: dist/browser-dom-junit.xml
       - id: build-cross-platform
         needs:
           - unit-tests
+          - integration-tests
         runs_on:
           executor: script
           shell: posix

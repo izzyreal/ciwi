@@ -11,5 +11,6 @@ npx playwright install chromium
 npm test
 ```
 
-The module is intended to move into the repository's containerized integration
-test workflow once that environment is available.
+The `build` pipeline runs this module in the matching official Playwright
+container as its `integration-tests` job. That job is separate from
+`unit-tests`; both must succeed before `build-cross-platform` starts.

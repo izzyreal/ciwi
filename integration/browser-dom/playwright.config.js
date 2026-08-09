@@ -8,12 +8,17 @@ Module._initPaths();
 
 const {defineConfig} = require('@playwright/test');
 
+const junitReport = process.env.CIWI_JUNIT_REPORT;
+
 module.exports = defineConfig({
   testDir: '../../internal/server/webui/browser-tests',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? 'github' : 'line',
+  workers: process.env.CI ? 1 : undefined,
+  reporter: junitReport
+    ? [['junit', {outputFile: junitReport}]]
+    : (process.env.CI ? 'github' : 'line'),
   use: {
     browserName: 'chromium',
     headless: true,

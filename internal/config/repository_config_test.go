@@ -34,6 +34,15 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 		t.Fatalf("job %q not found in pipeline %q", id, pipeline.ID)
 		return PipelineJobSpec{}
 	}
+	build := pipelineByID("build")
+	integrationTests := jobByID(build, "integration-tests")
+	buildCrossPlatform := jobByID(build, "build-cross-platform")
+	if integrationTests.RunsOn["os"] != "linux" || integrationTests.RunsOn["arch"] != "amd64" || integrationTests.Requires.Tools["docker"] != "*" {
+		t.Fatalf("unexpected browser integration runtime: %+v", integrationTests)
+	}
+	if !slices.Contains(buildCrossPlatform.Needs, "unit-tests") || !slices.Contains(buildCrossPlatform.Needs, "integration-tests") {
+		t.Fatalf("cross-platform build dependencies = %+v, want both test jobs", buildCrossPlatform.Needs)
+	}
 
 	windowsPackage := pipelineByID("package-windows")
 	windowsInstaller := jobByID(windowsPackage, "windows-installer")

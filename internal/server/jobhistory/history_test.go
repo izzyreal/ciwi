@@ -110,6 +110,34 @@ func TestHandleCardsFullBuildsSectionsAndMatrixGroups(t *testing.T) {
 	}
 }
 
+func TestExecutionCardSectionsUseDescendingPlanSequence(t *testing.T) {
+	jobs := []protocol.JobExecution{
+		job("package", "queued", "2026-08-09T12:00:03Z", map[string]string{
+			"pipeline_id": "package-windows", "pipeline_run_id": "run-package", "chain_run_id": "chain-1",
+			"pipeline_chain_index": "3", "pipeline_job_id": "package", "pipeline_job_index": "0",
+		}),
+		job("sign", "queued", "2026-08-09T12:00:02Z", map[string]string{
+			"pipeline_id": "release-github", "pipeline_run_id": "run-release", "chain_run_id": "chain-1",
+			"pipeline_chain_index": "4", "pipeline_job_id": "sign", "pipeline_job_index": "1",
+		}),
+		job("publish", "queued", "2026-08-09T12:00:01Z", map[string]string{
+			"pipeline_id": "release-github", "pipeline_run_id": "run-release", "chain_run_id": "chain-1",
+			"pipeline_chain_index": "4", "pipeline_job_id": "publish", "pipeline_job_index": "2",
+		}),
+	}
+	cards := buildExecutionCards(jobs, nil)
+	if len(cards) != 1 {
+		t.Fatalf("execution cards = %+v, want one chain", cards)
+	}
+	sections := cardView(jobs, cards[0], true, false).Sections
+	if len(sections) != 2 || sections[0].Label != "release-github" || sections[1].Label != "package-windows" {
+		t.Fatalf("pipeline section order = %+v", sections)
+	}
+	if len(sections[0].Items) != 2 || sections[0].Items[0].Job.ID != "publish" || sections[0].Items[1].Job.ID != "sign" {
+		t.Fatalf("release job order = %+v", sections[0].Items)
+	}
+}
+
 func TestHandleCardsPaginationAndInvalidDetail(t *testing.T) {
 	store := &stubStore{listJobExecutionsFn: func() ([]protocol.JobExecution, error) {
 		return []protocol.JobExecution{
