@@ -50,3 +50,8 @@ ciwi-artifacts
 # Codex build cache
 .cache
 .gocache
+
+# Browser test dependencies and reports
+node_modules/
+playwright-report/
+test-results/

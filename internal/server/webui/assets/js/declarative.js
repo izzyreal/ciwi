@@ -27,6 +27,68 @@
   const disclosureStates = window.ciwiDisclosureState;
   const viewStorageKey = 'ciwi.declarative.views.v1';
   const viewStates = loadViewStates();
+  let committedActionBindings = new Map();
+  let committedRenderSignature = '';
+
+  function rendererKeyPart(value) {
+	return encodeURIComponent(String(value ?? '').trim());
+  }
+
+  function createRenderSession(screenName, actionBindings) {
+	return {
+	  screenName: rendererKeyPart(screenName || 'unknown'),
+	  actionBindings: actionBindings || new Map(),
+	};
+  }
+
+  function rootRenderContext(session) {
+	const screenScope = 'screen:' + session.screenName;
+	return {session, path: screenScope + '/root', parentScope: screenScope, repeatIdentity: '', inRepeat: false};
+  }
+
+  function childRenderContext(context, segment, repeatIdentity = '') {
+	return {
+	  session: context.session,
+	  path: context.identity + '/' + segment,
+	  parentScope: context.identity,
+	  repeatIdentity,
+	  inRepeat: context.inRepeat || !!repeatIdentity,
+	};
+  }
+
+  function nodeRenderIdentity(node, data, context) {
+	if (context.repeatIdentity) return context.repeatIdentity;
+	if (node.disclosure && node.disclosure.stateKey) {
+	  const stateKey = renderText({template: node.disclosure.stateKey}, data).trim();
+	  if (stateKey) return context.parentScope + '/disclosure:' + rendererKeyPart(stateKey);
+	}
+	if (node.id) {
+	  const idScope = context.inRepeat ? context.parentScope : 'screen:' + context.session.screenName;
+	  return idScope + '/id:' + rendererKeyPart(node.id);
+	}
+	return context.path;
+  }
+
+  function annotateRendererElement(element, component, identity) {
+	if (!element || element.nodeType !== Node.ELEMENT_NODE) return element;
+	element.dataset.ciwiNodeKey = identity;
+	element.dataset.ciwiComponent = component;
+	element.dataset.ciwiTag = String(element.localName || element.tagName || '').toLowerCase();
+	return element;
+  }
+
+  function repeatedItems(node, data, scopePath) {
+	const list = resolve(data, node.repeat.source);
+	const seen = new Set();
+	return (Array.isArray(list) ? list : []).map((item, index) => {
+	  const itemData = Object.assign({}, data, {[node.repeat.as]: item});
+	  const key = String(resolve(itemData, node.repeat.key) ?? '').trim();
+	  if (!key) throw new Error('Empty repeat key at ' + scopePath + ' for item ' + String(index));
+	  if (seen.has(key)) throw new Error('Duplicate repeat key "' + key + '" at ' + scopePath);
+	  seen.add(key);
+	  return {itemData, key};
+	});
+  }
 
   function uiResourceURL(path) {
 	return typeof window.ciwiUIResourceURL === 'function' ? window.ciwiUIResourceURL(path) : path;
@@ -650,23 +712,24 @@
     return element.contains(selection.anchorNode) || element.contains(selection.focusNode);
   }
 
-  function bindActions(element, actions, data) {
+  function bindActions(element, actions, data, context) {
+	const bindings = [];
     (actions || []).forEach(action => {
-      const invoke = async actionData => {
+      const invoke = async (actionData, actionElement) => {
         const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, actionData)]));
         if (!window.ciwiConfirmAction(action.confirm)) return;
         const execute = async runtime => {
 		if (action.command === 'navigate' && args.route) {
-		  const previousDisabled = !!element.disabled;
-		  element.disabled = true;
-		  element.setAttribute('aria-busy', 'true');
-		  element.classList.add('ciwi-action-pending');
+		  const previousDisabled = !!actionElement.disabled;
+		  actionElement.disabled = true;
+		  actionElement.setAttribute('aria-busy', 'true');
+		  actionElement.classList.add('ciwi-action-pending');
 		  try {
 			await navigateBrowser(args.route, {section: args.section || ''});
 		  } finally {
-			element.disabled = previousDisabled;
-			element.removeAttribute('aria-busy');
-			element.classList.remove('ciwi-action-pending');
+			actionElement.disabled = previousDisabled;
+			actionElement.removeAttribute('aria-busy');
+			actionElement.classList.remove('ciwi-action-pending');
 		  }
         }
         else if (action.command === 'open-url' && args.url) window.open(args.url, '_blank', 'noopener,noreferrer');
@@ -1035,42 +1098,87 @@
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
 		if (runtime.refreshOnSuccess) await refresh({throwOnError: true});
         };
-        if (typeof window.ciwiRunAction === 'function') return window.ciwiRunAction(action.command, args, element, execute);
+        if (typeof window.ciwiRunAction === 'function') return window.ciwiRunAction(action.command, args, actionElement, execute);
         const idempotencyKey = typeof window.ciwiActionID === 'function' ? window.ciwiActionID() : '';
         return execute({signal: undefined, idempotencyKey});
       };
       if (action.on === 'activate') {
         element.tabIndex = element.tabIndex >= 0 ? element.tabIndex : 0;
         element.setAttribute('role', element.tagName === 'BUTTON' ? 'button' : 'link');
-        element.addEventListener('click', event => {
-		  const summary = element.closest('summary');
-		  if (element.tagName === 'BUTTON' || summary) event.stopPropagation();
-		  // A click on any descendant of <summary> performs the summary's
-		  // built-in toggle even when propagation is stopped. Child actions own
-		  // the gesture, so suppress that default before invoking the action.
-		  if (summary) event.preventDefault();
-		  if (element.tagName !== 'BUTTON' && elementContainsTextSelection(element)) return;
-          invoke(data).catch(error => window.alert(error.message || String(error)));
-        });
-        element.addEventListener('keydown', event => {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); invoke(data).catch(error => window.alert(error.message || String(error))); }
-        });
-      } else if (action.on === 'change') {
-		const eventName = element.id === 'job-output-search' ? 'input' : 'change';
-		element.addEventListener(eventName, () => {
-          const selected = element.options && element.selectedIndex >= 0 ? element.options[element.selectedIndex] : null;
-          const actionData = element.tagName === 'INPUT' || element.tagName === 'TEXTAREA'
-            ? Object.assign({}, data, {input: {value: element.value}})
-            : Object.assign({}, data, {selection: {value: element.value, label: selected ? selected.textContent : (element.dataset.selectedLabel || element.value)}});
-          invoke(actionData).catch(error => window.alert(error.message || String(error)));
-        });
       }
+	  bindings.push({action, data, invoke});
     });
+	if (!bindings.length || !context || !context.identity) return;
+	element.dataset.ciwiActionKey = context.identity;
+	context.session.actionBindings.set(context.identity, bindings);
   }
+
+  function delegatedActionElement(event) {
+	const target = event.target && event.target.closest ? event.target.closest('[data-ciwi-action-key]') : null;
+	return target && root.contains(target) ? target : null;
+  }
+
+  function reportDelegatedActionError(error) {
+	window.alert(error && error.message ? error.message : String(error));
+  }
+
+  function invokeDelegatedActions(element, eventName) {
+	const key = String(element.dataset.ciwiActionKey || '');
+	const bindings = committedActionBindings.get(key) || [];
+	bindings.filter(binding => binding.action.on === eventName).forEach(binding => {
+	  let actionData = binding.data;
+	  if (eventName === 'change') {
+		const selected = element.options && element.selectedIndex >= 0 ? element.options[element.selectedIndex] : null;
+		actionData = element.tagName === 'INPUT' || element.tagName === 'TEXTAREA'
+		  ? Object.assign({}, binding.data, {input: {value: element.value}})
+		  : Object.assign({}, binding.data, {selection: {
+			value: element.value,
+			label: selected ? selected.textContent : (element.dataset.selectedLabel || element.value),
+		  }});
+	  }
+	  binding.invoke(actionData, element).catch(reportDelegatedActionError);
+	});
+  }
+
+  root.addEventListener('click', event => {
+	const element = delegatedActionElement(event);
+	if (!element) return;
+	const bindings = committedActionBindings.get(String(element.dataset.ciwiActionKey || '')) || [];
+	if (!bindings.some(binding => binding.action.on === 'activate')) return;
+	const summary = element.closest('summary');
+	if (element.tagName === 'BUTTON' || summary) event.stopPropagation();
+	// A click on any descendant of <summary> performs the summary's built-in
+	// toggle. A child action owns that gesture, so suppress the default toggle.
+	if (summary) event.preventDefault();
+	if (element.tagName !== 'BUTTON' && elementContainsTextSelection(element)) return;
+	invokeDelegatedActions(element, 'activate');
+  }, true);
+
+  root.addEventListener('keydown', event => {
+	if (event.key !== 'Enter' && event.key !== ' ') return;
+	const element = delegatedActionElement(event);
+	if (!element) return;
+	const bindings = committedActionBindings.get(String(element.dataset.ciwiActionKey || '')) || [];
+	if (!bindings.some(binding => binding.action.on === 'activate')) return;
+	event.preventDefault();
+	event.stopPropagation();
+	invokeDelegatedActions(element, 'activate');
+  }, true);
+
+  const handleDelegatedChange = event => {
+	const element = delegatedActionElement(event);
+	if (!element) return;
+	const expectedEvent = element.id === 'job-output-search' ? 'input' : 'change';
+	if (event.type !== expectedEvent) return;
+	invokeDelegatedActions(element, 'change');
+  };
+  root.addEventListener('input', handleDelegatedChange);
+  root.addEventListener('change', handleDelegatedChange);
 
   function declarativeIcon(name) {
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.classList.add('dsl-icon');
+	icon.dataset.ciwiIcon = String(name || '');
     icon.setAttribute('aria-hidden', 'true');
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
     use.setAttribute('href', uiResourceURL('/ui/icons.svg') + '#icon-' + name);
@@ -1161,7 +1269,7 @@
     };
   }
 
-  function renderDefinitionGraph(node, data, selection) {
+  function renderDefinitionGraph(node, data, selection, context) {
     const graphNodes = definitionGraphNodes(node.graphView, data);
     if (!graphNodes.length) {
       const empty = document.createElement('div');
@@ -1256,7 +1364,9 @@
         play.title = runHelp;
         play.appendChild(declarativeIcon('player-play'));
 		play.addEventListener('click', event => event.stopPropagation());
-        bindActions(play, actions, graphNode.data);
+        const actionIdentity = context.identity + '/graph-node:' + rendererKeyPart(graphNode.id) + '/action';
+		annotateRendererElement(play, 'button', actionIdentity);
+        bindActions(play, actions, graphNode.data, {session: context.session, identity: actionIdentity});
         card.appendChild(play);
       }
       stage.appendChild(card);
@@ -1301,7 +1411,11 @@
 		if (selected) {
 			const detail = document.createElement('div');
 			detail.className = 'dsl-definition-graph-details';
-			details.forEach(child => detail.appendChild(renderNode(child, selected.data)));
+			details.forEach((child, index) => detail.appendChild(renderNode(child, selected.data, childRenderContext(
+			  context,
+			  'graph-details:' + String(index),
+			  context.identity + '/graph-node:' + rendererKeyPart(selected.id) + '/details:' + String(index),
+			))));
 			wrapper.appendChild(detail);
 		}
 	}
@@ -1309,7 +1423,7 @@
     return wrapper;
   }
 
-  function renderGraphView(element, node, data) {
+  function renderGraphView(element, node, data, context) {
     const stateKey = renderText({template: node.graphView.stateKey}, data);
     let mode = viewStates[stateKey];
     if (mode !== 'graph' && mode !== 'list') mode = node.graphView.defaultMode === 'list' ? 'list' : 'graph';
@@ -1331,8 +1445,12 @@
 			selectedID = id;
 			renderBody();
 		},
-	  }));
-      else (node.children || []).forEach(child => body.appendChild(renderNode(child, data)));
+	  }, context));
+      else (node.children || []).forEach((child, index) => body.appendChild(renderNode(
+		child,
+		data,
+		childRenderContext(context, 'children:' + String(index)),
+	  )));
       Array.from(modes.children).forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === mode)));
     };
     ['graph', 'list'].forEach(value => {
@@ -1353,7 +1471,7 @@
     renderBody();
   }
 
-  function renderTreeView(element, node, data) {
+  function renderTreeView(element, node, data, context) {
 	const tree = node.treeView || {};
 	const filter = tree.filter ? String(resolve(data, tree.filter) || 'all') : '';
 	const source = resolve(data, tree.nodes);
@@ -1371,8 +1489,12 @@
 
 	function renderEntry(entry) {
 	  const itemData = entry.itemData;
+	  const entryKey = String(resolve(itemData, tree.nodeKey) ?? '').trim();
+	  if (!entryKey) throw new Error('Empty tree node key at ' + context.path);
+	  const entryIdentity = context.identity + '/tree-node:' + rendererKeyPart(entryKey);
 	  const row = document.createElement('div');
 	  row.className = 'dsl-tree-row';
+	  annotateRendererElement(row, 'tree-row', entryIdentity + '/row');
 	  row.style.setProperty('--ciwi-tree-depth', String(entry.depth));
 	  let link = tree.nodeLink ? String(resolve(itemData, tree.nodeLink) || '') : '';
 	  const fileDownload = (node.actions || []).find(action => action.command === 'download-artifact');
@@ -1409,13 +1531,15 @@
 		button.className = 'dsl-button dsl-tree-action';
 		button.type = 'button';
 		button.textContent = actionLabel;
-		bindActions(button, node.actions, itemData);
+		const actionIdentity = entryIdentity + '/action';
+		annotateRendererElement(button, 'button', actionIdentity);
+		bindActions(button, node.actions, itemData, {session: context.session, identity: actionIdentity});
 		row.appendChild(button);
 	  }
 	  if (!entry.children.length) return row;
 	  const details = document.createElement('details');
 	  details.className = 'dsl-tree-branch';
-	  const key = String(resolve(itemData, tree.nodeKey) || '');
+	  const key = entryKey;
 	  const stateKey = String(tree.stateKey || '') + ':' + key;
 	  const fallback = tree.defaultExpanded ? !!resolve(itemData, tree.defaultExpanded) : false;
 	  details.open = disclosureStates.get(stateKey, fallback);
@@ -1435,7 +1559,7 @@
 	preparedNodes.forEach(entry => element.appendChild(renderEntry(entry)));
   }
 
-  function renderNode(rawNode, data) {
+  function renderNode(rawNode, data, context) {
     const node = withWebOverride(rawNode);
     if (node.hidden) return document.createDocumentFragment();
     if (node.visible) {
@@ -1445,16 +1569,24 @@
       if (node.visible.not ? equal : !equal) return document.createDocumentFragment();
     }
     if (node.repeat && node.component !== 'list' && node.component !== 'scroller') {
-      const list = resolve(data, node.repeat.source);
       const fragment = document.createDocumentFragment();
-      (Array.isArray(list) ? list : []).forEach(item => {
-        const itemData = Object.assign({}, data, { [node.repeat.as]: item });
+      repeatedItems(node, data, context.path).forEach(({itemData, key}) => {
         const clone = Object.assign({}, node, { repeat: null });
-        fragment.appendChild(renderNode(clone, itemData));
+		const repeatIdentity = context.path + '/repeat:' + rendererKeyPart(key);
+        fragment.appendChild(renderNode(clone, itemData, {
+		  session: context.session,
+		  path: context.path,
+		  parentScope: context.parentScope,
+		  repeatIdentity,
+		  inRepeat: true,
+		}));
       });
       return fragment;
     }
     const element = elementFor(node);
+	const identity = nodeRenderIdentity(node, data, context);
+	context = Object.assign({}, context, {identity});
+	annotateRendererElement(element, node.component, identity);
     element.classList.add('dsl-' + node.component);
     if (node.id) element.id = node.id;
     const style = node.style || {};
@@ -1464,13 +1596,13 @@
     if (tone) element.classList.add('dsl-' + tone);
     if (style.emphasis) element.classList.add('dsl-' + style.emphasis);
     if (style.truncate) element.classList.add('dsl-truncate');
-    applyLayout(element, node.layout);
+	applyLayout(element, node.layout);
 	if (node.component === 'graph-view' && node.graphView) {
-	  renderGraphView(element, node, data);
+	  renderGraphView(element, node, data, context);
 	  return element;
 	}
 	if (node.component === 'tree-view' && node.treeView) {
-	  renderTreeView(element, node, data);
+	  renderTreeView(element, node, data, context);
 	  return element;
 	}
 	if (node.enabled) {
@@ -1491,10 +1623,6 @@
 		const statusIcon = {success: 'circle-check', danger: 'circle-x', warning: 'clock', accent: 'loader-2'}[statusTone] || 'clock';
 	    const status = declarativeIcon(statusIcon);
 	    status.classList.add('dsl-execution-row-status', 'dsl-status-' + statusTone);
-	    const disclosureKey = node.disclosure && node.disclosure.stateKey
-	      ? renderText({template: node.disclosure.stateKey}, data)
-	      : '';
-	    if (disclosureKey) status.dataset.ciwiStableKey = 'execution-status:' + disclosureKey + ':' + statusIcon;
 	    summary.appendChild(status);
 	    const label = document.createElement('span');
 	    label.textContent = renderText(node.text, data) || 'Details';
@@ -1534,7 +1662,11 @@
         } else {
           element.open = defaultExpanded;
         }
-		(node.disclosure.summary || []).forEach(summaryNode => summary.appendChild(renderNode(summaryNode, data)));
+		(node.disclosure.summary || []).forEach((summaryNode, index) => summary.appendChild(renderNode(
+		  summaryNode,
+		  data,
+		  childRenderContext(context, 'summary:' + String(index)),
+		)));
       }
     } else if (node.component === 'icon' && node.icon) {
       element.appendChild(declarativeIcon(node.icon));
@@ -1568,6 +1700,7 @@
 		element.style.minHeight = String(minimumLines * 24) + 'px';
 	  }
       element.value = String(resolve(data, node.input.value) ?? '');
+	  element.__ciwiRenderedValue = element.value;
       element.placeholder = node.input.placeholder || '';
     } else if (node.text) {
       const text = renderText(node.text, data);
@@ -1599,16 +1732,25 @@
 	  if (label) appendPositionedIcon(element, label, icon, activeControls.button.iconPosition);
 	  else element.prepend(icon);
     }
-    bindActions(element, node.actions, data);
+    bindActions(element, node.actions, data, context);
 	const childrenTarget = element;
     if ((node.component === 'list' || node.component === 'scroller') && node.repeat) {
-      const list = resolve(data, node.repeat.source);
-      (Array.isArray(list) ? list : []).forEach(item => {
-        const itemData = Object.assign({}, data, {[node.repeat.as]: item});
-		(node.children || []).forEach(child => childrenTarget.appendChild(renderNode(child, itemData)));
+	  repeatedItems(node, data, context.path).forEach(({itemData, key}) => {
+		(node.children || []).forEach((child, index) => {
+		  const repeatIdentity = context.identity + '/repeat:' + rendererKeyPart(key) + '/child:' + String(index);
+		  childrenTarget.appendChild(renderNode(
+			child,
+			itemData,
+			childRenderContext(context, 'children:' + String(index), repeatIdentity),
+		  ));
+		});
       });
     } else {
-	  (node.children || []).forEach(child => childrenTarget.appendChild(renderNode(child, data)));
+	  (node.children || []).forEach((child, index) => childrenTarget.appendChild(renderNode(
+		child,
+		data,
+		childRenderContext(context, 'children:' + String(index)),
+	  )));
     }
     if (node.progress && node.progress.binding) {
       const target = node.component === 'disclosure' ? element.querySelector(':scope > summary') : element;
@@ -1617,29 +1759,125 @@
     return element;
   }
 
+  const replaceOnRefreshComponents = new Set(['graph-view', 'tree-view', 'select']);
+
+  function rendererNodeKey(node) {
+	return node && node.nodeType === Node.ELEMENT_NODE ? String(node.dataset.ciwiNodeKey || '') : '';
+  }
+
+  function compatibleRenderedNodes(current, next) {
+	if (!current || !next || current.nodeType !== next.nodeType) return false;
+	if (current.nodeType === Node.TEXT_NODE || current.nodeType === Node.COMMENT_NODE) return true;
+	if (current.nodeType !== Node.ELEMENT_NODE) return false;
+	if (current.namespaceURI !== next.namespaceURI || current.localName !== next.localName) return false;
+	const currentKey = rendererNodeKey(current);
+	const nextKey = rendererNodeKey(next);
+	if ((currentKey || nextKey) && currentKey !== nextKey) return false;
+	const currentComponent = String(current.dataset.ciwiComponent || '');
+	const nextComponent = String(next.dataset.ciwiComponent || '');
+	if ((currentComponent || nextComponent) && currentComponent !== nextComponent) return false;
+	if (replaceOnRefreshComponents.has(nextComponent)) return false;
+	const currentIcon = String(current.dataset.ciwiIcon || '');
+	const nextIcon = String(next.dataset.ciwiIcon || '');
+	return !((currentIcon || nextIcon) && currentIcon !== nextIcon);
+  }
+
+  function patchRenderedAttributes(current, next) {
+	Array.from(current.attributes).forEach(attribute => {
+	  if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+	});
+	Array.from(next.attributes).forEach(attribute => {
+	  if (current.getAttribute(attribute.name) !== attribute.value) current.setAttribute(attribute.name, attribute.value);
+	});
+  }
+
+  function patchRenderedElement(current, next) {
+	const previousProgressState = String(current.__ciwiSemanticProgressState || '');
+	const nextProgressState = String(next.__ciwiSemanticProgressState || '');
+	const preserveProgressAnimation = previousProgressState !== '' && previousProgressState === nextProgressState;
+	const previousProgressDelay = preserveProgressAnimation
+	  ? current.style.getPropertyValue('--ciwi-progress-animation-delay')
+	  : '';
+	patchRenderedAttributes(current, next);
+	if (preserveProgressAnimation) {
+	  if (previousProgressDelay) current.style.setProperty('--ciwi-progress-animation-delay', previousProgressDelay);
+	  else current.style.removeProperty('--ciwi-progress-animation-delay');
+	}
+	if (Object.prototype.hasOwnProperty.call(next, '__ciwiRenderedValue')) {
+	  const previousValue = String(current.__ciwiRenderedValue ?? '');
+	  const nextValue = String(next.__ciwiRenderedValue ?? '');
+	  if (!Object.prototype.hasOwnProperty.call(current, '__ciwiRenderedValue') || previousValue !== nextValue) {
+		current.value = nextValue;
+	  }
+	  current.__ciwiRenderedValue = nextValue;
+	}
+	if (Object.prototype.hasOwnProperty.call(next, '__ciwiSemanticProgress')) {
+	  current.__ciwiSemanticProgress = next.__ciwiSemanticProgress;
+	  current.__ciwiSemanticProgressState = preserveProgressAnimation ? previousProgressState : nextProgressState;
+	}
+	if (Object.prototype.hasOwnProperty.call(next, '__ciwiPulseTimestamp')) {
+	  current.__ciwiPulseTimestamp = next.__ciwiPulseTimestamp;
+	}
+  }
+
+  function reconcileRenderedChildren(current, next) {
+	const previousChildren = Array.from(current.childNodes);
+	const keyedChildren = new Map(previousChildren.map(child => [rendererNodeKey(child), child]).filter(([key]) => key));
+	const nextKeys = new Set(Array.from(next.childNodes).map(rendererNodeKey).filter(Boolean));
+	keyedChildren.forEach((child, key) => {
+	  if (!nextKeys.has(key)) child.remove();
+	});
+	const retained = new Set();
+	Array.from(next.childNodes).forEach((nextChild, index) => {
+	  const key = rendererNodeKey(nextChild);
+	  let candidate = key ? keyedChildren.get(key) : current.childNodes[index];
+	  if (candidate && retained.has(candidate)) candidate = null;
+	  if (candidate && !key && rendererNodeKey(candidate)) candidate = null;
+	  let committedChild = nextChild;
+	  if (candidate && compatibleRenderedNodes(candidate, nextChild)) {
+		committedChild = reconcileRenderedNode(candidate, nextChild);
+		retained.add(candidate);
+	  } else if (candidate && candidate.parentNode === current) {
+		candidate.replaceWith(nextChild);
+	  }
+	  const reference = current.childNodes[index] || null;
+	  if (committedChild !== reference) current.insertBefore(committedChild, reference);
+	});
+	previousChildren.forEach(child => {
+	  if (!retained.has(child) && child.parentNode === current) child.remove();
+	});
+  }
+
+  function reconcileRenderedNode(current, next) {
+	if (!compatibleRenderedNodes(current, next)) {
+	  current.replaceWith(next);
+	  return next;
+	}
+	if (current.nodeType === Node.TEXT_NODE || current.nodeType === Node.COMMENT_NODE) {
+	  if (current.data !== next.data) current.data = next.data;
+	  return current;
+	}
+	patchRenderedElement(current, next);
+	reconcileRenderedChildren(current, next);
+	return current;
+  }
+
   function renderCurrent() {
     if (!currentDocument || !currentData) return;
     closeBrowserSelect();
-    const viewState = window.ciwiCaptureViewState(root);
-	const nextRoot = renderNode(currentDocument.screen.root, currentData);
-	preserveStableElements(nextRoot);
-    root.replaceChildren(nextRoot);
-	window.ciwiRestoreViewState(root, viewState);
+	const session = createRenderSession(currentDocument.metadata && currentDocument.metadata.name);
+	const nextRoot = renderNode(currentDocument.screen.root, currentData, rootRenderContext(session));
+	const nextSignature = session.screenName + ':' + currentPath;
+	const previousRoot = root.childNodes.length === 1 ? root.firstChild : null;
+	const reconcile = committedRenderSignature === nextSignature && compatibleRenderedNodes(previousRoot, nextRoot);
+	const viewState = reconcile ? null : window.ciwiCaptureViewState(root);
+	if (reconcile) reconcileRenderedNode(previousRoot, nextRoot);
+	else root.replaceChildren(nextRoot);
+	committedActionBindings = session.actionBindings;
+	committedRenderSignature = nextSignature;
+	if (viewState) window.ciwiRestoreViewState(root, viewState);
 	if (currentData.jobDetails) bindJobOutputScrollIntent(currentData.jobDetails);
 	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
-  }
-
-  function preserveStableElements(nextRoot) {
-	if (!nextRoot || typeof nextRoot.querySelectorAll !== 'function') return;
-	const previous = new Map();
-	root.querySelectorAll('[data-ciwi-stable-key]').forEach(element => {
-	  previous.set(String(element.dataset.ciwiStableKey || ''), element);
-	});
-	nextRoot.querySelectorAll('[data-ciwi-stable-key]').forEach(element => {
-	  const key = String(element.dataset.ciwiStableKey || '');
-	  const retained = previous.get(key);
-	  if (key && retained && retained.tagName === element.tagName) element.replaceWith(retained);
-	});
   }
 
   async function navigateBrowser(path, options = {}) {
@@ -1801,11 +2039,11 @@
     });
   }
 
-  function findDeclarativeNodeByID(node, id) {
+  function findDeclarativeNodeByID(node, id, path = 'root') {
 	if (!node || typeof node !== 'object') return null;
-	if (node.id === id) return node;
-	for (const child of (node.children || [])) {
-	  const found = findDeclarativeNodeByID(child, id);
+	if (node.id === id) return {node, path};
+	for (let index = 0; index < (node.children || []).length; index += 1) {
+	  const found = findDeclarativeNodeByID(node.children[index], id, path + '/children:' + String(index));
 	  if (found) return found;
 	}
 	return null;
@@ -1852,20 +2090,40 @@
 
   function patchJobOutputRegion(view) {
 	const contractRoot = currentDocument && currentDocument.screen && currentDocument.screen.root;
-	const systemNode = findDeclarativeNodeByID(contractRoot, 'job-output-system');
-	const groupsNode = findDeclarativeNodeByID(contractRoot, 'job-output-groups');
+	const systemMatch = findDeclarativeNodeByID(contractRoot, 'job-output-system');
+	const groupsMatch = findDeclarativeNodeByID(contractRoot, 'job-output-groups');
 	const previousScroller = document.getElementById('job-output-groups');
-	if (!systemNode || !groupsNode || !previousScroller) {
+	if (!systemMatch || !groupsMatch || !previousScroller) {
 	  renderCurrent();
 	  return;
 	}
-	const nextScroller = renderNode(groupsNode, currentData);
+	const session = createRenderSession(
+	  currentDocument.metadata && currentDocument.metadata.name,
+	  new Map(committedActionBindings),
+	);
+	const screenScope = 'screen:' + session.screenName;
+	const subtreeActionPrefixes = [systemMatch, groupsMatch].map(match => (
+	  screenScope + '/id:' + rendererKeyPart(match.node.id)
+	));
+	session.actionBindings.forEach((_, key) => {
+	  if (subtreeActionPrefixes.some(prefix => key === prefix || key.startsWith(prefix + '/'))) {
+		session.actionBindings.delete(key);
+	  }
+	});
+	const contextForMatch = match => ({
+	  session,
+	  path: screenScope + '/' + match.path,
+	  parentScope: screenScope + '/' + match.path.substring(0, Math.max(0, match.path.lastIndexOf('/'))),
+	  repeatIdentity: '',
+	  inRepeat: false,
+	});
+	const nextScroller = renderNode(groupsMatch.node, currentData, contextForMatch(groupsMatch));
 	if (!nextScroller || nextScroller.nodeType !== Node.ELEMENT_NODE) {
 	  renderCurrent();
 	  return;
 	}
 	const previousSystem = document.getElementById('job-output-system');
-	const renderedSystem = renderNode(systemNode, currentData);
+	const renderedSystem = renderNode(systemMatch.node, currentData, contextForMatch(systemMatch));
 	const nextSystem = renderedSystem && renderedSystem.nodeType === Node.ELEMENT_NODE ? renderedSystem : null;
 	if (previousSystem && nextSystem) previousSystem.replaceWith(nextSystem);
 	else if (previousSystem) previousSystem.remove();
@@ -1889,6 +2147,7 @@
 	previousGroups.forEach(group => {
 	  if (!retained.has(group)) group.remove();
 	});
+	committedActionBindings = session.actionBindings;
 	bindJobOutputScrollIntent(view);
 	if (view.output_tailing) scrollJobOutputToEnd(previousScroller);
 	updateJobOutputSearchCount(view);
@@ -2251,6 +2510,7 @@
       const message = document.createElement('div');
       message.className = 'dsl-error';
       message.textContent = error.message || String(error);
+	  committedRenderSignature = '';
       root.replaceChildren(message);
 	  return false;
     }

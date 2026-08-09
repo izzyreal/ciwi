@@ -84,17 +84,21 @@ func TestBrowserProgressUpdatesDoNotRestartAnimationClasses(t *testing.T) {
 	}
 }
 
-func TestBrowserStatusSpinnerKeepsDOMIdentityAcrossRenders(t *testing.T) {
+func TestBrowserStatusSpinnerUsesGeneralDOMReconciliation(t *testing.T) {
 	javascript, err := uiAssets.ReadFile("assets/js/declarative.js")
 	if err != nil {
 		t.Fatal(err)
 	}
+	script := string(javascript)
+	if strings.Contains(script, "ciwiStableKey") || strings.Contains(script, "preserveStableElements") {
+		t.Fatal("browser status spinner still has a component-specific retention path")
+	}
 	for _, expected := range []string{
-		"status.dataset.ciwiStableKey = 'execution-status:' + disclosureKey + ':' + statusIcon",
-		"preserveStableElements(nextRoot)",
-		"element.replaceWith(retained)",
+		"icon.dataset.ciwiIcon = String(name || '')",
+		"compatibleRenderedNodes(previousRoot, nextRoot)",
+		"reconcileRenderedNode(previousRoot, nextRoot)",
 	} {
-		if !strings.Contains(string(javascript), expected) {
+		if !strings.Contains(script, expected) {
 			t.Fatalf("browser status spinner continuity is missing %q", expected)
 		}
 	}
