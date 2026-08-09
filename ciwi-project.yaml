@@ -40,10 +40,12 @@ pipelines:
           tools:
             git: "*"
             docker: "*"
-        timeout_seconds: 600
+        timeout_seconds: 1800
         artifacts:
           - dist/browser-dom-junit.xml
         steps:
+          - name: Pull Playwright test image
+            run: docker pull mcr.microsoft.com/playwright:v1.62.1-noble
           - name: Run browser DOM integration tests
             test:
               name: browser-dom-integration

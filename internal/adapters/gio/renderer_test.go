@@ -2731,7 +2731,7 @@ func TestOutputTailingUsesCompactStatefulIconToggle(t *testing.T) {
 	}
 }
 
-func TestCompactJobDetailsKeepsExpandedOutputInBoundedScroller(t *testing.T) {
+func TestCompactJobDetailsLetsPageScrollThroughExpandedOutput(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
@@ -2766,14 +2766,14 @@ func TestCompactJobDetailsKeepsExpandedOutputInBoundedScroller(t *testing.T) {
 	var operations op.Ops
 	renderer.Layout(layout.Context{Ops: &operations, Constraints: layout.Exact(image.Pt(390, 844))})
 
-	if renderer.outputScroller == nil {
-		t.Fatal("compact output groups did not install their bounded vertical scroller")
+	if renderer.outputScroller != nil {
+		t.Fatal("compact output retained a nested vertical scroller")
 	}
 	if renderer.outputEditors["step:1"] == nil {
 		t.Fatal("expanded step output was not laid out")
 	}
-	if renderer.outputScroller.Position.Length <= 660 {
-		t.Fatalf("output scroll length = %d, want expanded output larger than its 660dp viewport", renderer.outputScroller.Position.Length)
+	if renderer.list.Position.Length <= 844 {
+		t.Fatalf("page scroll length = %d, want expanded output in the phone page", renderer.list.Position.Length)
 	}
 	outputGroups, found := screenNodeByID(screen.Screen.Root, "job-output-groups")
 	if !found {
@@ -2784,8 +2784,8 @@ func TestCompactJobDetailsKeepsExpandedOutputInBoundedScroller(t *testing.T) {
 		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
 		Constraints: layout.Constraints{Max: image.Pt(390, 10_000)},
 	}, outputGroups, renderer.data, "test/compact-job-output-groups")
-	if dimensions.Size.Y != 660 {
-		t.Fatalf("expanded compact output viewport height = %d, want bounded 660dp", dimensions.Size.Y)
+	if dimensions.Size.Y <= 660 {
+		t.Fatalf("expanded compact output height = %d, want content taller than the desktop viewport bound", dimensions.Size.Y)
 	}
 }
 
@@ -2937,8 +2937,8 @@ func TestIPhoneLandscapeCompactModeSurvivesPageListConstraints(t *testing.T) {
 	if !renderer.compact {
 		t.Fatal("iPhone landscape viewport was not classified as compact")
 	}
-	if renderer.outputScroller == nil {
-		t.Fatal("iPhone landscape output did not retain its bounded scroller")
+	if renderer.outputScroller != nil {
+		t.Fatal("iPhone landscape output retained a nested vertical scroller")
 	}
 }
 

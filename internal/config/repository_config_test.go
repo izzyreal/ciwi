@@ -3,6 +3,7 @@ package config
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +40,9 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	buildCrossPlatform := jobByID(build, "build-cross-platform")
 	if integrationTests.RunsOn["os"] != "linux" || integrationTests.RunsOn["arch"] != "amd64" || integrationTests.Requires.Tools["docker"] != "*" {
 		t.Fatalf("unexpected browser integration runtime: %+v", integrationTests)
+	}
+	if integrationTests.TimeoutSeconds < 1800 || len(integrationTests.Steps) < 2 || !strings.HasPrefix(integrationTests.Steps[0].Run, "docker pull mcr.microsoft.com/playwright:") {
+		t.Fatalf("browser integration job must budget and isolate its cold image pull: %+v", integrationTests)
 	}
 	if !slices.Contains(buildCrossPlatform.Needs, "unit-tests") || !slices.Contains(buildCrossPlatform.Needs, "integration-tests") {
 		t.Fatalf("cross-platform build dependencies = %+v, want both test jobs", buildCrossPlatform.Needs)

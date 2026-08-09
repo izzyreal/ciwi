@@ -446,6 +446,22 @@ func TestJobOutputGroupsUseAuthoritativeStepContentTypography(t *testing.T) {
 	}
 }
 
+func TestCompactNativeJobOutputDoesNotOfferDedicatedScrollerTailing(t *testing.T) {
+	screen, err := LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var toggle *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.ID == "job-output-tailing-toggle" {
+			toggle = node
+		}
+	})
+	if toggle == nil || !toggle.Overrides["compact"].Hidden {
+		t.Fatalf("compact native output tailing toggle = %#v, want hidden without a dedicated output scroller", toggle)
+	}
+}
+
 func TestHistoryExecutionRowsOwnJobNavigation(t *testing.T) {
 	for _, screenName := range []string{"front-page", "project-details"} {
 		screen, err := LoadScreen(screenName)

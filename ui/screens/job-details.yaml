@@ -382,6 +382,9 @@ screen:
                 style:
                   role: tailing-toggle
                   toneBinding: jobDetails.tailing_tone
+                overrides:
+                  compact:
+                    hidden: true
                 actions:
                   - on: activate
                     command: toggle-output-tailing

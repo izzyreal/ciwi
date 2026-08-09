@@ -1397,6 +1397,9 @@ func (r *Renderer) layoutNode(gtx layout.Context, raw uidsl.Node, data any, path
 	if hidden {
 		return layout.Dimensions{}
 	}
+	if r.compact && node.ID == "job-output-groups" {
+		node.Layout.MaxHeight = ""
+	}
 	if node.Visible != nil {
 		value, err := uidsl.Resolve(data, node.Visible.Binding)
 		if err != nil {
@@ -3470,10 +3473,10 @@ func (r *Renderer) layoutScroller(gtx layout.Context, node uidsl.Node, data any,
 	if err != nil {
 		return r.errorLabel(gtx, err)
 	}
-	// Keep output groups in their own vertical list on every native layout.
-	// The shared maxHeight then bounds expanded output while the same viewport
-	// remains scrollable when all disclosures are collapsed.
-	if node.ID == "job-output-groups" && len(items) == 0 {
+	// Avoid same-axis nested scrolling on phones. Expanded output participates
+	// in the page list so a touch drag over the log scrolls through the log,
+	// while desktop retains the bounded output viewport.
+	if node.ID == "job-output-groups" && (r.compact || len(items) == 0) {
 		r.outputScroller = nil
 		return r.layoutInlineScrollerItems(gtx, node, data, path, items)
 	}
