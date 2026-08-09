@@ -59,45 +59,60 @@ screen:
                 children:
                   - component: badge
                     text:
-                      binding: settings.server_version
+                      template: "Server {{settings.server_version}}"
                     style:
                       tone: muted
                       emphasis: strong
-          - component: button
-            text:
-              literal: Back to Main
-            icon: arrow-left
-            actions:
-              - on: activate
-                command: navigate
-                arguments:
-                  route: /
-          - component: button
-            text:
-              literal: Agents
-            icon: server
-            actions:
-              - on: activate
-                command: navigate
-                arguments:
-                  route: /agents
-          - component: button
-            text: {literal: Vault}
-            icon: vault
-            actions: [{on: activate, command: navigate, arguments: {route: /vault}}]
-          - component: button
-            text:
-              literal: Restart Server
-            icon: refresh
-            enabled:
-              binding: client.connected
-            actions:
-              - on: activate
-                command: server-update-action
-                arguments: {action: restart, targetVersion: ""}
-                confirm:
-                  title: Restart Server
-                  message: Restart ciwi server now? The native client will reconnect automatically.
+                  - component: badge
+                    id: settings-client-version
+                    visible: {binding: settings.client_version, empty: true, not: true}
+                    overrides:
+                      web: {hidden: true}
+                    text:
+                      template: "Native client {{settings.client_version}}"
+                    style:
+                      tone: muted
+                      emphasis: strong
+          - component: row
+            id: settings-header-actions
+            layout: {direction: horizontal, gap: small, align: center, wrap: true}
+            style: {role: compact-toolbar}
+            children:
+              - component: button
+                text:
+                  literal: Restart Server
+                icon: refresh
+                enabled:
+                  binding: client.connected
+                actions:
+                  - on: activate
+                    command: server-update-action
+                    arguments: {action: restart, targetVersion: ""}
+                    confirm:
+                      title: Restart Server
+                      message: Restart ciwi server now? The native client will reconnect automatically.
+              - component: button
+                text:
+                  literal: Agents
+                icon: server
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /agents
+              - component: button
+                text: {literal: Vault}
+                icon: vault
+                actions: [{on: activate, command: navigate, arguments: {route: /vault}}]
+              - component: button
+                text:
+                  literal: Back to Main
+                icon: arrow-left
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /
       - component: column
         id: settings-loading
         visible: {binding: settings.loading}
@@ -609,7 +624,7 @@ screen:
               - component: card
                 layout:
                   direction: vertical
-                  gap: medium
+                  gap: small
                   padding: medium
                 children:
                   - component: row
@@ -656,6 +671,8 @@ screen:
                             confirm:
                               title: Apply Update
                               message: "Update server and agents to {{settings.selected_update_version}} and restart ciwi?"
+                  - component: spacer
+                    layout: {minHeight: "8"}
                   - component: text
                     text:
                       binding: settings.update_result
@@ -714,7 +731,7 @@ screen:
               - component: card
                 layout:
                   direction: vertical
-                  gap: medium
+                  gap: small
                   padding: medium
                 children:
                   - component: row
@@ -761,6 +778,8 @@ screen:
                             confirm:
                               title: Rollback
                               message: "Rollback server and agents to {{settings.selected_rollback_version}}?"
+                  - component: spacer
+                    layout: {minHeight: "8"}
                   - component: text
                     text:
                       binding: settings.rollback_result

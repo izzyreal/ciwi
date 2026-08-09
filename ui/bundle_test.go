@@ -195,14 +195,27 @@ func TestSettingsHeaderMatchesAuthoritativeNavigation(t *testing.T) {
 	if header == nil {
 		t.Fatal("settings header is missing")
 	}
-	var labels []string
+	if header.Layout.Align != "center" {
+		t.Fatalf("settings header alignment = %q, want center", header.Layout.Align)
+	}
+	var actions *uidsl.Node
 	for index := range header.Children {
-		child := &header.Children[index]
+		if header.Children[index].ID == "settings-header-actions" {
+			actions = &header.Children[index]
+			break
+		}
+	}
+	if actions == nil || actions.Layout.Align != "center" {
+		t.Fatalf("settings header actions = %#v, want one centered row", actions)
+	}
+	var labels []string
+	for index := range actions.Children {
+		child := &actions.Children[index]
 		if child.Component == "button" && child.Text != nil {
 			labels = append(labels, child.Text.Literal)
 		}
 	}
-	if got, want := strings.Join(labels, ","), "Back to Main,Agents,Vault,Restart Server"; got != want {
+	if got, want := strings.Join(labels, ","), "Restart Server,Agents,Vault,Back to Main"; got != want {
 		t.Fatalf("settings header buttons = %q, want %q", got, want)
 	}
 	walkNodes(*header, func(node *uidsl.Node) {
@@ -210,6 +223,33 @@ func TestSettingsHeaderMatchesAuthoritativeNavigation(t *testing.T) {
 			t.Fatal("settings header still contains the native-only subtitle")
 		}
 	})
+}
+
+func TestSettingsUpdateCardsSeparateControlsFromDescriptions(t *testing.T) {
+	screen, err := LoadScreen("settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections := map[string]*uidsl.Node{}
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.ID == "server-updates" || node.ID == "rollback" {
+			sections[node.ID] = node
+		}
+	})
+	for _, id := range []string{"server-updates", "rollback"} {
+		section := sections[id]
+		if section == nil || len(section.Children) < 2 {
+			t.Fatalf("settings section %q = %#v", id, section)
+		}
+		card := section.Children[1]
+		if card.Component != "card" || card.Layout.Gap != "small" || len(card.Children) < 3 {
+			t.Fatalf("settings section %q card = %#v", id, card)
+		}
+		spacer := card.Children[1]
+		if spacer.Component != "spacer" || spacer.Layout.MinHeight != "8" {
+			t.Fatalf("settings section %q description spacer = %#v", id, spacer)
+		}
+	}
 }
 
 func TestFrontPagePipelineProgressUsesSectionHeaderSurface(t *testing.T) {
@@ -331,7 +371,7 @@ func TestOnlyVersionBadgesUseStrongWeight(t *testing.T) {
 			if node.Component != "badge" || node.Text == nil {
 				return
 			}
-			versionBadge := node.Text.Binding == "frontPage.server.version" || node.Text.Binding == "settings.server_version"
+			versionBadge := strings.Contains(node.Text.Template, "frontPage.server.version") || strings.Contains(node.Text.Template, "settings.server_version") || strings.Contains(node.Text.Template, "settings.client_version")
 			if versionBadge != (node.Style.Emphasis == "strong") {
 				t.Errorf("%s badge %#v emphasis = %q, version badge = %v", screenName, *node.Text, node.Style.Emphasis, versionBadge)
 			}
@@ -671,6 +711,7 @@ func TestPlatformOverridesAreLimitedToPlatformMechanics(t *testing.T) {
 					continue
 				}
 				allowed := route.Screen == "settings" && node.ID == "native-connection" && platform == "web" && override.Hidden
+				allowed = allowed || route.Screen == "settings" && node.ID == "settings-client-version" && platform == "web" && override.Hidden
 				allowed = allowed || route.Screen == "job-details" && node.Style.Role == "floating-collapse" && platform == "gio" && override.Hidden
 				if !allowed {
 					t.Errorf("%s node %q role %q has non-mechanical %s override: %#v", route.Screen, node.ID, node.Style.Role, platform, override)

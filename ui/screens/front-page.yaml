@@ -69,7 +69,7 @@ screen:
                           emphasis: strong
                       - component: badge
                         text:
-                          binding: frontPage.server.version
+                          template: "Server {{frontPage.server.version}}"
                         style:
                           tone: muted
                           emphasis: strong

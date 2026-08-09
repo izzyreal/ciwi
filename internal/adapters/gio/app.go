@@ -453,7 +453,7 @@ func Run(options Options) error {
 		return err
 	}
 	renderer.SetActionCatalog(actionCatalog)
-	initialData, err := offlineFrontPageBindingData(options.Version)
+	initialData, err := offlineFrontPageBindingData()
 	if err != nil {
 		return err
 	}
@@ -1946,7 +1946,7 @@ func screenLoadingData(navigation navigationState, clientVersion, themeName, mod
 func screenLoadingBindingData(navigation navigationState, clientVersion, themeName, mode, endpoint string, sshSettings sshConnectionSettings) (map[string]any, error) {
 	switch navigation.screen {
 	case "front-page":
-		return offlineFrontPageBindingData(clientVersion)
+		return offlineFrontPageBindingData()
 	case "project-details":
 		data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
 			Project: &cnpv1.ProjectSummary{Id: navigation.projectID},
@@ -2377,9 +2377,9 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 	}}, nil
 }
 
-func offlineFrontPageBindingData(clientVersion string) (map[string]any, error) {
+func offlineFrontPageBindingData() (map[string]any, error) {
 	data, err := frontPageBindingData(&cnpv1.FrontPageView{
-		Server: &cnpv1.ServerInfo{Version: strings.TrimSpace(clientVersion)},
+		Server: &cnpv1.ServerInfo{Version: "Unavailable"},
 	})
 	if err != nil {
 		return nil, err
@@ -2425,7 +2425,7 @@ func offlineSettingsBindingData(clientVersion, selectedTheme, mode, endpoint str
 func refreshOfflineScreen(renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState, clientVersion, mode, endpoint string, sshSettings sshConnectionSettings) error {
 	switch navigation.screen {
 	case "front-page":
-		data, err := offlineFrontPageBindingData(clientVersion)
+		data, err := offlineFrontPageBindingData()
 		if err != nil {
 			return err
 		}

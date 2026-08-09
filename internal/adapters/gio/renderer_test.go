@@ -314,7 +314,7 @@ func TestRendererLaysOutSharedFrontPage(t *testing.T) {
 	}
 	var foundVersion bool
 	for _, selectable := range renderer.selectables {
-		if selectable.Text() == "v0.2.0" {
+		if selectable.Text() == "Server v0.2.0" {
 			foundVersion = true
 			break
 		}
@@ -1182,7 +1182,7 @@ func TestGraphViewportResetsReusedTouchID(t *testing.T) {
 	}
 }
 
-func TestScrollGestureGuardOnlyArmsForInertialMovement(t *testing.T) {
+func TestScrollGestureGuardOnlyArmsAfterTouchDrag(t *testing.T) {
 	guard := &scrollGestureGuard{}
 	list := &layout.List{}
 	guard.observe(list)
@@ -1191,8 +1191,17 @@ func TestScrollGestureGuardOnlyArmsForInertialMovement(t *testing.T) {
 	}
 	list.Position.Offset = 12
 	guard.observe(list)
+	if guard.inertial {
+		t.Fatal("programmatic list movement armed the momentum tap guard")
+	}
+	guard.observeState(layout.Position{Offset: 24}, true)
+	guard.observeState(layout.Position{Offset: 24}, false)
+	if guard.inertial || !guard.inertiaCandidate {
+		t.Fatal("released moving drag did not wait for possible fling movement")
+	}
+	guard.observeState(layout.Position{Offset: 36}, false)
 	if !guard.inertial {
-		t.Fatal("moving non-dragged list did not arm the momentum tap guard")
+		t.Fatal("fling movement after a touch drag did not arm the momentum tap guard")
 	}
 }
 
@@ -2283,7 +2292,7 @@ func TestNativeQueuedJobsNoticeNavigatesAndScrollsAfterTouch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := offlineFrontPageBindingData("v0.2.0")
+	data, err := offlineFrontPageBindingData()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2429,6 +2438,18 @@ func TestNativeAlertUsesDedicatedModalState(t *testing.T) {
 	}
 }
 
+func TestOfflineFrontPageDoesNotInventServerVersion(t *testing.T) {
+	data, err := offlineFrontPageBindingData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontPage := data["frontPage"].(map[string]any)
+	server := frontPage["server"].(map[string]any)
+	if got := fmt.Sprint(server["version"]); got != "Unavailable" {
+		t.Fatalf("offline server version = %q, want Unavailable", got)
+	}
+}
+
 func TestNativeNoticeCanTargetFrontPageSection(t *testing.T) {
 	screen, err := sharedUI.LoadScreen("front-page")
 	if err != nil {
@@ -2442,7 +2463,7 @@ func TestNativeNoticeCanTargetFrontPageSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := offlineFrontPageBindingData("v0.2.0")
+	data, err := offlineFrontPageBindingData()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2454,8 +2475,9 @@ func TestNativeNoticeCanTargetFrontPageSection(t *testing.T) {
 	if renderer.pendingScrollSection != "" {
 		t.Fatalf("pending section target was not consumed: %q", renderer.pendingScrollSection)
 	}
-	if renderer.list.Position.First != 3 {
-		t.Fatalf("front-page list first item = %d, want queued section index 3", renderer.list.Position.First)
+	visible := renderer.visibleRootChildIndices(screen.Screen.Root.Children, renderer.data)
+	if renderer.list.Position.First >= len(visible) || screen.Screen.Root.Children[visible[renderer.list.Position.First]].ID != "queued-executions" {
+		t.Fatalf("front-page list first item = %d (%v), want queued section", renderer.list.Position.First, visible)
 	}
 }
 
@@ -2868,6 +2890,27 @@ func TestRootPageInsetsScrollWithFirstAndLastContent(t *testing.T) {
 	}
 	if renderer.list.Position.Length != 244 {
 		t.Fatalf("scroll content length = %d, want top 16 + children 200 + gap 12 + bottom 16 = 244", renderer.list.Position.Length)
+	}
+}
+
+func TestInvisibleRootChildrenDoNotAddPageGaps(t *testing.T) {
+	renderer := &Renderer{
+		list:    layout.List{Axis: layout.Vertical},
+		metrics: visualMetrics{pageInset: 16, spaceMedium: 12},
+	}
+	screen := &uidsl.ScreenDocument{Metadata: uidsl.Metadata{Name: "root-gap-test"}}
+	root := uidsl.Node{Layout: uidsl.Layout{Gap: "medium"}}
+	children := []uidsl.Node{
+		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
+		{Component: "spacer", Visible: &uidsl.Condition{Binding: "state.loading"}, Layout: uidsl.Layout{MinHeight: "100"}},
+		{Component: "spacer", Visible: &uidsl.Condition{Binding: "state.error"}, Layout: uidsl.Layout{MinHeight: "100"}},
+		{Component: "spacer", Layout: uidsl.Layout{MinHeight: "100"}},
+	}
+	data := map[string]any{"state": map[string]any{"loading": false, "error": false}}
+	gtx := layout.Context{Ops: new(op.Ops), Constraints: layout.Exact(image.Pt(800, 120))}
+	renderer.layoutRootChildren(children, root, screen, data)(gtx)
+	if renderer.list.Position.Length != 244 {
+		t.Fatalf("root length with hidden lifecycle nodes = %d, want two visible children, one gap, and page insets", renderer.list.Position.Length)
 	}
 }
 
