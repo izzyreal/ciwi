@@ -49,7 +49,7 @@ pipelines:
           - name: Run browser DOM integration tests
             test:
               name: browser-dom-integration
-              command: mkdir -p dist && docker run --rm --ipc=host -e CI=1 -e CIWI_JUNIT_REPORT=/work/dist/browser-dom-junit.xml -v "$PWD:/work" -v /work/integration/browser-dom/node_modules -w /work/integration/browser-dom mcr.microsoft.com/playwright:v1.62.1-noble bash -lc 'npm ci && npm test'
+              command: mkdir -p dist integration/browser-dom/node_modules && docker run --rm --ipc=host --user "$(id -u):$(id -g)" -e HOME=/tmp -e CI=1 -e CIWI_JUNIT_REPORT=/work/dist/browser-dom-junit.xml -v "$PWD:/work" -w /work/integration/browser-dom mcr.microsoft.com/playwright:v1.62.1-noble bash -lc 'npm ci && npm test'
               format: junit-xml
               report: dist/browser-dom-junit.xml
       - id: build-cross-platform

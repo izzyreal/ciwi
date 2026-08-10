@@ -44,6 +44,12 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	if integrationTests.TimeoutSeconds < 1800 || len(integrationTests.Steps) < 2 || !strings.HasPrefix(integrationTests.Steps[0].Run, "docker pull mcr.microsoft.com/playwright:") {
 		t.Fatalf("browser integration job must budget and isolate its cold image pull: %+v", integrationTests)
 	}
+	integrationCommand := integrationTests.Steps[1].Test.Command
+	if !strings.Contains(integrationCommand, `--user "$(id -u):$(id -g)"`) ||
+		!strings.Contains(integrationCommand, `-e HOME=/tmp`) ||
+		strings.Contains(integrationCommand, `-v /work/integration/browser-dom/node_modules`) {
+		t.Fatalf("browser integration container must not create root-owned workspace files: %q", integrationCommand)
+	}
 	if !slices.Contains(buildCrossPlatform.Needs, "unit-tests") || !slices.Contains(buildCrossPlatform.Needs, "integration-tests") {
 		t.Fatalf("cross-platform build dependencies = %+v, want both test jobs", buildCrossPlatform.Needs)
 	}

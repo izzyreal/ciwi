@@ -13,4 +13,6 @@ npm test
 
 The `build` pipeline runs this module in the matching official Playwright
 container as its `integration-tests` job. That job is separate from
-`unit-tests`; both must succeed before `build-cross-platform` starts.
+`unit-tests`; both must succeed before `build-cross-platform` starts. The
+container runs with the agent user's UID and GID so its bind-mounted test
+output remains removable by the agent on the next execution.
