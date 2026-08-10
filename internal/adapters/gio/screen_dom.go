@@ -53,6 +53,11 @@ type domSelectState struct {
 	open    bool
 }
 
+type domStyleContext struct {
+	tone     string
+	emphasis string
+}
+
 func (r *Renderer) layoutScreenDOMFrame(gtx layout.Context, screen *uidsl.ScreenDocument, data any, pendingScrollSection string, notice *nativeNotice, alert *nativeAlert) layout.Dimensions {
 	if r.dom == nil || r.dom.theme != r.theme {
 		r.dom = &screenDOMRenderer{
@@ -183,11 +188,13 @@ func (r *Renderer) buildScreenDOM(screen *uidsl.ScreenDocument, data any, pendin
 	if hidden {
 		return r.domMessage("hidden-screen", "", r.palette.text)
 	}
+	rootResolvedStyle, rootStyle := r.resolveDOMStyle(root.Component, root.Style, data, domStyleContext{})
+	root.Style = rootResolvedStyle
 	children := make([]giodom.Element, 0, len(root.Children))
 	scrollTarget := giodom.Key("")
 	for index := range root.Children {
 		path := fmt.Sprintf("%s/root/%d", screen.Metadata.Name, index)
-		compiled := r.compileDOMNode(root.Children[index], data, path)
+		compiled := r.compileDOMNodeWithStyle(root.Children[index], data, path, rootStyle)
 		if compiled == nil {
 			continue
 		}
@@ -219,7 +226,7 @@ func (r *Renderer) buildScreenDOM(screen *uidsl.ScreenDocument, data any, pendin
 		last := children[lastIndex]
 		children[lastIndex] = giodom.Inset(last.Key, giodom.Insets{Bottom: pageInset}, last)
 	}
-	page := giodom.VirtualList(giodom.Key("page-list:"+screen.Metadata.Name), props, giodom.Keyed(domElementsRevision(children), children...))
+	page := giodom.StockList(giodom.Key("page-list:"+screen.Metadata.Name), props, giodom.Keyed(domElementsRevision(children), children...))
 	page = giodom.Inset(giodom.Key("page-inset:"+screen.Metadata.Name), giodom.Insets{
 		Right: pageInset, Left: pageInset,
 	}, page)
@@ -231,21 +238,24 @@ func (r *Renderer) buildScreenDOM(screen *uidsl.ScreenDocument, data any, pendin
 }
 
 func (r *Renderer) compileDOMNode(raw uidsl.Node, data any, path string) *giodom.Element {
+	return r.compileDOMNodeWithStyle(raw, data, path, domStyleContext{})
+}
+
+func (r *Renderer) compileDOMNodeWithStyle(raw uidsl.Node, data any, path string, inherited domStyleContext) *giodom.Element {
 	node, hidden := applyGioOverride(raw, r.compact)
 	if hidden || !domNodeVisible(node, data) {
 		return nil
 	}
 	if node.Component == "scroller" {
-		return r.compileDOMScroller(node, data, path)
+		resolvedStyle, childStyle := r.resolveDOMStyle(node.Component, node.Style, data, inherited)
+		node.Style = resolvedStyle
+		return r.compileDOMScroller(node, data, path, childStyle)
 	}
 	if node.Repeat != nil {
-		return r.compileDOMRepeat(node, data, path)
+		return r.compileDOMRepeat(node, data, path, inherited)
 	}
-	if node.Style.ToneBinding != "" {
-		if value, err := uidsl.Resolve(data, node.Style.ToneBinding); err == nil {
-			node.Style.Tone = semanticTone(fmt.Sprint(value))
-		}
-	}
+	resolvedStyle, childStyle := r.resolveDOMStyle(node.Component, node.Style, data, inherited)
+	node.Style = resolvedStyle
 	if node.Style.Role == "skeleton" {
 		element := r.compileDOMSkeleton(node, path)
 		return r.decorateDOMNode(element, node, data, path)
@@ -254,11 +264,11 @@ func (r *Renderer) compileDOMNode(raw uidsl.Node, data any, path string) *giodom
 	var element giodom.Element
 	switch node.Component {
 	case "page", "column", "row", "list", "section", "card":
-		element = r.compileDOMContainer(node, data, path)
+		element = r.compileDOMContainer(node, data, path, childStyle)
 	case "disclosure":
-		element = r.compileDOMDisclosure(node, data, path)
+		element = r.compileDOMDisclosure(node, data, path, childStyle)
 	case "tree-view":
-		element = r.compileDOMTree(node, data, path)
+		element = r.compileDOMTree(node, data, path, childStyle)
 	case "graph-view":
 		element = r.compileDOMGraph(node, data, path)
 	case "text":
@@ -286,7 +296,59 @@ func (r *Renderer) compileDOMNode(raw uidsl.Node, data any, path string) *giodom
 	return r.decorateDOMNode(element, node, data, path)
 }
 
-func (r *Renderer) compileDOMRepeat(node uidsl.Node, data any, path string) *giodom.Element {
+func (r *Renderer) resolveDOMStyle(component string, style uidsl.Style, data any, inherited domStyleContext) (uidsl.Style, domStyleContext) {
+	if style.ToneBinding != "" {
+		if value, err := uidsl.Resolve(data, style.ToneBinding); err == nil {
+			style.Tone = semanticTone(fmt.Sprint(value))
+		}
+	}
+	if style.Tone == "" {
+		if local := domLocalTone(component, style.Role); local != "" {
+			style.Tone = local
+		} else {
+			style.Tone = inherited.tone
+		}
+	}
+	if style.Emphasis == "" && !r.domResetsEmphasis(component, style.Role) {
+		style.Emphasis = inherited.emphasis
+	}
+	return style, domStyleContext{tone: style.Tone, emphasis: style.Emphasis}
+}
+
+func domLocalTone(component, role string) string {
+	switch component {
+	case "button", "icon":
+		return "accent"
+	case "input", "select":
+		return "text"
+	}
+	switch role {
+	case "title", "job-title", "heading", "tree-label":
+		return "text"
+	case "table-header", "tree-detail":
+		return "muted"
+	case "link":
+		return "accent"
+	case "output-system", "output-group", "output-code", "output-meta":
+		return "console-text"
+	case "output-label":
+		return "console-accent"
+	}
+	return ""
+}
+
+func (r *Renderer) domResetsEmphasis(component, role string) bool {
+	if component == "button" || component == "input" || component == "select" || component == "badge" {
+		return true
+	}
+	if component == "text" {
+		_, defined := r.typography.Roles[role]
+		return defined
+	}
+	return false
+}
+
+func (r *Renderer) compileDOMRepeat(node uidsl.Node, data any, path string, inherited domStyleContext) *giodom.Element {
 	items, err := resolveItems(data, node.Repeat.Source)
 	if err != nil {
 		element := r.domError(path, err)
@@ -302,7 +364,7 @@ func (r *Renderer) compileDOMRepeat(node uidsl.Node, data any, path string) *gio
 		if value, resolveErr := uidsl.Resolve(itemData, repeat.Key); resolveErr == nil {
 			key = fmt.Sprint(value)
 		}
-		compiled := r.compileDOMNode(clone, itemData, path+"/"+key)
+		compiled := r.compileDOMNodeWithStyle(clone, itemData, path+"/"+key, inherited)
 		if compiled == nil {
 			continue
 		}
@@ -324,12 +386,12 @@ func (r *Renderer) compileDOMRepeat(node uidsl.Node, data any, path string) *gio
 	return r.decorateDOMNode(result, node, data, path)
 }
 
-func (r *Renderer) compileDOMContainer(node uidsl.Node, data any, path string) giodom.Element {
+func (r *Renderer) compileDOMContainer(node uidsl.Node, data any, path string, childStyle domStyleContext) giodom.Element {
 	if r.compact && node.ID == "project-header" {
-		return r.compileDOMCompactProjectHeader(node, data, path)
+		return r.compileDOMCompactProjectHeader(node, data, path, childStyle)
 	}
 	if r.compact && node.Style.Role == "compact-action-row" {
-		return r.compileDOMCompactActionRow(node, data, path)
+		return r.compileDOMCompactActionRow(node, data, path, childStyle)
 	}
 	axis := layout.Vertical
 	if node.Component == "row" || node.Layout.Direction == "horizontal" {
@@ -343,9 +405,9 @@ func (r *Renderer) compileDOMContainer(node uidsl.Node, data any, path string) g
 		return giodom.Spacer(domNodeKey(node, path), 0, 0)
 	}
 	weights := domGridWeights(node.Style.Role, len(node.Children))
-	children := r.compileDOMChildren(node.Children, data, path)
+	children := r.compileDOMChildren(node.Children, data, path, childStyle)
 	if weights != nil && !r.compact {
-		children = r.compileDOMGridChildren(node.Children, data, path, weights)
+		children = r.compileDOMGridChildren(node.Children, data, path, weights, childStyle)
 	}
 	if stackedCompactRow {
 		for index := range children {
@@ -353,7 +415,7 @@ func (r *Renderer) compileDOMContainer(node uidsl.Node, data any, path string) g
 		}
 	}
 	if r.compact && (node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" || node.Style.Role == "agent-record") {
-		children = r.compactDOMRecordChildren(node, data, path)
+		children = r.compactDOMRecordChildren(node, data, path, childStyle)
 		axis = layout.Vertical
 	}
 	props := giodom.FlexProps{
@@ -372,10 +434,10 @@ func (r *Renderer) compileDOMContainer(node uidsl.Node, data any, path string) g
 	return giodom.Element{Kind: giodom.KindFlex, Key: domNodeKey(node, path), Flex: props, Children: giodom.Static(children...)}
 }
 
-func (r *Renderer) compileDOMGridChildren(nodes []uidsl.Node, data any, path string, weights []float32) []giodom.Element {
+func (r *Renderer) compileDOMGridChildren(nodes []uidsl.Node, data any, path string, weights []float32, inherited domStyleContext) []giodom.Element {
 	children := make([]giodom.Element, 0, len(nodes))
 	for index := range nodes {
-		compiled := r.compileDOMNode(nodes[index], data, fmt.Sprintf("%s/%d", path, index))
+		compiled := r.compileDOMNodeWithStyle(nodes[index], data, fmt.Sprintf("%s/%d", path, index), inherited)
 		if compiled == nil {
 			empty := giodom.Spacer(giodom.Key(fmt.Sprintf("%s/empty/%d", path, index)), 0, 0)
 			compiled = &empty
@@ -421,28 +483,28 @@ func domFlexSpacing(justify string) layout.Spacing {
 	}
 }
 
-func (r *Renderer) compileDOMCompactProjectHeader(node uidsl.Node, data any, path string) giodom.Element {
+func (r *Renderer) compileDOMCompactProjectHeader(node uidsl.Node, data any, path string, inherited domStyleContext) giodom.Element {
 	var logo, title, metadata, back *giodom.Element
 	for index := range node.Children {
 		child := node.Children[index]
 		switch child.Style.Role {
 		case "project-icon":
-			logo = r.compileDOMNode(child, data, fmt.Sprintf("%s/%d", path, index))
+			logo = r.compileDOMNodeWithStyle(child, data, fmt.Sprintf("%s/%d", path, index), inherited)
 			if logo == nil {
 				empty := giodom.Spacer(giodom.Key(path+"/compact-logo-empty"), 0, 0)
 				logo = &empty
 			}
 		case "project-header-back":
 			child.Style.Role = "icon-button"
-			back = r.compileDOMNode(child, data, fmt.Sprintf("%s/%d", path, index))
+			back = r.compileDOMNodeWithStyle(child, data, fmt.Sprintf("%s/%d", path, index), inherited)
 		case "project-header-copy":
 			for copyIndex := range child.Children {
 				copyChild := child.Children[copyIndex]
 				switch copyChild.Style.Role {
 				case "title":
-					title = r.compileDOMNode(copyChild, data, fmt.Sprintf("%s/%d/%d", path, index, copyIndex))
+					title = r.compileDOMNodeWithStyle(copyChild, data, fmt.Sprintf("%s/%d/%d", path, index, copyIndex), inherited)
 				case "project-header-metadata":
-					metadata = r.compileDOMNode(copyChild, data, fmt.Sprintf("%s/%d/%d", path, index, copyIndex))
+					metadata = r.compileDOMNodeWithStyle(copyChild, data, fmt.Sprintf("%s/%d/%d", path, index, copyIndex), inherited)
 				}
 			}
 		}
@@ -463,14 +525,14 @@ func (r *Renderer) compileDOMCompactProjectHeader(node uidsl.Node, data any, pat
 	}
 }
 
-func (r *Renderer) compileDOMCompactActionRow(node uidsl.Node, data any, path string) giodom.Element {
+func (r *Renderer) compileDOMCompactActionRow(node uidsl.Node, data any, path string, inherited domStyleContext) giodom.Element {
 	content, actions := make([]giodom.Element, 0, len(node.Children)), make([]giodom.Element, 0, 2)
 	for index := range node.Children {
 		child := node.Children[index]
 		if child.Component == "spacer" {
 			continue
 		}
-		compiled := r.compileDOMNode(child, data, fmt.Sprintf("%s/%d", path, index))
+		compiled := r.compileDOMNodeWithStyle(child, data, fmt.Sprintf("%s/%d", path, index), inherited)
 		if compiled == nil {
 			continue
 		}
@@ -504,10 +566,10 @@ func (r *Renderer) compileDOMCompactActionRow(node uidsl.Node, data any, path st
 	}
 }
 
-func (r *Renderer) compileDOMChildren(nodes []uidsl.Node, data any, path string) []giodom.Element {
+func (r *Renderer) compileDOMChildren(nodes []uidsl.Node, data any, path string, inherited domStyleContext) []giodom.Element {
 	children := make([]giodom.Element, 0, len(nodes))
 	for index := range nodes {
-		compiled := r.compileDOMNode(nodes[index], data, fmt.Sprintf("%s/%d", path, index))
+		compiled := r.compileDOMNodeWithStyle(nodes[index], data, fmt.Sprintf("%s/%d", path, index), inherited)
 		if compiled == nil {
 			continue
 		}
@@ -517,7 +579,7 @@ func (r *Renderer) compileDOMChildren(nodes []uidsl.Node, data any, path string)
 	return children
 }
 
-func (r *Renderer) compactDOMRecordChildren(node uidsl.Node, data any, path string) []giodom.Element {
+func (r *Renderer) compactDOMRecordChildren(node uidsl.Node, data any, path string, inherited domStyleContext) []giodom.Element {
 	labels := []string{"Job", "Status", "Pipeline", "Build", "Agent", "Created", "Reason", "Actions"}
 	if node.Style.Role == "history-execution-job-row" {
 		labels = []string{"Job", "Status", "Pipeline", "Build", "Agent", "Created", "Duration"}
@@ -529,7 +591,7 @@ func (r *Renderer) compactDOMRecordChildren(node uidsl.Node, data any, path stri
 		if index >= len(labels) || !compactNodeHasContent(node.Children[index], data) {
 			continue
 		}
-		value := r.compileDOMNode(node.Children[index], data, fmt.Sprintf("%s/%d", path, index))
+		value := r.compileDOMNodeWithStyle(node.Children[index], data, fmt.Sprintf("%s/%d", path, index), inherited)
 		if value == nil {
 			continue
 		}
@@ -596,28 +658,8 @@ func domElementsRevision(elements []giodom.Element) uint64 {
 
 func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data any, path string) *giodom.Element {
 	var progressProps *giodom.ProgressProps
-	if node.Progress != nil {
-		if progress, active := activeSemanticProgress(data, node.Progress); active {
-			state, fraction := evaluateSemanticProgress(progress, time.Now())
-			mode := giodom.ProgressDeterminate
-			switch state {
-			case "indeterminate":
-				mode = giodom.ProgressIndeterminate
-			case "overrun":
-				mode = giodom.ProgressOverrun
-			case "complete", "completed":
-				mode = giodom.ProgressComplete
-			}
-			fill := r.palette.success
-			if node.Style.Role == "output-group" {
-				fill = r.palette.consoleSuccess
-			}
-			fill.A = 0x2e
-			progressProps = &giodom.ProgressProps{
-				Mode: mode, Fraction: float32(fraction), Animate: state == "determinate" && progress.ratePerMS > 0, Color: fill,
-				Radius: r.metrics.surfaceRadius, Phase: -time.Duration(progress.snapshotUnixMS) * time.Millisecond,
-			}
-		}
+	if node.Component != "disclosure" {
+		progressProps = r.domProgressProps(node, data)
 	}
 
 	isOutputConsole := node.ID == "job-output-groups"
@@ -634,6 +676,9 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 			props.Padding = giodom.UniformInsets(r.metrics.cardPadding)
 		}
 		if node.Layout.Padding != "" {
+			props.Padding = giodom.Insets{}
+		}
+		if node.Component == "disclosure" && r.domProgressProps(node, data) != nil {
 			props.Padding = giodom.Insets{}
 		}
 		if node.Component == "card" || node.Component == "section" || node.Style.Role == "hero" {
@@ -699,6 +744,51 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 	}
 	element.Key = domNodeKey(node, path)
 	return &element
+}
+
+func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressProps {
+	progress, active := activeSemanticProgress(data, node.Progress)
+	if !active {
+		return nil
+	}
+	state, fraction := evaluateSemanticProgress(progress, time.Now())
+	mode := giodom.ProgressDeterminate
+	switch state {
+	case "indeterminate":
+		mode = giodom.ProgressIndeterminate
+	case "overrun":
+		mode = giodom.ProgressOverrun
+	case "complete", "completed":
+		mode = giodom.ProgressComplete
+	}
+	fill := r.palette.success
+	if node.Style.Role == "output-group" {
+		fill = r.palette.consoleSuccess
+	}
+	track := r.domProgressTrack(node)
+	tintOpacity := float64(r.controls.Progress.TintOpacity)
+	if track.A == 0xff {
+		fill = mixColorSRGB(track, fill, tintOpacity)
+	} else {
+		fill.A = uint8(math.Round(0xff * tintOpacity))
+	}
+	return &giodom.ProgressProps{
+		Mode: mode, Fraction: float32(fraction), Animate: state == "determinate" && progress.ratePerMS > 0, Color: fill,
+		Track: track, Radius: r.metrics.surfaceRadius, Phase: -time.Duration(progress.snapshotUnixMS) * time.Millisecond,
+	}
+}
+
+func (r *Renderer) domProgressTrack(node uidsl.Node) color.NRGBA {
+	switch node.Style.Role {
+	case "execution-row":
+		return r.palette.surfaceRaised
+	case "execution-section-header":
+		return r.palette.subtle
+	case "output-group":
+		return r.palette.consoleSurface
+	default:
+		return color.NRGBA{}
+	}
 }
 
 func (r *Renderer) domConstraint(values uidsl.Layout) (giodom.ConstraintProps, bool) {
@@ -800,18 +890,12 @@ func (r *Renderer) domTextColor(role, tone string) color.NRGBA {
 	if resolved, ok := r.toneColor(tone); ok {
 		return resolved
 	}
-	switch role {
-	case "table-header", "detail", "detail-small":
-		return r.palette.muted
-	case "output-code", "output-meta":
-		return r.palette.consoleText
-	case "output-label":
-		return r.palette.consoleAccent
-	case "link":
-		return r.palette.accent
-	default:
-		return r.palette.text
+	if local := domLocalTone("text", role); local != "" {
+		if resolved, ok := r.toneColor(local); ok {
+			return resolved
+		}
 	}
+	return r.palette.text
 }
 
 func (r *Renderer) domTextAction(node uidsl.Node, data any, path, value, role string, strong bool) giodom.Element {
@@ -1413,7 +1497,41 @@ func (r *Renderer) compileDOMSpacer(node uidsl.Node, path string) giodom.Element
 	return element
 }
 
-func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string) giodom.Element {
+func domPassiveDisclosureSummary(element giodom.Element) giodom.Element {
+	if element.Kind == giodom.KindText {
+		element.Text.Selectable = false
+		return element
+	}
+	// Native leaves include explicit actions as well as passive images and
+	// icons. Keep their event behavior intact so an action nested in a summary
+	// remains the foremost hit target.
+	if element.Kind == giodom.KindButton || element.Kind == giodom.KindEditor || element.Kind == giodom.KindNative {
+		return element
+	}
+	if element.Responsive.Compact != nil {
+		compact := domPassiveDisclosureSummary(*element.Responsive.Compact)
+		element.Responsive.Compact = &compact
+	}
+	if element.Responsive.Wide != nil {
+		wide := domPassiveDisclosureSummary(*element.Responsive.Wide)
+		element.Responsive.Wide = &wide
+	}
+	if element.Children == nil {
+		return element
+	}
+	children := make([]giodom.Element, 0, element.Children.Len())
+	for index := 0; index < element.Children.Len(); index++ {
+		children = append(children, domPassiveDisclosureSummary(element.Children.At(index)))
+	}
+	if element.Children.Dynamic() {
+		element.Children = giodom.Keyed(element.Children.Revision(), children...)
+	} else {
+		element.Children = giodom.Static(children...)
+	}
+	return element
+}
+
+func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, childStyle domStyleContext) giodom.Element {
 	label := "Details"
 	if node.Text != nil {
 		resolved, err := uidsl.RenderText(data, *node.Text)
@@ -1489,7 +1607,7 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string) 
 		)
 	}
 	if node.Disclosure != nil {
-		summary = append(summary, r.compileDOMChildren(node.Disclosure.Summary, data, path+"/summary")...)
+		summary = append(summary, r.compileDOMChildren(node.Disclosure.Summary, data, path+"/summary", childStyle)...)
 	}
 	if iconOnlyToggle {
 		summary = append(summary, header)
@@ -1501,14 +1619,50 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string) 
 		Flex:     giodom.FlexProps{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: r.metrics.spaceSmall, Wrap: node.Style.Role == "project-row"},
 		Children: giodom.Static(summary...),
 	}
-	content := []giodom.Element{headerRow}
-	if expanded && !navigatePresentation {
-		children := node.Children
-		if node.Style.Role == "output-group" {
-			children = withDefaultConsoleText(children)
-		}
-		content = append(content, r.compileDOMChildren(children, data, path+"/body")...)
+	activateHeader := func(header giodom.Element) giodom.Element {
+		header = domPassiveDisclosureSummary(header)
+		return giodom.Control(giodom.Key(path+"/summary-activate"), giodom.ButtonProps{
+			Enabled: true, Description: label,
+			OnClick: func() {
+				if navigatePresentation && hasNavigateAction {
+					r.dispatch(navigateAction, data)
+					return
+				}
+				r.setDisclosureState(stateKey, !expanded, persistent)
+			},
+		}, header)
 	}
+	bodyChildren := []giodom.Element{}
+	if expanded && !navigatePresentation {
+		bodyChildren = r.compileDOMChildren(node.Children, data, path+"/body", childStyle)
+	}
+	if progress := r.domProgressProps(node, data); progress != nil {
+		padding := r.spacing(node.Layout.Padding)
+		if node.Layout.Padding == "" {
+			padding = r.metrics.sectionPadding
+		}
+		headerContent := giodom.Inset(giodom.Key(path+"/progress-header-inset"), giodom.UniformInsets(padding), headerRow)
+		headerProgress := *progress
+		headerProgress.Track = r.domProgressTrack(node)
+		header := giodom.Progress(giodom.Key(path+"/progress-header"), headerProgress, headerContent)
+		header = activateHeader(header)
+		content := []giodom.Element{header}
+		if len(bodyChildren) > 0 {
+			body := giodom.Element{
+				Kind: giodom.KindFlex, Key: giodom.Key(path + "/body"),
+				Flex:     giodom.FlexProps{Axis: layout.Vertical, Alignment: layout.Start, Gap: r.spacing(node.Layout.Gap)},
+				Children: giodom.Static(bodyChildren...),
+			}
+			body = giodom.Inset(giodom.Key(path+"/body-inset"), giodom.Insets{Top: padding, Right: padding, Bottom: padding, Left: padding}, body)
+			content = append(content, body)
+		}
+		return giodom.Element{
+			Kind: giodom.KindFlex, Key: domNodeKey(node, path),
+			Flex:     giodom.FlexProps{Axis: layout.Vertical, Alignment: layout.Start},
+			Children: giodom.Static(content...),
+		}
+	}
+	content := append([]giodom.Element{activateHeader(headerRow)}, bodyChildren...)
 	return giodom.Element{
 		Kind: giodom.KindFlex, Key: domNodeKey(node, path),
 		Flex: giodom.FlexProps{
@@ -1542,7 +1696,7 @@ func (r *Renderer) rememberDOMDisclosure(key string, expanded, persistent bool) 
 	}
 }
 
-func (r *Renderer) compileDOMTree(node uidsl.Node, data any, path string) giodom.Element {
+func (r *Renderer) compileDOMTree(node uidsl.Node, data any, path string, inherited domStyleContext) giodom.Element {
 	if node.TreeView == nil {
 		return r.domMessage(giodom.Key(path+"/missing-tree"), "Tree configuration is missing", r.palette.danger)
 	}
@@ -1571,7 +1725,7 @@ func (r *Renderer) compileDOMTree(node uidsl.Node, data any, path string) giodom
 		if entryErr != nil {
 			return r.domError(path, entryErr)
 		}
-		compiled := r.compileDOMNode(entry, itemData, fmt.Sprintf("%s/%d:%s", path, index, key))
+		compiled := r.compileDOMNodeWithStyle(entry, itemData, fmt.Sprintf("%s/%d:%s", path, index, key), inherited)
 		if compiled == nil {
 			continue
 		}
@@ -1594,7 +1748,7 @@ func (r *Renderer) compileDOMGraph(node uidsl.Node, data any, path string) giodo
 	})
 }
 
-func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string) *giodom.Element {
+func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, inherited domStyleContext) *giodom.Element {
 	if node.Repeat == nil {
 		element := r.domMessage(giodom.Key(path+"/missing-repeat"), "Scroller repeat configuration is missing", r.palette.danger)
 		return &element
@@ -1633,7 +1787,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string) *g
 		}
 		container.Repeat = nil
 		container.Actions = nil
-		compiled := r.compileDOMContainer(container, itemData, path+"/"+string(key))
+		compiled := r.compileDOMContainer(container, itemData, path+"/"+string(key), inherited)
 		compiled.Key = key
 		return compiled
 	}

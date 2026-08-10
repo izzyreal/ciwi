@@ -40,6 +40,16 @@
     return catalogPromise;
   }
 
+  function reservePendingLabel(element, command) {
+    if (!element || !command) return;
+    void catalog().then(specs => {
+      const spec = specs.get(command);
+      const label = element.querySelector && element.querySelector('.dsl-button-label');
+      if (!label || !spec || !spec.pending) return;
+      label.setAttribute('data-ciwi-reserved-label', spec.pending);
+    }).catch(() => {});
+  }
+
   function canonicalArguments(argumentsValue) {
     const source = argumentsValue || {};
     return Object.keys(source).sort().reduce((result, key) => {
@@ -159,6 +169,7 @@
   window.ciwiActionHeaders = actionHeaders;
   window.ciwiActionID = newActionID;
   window.ciwiConfirmAction = confirmAction;
+  window.ciwiReservePendingLabel = reservePendingLabel;
   window.ciwiSyncActionElement = syncActionElement;
   window.ciwiActiveOperations = () => Array.from(activeByFingerprint.values());
   // Warm the shared contract so the first user action receives immediate

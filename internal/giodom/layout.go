@@ -404,7 +404,10 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 			return layout.Dimensions{Size: size}
 		}
 		props := element.Progress
-		paint.FillShape(gtx.Ops, props.Track, clip.UniformRRect(image.Rectangle{Max: size}, clampRadius(gtx.Dp(props.Radius), size)).Op(gtx.Ops))
+		rounded := clip.UniformRRect(image.Rectangle{Max: size}, clampRadius(gtx.Dp(props.Radius), size))
+		area := rounded.Push(gtx.Ops)
+		defer area.Pop()
+		paint.FillShape(gtx.Ops, props.Track, rounded.Op(gtx.Ops))
 		fraction := max(float32(0), min(float32(1), props.Fraction))
 		progressColor := props.Color
 		switch props.Mode {

@@ -26,3 +26,5 @@ controls:
     optionPaddingY: 7
     optionMinimumHeight: 40
     selectionIndicatorWidth: 20
+  progress:
+    tintOpacity: 0.18

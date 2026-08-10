@@ -216,6 +216,7 @@
 	metric('--ciwi-select-option-padding-y', activeControls.select.optionPaddingY);
 	metric('--ciwi-select-option-min-height', activeControls.select.optionMinimumHeight);
 	metric('--ciwi-select-indicator-width', activeControls.select.selectionIndicatorWidth);
+	style.setProperty('--ciwi-progress-tint', String(activeControls.progress.tintOpacity * 100) + '%');
   }
 
   function appendPositionedIcon(element, label, icon, position) {
@@ -1852,7 +1853,10 @@
 	  element.textContent = '';
 	  const label = document.createElement('span');
 	  label.className = 'dsl-button-label';
-	  label.textContent = copy;
+	  const current = document.createElement('span');
+	  current.className = 'dsl-button-label-current';
+	  current.textContent = copy;
+	  label.appendChild(current);
 	  element.appendChild(label);
 	}
     if (node.component === 'button' && node.icon) {
@@ -1862,6 +1866,9 @@
 	  else element.prepend(icon);
     }
     bindActions(element, node.actions, data, context);
+	if (node.component === 'button' && node.actions && node.actions.length && typeof window.ciwiReservePendingLabel === 'function') {
+	  window.ciwiReservePendingLabel(element, node.actions[0].command);
+	}
 	const childrenTarget = element;
     if ((node.component === 'list' || node.component === 'scroller') && node.repeat) {
 	  repeatedItems(node, data, context.path).forEach(({itemData, key}) => {

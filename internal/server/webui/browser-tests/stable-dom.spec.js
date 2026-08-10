@@ -10,13 +10,19 @@ const cssDirectory = path.join(repositoryRoot, 'internal/server/webui/assets/css
 
 const controls = {
   controls: {
-    button: {iconSize: 16, iconGap: 6, iconPosition: 'leading'},
+    button: {
+      iconPosition: 'leading', minimumHeight: {web: 44, native: 44},
+      paddingX: {web: 12, native: 12}, paddingY: {web: 8, native: 8},
+      iconSize: {web: 19, native: 19}, iconGap: {web: 8, native: 8},
+      iconOnlySize: {web: 34, native: 34},
+    },
     select: {
-      chevronSize: 16, chevronGap: 6, minimumHeight: 44, menuPadding: 4,
+      chevronPosition: 'trailing', chevronSize: 16, chevronGap: 6, minimumHeight: 44, menuPadding: 4,
       menuItemGap: 2, optionGap: 6, optionPaddingX: 8, optionPaddingY: 6,
       optionMinimumHeight: 28, selectionIndicatorWidth: 16,
       viewportInset: 8, menuGap: 4, menuMinimumWidth: 120,
     },
+    progress: {tintOpacity: 0.18},
   },
 };
 

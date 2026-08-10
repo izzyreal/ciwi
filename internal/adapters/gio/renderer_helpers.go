@@ -161,21 +161,6 @@ func disclosureDefaultExpanded(disclosure *uidsl.Disclosure, data any) bool {
 	return disclosure.DefaultExpanded
 }
 
-func withDefaultConsoleText(children []uidsl.Node) []uidsl.Node {
-	result := make([]uidsl.Node, len(children))
-	for index := range children {
-		child := children[index]
-		if child.Component == "text" && child.Style.Tone == "" && child.Style.ToneBinding == "" {
-			child.Style.Tone = "console-text"
-		}
-		if len(child.Children) > 0 {
-			child.Children = withDefaultConsoleText(child.Children)
-		}
-		result[index] = child
-	}
-	return result
-}
-
 func compactNodeHasContent(node uidsl.Node, data any) bool {
 	if node.Visible != nil {
 		value, err := uidsl.Resolve(data, node.Visible.Binding)

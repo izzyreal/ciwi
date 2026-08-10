@@ -35,6 +35,8 @@ controls:
     optionPaddingY: 7
     optionMinimumHeight: 40
     selectionIndicatorWidth: 20
+  progress:
+    tintOpacity: 0.18
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -78,6 +80,7 @@ func validControlsDocument() *ControlsDocument {
 				OptionGap: 8, OptionPaddingX: 10, OptionPaddingY: 7, OptionMinimumHeight: 40,
 				SelectionIndicatorWidth: 20,
 			},
+			Progress: ProgressControl{TintOpacity: 0.18},
 		},
 	}
 }

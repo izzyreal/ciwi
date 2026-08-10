@@ -742,7 +742,7 @@
       isolation: isolate;
       overflow: hidden;
       --ciwi-progress-width: 0%;
-      --ciwi-progress-color: color-mix(in srgb, var(--ok) 18%, transparent);
+      --ciwi-progress-color: color-mix(in srgb, var(--ok) var(--ciwi-progress-tint, 18%), transparent);
       --ciwi-progress-animation-delay: 0ms;
     }
     .ciwi-progress-surface::before {

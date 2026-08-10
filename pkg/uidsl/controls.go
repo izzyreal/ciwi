@@ -9,8 +9,9 @@ type ControlsDocument struct {
 }
 
 type Controls struct {
-	Button ButtonControl `yaml:"button" json:"button"`
-	Select SelectControl `yaml:"select" json:"select"`
+	Button   ButtonControl   `yaml:"button" json:"button"`
+	Select   SelectControl   `yaml:"select" json:"select"`
+	Progress ProgressControl `yaml:"progress" json:"progress"`
 }
 
 // PlatformMetric allows the shared control contract to account for the
@@ -48,6 +49,11 @@ type SelectControl struct {
 	OptionPaddingY          float32 `yaml:"optionPaddingY" json:"optionPaddingY"`
 	OptionMinimumHeight     float32 `yaml:"optionMinimumHeight" json:"optionMinimumHeight"`
 	SelectionIndicatorWidth float32 `yaml:"selectionIndicatorWidth" json:"selectionIndicatorWidth"`
+}
+
+// ProgressControl defines renderer-independent semantic progress visuals.
+type ProgressControl struct {
+	TintOpacity float32 `yaml:"tintOpacity" json:"tintOpacity"`
 }
 
 func ParseControls(payload []byte) (*ControlsDocument, error) {
@@ -126,6 +132,9 @@ func (d *ControlsDocument) Validate() error {
 	}
 	if d.Controls.Select.MenuMaximumHeight < d.Controls.Select.MenuMinimumHeight {
 		return fmt.Errorf("select menuMaximumHeight must be at least menuMinimumHeight")
+	}
+	if opacity := d.Controls.Progress.TintOpacity; opacity <= 0 || opacity > 1 {
+		return fmt.Errorf("progress tintOpacity must be greater than zero and at most one")
 	}
 	return nil
 }

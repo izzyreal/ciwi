@@ -121,7 +121,7 @@ func (r *Renderer) layoutDOMGraphView(gtx layout.Context, node uidsl.Node, data 
 	}
 	body := func(gtx layout.Context) layout.Dimensions {
 		if state.mode == "list" {
-			children := r.compileDOMChildren(node.Children, data, path+"/list")
+			children := r.compileDOMChildren(node.Children, data, path+"/list", domStyleContext{tone: node.Style.Tone, emphasis: node.Style.Emphasis})
 			return state.runtime.Layout(gtx, giodom.Column(giodom.Key(path+"/list-root"), r.metrics.spaceSmall, children...))
 		}
 		return r.layoutDOMDefinitionGraph(gtx, node, data, path+"/graph", state)
@@ -234,7 +234,7 @@ func (r *Renderer) layoutDOMDefinitionGraph(gtx layout.Context, node uidsl.Node,
 				divider := image.Pt(gtx.Constraints.Max.X, height)
 				paint.FillShape(gtx.Ops, r.palette.border, clip.Rect{Max: divider}.Op())
 				return layout.Inset{Top: unit.Dp(float32(height) / gtx.Metric.PxPerDp)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					elements := r.compileDOMChildren(node.GraphView.Details, detailsData, path+"/details/"+state.selection)
+					elements := r.compileDOMChildren(node.GraphView.Details, detailsData, path+"/details/"+state.selection, domStyleContext{tone: node.Style.Tone, emphasis: node.Style.Emphasis})
 					return state.runtime.Layout(gtx, giodom.Column(giodom.Key(path+"/details-root"), r.metrics.spaceMedium, elements...))
 				})
 			})

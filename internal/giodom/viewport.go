@@ -38,8 +38,9 @@ type keyedViewportState struct {
 }
 
 type stockListState struct {
-	list     layout.List
-	revision uint64
+	list           layout.List
+	revision       uint64
+	scrollRevision uint64
 }
 
 type recordedViewportChild struct {
@@ -306,6 +307,18 @@ func (r *Runtime) layoutStockList(gtx layout.Context, element Element, identity 
 	state.list.Axis = props.Axis
 	state.list.Gap = gtx.Dp(props.Gap)
 	state.list.ScrollToEnd = props.ScrollToEnd
+	if props.ScrollTo != "" && props.ScrollRevision != state.scrollRevision {
+		for index := 0; index < children.Len(); index++ {
+			if children.KeyAt(index) != props.ScrollTo {
+				continue
+			}
+			state.list.Position.First = index
+			state.list.Position.Offset = 0
+			state.list.Position.BeforeEnd = true
+			break
+		}
+		state.scrollRevision = props.ScrollRevision
+	}
 	state.revision = children.Revision()
 	listContext := gtx
 	listContext.Constraints = layout.Exact(viewport)

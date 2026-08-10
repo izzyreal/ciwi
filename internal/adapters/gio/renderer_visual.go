@@ -242,6 +242,8 @@ func (r *Renderer) nativeTextStyle(role string, strong bool) nativeTextStyle {
 
 func (r *Renderer) toneColor(tone string) (color.NRGBA, bool) {
 	switch tone {
+	case "text":
+		return r.palette.text, true
 	case "muted":
 		return r.palette.muted, true
 	case "accent":

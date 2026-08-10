@@ -653,7 +653,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"element.textContent = ''", "appendPositionedIcon(element, label, icon, activeControls.button.iconPosition)", ".dsl-disclosure > summary::after", ".dsl-code-inline",
 		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted", "cssLength(layout.gap)",
 		"/ui/contracts/controls.json", "activeControls.select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-select-chevron-gap",
-		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) 18%",
+		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) var(--ciwi-progress-tint, 18%)",
 		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", ".dsl-output-group:not([open]) > summary",
 		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-output-group > summary { color:var(--console-accent)",
 		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
