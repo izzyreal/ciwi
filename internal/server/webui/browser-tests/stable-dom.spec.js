@@ -105,7 +105,13 @@ const screen = {
             component: 'list', id: 'probe-rows', repeat: {source: 'probe.rows', as: 'row', key: 'row.key'},
             children: [{
               component: 'disclosure', text: {binding: 'row.label'}, image: {asset: 'ciwi-logo'},
-              disclosure: {defaultExpanded: true, stateKey: 'execution:{{row.key}}'},
+              disclosure: {
+                defaultExpanded: true, stateKey: 'execution:{{row.key}}',
+                summary: [
+                  {component: 'spacer', layout: {grow: true}},
+                  {component: 'text', text: {binding: 'row.summary'}, style: {toneBinding: 'row.status', emphasis: 'strong'}},
+                ],
+              },
               style: {role: 'execution-row', toneBinding: 'row.status'},
             }],
           },
@@ -134,6 +140,11 @@ const settingsScreen = {
       children: [{
         component: 'column', visible: {binding: 'settings.ready'},
         children: [
+          {
+            component: 'button', id: 'settings-check-updates', text: {literal: 'Check for updates'},
+            enabled: {binding: 'settings.update_supported'},
+            actions: [{on: 'activate', command: 'check-server-updates'}],
+          },
           {
             component: 'select', id: 'settings-update-select', enabled: {binding: 'settings.update_supported'},
             select: {
@@ -164,7 +175,10 @@ function model(overrides = {}) {
     graph_visible: false, graph_nodes: [], tree_visible: false, tree_nodes: [], output_visible: false, output: '',
     log_visible: false, log: '', selection_start: 'Select from here', selection_end: 'through here',
     options: [{value: 'a', label: 'Alpha'}, {value: 'b', label: 'Beta'}],
-    rows: [{key: 'a', label: 'Execution A', status: 'running'}, {key: 'b', label: 'Execution B', status: 'waiting'}],
+    rows: [
+      {key: 'a', label: 'Execution A', summary: '1/3 successful, 1 in progress, 1 waiting', status: 'running'},
+      {key: 'b', label: 'Execution B', summary: '0/1 successful, 1 waiting', status: 'waiting'},
+    ],
   }, overrides);
 }
 
@@ -255,6 +269,8 @@ async function installFixture(page, models) {
 async function installSettingsFixture(page) {
   let releaseUpdate;
   const updateGate = new Promise(resolve => { releaseUpdate = resolve; });
+  let releaseCheck;
+  const checkGate = new Promise(resolve => { releaseCheck = resolve; });
   const updateBodies = [];
   await page.route('http://ciwi-settings.test/**', async route => {
     const url = new URL(route.request().url());
@@ -299,9 +315,10 @@ async function installSettingsFixture(page) {
       return;
     }
     if (url.pathname === '/ui/contracts/actions.json') {
-      await route.fulfill({json: {actions: [{
-        command: 'server-update-action', class: 'mutation', scope: 'server-update', pending: 'Updating…', refreshOnSuccess: false,
-      }]}});
+      await route.fulfill({json: {actions: [
+        {command: 'server-update-action', class: 'mutation', scope: 'server-update', pending: 'Updating…', refreshOnSuccess: false},
+        {command: 'check-server-updates', class: 'query', scope: 'server-updates', pending: 'Checking for updates…'},
+      ]}});
       return;
     }
     if (url.pathname === '/api/v1/server-info') {
@@ -325,6 +342,11 @@ async function installSettingsFixture(page) {
       await route.fulfill({json: {message: 'Update accepted'}});
       return;
     }
+    if (url.pathname === '/api/v1/update/check') {
+      await checkGate;
+      await route.fulfill({json: {current_version: 'v1.0.0', latest_version: 'v1.0.0', update_available: false, available_versions: []}});
+      return;
+    }
     if (url.pathname === '/ciwi-logo.png' || url.pathname === '/ui/icons.svg') {
       await route.fulfill({status: 204, body: ''});
       return;
@@ -333,7 +355,7 @@ async function installSettingsFixture(page) {
   });
   await page.goto('http://ciwi-settings.test/');
   await expect(page.locator('#settings-update-select .dsl-select-label')).toHaveText('v1.1.0');
-  return {releaseUpdate, updateBodies};
+  return {releaseUpdate, releaseCheck, updateBodies};
 }
 
 async function refreshTo(page, version) {
@@ -369,7 +391,7 @@ test('renderer keys remain deterministic and status SVG identity survives compat
 });
 
 test('an incompatible terminal icon replaces the retained status SVG', async ({page}) => {
-  await installFixture(page, [model(), model({version: 'done', rows: [{key: 'a', label: 'Execution A', status: 'succeeded'}]})]);
+  await installFixture(page, [model(), model({version: 'done', rows: [{key: 'a', label: 'Execution A', summary: '1/1 successful', status: 'succeeded'}]})]);
   await page.evaluate(() => { window.previousSpinner = document.querySelector('.dsl-execution-row-status.dsl-status-accent'); });
   await refreshTo(page, 'done');
   expect(await page.evaluate(() => window.previousSpinner === document.querySelector('.dsl-execution-row-status'))).toBe(false);
@@ -378,8 +400,8 @@ test('an incompatible terminal icon replaces the retained status SVG', async ({p
 
 test('duplicate repeat keys abort before replacing the mounted screen', async ({page}) => {
   await installFixture(page, [model(), model({version: 'invalid', rows: [
-    {key: 'same', label: 'First', status: 'waiting'},
-    {key: 'same', label: 'Second', status: 'waiting'},
+    {key: 'same', label: 'First', summary: 'waiting', status: 'waiting'},
+    {key: 'same', label: 'Second', summary: 'waiting', status: 'waiting'},
   ]})]);
   await page.locator('#probe-refresh').click();
   await expect(page.locator('#probe-version')).toHaveText('one');
@@ -387,7 +409,7 @@ test('duplicate repeat keys abort before replacing the mounted screen', async ({
 });
 
 test('empty repeat keys abort before replacing the mounted screen', async ({page}) => {
-  await installFixture(page, [model(), model({version: 'invalid', rows: [{key: ' ', label: 'Empty', status: 'waiting'}]})]);
+  await installFixture(page, [model(), model({version: 'invalid', rows: [{key: ' ', label: 'Empty', summary: 'waiting', status: 'waiting'}]})]);
   await page.locator('#probe-refresh').click();
   await expect(page.locator('#probe-version')).toHaveText('one');
   await expect.poll(() => page.evaluate(() => window.alerts.join('\n'))).toContain('Empty repeat key');
@@ -494,9 +516,9 @@ test('expanded disclosure mounted identity survives a same-route refresh', async
 
 test('keyed row mounted identity survives sibling insertion and reorder', async ({page}) => {
   await installFixture(page, [model(), model({version: 'two', rows: [
-    {key: 'new', label: 'New', status: 'waiting'},
-    {key: 'b', label: 'Execution B', status: 'waiting'},
-    {key: 'a', label: 'Execution A', status: 'running'},
+    {key: 'new', label: 'New', summary: 'waiting', status: 'waiting'},
+    {key: 'b', label: 'Execution B', summary: 'waiting', status: 'waiting'},
+    {key: 'a', label: 'Execution A', summary: 'in progress', status: 'running'},
   ]})]);
   await page.evaluate(() => { window.previousRow = document.querySelector('[data-disclosure-key="execution:b"]'); });
   await refreshTo(page, 'two');
@@ -653,6 +675,55 @@ test('shared table, badge, and control sizing contracts are intrinsic and aligne
   expect(metrics.rowAlign).toBe('center');
   expect(metrics.badgeWidth).toBeLessThan(metrics.rowWidth / 2);
   expect(metrics.heights).toEqual([44, 44, 44]);
+});
+
+test('execution summaries stack in portrait and split without collapsing in landscape', async ({page}) => {
+  await page.setViewportSize({width: 375, height: 667});
+  await installFixture(page, [model({rows: [{
+    key: 'a', label: 'VMPC2000XL Full cross-platform release Mon 10 Aug, 21:15:00 v0.9.17',
+    summary: '1/15 successful, 7 in progress, 7 waiting', status: 'running',
+  }]})]);
+  const portrait = await page.locator('.dsl-execution-row > summary').evaluate(summary => {
+    const label = summary.querySelector('.dsl-execution-row-label').getBoundingClientRect();
+    const status = summary.querySelector('.dsl-execution-row-summary').getBoundingClientRect();
+    const bounds = summary.getBoundingClientRect();
+    return {label: label.toJSON(), status: status.toJSON(), bounds: bounds.toJSON()};
+  });
+  expect(portrait.status.top).toBeGreaterThanOrEqual(portrait.label.bottom - 1);
+  expect(portrait.status.width).toBeGreaterThan(100);
+  expect(portrait.status.right).toBeLessThanOrEqual(portrait.bounds.right + 1);
+
+  await page.setViewportSize({width: 667, height: 375});
+  const landscape = await page.locator('.dsl-execution-row > summary').evaluate(summary => {
+    const label = summary.querySelector('.dsl-execution-row-label').getBoundingClientRect();
+    const status = summary.querySelector('.dsl-execution-row-summary').getBoundingClientRect();
+    const bounds = summary.getBoundingClientRect();
+    return {label: label.toJSON(), status: status.toJSON(), bounds: bounds.toJSON()};
+  });
+  expect(landscape.status.left).toBeGreaterThanOrEqual(landscape.label.right - 1);
+  expect(landscape.status.width).toBeGreaterThanOrEqual(140);
+  expect(landscape.status.right).toBeLessThanOrEqual(landscape.bounds.right + 1);
+});
+
+test('action buttons reserve their widest graphical pending label', async ({page}) => {
+  const fixture = await installSettingsFixture(page);
+  const button = page.locator('#settings-check-updates');
+  await expect(button.locator('.dsl-button-label')).toHaveAttribute('data-ciwi-reserved-label', 'Checking for updates…');
+  const before = await button.evaluate(element => {
+    const label = element.querySelector('.dsl-button-label');
+    const style = getComputedStyle(element);
+    return {
+      width: element.getBoundingClientRect().width,
+      required: label.getBoundingClientRect().width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+        + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth),
+    };
+  });
+  expect(before.width).toBeGreaterThanOrEqual(before.required - 0.5);
+  await button.click();
+  await expect(button).toHaveAttribute('aria-busy', 'true');
+  expect(await button.evaluate(element => element.getBoundingClientRect().width)).toBeCloseTo(before.width, 1);
+  fixture.releaseCheck();
+  await expect(button).not.toHaveAttribute('aria-busy', 'true');
 });
 
 test('confirmed server update interpolates its version and resets controls before the request completes', async ({page}) => {

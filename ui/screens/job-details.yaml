@@ -382,9 +382,6 @@ screen:
                 style:
                   role: tailing-toggle
                   toneBinding: jobDetails.tailing_tone
-                overrides:
-                  compact:
-                    hidden: true
                 actions:
                   - on: activate
                     command: toggle-output-tailing
@@ -502,9 +499,6 @@ screen:
                     icon: arrow-up
                     style:
                       role: floating-collapse
-                    overrides:
-                      gio:
-                        hidden: true
                     actions:
                       - on: activate
                         command: set-disclosures

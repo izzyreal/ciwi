@@ -142,9 +142,10 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 		wantNotice        string
 		wantSection       string
 		wantNoticeEnabled bool
+		wantNavigateBack  bool
 		wantCancel        string
 	}{
-		{command: "run-pipeline", arguments: map[string]string{"pipelineDbId": "7", "pipelineJobId": "unit-tests", "dryRun": "true"}, wantCall: "run-pipeline", wantNotice: "/", wantSection: "queued-executions", wantNoticeEnabled: true},
+		{command: "run-pipeline", arguments: map[string]string{"pipelineDbId": "7", "pipelineJobId": "unit-tests", "dryRun": "true", "backOnSuccess": "true"}, wantCall: "run-pipeline", wantNotice: "/", wantSection: "queued-executions", wantNoticeEnabled: true, wantNavigateBack: true},
 		{command: "run-chain", arguments: map[string]string{"projectId": "2", "chainId": "release"}, wantCall: "run-chain", wantNotice: "/", wantSection: "queued-executions", wantNoticeEnabled: true},
 		{command: "clear-queue", wantCall: "clear-queue"},
 		{command: "remove-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "remove-execution"},
@@ -181,6 +182,9 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 			if effect.NavigateRoute != test.wantRoute {
 				t.Fatalf("navigate route = %q, want %q", effect.NavigateRoute, test.wantRoute)
 			}
+			if effect.NavigateBack != test.wantNavigateBack {
+				t.Fatalf("navigate back = %v, want %v", effect.NavigateBack, test.wantNavigateBack)
+			}
 			if effect.NoticeRoute != test.wantNotice {
 				t.Fatalf("notice route = %q, want %q", effect.NoticeRoute, test.wantNotice)
 			}
@@ -194,6 +198,31 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 				t.Fatalf("cancelled job = %q, want %q", effect.CancelledJob, test.wantCancel)
 			}
 		})
+	}
+}
+
+func TestNativeRunOptionsBackTargetsAndDelayedOperationGuard(t *testing.T) {
+	front := navigationState{screen: "front-page"}
+	project := navigationState{screen: "project-details", projectID: 2}
+	target, pop, err := nativeBackNavigationTarget([]navigationState{front, project}, "/projects/2")
+	if err != nil || !pop || target != project {
+		t.Fatalf("history target = %#v, pop=%v, err=%v", target, pop, err)
+	}
+	target, pop, err = nativeBackNavigationTarget(nil, "/projects/2")
+	if err != nil || pop || target != project {
+		t.Fatalf("fallback target = %#v, pop=%v, err=%v", target, pop, err)
+	}
+	target, pop, err = nativeBackNavigationTarget(nil, "/projects/0")
+	if err != nil || pop || target != front {
+		t.Fatalf("invalid fallback target = %#v, pop=%v, err=%v", target, pop, err)
+	}
+
+	chainOperation := operations.Operation{Command: "run-chain", Arguments: map[string]string{"projectId": "2", "chainId": "release"}}
+	if !nativeRunOptionsOperationMatches(navigationState{screen: "run-options", projectID: 2, chainID: "release"}, chainOperation) {
+		t.Fatal("matching chain operation was not recognized")
+	}
+	if nativeRunOptionsOperationMatches(project, chainOperation) || nativeRunOptionsOperationMatches(navigationState{screen: "run-options", projectID: 2, chainID: "other"}, chainOperation) {
+		t.Fatal("delayed chain operation matched a different navigation target")
 	}
 }
 

@@ -311,9 +311,19 @@ func (r *Runtime) layoutText(gtx layout.Context, element Element, identity strin
 
 func (r *Runtime) layoutButton(gtx layout.Context, element Element, identity string) layout.Dimensions {
 	clickable := r.useState(identity, "clickable", KindButton, func() any { return new(widget.Clickable) }).(*widget.Clickable)
+	clicks := 0
 	for clickable.Clicked(gtx) {
+		clicks++
+	}
+	claimClicks := func() {
+		if clicks == 0 {
+			return
+		}
+		r.controlClicks++
 		if element.Button.Enabled && element.Button.OnClick != nil {
-			element.Button.OnClick()
+			for range clicks {
+				element.Button.OnClick()
+			}
 		}
 	}
 	if !element.Button.Enabled {
@@ -323,7 +333,8 @@ func (r *Runtime) layoutButton(gtx layout.Context, element Element, identity str
 		semantic.DescriptionOp(element.Button.Description).Add(gtx.Ops)
 	}
 	if element.Children != nil && element.Children.Len() > 0 {
-		return clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		beforeChildren := r.controlClicks
+		dimensions := clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			if minimum := gtx.Dp(element.Button.MinHeight); minimum > gtx.Constraints.Min.Y {
 				gtx.Constraints.Min.Y = min(minimum, gtx.Constraints.Max.Y)
 			}
@@ -343,7 +354,12 @@ func (r *Runtime) layoutButton(gtx layout.Context, element Element, identity str
 				})
 			})
 		})
+		if r.controlClicks == beforeChildren {
+			claimClicks()
+		}
+		return dimensions
 	}
+	claimClicks()
 	style := material.Button(r.theme, clickable, element.Button.Label)
 	return style.Layout(gtx)
 }
@@ -482,6 +498,9 @@ func (r *Runtime) layoutOverlay(gtx layout.Context, element Element, identity st
 
 func (r *Runtime) layoutConstrain(gtx layout.Context, element Element, identity string) layout.Dimensions {
 	props := element.Constraint
+	if props.FillWidth {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+	}
 	if props.MinWidth > 0 {
 		gtx.Constraints.Min.X = max(gtx.Constraints.Min.X, min(gtx.Constraints.Max.X, gtx.Dp(props.MinWidth)))
 	}

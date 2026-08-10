@@ -56,15 +56,17 @@ type keyValidationState struct {
 
 // Runtime reconciles immutable elements with bounded Gio widget state.
 type Runtime struct {
-	theme             *material.Theme
-	states            map[string]*stateEntry
-	frame             uint64
-	maxStateSlots     int
-	maxGeometryPixels int
-	heapAlloc         uint64
-	heapObjects       uint64
-	heapSys           uint64
-	stats             Stats
+	theme               *material.Theme
+	states              map[string]*stateEntry
+	frame               uint64
+	maxStateSlots       int
+	maxGeometryPixels   int
+	heapAlloc           uint64
+	heapObjects         uint64
+	heapSys             uint64
+	stats               Stats
+	nestedScrollClaimed bool
+	controlClicks       uint64
 }
 
 // NewRuntime constructs an independent DOM runtime.
@@ -88,6 +90,7 @@ func NewRuntime(theme *material.Theme, options Options) *Runtime {
 func (r *Runtime) Layout(gtx layout.Context, root Element) layout.Dimensions {
 	started := time.Now()
 	r.frame++
+	r.nestedScrollClaimed = false
 	r.stats = Stats{Frame: r.frame}
 	identity := "root"
 	if root.Key != "" {
@@ -114,6 +117,7 @@ func (r *Runtime) Layout(gtx layout.Context, root Element) layout.Dimensions {
 func (r *Runtime) Reset() {
 	r.states = make(map[string]*stateEntry)
 	r.frame = 0
+	r.controlClicks = 0
 	r.heapAlloc = 0
 	r.heapObjects = 0
 	r.heapSys = 0
@@ -178,7 +182,14 @@ func (r *Runtime) layoutNative(gtx layout.Context, element Element, identity str
 	if element.Native.NewState != nil {
 		state = r.useState(identity, "native", KindNative, element.Native.NewState)
 	}
+	interactionRevision := uint64(0)
+	if element.Native.InteractionRevision != nil {
+		interactionRevision = element.Native.InteractionRevision()
+	}
 	dimensions := element.Native.Layout(gtx, state)
+	if element.Native.InteractionRevision != nil && element.Native.InteractionRevision() != interactionRevision {
+		r.controlClicks++
+	}
 	if r.rejectGeometry(identity, dimensions.Size.X, dimensions.Size.Y) {
 		return layout.Dimensions{}
 	}

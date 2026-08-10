@@ -226,7 +226,8 @@ func (r *Renderer) buildScreenDOM(screen *uidsl.ScreenDocument, data any, pendin
 		last := children[lastIndex]
 		children[lastIndex] = giodom.Inset(last.Key, giodom.Insets{Bottom: pageInset}, last)
 	}
-	page := giodom.StockList(giodom.Key("page-list:"+screen.Metadata.Name), props, giodom.Keyed(domElementsRevision(children), children...))
+	props.PassThroughScroll = true
+	page := giodom.VirtualList(giodom.Key("page-list:"+screen.Metadata.Name), props, giodom.Keyed(domElementsRevision(children), children...))
 	page = giodom.Inset(giodom.Key("page-inset:"+screen.Metadata.Name), giodom.Insets{
 		Right: pageInset, Left: pageInset,
 	}, page)
@@ -657,6 +658,9 @@ func domElementsRevision(elements []giodom.Element) uint64 {
 }
 
 func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data any, path string) *giodom.Element {
+	if element.Kind == giodom.KindNative && len(node.Actions) > 0 {
+		element.Native.InteractionRevision = func() uint64 { return r.domInteractionRevision }
+	}
 	var progressProps *giodom.ProgressProps
 	if node.Component != "disclosure" {
 		progressProps = r.domProgressProps(node, data)
@@ -738,6 +742,9 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 			Enabled: conditionEnabled(node.Enabled, data), Description: domActionDescription(action),
 			OnClick: func() { r.dispatch(action, data) },
 		}, element)
+	}
+	if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {
+		element = giodom.Constrain(giodom.Key(path+"/row-width"), giodom.ConstraintProps{FillWidth: true}, element)
 	}
 	if constraint, ok := r.domConstraint(node.Layout); ok {
 		element = giodom.Constrain(giodom.Key(path+"/constraint"), constraint, element)
@@ -1082,6 +1089,12 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 				fill, border = mixColorSRGB(r.palette.surface, toned, .12), toned
 			}
 		}
+		if role == "floating-collapse" {
+			fill, border, inkTone = r.palette.consoleSurface, r.palette.consoleBorder, "console-text"
+			if clickable.Hovered() || gtx.Focused(clickable) {
+				border = r.palette.consoleAccent
+			}
+		}
 		if !options.Enabled {
 			fill, border, inkTone = r.palette.subtle, r.palette.border, "muted"
 		}
@@ -1127,6 +1140,8 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 					labelStyle := r.materialTextLabel(label, "control", false)
 					if role == "select" {
 						labelStyle.Color = r.palette.text
+					} else if role == "floating-collapse" {
+						labelStyle.Color = r.palette.consoleText
 					} else if !options.Enabled {
 						labelStyle.Color = r.palette.muted
 					} else {
@@ -1640,10 +1655,13 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 		}(header.Native.Layout)
 	}
 	summary := []giodom.Element{}
+	executionLeading := []giodom.Element{}
+	executionCopy := []giodom.Element{}
+	executionActions := []giodom.Element{}
 	if node.Style.Role == "execution-row" {
 		if node.Image != nil {
 			imageNode := uidsl.Node{Component: "image", Image: node.Image, Style: uidsl.Style{Role: "execution-row-image"}}
-			summary = append(summary, r.compileDOMImage(imageNode, data, path+"/summary/image"))
+			executionLeading = append(executionLeading, r.compileDOMImage(imageNode, data, path+"/summary/image"))
 		}
 		statusIcon, statusTone := "status-waiting", "warning"
 		switch node.Style.Tone {
@@ -1655,13 +1673,28 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 			statusIcon, statusTone = "loader-2", "warning"
 		}
 		statusNode := uidsl.Node{Component: "icon", Icon: statusIcon, Style: uidsl.Style{Role: "execution-row-status", Tone: statusTone}}
-		summary = append(summary,
-			r.compileDOMIcon(statusNode, data, path+"/summary/status"),
-			r.domText(giodom.Key(path+"/summary/label"), label, "control", false, "", true),
-		)
+		executionLeading = append(executionLeading, r.compileDOMIcon(statusNode, data, path+"/summary/status"))
 	}
 	if node.Disclosure != nil {
-		summary = append(summary, r.compileDOMChildren(node.Disclosure.Summary, data, path+"/summary", childStyle)...)
+		if node.Style.Role == "execution-row" {
+			for index := range node.Disclosure.Summary {
+				summaryNode := node.Disclosure.Summary[index]
+				if summaryNode.Component == "spacer" {
+					continue
+				}
+				compiled := r.compileDOMNodeWithStyle(summaryNode, data, fmt.Sprintf("%s/summary/%d", path, index), childStyle)
+				if compiled == nil {
+					continue
+				}
+				if summaryNode.Component == "button" {
+					executionActions = append(executionActions, *compiled)
+				} else {
+					executionCopy = append(executionCopy, *compiled)
+				}
+			}
+		} else {
+			summary = append(summary, r.compileDOMChildren(node.Disclosure.Summary, data, path+"/summary", childStyle)...)
+		}
 	}
 	if !iconOnlyToggle {
 		role, tone := "body", "accent"
@@ -1671,18 +1704,23 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 		labelElement := r.domText(giodom.Key(path+"/summary/label"), label, role, true, tone, false)
 		summary = append([]giodom.Element{labelElement}, summary...)
 	}
-	if r.controls.Disclosure.ChevronPosition == "leading" {
-		summary = append([]giodom.Element{header}, summary...)
+	var headerRow giodom.Element
+	if node.Style.Role == "execution-row" {
+		headerRow = r.domExecutionDisclosureHeader(path, label, executionLeading, executionCopy, executionActions, header)
 	} else {
-		summary = append(summary, header)
-	}
-	headerRow := giodom.Element{
-		Kind: giodom.KindFlex, Key: giodom.Key(path + "/header"),
-		Flex: giodom.FlexProps{
-			Axis: layout.Horizontal, Alignment: layout.Middle, Gap: unit.Dp(r.controls.Disclosure.ChevronGap),
-			Wrap: node.Style.Role == "project-row",
-		},
-		Children: giodom.Static(summary...),
+		if r.controls.Disclosure.ChevronPosition == "leading" {
+			summary = append([]giodom.Element{header}, summary...)
+		} else {
+			summary = append(summary, header)
+		}
+		headerRow = giodom.Element{
+			Kind: giodom.KindFlex, Key: giodom.Key(path + "/header"),
+			Flex: giodom.FlexProps{
+				Axis: layout.Horizontal, Alignment: layout.Middle, Gap: unit.Dp(r.controls.Disclosure.ChevronGap),
+				Wrap: node.Style.Role == "project-row",
+			},
+			Children: giodom.Static(summary...),
+		}
 	}
 	activateHeader := func(header giodom.Element) giodom.Element {
 		header = domPassiveDisclosureSummary(header)
@@ -1699,7 +1737,11 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	}
 	bodyChildren := []giodom.Element{}
 	if expanded && !navigatePresentation {
-		bodyChildren = r.compileDOMChildren(node.Children, data, path+"/body", childStyle)
+		if node.Style.Role == "output-group" {
+			bodyChildren = r.compileDOMChildrenOmittingRole(node.Children, data, path+"/body", childStyle, "floating-collapse")
+		} else {
+			bodyChildren = r.compileDOMChildren(node.Children, data, path+"/body", childStyle)
+		}
 	}
 	if progress := r.domProgressProps(node, data); progress != nil {
 		padding := r.spacing(node.Layout.Padding)
@@ -1738,6 +1780,46 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	}
 }
 
+func (r *Renderer) domExecutionDisclosureHeader(path, label string, leading, copyElements, actions []giodom.Element, toggle giodom.Element) giodom.Element {
+	gap := unit.Dp(r.controls.Disclosure.ChevronGap)
+	title := r.domText(giodom.Key(path+"/summary/label"), label, "control", false, "", false)
+
+	narrowCopyChildren := make([]giodom.Element, 0, len(copyElements)+1)
+	narrowCopyChildren = append(narrowCopyChildren, title)
+	narrowCopyChildren = append(narrowCopyChildren, copyElements...)
+	narrowCopy := giodom.Column(giodom.Key(path+"/header/narrow/copy"), r.metrics.spaceSmall/2, narrowCopyChildren...)
+	narrowCopy.Grow = true
+	narrowChildren := make([]giodom.Element, 0, len(leading)+len(actions)+2)
+	narrowChildren = append(narrowChildren, leading...)
+	narrowChildren = append(narrowChildren, narrowCopy)
+	narrowChildren = append(narrowChildren, actions...)
+	narrowChildren = append(narrowChildren, toggle)
+	narrow := giodom.Element{
+		Kind: giodom.KindFlex, Key: giodom.Key(path + "/header/narrow"),
+		Flex:     giodom.FlexProps{Axis: layout.Horizontal, Alignment: layout.Start, Gap: gap},
+		Children: giodom.Static(narrowChildren...),
+	}
+
+	wideTitle := title
+	wideTitle.Grow = true
+	wideChildren := make([]giodom.Element, 0, len(leading)+len(copyElements)+len(actions)+2)
+	wideChildren = append(wideChildren, leading...)
+	wideChildren = append(wideChildren, wideTitle)
+	if len(copyElements) > 0 {
+		wideCopy := giodom.Column(giodom.Key(path+"/header/wide/copy"), r.metrics.spaceSmall/2, copyElements...)
+		wideCopy = giodom.Constrain(giodom.Key(path+"/header/wide/copy-width"), giodom.ConstraintProps{MinWidth: 140, MaxWidth: 220}, wideCopy)
+		wideChildren = append(wideChildren, wideCopy)
+	}
+	wideChildren = append(wideChildren, actions...)
+	wideChildren = append(wideChildren, toggle)
+	wide := giodom.Element{
+		Kind: giodom.KindFlex, Key: giodom.Key(path + "/header/wide"),
+		Flex:     giodom.FlexProps{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gap},
+		Children: giodom.Static(wideChildren...),
+	}
+	return giodom.Responsive(giodom.Key(path+"/header"), 560, narrow, wide)
+}
+
 func (r *Renderer) rememberDOMDisclosure(key string, expanded, persistent bool) {
 	if strings.TrimSpace(key) == "" {
 		return
@@ -1759,6 +1841,36 @@ func (r *Renderer) rememberDOMDisclosure(key string, expanded, persistent bool) 
 	if persistent {
 		r.persistentDisclosures[key] = true
 	}
+}
+
+func domOutputCollapseDeclaration(scroller uidsl.Node) (uidsl.Node, uidsl.Node, bool) {
+	for _, child := range scroller.Children {
+		if child.Component != "disclosure" || child.Style.Role != "output-group" {
+			continue
+		}
+		for _, body := range child.Children {
+			if body.Style.Role == "floating-collapse" {
+				return child, body, true
+			}
+		}
+	}
+	return uidsl.Node{}, uidsl.Node{}, false
+}
+
+func (r *Renderer) compileDOMChildrenOmittingRole(nodes []uidsl.Node, data any, path string, inherited domStyleContext, role string) []giodom.Element {
+	children := make([]giodom.Element, 0, len(nodes))
+	for index := range nodes {
+		if nodes[index].Style.Role == role {
+			continue
+		}
+		compiled := r.compileDOMNodeWithStyle(nodes[index], data, fmt.Sprintf("%s/%d", path, index), inherited)
+		if compiled == nil {
+			continue
+		}
+		compiled.Grow = nodes[index].Layout.Grow
+		children = append(children, *compiled)
+	}
+	return children
 }
 
 func (r *Renderer) compileDOMTree(node uidsl.Node, data any, path string, inherited domStyleContext) giodom.Element {
@@ -1866,8 +1978,9 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		parsed, _ := strconv.ParseFloat(node.Layout.MaxWidth, 32)
 		viewport = unit.Dp(parsed)
 	}
-	if node.ID == "job-output-groups" && viewport > 2*r.metrics.spaceSmall && !r.compact {
-		viewport -= 2 * r.metrics.spaceSmall
+	isOutputGroups := node.ID == "job-output-groups"
+	if isOutputGroups {
+		viewport = r.domOutputGroupsViewport(viewport)
 	}
 	scrollTarget := giodom.Key("")
 	scrollRevision := uint64(0)
@@ -1876,12 +1989,60 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		scrollRevision = r.outputScrollRevision
 		r.pendingOutputScroll = ""
 	}
+	var onLeaveEnd func()
+	if isOutputGroups {
+		onLeaveEnd = func() {
+			if !r.outputTailing {
+				return
+			}
+			r.outputTailing = false
+			r.SetRootBinding("jobDetails", "tailing_label", "Tailing: Off")
+			r.SetRootBinding("jobDetails", "tailing_tone", "warning")
+			r.requestFrame()
+		}
+	}
+	var pinnedOverlay func(giodom.ListViewportItem) *giodom.Element
+	if disclosureNode, collapseNode, ok := domOutputCollapseDeclaration(node); isOutputGroups && ok {
+		pinnedOverlay = func(position giodom.ListViewportItem) *giodom.Element {
+			if position.Index < 0 || position.Index >= len(items) || position.Extent <= position.Viewport {
+				return nil
+			}
+			itemData := mergeData(data, repeat.As, items[position.Index])
+			fallback := fmt.Sprintf("%s/%s/disclosure", path, position.Key)
+			stateKey, _ := r.disclosureStateKey(disclosureNode, itemData, fallback)
+			expanded, exists := r.disclosures[stateKey]
+			if !exists {
+				expanded = disclosureDefaultExpanded(disclosureNode.Disclosure, itemData)
+			}
+			if !expanded {
+				return nil
+			}
+			return r.compileDOMNodeWithStyle(collapseNode, itemData, fallback+"/pinned-collapse", inherited)
+		}
+	}
 	result := giodom.VirtualList(domNodeKey(node, path), giodom.ListProps{
 		Axis: axis, Gap: r.spacing(node.Layout.Gap), Viewport: viewport, ShrinkCross: axis == layout.Horizontal,
-		Estimate: 100, Overscan: 2, MaxMeasured: 512, ScrollToEnd: node.ID == "job-output-groups" && r.outputTailing,
-		ScrollTo: scrollTarget, ScrollRevision: scrollRevision,
+		NestedScroll: isOutputGroups, Estimate: 100, Overscan: 2, MaxMeasured: 512,
+		ScrollToEnd: isOutputGroups && r.outputTailing, ForceEndRevision: r.outputTailRevision, ResetRevision: r.outputResetRevision,
+		ScrollTo: scrollTarget, ScrollRevision: scrollRevision, OnLeaveEnd: onLeaveEnd,
+		PinnedOverlay: pinnedOverlay, PinnedAlignment: layout.NE,
+		PinnedInsets: giodom.Insets{Top: r.metrics.spaceSmall, Right: r.metrics.spaceSmall},
 	}, children)
 	return r.decorateDOMNode(result, node, data, path)
+}
+
+func (r *Renderer) domOutputGroupsViewport(declared unit.Dp) unit.Dp {
+	viewport := declared
+	if r.viewportHeight > 0 {
+		responsive := max(unit.Dp(240), min(unit.Dp(660), r.viewportHeight*0.7))
+		if viewport == 0 || responsive < viewport {
+			viewport = responsive
+		}
+	}
+	if viewport > 2*r.metrics.spaceSmall {
+		viewport -= 2 * r.metrics.spaceSmall
+	}
+	return viewport
 }
 
 func (r *Renderer) domError(path string, err error) giodom.Element {

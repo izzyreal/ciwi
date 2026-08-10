@@ -17,6 +17,7 @@ import (
 	"gioui.org/x/explorer"
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
@@ -643,6 +644,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	if strings.TrimSpace(options.Route) != "" {
 		navigation, _ = navigationForRoute(options.Route)
 	}
+	navigationHistory := []navigationState{}
 	if initialConnectErr != nil {
 		if navigation.screen != "front-page" && navigation.screen != "settings" {
 			navigation = navigationState{screen: "front-page"}
@@ -743,6 +745,29 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 	}
 	beginNavigation := func(target navigationState) error { return beginNavigationWith(target, false) }
 	beginResyncNavigation := func(target navigationState) error { return beginNavigationWith(target, true) }
+	beginForwardNavigation := func(target navigationState) error {
+		previous := navigation
+		if err := beginNavigation(target); err != nil {
+			return err
+		}
+		if previous != target {
+			navigationHistory = append(navigationHistory, previous)
+		}
+		return nil
+	}
+	beginBackNavigation := func(fallbackRoute string) error {
+		target, popHistory, err := nativeBackNavigationTarget(navigationHistory, fallbackRoute)
+		if err != nil {
+			return err
+		}
+		if err := beginNavigation(target); err != nil {
+			return err
+		}
+		if popHistory {
+			navigationHistory = navigationHistory[:len(navigationHistory)-1]
+		}
+		return nil
+	}
 	if client != nil {
 		if err := beginResyncNavigation(navigation); err != nil {
 			renderer.ShowAlert("Could not load the initial screen", err.Error())
@@ -928,17 +953,26 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			renderer.SetRootBinding("jobDetails", "can_cancel", false)
 			screenCache.SetRootBinding(navigation, "jobDetails", "can_cancel", false)
 		}
-		if effect.NavigateRoute != "" && client != nil {
+		navigated := false
+		if effect.NavigateBack && client != nil && nativeRunOptionsOperationMatches(navigation, operation) {
+			if err := beginBackNavigation(operation.Arguments["fallbackRoute"]); err != nil {
+				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+err.Error())
+				return
+			}
+			navigated = true
+		} else if effect.NavigateRoute != "" && client != nil {
 			next, parseErr := navigationForRoute(effect.NavigateRoute)
 			if parseErr != nil {
 				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+parseErr.Error())
 				return
 			}
-			if err := beginNavigation(next); err != nil {
+			if err := beginForwardNavigation(next); err != nil {
 				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+err.Error())
 				return
 			}
-		} else if client != nil && shouldRefreshAfterNativeOperation(actionCatalog, operation, effect) {
+			navigated = true
+		}
+		if !navigated && client != nil && shouldRefreshAfterNativeOperation(actionCatalog, operation, effect) {
 			requestResyncLoad(navigation)
 		}
 		if effect.Notice && effect.Message != "" {
@@ -1403,6 +1437,18 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				window.Invalidate()
 				continue
 			}
+			if command.action.Command == "navigate-back" {
+				if client == nil {
+					renderer.ShowAlert("Server connection required", "This screen needs a server connection.")
+					window.Invalidate()
+					continue
+				}
+				if err := beginBackNavigation(command.arguments["fallbackRoute"]); err != nil {
+					renderer.ShowAlert("Navigation failed", err.Error())
+				}
+				window.Invalidate()
+				continue
+			}
 			if command.action.Command == "navigate" {
 				next, parseErr := navigationForRoute(command.arguments["route"])
 				if parseErr != nil {
@@ -1422,7 +1468,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 						window.Invalidate()
 						continue
 					}
+					previous := navigation
 					navigation = next
+					if previous != next {
+						navigationHistory = append(navigationHistory, previous)
+					}
 					stopOutput()
 					if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint, sshSettings); err != nil {
 						renderer.ShowAlert("Screen unavailable", err.Error())
@@ -1431,7 +1481,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					window.Invalidate()
 					continue
 				}
-				if err := beginNavigation(next); err != nil {
+				if err := beginForwardNavigation(next); err != nil {
 					renderer.ShowAlert("Navigation failed", err.Error())
 				}
 				window.Invalidate()
@@ -1718,6 +1768,37 @@ func navigationForRoute(route string) (navigationState, error) {
 		return navigationState{}, fmt.Errorf("invalid route %q", route)
 	}
 	return next, nil
+}
+
+func nativeBackNavigationTarget(history []navigationState, fallbackRoute string) (navigationState, bool, error) {
+	if len(history) > 0 {
+		return history[len(history)-1], true, nil
+	}
+	target, err := navigationForRoute(fallbackRoute)
+	if err == nil {
+		return target, false, nil
+	}
+	target, rootErr := navigationForRoute("/")
+	if rootErr != nil {
+		return navigationState{}, false, rootErr
+	}
+	return target, false, nil
+}
+
+func nativeRunOptionsOperationMatches(navigation navigationState, operation operations.Operation) bool {
+	if navigation.screen != "run-options" {
+		return false
+	}
+	switch operation.Command {
+	case "run-pipeline":
+		pipelineID, err := strconv.ParseInt(strings.TrimSpace(operation.Arguments["pipelineDbId"]), 10, 64)
+		return err == nil && pipelineID > 0 && navigation.pipelineDBID == pipelineID
+	case "run-chain":
+		projectID, err := strconv.ParseInt(strings.TrimSpace(operation.Arguments["projectId"]), 10, 64)
+		return err == nil && projectID > 0 && navigation.projectID == projectID && navigation.chainID == strings.TrimSpace(operation.Arguments["chainId"])
+	default:
+		return false
+	}
 }
 
 func loadScreenData(ctx context.Context, client *cnpclient.Client, navigation navigationState, themeName string) (map[string]any, error) {
@@ -2198,10 +2279,26 @@ func decorateProjectDetails(root map[string]any) {
 	root["loading"] = false
 	root["ready"] = true
 	root["load_error"] = ""
-	if project, ok := root["project"].(map[string]any); ok {
-		if strings.TrimSpace(fmt.Sprint(project["project_icon"])) == "" {
-			project["project_icon"] = root["project_icon"]
-			project["project_icon_content_type"] = root["project_icon_content_type"]
+	project, _ := root["project"].(map[string]any)
+	if project == nil {
+		project = map[string]any{}
+		root["project"] = project
+	}
+	defaults := map[string]any{
+		"id": float64(0), "name": "Project", "project_icon": "", "project_icon_content_type": "",
+		"repo_url": "", "repo_ref": "", "config_file": "", "pipeline_chains": []any{}, "has_pipeline_chains": false,
+	}
+	for key, value := range defaults {
+		if _, exists := project[key]; !exists {
+			project[key] = value
+		}
+	}
+	if strings.TrimSpace(fmt.Sprint(project["project_icon"])) == "" {
+		if icon, exists := root["project_icon"]; exists && icon != nil {
+			project["project_icon"] = icon
+		}
+		if contentType, exists := root["project_icon_content_type"]; exists && contentType != nil {
+			project["project_icon_content_type"] = contentType
 		}
 	}
 	applyProjectStructureFilter(root, "all-pipelines")
@@ -2289,8 +2386,12 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 		root["system_output"] = ""
 		root["output_search"] = ""
 		root["output_search_count"] = "0/0"
-		root["tailing_label"] = "Tailing: On"
-		root["tailing_tone"] = "success"
+		root["tailing_label"] = "Tailing: Off"
+		root["tailing_tone"] = "warning"
+		if protocol.IsActiveJobExecutionStatus(fmt.Sprint(root["status"])) {
+			root["tailing_label"] = "Tailing: On"
+			root["tailing_tone"] = "success"
+		}
 		if groups, ok := root["output_groups"].([]any); ok {
 			for _, raw := range groups {
 				entry, entryOK := raw.(map[string]any)

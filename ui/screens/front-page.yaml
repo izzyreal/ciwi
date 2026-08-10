@@ -667,6 +667,11 @@ screen:
                                   align: center
                                 style:
                                   role: queued-execution-job-row
+                                actions:
+                                  - on: activate
+                                    command: navigate
+                                    arguments:
+                                      route: /jobs/{{job.id}}
                                 children:
                                   - component: text
                                     text:
@@ -675,11 +680,6 @@ screen:
                                       role: link
                                       tone: accent
                                       emphasis: strong
-                                    actions:
-                                      - on: activate
-                                        command: navigate
-                                        arguments:
-                                          route: /jobs/{{job.id}}
                                   - component: text
                                     text:
                                       binding: job.status

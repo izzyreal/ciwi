@@ -2,6 +2,7 @@ apiVersion: ciwi.ui/v1
 kind: ActionCatalog
 actions:
   - { command: navigate, class: local }
+  - { command: navigate-back, class: local }
   - { command: toggle, class: local }
   - { command: change-theme, class: local }
   - { command: select-timeline-item, class: local }

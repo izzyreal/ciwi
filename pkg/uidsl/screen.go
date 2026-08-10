@@ -232,7 +232,7 @@ var components = map[string]bool{
 }
 
 var commands = map[string]bool{
-	"navigate": true, "run-pipeline": true, "run-chain": true,
+	"navigate": true, "navigate-back": true, "run-pipeline": true, "run-chain": true,
 	"toggle": true, "refresh": true, "clear-queue": true,
 	"flush-history": true, "delete-execution": true, "remove-execution": true,
 	"cancel-execution": true, "rerun-execution": true,

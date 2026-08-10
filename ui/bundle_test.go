@@ -165,6 +165,33 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	}
 }
 
+func TestRunOptionsReturnsThroughSharedBackAction(t *testing.T) {
+	screen, err := LoadScreen("run-options")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backs, runs := 0, 0
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		for _, action := range node.Actions {
+			switch action.Command {
+			case "navigate-back":
+				backs++
+				if action.Arguments["fallbackRoute"] != "/projects/{{runOptions.project_id}}" {
+					t.Errorf("back fallback = %q", action.Arguments["fallbackRoute"])
+				}
+			case "run-pipeline", "run-chain":
+				runs++
+				if action.Arguments["backOnSuccess"] != "true" || action.Arguments["fallbackRoute"] != "/projects/{{runOptions.project_id}}" {
+					t.Errorf("run return arguments = %#v", action.Arguments)
+				}
+			}
+		}
+	})
+	if backs != 2 || runs != 4 {
+		t.Fatalf("Run Options actions = %d backs and %d runs, want 2 and 4", backs, runs)
+	}
+}
+
 func TestJobDetailsSchedulingUsesAwaitingDesign(t *testing.T) {
 	screen, err := LoadScreen("job-details")
 	if err != nil {
@@ -495,7 +522,7 @@ func TestJobOutputGroupsUseAuthoritativeStepContentTypography(t *testing.T) {
 	}
 }
 
-func TestCompactNativeJobOutputDoesNotOfferDedicatedScrollerTailing(t *testing.T) {
+func TestCompactNativeJobOutputKeepsTailingControl(t *testing.T) {
 	screen, err := LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
@@ -506,35 +533,62 @@ func TestCompactNativeJobOutputDoesNotOfferDedicatedScrollerTailing(t *testing.T
 			toggle = node
 		}
 	})
-	if toggle == nil || !toggle.Overrides["compact"].Hidden {
-		t.Fatalf("compact native output tailing toggle = %#v, want hidden without a dedicated output scroller", toggle)
+	if toggle == nil || toggle.Overrides["compact"].Hidden {
+		t.Fatalf("compact native output tailing toggle = %#v, want visible for the nested output scroller", toggle)
 	}
 }
 
-func TestHistoryExecutionRowsOwnJobNavigation(t *testing.T) {
-	for _, screenName := range []string{"front-page", "project-details"} {
-		screen, err := LoadScreen(screenName)
+func TestExecutionJobRowsOwnJobNavigation(t *testing.T) {
+	for _, testCase := range []struct {
+		screen string
+		role   string
+	}{
+		{screen: "front-page", role: "queued-execution-job-row"},
+		{screen: "front-page", role: "history-execution-job-row"},
+		{screen: "project-details", role: "history-execution-job-row"},
+	} {
+		screen, err := LoadScreen(testCase.screen)
 		if err != nil {
 			t.Fatal(err)
 		}
 		rows := 0
 		walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
-			if node.Style.Role != "history-execution-job-row" {
+			if node.Style.Role != testCase.role {
 				return
 			}
 			rows++
 			if len(node.Actions) != 1 || node.Actions[0].Command != "navigate" || node.Actions[0].Arguments["route"] != "/jobs/{{job.id}}" {
-				t.Errorf("%s history row action = %#v, want row-level job navigation", screenName, node.Actions)
+				t.Errorf("%s %s action = %#v, want row-level job navigation", testCase.screen, testCase.role, node.Actions)
 			}
-			for _, child := range node.Children {
-				if len(child.Actions) != 0 {
-					t.Errorf("%s history row child retains its own action: %#v", screenName, child.Actions)
-				}
+			if len(node.Children) == 0 || len(node.Children[0].Actions) != 0 {
+				t.Errorf("%s %s job label retains its own action", testCase.screen, testCase.role)
 			}
 		})
 		if rows == 0 {
-			t.Errorf("%s has no history execution rows", screenName)
+			t.Errorf("%s has no %s rows", testCase.screen, testCase.role)
 		}
+	}
+}
+
+func TestJobOutputFloatingCollapseIsShared(t *testing.T) {
+	screen, err := LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var collapse *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.Style.Role == "floating-collapse" {
+			collapse = node
+		}
+	})
+	if collapse == nil {
+		t.Fatal("job details screen has no floating Collapse control")
+	}
+	if collapse.Overrides["gio"].Hidden || collapse.Overrides["web"].Hidden {
+		t.Fatalf("floating Collapse platform overrides = %#v, want shared visibility", collapse.Overrides)
+	}
+	if len(collapse.Actions) != 1 || collapse.Actions[0].Command != "set-disclosures" {
+		t.Fatalf("floating Collapse actions = %#v, want shared disclosure action", collapse.Actions)
 	}
 }
 
@@ -721,7 +775,6 @@ func TestPlatformOverridesAreLimitedToPlatformMechanics(t *testing.T) {
 				}
 				allowed := route.Screen == "settings" && node.ID == "native-connection" && platform == "web" && override.Hidden
 				allowed = allowed || route.Screen == "settings" && node.ID == "settings-client-version" && platform == "web" && override.Hidden
-				allowed = allowed || route.Screen == "job-details" && node.Style.Role == "floating-collapse" && platform == "gio" && override.Hidden
 				if !allowed {
 					t.Errorf("%s node %q role %q has non-mechanical %s override: %#v", route.Screen, node.ID, node.Style.Role, platform, override)
 				}

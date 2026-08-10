@@ -181,17 +181,37 @@ type ProgressProps struct {
 
 // ListProps configures stock and keyed scrolling lists.
 type ListProps struct {
-	Axis           layout.Axis
-	Gap            unit.Dp
-	Viewport       unit.Dp
-	ShrinkCross    bool
-	Estimate       unit.Dp
-	Overscan       int
-	MaxMeasured    int
-	ScrollToEnd    bool
-	ScrollTo       Key
-	ScrollRevision uint64
-	SemanticLabel  string
+	Axis              layout.Axis
+	Gap               unit.Dp
+	Viewport          unit.Dp
+	ShrinkCross       bool
+	NestedScroll      bool
+	PassThroughScroll bool
+	Estimate          unit.Dp
+	Overscan          int
+	MaxMeasured       int
+	ScrollToEnd       bool
+	ForceEndRevision  uint64
+	ResetRevision     uint64
+	ScrollTo          Key
+	ScrollRevision    uint64
+	SemanticLabel     string
+	OnLeaveEnd        func()
+	PinnedOverlay     func(ListViewportItem) *Element
+	PinnedAlignment   layout.Direction
+	PinnedInsets      Insets
+}
+
+// ListViewportItem describes the item currently crossing the leading edge of
+// a keyed viewport. Dimensions use device-independent units so callers can
+// decide whether a viewport-local action is useful without depending on Gio
+// pixel metrics.
+type ListViewportItem struct {
+	Key      Key
+	Index    int
+	Offset   unit.Dp
+	Extent   unit.Dp
+	Viewport unit.Dp
 }
 
 // OverlayProps configures a body with an optional centered modal child.
@@ -204,6 +224,7 @@ type OverlayProps struct {
 // ConstraintProps applies optional minimum and maximum dimensions.
 type ConstraintProps struct {
 	MinWidth, MaxWidth, MinHeight, MaxHeight unit.Dp
+	FillWidth                                bool
 }
 
 // AlignProps positions one child within the available constraints.
@@ -216,8 +237,9 @@ type AlignProps struct {
 // optional state under the element identity, so applications do not need
 // unbounded widget maps outside the DOM.
 type NativeProps struct {
-	NewState func() any
-	Layout   func(layout.Context, any) layout.Dimensions
+	NewState            func() any
+	Layout              func(layout.Context, any) layout.Dimensions
+	InteractionRevision func() uint64
 }
 
 // Element is an immutable description produced by application code.

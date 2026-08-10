@@ -30,9 +30,9 @@ screen:
             icon: arrow-left
             actions:
               - on: activate
-                command: navigate
+                command: navigate-back
                 arguments:
-                  route: /projects/{{runOptions.project_id}}
+                  fallbackRoute: /projects/{{runOptions.project_id}}
           - component: text
             text:
               template: "Run options: {{runOptions.target_label}}"
@@ -78,7 +78,7 @@ screen:
               - component: button
                 text: {literal: Back}
                 icon: arrow-left
-                actions: [{on: activate, command: navigate, arguments: {route: "/projects/{{runOptions.project_id}}"}}]
+                actions: [{on: activate, command: navigate-back, arguments: {fallbackRoute: "/projects/{{runOptions.project_id}}"}}]
       - component: section
         visible: {binding: runOptions.ready}
         layout:
@@ -165,6 +165,8 @@ screen:
                       pipelineDbId: "{{runOptions.pipeline_db_id}}"
                       sourceRef: "{{runOptions.selected_source_ref}}"
                       agentId: "{{runOptions.selected_agent_id}}"
+                      backOnSuccess: "true"
+                      fallbackRoute: /projects/{{runOptions.project_id}}
               - component: button
                 text:
                   literal: Dry Run
@@ -179,6 +181,8 @@ screen:
                       sourceRef: "{{runOptions.selected_source_ref}}"
                       agentId: "{{runOptions.selected_agent_id}}"
                       dryRun: "true"
+                      backOnSuccess: "true"
+                      fallbackRoute: /projects/{{runOptions.project_id}}
           - component: row
             visible:
               binding: runOptions.target_kind
@@ -200,6 +204,8 @@ screen:
                       chainId: "{{runOptions.chain_id}}"
                       sourceRef: "{{runOptions.selected_source_ref}}"
                       agentId: "{{runOptions.selected_agent_id}}"
+                      backOnSuccess: "true"
+                      fallbackRoute: /projects/{{runOptions.project_id}}
               - component: button
                 text:
                   literal: Dry Run Chain
@@ -215,3 +221,5 @@ screen:
                       sourceRef: "{{runOptions.selected_source_ref}}"
                       agentId: "{{runOptions.selected_agent_id}}"
                       dryRun: "true"
+                      backOnSuccess: "true"
+                      fallbackRoute: /projects/{{runOptions.project_id}}

@@ -41,3 +41,25 @@ func TestLoadingViewModelsSatisfySharedScreenBindings(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectDetailsDecorationSuppliesMissingIconBinding(t *testing.T) {
+	screen, err := sharedui.LoadScreen("project-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := screenLoadingBindingData(navigationState{screen: "project-details", projectID: 1}, "test", "default", connectionModeDiscover, "", sshConnectionSettings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := data["projectDetails"].(map[string]any)
+	project := root["project"].(map[string]any)
+	delete(project, "project_icon")
+	delete(project, "project_icon_content_type")
+	decorateProjectDetails(root)
+	if err := validateNativeBindings(screen, data); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := project["project_icon"]; !exists {
+		t.Fatal("project_icon binding is missing")
+	}
+}

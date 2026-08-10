@@ -30,6 +30,8 @@
   const graphRuntimeStates = new Map();
   let committedActionBindings = new Map();
   let committedRenderSignature = '';
+  let pendingHistoryNavigation = null;
+  let browserNavigationSequence = 0;
 
   function rendererKeyPart(value) {
 	return encodeURIComponent(String(value ?? '').trim());
@@ -294,7 +296,12 @@
   }
 
   function decorateProjectDetails(view) {
-	const project = (view && view.project) || {};
+	const suppliedProject = view && view.project && typeof view.project === 'object' ? view.project : {};
+	const project = Object.assign({
+	  id: Number(view && view.project_id || 0), name: 'Project', project_icon: '',
+	  repo_url: '', repo_ref: '', config_file: '', pipeline_chains: [], has_pipeline_chains: false,
+	}, suppliedProject);
+	view.project = project;
 	const previousProject = currentData && currentData.projectDetails && currentData.projectDetails.project;
 	const previousFilter = previousProject && String(previousProject.id) === String(project.id)
 	  ? String(currentData.projectDetails.structure_filter || 'all-pipelines')
@@ -511,6 +518,31 @@
 
   function routePath() {
 	return String(window.location.pathname || '/');
+  }
+
+  function browserHistoryState(path, returnPath) {
+	browserNavigationSequence += 1;
+	return {ciwi: true, navigationID: browserNavigationSequence, path: String(path || '/'), returnPath: String(returnPath || '')};
+  }
+
+  function browserNavigationFallback(path) {
+	const candidate = String(path || '').trim();
+	if (!candidate.startsWith('/') || /^\/projects\/(?:0|$)/.test(candidate)) return '/';
+	return candidate;
+  }
+
+  async function navigateBrowserBack(fallbackPath) {
+	const state = window.history.state || {};
+	const returnPath = state.ciwi === true ? String(state.returnPath || '').trim() : '';
+	if (returnPath && returnPath !== routePath()) {
+	  if (pendingHistoryNavigation) throw new Error('Navigation is already in progress');
+	  await new Promise((resolve, reject) => {
+		pendingHistoryNavigation = {resolve, reject};
+		window.history.back();
+	  });
+	  return;
+	}
+	await navigateBrowser(browserNavigationFallback(fallbackPath), {replace: true});
   }
 
   function routeSegments(path) {
@@ -793,7 +825,10 @@
       const invoke = async (actionData, actionElement) => {
         const args = Object.fromEntries(Object.entries(action.arguments || {}).map(([key, value]) => [key, renderText({ template: value }, actionData)]));
         if (!window.ciwiConfirmAction(renderActionConfirmation(action.confirm, actionData))) return;
+		const invokedPath = routePath();
+		const invokedNavigationID = Number(window.history.state && window.history.state.navigationID || 0);
         const execute = async runtime => {
+		let navigatedAfterSuccess = false;
 		if (action.command === 'navigate' && args.route) {
 		  const previousDisabled = !!actionElement.disabled;
 		  actionElement.disabled = true;
@@ -807,6 +842,9 @@
 			actionElement.classList.remove('ciwi-action-pending');
 		  }
         }
+		else if (action.command === 'navigate-back') {
+		  await navigateBrowserBack(args.fallbackRoute);
+		}
         else if (action.command === 'open-url' && args.url) window.open(args.url, '_blank', 'noopener,noreferrer');
 		else if (action.command === 'refresh') await refresh({throwOnError: true, showLoading: true});
 		else if (action.command === 'change-theme') {
@@ -1015,6 +1053,10 @@
           if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
 		  showResponseNotice(result);
+		  if (args.backOnSuccess === 'true' && routePath() === invokedPath && Number(window.history.state && window.history.state.navigationID || 0) === invokedNavigationID) {
+			await navigateBrowserBack(args.fallbackRoute);
+			navigatedAfterSuccess = true;
+		  }
         }
 		else if (action.command === 'run-chain') {
 		  const path = '/api/v1/projects/' + encodeURIComponent(args.projectId) + '/pipeline-chains/' + encodeURIComponent(args.chainId) + '/run';
@@ -1026,6 +1068,10 @@
 		  if (!response.ok) throw new Error(await response.text());
 		  const result = await response.json();
 		  showResponseNotice(result);
+		  if (args.backOnSuccess === 'true' && routePath() === invokedPath && Number(window.history.state && window.history.state.navigationID || 0) === invokedNavigationID) {
+			await navigateBrowserBack(args.fallbackRoute);
+			navigatedAfterSuccess = true;
+		  }
 		}
 		else if (action.command === 'agent-action') {
 		  const response = await fetch('/api/v1/agents/' + encodeURIComponent(args.agentId) + '/actions', {
@@ -1176,7 +1222,7 @@
 		  await navigateBrowser('/jobs/' + encodeURIComponent(rerunID));
 		}
         else throw new Error('Command is not implemented by the web proof renderer: ' + action.command);
-		if (runtime.refreshOnSuccess) await refresh({throwOnError: true});
+		if (runtime.refreshOnSuccess && !navigatedAfterSuccess) await refresh({throwOnError: true});
         };
         if (typeof window.ciwiRunAction === 'function') return window.ciwiRunAction(action.command, args, actionElement, execute);
         const idempotencyKey = typeof window.ciwiActionID === 'function' ? window.ciwiActionID() : '';
@@ -1768,6 +1814,7 @@
 	    status.classList.add('dsl-execution-row-status', 'dsl-status-' + statusTone);
 	    summary.appendChild(status);
 	    const label = document.createElement('span');
+	    label.className = 'dsl-execution-row-label';
 	    label.textContent = renderText(node.text, data) || 'Details';
 	    summary.appendChild(label);
 	  } else {
@@ -1805,11 +1852,18 @@
         } else {
           element.open = defaultExpanded;
         }
-		(node.disclosure.summary || []).forEach((summaryNode, index) => summary.appendChild(renderNode(
-		  summaryNode,
-		  data,
-		  childRenderContext(context, 'summary:' + String(index)),
-		)));
+		(node.disclosure.summary || []).forEach((summaryNode, index) => {
+		  const summaryElement = renderNode(
+		    summaryNode,
+		    data,
+		    childRenderContext(context, 'summary:' + String(index)),
+		  );
+		  if (style.role === 'execution-row' && summaryElement.classList) {
+		    if (summaryNode.component === 'text') summaryElement.classList.add('dsl-execution-row-summary');
+		    if (summaryNode.component === 'button') summaryElement.classList.add('dsl-execution-row-action');
+		  }
+		  summary.appendChild(summaryElement);
+		});
       }
     } else if (node.component === 'icon' && node.icon) {
       element.appendChild(declarativeIcon(node.icon));
@@ -2159,7 +2213,12 @@
   async function navigateBrowser(path, options = {}) {
 	const targetPath = String(path || '/');
 	const previousPath = currentPath || routePath();
-	if (!options.fromHistory) window.history.pushState({}, '', targetPath);
+	const previousState = window.history.state;
+	if (!options.fromHistory) {
+	  const nextState = browserHistoryState(targetPath, options.replace ? '' : previousPath);
+	  if (options.replace) window.history.replaceState(nextState, '', targetPath);
+	  else window.history.pushState(nextState, '', targetPath);
+	}
 	try {
 	  await refresh({throwOnError: true, showLoading: true});
 	  if (options.section) {
@@ -2167,7 +2226,7 @@
 		if (target) target.scrollIntoView({block: 'start'});
 	  }
 	} catch (error) {
-	  window.history.replaceState({}, '', previousPath);
+	  window.history.replaceState(previousState || browserHistoryState(previousPath, ''), '', previousPath);
 	  throw error;
 	}
   }
@@ -2305,18 +2364,20 @@
   function updateDeclarativeOutputCollapseButtons() {
     const container = document.getElementById('job-output-groups');
     if (!container) return;
-    const threshold = Math.max(480, container.clientHeight);
     container.querySelectorAll('details.dsl-output-group').forEach(details => {
       const button = details.querySelector(':scope > .dsl-floating-collapse');
       if (!button) return;
-      const summary = details.querySelector(':scope > summary');
-      const contentHeight = details.open ? Math.max(0, details.scrollHeight - Number((summary && summary.offsetHeight) || 0)) : 0;
-      button.hidden = !details.open || contentHeight <= threshold;
+      button.hidden = !details.open || details.scrollHeight <= container.clientHeight;
     });
   }
 
   function outputIsAtBottom(element) {
 	return !element || element.scrollHeight - element.clientHeight - element.scrollTop <= 3;
+  }
+
+  function jobOutputStartsAtTail(view) {
+	return ['queued', 'leased', 'running', 'waiting', 'in progress', 'active']
+	  .includes(String(view && view.status || '').trim().toLowerCase());
   }
 
   function setOutputTailing(view, enabled) {
@@ -2670,7 +2731,7 @@
 		view.output_match_index = sameJob ? Number(previousJob.output_match_index || 0) : 0;
 		initializeJobOutputView(view, sameJob ? previousJob : null);
 		updateOutputSearch(view, 0);
-		view.output_tailing = sameJob ? !!previousJob.output_tailing : true;
+		view.output_tailing = sameJob ? !!previousJob.output_tailing : jobOutputStartsAtTail(view);
 		view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
 		view.tailing_tone = view.output_tailing ? 'success' : 'warning';
 		const timeline = Array.isArray(view.timeline) ? view.timeline : [];
@@ -2735,8 +2796,20 @@
   }
 
   window.addEventListener('popstate', () => {
-	navigateBrowser(routePath(), {fromHistory: true}).catch(error => window.alert(error.message || String(error)));
+	const pending = pendingHistoryNavigation;
+	pendingHistoryNavigation = null;
+	navigateBrowser(routePath(), {fromHistory: true}).then(() => {
+	  if (pending) pending.resolve();
+	}).catch(error => {
+	  if (pending) pending.reject(error);
+	  else window.alert(error.message || String(error));
+	});
   });
+  if (!window.history.state || window.history.state.ciwi !== true || !window.history.state.navigationID) {
+	window.history.replaceState(browserHistoryState(routePath(), ''), '', routePath());
+  } else {
+	browserNavigationSequence = Math.max(browserNavigationSequence, Number(window.history.state.navigationID || 0));
+  }
   changeRefreshScheduler = window.ciwiCreateChangeRefreshScheduler({refresh: () => refresh(), delay: 100});
   refresh({showLoading: true}).finally(startChangeWatch);
 })();

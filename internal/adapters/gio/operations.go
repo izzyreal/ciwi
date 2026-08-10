@@ -70,6 +70,7 @@ type nativeOperationEffect struct {
 	Message       string
 	Refresh       bool
 	NavigateRoute string
+	NavigateBack  bool
 	Notice        bool
 	NoticeRoute   string
 	NoticeLabel   string
@@ -225,10 +226,12 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("run pipeline: %w", err)
 		}
-		return noticeEffect(presentation.QueuedPipelineNotice(
+		effect := noticeEffect(presentation.QueuedPipelineNotice(
 			result.ProjectName, result.PipelineId, arguments["pipelineJobId"], int(result.Enqueued),
 			arguments["dryRun"] == "true", result.JobExecutionIds,
-		)), nil
+		))
+		effect.NavigateBack = arguments["backOnSuccess"] == "true"
+		return effect, nil
 	case "run-chain":
 		projectID, err := positiveInt64(arguments["projectId"], "project identifier")
 		chainID := strings.TrimSpace(arguments["chainId"])
@@ -247,9 +250,11 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if label == "" {
 			label = strings.TrimSpace(result.ChainId)
 		}
-		return noticeEffect(presentation.QueuedChainNotice(
+		effect := noticeEffect(presentation.QueuedChainNotice(
 			result.ProjectName, label, int(result.Enqueued), arguments["dryRun"] == "true",
-		)), nil
+		))
+		effect.NavigateBack = arguments["backOnSuccess"] == "true"
+		return effect, nil
 	case "clear-queue":
 		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()

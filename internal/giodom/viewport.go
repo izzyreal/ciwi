@@ -18,23 +18,25 @@ type measurement struct {
 }
 
 type keyedViewportState struct {
-	scroll         gesture.Scroll
-	anchor         Key
-	anchorIndex    int
-	anchorOffset   int
-	measurements   map[Key]measurement
-	clock          uint64
-	atEnd          bool
-	initialized    bool
-	indexed        bool
-	revision       uint64
-	count          int
-	estimate       int
-	gap            int
-	crossSize      int
-	extents        []int
-	prefixTree     []int
-	scrollRevision uint64
+	scroll           gesture.Scroll
+	anchor           Key
+	anchorIndex      int
+	anchorOffset     int
+	measurements     map[Key]measurement
+	clock            uint64
+	atEnd            bool
+	initialized      bool
+	indexed          bool
+	revision         uint64
+	count            int
+	estimate         int
+	gap              int
+	crossSize        int
+	extents          []int
+	prefixTree       []int
+	scrollRevision   uint64
+	forceEndRevision uint64
+	resetRevision    uint64
 }
 
 type stockListState struct {
@@ -62,6 +64,14 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	state := r.useState(identity, "viewport", KindVirtualList, func() any {
 		return &keyedViewportState{measurements: make(map[Key]measurement)}
 	}).(*keyedViewportState)
+	if props.ResetRevision != 0 && props.ResetRevision != state.resetRevision {
+		state.anchor = ""
+		state.anchorIndex = 0
+		state.anchorOffset = 0
+		state.atEnd = false
+		state.initialized = false
+		state.resetRevision = props.ResetRevision
+	}
 
 	mainViewport := axisMain(props.Axis, viewport)
 	if r.rejectGeometry(identity, viewport.X, viewport.Y, mainViewport) || mainViewport == 0 {
@@ -97,8 +107,12 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		offset = state.prefixAt(anchorIndex) + max(0, state.anchorOffset)
 	}
 	maxOffset := max(0, total-mainViewport)
-	if props.ScrollToEnd && (!state.initialized || state.atEnd) {
+	forceEnd := props.ScrollToEnd && props.ForceEndRevision != 0 && props.ForceEndRevision != state.forceEndRevision
+	if props.ScrollToEnd && (!state.initialized || state.atEnd || forceEnd) {
 		offset = maxOffset
+	}
+	if forceEnd {
+		state.forceEndRevision = props.ForceEndRevision
 	}
 	offset = min(max(0, offset), maxOffset)
 
@@ -111,8 +125,15 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	} else {
 		yRange = scrollRange
 	}
-	offset += state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
-	offset = min(max(0, offset), maxOffset)
+	scrollDelta := 0
+	if !props.PassThroughScroll {
+		scrollDelta = state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
+		offset += scrollDelta
+		offset = min(max(0, offset), maxOffset)
+		if props.NestedScroll && (scrollDelta != 0 || state.scroll.State() == gesture.StateDragging) {
+			r.nestedScrollClaimed = true
+		}
+	}
 
 	firstVisible := state.firstVisible(offset)
 	start := max(0, firstVisible-props.Overscan)
@@ -147,6 +168,13 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		recorded = append(recorded, recordedViewportChild{call: call, pos: pos, size: dimensions.Size})
 		crossExtent = max(crossExtent, axisCross(props.Axis, dimensions.Size))
 	}
+	if props.PassThroughScroll && !r.nestedScrollClaimed {
+		scrollDelta = state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
+		if scrollDelta != 0 {
+			offset = min(max(0, offset+scrollDelta), maxOffset)
+			gtx.Execute(op.InvalidateCmd{})
+		}
+	}
 
 	renderedViewport := viewport
 	if props.ShrinkCross {
@@ -157,11 +185,40 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	if props.SemanticLabel != "" {
 		semantic.DescriptionOp(props.SemanticLabel).Add(gtx.Ops)
 	}
-	state.scroll.Add(gtx.Ops)
+	if !props.NestedScroll {
+		if props.PassThroughScroll {
+			pass := pointer.PassOp{}.Push(gtx.Ops)
+			state.scroll.Add(gtx.Ops)
+			pass.Pop()
+		} else {
+			state.scroll.Add(gtx.Ops)
+		}
+	}
 	for _, child := range recorded {
 		translation := op.Offset(child.pos).Push(gtx.Ops)
 		child.call.Add(gtx.Ops)
 		translation.Pop()
+	}
+	if props.NestedScroll {
+		state.scroll.Add(gtx.Ops)
+	}
+	if props.PinnedOverlay != nil && firstVisible >= 0 && firstVisible < children.Len() {
+		position := state.prefixAt(firstVisible)
+		item := ListViewportItem{
+			Key: children.KeyAt(firstVisible), Index: firstVisible,
+			Offset:   gtx.Metric.PxToDp(offset - position),
+			Extent:   gtx.Metric.PxToDp(state.extents[firstVisible]),
+			Viewport: gtx.Metric.PxToDp(mainViewport),
+		}
+		if overlay := props.PinnedOverlay(item); overlay != nil {
+			overlayContext := gtx
+			overlayContext.Constraints = layout.Exact(renderedViewport)
+			applyInsets(props.PinnedInsets, overlayContext, func(gtx layout.Context) layout.Dimensions {
+				return props.PinnedAlignment.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return r.layoutElement(gtx, *overlay, identity+"/pinned:"+identityPart(item.Key))
+				})
+			})
+		}
 	}
 	area.Pop()
 
@@ -175,7 +232,11 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		state.anchorOffset = 0
 	}
 	maxOffset = max(0, state.totalExtent()-mainViewport)
+	wasAtEnd := state.atEnd
 	state.atEnd = offset >= maxOffset-1
+	if scrollDelta != 0 && wasAtEnd && !state.atEnd && props.OnLeaveEnd != nil {
+		props.OnLeaveEnd()
+	}
 	state.initialized = true
 	r.stats.VisibleListItems += len(recorded)
 	r.stats.MeasuredListItems += len(state.measurements)

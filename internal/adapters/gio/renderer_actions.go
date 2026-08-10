@@ -53,6 +53,7 @@ func (r *Renderer) notifyDisclosureChange() {
 }
 
 func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, data any) {
+	r.domInteractionRevision++
 	r.dispatchAction(&gtx, action, data)
 }
 
@@ -142,6 +143,7 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		label, tone := "Tailing: Off", "warning"
 		if r.outputTailing {
 			label, tone = "Tailing: On", "success"
+			r.outputTailRevision++
 		}
 		r.SetRootBinding("jobDetails", "tailing_label", label)
 		r.SetRootBinding("jobDetails", "tailing_tone", tone)

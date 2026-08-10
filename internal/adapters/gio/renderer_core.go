@@ -18,6 +18,7 @@ import (
 	"gioui.org/widget/material"
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
+	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
 )
@@ -66,6 +67,8 @@ type Renderer struct {
 	pendingOutputSelection *outputSelection
 	pendingOutputScroll    string
 	outputScrollRevision   uint64
+	outputResetRevision    uint64
+	outputTailRevision     uint64
 	renderedJobID          string
 	activeOperations       map[string]operations.Operation
 	actionCatalog          *uidsl.ActionCatalogDocument
@@ -74,6 +77,8 @@ type Renderer struct {
 	pendingScrollSection   string
 	compact                bool
 	viewportSize           image.Point
+	viewportHeight         unit.Dp
+	domInteractionRevision uint64
 	dom                    *screenDOMRenderer
 }
 
@@ -610,6 +615,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 
 func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout.Dimensions {
 	r.viewportSize = gtx.Constraints.Max
+	r.viewportHeight = gtx.Metric.PxToDp(r.viewportSize.Y)
 	r.compact = compactLayoutForPlatform(gtx, platform)
 	r.mu.Lock()
 	if r.notice != nil && !r.notice.expires.IsZero() && !gtx.Now.Before(r.notice.expires) {
@@ -638,7 +644,11 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 	if screen != nil && screen.Metadata.Name == "job-details" {
 		jobID := bindingString(data, "jobDetails.id")
 		if jobID != r.renderedJobID {
-			r.renderedJobID, r.outputTailing, r.outputSearch, r.outputMatch = jobID, true, "", 0
+			r.renderedJobID, r.outputTailing, r.outputSearch, r.outputMatch = jobID, jobOutputStartsAtTail(bindingString(data, "jobDetails.status")), "", 0
+			r.outputResetRevision++
+			if r.outputTailing {
+				r.outputTailRevision++
+			}
 			r.pendingOutputSelection, r.pendingOutputScroll = nil, ""
 		}
 	}
@@ -680,4 +690,16 @@ func cloneAnyMap(values map[string]any) map[string]any {
 		result[key] = value
 	}
 	return result
+}
+
+func jobOutputStartsAtTail(status string) bool {
+	if protocol.IsActiveJobExecutionStatus(status) {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "waiting", "in progress", "active":
+		return true
+	default:
+		return false
+	}
 }

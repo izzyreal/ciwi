@@ -153,7 +153,7 @@ func TestActionCatalogContractAndBrowserRunnerRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(declarative), "if (runtime.refreshOnSuccess) await refresh({throwOnError: true})") {
+	if !strings.Contains(string(declarative), "if (runtime.refreshOnSuccess && !navigatedAfterSuccess) await refresh({throwOnError: true})") {
 		t.Fatal("declarative renderer does not honor shared post-success refresh semantics")
 	}
 }
@@ -274,7 +274,7 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 	script := string(scriptPayload)
 	for _, expected := range []string{
 		"sameJob ? String(previousJob.output_search || '') : ''",
-		"sameJob ? !!previousJob.output_tailing : true",
+		"sameJob ? !!previousJob.output_tailing : jobOutputStartsAtTail(view)",
 		"decorateJobDetails(view)",
 		"view.project_icon = Number(view.project_id || 0) > 0",
 		"setOutputTailing(data.jobDetails, !data.jobDetails.output_tailing)",
