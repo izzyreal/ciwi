@@ -23,9 +23,11 @@ func TestUIHandlerServesEveryDeclarativeRouteAndAsset(t *testing.T) {
 		{"/run-options/pipelines/42", "text/html"},
 		{"/run-options/projects/1/pipelines/42", "text/html"},
 		{"/run-options/projects/1/chains/release", "text/html"},
-		{"/ciwi-logo.png", "image/png"},
 	}
 	for path, asset := range staticRoutes {
+		tests = append(tests, struct{ path, contentType string }{path, asset.contentType})
+	}
+	for path, asset := range sharedStaticRoutes {
 		tests = append(tests, struct{ path, contentType string }{path, asset.contentType})
 	}
 	for _, tt := range tests {
@@ -91,6 +93,7 @@ func TestDeclarativePageBootstrapsFromVersionedCachedResources(t *testing.T) {
 	for _, path := range []string{
 		"/ui/declarative.js?v=" + revision,
 		"/ui/notices.js?v=" + revision,
+		"/ui/fonts/ciwi-sans-regular.ttf?v=" + revision,
 		"/ui/contracts/screens/front-page.json?v=" + revision,
 		"/ui/contracts/controls.json?v=" + revision,
 		"/ui/contracts/themes.json?v=" + revision,
@@ -105,6 +108,14 @@ func TestDeclarativePageBootstrapsFromVersionedCachedResources(t *testing.T) {
 	Handler(unversionedRecorder, httptest.NewRequest(http.MethodGet, "/ui/declarative.js", nil))
 	if got := unversionedRecorder.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("unversioned asset Cache-Control = %q, want no-store", got)
+	}
+	typographyRecorder := httptest.NewRecorder()
+	Handler(typographyRecorder, httptest.NewRequest(http.MethodGet, "/ui/css/typography.css?v="+revision, nil))
+	typographyCSS := typographyRecorder.Body.String()
+	if !strings.Contains(typographyCSS, `font-family:"Ciwi Sans"`) ||
+		!strings.Contains(typographyCSS, "/ui/fonts/ciwi-sans-regular.ttf?v="+revision) ||
+		!strings.Contains(typographyCSS, `--ciwi-font-body:"Ciwi Sans", sans-serif`) {
+		t.Fatalf("typography CSS does not expose the shared Ciwi Sans faces and family: %s", typographyCSS)
 	}
 }
 

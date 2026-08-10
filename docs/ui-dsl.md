@@ -44,6 +44,12 @@ browser proof renderer). A style can use `toneBinding` to map execution states s
 `succeeded`, `failed`, `queued`, and `running` onto the shared semantic status
 palette without duplicating status-color logic in every screen.
 
+Typography families and control geometry are shared contracts as well. Font
+families declare their browser fallback list and native Gio typeface name,
+while button metrics carry explicit web and native values where the two layout
+engines require different numbers to produce the same visual result. Both
+renderers load the actual Geist Sans and Geist Mono faces from `ui/assets`.
+
 The `select` component binds its value and option list to view data, exposes a
 renderer-neutral `selection` value to its change action, and is rendered as a
 native expandable choice control or a browser `<select>` as appropriate.
@@ -58,16 +64,17 @@ coverage hierarchies therefore remain presentation data instead of being
 rebuilt independently by JavaScript and Gio.
 Disclosures can declare a renderer-neutral initial state and a templated stable
 state key. Clients persist only keyed disclosure state; unkeyed disclosures
-retain ordinary screen-session behavior. A disclosure may request a full-screen
-sheet in compact viewports, allowing phone clients to drill into detail that is
-shown inline on larger screens without duplicating the screen definition.
+retain ordinary screen-session behavior. Compact clients render the same
+disclosure hierarchy with responsive reflow; project summaries may navigate to
+the existing project route rather than expanding inline.
 
 Ordinary non-control text, including headings, disclosure labels, and status
 copy, is selectable in the Gio adapter. The semantic `code` text role renders
 as a selectable read-only native editor and as a scrollable monospace region in
 the browser adapter; it does not embed or execute source code. Buttons remain
-native controls, so their captions follow platform control behavior rather
-than document-text selection behavior.
+native controls, so their captions follow platform interaction behavior rather
+than document-text selection behavior, while their dimensions, icon placement,
+and typography come from the shared control contract.
 
 It intentionally does not contain selectors, arbitrary CSS properties, DOM
 APIs, Gio types, scripts, URLs to executable resources, protobuf messages, or

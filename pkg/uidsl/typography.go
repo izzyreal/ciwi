@@ -12,9 +12,14 @@ type TypographyDocument struct {
 }
 
 type Typography struct {
-	Families map[string]string           `yaml:"families" json:"families"`
+	Families map[string]TypographyFamily `yaml:"families" json:"families"`
 	Weights  map[string]TypographyWeight `yaml:"weights" json:"weights"`
 	Roles    map[string]TypographyRole   `yaml:"roles" json:"roles"`
+}
+
+type TypographyFamily struct {
+	Web    string `yaml:"web" json:"web"`
+	Native string `yaml:"native" json:"native"`
 }
 
 type TypographyWeight struct {
@@ -57,8 +62,14 @@ func (d *TypographyDocument) Validate() error {
 		return fmt.Errorf("kind must be Typography, got %q", d.Kind)
 	}
 	for _, family := range []string{"body", "mono"} {
-		if strings.TrimSpace(d.Typography.Families[family]) == "" {
-			return fmt.Errorf("typography family %q is required", family)
+		definition, ok := d.Typography.Families[family]
+		if !ok || strings.TrimSpace(definition.Web) == "" || strings.TrimSpace(definition.Native) == "" {
+			return fmt.Errorf("typography family %q must define web and native names", family)
+		}
+	}
+	for name, family := range d.Typography.Families {
+		if !identifierPattern.MatchString(name) || strings.TrimSpace(family.Web) == "" || strings.TrimSpace(family.Native) == "" {
+			return fmt.Errorf("typography family %q must define web and native names", name)
 		}
 	}
 	for name, weight := range d.Typography.Weights {

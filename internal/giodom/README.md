@@ -28,6 +28,11 @@ iOS.
   operations.
 - Rounded borders use nested filled shapes. The evaluated runtime does not use
   stroked curves.
+- Surface background painters run only after geometry validation and inside the
+  rounded interior clip; applications remain responsible for keeping their
+  image resources bounded.
+- Flex containers support CSS-like spacing and proportional weights, while text
+  elements carry the complete font and line-height contract.
 
 `StockList` is deliberately included as a control. It uses Gio's
 `layout.List` while retaining every other runtime rule, which makes list

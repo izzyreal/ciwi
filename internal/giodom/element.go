@@ -6,7 +6,9 @@
 package giodom
 
 import (
+	"image"
 	"image/color"
+	"time"
 
 	"gioui.org/font"
 	"gioui.org/layout"
@@ -90,9 +92,11 @@ func UniformInsets(value unit.Dp) Insets {
 type FlexProps struct {
 	Axis      layout.Axis
 	Alignment layout.Alignment
+	Spacing   layout.Spacing
 	Gap       unit.Dp
 	Padding   Insets
 	Wrap      bool
+	Stretch   bool
 }
 
 // SurfaceProps configures a filled, optionally bordered rounded surface.
@@ -102,16 +106,21 @@ type SurfaceProps struct {
 	BorderWidth unit.Dp
 	Radius      unit.Dp
 	Padding     Insets
+	// PaintBackground optionally paints the surface interior. Runtime clips the
+	// callback to the safe rounded interior and rejects invalid geometry before
+	// invoking it.
+	PaintBackground func(layout.Context, image.Point)
 }
 
 // TextProps configures selectable presentation text.
 type TextProps struct {
-	Value      string
-	Size       unit.Sp
-	Color      color.NRGBA
-	Weight     font.Weight
-	MaxLines   int
-	Selectable bool
+	Value           string
+	Size            unit.Sp
+	Color           color.NRGBA
+	Font            font.Font
+	LineHeightScale float32
+	MaxLines        int
+	Selectable      bool
 }
 
 // ButtonProps configures one native material button.
@@ -149,13 +158,25 @@ type ResponsiveProps struct {
 	Wide       *Element
 }
 
+// ProgressMode describes the visual state of a progress underlay.
+type ProgressMode uint8
+
+const (
+	ProgressDeterminate ProgressMode = iota
+	ProgressIndeterminate
+	ProgressOverrun
+	ProgressComplete
+)
+
 // ProgressProps configures an animated progress underlay around one child.
 type ProgressProps struct {
-	Fraction      float32
-	Indeterminate bool
-	Color         color.NRGBA
-	Track         color.NRGBA
-	Radius        unit.Dp
+	Mode     ProgressMode
+	Fraction float32
+	Animate  bool
+	Color    color.NRGBA
+	Track    color.NRGBA
+	Radius   unit.Dp
+	Phase    time.Duration
 }
 
 // ListProps configures stock and keyed scrolling lists.
@@ -203,6 +224,7 @@ type Element struct {
 	Kind       Kind
 	Key        Key
 	Grow       bool
+	FlexWeight float32
 	Flex       FlexProps
 	Surface    SurfaceProps
 	Text       TextProps

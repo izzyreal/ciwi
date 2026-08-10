@@ -10,7 +10,14 @@ func TestParseControls(t *testing.T) {
 apiVersion: ciwi.ui/v1
 kind: Controls
 controls:
-  button: {iconPosition: leading, iconSize: 19, iconGap: 8}
+  button:
+    iconPosition: leading
+    minimumHeight: {web: 44, native: 44}
+    paddingX: {web: 12, native: 12}
+    paddingY: {web: 8, native: 8}
+    iconSize: {web: 19, native: 19}
+    iconGap: {web: 8, native: 8}
+    iconOnlySize: {web: 34, native: 34}
   select:
     chevronPosition: trailing
     chevronSize: 19
@@ -55,7 +62,15 @@ func validControlsDocument() *ControlsDocument {
 		APIVersion: APIVersion,
 		Kind:       "Controls",
 		Controls: Controls{
-			Button: ButtonControl{IconPosition: "leading", IconSize: 19, IconGap: 8},
+			Button: ButtonControl{
+				IconPosition:  "leading",
+				MinimumHeight: PlatformMetric{Web: 44, Native: 44},
+				PaddingX:      PlatformMetric{Web: 12, Native: 12},
+				PaddingY:      PlatformMetric{Web: 8, Native: 8},
+				IconSize:      PlatformMetric{Web: 19, Native: 19},
+				IconGap:       PlatformMetric{Web: 8, Native: 8},
+				IconOnlySize:  PlatformMetric{Web: 34, Native: 34},
+			},
 			Select: SelectControl{
 				ChevronPosition: "trailing", ChevronSize: 19, ChevronGap: 12, MinimumHeight: 44,
 				MenuGap: 6, MenuPadding: 6, MenuItemGap: 2, MenuMinimumWidth: 120,

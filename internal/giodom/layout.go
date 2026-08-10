@@ -40,26 +40,38 @@ func (r *Runtime) layoutFlex(gtx layout.Context, element Element, identity strin
 				continue
 			}
 			widgetFn := func(gtx layout.Context) layout.Dimensions {
+				if element.Flex.Stretch && element.Flex.Axis == layout.Vertical {
+					gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				}
 				return r.layoutElement(gtx, child, childIdentity)
 			}
-			if child.Grow {
-				flexed = append(flexed, layout.Flexed(1, widgetFn))
+			if weight := flexWeight(child); weight > 0 {
+				flexed = append(flexed, layout.Flexed(weight, widgetFn))
 			} else {
 				flexed = append(flexed, layout.Rigid(widgetFn))
 			}
 		}
 		return layout.Flex{
 			Axis: element.Flex.Axis, Alignment: element.Flex.Alignment,
-			Gap: gtx.Dp(element.Flex.Gap),
+			Spacing: element.Flex.Spacing, Gap: gtx.Dp(element.Flex.Gap),
 		}.Layout(gtx, flexed...)
 	})
+}
+
+func flexWeight(element Element) float32 {
+	if element.FlexWeight > 0 {
+		return element.FlexWeight
+	}
+	if element.Grow {
+		return 1
+	}
+	return 0
 }
 
 type recordedFlowChild struct {
 	call op.CallOp
 	size image.Point
 	pos  image.Point
-	grow bool
 }
 
 func (r *Runtime) layoutFlow(gtx layout.Context, element Element, identity string) layout.Dimensions {
@@ -96,7 +108,7 @@ func (r *Runtime) layoutFlow(gtx layout.Context, element Element, identity strin
 		childContext := gtx
 		childContext.Constraints.Min = image.Point{}
 		childContext.Constraints.Max.X = maxWidth
-		if child.Grow && child.Kind == KindConstrain && child.Constraint.MinWidth > 0 {
+		if flexWeight(child) > 0 && child.Kind == KindConstrain && child.Constraint.MinWidth > 0 {
 			childContext.Constraints.Max.X = min(maxWidth, max(1, gtx.Dp(child.Constraint.MinWidth)))
 		}
 		macro := op.Record(gtx.Ops)
@@ -121,32 +133,29 @@ func (r *Runtime) layoutFlow(gtx layout.Context, element Element, identity strin
 	recorded := make([]recordedFlowChild, 0, children.Len())
 	y, usedWidth := 0, 0
 	for lineIndex, current := range lines {
-		growCount := 0
+		remainingWeight := float32(0)
 		for _, child := range current.children {
-			if child.element.Grow {
-				growCount++
-			}
+			remainingWeight += flexWeight(child.element)
 		}
 		extra := max(0, maxWidth-current.width)
+		lineStart := len(recorded)
 		x, lineHeight := 0, 0
 		for childIndex, child := range current.children {
 			if childIndex > 0 {
 				x += gap
 			}
 			allocated := child.size.X
-			if child.element.Grow && growCount > 0 {
-				share := extra / growCount
-				if extra%growCount > 0 {
-					share++
-				}
+			weight := flexWeight(child.element)
+			if weight > 0 && remainingWeight > 0 {
+				share := int(math.Round(float64(extra) * float64(weight/remainingWeight)))
 				allocated = min(maxWidth-x, allocated+share)
 				extra = max(0, extra-share)
-				growCount--
+				remainingWeight -= weight
 			}
 			childContext := gtx
 			childContext.Constraints.Min = image.Point{}
 			childContext.Constraints.Max.X = max(0, maxWidth-x)
-			if child.element.Grow {
+			if weight > 0 {
 				childContext.Constraints.Min.X = allocated
 				childContext.Constraints.Max.X = allocated
 			}
@@ -156,11 +165,20 @@ func (r *Runtime) layoutFlow(gtx layout.Context, element Element, identity strin
 			if r.rejectGeometry(child.identity, dimensions.Size.X, dimensions.Size.Y) {
 				continue
 			}
-			recorded = append(recorded, recordedFlowChild{call: call, size: dimensions.Size, pos: image.Pt(x, y), grow: child.element.Grow})
+			recorded = append(recorded, recordedFlowChild{call: call, size: dimensions.Size, pos: image.Pt(x, y)})
 			x += dimensions.Size.X
 			lineHeight = max(lineHeight, dimensions.Size.Y)
 		}
-		usedWidth = max(usedWidth, x)
+		remaining := max(0, maxWidth-x)
+		for index := lineStart; index < len(recorded); index++ {
+			recorded[index].pos.X += flowSpacingOffset(element.Flex.Spacing, remaining, index-lineStart, len(recorded)-lineStart)
+			recorded[index].pos.Y += flowAlignmentOffset(element.Flex.Alignment, lineHeight-recorded[index].size.Y)
+		}
+		if element.Flex.Spacing == layout.SpaceEnd {
+			usedWidth = max(usedWidth, x)
+		} else {
+			usedWidth = max(usedWidth, maxWidth)
+		}
 		y += lineHeight
 		if lineIndex < len(lines)-1 {
 			y += gap
@@ -176,6 +194,43 @@ func (r *Runtime) layoutFlow(gtx layout.Context, element Element, identity strin
 	}
 	area.Pop()
 	return layout.Dimensions{Size: size}
+}
+
+func flowAlignmentOffset(alignment layout.Alignment, extra int) int {
+	if extra <= 0 {
+		return 0
+	}
+	switch alignment {
+	case layout.Middle:
+		return extra / 2
+	case layout.End:
+		return extra
+	default:
+		return 0
+	}
+}
+
+func flowSpacingOffset(spacing layout.Spacing, extra, index, count int) int {
+	if extra <= 0 || count <= 0 {
+		return 0
+	}
+	switch spacing {
+	case layout.SpaceStart:
+		return extra
+	case layout.SpaceSides:
+		return extra / 2
+	case layout.SpaceBetween:
+		if count > 1 {
+			return extra * index / (count - 1)
+		}
+		return extra / 2
+	case layout.SpaceAround:
+		return extra * (2*index + 1) / (2 * count)
+	case layout.SpaceEvenly:
+		return extra * (index + 1) / (count + 1)
+	default:
+		return 0
+	}
 }
 
 func (r *Runtime) layoutSurface(gtx layout.Context, element Element, identity string) layout.Dimensions {
@@ -199,21 +254,30 @@ func paintSafeSurface(gtx layout.Context, size image.Point, props SurfaceProps) 
 	rect := image.Rectangle{Max: size}
 	radius := clampRadius(gtx.Dp(props.Radius), size)
 	borderWidth := max(0, gtx.Dp(props.BorderWidth))
-	outerColor := props.Fill
-	if borderWidth > 0 && props.Border.A != 0 {
-		outerColor = props.Border
+	hasBorder := borderWidth > 0 && props.Border.A != 0
+	if hasBorder {
+		paint.FillShape(gtx.Ops, props.Border, clip.UniformRRect(rect, radius).Op(gtx.Ops))
 	}
-	paint.FillShape(gtx.Ops, outerColor, clip.UniformRRect(rect, radius).Op(gtx.Ops))
-	if borderWidth <= 0 || props.Border.A == 0 {
-		return
+	inner := rect
+	if hasBorder {
+		inner = rect.Inset(min(borderWidth, min(size.X, size.Y)/2))
 	}
-	inner := rect.Inset(min(borderWidth, min(size.X, size.Y)/2))
 	if inner.Empty() {
 		return
 	}
-	innerRadius := max(0, radius-borderWidth)
+	innerRadius := radius
+	if hasBorder {
+		innerRadius = max(0, radius-borderWidth)
+	}
 	offset := op.Offset(inner.Min).Push(gtx.Ops)
-	paint.FillShape(gtx.Ops, props.Fill, clip.UniformRRect(image.Rectangle{Max: inner.Size()}, innerRadius).Op(gtx.Ops))
+	innerRect := image.Rectangle{Max: inner.Size()}
+	if props.PaintBackground == nil {
+		paint.FillShape(gtx.Ops, props.Fill, clip.UniformRRect(innerRect, innerRadius).Op(gtx.Ops))
+	} else {
+		area := clip.UniformRRect(innerRect, innerRadius).Push(gtx.Ops)
+		props.PaintBackground(gtx, inner.Size())
+		area.Pop()
+	}
 	offset.Pop()
 }
 
@@ -232,7 +296,12 @@ func (r *Runtime) layoutText(gtx layout.Context, element Element, identity strin
 		selectable := r.useState(identity, "selectable", KindText, func() any { return new(widget.Selectable) }).(*widget.Selectable)
 		label.State = selectable
 	}
-	label.Font.Weight = element.Text.Weight
+	if element.Text.Font.Typeface != "" || element.Text.Font.Weight != 0 || element.Text.Font.Style != 0 {
+		label.Font = element.Text.Font
+	}
+	if element.Text.LineHeightScale > 0 {
+		label.LineHeightScale = element.Text.LineHeightScale
+	}
 	label.MaxLines = element.Text.MaxLines
 	if element.Text.Color.A != 0 {
 		label.Color = element.Text.Color
@@ -337,18 +406,34 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 		props := element.Progress
 		paint.FillShape(gtx.Ops, props.Track, clip.UniformRRect(image.Rectangle{Max: size}, clampRadius(gtx.Dp(props.Radius), size)).Op(gtx.Ops))
 		fraction := max(float32(0), min(float32(1), props.Fraction))
-		if props.Indeterminate {
-			const cycle = 1600 * time.Millisecond
-			phase := float32(gtx.Now.UnixNano()%int64(cycle)) / float32(cycle)
-			fraction = .28
-			start := int(float32(size.X+size.X/3)*phase) - size.X/3
-			progress := image.Rect(max(0, start), 0, min(size.X, start+int(float32(size.X)*fraction)), size.Y)
-			if !progress.Empty() {
-				paint.FillShape(gtx.Ops, props.Color, clip.Rect(progress).Op())
-			}
+		progressColor := props.Color
+		switch props.Mode {
+		case ProgressIndeterminate:
+			const cycle = 4 * time.Second
+			elapsed := gtx.Now.UnixNano() + int64(props.Phase)
+			phase := float64(elapsed%int64(cycle)) / float64(cycle)
+			position := .5 - .5*math.Cos(2*math.Pi*phase)
+			width := max(1, int(float64(size.X)*.22))
+			start := int(float64(max(0, size.X-width)) * position)
+			paint.FillShape(gtx.Ops, progressColor, clip.Rect(image.Rect(start, 0, min(size.X, start+width), size.Y)).Op())
 			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 60)})
-		} else if width := int(math.Round(float64(size.X) * float64(fraction))); width > 0 {
-			paint.FillShape(gtx.Ops, props.Color, clip.Rect(image.Rect(0, 0, min(width, size.X), size.Y)).Op())
+		case ProgressOverrun:
+			const cycle = 2 * time.Second
+			elapsed := gtx.Now.UnixNano() + int64(props.Phase)
+			phase := float64(elapsed%int64(cycle)) / float64(cycle)
+			opacity := .58 + .42*(.5-.5*math.Cos(2*math.Pi*phase))
+			progressColor.A = uint8(math.Round(float64(progressColor.A) * opacity))
+			paint.FillShape(gtx.Ops, progressColor, clip.UniformRRect(image.Rectangle{Max: size}, clampRadius(gtx.Dp(props.Radius), size)).Op(gtx.Ops))
+			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 60)})
+		case ProgressComplete:
+			paint.FillShape(gtx.Ops, progressColor, clip.UniformRRect(image.Rectangle{Max: size}, clampRadius(gtx.Dp(props.Radius), size)).Op(gtx.Ops))
+		default:
+			if width := int(math.Round(float64(size.X) * float64(fraction))); width > 0 {
+				paint.FillShape(gtx.Ops, progressColor, clip.Rect(image.Rect(0, 0, min(width, size.X), size.Y)).Op())
+			}
+			if props.Animate {
+				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 60)})
+			}
 		}
 		return layout.Dimensions{Size: size}
 	}, func(gtx layout.Context) layout.Dimensions {

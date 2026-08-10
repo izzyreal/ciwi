@@ -56,6 +56,9 @@ func TestDeclarativeControlsContract(t *testing.T) {
 	if controls.Controls.Button.IconPosition != "leading" || controls.Controls.Select.ChevronPosition != "trailing" {
 		t.Fatalf("controls = %#v", controls.Controls)
 	}
+	if got := controls.Controls.Button.PaddingY; got.Web != 8 || got.Native != 8 {
+		t.Fatalf("button vertical padding = %#v", got)
+	}
 }
 
 func TestEveryWebCommandHasABrowserAdapter(t *testing.T) {

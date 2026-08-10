@@ -3,8 +3,12 @@ kind: Controls
 controls:
   button:
     iconPosition: leading
-    iconSize: 19
-    iconGap: 8
+    minimumHeight: {web: 44, native: 44}
+    paddingX: {web: 12, native: 12}
+    paddingY: {web: 8, native: 8}
+    iconSize: {web: 19, native: 19}
+    iconGap: {web: 8, native: 8}
+    iconOnlySize: {web: 34, native: 34}
   select:
     chevronPosition: trailing
     chevronSize: 19

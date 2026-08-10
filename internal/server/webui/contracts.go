@@ -84,13 +84,25 @@ func serveTypographyCSS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var css strings.Builder
-	css.WriteString("@font-face{font-family:\"Ciwi Mono\";src:url(\"/ui/fonts/ciwi-mono-regular.ttf?v=3\") format(\"truetype\");font-style:normal;font-weight:400;font-display:swap}\n")
-	css.WriteString("@font-face{font-family:\"Ciwi Mono\";src:url(\"/ui/fonts/ciwi-mono-medium.ttf?v=3\") format(\"truetype\");font-style:normal;font-weight:500;font-display:swap}\n")
-	css.WriteString("@font-face{font-family:\"Ciwi Mono\";src:url(\"/ui/fonts/ciwi-mono-bold.ttf?v=3\") format(\"truetype\");font-style:normal;font-weight:700;font-display:swap}\n")
+	revision := currentBrowserUIRevision()
+	for _, face := range []struct {
+		family, path string
+		weight       int
+	}{
+		{"Ciwi Sans", "ciwi-sans-regular.ttf", 400},
+		{"Ciwi Sans", "ciwi-sans-semibold.ttf", 600},
+		{"Ciwi Sans", "ciwi-sans-bold.ttf", 700},
+		{"Ciwi Sans", "ciwi-sans-extrabold.ttf", 800},
+		{"Ciwi Mono", "ciwi-mono-regular.ttf", 400},
+		{"Ciwi Mono", "ciwi-mono-medium.ttf", 500},
+		{"Ciwi Mono", "ciwi-mono-bold.ttf", 700},
+	} {
+		fmt.Fprintf(&css, "@font-face{font-family:%q;src:url(\"/ui/fonts/%s?v=%s\") format(\"truetype\");font-style:normal;font-weight:%d;font-display:swap}\n", face.family, face.path, revision, face.weight)
+	}
 	css.WriteString(":root{\n")
 	families := sortedMapKeys(document.Typography.Families)
 	for _, name := range families {
-		fmt.Fprintf(&css, "  --ciwi-font-%s:%s;\n", name, document.Typography.Families[name])
+		fmt.Fprintf(&css, "  --ciwi-font-%s:%s;\n", name, document.Typography.Families[name].Web)
 	}
 	weights := sortedMapKeys(document.Typography.Weights)
 	for _, name := range weights {

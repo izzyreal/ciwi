@@ -23,21 +23,29 @@ type embeddedAsset struct {
 }
 
 var staticRoutes = map[string]embeddedAsset{
-	"/favicon.ico":                    {"assets/ciwi-favicon.png", "image/png", true, false},
-	"/ciwi-favicon.png":               {"assets/ciwi-favicon.png", "image/png", true, false},
-	"/ui/fonts/ciwi-mono-regular.ttf": {"assets/fonts/GeistMono-Regular.ttf", "font/ttf", true, false},
-	"/ui/fonts/ciwi-mono-medium.ttf":  {"assets/fonts/GeistMono-Medium.ttf", "font/ttf", true, false},
-	"/ui/fonts/ciwi-mono-bold.ttf":    {"assets/fonts/GeistMono-Bold.ttf", "font/ttf", true, false},
-	"/ui/icons.svg":                   {"assets/tabler-icons.svg", "image/svg+xml", true, false},
-	"/ui/theme.js":                    {"assets/js/theme.js", "application/javascript; charset=utf-8", true, true},
-	"/ui/heartbeat.js":                {"assets/js/heartbeat.js", "application/javascript; charset=utf-8", true, true},
-	"/ui/actions.js":                  {"assets/js/actions.js", "application/javascript; charset=utf-8", true, true},
-	"/ui/notices.js":                  {"assets/js/notices.js", "application/javascript; charset=utf-8", true, true},
-	"/ui/view-state.js":               {"assets/js/view-state.js", "application/javascript; charset=utf-8", true, true},
-	"/ui/change-refresh.js":           {"assets/js/change-refresh.js", "application/javascript; charset=utf-8", true, true},
-	"/ui/declarative.js":              {"assets/js/declarative.js", "application/javascript; charset=utf-8", true, true},
-	"/ui/css/chrome.css":              {"assets/css/chrome.css", "text/css; charset=utf-8", true, true},
-	"/ui/css/declarative.css":         {"assets/css/declarative.css", "text/css; charset=utf-8", true, true},
+	"/favicon.ico":            {"assets/ciwi-favicon.png", "image/png", true, false},
+	"/ciwi-favicon.png":       {"assets/ciwi-favicon.png", "image/png", true, false},
+	"/ui/icons.svg":           {"assets/tabler-icons.svg", "image/svg+xml", true, false},
+	"/ui/theme.js":            {"assets/js/theme.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/heartbeat.js":        {"assets/js/heartbeat.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/actions.js":          {"assets/js/actions.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/notices.js":          {"assets/js/notices.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/view-state.js":       {"assets/js/view-state.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/change-refresh.js":   {"assets/js/change-refresh.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/declarative.js":      {"assets/js/declarative.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/css/chrome.css":      {"assets/css/chrome.css", "text/css; charset=utf-8", true, true},
+	"/ui/css/declarative.css": {"assets/css/declarative.css", "text/css; charset=utf-8", true, true},
+}
+
+var sharedStaticRoutes = map[string]embeddedAsset{
+	"/ciwi-logo.png":                    {"assets/ciwi-logo.png", "image/png", true, false},
+	"/ui/fonts/ciwi-sans-regular.ttf":   {"assets/GeistSans-Regular.ttf", "font/ttf", true, true},
+	"/ui/fonts/ciwi-sans-semibold.ttf":  {"assets/GeistSans-SemiBold.ttf", "font/ttf", true, true},
+	"/ui/fonts/ciwi-sans-bold.ttf":      {"assets/GeistSans-Bold.ttf", "font/ttf", true, true},
+	"/ui/fonts/ciwi-sans-extrabold.ttf": {"assets/GeistSans-ExtraBold.ttf", "font/ttf", true, true},
+	"/ui/fonts/ciwi-mono-regular.ttf":   {"assets/GeistMono-Regular.ttf", "font/ttf", true, true},
+	"/ui/fonts/ciwi-mono-medium.ttf":    {"assets/GeistMono-Medium.ttf", "font/ttf", true, true},
+	"/ui/fonts/ciwi-mono-bold.ttf":      {"assets/GeistMono-Bold.ttf", "font/ttf", true, true},
 }
 
 var (
@@ -81,12 +89,12 @@ func cacheVersionedUIResource(w http.ResponseWriter, r *http.Request) {
 
 // Handler serves ciwi's browser pages and embedded static assets.
 func Handler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/ciwi-logo.png" {
-		serveSharedUIAsset(w, embeddedAsset{
-			path:        "assets/ciwi-logo.png",
-			contentType: "image/png",
-			cache:       true,
-		})
+	if asset, ok := sharedStaticRoutes[r.URL.Path]; ok {
+		if asset.immutable && r.URL.Query().Get("v") != currentBrowserUIRevision() {
+			asset.cache = false
+			asset.immutable = false
+		}
+		serveSharedUIAsset(w, asset)
 		return
 	}
 	if r.URL.Path == "/ui/css/typography.css" {

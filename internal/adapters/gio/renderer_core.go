@@ -33,6 +33,7 @@ type Renderer struct {
 	data                   any
 	theme                  *material.Theme
 	typography             uidsl.Typography
+	controls               uidsl.Controls
 	palette                palette
 	metrics                visualMetrics
 	themeName              string
@@ -52,6 +53,8 @@ type Renderer struct {
 	pageBackgroundSize     image.Point
 	pageBackground         paint.ImageOp
 	pageBackgroundReady    bool
+	surfaceBackground      paint.ImageOp
+	surfaceBackgroundReady bool
 	onAction               ActionHandler
 	invalidate             func()
 	pending                *pendingConfirmation
@@ -65,6 +68,7 @@ type Renderer struct {
 	outputScrollRevision   uint64
 	renderedJobID          string
 	activeOperations       map[string]operations.Operation
+	actionCatalog          *uidsl.ActionCatalogDocument
 	notice                 *nativeNotice
 	noticeQueue            []nativeNotice
 	pendingScrollSection   string
@@ -137,6 +141,10 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	if err != nil {
 		return nil, err
 	}
+	controlsDocument, err := sharedUI.LoadControls()
+	if err != nil {
+		return nil, err
+	}
 	materialTheme, colors, err := rendererTheme(theme, typographyDocument.Typography)
 	if err != nil {
 		return nil, err
@@ -146,7 +154,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		return nil, err
 	}
 	return &Renderer{
-		screen: screen, theme: materialTheme, typography: typographyDocument.Typography,
+		screen: screen, theme: materialTheme, typography: typographyDocument.Typography, controls: controlsDocument.Controls,
 		palette: colors, metrics: metricsFromTheme(theme.Theme, typographyDocument.Typography),
 		themeName: theme.Metadata.Name, onAction: onAction,
 		disclosures: map[string]bool{}, persistentDisclosures: map[string]bool{},
@@ -165,6 +173,12 @@ func (r *Renderer) SetOperations(snapshot []operations.Operation) {
 	}
 	r.mu.Lock()
 	r.activeOperations = active
+	r.mu.Unlock()
+}
+
+func (r *Renderer) SetActionCatalog(catalog *uidsl.ActionCatalogDocument) {
+	r.mu.Lock()
+	r.actionCatalog = catalog
 	r.mu.Unlock()
 }
 
@@ -604,7 +618,7 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 	if r.pendingTheme != nil && r.pendingPalette != nil && r.pendingMetrics != nil {
 		r.theme, r.palette, r.metrics, r.themeName = r.pendingTheme, *r.pendingPalette, *r.pendingMetrics, r.pendingThemeName
 		r.pendingTheme, r.pendingPalette, r.pendingMetrics, r.pendingThemeName = nil, nil, nil, ""
-		r.pageBackgroundReady = false
+		r.pageBackgroundReady, r.surfaceBackgroundReady = false, false
 		r.dom = nil
 	}
 	screen, data, pendingSection := r.screen, r.data, r.pendingScrollSection

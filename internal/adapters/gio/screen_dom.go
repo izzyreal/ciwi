@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -210,10 +211,17 @@ func (r *Renderer) buildScreenDOM(screen *uidsl.ScreenDocument, data any, pendin
 		}
 		r.mu.Unlock()
 	}
-	page := giodom.VirtualList(giodom.Key("page-list:"+screen.Metadata.Name), props, giodom.Keyed(domElementsRevision(children), children...))
 	pageInset := r.pageInset()
+	if len(children) > 0 {
+		first := children[0]
+		children[0] = giodom.Inset(first.Key, giodom.Insets{Top: pageInset}, first)
+		lastIndex := len(children) - 1
+		last := children[lastIndex]
+		children[lastIndex] = giodom.Inset(last.Key, giodom.Insets{Bottom: pageInset}, last)
+	}
+	page := giodom.VirtualList(giodom.Key("page-list:"+screen.Metadata.Name), props, giodom.Keyed(domElementsRevision(children), children...))
 	page = giodom.Inset(giodom.Key("page-inset:"+screen.Metadata.Name), giodom.Insets{
-		Top: pageInset, Right: pageInset, Bottom: pageInset, Left: pageInset,
+		Right: pageInset, Left: pageInset,
 	}, page)
 	if r.metrics.pageWidth > 0 {
 		page = giodom.Constrain(giodom.Key("page-width:"+screen.Metadata.Name), giodom.ConstraintProps{MaxWidth: r.metrics.pageWidth}, page)
@@ -237,6 +245,10 @@ func (r *Renderer) compileDOMNode(raw uidsl.Node, data any, path string) *giodom
 		if value, err := uidsl.Resolve(data, node.Style.ToneBinding); err == nil {
 			node.Style.Tone = semanticTone(fmt.Sprint(value))
 		}
+	}
+	if node.Style.Role == "skeleton" {
+		element := r.compileDOMSkeleton(node, path)
+		return r.decorateDOMNode(element, node, data, path)
 	}
 
 	var element giodom.Element
@@ -303,13 +315,22 @@ func (r *Renderer) compileDOMRepeat(node uidsl.Node, data any, path string) *gio
 	}
 	result := giodom.Element{
 		Kind: giodom.KindFlex, Key: domNodeKey(node, path),
-		Flex:     giodom.FlexProps{Axis: axis, Alignment: flexAlignment(axis, node.Layout.Align, false), Gap: r.spacing(node.Layout.Gap), Wrap: node.Layout.Wrap},
+		Flex: giodom.FlexProps{
+			Axis: axis, Alignment: flexAlignment(axis, node.Layout.Align, false), Spacing: domFlexSpacing(node.Layout.Justify),
+			Gap: r.spacing(node.Layout.Gap), Wrap: node.Layout.Wrap,
+		},
 		Children: giodom.Keyed(domElementsRevision(elements), elements...),
 	}
 	return r.decorateDOMNode(result, node, data, path)
 }
 
 func (r *Renderer) compileDOMContainer(node uidsl.Node, data any, path string) giodom.Element {
+	if r.compact && node.ID == "project-header" {
+		return r.compileDOMCompactProjectHeader(node, data, path)
+	}
+	if r.compact && node.Style.Role == "compact-action-row" {
+		return r.compileDOMCompactActionRow(node, data, path)
+	}
 	axis := layout.Vertical
 	if node.Component == "row" || node.Layout.Direction == "horizontal" {
 		axis = layout.Horizontal
@@ -321,7 +342,11 @@ func (r *Renderer) compileDOMContainer(node uidsl.Node, data any, path string) g
 	if r.compact && (node.Style.Role == "queued-execution-header" || node.Style.Role == "history-execution-header" || node.Style.Role == "agent-header") {
 		return giodom.Spacer(domNodeKey(node, path), 0, 0)
 	}
+	weights := domGridWeights(node.Style.Role, len(node.Children))
 	children := r.compileDOMChildren(node.Children, data, path)
+	if weights != nil && !r.compact {
+		children = r.compileDOMGridChildren(node.Children, data, path, weights)
+	}
 	if stackedCompactRow {
 		for index := range children {
 			children[index].Grow = false
@@ -333,10 +358,150 @@ func (r *Renderer) compileDOMContainer(node uidsl.Node, data any, path string) g
 	}
 	props := giodom.FlexProps{
 		Axis: axis, Alignment: flexAlignment(axis, node.Layout.Align, false),
-		Gap: r.spacing(node.Layout.Gap), Padding: giodom.UniformInsets(r.spacing(node.Layout.Padding)),
-		Wrap: axis == layout.Horizontal && (node.Layout.Wrap || node.Style.Role == "hero"),
+		Spacing: domFlexSpacing(node.Layout.Justify),
+		Gap:     r.spacing(node.Layout.Gap), Padding: giodom.UniformInsets(r.spacing(node.Layout.Padding)),
+		Wrap:    axis == layout.Horizontal && (node.Layout.Wrap || node.Style.Role == "hero") && !(weights != nil && !r.compact),
+		Stretch: node.Style.Role == "report-stack",
+	}
+	if node.Style.Role == "hero-brand" {
+		props.Gap = max(props.Gap, r.metrics.spaceMedium+r.metrics.spaceSmall/2)
+	}
+	if node.Style.Role == "queued-execution-header" || node.Style.Role == "history-execution-header" || node.Style.Role == "agent-header" {
+		props.Padding = giodom.Insets{Top: 6, Right: r.metrics.spaceSmall, Bottom: 6, Left: r.metrics.spaceSmall}
 	}
 	return giodom.Element{Kind: giodom.KindFlex, Key: domNodeKey(node, path), Flex: props, Children: giodom.Static(children...)}
+}
+
+func (r *Renderer) compileDOMGridChildren(nodes []uidsl.Node, data any, path string, weights []float32) []giodom.Element {
+	children := make([]giodom.Element, 0, len(nodes))
+	for index := range nodes {
+		compiled := r.compileDOMNode(nodes[index], data, fmt.Sprintf("%s/%d", path, index))
+		if compiled == nil {
+			empty := giodom.Spacer(giodom.Key(fmt.Sprintf("%s/empty/%d", path, index)), 0, 0)
+			compiled = &empty
+		}
+		compiled.FlexWeight = weights[index]
+		children = append(children, *compiled)
+	}
+	return children
+}
+
+func domGridWeights(role string, childCount int) []float32 {
+	var weights []float32
+	switch role {
+	case "queued-execution-header", "queued-execution-job-row":
+		weights = []float32{2, 1, 1.25, 1.1, 1.2, 1.35, 2.25, .85}
+	case "history-execution-header", "history-execution-job-row":
+		weights = []float32{2, 1, 1.25, 1.1, 1.2, 1.35, 1}
+	case "agent-header":
+		weights = []float32{1.6, 1.35, 1.05, .8, 1.2, .9, .8}
+	case "agent-record":
+		weights = []float32{1.6, 1.35, 1.05, .8, 1.2, .9, .8, .2}
+	}
+	if len(weights) != childCount {
+		return nil
+	}
+	return weights
+}
+
+func domFlexSpacing(justify string) layout.Spacing {
+	switch strings.ToLower(strings.TrimSpace(justify)) {
+	case "end", "flex-end":
+		return layout.SpaceStart
+	case "center":
+		return layout.SpaceSides
+	case "space-around":
+		return layout.SpaceAround
+	case "space-between":
+		return layout.SpaceBetween
+	case "space-evenly":
+		return layout.SpaceEvenly
+	default:
+		return layout.SpaceEnd
+	}
+}
+
+func (r *Renderer) compileDOMCompactProjectHeader(node uidsl.Node, data any, path string) giodom.Element {
+	var logo, title, metadata, back *giodom.Element
+	for index := range node.Children {
+		child := node.Children[index]
+		switch child.Style.Role {
+		case "project-icon":
+			logo = r.compileDOMNode(child, data, fmt.Sprintf("%s/%d", path, index))
+			if logo == nil {
+				empty := giodom.Spacer(giodom.Key(path+"/compact-logo-empty"), 0, 0)
+				logo = &empty
+			}
+		case "project-header-back":
+			child.Style.Role = "icon-button"
+			back = r.compileDOMNode(child, data, fmt.Sprintf("%s/%d", path, index))
+		case "project-header-copy":
+			for copyIndex := range child.Children {
+				copyChild := child.Children[copyIndex]
+				switch copyChild.Style.Role {
+				case "title":
+					title = r.compileDOMNode(copyChild, data, fmt.Sprintf("%s/%d/%d", path, index, copyIndex))
+				case "project-header-metadata":
+					metadata = r.compileDOMNode(copyChild, data, fmt.Sprintf("%s/%d/%d", path, index, copyIndex))
+				}
+			}
+		}
+	}
+	if logo == nil || title == nil || metadata == nil || back == nil {
+		return r.domMessage(giodom.Key(path+"/compact-header-error"), "Compact project header is incomplete", r.palette.danger)
+	}
+	title.Grow = true
+	top := giodom.Element{
+		Kind: giodom.KindFlex, Key: giodom.Key(path + "/compact-top"),
+		Flex:     giodom.FlexProps{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: r.metrics.spaceMedium},
+		Children: giodom.Static(*back, *title, *logo),
+	}
+	return giodom.Element{
+		Kind: giodom.KindFlex, Key: domNodeKey(node, path),
+		Flex:     giodom.FlexProps{Axis: layout.Vertical, Alignment: layout.Start, Gap: r.metrics.spaceSmall},
+		Children: giodom.Static(top, *metadata),
+	}
+}
+
+func (r *Renderer) compileDOMCompactActionRow(node uidsl.Node, data any, path string) giodom.Element {
+	content, actions := make([]giodom.Element, 0, len(node.Children)), make([]giodom.Element, 0, 2)
+	for index := range node.Children {
+		child := node.Children[index]
+		if child.Component == "spacer" {
+			continue
+		}
+		compiled := r.compileDOMNode(child, data, fmt.Sprintf("%s/%d", path, index))
+		if compiled == nil {
+			continue
+		}
+		compiled.Grow = false
+		if child.Component == "button" {
+			actions = append(actions, *compiled)
+		} else {
+			content = append(content, *compiled)
+		}
+	}
+	children := make([]giodom.Element, 0, 2)
+	if len(content) > 0 {
+		children = append(children, giodom.Element{
+			Kind: giodom.KindFlex, Key: giodom.Key(path + "/compact-content"),
+			Flex: giodom.FlexProps{Axis: layout.Vertical, Alignment: layout.Start, Gap: r.metrics.spaceSmall}, Children: giodom.Static(content...),
+		})
+	}
+	if len(actions) > 0 {
+		children = append(children, giodom.Element{
+			Kind: giodom.KindFlex, Key: giodom.Key(path + "/compact-actions"),
+			Flex: giodom.FlexProps{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: r.metrics.spaceSmall, Wrap: true}, Children: giodom.Static(actions...),
+		})
+	}
+	return giodom.Element{
+		Kind: giodom.KindFlex, Key: domNodeKey(node, path),
+		Flex: giodom.FlexProps{
+			Axis: layout.Vertical, Alignment: layout.Start, Gap: r.metrics.spaceSmall,
+			Padding: giodom.UniformInsets(r.spacing(node.Layout.Padding)),
+		},
+		Children: giodom.Static(children...),
+	}
 }
 
 func (r *Renderer) compileDOMChildren(nodes []uidsl.Node, data any, path string) []giodom.Element {
@@ -376,6 +541,25 @@ func (r *Renderer) compactDOMRecordChildren(node uidsl.Node, data any, path stri
 	return rows
 }
 
+func (r *Renderer) compileDOMSkeleton(node uidsl.Node, path string) giodom.Element {
+	return giodom.Native(domNodeKey(node, path), giodom.NativeProps{
+		Layout: func(gtx layout.Context, _ any) layout.Dimensions {
+			size := gtx.Constraints.Min
+			if size.X <= 0 || size.Y <= 0 {
+				return layout.Dimensions{Size: size}
+			}
+			const cycle = 2200 * time.Millisecond
+			phase := float64(gtx.Now.UnixNano()%int64(cycle)) / float64(cycle)
+			opacity := float32(.35 + .55*(.5-.5*math.Cos(2*math.Pi*phase)))
+			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+			fade := paint.PushOpacity(gtx.Ops, opacity)
+			paintDOMSurface(gtx, size, r.palette.border, color.NRGBA{}, 0, gtx.Dp(r.metrics.controlRadius))
+			fade.Pop()
+			return layout.Dimensions{Size: size}
+		},
+	})
+}
+
 func domNodeVisible(node uidsl.Node, data any) bool {
 	if node.Visible == nil {
 		return true
@@ -411,29 +595,33 @@ func domElementsRevision(elements []giodom.Element) uint64 {
 }
 
 func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data any, path string) *giodom.Element {
-	if node.Style.Role == "skeleton" {
-		fill := r.palette.border
-		fill.A = 0x80
-		element = giodom.Surface(domNodeKey(node, path), giodom.SurfaceProps{Fill: fill, Radius: r.metrics.controlRadius}, element)
-	}
+	var progressProps *giodom.ProgressProps
 	if node.Progress != nil {
 		if progress, active := activeSemanticProgress(data, node.Progress); active {
 			state, fraction := evaluateSemanticProgress(progress, time.Now())
+			mode := giodom.ProgressDeterminate
+			switch state {
+			case "indeterminate":
+				mode = giodom.ProgressIndeterminate
+			case "overrun":
+				mode = giodom.ProgressOverrun
+			case "complete", "completed":
+				mode = giodom.ProgressComplete
+			}
 			fill := r.palette.success
-			track := color.NRGBA{}
 			if node.Style.Role == "output-group" {
 				fill = r.palette.consoleSuccess
-				track = r.palette.consoleSurface
 			}
-			fill.A = 0x38
-			element = giodom.Progress(giodom.Key(path+"/progress"), giodom.ProgressProps{
-				Fraction: float32(fraction), Indeterminate: state == "indeterminate",
-				Color: fill, Track: track, Radius: r.metrics.surfaceRadius,
-			}, element)
+			fill.A = 0x2e
+			progressProps = &giodom.ProgressProps{
+				Mode: mode, Fraction: float32(fraction), Animate: state == "determinate" && progress.ratePerMS > 0, Color: fill,
+				Radius: r.metrics.surfaceRadius, Phase: -time.Duration(progress.snapshotUnixMS) * time.Millisecond,
+			}
 		}
 	}
 
-	isSurface := node.Component == "card" || node.Component == "section" || node.Component == "disclosure" || node.Component == "graph-view" || node.Style.Role == "hero"
+	isOutputConsole := node.ID == "job-output-groups"
+	isSurface := node.Component == "card" || node.Component == "section" || node.Component == "disclosure" || node.Component == "graph-view" || node.Style.Role == "hero" || node.Style.Role == "execution-section-header" || isOutputConsole
 	if isSurface && !(node.Component == "disclosure" && node.Style.Role == "tree-branch") {
 		props := giodom.SurfaceProps{
 			Fill: r.palette.surface, Border: r.palette.border, BorderWidth: 1,
@@ -448,20 +636,50 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 		if node.Layout.Padding != "" {
 			props.Padding = giodom.Insets{}
 		}
+		if node.Component == "card" || node.Component == "section" || node.Style.Role == "hero" {
+			props.PaintBackground = r.paintCardSurface
+		}
 		switch {
 		case node.Style.Role == "hero":
-			props.Fill = r.palette.heroStart
 			props.Padding = giodom.UniformInsets(r.metrics.heroPadding)
 		case node.Component == "disclosure" && node.Style.Role == "output-group":
 			props.Fill, props.Border = r.palette.consoleSurface, r.palette.consoleBorder
+			props.PaintBackground = nil
 		case node.Component == "disclosure":
-			props.Fill, props.BorderWidth = r.palette.surfaceRaised, 0
+			props.Fill = r.palette.surfaceRaised
 		case node.Component == "card" && node.Style.Role == "output-system":
 			props.Fill, props.Border = r.palette.consoleSurface, r.palette.consoleBorder
+			props.PaintBackground = nil
 		case node.Component == "card" && node.Style.Role == "scheduling-awaiting":
 			props.Fill, props.Border = r.palette.awaitingSurface, r.palette.awaitingBorder
+			props.PaintBackground = nil
+		case node.Style.Role == "execution-section-header":
+			props.Fill, props.BorderWidth, props.Radius = r.palette.subtle, 0, r.metrics.controlRadius
+		case isOutputConsole:
+			props.Fill, props.Border, props.Padding = r.palette.consoleBackground, r.palette.consoleBorder, giodom.UniformInsets(r.metrics.spaceSmall)
+			props.PaintBackground = nil
 		}
-		element = giodom.Surface(giodom.Key(path+"/surface"), props, element)
+		if progressProps != nil {
+			content := element
+			if props.Padding != (giodom.Insets{}) {
+				content = giodom.Inset(giodom.Key(path+"/surface-content-inset"), props.Padding, content)
+				props.Padding = giodom.Insets{}
+			}
+			content = giodom.Progress(giodom.Key(path+"/progress"), *progressProps, content)
+			element = giodom.Surface(giodom.Key(path+"/surface"), props, content)
+			progressProps = nil
+		} else {
+			element = giodom.Surface(giodom.Key(path+"/surface"), props, element)
+		}
+	}
+	if progressProps != nil {
+		switch node.Style.Role {
+		case "execution-row":
+			progressProps.Track = r.palette.surfaceRaised
+		case "execution-section-header":
+			progressProps.Track = r.palette.subtle
+		}
+		element = giodom.Progress(giodom.Key(path+"/progress"), *progressProps, element)
 	}
 	if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {
 		element = giodom.Surface(giodom.Key(path+"/row-surface"), giodom.SurfaceProps{
@@ -573,7 +791,7 @@ func (r *Renderer) domText(key giodom.Key, value, role string, strong bool, tone
 		Kind: giodom.KindText, Key: key,
 		Text: giodom.TextProps{
 			Value: value, Size: style.size, Color: r.domTextColor(role, tone),
-			Weight: style.font.Weight, Selectable: selectable,
+			Font: style.font, LineHeightScale: style.lineHeight, Selectable: selectable,
 		},
 	}
 }
@@ -608,6 +826,9 @@ func (r *Renderer) domTextAction(node uidsl.Node, data any, path, value, role st
 			return state.clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				label := r.materialTextLabel(value, role, strong)
 				label.Color = r.domTextColor(role, node.Style.Tone)
+				if state.clickable.Hovered() || gtx.Focused(&state.clickable) {
+					label.Color = r.palette.accentStrong
+				}
 				return label.Layout(gtx)
 			})
 		},
@@ -639,7 +860,7 @@ func (r *Renderer) compileDOMBadge(node uidsl.Node, data any, path string) giodo
 	text := r.domText(giodom.Key(path+"/text"), value, "badge", node.Style.Emphasis == "strong", textTone, true)
 	return giodom.Surface(domNodeKey(node, path), giodom.SurfaceProps{
 		Fill: fill, Border: border, BorderWidth: borderWidth, Radius: 100,
-		Padding: giodom.Insets{Top: 2, Right: 8, Bottom: 2, Left: 8},
+		Padding: giodom.Insets{Top: 4, Right: 9, Bottom: 4, Left: 9},
 	}, text)
 }
 
@@ -660,54 +881,197 @@ func (r *Renderer) compileDOMButton(node uidsl.Node, data any, path string) giod
 			if node.Style.Role == "connection-pulse" {
 				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
 				fade := paint.PushOpacity(gtx.Ops, connectionPulseOpacity(gtx.Now))
-				dimensions := r.layoutDOMControl(gtx, &state.clickable, label, node.Icon, node.Style.Role, node.Style.Tone)
+				dimensions := r.layoutDOMControlWithOptions(gtx, &state.clickable, label, node.Icon, node.Style.Role, node.Style.Tone, domControlOptions{
+					Enabled: enabled, ReservedLabels: r.domButtonReservedLabels(node, data, label),
+				})
 				fade.Pop()
 				return dimensions
 			}
-			return r.layoutDOMControl(gtx, &state.clickable, label, node.Icon, node.Style.Role, node.Style.Tone)
+			return r.layoutDOMControlWithOptions(gtx, &state.clickable, label, node.Icon, node.Style.Role, node.Style.Tone, domControlOptions{
+				Enabled: enabled, ReservedLabels: r.domButtonReservedLabels(node, data, label),
+			})
 		},
 	})
 }
 
+type domControlOptions struct {
+	Enabled        bool
+	TrailingIcon   bool
+	ReservedLabels []string
+}
+
 func (r *Renderer) layoutDOMControl(gtx layout.Context, clickable *widget.Clickable, label, iconName, role, tone string) layout.Dimensions {
-	iconOnly := role == "icon-button"
+	return r.layoutDOMControlWithOptions(gtx, clickable, label, iconName, role, tone, domControlOptions{
+		Enabled: true, ReservedLabels: []string{label},
+	})
+}
+
+func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *widget.Clickable, label, iconName, role, tone string, options domControlOptions) layout.Dimensions {
+	disclosureChevron := role == "disclosure-chevron"
+	iconOnly := role == "icon-button" || role == "tailing-toggle" || disclosureChevron
+	buttonMetrics := r.controls.Button
+	iconSize := buttonMetrics.IconSize.Native
+	iconGap := buttonMetrics.IconGap.Native
+	trailingIcon := options.TrailingIcon
+	if role != "select" && !iconOnly {
+		trailingIcon = buttonMetrics.IconPosition == "trailing"
+	}
+	if role == "select" {
+		iconSize = r.controls.Select.ChevronSize
+		iconGap = r.controls.Select.ChevronGap
+	}
+	if len(options.ReservedLabels) == 0 {
+		options.ReservedLabels = []string{label}
+	}
 	semantic.DescriptionOp(label).Add(gtx.Ops)
+	// Controls size to their own metric. A surrounding row may have a taller
+	// cross-axis minimum, but that height belongs to the row rather than each
+	// control inside it. Clear it before Clickable.Layout so the widget cannot
+	// re-apply the inherited minimum to the dimensions returned by its child.
+	gtx.Constraints.Min.Y = 0
 	return clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		if !iconOnly {
-			gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(38)))
+		minimum := unit.Dp(buttonMetrics.MinimumHeight.Native)
+		if role == "select" {
+			minimum = unit.Dp(r.controls.Select.MinimumHeight)
+		}
+		if iconOnly {
+			minimum = unit.Dp(buttonMetrics.IconOnlySize.Native)
+		}
+		if disclosureChevron {
+			minimum = 24
+			iconSize = 20
+		}
+		gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(minimum)))
+		if iconOnly {
+			gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, max(gtx.Constraints.Min.X, gtx.Dp(minimum)))
+		}
+		fill, border := r.palette.surface, r.palette.border
+		inkTone := defaultString(tone, "accent")
+		if clickable.Pressed() && !disclosureChevron {
+			fill = r.palette.subtle
+		}
+		if (clickable.Hovered() || gtx.Focused(clickable)) && !disclosureChevron {
+			border = r.palette.accent
+		}
+		if disclosureChevron {
+			fill, border, inkTone = color.NRGBA{}, color.NRGBA{}, "muted"
+			if clickable.Hovered() || gtx.Focused(clickable) {
+				inkTone = "accent"
+			}
+		}
+		if role == "tailing-toggle" {
+			if toned, ok := r.toneColor(tone); ok {
+				fill, border = mixColorSRGB(r.palette.surface, toned, .12), toned
+			}
+		}
+		if !options.Enabled {
+			fill, border, inkTone = r.palette.subtle, r.palette.border, "muted"
+		}
+		var fade paint.OpacityStack
+		if !options.Enabled {
+			fade = paint.PushOpacity(gtx.Ops, .65)
+			defer fade.Pop()
 		}
 		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			size := gtx.Constraints.Min
-			paintDOMSurface(gtx, size, r.palette.subtle, r.palette.border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
+			paintDOMSurface(gtx, size, fill, border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
 			return layout.Dimensions{Size: size}
 		}, func(gtx layout.Context) layout.Dimensions {
-			paddingX, paddingY := r.metrics.controlPaddingX, r.metrics.controlPaddingY
+			// The minimum height belongs to the control surface, not each child.
+			// If it reaches Label.Layout, Gio constrains the label to that full
+			// height while painting its glyphs from the top, which defeats the
+			// Flex middle alignment. Let the foreground keep its intrinsic height;
+			// Background.Layout centers it inside the minimum-sized surface.
+			gtx.Constraints.Min.Y = 0
+			paddingX := unit.Dp(buttonMetrics.PaddingX.Native)
+			paddingY := unit.Dp(buttonMetrics.PaddingY.Native)
+			if role == "select" {
+				paddingX, paddingY = r.metrics.controlPaddingX, r.metrics.controlPaddingY
+			}
 			if iconOnly {
-				paddingX, paddingY = 10, 10
+				inset := max(float32(0), (buttonMetrics.IconOnlySize.Native-iconSize)/2)
+				paddingX, paddingY = unit.Dp(inset), unit.Dp(inset)
+			}
+			if disclosureChevron {
+				paddingX, paddingY = 2, 2
 			}
 			return layout.Inset{Top: paddingY, Right: paddingX, Bottom: paddingY, Left: paddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				children := make([]layout.FlexChild, 0, 2)
-				if iconName != "" {
-					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return r.layoutGlyph(gtx, iconName, defaultString(tone, "accent"), 20)
-					}))
+				if iconOnly {
+					return r.layoutGlyph(gtx, iconName, inkTone, unit.Dp(iconSize))
 				}
-				if !iconOnly {
-					if len(children) > 0 {
-						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Spacer{Width: r.metrics.spaceSmall}.Layout(gtx)
-						}))
-					}
-					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						labelStyle := r.materialTextLabel(label, "control", false)
+				reservedWidth := r.domWidestControlLabel(gtx, options.ReservedLabels)
+				iconWidth := 0
+				if iconName != "" {
+					iconWidth = gtx.Dp(unit.Dp(iconSize + iconGap))
+				}
+				gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, max(gtx.Constraints.Min.X, reservedWidth+iconWidth))
+				labelWidget := func(gtx layout.Context) layout.Dimensions {
+					labelStyle := r.materialTextLabel(label, "control", false)
+					if role == "select" {
+						labelStyle.Color = r.palette.text
+					} else if !options.Enabled {
+						labelStyle.Color = r.palette.muted
+					} else {
 						labelStyle.Color = r.palette.accentStrong
-						return labelStyle.Layout(gtx)
-					}))
+					}
+					labelStyle.MaxLines = 1
+					return labelStyle.Layout(gtx)
+				}
+				glyph := func(gtx layout.Context) layout.Dimensions {
+					return r.layoutGlyph(gtx, iconName, inkTone, unit.Dp(iconSize))
+				}
+				gap := func(gtx layout.Context) layout.Dimensions {
+					return layout.Spacer{Width: unit.Dp(iconGap)}.Layout(gtx)
+				}
+				children := make([]layout.FlexChild, 0, 3)
+				if iconName != "" && !trailingIcon {
+					children = append(children, layout.Rigid(glyph), layout.Rigid(gap))
+				}
+				if trailingIcon {
+					children = append(children, layout.Flexed(1, labelWidget))
+				} else {
+					children = append(children, layout.Rigid(labelWidget))
+				}
+				if iconName != "" && trailingIcon {
+					children = append(children, layout.Rigid(gap), layout.Rigid(glyph))
 				}
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 			})
 		})
 	})
+}
+
+func (r *Renderer) domWidestControlLabel(gtx layout.Context, labels []string) int {
+	widest := 0
+	for _, value := range labels {
+		measure := gtx
+		measure.Constraints.Min = image.Point{}
+		macro := op.Record(gtx.Ops)
+		label := r.materialTextLabel(value, "control", false)
+		label.MaxLines = 1
+		dimensions := label.Layout(measure)
+		_ = macro.Stop()
+		widest = max(widest, dimensions.Size.X)
+	}
+	return widest
+}
+
+func (r *Renderer) domButtonReservedLabels(node uidsl.Node, data any, displayed string) []string {
+	labels := []string{displayed}
+	if node.Text != nil {
+		if ordinary, err := uidsl.RenderText(data, *node.Text); err == nil {
+			labels = append(labels, ordinary)
+		}
+	}
+	if len(node.Actions) > 0 {
+		r.mu.RLock()
+		catalog := r.actionCatalog
+		r.mu.RUnlock()
+		if spec, ok := catalog.Spec(node.Actions[0].Command); ok && strings.TrimSpace(spec.Pending) != "" {
+			labels = append(labels, spec.Pending)
+		}
+	}
+	return labels
 }
 
 func paintDOMSurface(gtx layout.Context, size image.Point, fill, border color.NRGBA, borderWidth, radius int) {
@@ -777,9 +1141,14 @@ func (r *Renderer) compileDOMInput(node uidsl.Node, data any, path string) giodo
 				inputData := mergeData(data, "input", map[string]any{"value": state.editor.Text()})
 				r.dispatchFromLayout(gtx, node.Actions[0], inputData)
 			}
+			gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(44)))
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Min
-				paintDOMSurface(gtx, size, r.palette.surface, r.palette.border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
+				border := r.palette.border
+				if gtx.Focused(&state.editor) {
+					border = r.palette.accent
+				}
+				paintDOMSurface(gtx, size, r.palette.surface, border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
 				return layout.Dimensions{Size: size}
 			}, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{
@@ -895,7 +1264,14 @@ func (r *Renderer) layoutDOMSelect(gtx layout.Context, state *domSelectState, no
 		if state.open {
 			icon = "chevron-up"
 		}
-		return r.layoutDOMControl(gtx, &state.toggle, selectedLabel, icon, "select", "accent")
+		labels := make([]string, 0, len(options)+1)
+		labels = append(labels, selectedLabel)
+		for _, option := range options {
+			labels = append(labels, option.label)
+		}
+		return r.layoutDOMControlWithOptions(gtx, &state.toggle, selectedLabel, icon, "select", "muted", domControlOptions{
+			Enabled: enabled, TrailingIcon: true, ReservedLabels: labels,
+		})
 	}
 	if !state.open {
 		return header(gtx)
@@ -929,9 +1305,14 @@ func (r *Renderer) layoutDOMSelect(gtx layout.Context, state *domSelectState, no
 					if option.value == selectedValue {
 						fill = r.palette.subtle
 					}
+					border := color.NRGBA{}
+					if button.Hovered() || gtx.Focused(button) {
+						fill, border = r.palette.subtle, r.palette.accent
+					}
+					gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(40)))
 					return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						size := gtx.Constraints.Min
-						paintDOMSurface(gtx, size, fill, color.NRGBA{}, 0, gtx.Dp(r.metrics.controlRadius))
+						paintDOMSurface(gtx, size, fill, border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
 						return layout.Dimensions{Size: size}
 					}, func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: 8, Right: 10, Bottom: 8, Left: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1003,6 +1384,8 @@ func (r *Renderer) compileDOMImage(node uidsl.Node, data any, path string) giodo
 				width, height = 72, 72
 			} else if node.Style.Role == "job-header-icon" {
 				width, height = 100, 100
+			} else if node.Style.Role == "execution-row-image" {
+				width, height = 28, 28
 			}
 			return r.layoutImageSource(gtx, source, node.Image.Description, width, height)
 		},
@@ -1012,6 +1395,9 @@ func (r *Renderer) compileDOMImage(node uidsl.Node, data any, path string) giodo
 func (r *Renderer) compileDOMIcon(node uidsl.Node, data any, path string) giodom.Element {
 	return giodom.Native(domNodeKey(node, path), giodom.NativeProps{
 		Layout: func(gtx layout.Context, _ any) layout.Dimensions {
+			if node.Style.Role == "execution-row-status" {
+				return r.layoutGlyph(gtx, node.Icon, node.Style.Tone, 20)
+			}
 			return r.layoutIcon(gtx, node, data)
 		},
 	})
@@ -1054,7 +1440,7 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string) 
 	}
 	toggleRole := "disclosure-toggle"
 	if iconOnlyToggle {
-		toggleRole = "icon-button"
+		toggleRole = "disclosure-chevron"
 	}
 	toggleNode := uidsl.Node{
 		Component: "button", Text: &uidsl.Text{Literal: label}, Icon: icon,
@@ -1075,13 +1461,33 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string) 
 				}
 				role := "disclosure-toggle"
 				if iconOnlyToggle {
-					role = "icon-button"
+					role = "disclosure-chevron"
 				}
 				return r.layoutDOMControl(gtx, &state.clickable, label, icon, role, node.Style.Tone)
 			}
 		}(header.Native.Layout)
 	}
 	summary := []giodom.Element{}
+	if node.Style.Role == "execution-row" {
+		if node.Image != nil {
+			imageNode := uidsl.Node{Component: "image", Image: node.Image, Style: uidsl.Style{Role: "execution-row-image"}}
+			summary = append(summary, r.compileDOMImage(imageNode, data, path+"/summary/image"))
+		}
+		statusIcon, statusTone := "status-waiting", "warning"
+		switch node.Style.Tone {
+		case "success":
+			statusIcon, statusTone = "status-success", "success"
+		case "danger":
+			statusIcon, statusTone = "status-danger", "danger"
+		case "accent":
+			statusIcon, statusTone = "loader-2", "warning"
+		}
+		statusNode := uidsl.Node{Component: "icon", Icon: statusIcon, Style: uidsl.Style{Role: "execution-row-status", Tone: statusTone}}
+		summary = append(summary,
+			r.compileDOMIcon(statusNode, data, path+"/summary/status"),
+			r.domText(giodom.Key(path+"/summary/label"), label, "control", false, "", true),
+		)
+	}
 	if node.Disclosure != nil {
 		summary = append(summary, r.compileDOMChildren(node.Disclosure.Summary, data, path+"/summary")...)
 	}
@@ -1240,6 +1646,9 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string) *g
 	if node.Layout.MaxWidth != "" && axis == layout.Horizontal {
 		parsed, _ := strconv.ParseFloat(node.Layout.MaxWidth, 32)
 		viewport = unit.Dp(parsed)
+	}
+	if node.ID == "job-output-groups" && viewport > 2*r.metrics.spaceSmall && !r.compact {
+		viewport -= 2 * r.metrics.spaceSmall
 	}
 	if viewport <= 0 || (r.compact && node.ID == "job-output-groups") {
 		elements := make([]giodom.Element, 0, len(items))

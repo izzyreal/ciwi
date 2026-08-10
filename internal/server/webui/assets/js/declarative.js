@@ -199,8 +199,12 @@
 	if (!activeControls) return;
 	const style = document.documentElement.style;
 	const metric = (variable, value) => style.setProperty(variable, String(value) + 'px');
-	metric('--ciwi-button-icon-size', activeControls.button.iconSize);
-	metric('--ciwi-button-icon-gap', activeControls.button.iconGap);
+	metric('--ciwi-button-min-height', activeControls.button.minimumHeight.web);
+	metric('--ciwi-button-padding-x', activeControls.button.paddingX.web);
+	metric('--ciwi-button-padding-y', activeControls.button.paddingY.web);
+	metric('--ciwi-button-icon-size', activeControls.button.iconSize.web);
+	metric('--ciwi-button-icon-gap', activeControls.button.iconGap.web);
+	metric('--ciwi-button-icon-only-size', activeControls.button.iconOnlySize.web);
 	metric('--ciwi-control-min-height', activeControls.select.minimumHeight);
 	metric('--ciwi-select-chevron-size', activeControls.select.chevronSize);
 	metric('--ciwi-select-chevron-gap', activeControls.select.chevronGap);

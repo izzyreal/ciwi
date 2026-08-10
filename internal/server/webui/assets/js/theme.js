@@ -107,7 +107,11 @@ function ciwiApplyContractThemeDocuments(documents, requestedName) {
     });
     const page = ciwiThemeGradientCSS(theme.gradients && theme.gradients.page);
     const hero = ciwiThemeGradientCSS(theme.gradients && theme.gradients.hero);
-    if (page) style.setProperty('--page-background', page);
+    if (colors['background-glow-a'] && colors['background-glow-b'] && colors['background-start'] && colors['background-end']) {
+      style.setProperty('--page-background', 'radial-gradient(circle at 12% -10%, color-mix(in srgb, var(--bg-glow-a) 86%, transparent) 0%, transparent 38%), radial-gradient(circle at 90% 8%, color-mix(in srgb, var(--bg-glow-b) 82%, transparent) 0%, transparent 34%), linear-gradient(145deg, var(--bg2) 0%, var(--bg) 48%, var(--bg3) 100%)');
+    } else if (page) {
+      style.setProperty('--page-background', page);
+    }
     if (hero) style.setProperty('--chrome-card-bg', hero);
     if (colors['surface-glow']) {
       style.setProperty('--ciwi-card-background', 'radial-gradient(circle at 100% 0%, var(--card-glow) 0%, transparent 38%), linear-gradient(145deg, var(--surface) 0%, var(--surface-subtle) 100%)');

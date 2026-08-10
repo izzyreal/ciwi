@@ -62,7 +62,8 @@ summary rows disclose their content, and selecting text does neither. Queue and
 history details use compact horizontal job rows rather than renderer-specific
 cards. Project icons and pipeline content are ordinary shared row/column/image
 nodes rather than renderer-composed project bodies. Browser and native
-code/identifier text share the bundled Geist Mono face.
+code/identifier text share the bundled Geist Mono face; ordinary UI and
+control text share the bundled Geist Sans faces.
 
 Job output uses theme-owned console tokens in both renderers. Its controls,
 execution path, system messages, and grouped phase/step output now live in one
@@ -80,9 +81,8 @@ overwriting an existing file.
 Settings, managed-YAML editing, agent details, and ad-hoc agent scripts now use
 the same presentation/action contracts. Both adapters expose asynchronous busy
 state and bounded success/error notices; agent heartbeat icons use the shared
-event-timestamp pulse binding. Compact overrides provide phone-width layouts,
-touch scrolling, and full-screen disclosure sheets without separate mobile
-screen definitions.
+event-timestamp pulse binding. Compact overrides provide phone-width reflow and
+touch scrolling without separate mobile screen definitions.
 
 Tests enforce the renderer boundary: populated browser binding fixtures cover
 every shared route, every web-visible command must have a browser adapter, and

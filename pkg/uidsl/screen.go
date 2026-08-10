@@ -452,8 +452,8 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 				return fmt.Errorf("%s.disclosure.stateKey: %w", path, err)
 			}
 		}
-		if presentation := node.Disclosure.CompactPresentation; presentation != "" && presentation != "inline" && presentation != "sheet" && presentation != "navigate" {
-			return fmt.Errorf("%s.disclosure.compactPresentation must be inline, sheet, or navigate", path)
+		if presentation := node.Disclosure.CompactPresentation; presentation != "" && presentation != "inline" && presentation != "navigate" {
+			return fmt.Errorf("%s.disclosure.compactPresentation must be inline or navigate", path)
 		}
 		for i, summaryNode := range node.Disclosure.Summary {
 			if err := validateNode(summaryNode, fmt.Sprintf("%s.disclosure.summary[%d]", path, i), ids, scope); err != nil {

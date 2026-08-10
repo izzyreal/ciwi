@@ -2,10 +2,14 @@ apiVersion: ciwi.ui/v1
 kind: Typography
 typography:
   families:
-    body: '"Avenir Next", "Segoe UI", sans-serif'
-    mono: '"Ciwi Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+    body:
+      web: '"Ciwi Sans", sans-serif'
+      native: Ciwi Sans
+    mono:
+      web: '"Ciwi Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+      native: Ciwi Mono
   weights:
-    regular: {web: 400, native: 450}
+    regular: {web: 400, native: 400}
     medium: {web: 600, native: 600}
     strong: {web: 700, native: 700}
     title: {web: 800, native: 800}

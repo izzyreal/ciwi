@@ -370,8 +370,12 @@ func progressCard(key giodom.Key, title, detail string, active bool) giodom.Elem
 		label(key+"-detail", detail, 16, labPalette.muted),
 	)
 	content.Flex.Padding = giodom.UniformInsets(15)
+	mode := giodom.ProgressDeterminate
+	if active {
+		mode = giodom.ProgressIndeterminate
+	}
 	progress := giodom.Progress(key+"-progress", giodom.ProgressProps{
-		Fraction: .42, Indeterminate: active, Color: labPalette.progress, Track: labPalette.track, Radius: 14,
+		Mode: mode, Fraction: .42, Color: labPalette.progress, Track: labPalette.track, Radius: 14,
 	}, content)
 	return giodom.Surface(key, giodom.SurfaceProps{
 		Fill: labPalette.track, Border: labPalette.border, BorderWidth: 1, Radius: 14,

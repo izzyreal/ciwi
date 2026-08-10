@@ -10,10 +10,10 @@ apiVersion: ciwi.ui/v1
 kind: Typography
 typography:
   families:
-    body: sans-serif
-    mono: monospace
+    body: {web: '"Ciwi Sans", sans-serif', native: Ciwi Sans}
+    mono: {web: '"Ciwi Mono", monospace', native: Ciwi Mono}
   weights:
-    regular: {web: 400, native: 450}
+    regular: {web: 400, native: 400}
     medium: {web: 600, native: 600}
     strong: {web: 700, native: 700}
     title: {web: 800, native: 800}
@@ -42,8 +42,11 @@ func TestParseTypography(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := document.Typography.Weights["regular"].Native; got != 450 {
-		t.Fatalf("native regular weight = %d, want 450", got)
+	if got := document.Typography.Weights["regular"].Native; got != 400 {
+		t.Fatalf("native regular weight = %d, want 400", got)
+	}
+	if got := document.Typography.Families["body"].Native; got != "Ciwi Sans" {
+		t.Fatalf("native body family = %q, want Ciwi Sans", got)
 	}
 	if got := document.Typography.Roles["output-label"].Family; got != "mono" {
 		t.Fatalf("output label family = %q, want mono", got)

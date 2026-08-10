@@ -69,6 +69,21 @@ func tablerIcons() map[string]nativeIcon {
 	arc := func(from, c1, c2, to f32.Point) func(*clip.Path) {
 		return func(path *clip.Path) { path.MoveTo(from); path.CubeTo(c1, c2, to) }
 	}
+	roundedRect := func(x, y, width, height, radius float32) func(*clip.Path) {
+		const k = float32(4 * (math.Sqrt2 - 1) / 3)
+		curve := radius * k
+		return func(path *clip.Path) {
+			path.MoveTo(f32.Pt(x+radius, y))
+			path.LineTo(f32.Pt(x+width-radius, y))
+			path.CubeTo(f32.Pt(x+width-radius+curve, y), f32.Pt(x+width, y+radius-curve), f32.Pt(x+width, y+radius))
+			path.LineTo(f32.Pt(x+width, y+height-radius))
+			path.CubeTo(f32.Pt(x+width, y+height-radius+curve), f32.Pt(x+width-radius+curve, y+height), f32.Pt(x+width-radius, y+height))
+			path.LineTo(f32.Pt(x+radius, y+height))
+			path.CubeTo(f32.Pt(x+radius-curve, y+height), f32.Pt(x, y+height-radius+curve), f32.Pt(x, y+height-radius))
+			path.LineTo(f32.Pt(x, y+radius))
+			path.CubeTo(f32.Pt(x, y+radius-curve), f32.Pt(x+radius-curve, y), f32.Pt(x+radius, y))
+		}
+	}
 	definitions := map[string]tablerIcon{
 		"arrow-left":        tablerIcon{paths(line(f32.Pt(5, 12), f32.Pt(19, 12)), line(f32.Pt(5, 12), f32.Pt(11, 18)), line(f32.Pt(5, 12), f32.Pt(11, 6)))},
 		"arrow-up":          tablerIcon{paths(line(f32.Pt(12, 5), f32.Pt(12, 19)), line(f32.Pt(18, 11), f32.Pt(12, 5), f32.Pt(6, 11)))},
@@ -100,7 +115,7 @@ func tablerIcons() map[string]nativeIcon {
 		"status-danger":  tablerIcon{paths(circle(f32.Pt(12, 12), 9), line(f32.Pt(9, 9), f32.Pt(15, 15)), line(f32.Pt(15, 9), f32.Pt(9, 15)))},
 		"status-running": tablerIcon{paths(circle(f32.Pt(12, 12), 9), line(f32.Pt(10, 8), f32.Pt(10, 16), f32.Pt(16, 12), f32.Pt(10, 8)))},
 		"status-waiting": tablerIcon{paths(line(f32.Pt(7, 3), f32.Pt(17, 3)), line(f32.Pt(7, 21), f32.Pt(17, 21)), line(f32.Pt(8, 3), f32.Pt(8, 7), f32.Pt(12, 11), f32.Pt(16, 7), f32.Pt(16, 3)), line(f32.Pt(8, 21), f32.Pt(8, 17), f32.Pt(12, 13), f32.Pt(16, 17), f32.Pt(16, 21)))},
-		"server":         tablerIcon{paths(line(f32.Pt(3, 5), f32.Pt(21, 5), f32.Pt(21, 16), f32.Pt(3, 16), f32.Pt(3, 5)), line(f32.Pt(7, 20), f32.Pt(17, 20)), line(f32.Pt(9, 16), f32.Pt(9, 20)), line(f32.Pt(15, 16), f32.Pt(15, 20)))},
+		"server":         tablerIcon{paths(roundedRect(3, 4, 18, 6, 2), roundedRect(3, 14, 18, 6, 2), circle(f32.Pt(7, 7), .05), circle(f32.Pt(7, 17), .05))},
 		"terminal-2":     tablerIcon{paths(line(f32.Pt(4, 5), f32.Pt(20, 5), f32.Pt(20, 19), f32.Pt(4, 19), f32.Pt(4, 5)), line(f32.Pt(8, 9), f32.Pt(11, 12), f32.Pt(8, 15)), line(f32.Pt(13, 15), f32.Pt(16, 15)))},
 		"network":        tablerIcon{paths(circle(f32.Pt(12, 5), 2), circle(f32.Pt(5, 18), 2), circle(f32.Pt(19, 18), 2), line(f32.Pt(12, 7), f32.Pt(12, 11), f32.Pt(5, 16)), line(f32.Pt(12, 11), f32.Pt(19, 16)))},
 		"trash":          tablerIcon{paths(line(f32.Pt(4, 7), f32.Pt(20, 7)), line(f32.Pt(10, 11), f32.Pt(10, 17)), line(f32.Pt(14, 11), f32.Pt(14, 17)), line(f32.Pt(5, 7), f32.Pt(6, 20), f32.Pt(8, 22), f32.Pt(16, 22), f32.Pt(18, 20), f32.Pt(19, 7)), line(f32.Pt(9, 7), f32.Pt(9, 4), f32.Pt(10, 3), f32.Pt(14, 3), f32.Pt(15, 4), f32.Pt(15, 7)))},

@@ -13,10 +13,22 @@ type Controls struct {
 	Select SelectControl `yaml:"select" json:"select"`
 }
 
+// PlatformMetric allows the shared control contract to account for the
+// different box and text layout semantics used by browsers and Gio without
+// scattering renderer-specific constants through either implementation.
+type PlatformMetric struct {
+	Web    float32 `yaml:"web" json:"web"`
+	Native float32 `yaml:"native" json:"native"`
+}
+
 type ButtonControl struct {
-	IconPosition string  `yaml:"iconPosition" json:"iconPosition"`
-	IconSize     float32 `yaml:"iconSize" json:"iconSize"`
-	IconGap      float32 `yaml:"iconGap" json:"iconGap"`
+	IconPosition  string         `yaml:"iconPosition" json:"iconPosition"`
+	MinimumHeight PlatformMetric `yaml:"minimumHeight" json:"minimumHeight"`
+	PaddingX      PlatformMetric `yaml:"paddingX" json:"paddingX"`
+	PaddingY      PlatformMetric `yaml:"paddingY" json:"paddingY"`
+	IconSize      PlatformMetric `yaml:"iconSize" json:"iconSize"`
+	IconGap       PlatformMetric `yaml:"iconGap" json:"iconGap"`
+	IconOnlySize  PlatformMetric `yaml:"iconOnlySize" json:"iconOnlySize"`
 }
 
 type SelectControl struct {
@@ -66,7 +78,6 @@ func (d *ControlsDocument) Validate() error {
 		return err
 	}
 	positive := map[string]float32{
-		"button iconSize":                d.Controls.Button.IconSize,
 		"select chevronSize":             d.Controls.Select.ChevronSize,
 		"select minimumHeight":           d.Controls.Select.MinimumHeight,
 		"select menuMinimumWidth":        d.Controls.Select.MenuMinimumWidth,
@@ -81,7 +92,6 @@ func (d *ControlsDocument) Validate() error {
 		}
 	}
 	nonNegative := map[string]float32{
-		"button iconGap":        d.Controls.Button.IconGap,
 		"select chevronGap":     d.Controls.Select.ChevronGap,
 		"select menuGap":        d.Controls.Select.MenuGap,
 		"select menuPadding":    d.Controls.Select.MenuPadding,
@@ -94,6 +104,24 @@ func (d *ControlsDocument) Validate() error {
 	for name, value := range nonNegative {
 		if value < 0 {
 			return fmt.Errorf("%s must be non-negative", name)
+		}
+	}
+	for name, metric := range map[string]PlatformMetric{
+		"button minimumHeight": d.Controls.Button.MinimumHeight,
+		"button iconSize":      d.Controls.Button.IconSize,
+		"button iconOnlySize":  d.Controls.Button.IconOnlySize,
+	} {
+		if metric.Web <= 0 || metric.Native <= 0 {
+			return fmt.Errorf("%s must define positive web and native values", name)
+		}
+	}
+	for name, metric := range map[string]PlatformMetric{
+		"button paddingX": d.Controls.Button.PaddingX,
+		"button paddingY": d.Controls.Button.PaddingY,
+		"button iconGap":  d.Controls.Button.IconGap,
+	} {
+		if metric.Web < 0 || metric.Native < 0 {
+			return fmt.Errorf("%s must define non-negative web and native values", name)
 		}
 	}
 	if d.Controls.Select.MenuMaximumHeight < d.Controls.Select.MenuMinimumHeight {

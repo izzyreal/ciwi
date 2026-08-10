@@ -76,8 +76,11 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := typography.Typography.Weights["regular"].Native; got != 450 {
-		t.Fatalf("native regular typography weight = %d, want 450", got)
+	if got := typography.Typography.Weights["regular"].Native; got != 400 {
+		t.Fatalf("native regular typography weight = %d, want 400", got)
+	}
+	if got := typography.Typography.Families["body"].Native; got != "Ciwi Sans" {
+		t.Fatalf("native body family = %q, want Ciwi Sans", got)
 	}
 	if got := typography.Typography.Roles["output-meta"].Family; got != "mono" {
 		t.Fatalf("output metadata family = %q, want mono", got)
@@ -100,6 +103,9 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	}
 	if controls.Controls.Button.IconPosition != "leading" || controls.Controls.Select.ChevronPosition != "trailing" {
 		t.Fatalf("shared controls = %#v", controls.Controls)
+	}
+	if got := controls.Controls.Button.MinimumHeight; got.Web != 44 || got.Native != 44 {
+		t.Fatalf("shared button minimum height = %#v", got)
 	}
 	if len(themes) != 23 {
 		t.Fatalf("theme count = %d, want 23", len(themes))
@@ -145,7 +151,10 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if !bytes.HasPrefix(logo, []byte("\x89PNG\r\n\x1a\n")) {
 		t.Fatal("embedded ciwi logo is not a PNG")
 	}
-	for _, name := range []string{"GeistMono-Regular.ttf", "GeistMono-Medium.ttf", "GeistMono-Bold.ttf"} {
+	for _, name := range []string{
+		"GeistSans-Regular.ttf", "GeistSans-SemiBold.ttf", "GeistSans-Bold.ttf", "GeistSans-ExtraBold.ttf",
+		"GeistMono-Regular.ttf", "GeistMono-Medium.ttf", "GeistMono-Bold.ttf",
+	} {
 		fontData, err := Read("assets/" + name)
 		if err != nil {
 			t.Fatal(err)

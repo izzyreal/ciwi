@@ -90,8 +90,8 @@ The focused `Build and publish iOS client` chain builds the Gio
 client as an arm64 static framework, links it into the minimal UIKit host in
 `packaging/ios`, archives the app with automatic Xcode signing, validates the
 archive, and uploads it to TestFlight. Compact overrides provide phone-width
-layouts, full-screen disclosure sheets, touch scrolling, and compact job-detail
-navigation while retaining the same screen definitions used on desktop.
+reflow, touch scrolling, and compact job-detail navigation while retaining the
+same screen definitions used on desktop.
 
 The macOS build agent must have Xcode signed into the Apple developer account
 for team `KFBA7Q5H76`, automatic signing access, and permission to upload the

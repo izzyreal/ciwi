@@ -11,6 +11,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gioui.org/f32"
@@ -99,6 +100,32 @@ func renderPageBackground(size image.Point, colors palette) *image.NRGBA {
 	return result
 }
 
+func (r *Renderer) paintCardSurface(gtx layout.Context, size image.Point) {
+	if size.X <= 0 || size.Y <= 0 {
+		return
+	}
+	if !r.surfaceBackgroundReady {
+		const dimension = maxGradientTextureDimension
+		r.surfaceBackground = paint.NewImageOp(renderSurfaceBackground(image.Pt(dimension, dimension), r.palette))
+		r.surfaceBackground.Filter = paint.FilterLinear
+		r.surfaceBackgroundReady = true
+	}
+	paintScaledImageOps(gtx.Ops, r.surfaceBackground, size)
+}
+
+func renderSurfaceBackground(size image.Point, colors palette) *image.NRGBA {
+	gradient := newThreeStopGradient(size, 145, colors.surface, 1, colors.subtle, colors.subtle)
+	glow := newRadialGlow(size, 1, 0, .38, colors.surfaceGlow, 1)
+	result := image.NewNRGBA(image.Rectangle{Max: size})
+	for y := 0; y < size.Y; y++ {
+		for x := 0; x < size.X; x++ {
+			px, py := float64(x)+.5, float64(y)+.5
+			result.SetNRGBA(x, y, glow.composite(gradient.pixel(px, py), px, py))
+		}
+	}
+	return result
+}
+
 type threeStopGradient struct {
 	startX, startY, dx, dy, denominator, middlePosition float64
 	start, middle, end                                  color.NRGBA
@@ -168,7 +195,7 @@ func compactViewport(platform string, width, height float32) bool {
 
 func (r *Renderer) pageInset() unit.Dp {
 	if !r.compact {
-		return r.metrics.pageInset
+		return r.metrics.pageInset + r.metrics.spaceLarge
 	}
 	return max(unit.Dp(2), r.metrics.pageInset*.2)
 }
@@ -208,7 +235,7 @@ func (r *Renderer) nativeTextStyle(role string, strong bool) nativeTextStyle {
 	}
 	weight := r.typography.Weights[weightName].Native
 	return nativeTextStyle{
-		font: font.Font{Typeface: font.Typeface(r.typography.Families[definition.Family]), Weight: font.Weight(weight - 400)},
+		font: font.Font{Typeface: font.Typeface(r.typography.Families[definition.Family].Native), Weight: font.Weight(weight - 400)},
 		size: unit.Sp(definition.Size), lineHeight: definition.LineHeight,
 	}
 }
@@ -504,28 +531,50 @@ func rendererTheme(document *uidsl.ThemeDocument, typography uidsl.Typography) (
 		return nil, palette{}, err
 	}
 	theme.Shaper = giotext.NewShaper(giotext.WithCollection(fonts))
-	theme.Face = font.Typeface(typography.Families["body"])
+	theme.Face = font.Typeface(typography.Families["body"].Native)
 	theme.Palette.Fg, theme.Palette.Bg = colors.text, colors.background
 	theme.Palette.ContrastBg, theme.Palette.ContrastFg = colors.accent, colors.surface
 	return theme, colors, nil
 }
 
+var (
+	ciwiFontsOnce sync.Once
+	ciwiFonts     []font.FontFace
+	ciwiFontsErr  error
+)
+
 func ciwiFontCollection() ([]font.FontFace, error) {
+	ciwiFontsOnce.Do(func() {
+		ciwiFonts, ciwiFontsErr = loadCiwiFontCollection()
+	})
+	return ciwiFonts, ciwiFontsErr
+}
+
+func loadCiwiFontCollection() ([]font.FontFace, error) {
 	collection := append([]font.FontFace(nil), gofont.Collection()...)
 	for _, source := range []struct {
-		path   string
-		weight font.Weight
-	}{{"assets/GeistMono-Regular.ttf", font.Normal}, {"assets/GeistMono-Medium.ttf", font.Medium}, {"assets/GeistMono-Bold.ttf", font.Bold}} {
+		path     string
+		typeface font.Typeface
+		weight   font.Weight
+	}{
+		{"assets/GeistSans-Regular.ttf", "Ciwi Sans", font.Normal},
+		{"assets/GeistSans-SemiBold.ttf", "Ciwi Sans", font.SemiBold},
+		{"assets/GeistSans-Bold.ttf", "Ciwi Sans", font.Bold},
+		{"assets/GeistSans-ExtraBold.ttf", "Ciwi Sans", font.ExtraBold},
+		{"assets/GeistMono-Regular.ttf", "Ciwi Mono", font.Normal},
+		{"assets/GeistMono-Medium.ttf", "Ciwi Mono", font.Medium},
+		{"assets/GeistMono-Bold.ttf", "Ciwi Mono", font.Bold},
+	} {
 		payload, err := sharedUI.Read(source.path)
 		if err != nil {
-			return nil, fmt.Errorf("load native monospace font: %w", err)
+			return nil, fmt.Errorf("load native font: %w", err)
 		}
 		faces, err := opentype.ParseCollection(payload)
 		if err != nil || len(faces) == 0 {
-			return nil, fmt.Errorf("parse native monospace font %q", source.path)
+			return nil, fmt.Errorf("parse native font %q", source.path)
 		}
 		face := faces[0]
-		face.Font.Typeface, face.Font.Weight = font.Typeface("Ciwi Mono"), source.weight
+		face.Font.Typeface, face.Font.Weight = source.typeface, source.weight
 		collection = append(collection, face)
 	}
 	return collection, nil

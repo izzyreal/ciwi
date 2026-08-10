@@ -45,6 +45,8 @@ screen:
               gap: medium
               align: center
               grow: true
+            style:
+              role: hero-brand
             children:
               - component: image
                 image:
@@ -589,7 +591,6 @@ screen:
                   binding: execution.progress
                 disclosure:
                   stateKey: "front-queued:{{execution.key}}"
-                  compactPresentation: sheet
                   summary:
                     - component: spacer
                       layout:
@@ -846,7 +847,6 @@ screen:
                   binding: execution.progress
                 disclosure:
                   stateKey: "front-history:{{execution.key}}"
-                  compactPresentation: sheet
                   summary:
                     - component: spacer
                       layout:
