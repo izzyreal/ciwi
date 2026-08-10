@@ -9,6 +9,15 @@ controls:
     iconSize: {web: 19, native: 19}
     iconGap: {web: 8, native: 8}
     iconOnlySize: {web: 34, native: 34}
+  badge:
+    paddingX: 9
+    paddingY: 4
+    tintOpacity: 0.12
+    borderOpacity: 0.55
+  input:
+    minimumHeight: {web: 44, native: 44}
+    paddingX: {web: 12, native: 12}
+    paddingY: {web: 9, native: 8}
   select:
     chevronPosition: trailing
     chevronSize: 19
@@ -26,5 +35,9 @@ controls:
     optionPaddingY: 7
     optionMinimumHeight: 40
     selectionIndicatorWidth: 20
+  disclosure:
+    chevronPosition: trailing
+    chevronSize: 20
+    chevronGap: 8
   progress:
     tintOpacity: 0.18

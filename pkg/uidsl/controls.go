@@ -9,9 +9,12 @@ type ControlsDocument struct {
 }
 
 type Controls struct {
-	Button   ButtonControl   `yaml:"button" json:"button"`
-	Select   SelectControl   `yaml:"select" json:"select"`
-	Progress ProgressControl `yaml:"progress" json:"progress"`
+	Button     ButtonControl     `yaml:"button" json:"button"`
+	Badge      BadgeControl      `yaml:"badge" json:"badge"`
+	Input      InputControl      `yaml:"input" json:"input"`
+	Select     SelectControl     `yaml:"select" json:"select"`
+	Disclosure DisclosureControl `yaml:"disclosure" json:"disclosure"`
+	Progress   ProgressControl   `yaml:"progress" json:"progress"`
 }
 
 // PlatformMetric allows the shared control contract to account for the
@@ -32,6 +35,19 @@ type ButtonControl struct {
 	IconOnlySize  PlatformMetric `yaml:"iconOnlySize" json:"iconOnlySize"`
 }
 
+type BadgeControl struct {
+	PaddingX      float32 `yaml:"paddingX" json:"paddingX"`
+	PaddingY      float32 `yaml:"paddingY" json:"paddingY"`
+	TintOpacity   float32 `yaml:"tintOpacity" json:"tintOpacity"`
+	BorderOpacity float32 `yaml:"borderOpacity" json:"borderOpacity"`
+}
+
+type InputControl struct {
+	MinimumHeight PlatformMetric `yaml:"minimumHeight" json:"minimumHeight"`
+	PaddingX      PlatformMetric `yaml:"paddingX" json:"paddingX"`
+	PaddingY      PlatformMetric `yaml:"paddingY" json:"paddingY"`
+}
+
 type SelectControl struct {
 	ChevronPosition         string  `yaml:"chevronPosition" json:"chevronPosition"`
 	ChevronSize             float32 `yaml:"chevronSize" json:"chevronSize"`
@@ -49,6 +65,12 @@ type SelectControl struct {
 	OptionPaddingY          float32 `yaml:"optionPaddingY" json:"optionPaddingY"`
 	OptionMinimumHeight     float32 `yaml:"optionMinimumHeight" json:"optionMinimumHeight"`
 	SelectionIndicatorWidth float32 `yaml:"selectionIndicatorWidth" json:"selectionIndicatorWidth"`
+}
+
+type DisclosureControl struct {
+	ChevronPosition string  `yaml:"chevronPosition" json:"chevronPosition"`
+	ChevronSize     float32 `yaml:"chevronSize" json:"chevronSize"`
+	ChevronGap      float32 `yaml:"chevronGap" json:"chevronGap"`
 }
 
 // ProgressControl defines renderer-independent semantic progress visuals.
@@ -83,7 +105,11 @@ func (d *ControlsDocument) Validate() error {
 	if err := validateIconPosition("select chevronPosition", d.Controls.Select.ChevronPosition); err != nil {
 		return err
 	}
+	if err := validateIconPosition("disclosure chevronPosition", d.Controls.Disclosure.ChevronPosition); err != nil {
+		return err
+	}
 	positive := map[string]float32{
+		"disclosure chevronSize":         d.Controls.Disclosure.ChevronSize,
 		"select chevronSize":             d.Controls.Select.ChevronSize,
 		"select minimumHeight":           d.Controls.Select.MinimumHeight,
 		"select menuMinimumWidth":        d.Controls.Select.MenuMinimumWidth,
@@ -98,6 +124,9 @@ func (d *ControlsDocument) Validate() error {
 		}
 	}
 	nonNegative := map[string]float32{
+		"badge paddingX":        d.Controls.Badge.PaddingX,
+		"badge paddingY":        d.Controls.Badge.PaddingY,
+		"disclosure chevronGap": d.Controls.Disclosure.ChevronGap,
 		"select chevronGap":     d.Controls.Select.ChevronGap,
 		"select menuGap":        d.Controls.Select.MenuGap,
 		"select menuPadding":    d.Controls.Select.MenuPadding,
@@ -116,6 +145,7 @@ func (d *ControlsDocument) Validate() error {
 		"button minimumHeight": d.Controls.Button.MinimumHeight,
 		"button iconSize":      d.Controls.Button.IconSize,
 		"button iconOnlySize":  d.Controls.Button.IconOnlySize,
+		"input minimumHeight":  d.Controls.Input.MinimumHeight,
 	} {
 		if metric.Web <= 0 || metric.Native <= 0 {
 			return fmt.Errorf("%s must define positive web and native values", name)
@@ -125,6 +155,8 @@ func (d *ControlsDocument) Validate() error {
 		"button paddingX": d.Controls.Button.PaddingX,
 		"button paddingY": d.Controls.Button.PaddingY,
 		"button iconGap":  d.Controls.Button.IconGap,
+		"input paddingX":  d.Controls.Input.PaddingX,
+		"input paddingY":  d.Controls.Input.PaddingY,
 	} {
 		if metric.Web < 0 || metric.Native < 0 {
 			return fmt.Errorf("%s must define non-negative web and native values", name)
@@ -135,6 +167,14 @@ func (d *ControlsDocument) Validate() error {
 	}
 	if opacity := d.Controls.Progress.TintOpacity; opacity <= 0 || opacity > 1 {
 		return fmt.Errorf("progress tintOpacity must be greater than zero and at most one")
+	}
+	for name, opacity := range map[string]float32{
+		"badge tintOpacity":   d.Controls.Badge.TintOpacity,
+		"badge borderOpacity": d.Controls.Badge.BorderOpacity,
+	} {
+		if opacity <= 0 || opacity > 1 {
+			return fmt.Errorf("%s must be greater than zero and at most one", name)
+		}
 	}
 	return nil
 }

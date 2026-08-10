@@ -184,6 +184,7 @@ type ListProps struct {
 	Axis           layout.Axis
 	Gap            unit.Dp
 	Viewport       unit.Dp
+	ShrinkCross    bool
 	Estimate       unit.Dp
 	Overscan       int
 	MaxMeasured    int
@@ -224,6 +225,7 @@ type Element struct {
 	Kind       Kind
 	Key        Key
 	Grow       bool
+	FitContent bool
 	FlexWeight float32
 	Flex       FlexProps
 	Surface    SurfaceProps

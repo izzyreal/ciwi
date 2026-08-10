@@ -739,7 +739,7 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 			OnClick: func() { r.dispatch(action, data) },
 		}, element)
 	}
-	if constraint, ok := r.domConstraint(node.Layout); ok {
+	if constraint, ok := r.domConstraint(node); ok {
 		element = giodom.Constrain(giodom.Key(path+"/constraint"), constraint, element)
 	}
 	element.Key = domNodeKey(node, path)
@@ -765,10 +765,11 @@ func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressP
 	if node.Style.Role == "output-group" {
 		fill = r.palette.consoleSuccess
 	}
-	track := r.domProgressTrack(node)
+	track := color.NRGBA{}
+	base := r.domProgressBase(node)
 	tintOpacity := float64(r.controls.Progress.TintOpacity)
-	if track.A == 0xff {
-		fill = mixColorSRGB(track, fill, tintOpacity)
+	if base.A == 0xff {
+		fill = mixColorSRGB(base, fill, tintOpacity)
 	} else {
 		fill.A = uint8(math.Round(0xff * tintOpacity))
 	}
@@ -778,7 +779,7 @@ func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressP
 	}
 }
 
-func (r *Renderer) domProgressTrack(node uidsl.Node) color.NRGBA {
+func (r *Renderer) domProgressBase(node uidsl.Node) color.NRGBA {
 	switch node.Style.Role {
 	case "execution-row":
 		return r.palette.surfaceRaised
@@ -786,12 +787,19 @@ func (r *Renderer) domProgressTrack(node uidsl.Node) color.NRGBA {
 		return r.palette.subtle
 	case "output-group":
 		return r.palette.consoleSurface
+	}
+	switch node.Component {
+	case "card", "section", "graph-view":
+		return r.palette.surface
+	case "disclosure":
+		return r.palette.surfaceRaised
 	default:
 		return color.NRGBA{}
 	}
 }
 
-func (r *Renderer) domConstraint(values uidsl.Layout) (giodom.ConstraintProps, bool) {
+func (r *Renderer) domConstraint(node uidsl.Node) (giodom.ConstraintProps, bool) {
+	values := node.Layout
 	parse := func(value string) unit.Dp {
 		value = strings.TrimSpace(value)
 		if value == "page" {
@@ -806,6 +814,36 @@ func (r *Renderer) domConstraint(values uidsl.Layout) (giodom.ConstraintProps, b
 	props := giodom.ConstraintProps{
 		MinWidth: parse(values.MinWidth), MaxWidth: parse(values.MaxWidth),
 		MinHeight: parse(values.MinHeight), MaxHeight: parse(values.MaxHeight),
+	}
+	// The browser's ordinary surfaces use the CSS content box for explicit
+	// min/max dimensions. Preserve that shared DSL meaning when Gio applies
+	// constraints around the already-padded, bordered surface.
+	padding, bordered := unit.Dp(0), false
+	switch {
+	case node.Style.Role == "hero":
+		padding, bordered = r.metrics.heroPadding, true
+	case node.Component == "card":
+		padding, bordered = r.metrics.cardPadding, true
+	case node.Component == "section" || node.Component == "disclosure" || node.Component == "graph-view":
+		padding, bordered = r.metrics.sectionPadding, true
+	}
+	if node.Layout.Padding != "" {
+		padding = r.spacing(node.Layout.Padding)
+	}
+	if bordered {
+		extra := 2 * (padding + 1)
+		if props.MinWidth > 0 {
+			props.MinWidth += extra
+		}
+		if props.MaxWidth > 0 {
+			props.MaxWidth += extra
+		}
+		if props.MinHeight > 0 {
+			props.MinHeight += extra
+		}
+		if props.MaxHeight > 0 {
+			props.MaxHeight += extra
+		}
 	}
 	return props, props != (giodom.ConstraintProps{})
 }
@@ -835,6 +873,11 @@ func (r *Renderer) compileDOMText(node uidsl.Node, data any, path string) giodom
 }
 
 func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, role string, strong bool) giodom.Element {
+	displayValue := value
+	if role == "output-code" {
+		displayValue = strings.TrimSuffix(displayValue, "\n")
+		displayValue = strings.TrimSuffix(displayValue, "\r")
+	}
 	return giodom.Native(domNodeKey(node, path), giodom.NativeProps{
 		NewState: func() any {
 			state := &domEditorState{}
@@ -845,8 +888,8 @@ func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, ro
 			state := raw.(*domEditorState)
 			state.editor.ReadOnly = true
 			state.editor.SingleLine = role == "code-inline" && node.Style.Truncate
-			if state.editor.Text() != value {
-				state.editor.SetText(value)
+			if state.editor.Text() != displayValue {
+				state.editor.SetText(displayValue)
 			}
 			outputID := ""
 			if node.ID == "job-output-group-text" {
@@ -939,13 +982,19 @@ func (r *Renderer) compileDOMBadge(node uidsl.Node, data any, path string) giodo
 			border, borderWidth = r.palette.border, 1
 		}
 	} else {
-		fill.A, border.A = 0x24, 0x90
+		fill = mixColorSRGB(r.palette.surface, tone, float64(r.controls.Badge.TintOpacity))
+		border.A = uint8(math.Round(0xff * float64(r.controls.Badge.BorderOpacity)))
 	}
 	text := r.domText(giodom.Key(path+"/text"), value, "badge", node.Style.Emphasis == "strong", textTone, true)
-	return giodom.Surface(domNodeKey(node, path), giodom.SurfaceProps{
+	badge := giodom.Surface(domNodeKey(node, path), giodom.SurfaceProps{
 		Fill: fill, Border: border, BorderWidth: borderWidth, Radius: 100,
-		Padding: giodom.Insets{Top: 4, Right: 9, Bottom: 4, Left: 9},
+		Padding: giodom.Insets{
+			Top: unit.Dp(r.controls.Badge.PaddingY), Right: unit.Dp(r.controls.Badge.PaddingX),
+			Bottom: unit.Dp(r.controls.Badge.PaddingY), Left: unit.Dp(r.controls.Badge.PaddingX),
+		},
 	}, text)
+	badge.FitContent = true
+	return badge
 }
 
 func (r *Renderer) compileDOMButton(node uidsl.Node, data any, path string) giodom.Element {
@@ -1022,8 +1071,8 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 			minimum = unit.Dp(buttonMetrics.IconOnlySize.Native)
 		}
 		if disclosureChevron {
-			minimum = 24
-			iconSize = 20
+			iconSize = r.controls.Disclosure.ChevronSize
+			minimum = unit.Dp(max(float32(24), iconSize+4))
 		}
 		gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(minimum)))
 		if iconOnly {
@@ -1225,7 +1274,13 @@ func (r *Renderer) compileDOMInput(node uidsl.Node, data any, path string) giodo
 				inputData := mergeData(data, "input", map[string]any{"value": state.editor.Text()})
 				r.dispatchFromLayout(gtx, node.Actions[0], inputData)
 			}
-			gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(44)))
+			minimum := gtx.Dp(unit.Dp(r.controls.Input.MinimumHeight.Native))
+			if node.Input.Multiline {
+				gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, minimum))
+			} else {
+				height := min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, minimum))
+				gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+			}
 			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				size := gtx.Constraints.Min
 				border := r.palette.border
@@ -1235,9 +1290,11 @@ func (r *Renderer) compileDOMInput(node uidsl.Node, data any, path string) giodo
 				paintDOMSurface(gtx, size, r.palette.surface, border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
 				return layout.Dimensions{Size: size}
 			}, func(gtx layout.Context) layout.Dimensions {
+				paddingX := unit.Dp(r.controls.Input.PaddingX.Native)
+				paddingY := unit.Dp(r.controls.Input.PaddingY.Native)
 				return layout.Inset{
-					Top: r.metrics.controlPaddingY, Right: r.metrics.controlPaddingX,
-					Bottom: r.metrics.controlPaddingY, Left: r.metrics.controlPaddingX,
+					Top: paddingY, Right: paddingX,
+					Bottom: paddingY, Left: paddingX,
 				}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					if node.Input.Multiline && node.Input.MinLines > 1 {
 						minimum := gtx.Dp(unit.Dp(float32(node.Input.MinLines) * 24))
@@ -1556,13 +1613,9 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	if expanded {
 		icon = "chevron-down"
 	}
-	toggleRole := "disclosure-toggle"
-	if iconOnlyToggle {
-		toggleRole = "disclosure-chevron"
-	}
 	toggleNode := uidsl.Node{
 		Component: "button", Text: &uidsl.Text{Literal: label}, Icon: icon,
-		Style: uidsl.Style{Role: toggleRole, Tone: node.Style.Tone},
+		Style: uidsl.Style{Role: "disclosure-chevron", Tone: node.Style.Tone},
 	}
 	if navigatePresentation && hasNavigateAction {
 		toggleNode.Actions = []uidsl.Action{navigateAction}
@@ -1577,11 +1630,7 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 				for state.clickable.Clicked(gtx) {
 					r.setDisclosureState(stateKey, !expanded, persistent)
 				}
-				role := "disclosure-toggle"
-				if iconOnlyToggle {
-					role = "disclosure-chevron"
-				}
-				return r.layoutDOMControl(gtx, &state.clickable, label, icon, role, node.Style.Tone)
+				return r.layoutDOMControl(gtx, &state.clickable, label, icon, "disclosure-chevron", node.Style.Tone)
 			}
 		}(header.Native.Layout)
 	}
@@ -1609,14 +1658,25 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	if node.Disclosure != nil {
 		summary = append(summary, r.compileDOMChildren(node.Disclosure.Summary, data, path+"/summary", childStyle)...)
 	}
-	if iconOnlyToggle {
-		summary = append(summary, header)
-	} else {
+	if !iconOnlyToggle {
+		role, tone := "body", "accent"
+		if node.Style.Role == "output-group" {
+			role, tone = "output-summary", "console-accent"
+		}
+		labelElement := r.domText(giodom.Key(path+"/summary/label"), label, role, true, tone, false)
+		summary = append([]giodom.Element{labelElement}, summary...)
+	}
+	if r.controls.Disclosure.ChevronPosition == "leading" {
 		summary = append([]giodom.Element{header}, summary...)
+	} else {
+		summary = append(summary, header)
 	}
 	headerRow := giodom.Element{
 		Kind: giodom.KindFlex, Key: giodom.Key(path + "/header"),
-		Flex:     giodom.FlexProps{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: r.metrics.spaceSmall, Wrap: node.Style.Role == "project-row"},
+		Flex: giodom.FlexProps{
+			Axis: layout.Horizontal, Alignment: layout.Middle, Gap: unit.Dp(r.controls.Disclosure.ChevronGap),
+			Wrap: node.Style.Role == "project-row",
+		},
 		Children: giodom.Static(summary...),
 	}
 	activateHeader := func(header giodom.Element) giodom.Element {
@@ -1643,7 +1703,7 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 		}
 		headerContent := giodom.Inset(giodom.Key(path+"/progress-header-inset"), giodom.UniformInsets(padding), headerRow)
 		headerProgress := *progress
-		headerProgress.Track = r.domProgressTrack(node)
+		headerProgress.Track = color.NRGBA{}
 		header := giodom.Progress(giodom.Key(path+"/progress-header"), headerProgress, headerContent)
 		header = activateHeader(header)
 		content := []giodom.Element{header}
@@ -1793,7 +1853,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 	}
 	children := giodom.Lazy(revision, len(items), keyAt, build)
 	viewport := unit.Dp(0)
-	if node.Layout.MaxHeight != "" {
+	if axis == layout.Vertical && node.Layout.MaxHeight != "" {
 		parsed, _ := strconv.ParseFloat(node.Layout.MaxHeight, 32)
 		viewport = unit.Dp(parsed)
 	}
@@ -1824,7 +1884,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		r.pendingOutputScroll = ""
 	}
 	result := giodom.VirtualList(domNodeKey(node, path), giodom.ListProps{
-		Axis: axis, Gap: r.spacing(node.Layout.Gap), Viewport: viewport,
+		Axis: axis, Gap: r.spacing(node.Layout.Gap), Viewport: viewport, ShrinkCross: axis == layout.Horizontal,
 		Estimate: 100, Overscan: 2, MaxMeasured: 512, ScrollToEnd: node.ID == "job-output-groups" && r.outputTailing,
 		ScrollTo: scrollTarget, ScrollRevision: scrollRevision,
 	}, children)

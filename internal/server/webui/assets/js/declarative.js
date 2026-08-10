@@ -205,7 +205,13 @@
 	metric('--ciwi-button-icon-size', activeControls.button.iconSize.web);
 	metric('--ciwi-button-icon-gap', activeControls.button.iconGap.web);
 	metric('--ciwi-button-icon-only-size', activeControls.button.iconOnlySize.web);
-	metric('--ciwi-control-min-height', activeControls.select.minimumHeight);
+	metric('--ciwi-badge-padding-x', activeControls.badge.paddingX);
+	metric('--ciwi-badge-padding-y', activeControls.badge.paddingY);
+	style.setProperty('--ciwi-badge-tint', String(activeControls.badge.tintOpacity * 100) + '%');
+	style.setProperty('--ciwi-badge-border-opacity', String(activeControls.badge.borderOpacity * 100) + '%');
+	metric('--ciwi-input-min-height', activeControls.input.minimumHeight.web);
+	metric('--ciwi-input-padding-x', activeControls.input.paddingX.web);
+	metric('--ciwi-input-padding-y', activeControls.input.paddingY.web);
 	metric('--ciwi-select-chevron-size', activeControls.select.chevronSize);
 	metric('--ciwi-select-chevron-gap', activeControls.select.chevronGap);
 	metric('--ciwi-select-min-height', activeControls.select.minimumHeight);
@@ -216,6 +222,8 @@
 	metric('--ciwi-select-option-padding-y', activeControls.select.optionPaddingY);
 	metric('--ciwi-select-option-min-height', activeControls.select.optionMinimumHeight);
 	metric('--ciwi-select-indicator-width', activeControls.select.selectionIndicatorWidth);
+	metric('--ciwi-disclosure-chevron-size', activeControls.disclosure.chevronSize);
+	metric('--ciwi-disclosure-chevron-gap', activeControls.disclosure.chevronGap);
 	style.setProperty('--ciwi-progress-tint', String(activeControls.progress.tintOpacity * 100) + '%');
   }
 
@@ -1743,6 +1751,7 @@
 	if ('disabled' in element) element.__ciwiRenderedDisabled = !!element.disabled;
     if (node.component === 'disclosure') {
       const summary = document.createElement('summary');
+	  summary.classList.add('dsl-disclosure-chevron-' + activeControls.disclosure.chevronPosition);
 	  if (style.role === 'execution-row' && node.image) {
 	    const image = document.createElement('img');
 	    image.className = 'dsl-execution-row-image';

@@ -18,6 +18,15 @@ controls:
     iconSize: {web: 19, native: 19}
     iconGap: {web: 8, native: 8}
     iconOnlySize: {web: 34, native: 34}
+  badge:
+    paddingX: 9
+    paddingY: 4
+    tintOpacity: 0.12
+    borderOpacity: 0.55
+  input:
+    minimumHeight: {web: 44, native: 44}
+    paddingX: {web: 12, native: 12}
+    paddingY: {web: 9, native: 8}
   select:
     chevronPosition: trailing
     chevronSize: 19
@@ -35,6 +44,10 @@ controls:
     optionPaddingY: 7
     optionMinimumHeight: 40
     selectionIndicatorWidth: 20
+  disclosure:
+    chevronPosition: trailing
+    chevronSize: 20
+    chevronGap: 8
   progress:
     tintOpacity: 0.18
 `))
@@ -73,6 +86,12 @@ func validControlsDocument() *ControlsDocument {
 				IconGap:       PlatformMetric{Web: 8, Native: 8},
 				IconOnlySize:  PlatformMetric{Web: 34, Native: 34},
 			},
+			Badge: BadgeControl{PaddingX: 9, PaddingY: 4, TintOpacity: 0.12, BorderOpacity: 0.55},
+			Input: InputControl{
+				MinimumHeight: PlatformMetric{Web: 44, Native: 44},
+				PaddingX:      PlatformMetric{Web: 12, Native: 12},
+				PaddingY:      PlatformMetric{Web: 9, Native: 8},
+			},
 			Select: SelectControl{
 				ChevronPosition: "trailing", ChevronSize: 19, ChevronGap: 12, MinimumHeight: 44,
 				MenuGap: 6, MenuPadding: 6, MenuItemGap: 2, MenuMinimumWidth: 120,
@@ -80,7 +99,8 @@ func validControlsDocument() *ControlsDocument {
 				OptionGap: 8, OptionPaddingX: 10, OptionPaddingY: 7, OptionMinimumHeight: 40,
 				SelectionIndicatorWidth: 20,
 			},
-			Progress: ProgressControl{TintOpacity: 0.18},
+			Disclosure: DisclosureControl{ChevronPosition: "trailing", ChevronSize: 20, ChevronGap: 8},
+			Progress:   ProgressControl{TintOpacity: 0.18},
 		},
 	}
 }

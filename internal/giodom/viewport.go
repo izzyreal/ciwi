@@ -118,6 +118,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	start := max(0, firstVisible-props.Overscan)
 	endLimit := offset + mainViewport + props.Overscan*(estimate+gap)
 	recorded := make([]recordedViewportChild, 0, props.Overscan*2+8)
+	crossExtent := axisCross(props.Axis, gtx.Constraints.Min)
 	for index := start; index < children.Len(); index++ {
 		position := state.prefixAt(index)
 		if position >= endLimit && index > firstVisible {
@@ -127,7 +128,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		if !valid {
 			continue
 		}
-		childContext := listChildContext(gtx, props.Axis, viewport, r.maxGeometryPixels)
+		childContext := listChildContext(gtx, props.Axis, viewport, r.maxGeometryPixels, !props.ShrinkCross)
 		macro := op.Record(gtx.Ops)
 		dimensions := r.layoutElement(childContext, children.At(index), childIdentity)
 		call := macro.Stop()
@@ -144,9 +145,15 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		position = state.prefixAt(index)
 		pos := axisPoint(props.Axis, position-offset, 0)
 		recorded = append(recorded, recordedViewportChild{call: call, pos: pos, size: dimensions.Size})
+		crossExtent = max(crossExtent, axisCross(props.Axis, dimensions.Size))
 	}
 
-	area := clip.Rect{Max: viewport}.Push(gtx.Ops)
+	renderedViewport := viewport
+	if props.ShrinkCross {
+		crossExtent = min(axisCross(props.Axis, viewport), crossExtent)
+		renderedViewport = setAxisCross(props.Axis, renderedViewport, crossExtent)
+	}
+	area := clip.Rect{Max: renderedViewport}.Push(gtx.Ops)
 	if props.SemanticLabel != "" {
 		semantic.DescriptionOp(props.SemanticLabel).Add(gtx.Ops)
 	}
@@ -172,7 +179,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	state.initialized = true
 	r.stats.VisibleListItems += len(recorded)
 	r.stats.MeasuredListItems += len(state.measurements)
-	return layout.Dimensions{Size: viewport}
+	return layout.Dimensions{Size: renderedViewport}
 }
 
 func (s *keyedViewportState) reconcileIndex(children Children, estimate, gap, crossSize int) {
@@ -361,12 +368,18 @@ func listViewportSize(gtx layout.Context, props ListProps) image.Point {
 	return gtx.Constraints.Constrain(size)
 }
 
-func listChildContext(gtx layout.Context, axis layout.Axis, viewport image.Point, maxGeometry int) layout.Context {
+func listChildContext(gtx layout.Context, axis layout.Axis, viewport image.Point, maxGeometry int, stretchCross bool) layout.Context {
 	if axis == layout.Horizontal {
-		gtx.Constraints.Min = image.Pt(0, viewport.Y)
+		gtx.Constraints.Min = image.Pt(0, 0)
+		if stretchCross {
+			gtx.Constraints.Min.Y = viewport.Y
+		}
 		gtx.Constraints.Max = image.Pt(maxGeometry, viewport.Y)
 	} else {
-		gtx.Constraints.Min = image.Pt(viewport.X, 0)
+		gtx.Constraints.Min = image.Pt(0, 0)
+		if stretchCross {
+			gtx.Constraints.Min.X = viewport.X
+		}
 		gtx.Constraints.Max = image.Pt(viewport.X, maxGeometry)
 	}
 	return gtx
@@ -391,6 +404,15 @@ func setAxisMain(axis layout.Axis, point image.Point, value int) image.Point {
 		point.X = value
 	} else {
 		point.Y = value
+	}
+	return point
+}
+
+func setAxisCross(axis layout.Axis, point image.Point, value int) image.Point {
+	if axis == layout.Horizontal {
+		point.Y = value
+	} else {
+		point.X = value
 	}
 	return point
 }

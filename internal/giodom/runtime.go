@@ -2,6 +2,7 @@ package giodom
 
 import (
 	"fmt"
+	"image"
 	"net/url"
 	"runtime"
 	"time"
@@ -124,6 +125,9 @@ func (r *Runtime) Stats() Stats { return r.stats }
 
 func (r *Runtime) layoutElement(gtx layout.Context, element Element, identity string) layout.Dimensions {
 	r.stats.Elements++
+	if element.FitContent {
+		gtx.Constraints.Min = image.Point{}
+	}
 	switch element.Kind {
 	case KindFlex:
 		return r.layoutFlex(gtx, element, identity)
