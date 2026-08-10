@@ -1,13 +1,14 @@
 # giodom
 
-`giodom` is a standalone experiment in placing a small, keyed, reactive tree
-above Gio's immediate-mode primitives. It is intentionally not the ciwi native
-renderer and does not import ciwi screens, presentation state, transports, or
-the shared UI DSL.
+`giodom` is a small, keyed, reactive tree above Gio's immediate-mode
+primitives. It remains independent of ciwi screens, presentation state,
+transports, and the shared UI DSL. The production native adapter consumes it
+through a UIDSL compiler in `internal/adapters/gio`; the package itself stays a
+general-purpose runtime and retains its standalone lab.
 
-The package answers one narrow question: can an immutable application tree be
-reconciled into Gio widget state with predictable identity, scrolling,
-geometry, and memory use on macOS and iOS?
+The package reconciles an immutable application tree into Gio widget state with
+predictable identity, scrolling, geometry, and bounded memory use on macOS and
+iOS.
 
 ## Runtime contract
 
@@ -78,6 +79,6 @@ go test ./internal/giodom/... ./internal/architecture
 go test ./internal/giodom -run '^$' -bench . -benchmem
 ```
 
-These checks characterize the standalone abstraction. They are not ciwi
-renderer regression tests and do not make an adoption decision on their own.
-The device gate and decision rules live in `docs/gio-dom-viability.md`.
+These checks characterize the runtime independently of ciwi's UIDSL compiler.
+The device gate, adoption evidence, and remaining release-readiness work live
+in `docs/gio-dom-viability.md`.

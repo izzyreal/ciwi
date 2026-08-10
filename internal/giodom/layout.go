@@ -59,6 +59,7 @@ type recordedFlowChild struct {
 	call op.CallOp
 	size image.Point
 	pos  image.Point
+	grow bool
 }
 
 func (r *Runtime) layoutFlow(gtx layout.Context, element Element, identity string) layout.Dimensions {
@@ -69,8 +70,23 @@ func (r *Runtime) layoutFlow(gtx layout.Context, element Element, identity strin
 		r.rejectGeometry(identity, maxWidth)
 		return layout.Dimensions{}
 	}
-	recorded := make([]recordedFlowChild, 0, children.Len())
-	x, y, lineHeight, usedWidth := 0, 0, 0, 0
+	type measuredChild struct {
+		element  Element
+		identity string
+		size     image.Point
+	}
+	type flowLine struct {
+		children []measuredChild
+		width    int
+	}
+	lines := make([]flowLine, 0, 2)
+	line := flowLine{}
+	finishLine := func() {
+		if len(line.children) > 0 {
+			lines = append(lines, line)
+			line = flowLine{}
+		}
+	}
 	for index := 0; index < children.Len(); index++ {
 		childIdentity, valid := r.childIdentity(identity, children, index)
 		if !valid {
@@ -80,25 +96,77 @@ func (r *Runtime) layoutFlow(gtx layout.Context, element Element, identity strin
 		childContext := gtx
 		childContext.Constraints.Min = image.Point{}
 		childContext.Constraints.Max.X = maxWidth
+		if child.Grow && child.Kind == KindConstrain && child.Constraint.MinWidth > 0 {
+			childContext.Constraints.Max.X = min(maxWidth, max(1, gtx.Dp(child.Constraint.MinWidth)))
+		}
 		macro := op.Record(gtx.Ops)
 		dimensions := r.layoutElement(childContext, child, childIdentity)
-		call := macro.Stop()
+		_ = macro.Stop()
 		if r.rejectGeometry(childIdentity, dimensions.Size.X, dimensions.Size.Y) {
 			continue
 		}
-		if x > 0 && x+gap+dimensions.Size.X > maxWidth {
-			y += lineHeight + gap
-			x, lineHeight = 0, 0
+		nextWidth := dimensions.Size.X
+		if len(line.children) > 0 {
+			nextWidth += line.width + gap
 		}
-		if x > 0 {
-			x += gap
+		if len(line.children) > 0 && nextWidth > maxWidth {
+			finishLine()
+			nextWidth = dimensions.Size.X
 		}
-		recorded = append(recorded, recordedFlowChild{call: call, size: dimensions.Size, pos: image.Pt(x, y)})
-		x += dimensions.Size.X
-		lineHeight = max(lineHeight, dimensions.Size.Y)
-		usedWidth = max(usedWidth, x)
+		line.children = append(line.children, measuredChild{element: child, identity: childIdentity, size: dimensions.Size})
+		line.width = nextWidth
 	}
-	height := y + lineHeight
+	finishLine()
+
+	recorded := make([]recordedFlowChild, 0, children.Len())
+	y, usedWidth := 0, 0
+	for lineIndex, current := range lines {
+		growCount := 0
+		for _, child := range current.children {
+			if child.element.Grow {
+				growCount++
+			}
+		}
+		extra := max(0, maxWidth-current.width)
+		x, lineHeight := 0, 0
+		for childIndex, child := range current.children {
+			if childIndex > 0 {
+				x += gap
+			}
+			allocated := child.size.X
+			if child.element.Grow && growCount > 0 {
+				share := extra / growCount
+				if extra%growCount > 0 {
+					share++
+				}
+				allocated = min(maxWidth-x, allocated+share)
+				extra = max(0, extra-share)
+				growCount--
+			}
+			childContext := gtx
+			childContext.Constraints.Min = image.Point{}
+			childContext.Constraints.Max.X = max(0, maxWidth-x)
+			if child.element.Grow {
+				childContext.Constraints.Min.X = allocated
+				childContext.Constraints.Max.X = allocated
+			}
+			macro := op.Record(gtx.Ops)
+			dimensions := r.layoutElement(childContext, child.element, child.identity)
+			call := macro.Stop()
+			if r.rejectGeometry(child.identity, dimensions.Size.X, dimensions.Size.Y) {
+				continue
+			}
+			recorded = append(recorded, recordedFlowChild{call: call, size: dimensions.Size, pos: image.Pt(x, y), grow: child.element.Grow})
+			x += dimensions.Size.X
+			lineHeight = max(lineHeight, dimensions.Size.Y)
+		}
+		usedWidth = max(usedWidth, x)
+		y += lineHeight
+		if lineIndex < len(lines)-1 {
+			y += gap
+		}
+	}
+	height := y
 	size := gtx.Constraints.Constrain(image.Pt(usedWidth, height))
 	area := clip.Rect{Max: size}.Push(gtx.Ops)
 	for _, child := range recorded {
@@ -159,9 +227,13 @@ func (r *Runtime) layoutText(gtx layout.Context, element Element, identity strin
 		size = unit.Sp(16)
 	}
 	semantic.LabelOp(element.Text.Value).Add(gtx.Ops)
-	selectable := r.useState(identity, "selectable", KindText, func() any { return new(widget.Selectable) }).(*widget.Selectable)
 	label := material.Label(r.theme, size, element.Text.Value)
-	label.State = selectable
+	if element.Text.Selectable {
+		selectable := r.useState(identity, "selectable", KindText, func() any { return new(widget.Selectable) }).(*widget.Selectable)
+		label.State = selectable
+	}
+	label.Font.Weight = element.Text.Weight
+	label.MaxLines = element.Text.MaxLines
 	if element.Text.Color.A != 0 {
 		label.Color = element.Text.Color
 	}
@@ -177,6 +249,31 @@ func (r *Runtime) layoutButton(gtx layout.Context, element Element, identity str
 	}
 	if !element.Button.Enabled {
 		gtx = gtx.Disabled()
+	}
+	if element.Button.Description != "" {
+		semantic.DescriptionOp(element.Button.Description).Add(gtx.Ops)
+	}
+	if element.Children != nil && element.Children.Len() > 0 {
+		return clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if minimum := gtx.Dp(element.Button.MinHeight); minimum > gtx.Constraints.Min.Y {
+				gtx.Constraints.Min.Y = min(minimum, gtx.Constraints.Max.Y)
+			}
+			return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				size := gtx.Constraints.Min
+				if size.X == 0 || size.Y == 0 || r.rejectGeometry(identity, size.X, size.Y) {
+					return layout.Dimensions{Size: size}
+				}
+				paintSafeSurface(gtx, size, SurfaceProps{
+					Fill: element.Button.Fill, Border: element.Button.Border,
+					BorderWidth: element.Button.BorderWidth, Radius: element.Button.Radius,
+				})
+				return layout.Dimensions{Size: size}
+			}, func(gtx layout.Context) layout.Dimensions {
+				return applyInsets(element.Button.Padding, gtx, func(gtx layout.Context) layout.Dimensions {
+					return r.layoutOnlyChild(gtx, element, identity)
+				})
+			})
+		})
 	}
 	style := material.Button(r.theme, clickable, element.Button.Label)
 	return style.Layout(gtx)
@@ -278,13 +375,21 @@ func (r *Runtime) layoutOverlay(gtx layout.Context, element Element, identity st
 				return layout.Dimensions{Size: gtx.Constraints.Max}
 			}),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				alignment := layout.Center
+				if element.Overlay.Align {
+					alignment = element.Overlay.Alignment
+				}
+				return alignment.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return r.layoutElement(gtx, children.At(1), modalIdentity)
 				})
 			}),
 		)
 	}
-	return layout.Stack{Alignment: layout.Center}.Layout(gtx, stacked...)
+	alignment := layout.Center
+	if element.Overlay.Align {
+		alignment = element.Overlay.Alignment
+	}
+	return layout.Stack{Alignment: alignment}.Layout(gtx, stacked...)
 }
 
 func (r *Runtime) layoutConstrain(gtx layout.Context, element Element, identity string) layout.Dimensions {

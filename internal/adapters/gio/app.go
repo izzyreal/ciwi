@@ -452,7 +452,6 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
-	renderer.SetActionCatalog(actionCatalog)
 	initialData, err := offlineFrontPageBindingData()
 	if err != nil {
 		return err

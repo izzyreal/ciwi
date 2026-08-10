@@ -100,10 +100,10 @@ tailing, connection settings, and pending notices.
 
 Lifecycle regression tests exercise browser page and nested-scroll retention,
 focused-control selection, persistent disclosures, confirmation cancellation,
-and incremental output refresh. Gio renderer tests cover the corresponding
-disclosure, scroller, selected-timeline-item, compact-sheet, and confirmation
-paths. Screenshot comparison remains useful for visual polish, but refresh
-state is no longer protected only by manual observation.
+and incremental output refresh. Gio DOM tests cover keyed state retention,
+state pruning, bounded virtualization, responsive geometry, and scroll-anchor
+reconciliation independently of ciwi screens. Native interaction and visual
+parity remain device-level checks.
 
 ## Cutover footprint and performance
 

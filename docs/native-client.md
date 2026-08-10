@@ -191,5 +191,10 @@ theme for that launch.
 The Gio adapter resolves the same bundled logo, semantic icon names, theme
 gradients, status tones, and badge roles used by the declarative browser proof;
 these are renderer primitives rather than per-screen native drawings.
+All native screens are compiled from the shared UIDSL into a keyed reactive
+tree in `internal/giodom`. The runtime owns bounded widget and viewport state;
+the adapter owns only semantic interaction state such as disclosures, graph
+mode, output search, tailing, notices, and confirmations. Responsive reflow
+changes layout axis without carrying axis-specific growth into the new axis.
 The native client deliberately has no HTTP fallback: missing CNP capabilities
 fail visibly instead of silently coupling the native UI to browser endpoints.

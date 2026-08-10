@@ -18,22 +18,23 @@ type measurement struct {
 }
 
 type keyedViewportState struct {
-	scroll       gesture.Scroll
-	anchor       Key
-	anchorIndex  int
-	anchorOffset int
-	measurements map[Key]measurement
-	clock        uint64
-	atEnd        bool
-	initialized  bool
-	indexed      bool
-	revision     uint64
-	count        int
-	estimate     int
-	gap          int
-	crossSize    int
-	extents      []int
-	prefixTree   []int
+	scroll         gesture.Scroll
+	anchor         Key
+	anchorIndex    int
+	anchorOffset   int
+	measurements   map[Key]measurement
+	clock          uint64
+	atEnd          bool
+	initialized    bool
+	indexed        bool
+	revision       uint64
+	count          int
+	estimate       int
+	gap            int
+	crossSize      int
+	extents        []int
+	prefixTree     []int
+	scrollRevision uint64
 }
 
 type stockListState struct {
@@ -68,6 +69,17 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	estimate := max(1, gtx.Dp(props.Estimate))
 	gap := max(0, gtx.Dp(props.Gap))
 	state.reconcileIndex(children, estimate, gap, axisCross(props.Axis, viewport))
+	if props.ScrollTo != "" && props.ScrollRevision != state.scrollRevision {
+		for index := 0; index < children.Len(); index++ {
+			if children.KeyAt(index) == props.ScrollTo {
+				state.anchor = props.ScrollTo
+				state.anchorIndex = index
+				state.anchorOffset = 0
+				break
+			}
+		}
+		state.scrollRevision = props.ScrollRevision
+	}
 	total := state.totalExtent()
 
 	anchorIndex := state.anchorIndex

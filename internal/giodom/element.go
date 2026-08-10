@@ -8,6 +8,7 @@ package giodom
 import (
 	"image/color"
 
+	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/unit"
 )
@@ -33,6 +34,9 @@ const (
 	KindStockList
 	KindOverlay
 	KindConstrain
+	KindInset
+	KindAlign
+	KindNative
 )
 
 func (k Kind) String() string {
@@ -61,6 +65,12 @@ func (k Kind) String() string {
 		return "overlay"
 	case KindConstrain:
 		return "constrain"
+	case KindInset:
+		return "inset"
+	case KindAlign:
+		return "align"
+	case KindNative:
+		return "native"
 	default:
 		return "invalid"
 	}
@@ -96,16 +106,26 @@ type SurfaceProps struct {
 
 // TextProps configures selectable presentation text.
 type TextProps struct {
-	Value string
-	Size  unit.Sp
-	Color color.NRGBA
+	Value      string
+	Size       unit.Sp
+	Color      color.NRGBA
+	Weight     font.Weight
+	MaxLines   int
+	Selectable bool
 }
 
 // ButtonProps configures one native material button.
 type ButtonProps struct {
-	Label   string
-	Enabled bool
-	OnClick func()
+	Label       string
+	Description string
+	Enabled     bool
+	OnClick     func()
+	Fill        color.NRGBA
+	Border      color.NRGBA
+	BorderWidth unit.Dp
+	Radius      unit.Dp
+	Padding     Insets
+	MinHeight   unit.Dp
 }
 
 // EditorProps configures a controlled editor. Value remains the source of
@@ -140,24 +160,42 @@ type ProgressProps struct {
 
 // ListProps configures stock and keyed scrolling lists.
 type ListProps struct {
-	Axis          layout.Axis
-	Gap           unit.Dp
-	Viewport      unit.Dp
-	Estimate      unit.Dp
-	Overscan      int
-	MaxMeasured   int
-	ScrollToEnd   bool
-	SemanticLabel string
+	Axis           layout.Axis
+	Gap            unit.Dp
+	Viewport       unit.Dp
+	Estimate       unit.Dp
+	Overscan       int
+	MaxMeasured    int
+	ScrollToEnd    bool
+	ScrollTo       Key
+	ScrollRevision uint64
+	SemanticLabel  string
 }
 
 // OverlayProps configures a body with an optional centered modal child.
 type OverlayProps struct {
-	Scrim color.NRGBA
+	Scrim     color.NRGBA
+	Alignment layout.Direction
+	Align     bool
 }
 
 // ConstraintProps applies optional minimum and maximum dimensions.
 type ConstraintProps struct {
 	MinWidth, MaxWidth, MinHeight, MaxHeight unit.Dp
+}
+
+// AlignProps positions one child within the available constraints.
+type AlignProps struct {
+	Direction layout.Direction
+}
+
+// NativeProps is the deliberately narrow escape hatch for renderer-specific
+// leaves such as platform icons, menus, and canvases. Runtime owns the leaf's
+// optional state under the element identity, so applications do not need
+// unbounded widget maps outside the DOM.
+type NativeProps struct {
+	NewState func() any
+	Layout   func(layout.Context, any) layout.Dimensions
 }
 
 // Element is an immutable description produced by application code.
@@ -176,6 +214,9 @@ type Element struct {
 	List       ListProps
 	Overlay    OverlayProps
 	Constraint ConstraintProps
+	Inset      Insets
+	Align      AlignProps
+	Native     NativeProps
 	Children   Children
 }
 
@@ -256,12 +297,17 @@ func Surface(key Key, props SurfaceProps, child Element) Element {
 
 // Text constructs selectable text.
 func Text(key Key, value string, size unit.Sp, ink color.NRGBA) Element {
-	return Element{Kind: KindText, Key: key, Text: TextProps{Value: value, Size: size, Color: ink}}
+	return Element{Kind: KindText, Key: key, Text: TextProps{Value: value, Size: size, Color: ink, Selectable: true}}
 }
 
 // Button constructs a native material button.
 func Button(key Key, label string, enabled bool, onClick func()) Element {
 	return Element{Kind: KindButton, Key: key, Button: ButtonProps{Label: label, Enabled: enabled, OnClick: onClick}}
+}
+
+// Control constructs a styled clickable container around one child.
+func Control(key Key, props ButtonProps, child Element) Element {
+	return Element{Kind: KindButton, Key: key, Button: props, Children: Static(child)}
 }
 
 // Editor constructs a controlled native editor.
@@ -304,4 +350,19 @@ func Overlay(key Key, props OverlayProps, body Element, modal ...Element) Elemen
 // Constrain applies explicit bounds around one child.
 func Constrain(key Key, props ConstraintProps, child Element) Element {
 	return Element{Kind: KindConstrain, Key: key, Constraint: props, Children: Static(child)}
+}
+
+// Inset applies independent edge padding around one child.
+func Inset(key Key, insets Insets, child Element) Element {
+	return Element{Kind: KindInset, Key: key, Inset: insets, Children: Static(child)}
+}
+
+// Align positions one child within the available constraints.
+func Align(key Key, direction layout.Direction, child Element) Element {
+	return Element{Kind: KindAlign, Key: key, Align: AlignProps{Direction: direction}, Children: Static(child)}
+}
+
+// Native constructs one runtime-owned renderer-specific leaf.
+func Native(key Key, props NativeProps) Element {
+	return Element{Kind: KindNative, Key: key, Native: props}
 }

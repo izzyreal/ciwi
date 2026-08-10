@@ -1,7 +1,8 @@
 # Gio DOM viability experiment
 
-Status: standalone implementation complete; short-run macOS and physical-iOS
-functional/resource gates pass; rendered-frame profiling remains provisional
+Status: adopted by the production native renderer after standalone macOS and
+physical-iOS functional/resource gates passed; broader interaction and
+rendered-frame profiling remain release-readiness work
 
 ## Question
 
@@ -9,10 +10,10 @@ Can a sustainable, professional mobile and desktop UI with near-browser parity
 be built as a keyed reactive layer over Gio, or is there a material mismatch
 between Gio and that product goal?
 
-The experiment is intentionally independent of ciwi's renderer. A successful
-result is evidence that a suitable abstraction can be built; it is not yet
-authorization to migrate ciwi. A failed result is equally useful and may rule
-out Gio or this specific abstraction.
+The runtime remains independent of ciwi's renderer: it imports neither the
+shared UI DSL nor presentation, transport, or application packages. The
+production Gio adapter now compiles shared screen documents into this runtime,
+keeping that dependency one-way.
 
 ## What is implemented
 
@@ -30,11 +31,14 @@ out Gio or this specific abstraction.
   scenarios.
 - Per-second JSON diagnostics, a Go-heap watchdog, tests, benchmarks, and an
   enforced import boundary.
-- Separate macOS and iOS packaging; the iOS lab can coexist with ciwi.
+- Separate macOS and iOS lab packaging; the iOS lab can coexist with ciwi.
+- A production UIDSL-to-DOM compiler covering every native screen component,
+  keyed widget identity, responsive reflow, overlays, graph interaction, and
+  bounded virtual scrolling.
 
-The production Gio renderer remains at the known-good pre-experiment state.
-There is no bridge to `pkg/uidsl`, no ciwi screen adapter, and no server
-connection in this slice.
+The lab remains offline and separately packaged. Production integration lives
+in `internal/adapters/gio`; `internal/giodom` does not know about ciwi screens or
+server connections.
 
 ## Gates
 
@@ -92,8 +96,8 @@ include every Gio, driver, or GPU cost.
 
 ## Decision rule
 
-- **Adopt for a ciwi spike** only when both platforms pass the functional and
-  resource gates and at least one viewport passes the performance gate.
+- **Adopt for ciwi** only when both platforms pass the functional and resource
+  gates and at least one viewport passes the performance gate.
 - **Iterate the standalone layer** when failure is localized, bounded, and
   supported by a profile that identifies a correctable abstraction defect.
 - **Reject this approach** when safe, bounded input still causes unbounded
@@ -105,9 +109,9 @@ include every Gio, driver, or GPU cost.
   control, allocation profiles, and minimal reproducer should support that
   conclusion.
 
-No ciwi integration begins merely because unit tests or the macOS build pass.
-The physical-iOS soak is a first-class gate because the original failure was an
-iOS total-footprint OOM.
+The physical-iOS soak remains a first-class gate because the original failure
+was an iOS total-footprint OOM. Passing the standalone gate authorized the
+integration; release readiness still requires production-device verification.
 
 ## Current evidence
 
@@ -153,8 +157,22 @@ Evidence recorded on 2026-08-09:
   distinct `GioDOMLab` name, uses isolated Xcode DerivedData, and rejects an
   archive that does not contain the lab payload marker.
 
-These results rule out an inherent short-run Gio memory mismatch for the tested
-reactive model and support a limited ciwi integration spike. They do not yet
-establish release readiness: direct rendered-frame profiling on the target
-iPhone and broader interaction/visual parity checks remain before any general
-migration decision.
+These results ruled out an inherent short-run Gio memory mismatch for the
+tested reactive model and supported production integration.
+
+Integration evidence recorded on 2026-08-10:
+
+- Every native screen now compiles through the keyed DOM. The former direct
+  renderer, global path-indexed widget maps, geometry-op cache, surface cache,
+  icon cache, and loader texture cache were removed.
+- The compact layout bug was traced to desktop-axis `grow` being retained after
+  a horizontal row became a vertical phone layout. Clearing that axis-specific
+  growth during reflow removes the large gaps without special-casing screens.
+- The complete Go suite, universal macOS app build, arm64 iOS framework build,
+  and unsigned production iOS host build pass.
+- An untouched production macOS Job Details run against the live CNP server
+  used roughly 133 MiB after startup, 136 MiB at one minute, and 140 MiB at
+  2:13. It showed no accelerating growth or recurrence of the prior 2 GiB OOM.
+
+The integration result is still not a release claim. Direct interaction checks
+and a short physical-iPhone production run remain before release readiness.

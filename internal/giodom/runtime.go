@@ -149,10 +149,36 @@ func (r *Runtime) layoutElement(gtx layout.Context, element Element, identity st
 		return r.layoutOverlay(gtx, element, identity)
 	case KindConstrain:
 		return r.layoutConstrain(gtx, element, identity)
+	case KindInset:
+		return applyInsets(element.Inset, gtx, func(gtx layout.Context) layout.Dimensions {
+			return r.layoutOnlyChild(gtx, element, identity)
+		})
+	case KindAlign:
+		return element.Align.Direction.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return r.layoutOnlyChild(gtx, element, identity)
+		})
+	case KindNative:
+		return r.layoutNative(gtx, element, identity)
 	default:
 		r.recordError(fmt.Errorf("%s: invalid element kind", identity))
 		return layout.Dimensions{}
 	}
+}
+
+func (r *Runtime) layoutNative(gtx layout.Context, element Element, identity string) layout.Dimensions {
+	if element.Native.Layout == nil {
+		r.recordError(fmt.Errorf("%s: native layout is missing", identity))
+		return layout.Dimensions{}
+	}
+	var state any
+	if element.Native.NewState != nil {
+		state = r.useState(identity, "native", KindNative, element.Native.NewState)
+	}
+	dimensions := element.Native.Layout(gtx, state)
+	if r.rejectGeometry(identity, dimensions.Size.X, dimensions.Size.Y) {
+		return layout.Dimensions{}
+	}
+	return dimensions
 }
 
 func (r *Runtime) useState(identity, slot string, kind Kind, factory func() any) any {

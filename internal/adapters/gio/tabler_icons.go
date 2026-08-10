@@ -16,21 +16,11 @@ import (
 
 type nativeIcon interface {
 	Layout(layout.Context, color.NRGBA) layout.Dimensions
-	resetVisualCache()
-}
-
-func (icon *cachedNativeIcon) resetVisualCache() {
-	icon.cache.reset()
 }
 
 type tablerIcon struct{ draw func(*clip.Path) }
 
-type cachedNativeIcon struct {
-	icon  tablerIcon
-	cache *visualOpCache
-}
-
-func (icon *cachedNativeIcon) Layout(gtx layout.Context, ink color.NRGBA) layout.Dimensions {
+func (icon tablerIcon) Layout(gtx layout.Context, ink color.NRGBA) layout.Dimensions {
 	size := gtx.Constraints.Min.X
 	if size == 0 {
 		size = gtx.Dp(24)
@@ -38,13 +28,10 @@ func (icon *cachedNativeIcon) Layout(gtx layout.Context, ink color.NRGBA) layout
 	size = gtx.Constraints.Constrain(image.Pt(size, size)).X
 	scale := float32(size) / 24
 	transform := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(scale, scale))).Push(gtx.Ops)
-	key := visualOpKey{kind: "tabler-icon", color1: ink}
-	icon.cache.add(gtx.Ops, key, func(ops *op.Ops) {
-		var path clip.Path
-		path.Begin(ops)
-		icon.icon.draw(&path)
-		paint.FillShape(ops, ink, clip.Stroke{Path: path.End(), Width: 1.9}.Op())
-	})
+	var path clip.Path
+	path.Begin(gtx.Ops)
+	icon.draw(&path)
+	paint.FillShape(gtx.Ops, ink, clip.Stroke{Path: path.End(), Width: 1.9}.Op())
 	transform.Pop()
 	return layout.Dimensions{Size: image.Pt(size, size)}
 }
@@ -145,7 +132,7 @@ func tablerIcons() map[string]nativeIcon {
 	}
 	icons := make(map[string]nativeIcon, len(definitions))
 	for name, definition := range definitions {
-		icons[name] = &cachedNativeIcon{icon: definition, cache: newVisualOpCache(8)}
+		icons[name] = definition
 	}
 	return icons
 }
