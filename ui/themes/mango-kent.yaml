@@ -4,8 +4,6 @@ metadata: {name: mango-kent, title: Mango Kent, description: "Golden-orange fles
 theme:
   colors:
     background: "#fff3df"
-    background-start: "#f3b53e"
-    background-end: "#f5d265"
     background-glow-a: "#ee5d4e"
     background-glow-b: "#799243"
     surface: "#fffaf2"

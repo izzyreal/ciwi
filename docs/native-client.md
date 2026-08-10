@@ -189,8 +189,8 @@ endpoint. An explicit `-theme` or `CIWI_NATIVE_THEME` value overrides the saved
 theme for that launch.
 
 The Gio adapter resolves the same bundled logo, semantic icon names, theme
-gradients, status tones, and badge roles used by the declarative browser proof;
-these are renderer primitives rather than per-screen native drawings.
+gradients, status tones, and badge roles used by the declarative browser
+renderer; these are renderer primitives rather than per-screen native drawings.
 All native screens are compiled from the shared UIDSL into a keyed reactive
 tree in `internal/giodom`. The runtime owns bounded widget and viewport state;
 the adapter owns only semantic interaction state such as disclosures, graph

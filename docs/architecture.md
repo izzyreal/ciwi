@@ -70,6 +70,55 @@ imports. New exceptions are not accepted silently: a dependency that cannot yet
 be moved inward must be documented as migration debt and kept out of the inner
 layers.
 
+### Shared UI ownership
+
+The browser and native clients use the following single-authority boundaries:
+
+| Concern | Authoritative definition | Adapter-owned remainder |
+| --- | --- | --- |
+| Routes | `ui/routes.yaml` | Browser history and native navigation stacks |
+| Screen hierarchy, copy, bindings, actions, visibility, and semantic layout | `ui/screens/*.yaml` | DOM/Gio widget mechanics and accessibility |
+| Action class, pending label, conflict scope, navigation, and recovery | `ui/actions.yaml` | Mapping a command to HTTP or typed CNP operations |
+| Colors, gradients, dimensions, typography, and control geometry | `ui/themes/*.yaml`, `ui/typography.yaml`, and `ui/controls.yaml` | CSS variables or Gio drawing primitives |
+| Renderer-facing business data | `internal/presentation` | Transport representation and local interaction state |
+| Refresh invalidations | Screen data-source `watchTopics` | Route-specific HTTP/CNP loading and scheduling |
+
+Data-source declarations name binding roots and the topics that invalidate
+them. They deliberately do not name an abstract query: browser and native data
+loading use different transports, and the former query strings had no runtime
+consumer. State such as an open disclosure, graph viewport, output search,
+tailing, connection preferences, and a browser dropdown portal remains local to
+the renderer that implements the interaction.
+
+The action catalog is the only command-semantic registry. Screen loading
+validates every referenced command against it. Theme documents are also the
+only theme registry; the browser generates theme CSS from those documents and
+does not maintain a parallel JavaScript theme list or per-theme CSS blocks.
+
+### Review snapshot: 2026-08-10
+
+The architecture review after the shared UI and Gio DOM migrations found no
+new dependency inversion in the backend. The domain/application/presentation
+boundaries, transport-neutral CNP handler, transport adapters, migration
+discipline, and consumer-owned ports remain intact, and the transitive import
+boundary tests pass.
+
+The review removed inactive top-level UIDSL persistence/override declarations,
+non-executable data-source query names, a duplicate Go action-command registry,
+duplicate browser theme registries and CSS, legacy browser selectors, and dead
+preview route registrations. Shared multi-stop page and hero gradients are now
+painted by both renderers. Large renderer files were divided along data
+binding, DOM element, disclosure/graph, reconciliation, and browser control
+boundaries. The accepted ownership and tradeoffs are recorded in
+[`ADR 0002`](adr/0002-shared-ui-authority.md).
+
+Remaining duplication is intentional at adapter boundaries: HTTP and CNP must
+encode the same presentation models differently, and browser/Gio must map named
+actions to different transports. Cross-adapter binding fixtures and command
+coverage tests guard those seams. Interaction-heavy output buffering and
+selection also have separate implementations because their lifecycle and I/O
+models differ; their visible structure and command vocabulary stay shared.
+
 ## High-level architecture
 
 ```mermaid
@@ -266,8 +315,8 @@ even while internal Go and pre-1.0 protocol APIs continue to evolve.
 - Continue moving renderer-independent labels, semantic state, and validation
   through application/presentation slices; keep only transport representation
   and interaction state in the HTTP/browser and CNP/Gio adapters.
-- Extend graph drill-down from pipelines into job and step dependencies, and
-  continue compact/mobile interaction work without forking screen definitions.
+- Extend graph and compact/mobile interactions through the existing shared
+  graph/detail declarations without forking screen definitions.
 - Treat the shared declarative routes as the production UI contract. Add new
   browser and native behavior to the shared screen/action definitions first,
   with explicit platform overrides only when the interaction is inherently

@@ -9,7 +9,7 @@ import (
 )
 
 func TestBrowserProgressInterpolationKeepsServerSemanticState(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestBrowserProgressInterpolationKeepsServerSemanticState(t *testing.T) {
 }
 
 func TestBrowserProgressUpdatesDoNotRestartAnimationClasses(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestBrowserProgressUpdatesDoNotRestartAnimationClasses(t *testing.T) {
 }
 
 func TestBrowserStatusSpinnerUsesGeneralDOMReconciliation(t *testing.T) {
-	javascript, err := uiAssets.ReadFile("assets/js/declarative.js")
+	javascript, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,8 +95,8 @@ func TestBrowserStatusSpinnerUsesGeneralDOMReconciliation(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"icon.dataset.ciwiIcon = String(name || '')",
-		"compatibleRenderedNodes(previousRoot, nextRoot)",
-		"reconcileRenderedNode(previousRoot, nextRoot)",
+		"domReconciler.compatible(previousRoot, nextRoot)",
+		"domReconciler.reconcile(previousRoot, nextRoot)",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("browser status spinner continuity is missing %q", expected)

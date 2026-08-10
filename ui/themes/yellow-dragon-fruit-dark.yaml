@@ -5,8 +5,6 @@ theme:
   dark: true
   colors:
     background: "#11130a"
-    background-start: "#303713"
-    background-end: "#1d260f"
     background-glow-a: "#91851b"
     background-glow-b: "#657934"
     surface: "#1d2112"

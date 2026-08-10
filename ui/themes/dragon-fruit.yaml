@@ -4,8 +4,6 @@ metadata: {name: dragon-fruit, title: Dragon Fruit, description: "Electric magen
 theme:
   colors:
     background: "#fff2f6"
-    background-start: "#ef6485"
-    background-end: "#9bb958"
     background-glow-a: "#e62f69"
     background-glow-b: "#7fa34a"
     surface: "#fffafd"

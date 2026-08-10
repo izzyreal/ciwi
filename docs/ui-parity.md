@@ -49,6 +49,13 @@ declarations. Vault is available over both HTTP and typed CNP operations. The
 former hand-authored browser pages and `/declarative-preview` route have been
 removed.
 
+Routes, screens, action semantics, theme tokens, typography, control geometry,
+and presentation labels each have one shared authority. Browser theme CSS is
+generated from the shared theme documents, and screen commands are checked
+against the shared action catalog during bundle loading. Data-source
+declarations contain only binding roots and invalidation topics; transport
+loaders remain explicit adapter code.
+
 The project-details screen declares its nested pipeline and job dependency
 graphs once through the shared `graph-view` component. Browser and native
 renderers both provide persistent Graph/List switches, fit/reset/zoom controls,
@@ -105,10 +112,19 @@ state pruning, bounded virtualization, responsive geometry, and scroll-anchor
 reconciliation independently of ciwi screens. Native interaction and visual
 parity remain device-level checks.
 
+The browser adapter is divided into the screen renderer, view-binding
+decoration, select control, graph/tree renderers, and DOM reconciler. The Gio
+adapter separates application control flow and bindings from core DOM
+compilation, element/control compilation, and disclosure/graph/scroller
+compilation. Shared screen documents remain whole by product surface: their
+size is preferable to introducing a parameterized fragment language before a
+stable repeated component actually warrants one.
+
 ## Cutover footprint and performance
 
-Relative to pre-cutover `main` at `4493cf2`, the declarative branch deletes 31
-files and removes approximately 9,300 net lines. Five-run Apple M1 benchmarks
+As recorded at the original cutover, relative to `main` at `4493cf2`, the
+declarative branch deleted 31 files and removed approximately 9,300 net lines.
+Five-run Apple M1 benchmarks
 show unchanged allocations and no CPU regression: the native collapsed front
 page is about 13% faster, native collapsed Project Details about 1% faster, and
 the declarative browser route benchmark is effectively unchanged from the first

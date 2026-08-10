@@ -3,7 +3,7 @@ kind: Screen
 metadata: {name: vault, title: Vault Connections}
 screen:
   dataSources:
-    - {name: vault, query: get-vault-connections, watchTopics: [vault]}
+    - {name: vault, watchTopics: [vault]}
   root:
     component: page
     id: vault

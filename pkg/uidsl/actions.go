@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -64,8 +63,8 @@ func (d *ActionCatalogDocument) Validate() error {
 	seen := map[string]bool{}
 	for index := range d.Actions {
 		spec := &d.Actions[index]
-		if !commands[spec.Command] {
-			return fmt.Errorf("actions[%d].command %q is not supported", index, spec.Command)
+		if !identifierPattern.MatchString(spec.Command) {
+			return fmt.Errorf("actions[%d].command %q is malformed", index, spec.Command)
 		}
 		if seen[spec.Command] {
 			return fmt.Errorf("duplicate action command %q", spec.Command)
@@ -106,17 +105,57 @@ func (d *ActionCatalogDocument) Validate() error {
 			return fmt.Errorf("actions[%d].navigation %q is not supported", index, spec.Navigation)
 		}
 	}
-	missing := make([]string, 0)
-	for command := range commands {
-		if !seen[command] {
-			missing = append(missing, command)
-		}
-	}
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		return fmt.Errorf("action catalog is missing commands: %s", strings.Join(missing, ", "))
-	}
 	return nil
+}
+
+// ValidateScreenActions ensures that every command referenced by a screen is
+// defined by the authoritative action catalog. ParseScreen validates syntax;
+// bundle owners call this method to validate cross-document references.
+func (d *ScreenDocument) ValidateScreenActions(catalog *ActionCatalogDocument) error {
+	if d == nil {
+		return errors.New("screen document is nil")
+	}
+	if catalog == nil {
+		return errors.New("action catalog is nil")
+	}
+	var visit func(Node, string) error
+	visit = func(node Node, path string) error {
+		validate := func(actions []Action, actionPath string) error {
+			for index, action := range actions {
+				if _, ok := catalog.Spec(action.Command); !ok {
+					return fmt.Errorf("%s[%d].command %q is not defined in the action catalog", actionPath, index, action.Command)
+				}
+			}
+			return nil
+		}
+		if err := validate(node.Actions, path+".actions"); err != nil {
+			return err
+		}
+		if node.GraphView != nil && node.GraphView.Root != nil {
+			if err := validate(node.GraphView.Root.Actions, path+".graphView.root.actions"); err != nil {
+				return err
+			}
+			for index, child := range node.GraphView.Details {
+				if err := visit(child, fmt.Sprintf("%s.graphView.details[%d]", path, index)); err != nil {
+					return err
+				}
+			}
+		}
+		if node.Disclosure != nil {
+			for index, child := range node.Disclosure.Summary {
+				if err := visit(child, fmt.Sprintf("%s.disclosure.summary[%d]", path, index)); err != nil {
+					return err
+				}
+			}
+		}
+		for index, child := range node.Children {
+			if err := visit(child, fmt.Sprintf("%s.children[%d]", path, index)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return visit(d.Screen.Root, "screen.root")
 }
 
 func (d *ActionCatalogDocument) Spec(command string) (ActionSpec, bool) {

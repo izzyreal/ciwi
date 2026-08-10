@@ -4,8 +4,6 @@ metadata: {name: mango-chaunsa, title: Mango Chaunsa, description: "Sunlit Chaun
 theme:
   colors:
     background: "#fff8d9"
-    background-start: "#f4c63e"
-    background-end: "#ef9b2f"
     background-glow-a: "#ffe260"
     background-glow-b: "#e78a24"
     surface: "#fffdf2"

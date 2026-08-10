@@ -4,8 +4,6 @@ metadata: {name: yellow-dragon-fruit, title: Yellow Dragon Fruit, description: "
 theme:
   colors:
     background: "#fffceb"
-    background-start: "#f4d83d"
-    background-end: "#fff29a"
     background-glow-a: "#ffdf27"
     background-glow-b: "#9bad48"
     surface: "#fffef9"

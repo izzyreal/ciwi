@@ -4,8 +4,6 @@ metadata: {name: lychee, title: Lychee, description: "Coral lychee skin, pearl-w
 theme:
   colors:
     background: "#fff2ef"
-    background-start: "#ee7a72"
-    background-end: "#f2b0a0"
     background-glow-a: "#df514f"
     background-glow-b: "#9a4d36"
     surface: "#fffbfa"

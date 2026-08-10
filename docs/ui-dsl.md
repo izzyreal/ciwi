@@ -10,7 +10,7 @@ language. It is a ciwi UI schema, not a general browser implementation.
 - Shared action semantics: [`ui/actions.yaml`](../ui/actions.yaml)
 - Shared fonts and images: [`ui/assets`](../ui/assets)
 - Gio adapter: [`internal/adapters/gio`](../internal/adapters/gio)
-- Browser adapter: [`internal/server/webui/assets/js/declarative.js`](../internal/server/webui/assets/js/declarative.js)
+- Browser adapter: [`internal/server/webui`](../internal/server/webui)
 
 Every client embeds the same versioned bundle. A native server cannot send
 HTML, CSS, JavaScript, or replacement UI code to the desktop executable.
@@ -32,15 +32,15 @@ The `ciwi.ui/v1` schema contains:
 - dot-path data bindings and non-executable `{{binding}}` templates;
 - repetitions and visibility conditions;
 - named semantic commands with string arguments and confirmation copy;
-- client/session persistence declarations;
-- narrow `web`, `gio`, and compact-viewport overrides;
+- data-source binding roots and topic-scoped refresh invalidations;
+- narrow node-level `web`, `gio`, and compact-viewport overrides;
 - semantic color, gradient, and dimension tokens.
 
 Icons and bundled images are semantic asset names resolved by each renderer;
 screen documents never contain renderer-specific vector paths or filesystem
 locations. An image can alternatively bind to presentation data (for example,
 a project icon conveyed as bytes over CNP and as an image endpoint in the
-browser proof renderer). A style can use `toneBinding` to map execution states such as
+browser renderer). A style can use `toneBinding` to map execution states such as
 `succeeded`, `failed`, `queued`, and `running` onto the shared semantic status
 palette without duplicating status-color logic in every screen.
 
@@ -52,7 +52,8 @@ renderers load the actual Geist Sans and Geist Mono faces from `ui/assets`.
 
 The `select` component binds its value and option list to view data, exposes a
 renderer-neutral `selection` value to its change action, and is rendered as a
-native expandable choice control or a browser `<select>` as appropriate.
+native expandable choice control or an accessible browser popup control as
+appropriate.
 The single-line `input` component similarly exposes `input.value` to a change
 action. A repeated `scroller` describes a bounded horizontal collection while
 leaving native gesture handling and browser overflow behavior to each adapter.
@@ -81,9 +82,22 @@ APIs, Gio types, scripts, URLs to executable resources, protobuf messages, or
 transport calls. Renderer adapters own focus, accessibility, text selection,
 native widgets, dialogs, scrolling, and platform conventions.
 
+Persistence of renderer interaction state is intentionally not a top-level DSL
+facility. The declaration supplies stable keys where cross-render persistence
+is meaningful; each adapter owns its storage and lifecycle. Action recovery is
+a separate concern described by the action catalog's `persistence` policy.
+
+Data sources similarly do not prescribe transport queries. Their names define
+the roots available to bindings, and `watchTopics` define invalidation
+interest. Route-specific loaders remain explicit in the HTTP/browser and
+CNP/Gio adapters, where request parameters, cancellation, streaming, and local
+connection state can be handled without a false renderer-neutral query layer.
+
 YAML decoding uses strict known-field validation. Documents also reject unknown
-components and commands, duplicate node IDs, malformed repeats, ambiguous text
+components, duplicate node IDs, malformed repeats, ambiguous text
 expressions, missing theme tokens, and invalid gradients.
+The shared bundle validates every screen command against `ui/actions.yaml`, so
+the catalog—not a second Go list—is authoritative.
 `uidsl.ValidateBindings` additionally checks concrete view models—including
 repeat and select items—before Gio renders them; equivalent browser fixtures
 guard the web adapter's decorated view models.
@@ -135,9 +149,15 @@ Both adapters re-query authoritative views after changes. Gio consumes the CNP
 change stream and the browser consumes `/api/v1/ui/changes`; each screen's
 declared `watchTopics` determines which invalidations trigger a refresh.
 
+Theme documents are parsed by both renderers. Gio converts their semantic
+tokens to drawing primitives; the browser generates `/ui/css/themes.css` from
+the same documents and layers only renderer-specific derived variables on top.
+Adding a theme therefore requires no JavaScript registry or hand-authored CSS
+selector.
+
 ## Compatibility policy
 
 The `apiVersion` is mandatory. Additive optional fields can remain within
 `ciwi.ui/v1`; incompatible semantic changes require a new version. Both
-renderers should be tested against the same fixtures before a screen replaces
-hand-authored production UI.
+renderers should be tested against the same fixtures before a contract change
+is accepted.

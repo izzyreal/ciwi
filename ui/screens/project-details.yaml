@@ -7,7 +7,6 @@ metadata:
 screen:
   dataSources:
     - name: projectDetails
-      query: get-project-details
       watchTopics: [projects, queue, history]
   root:
     component: page

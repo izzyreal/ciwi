@@ -94,6 +94,7 @@ func TestDeclarativePageBootstrapsFromVersionedCachedResources(t *testing.T) {
 		"/ui/declarative.js?v=" + revision,
 		"/ui/notices.js?v=" + revision,
 		"/ui/fonts/ciwi-sans-regular.ttf?v=" + revision,
+		"/ui/css/themes.css?v=" + revision,
 		"/ui/contracts/screens/front-page.json?v=" + revision,
 		"/ui/contracts/controls.json?v=" + revision,
 		"/ui/contracts/themes.json?v=" + revision,

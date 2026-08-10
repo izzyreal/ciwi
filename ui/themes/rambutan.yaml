@@ -4,8 +4,6 @@ metadata: {name: rambutan, title: Rambutan, description: "Wild rambutan red, fre
 theme:
   colors:
     background: "#fff1f1"
-    background-start: "#e74348"
-    background-end: "#8fb94f"
     background-glow-a: "#d91f35"
     background-glow-b: "#60a340"
     surface: "#fffafa"

@@ -86,7 +86,7 @@ func cssGradientLine(rect image.Rectangle, angleDegrees float64) (f32.Point, f32
 }
 
 func renderPageBackground(size image.Point, colors palette) *image.NRGBA {
-	gradient := newThreeStopGradient(size, 145, colors.backgroundStart, .48, colors.background, colors.backgroundEnd)
+	gradient := newSampledGradient(size, colors.pageGradient)
 	glowB := newRadialGlow(size, .90, .08, .34, colors.backgroundGlowB, .82)
 	glowA := newRadialGlow(size, .12, -.10, .38, colors.backgroundGlowA, .86)
 	result := image.NewNRGBA(image.Rectangle{Max: size})
@@ -95,6 +95,30 @@ func renderPageBackground(size image.Point, colors palette) *image.NRGBA {
 			base := gradient.pixel(float64(x)+.5, float64(y)+.5)
 			base = glowB.composite(base, float64(x)+.5, float64(y)+.5)
 			result.SetNRGBA(x, y, glowA.composite(base, float64(x)+.5, float64(y)+.5))
+		}
+	}
+	return result
+}
+
+func (r *Renderer) paintHeroSurface(gtx layout.Context, size image.Point) {
+	if size.X <= 0 || size.Y <= 0 {
+		return
+	}
+	textureSize := gradientTextureSize(size)
+	if !r.heroBackgroundReady || r.heroBackgroundSize != textureSize {
+		r.heroBackground = paint.NewImageOp(renderHeroBackground(textureSize, r.palette))
+		r.heroBackground.Filter = paint.FilterLinear
+		r.heroBackgroundSize, r.heroBackgroundReady = textureSize, true
+	}
+	paintScaledImageOps(gtx.Ops, r.heroBackground, size)
+}
+
+func renderHeroBackground(size image.Point, colors palette) *image.NRGBA {
+	gradient := newSampledGradient(size, colors.heroGradient)
+	result := image.NewNRGBA(image.Rectangle{Max: size})
+	for y := 0; y < size.Y; y++ {
+		for x := 0; x < size.X; x++ {
+			result.SetNRGBA(x, y, gradient.pixel(float64(x)+.5, float64(y)+.5))
 		}
 	}
 	return result
@@ -154,6 +178,58 @@ func (gradient threeStopGradient) pixel(x, y float64) color.NRGBA {
 		return gradient.middle
 	}
 	return mixColorSRGB(gradient.middle, gradient.end, (t-gradient.middlePosition)/(1-gradient.middlePosition))
+}
+
+type sampledGradient struct {
+	kind                          string
+	startX, startY, dx, dy, scale float64
+	stops                         []nativeGradientStop
+}
+
+func newSampledGradient(size image.Point, gradient nativeGradient) sampledGradient {
+	sampled := sampledGradient{kind: gradient.kind, stops: gradient.stops}
+	if gradient.kind == "radial" {
+		sampled.startX, sampled.startY = float64(size.X)/2, float64(size.Y)/2
+		for _, corner := range [][2]float64{{0, 0}, {float64(size.X), 0}, {float64(size.X), float64(size.Y)}, {0, float64(size.Y)}} {
+			sampled.scale = max(sampled.scale, math.Hypot(corner[0]-sampled.startX, corner[1]-sampled.startY))
+		}
+		return sampled
+	}
+	lineStart, lineEnd := cssGradientLine(image.Rectangle{Max: size}, gradient.angle)
+	sampled.startX, sampled.startY = float64(lineStart.X), float64(lineStart.Y)
+	sampled.dx, sampled.dy = float64(lineEnd.X-lineStart.X), float64(lineEnd.Y-lineStart.Y)
+	sampled.scale = sampled.dx*sampled.dx + sampled.dy*sampled.dy
+	return sampled
+}
+
+func (gradient sampledGradient) pixel(x, y float64) color.NRGBA {
+	if len(gradient.stops) == 0 {
+		return color.NRGBA{}
+	}
+	t := 0.0
+	if gradient.kind == "radial" {
+		if gradient.scale > 0 {
+			t = math.Hypot(x-gradient.startX, y-gradient.startY) / gradient.scale
+		}
+	} else if gradient.scale > 0 {
+		t = ((x-gradient.startX)*gradient.dx + (y-gradient.startY)*gradient.dy) / gradient.scale
+	}
+	t = max(0, min(t, 1))
+	previous := gradient.stops[0]
+	if t <= previous.position {
+		return previous.color
+	}
+	for _, next := range gradient.stops[1:] {
+		if t <= next.position {
+			span := next.position - previous.position
+			if span <= 0 {
+				return next.color
+			}
+			return mixColorSRGB(previous.color, next.color, (t-previous.position)/span)
+		}
+		previous = next
+	}
+	return previous.color
 }
 
 type radialGlow struct {
@@ -476,21 +552,11 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 			return palette{}, fmt.Errorf("theme color %s: %w", name, err)
 		}
 	}
-	p.backgroundStart, p.backgroundEnd = p.background, p.background
-	p.heroStart, p.heroEnd, p.surfaceRaised = p.surface, p.subtle, p.subtle
+	p.surfaceRaised = p.subtle
 	p.pillBackground, p.pillText = p.subtle, p.accentStrong
 	p.noticeBackground, p.noticeText, p.noticeBorder = p.surfaceRaised, p.text, p.border
 	p.awaitingSurface, p.awaitingBorder, p.awaitingText = p.surfaceRaised, p.warning, p.warning
-	if gradient, ok := theme.Gradients["page"]; ok && len(gradient.Stops) >= 2 {
-		if p.backgroundStart, err = parseColor(gradient.Stops[0].Color); err != nil {
-			return palette{}, fmt.Errorf("page gradient start: %w", err)
-		}
-		if p.backgroundEnd, err = parseColor(gradient.Stops[len(gradient.Stops)-1].Color); err != nil {
-			return palette{}, fmt.Errorf("page gradient end: %w", err)
-		}
-	}
 	for name, target := range map[string]*color.NRGBA{
-		"background-start": &p.backgroundStart, "background-end": &p.backgroundEnd,
 		"background-glow-a": &p.backgroundGlowA, "background-glow-b": &p.backgroundGlowB,
 		"surface-raised": &p.surfaceRaised, "surface-glow": &p.surfaceGlow,
 		"pill-background": &p.pillBackground, "pill-text": &p.pillText,
@@ -508,15 +574,35 @@ func paletteFromTheme(theme uidsl.Theme) (palette, error) {
 			return palette{}, fmt.Errorf("theme color %s: %w", name, err)
 		}
 	}
-	if gradient, ok := theme.Gradients["hero"]; ok && len(gradient.Stops) >= 2 {
-		if p.heroStart, err = parseColor(gradient.Stops[0].Color); err != nil {
-			return palette{}, fmt.Errorf("hero gradient start: %w", err)
+	p.pageGradient = nativeGradient{kind: "linear", angle: 145, stops: []nativeGradientStop{
+		{color: p.background, position: 0}, {color: p.background, position: 1},
+	}}
+	p.heroGradient = nativeGradient{kind: "radial", stops: []nativeGradientStop{
+		{color: p.surface, position: 0}, {color: p.subtle, position: 1},
+	}}
+	if gradient, ok := theme.Gradients["page"]; ok {
+		if p.pageGradient, err = parseNativeGradient(gradient); err != nil {
+			return palette{}, fmt.Errorf("page gradient: %w", err)
 		}
-		if p.heroEnd, err = parseColor(gradient.Stops[len(gradient.Stops)-1].Color); err != nil {
-			return palette{}, fmt.Errorf("hero gradient end: %w", err)
+	}
+	if gradient, ok := theme.Gradients["hero"]; ok {
+		if p.heroGradient, err = parseNativeGradient(gradient); err != nil {
+			return palette{}, fmt.Errorf("hero gradient: %w", err)
 		}
 	}
 	return p, nil
+}
+
+func parseNativeGradient(gradient uidsl.Gradient) (nativeGradient, error) {
+	result := nativeGradient{kind: gradient.Kind, angle: float64(gradient.Angle), stops: make([]nativeGradientStop, 0, len(gradient.Stops))}
+	for _, stop := range gradient.Stops {
+		value, err := parseColor(stop.Color)
+		if err != nil {
+			return nativeGradient{}, err
+		}
+		result.stops = append(result.stops, nativeGradientStop{color: value, position: float64(stop.Position) / 100})
+	}
+	return result, nil
 }
 
 func rendererTheme(document *uidsl.ThemeDocument, typography uidsl.Typography) (*material.Theme, palette, error) {

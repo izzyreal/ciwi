@@ -4,8 +4,6 @@ metadata: {name: pina-colada, title: Piña Colada, description: "Pineapple gold,
 theme:
   colors:
     background: "#fff8e8"
-    background-start: "#ead29c"
-    background-end: "#f5e497"
     background-glow-a: "#ffd34f"
     background-glow-b: "#71bca4"
     surface: "#fffdf7"

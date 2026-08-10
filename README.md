@@ -50,6 +50,7 @@ Note on artifact log verbosity:
 - Vault/AppRole integration: [`docs/vault.md`](docs/vault.md)
 - Operations (update policy, maintenance, troubleshooting): [`docs/operations.md`](docs/operations.md)
 - Architecture and flows: [`docs/architecture.md`](docs/architecture.md)
+- Architecture decisions: [`docs/adr`](docs/adr)
 - Domain terminology: [`terminology.md`](terminology.md)
 
 ## Design Philosophy

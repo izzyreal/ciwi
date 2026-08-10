@@ -114,7 +114,7 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	for _, theme := range themes {
 		themesByName[theme.Metadata.Name] = theme
 		for _, token := range []string{
-			"background-start", "background-end", "background-glow-a", "background-glow-b",
+			"background-glow-a", "background-glow-b",
 			"surface-raised", "surface-glow", "pill-background", "pill-text",
 			"notice-background", "notice-text", "notice-border",
 			"awaiting-surface", "awaiting-border", "awaiting-text",
@@ -122,6 +122,11 @@ func TestEmbeddedUIBundle(t *testing.T) {
 		} {
 			if theme.Theme.Colors[token] == "" {
 				t.Errorf("theme %q is missing shared visual color %q", theme.Metadata.Name, token)
+			}
+		}
+		for _, name := range []string{"page", "hero"} {
+			if _, ok := theme.Theme.Gradients[name]; !ok {
+				t.Errorf("theme %q is missing shared visual gradient %q", theme.Metadata.Name, name)
 			}
 		}
 		for _, token := range []string{

@@ -62,7 +62,7 @@ func TestDeclarativeControlsContract(t *testing.T) {
 }
 
 func TestEveryWebCommandHasABrowserAdapter(t *testing.T) {
-	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	scriptPayload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestActionCatalogContractAndBrowserRunnerRoutes(t *testing.T) {
 			t.Errorf("browser action runner does not contain %q", expected)
 		}
 	}
-	declarative, err := uiAssets.ReadFile("assets/js/declarative.js")
+	declarative, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 }
 
 func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
-	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	scriptPayload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 }
 
 func TestDeclarativeBrowserProcessesInitialChangeStreamResync(t *testing.T) {
-	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	scriptPayload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestDeclarativeBrowserProcessesInitialChangeStreamResync(t *testing.T) {
 }
 
 func TestDeclarativeBrowserManagedYAMLEditorUsesCorrectCreatePayloadAndFullWidth(t *testing.T) {
-	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	scriptPayload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +440,7 @@ func TestPublicSettingsRouteUsesSharedRenderer(t *testing.T) {
 	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "declarativeRoot") {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +460,7 @@ func TestPublicSettingsRouteUsesSharedRenderer(t *testing.T) {
 }
 
 func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
 }
 
 func TestDeclarativeJobOutputRefreshPreservesStreamState(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +500,7 @@ func TestDeclarativeJobOutputRefreshPreservesStreamState(t *testing.T) {
 }
 
 func TestDeclarativeBrowserConsumesAuthoritativePresentationLabels(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +517,7 @@ func TestDeclarativeBrowserConsumesAuthoritativePresentationLabels(t *testing.T)
 }
 
 func TestDeclarativeRendererSupportsSemanticTonesAndIcons(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,22 +539,28 @@ func TestThemeBootstrapRecognizesEverySharedTheme(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(payload)
+	css := browserThemeCSS(themes)
 	for _, theme := range themes {
-		quotedName := "'" + theme.Metadata.Name + "'"
-		if !strings.Contains(script, quotedName) {
-			t.Errorf("theme bootstrap does not recognize %q", theme.Metadata.Name)
+		selector := `:root[data-ciwi-theme="` + theme.Metadata.Name + `"]`
+		if !strings.Contains(css, selector) {
+			t.Errorf("generated theme CSS does not recognize %q", theme.Metadata.Name)
 		}
-		if theme.Theme.Dark {
-			darkCatalog := script[strings.Index(script, "const ciwiDarkThemeNames"):]
-			if !strings.Contains(darkCatalog, quotedName) {
-				t.Errorf("theme bootstrap does not mark %q dark", theme.Metadata.Name)
-			}
+		if theme.Theme.Dark && !strings.Contains(css[strings.Index(css, selector):], "color-scheme:dark") {
+			t.Errorf("generated theme CSS does not mark %q dark", theme.Metadata.Name)
+		}
+	}
+	for _, theme := range themes {
+		if theme.Metadata.Name == "default" {
+			continue
+		}
+		if strings.Contains(script, "'"+theme.Metadata.Name+"'") {
+			t.Errorf("theme bootstrap duplicates shared theme name %q", theme.Metadata.Name)
 		}
 	}
 }
 
 func TestDeclarativeRendererSupportsSharedReportsAndArtifactDownloads(t *testing.T) {
-	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	scriptPayload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -633,7 +639,7 @@ func TestDeclarativeScreenIconsExistInBrowserSprite(t *testing.T) {
 }
 
 func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *testing.T) {
-	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	scriptPayload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,12 +653,17 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 	}
 	script := string(scriptPayload)
 	style := string(stylePayload)
-	combined := script + style + string(themePayload)
+	themes, err := sharedui.LoadThemes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := script + style + string(themePayload) + browserThemeCSS(themes)
 	for _, expected := range []string{
-		"ThemeDimensionVariables", "--ciwi-page-max", "node.disclosure.summary", "dsl-icon-button",
+		"--ciwi-page-max", "node.disclosure.summary", "dsl-icon-button",
 		"element.textContent = ''", "appendPositionedIcon(element, label, icon, activeControls.button.iconPosition)", ".dsl-disclosure > summary::after", ".dsl-code-inline",
 		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted", "cssLength(layout.gap)",
-		"/ui/contracts/controls.json", "activeControls.select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-select-chevron-gap",
+		".dsl-scheduling-awaiting", ".dsl-awaiting", "--awaiting-bg", "--awaiting-ink",
+		"/ui/contracts/controls.json", "controls().select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-select-chevron-gap",
 		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) var(--ciwi-progress-tint, 18%)",
 		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", ".dsl-output-group:not([open]) > summary",
 		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-output-group > summary { color:var(--console-accent)",
@@ -674,7 +685,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 }
 
 func TestDeclarativeRepeatedListsPreserveTheirLayoutContainer(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -695,7 +706,7 @@ func TestDeclarativeRepeatedListsPreserveTheirLayoutContainer(t *testing.T) {
 }
 
 func TestDeclarativeRendererBuildsIdentityAndFreshActionRegistries(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -711,9 +722,9 @@ func TestDeclarativeRendererBuildsIdentityAndFreshActionRegistries(t *testing.T)
 		"root.addEventListener('change', handleDelegatedChange)",
 		"const bindings = committedActionBindings.get(key) || []",
 		"committedRenderSignature === nextSignature",
-		"reconcileRenderedNode(previousRoot, nextRoot)",
+		"domReconciler.reconcile(previousRoot, nextRoot)",
 		"syncBrowserSelectMenu(activeBrowserSelect)",
-		"disposeRenderedNode(root)",
+		"domReconciler.dispose(root)",
 		"next.__ciwiStatefulContents",
 	} {
 		if !strings.Contains(script, expected) {
@@ -723,7 +734,7 @@ func TestDeclarativeRendererBuildsIdentityAndFreshActionRegistries(t *testing.T)
 }
 
 func TestDeclarativeNavigationCommitsTargetBeforeRemoteData(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -748,7 +759,7 @@ func TestDeclarativeNavigationCommitsTargetBeforeRemoteData(t *testing.T) {
 }
 
 func TestDeclarativeSettingsUsesRESTProjectUpdateTimestamp(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -761,7 +772,7 @@ func TestDeclarativeSettingsUsesRESTProjectUpdateTimestamp(t *testing.T) {
 }
 
 func TestDeclarativeRendererSupportsPersistentInteractiveDefinitionGraphs(t *testing.T) {
-	scriptPayload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	scriptPayload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}

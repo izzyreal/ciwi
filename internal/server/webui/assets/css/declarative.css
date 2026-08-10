@@ -147,8 +147,10 @@ a.dsl-tree-label { color:var(--accent); }
 .dsl-accent { color: var(--accent); }
 .dsl-success { color: var(--ok); }
 .dsl-warning { color: var(--warn); }
+.dsl-awaiting { color:var(--awaiting-ink); }
 .dsl-danger { color: var(--bad); }
 .dsl-focus { color: var(--focus-ring); }
+.dsl-scheduling-awaiting { background:var(--awaiting-bg); border-color:var(--awaiting-line); }
 .dsl-link { color: var(--accent); cursor: pointer; }
 .dsl-link:hover { color: var(--accent-strong); text-decoration: none; }
 .dsl-strong { font-weight:var(--ciwi-weight-strong); }

@@ -1,15 +1,21 @@
 package uidsl
 
 import (
-	"sort"
 	"strings"
 	"testing"
 )
 
-func TestActionCatalogRequiresEverySupportedCommand(t *testing.T) {
-	payload := []byte("apiVersion: ciwi.ui/v1\nkind: ActionCatalog\nactions:\n  - command: navigate\n    class: local\n")
-	if _, err := ParseActionCatalog(payload); err == nil {
-		t.Fatal("expected incomplete catalog to fail")
+func TestScreenActionsMustExistInCatalog(t *testing.T) {
+	screen, err := ParseScreen([]byte(validScreen))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := &ActionCatalogDocument{APIVersion: APIVersion, Kind: "ActionCatalog", Actions: []ActionSpec{{Command: "refresh", Class: ActionClassQuery}}}
+	if err := catalog.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := screen.ValidateScreenActions(catalog); err == nil || !strings.Contains(err.Error(), "navigate") {
+		t.Fatalf("cross-document action error = %v", err)
 	}
 }
 
@@ -61,7 +67,7 @@ func TestActionCatalogValidationRejectsInvalidSemantics(t *testing.T) {
 	}{
 		{name: "api version", edit: func(d *ActionCatalogDocument) { d.APIVersion = "v0" }, want: "apiVersion"},
 		{name: "kind", edit: func(d *ActionCatalogDocument) { d.Kind = "Screen" }, want: "kind"},
-		{name: "unsupported command", edit: func(d *ActionCatalogDocument) { d.Actions[0].Command = "unknown" }, want: "not supported"},
+		{name: "malformed command", edit: func(d *ActionCatalogDocument) { d.Actions[0].Command = "Unknown command" }, want: "malformed"},
 		{name: "duplicate", edit: func(d *ActionCatalogDocument) { d.Actions[1].Command = d.Actions[0].Command }, want: "duplicate"},
 		{name: "unsupported class", edit: func(d *ActionCatalogDocument) { d.Actions[0].Class = "background" }, want: "class"},
 		{name: "mutation scope", edit: func(d *ActionCatalogDocument) { d.Actions[0].Class = ActionClassMutation }, want: "scope"},
@@ -91,14 +97,10 @@ func TestActionSpecResolveScopeFallsBackToCommand(t *testing.T) {
 }
 
 func completeActionCatalog() *ActionCatalogDocument {
-	names := make([]string, 0, len(commands))
-	for command := range commands {
-		names = append(names, command)
-	}
-	sort.Strings(names)
-	actions := make([]ActionSpec, 0, len(names))
-	for _, command := range names {
-		actions = append(actions, ActionSpec{Command: command, Class: ActionClassLocal})
+	actions := []ActionSpec{
+		{Command: "navigate", Class: ActionClassLocal},
+		{Command: "refresh", Class: ActionClassLocal},
+		{Command: "run-pipeline", Class: ActionClassLocal},
 	}
 	return &ActionCatalogDocument{APIVersion: APIVersion, Kind: "ActionCatalog", Actions: actions}
 }

@@ -7,7 +7,6 @@ metadata:
 screen:
   dataSources:
     - name: jobDetails
-      query: get-job-details
       watchTopics: [agent-eligibility, queue, history]
   root:
     component: page
@@ -551,7 +550,8 @@ screen:
                     text:
                       literal: Details
                     visible:
-                      binding: outputGroup.is_phase
+                      binding: outputGroup.kind
+                      equals: phase
                     style:
                       role: output-label
                       tone: console-accent
@@ -559,7 +559,8 @@ screen:
                     text:
                       binding: outputGroup.details
                     visible:
-                      binding: outputGroup.is_phase
+                      binding: outputGroup.kind
+                      equals: phase
                     style:
                       role: output-code
                       tone: console-text
@@ -567,7 +568,9 @@ screen:
                     text:
                       literal: YAML literal
                     visible:
-                      binding: outputGroup.is_step
+                      binding: outputGroup.kind
+                      equals: phase
+                      not: true
                     style:
                       role: output-label
                       tone: console-accent
@@ -575,7 +578,9 @@ screen:
                     text:
                       binding: outputGroup.yaml_literal
                     visible:
-                      binding: outputGroup.is_step
+                      binding: outputGroup.kind
+                      equals: phase
+                      not: true
                     style:
                       role: output-code
                       tone: console-text
@@ -583,7 +588,9 @@ screen:
                     text:
                       literal: Expanded command
                     visible:
-                      binding: outputGroup.is_step
+                      binding: outputGroup.kind
+                      equals: phase
+                      not: true
                     style:
                       role: output-label
                       tone: console-accent
@@ -591,7 +598,9 @@ screen:
                     text:
                       binding: outputGroup.expanded_command
                     visible:
-                      binding: outputGroup.is_step
+                      binding: outputGroup.kind
+                      equals: phase
+                      not: true
                     style:
                       role: output-code
                       tone: console-text

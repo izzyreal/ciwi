@@ -20,7 +20,11 @@
   const browserViewCache = new Map();
   let screenContractsPreloaded = false;
   let changeRefreshScheduler = null;
-  let activeBrowserSelect = null;
+  let browserSelectControl = null;
+  let graphViewRenderer = null;
+  let treeViewRenderer = null;
+  let domReconciler = null;
+  let viewBindings = null;
   const determinateProgressLimit = .999;
   const indeterminateProgressCycleMs = 4000;
   const overrunProgressCycleMs = 2000;
@@ -277,185 +281,6 @@
     }
   }
 
-  function declarativeExecutionTimestamp(value) {
-	const parsed = new Date(String(value || ''));
-	if (Number.isNaN(parsed.getTime())) return '';
-	const parts = Object.fromEntries(new Intl.DateTimeFormat(undefined, {
-	  weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-	}).formatToParts(parsed).map(part => [part.type, part.value]));
-	return [parts.weekday, parts.day, parts.month].filter(Boolean).join(' ') + ', ' +
-	  [parts.hour, parts.minute, parts.second].filter(Boolean).join(':');
-  }
-
-  function decorateFrontPageProjects(projects) {
-	(Array.isArray(projects) ? projects : []).forEach(project => {
-	  project.project_icon = Number(project.id || 0) > 0 && String(project.source_kind || '') !== 'managed_yaml'
-		? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon'
-		: '';
-	});
-  }
-
-  function decorateProjectDetails(view) {
-	const suppliedProject = view && view.project && typeof view.project === 'object' ? view.project : {};
-	const project = Object.assign({
-	  id: Number(view && view.project_id || 0), name: 'Project', project_icon: '',
-	  repo_url: '', repo_ref: '', config_file: '', pipeline_chains: [], has_pipeline_chains: false,
-	}, suppliedProject);
-	view.project = project;
-	const previousProject = currentData && currentData.projectDetails && currentData.projectDetails.project;
-	const previousFilter = previousProject && String(previousProject.id) === String(project.id)
-	  ? String(currentData.projectDetails.structure_filter || 'all-pipelines')
-	  : 'all-pipelines';
-	project.project_icon = Number(project.id || 0) > 0 ? '/api/v1/projects/' + encodeURIComponent(project.id) + '/icon' : '';
-	view.loading = false;
-	view.ready = true;
-	view.load_error = '';
-	applyProjectStructureFilter(view, previousFilter);
-  }
-
-  function projectDetailsLoadingBinding(projectID) {
-	const id = String(projectID || '');
-	const currentProject = currentData && currentData.projectDetails && currentData.projectDetails.project;
-	const frontProjects = currentData && currentData.frontPage && Array.isArray(currentData.frontPage.projects)
-	  ? currentData.frontPage.projects : [];
-	const source = (currentProject && String(currentProject.id || '') === id
-	  ? currentProject
-	  : frontProjects.find(project => String(project.id || '') === id)) || {};
-	const project = Object.assign({}, source, {
-	  id: source.id || Number(projectID || 0),
-	  name: String(source.name || 'Project'),
-	  project_icon: String(source.project_icon || ''),
-	  pipeline_chains: [], has_pipeline_chains: false,
-	});
-	return {
-	  project, pipelines: [], visible_pipelines: [],
-	  structure_filter: 'all-pipelines', structure_filters: [],
-	  structure_root: {id: 'project:' + id + ':loading', label: project.name, meta: '', runnable: false, project_id: id, chain_id: ''},
-	  show_chain_structure: false, show_pipeline_structure: false,
-	  history_executions: [], history_empty: true,
-	  loading: true, ready: false, load_error: '',
-	};
-  }
-
-  function browserClientBinding() {
-	return {
-	  connected: true, connecting: false, offline: false, address: window.location.host,
-	  status: 'Connected through the browser', tone: 'success', progress: {state: 'none'},
-	};
-  }
-
-  function markBrowserViewReady(view) {
-	if (!view || typeof view !== 'object') return view;
-	view.loading = false;
-	view.ready = true;
-	view.load_error = '';
-	return view;
-  }
-
-  function browserLoadingBinding(routeMatch) {
-	const routeName = routeMatch.route.name;
-	const params = routeMatch.params || {};
-	if (routeName === 'project-details') return projectDetailsLoadingBinding(params.projectId);
-	const loading = {loading: true, ready: false, load_error: ''};
-	if (routeName === 'front-page') return Object.assign(loading, {
-	  server: {version: ''}, projects: [], queued_executions: [], history_executions: [],
-	  queued_empty: false, history_empty: false,
-	});
-	if (routeName === 'job-details') return Object.assign(loading, {
-	  id: String(params.jobId || ''), title: 'Job execution', project_icon: '', progress: {state: 'none'},
-	  status: '', status_label: '', current_step: '', can_rerun: false, can_cancel: false,
-	});
-	if (routeName === 'settings') return Object.assign(loading, {server_version: '', themes: [], projects: []});
-	if (routeName === 'agents') return Object.assign(loading, {summary: '', agents: []});
-	if (routeName === 'agent-details') return Object.assign(loading, {agent: {id: String(params.agentId || '')}});
-	if (routeName === 'agent-script') return Object.assign(loading, {
-	  agent_id: String(params.agentId || ''), agent_label: 'Agent', shells: [], selected_shell: '', script: '', can_run: false,
-	});
-	if (routeName === 'managed-yaml' || routeName === 'managed-yaml-new') return Object.assign(loading, {
-	  title: routeName === 'managed-yaml-new' ? 'Add Managed YAML' : 'Managed YAML',
-	  project_id: Number(params.projectId || 0), project_name: '', yaml: '', revision: '', editing: false,
-	});
-	if (routeName === 'vault') return Object.assign(loading, {connections: []});
-	if (routeName.includes('run-options')) return Object.assign(loading, {
-	  project_id: Number(params.projectId || 0), pipeline_db_id: Number(params.pipelineId || 0),
-	  chain_id: String(params.chainId || ''), target_label: 'Run options', target_kind: 'loading',
-	  source_refs: [], eligible_agents: [], selected_source_ref: '', selected_agent_id: '',
-	});
-	return loading;
-  }
-
-  function decorateJobDetails(view) {
-	view.project_icon = Number(view.project_id || 0) > 0
-	  ? '/api/v1/projects/' + encodeURIComponent(view.project_id) + '/icon'
-	  : '';
-  }
-
-  function applyProjectStructureFilter(view, requestedFilter) {
-	const pipelines = Array.isArray(view && view.pipelines) ? view.pipelines : [];
-	const filters = Array.isArray(view && view.structure_filters) ? view.structure_filters : [];
-	const requested = String(requestedFilter || 'all-pipelines').trim() || 'all-pipelines';
-	const selected = filters.find(filter => String(filter.value || '') === requested)
-	  || filters.find(filter => String(filter.value || '') === 'all-pipelines');
-	if (!selected) return;
-	const included = new Set((Array.isArray(selected.pipeline_ids) ? selected.pipeline_ids : []).map(String));
-	view.structure_filter = String(selected.value || 'all-pipelines');
-	view.visible_pipelines = pipelines.filter(pipeline => included.has(String(pipeline.pipeline_id || '')));
-	view.show_chain_structure = !!selected.show_chain_structure;
-	view.show_pipeline_structure = !!selected.show_pipeline_structure;
-	view.structure_root = Object.assign({}, selected.root || {});
-  }
-
-  function managedYAMLBinding(definition) {
-	const source = definition && typeof definition === 'object' ? definition : {};
-	const projectID = Number(source.project_id || 0);
-	const editing = projectID > 0;
-	return {
-	  title: editing ? 'Edit Managed YAML' : 'Add Managed YAML',
-	  project_id: projectID,
-	  project_name: String(source.project_name || (editing ? '' : 'New managed project')),
-	  yaml: String(source.yaml || ''),
-	  revision: String(source.revision || ''),
-	  editing,
-	  result: '',
-	  result_tone: 'muted',
-	};
-  }
-
-  function agentScriptBinding(view, agentID) {
-	const agent = (view && view.agent) || {};
-	const shells = (Array.isArray(agent.script_shells) ? agent.script_shells : []).map(shell => ({
-	  value: String(shell.value || ''),
-	  label: String(shell.label || shell.value || ''),
-	  example_script: String(shell.example_script || ''),
-	}));
-	const selected = shells.length ? shells[0].value : '';
-	return {
-	  agent_id: String(agentID || agent.id || ''),
-	  agent_label: String(agent.hostname || agent.id || agentID || ''),
-	  shells,
-	  selected_shell: selected,
-	  script: shells.length ? shells[0].example_script : '',
-	  can_run: !!agent.can_run_script && selected !== '',
-	  result: '',
-	  result_tone: 'muted',
-	};
-  }
-
-  function vaultBinding(view) {
-	const connections = Array.isArray(view && view.connections) ? view.connections : [];
-	return {
-	  connections,
-	  connections_empty: connections.length === 0,
-	  name: 'home-vault',
-	  url: '',
-	  role_id: '',
-	  approle_mount: 'approle',
-	  secret_id_env: 'CIWI_VAULT_SECRET_ID',
-	  result: '',
-	  result_tone: 'muted',
-	};
-  }
-
   function withWebOverride(node) {
     const override = node.overrides && node.overrides.web;
     if (!override) return node;
@@ -635,176 +460,6 @@
     }
   }
 
-  function closeBrowserSelect() {
-    if (!activeBrowserSelect) return;
-    const {trigger, menu, onDocumentPointer, onWindowChange} = activeBrowserSelect;
-    if (menu && menu.parentNode) menu.remove();
-    if (trigger) trigger.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('pointerdown', onDocumentPointer, true);
-    window.removeEventListener('resize', onWindowChange);
-    window.removeEventListener('scroll', onWindowChange, true);
-    activeBrowserSelect = null;
-  }
-
-  function layoutBrowserSelectMenu(trigger, menu) {
-    const rect = trigger.getBoundingClientRect();
-	const visuals = activeControls.select;
-    const inset = visuals.viewportInset;
-	const menuGap = visuals.menuGap;
-    const availableWidth = Math.max(visuals.menuMinimumWidth, window.innerWidth - inset * 2);
-    menu.style.maxWidth = availableWidth + 'px';
-    menu.style.minWidth = Math.min(availableWidth, rect.width) + 'px';
-    menu.style.left = Math.min(Math.max(inset, rect.left), Math.max(inset, window.innerWidth - inset - menu.offsetWidth)) + 'px';
-    const below = window.innerHeight - rect.bottom - inset;
-    const above = rect.top - inset;
-    const placeAbove = menu.offsetHeight > below && above > below;
-	const availableHeight = placeAbove ? above : below;
-	menu.style.maxHeight = Math.max(visuals.menuMinimumHeight, Math.min(visuals.menuMaximumHeight, availableHeight)) + 'px';
-    menu.style.top = (placeAbove ? Math.max(inset, rect.top - menu.offsetHeight - menuGap) : rect.bottom + menuGap) + 'px';
-  }
-
-  function selectedBrowserOption(trigger) {
-	const state = trigger.__ciwiSelectState || {options: [], selectedValue: ''};
-	return state.options.find(option => option.value === state.selectedValue)
-	  || state.options[0]
-	  || {value: state.selectedValue, label: state.selectedValue};
-  }
-
-  function updateBrowserSelectTrigger(trigger) {
-	const state = trigger.__ciwiSelectState;
-	if (!state) return;
-	const selected = selectedBrowserOption(trigger);
-	trigger.value = state.selectedValue;
-	trigger.dataset.selectedLabel = selected.label;
-	const label = trigger.querySelector(':scope > .dsl-select-label');
-	if (label) label.textContent = selected.label;
-	trigger.setAttribute('aria-expanded', String(!!activeBrowserSelect && activeBrowserSelect.trigger === trigger));
-	requestAnimationFrame(() => {
-	  if (!document.body.contains(trigger)) return;
-	  const context = document.createElement('canvas').getContext('2d');
-	  const computed = window.getComputedStyle(trigger);
-	  context.font = computed.font;
-	  const widest = state.options.reduce((width, option) => Math.max(width, context.measureText(option.label).width), 0);
-	  const padding = parseFloat(computed.paddingLeft) + parseFloat(computed.paddingRight);
-	  const visuals = activeControls.select;
-	  const contentWidth = widest + padding + visuals.chevronSize + visuals.chevronGap;
-	  trigger.style.width = 'min(100%, ' + String(Math.ceil(contentWidth)) + 'px)';
-	});
-  }
-
-  function syncBrowserSelectMenu(active) {
-	if (!active || !active.menu || !active.trigger.__ciwiSelectState) return;
-	const {trigger, menu} = active;
-	const state = trigger.__ciwiSelectState;
-	const previousFocus = document.activeElement && document.activeElement.closest
-	  ? document.activeElement.closest('.dsl-select-option')
-	  : null;
-	const focusedValue = previousFocus && menu.contains(previousFocus) ? String(previousFocus.dataset.value || '') : '';
-	const existing = new Map(Array.from(menu.querySelectorAll(':scope > .dsl-select-option')).map(choice => [
-	  String(choice.dataset.value || ''),
-	  choice,
-	]));
-	state.options.forEach(option => {
-	  let choice = existing.get(option.value);
-	  if (!choice) {
-		choice = document.createElement('button');
-		choice.type = 'button';
-		choice.className = 'dsl-select-option';
-		choice.setAttribute('role', 'option');
-		const check = document.createElement('span');
-		check.className = 'dsl-select-check';
-		const copy = document.createElement('span');
-		choice.append(check, copy);
-	  }
-	  choice.dataset.value = option.value;
-	  choice.setAttribute('aria-selected', String(option.value === state.selectedValue));
-	  choice.querySelector('.dsl-select-check').textContent = option.value === state.selectedValue ? '✓' : '';
-	  choice.lastElementChild.textContent = option.label;
-	  menu.appendChild(choice);
-	  existing.delete(option.value);
-	});
-	existing.forEach(choice => choice.remove());
-	if (focusedValue) {
-	  const retainedFocus = Array.from(menu.children).find(choice => choice.dataset.value === focusedValue);
-	  if (retainedFocus && document.activeElement !== retainedFocus) retainedFocus.focus({preventScroll: true});
-	}
-  }
-
-  function chooseBrowserSelectOption(trigger, value) {
-	const state = trigger.__ciwiSelectState;
-	if (!state) return;
-	const option = state.options.find(candidate => candidate.value === value);
-	if (!option) return;
-	state.selectedValue = option.value;
-	updateBrowserSelectTrigger(trigger);
-	closeBrowserSelect();
-	trigger.dispatchEvent(new Event('change', {bubbles: true}));
-	trigger.focus();
-  }
-
-  function openBrowserSelect(trigger) {
-	if (activeBrowserSelect && activeBrowserSelect.trigger === trigger) {
-	  closeBrowserSelect();
-	  return;
-	}
-	closeBrowserSelect();
-	const menu = document.createElement('div');
-	menu.className = 'dsl-select-menu';
-	menu.setAttribute('role', 'listbox');
-	menu.setAttribute('aria-label', trigger.getAttribute('aria-label') || 'Options');
-	menu.addEventListener('click', event => {
-	  const choice = event.target.closest('.dsl-select-option');
-	  if (choice && menu.contains(choice)) chooseBrowserSelectOption(trigger, String(choice.dataset.value || ''));
-	});
-	menu.addEventListener('keydown', event => {
-	  const choices = Array.from(menu.querySelectorAll(':scope > .dsl-select-option'));
-	  if (!choices.length) return;
-	  const selectedIndex = Math.max(0, choices.findIndex(choice => choice.dataset.value === trigger.value));
-	  const currentIndex = choices.indexOf(document.activeElement);
-	  const activeIndex = currentIndex >= 0 ? currentIndex : selectedIndex;
-	  const focusAt = index => choices[(index + choices.length) % choices.length].focus();
-	  if (event.key === 'ArrowDown') { event.preventDefault(); focusAt(activeIndex + 1); }
-	  if (event.key === 'ArrowUp') { event.preventDefault(); focusAt(activeIndex - 1); }
-	  if (event.key === 'Home') { event.preventDefault(); focusAt(0); }
-	  if (event.key === 'End') { event.preventDefault(); focusAt(choices.length - 1); }
-	  if (event.key === 'Escape') { event.preventDefault(); closeBrowserSelect(); trigger.focus(); }
-	});
-	document.body.appendChild(menu);
-	const onDocumentPointer = event => {
-	  if (!menu.contains(event.target) && event.target !== trigger && !trigger.contains(event.target)) closeBrowserSelect();
-	};
-	const onWindowChange = () => layoutBrowserSelectMenu(trigger, menu);
-	activeBrowserSelect = {trigger, menu, onDocumentPointer, onWindowChange};
-	trigger.setAttribute('aria-expanded', 'true');
-	syncBrowserSelectMenu(activeBrowserSelect);
-	layoutBrowserSelectMenu(trigger, menu);
-	document.addEventListener('pointerdown', onDocumentPointer, true);
-	window.addEventListener('resize', onWindowChange);
-	window.addEventListener('scroll', onWindowChange, true);
-	const choices = Array.from(menu.querySelectorAll(':scope > .dsl-select-option'));
-	const selectedIndex = Math.max(0, choices.findIndex(choice => choice.dataset.value === trigger.value));
-	choices[selectedIndex] && choices[selectedIndex].focus();
-  }
-
-  function configureBrowserSelect(trigger, options, selectedValue) {
-    trigger.type = 'button';
-    trigger.classList.add('dsl-select');
-	trigger.__ciwiSelectState = {options: options.map(option => ({...option})), selectedValue};
-    trigger.setAttribute('aria-haspopup', 'listbox');
-    trigger.setAttribute('aria-expanded', 'false');
-    const label = document.createElement('span');
-    label.className = 'dsl-select-label';
-	appendPositionedIcon(trigger, label, declarativeIcon('chevron-down'), activeControls.select.chevronPosition);
-	updateBrowserSelectTrigger(trigger);
-    trigger.addEventListener('click', () => openBrowserSelect(trigger));
-    trigger.addEventListener('keydown', event => {
-      if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
-        event.preventDefault();
-		openBrowserSelect(trigger);
-      }
-    });
-  }
-
   function elementContainsTextSelection(element) {
     const selection = window.getSelection && window.getSelection();
     if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) return false;
@@ -862,7 +517,7 @@
 		else if (action.command === 'set-project-structure-filter') {
 		  const details = currentData && currentData.projectDetails;
 		  if (!details) throw new Error('Project structure is unavailable');
-		  applyProjectStructureFilter(details, args.value || 'all-pipelines');
+		  viewBindings.applyProjectStructureFilter(details, args.value || 'all-pipelines');
 		  renderCurrent();
 		}
 		else if (action.command === 'set-report-filter') {
@@ -945,8 +600,8 @@
 		  }
 		  const response = await fetch(runOptionsViewURL(options.selected_source_ref, options.selected_agent_id), {signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
-		  const refreshedOptions = markBrowserViewReady(await response.json());
-		  currentData = {runOptions: refreshedOptions, client: browserClientBinding()};
+		  const refreshedOptions = viewBindings.markBrowserViewReady(await response.json());
+		  currentData = {runOptions: refreshedOptions, client: viewBindings.browserClientBinding()};
 		  browserViewCache.set(routePath(), refreshedOptions);
 		  renderCurrent();
 		}
@@ -1312,440 +967,6 @@
     return icon;
   }
 
-  function definitionGraphNodes(graph, data) {
-    const values = resolve(data, graph.nodes);
-    const nodes = (Array.isArray(values) ? values : []).map(value => {
-      const nodeData = Object.assign({}, data, {[graph.as]: value});
-      const dependencies = graph.dependencies ? resolve(nodeData, graph.dependencies) : [];
-      return {
-        id: String(resolve(nodeData, graph.nodeKey)),
-        label: renderText(graph.nodeLabel, nodeData),
-        meta: renderText(graph.nodeMeta, nodeData),
-        dependencies: (Array.isArray(dependencies) ? dependencies : []).map(String),
-        data: nodeData,
-        level: 0,
-      };
-    });
-	const seen = new Set();
-	nodes.forEach(node => {
-	  if (!node.id.trim()) throw new Error('Empty graph node key');
-	  if (seen.has(node.id)) throw new Error('Duplicate graph node key "' + node.id + '"');
-	  seen.add(node.id);
-	});
-    if (!graph.root) return nodes;
-    const rootValue = resolve(data, graph.root.binding);
-    const rootData = Object.assign({}, data, {[graph.root.as]: rootValue});
-    const rootID = '__root__:' + String(resolve(rootData, graph.root.key));
-    const regularIDs = new Set(nodes.map(graphNode => graphNode.id));
-    nodes.forEach(graphNode => {
-      if (!graphNode.dependencies.some(dependency => regularIDs.has(dependency))) graphNode.dependencies.push(rootID);
-    });
-    nodes.unshift({
-      id: rootID,
-      label: renderText(graph.root.label, rootData),
-      meta: renderText(graph.root.meta, rootData),
-      dependencies: [], data: rootData, root: true, level: 0,
-    });
-    return nodes;
-  }
-
-  function graphRootActionVisible(root, data) {
-    const condition = root && root.actionVisible;
-    if (!condition) return true;
-    const value = resolve(data, condition.binding);
-    const equal = condition.empty
-      ? String(value ?? '') === ''
-      : String(value ?? '') === String(condition.equals || 'true');
-    return condition.not ? !equal : equal;
-  }
-
-  function layoutDefinitionGraph(nodes) {
-    const nodeWidth = 210;
-    const nodeHeight = 76;
-    const gapX = 58;
-    const gapY = 24;
-    const padding = 16;
-    const byID = new Map(nodes.map(node => [node.id, node]));
-    const states = new Map();
-    const level = node => {
-      if (states.get(node.id) === 2) return node.level;
-      if (states.get(node.id) === 1) return 0;
-      states.set(node.id, 1);
-      node.dependencies.forEach(dependency => {
-        const parent = byID.get(dependency);
-        if (parent) node.level = Math.max(node.level, level(parent) + 1);
-      });
-      states.set(node.id, 2);
-      return node.level;
-    };
-    const columns = new Map();
-    let maxLevel = 0;
-    nodes.forEach(node => {
-      maxLevel = Math.max(maxLevel, level(node));
-      if (!columns.has(node.level)) columns.set(node.level, []);
-      columns.get(node.level).push(node);
-    });
-    const maxRows = Math.max(1, ...Array.from(columns.values(), values => values.length));
-    columns.forEach((values, column) => {
-      values.sort((left, right) => left.id.localeCompare(right.id));
-      const topRows = Math.floor((maxRows - values.length) / 2);
-      values.forEach((node, row) => {
-        node.x = padding + column * (nodeWidth + gapX);
-        node.y = padding + (topRows + row) * (nodeHeight + gapY);
-      });
-    });
-    return {
-      byID, nodeWidth, nodeHeight,
-      width: 2 * padding + (maxLevel + 1) * nodeWidth + maxLevel * gapX,
-      height: 2 * padding + maxRows * nodeHeight + (maxRows - 1) * gapY,
-    };
-  }
-
-  function renderDefinitionGraph(node, data, selection, context, viewportState) {
-    const graphNodes = definitionGraphNodes(node.graphView, data);
-    if (!graphNodes.length) {
-      const empty = document.createElement('div');
-      empty.className = 'dsl-definition-graph-empty';
-      empty.textContent = 'No pipelines configured.';
-      return empty;
-    }
-	const details = Array.isArray(node.graphView.details) ? node.graphView.details : [];
-	if (details.length && !graphNodes.some(graphNode => !graphNode.root && graphNode.id === selection.value)) {
-		const regular = graphNodes.filter(graphNode => !graphNode.root);
-		selection.value = (regular.find(graphNode => !graphNode.dependencies.some(dependency => !dependency.startsWith('__root__:'))) || regular[0] || {}).id || '';
-		selection.remember(selection.value);
-	}
-    const layout = layoutDefinitionGraph(graphNodes);
-    const wrapper = document.createElement('div');
-    wrapper.className = 'dsl-definition-graph';
-    const toolbar = document.createElement('div');
-    toolbar.className = 'dsl-definition-graph-toolbar';
-    const viewport = document.createElement('div');
-    viewport.className = 'dsl-definition-graph-viewport';
-	viewport.dataset.ciwiGraphViewportKey = context.identity;
-    const scaler = document.createElement('div');
-    scaler.className = 'dsl-definition-graph-scaler';
-    const stage = document.createElement('div');
-    stage.className = 'dsl-definition-graph-stage';
-    stage.style.width = layout.width + 'px';
-    stage.style.height = layout.height + 'px';
-    const edges = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    edges.classList.add('dsl-definition-graph-edges');
-    edges.setAttribute('viewBox', '0 0 ' + layout.width + ' ' + layout.height);
-    graphNodes.forEach(graphNode => {
-      graphNode.dependencies.forEach(dependency => {
-        const parent = layout.byID.get(dependency);
-        if (!parent) return;
-        const startX = parent.x + layout.nodeWidth;
-        const startY = parent.y + layout.nodeHeight / 2;
-        const endX = graphNode.x;
-        const endY = graphNode.y + layout.nodeHeight / 2;
-        const middle = (startX + endX) / 2;
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', 'M ' + startX + ' ' + startY + ' C ' + middle + ' ' + startY + ', ' + middle + ' ' + endY + ', ' + endX + ' ' + endY);
-        edges.appendChild(path);
-        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        arrow.setAttribute('points', endX + ',' + endY + ' ' + (endX - 8) + ',' + (endY - 5) + ' ' + (endX - 8) + ',' + (endY + 5));
-        edges.appendChild(arrow);
-      });
-    });
-    stage.appendChild(edges);
-    graphNodes.forEach(graphNode => {
-      const card = document.createElement('div');
-      card.className = 'dsl-definition-graph-node' + (graphNode.id === selection.value ? ' selected' : '');
-	  if (graphNode.root) card.classList.add('dsl-definition-graph-root');
-      card.style.left = graphNode.x + 'px';
-      card.style.top = graphNode.y + 'px';
-      card.style.width = layout.nodeWidth + 'px';
-      card.style.height = layout.nodeHeight + 'px';
-	  if (details.length && !graphNode.root) {
-		card.classList.add('selectable');
-		card.tabIndex = 0;
-		card.setAttribute('role', 'button');
-		card.setAttribute('aria-label', 'Select ' + graphNode.label);
-		const select = () => {
-			if (selection.value === graphNode.id) return;
-			selection.value = graphNode.id;
-			selection.remember(graphNode.id);
-			selection.onChange(graphNode.id);
-		};
-		card.addEventListener('click', select);
-		card.addEventListener('keydown', event => {
-			if (event.key === 'Enter' || event.key === ' ') {
-				event.preventDefault();
-				select();
-			}
-		});
-	  }
-      const copy = document.createElement('div');
-      copy.className = 'dsl-definition-graph-node-copy';
-      const title = document.createElement('div');
-      title.className = 'dsl-definition-graph-node-title';
-      title.textContent = graphNode.label;
-      title.title = graphNode.label;
-      const meta = document.createElement('div');
-      meta.className = 'dsl-definition-graph-node-meta';
-      meta.textContent = graphNode.meta;
-      meta.title = graphNode.meta;
-      copy.append(title, meta);
-      card.appendChild(copy);
-      const actions = graphNode.root ? ((node.graphView.root && node.graphView.root.actions) || []) : (node.actions || []);
-      const actionsVisible = !graphNode.root || graphRootActionVisible(node.graphView.root, graphNode.data);
-      if (actions.length && actionsVisible) {
-        const play = document.createElement('button');
-        play.className = 'dsl-button dsl-icon-button dsl-definition-graph-node-play';
-        const runHelp = 'Run ' + graphNode.label + ' as a new execution. Existing queued and running work is not interrupted.';
-        play.setAttribute('aria-label', runHelp);
-        play.title = runHelp;
-        play.appendChild(declarativeIcon('player-play'));
-		play.addEventListener('click', event => event.stopPropagation());
-        const actionIdentity = context.identity + '/graph-node:' + rendererKeyPart(graphNode.id) + '/action';
-		annotateRendererElement(play, 'button', actionIdentity);
-        bindActions(play, actions, graphNode.data, {session: context.session, identity: actionIdentity});
-        card.appendChild(play);
-      }
-      stage.appendChild(card);
-    });
-    scaler.appendChild(stage);
-    viewport.appendChild(scaler);
-	let mountedScaler = scaler;
-	let mountedStage = stage;
-    let scale = Number(viewportState.scale || 1);
-    const clamp = value => Math.min(1.5, Math.max(0.45, value));
-    const scaleLabel = document.createElement('span');
-    scaleLabel.className = 'dsl-definition-graph-scale';
-    const applyScale = next => {
-      scale = clamp(next);
-	  viewportState.scale = scale;
-	  mountedScaler.style.width = Math.round(layout.width * scale) + 'px';
-	  mountedScaler.style.height = Math.round(layout.height * scale) + 'px';
-	  mountedStage.style.transform = 'scale(' + scale + ')';
-      scaleLabel.textContent = Math.round(scale * 100) + '%';
-    };
-	applyScale(scale);
-    const control = (label, icon, action) => {
-      const button = document.createElement('button');
-      button.className = 'dsl-button' + (icon ? ' dsl-icon-button' : '');
-      button.setAttribute('aria-label', label);
-      button.title = label;
-      if (icon) button.appendChild(declarativeIcon(icon));
-      else button.textContent = label;
-      button.addEventListener('click', action);
-      return button;
-    };
-	let mountedViewport = viewport;
-    const fitViewport = target => applyScale(Math.min(
-	  (Math.max(1, target.clientWidth) - 32) / layout.width,
-	  388 / layout.height,
-    ));
-	const fit = () => fitViewport(mountedViewport);
-    toolbar.append(
-      control('Fit', '', fit),
-      control('Reset', '', () => applyScale(1)),
-      control('Zoom out', 'zoom-out', () => applyScale(scale - 0.1)),
-      scaleLabel,
-      control('Zoom in', 'zoom-in', () => applyScale(scale + 0.1)),
-    );
-	wrapper.append(toolbar, viewport);
-	if (details.length) {
-		const selected = graphNodes.find(graphNode => !graphNode.root && graphNode.id === selection.value);
-		if (selected) {
-			const detail = document.createElement('div');
-			detail.className = 'dsl-definition-graph-details';
-			details.forEach((child, index) => detail.appendChild(renderNode(child, selected.data, childRenderContext(
-			  context,
-			  'graph-details:' + String(index),
-			  context.identity + '/graph-node:' + rendererKeyPart(selected.id) + '/details:' + String(index),
-			))));
-			wrapper.appendChild(detail);
-		}
-	}
-	let layoutFrame = 0;
-	const disposeViewport = () => {
-	  if (layoutFrame) cancelAnimationFrame(layoutFrame);
-	  layoutFrame = 0;
-	};
-	const mountViewport = (target, adoptedScaler = mountedScaler, adoptedStage = mountedStage) => {
-	  disposeViewport();
-	  mountedViewport = target;
-	  mountedScaler = adoptedScaler;
-	  mountedStage = adoptedStage;
-	  target.__ciwiDispose = disposeViewport;
-	  target.__ciwiAdoptGraphViewport = mountViewport;
-	  if (!viewportState.initialized) {
-		layoutFrame = requestAnimationFrame(() => {
-		  layoutFrame = 0;
-		  fitViewport(target);
-		  viewportState.initialized = true;
-		});
-	  }
-	};
-	mountViewport(viewport);
-    return wrapper;
-  }
-
-  function renderGraphView(element, node, data, context) {
-    const stateKey = renderText({template: node.graphView.stateKey}, data);
-	const runtimeKey = context.session.screenName + ':' + stateKey;
-	let runtime = graphRuntimeStates.get(runtimeKey);
-	if (!runtime) {
-	  runtime = {selectedID: '', scale: 1, initialized: false};
-	  graphRuntimeStates.set(runtimeKey, runtime);
-	}
-	element.__ciwiStatefulContents = 'graph-view';
-	element.__ciwiGraphRuntime = runtime;
-    let mode = viewStates[stateKey];
-    if (mode !== 'graph' && mode !== 'list') mode = node.graphView.defaultMode === 'list' ? 'list' : 'graph';
-    const header = document.createElement('div');
-    header.className = 'dsl-graph-view-header';
-    const heading = document.createElement('div');
-    heading.className = 'dsl-heading';
-    heading.textContent = renderText(node.text, data) || 'Structure';
-    const modes = document.createElement('div');
-    modes.className = 'dsl-graph-view-modes';
-    const body = document.createElement('div');
-    body.className = 'dsl-graph-view-body';
-	let selectedID = runtime.selectedID;
-    const renderBody = () => {
-	  disposeRenderedNode(body);
-      body.replaceChildren();
-	  if (mode === 'graph') body.appendChild(renderDefinitionGraph(node, data, {
-		value: selectedID,
-		remember: id => {
-		  selectedID = id;
-		  runtime.selectedID = id;
-		},
-		onChange: id => {
-			selectedID = id;
-			runtime.selectedID = id;
-			renderBody();
-		},
-	  }, context, runtime));
-      else (node.children || []).forEach((child, index) => body.appendChild(renderNode(
-		child,
-		data,
-		childRenderContext(context, 'children:' + String(index)),
-	  )));
-      Array.from(modes.children).forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === mode)));
-    };
-    ['graph', 'list'].forEach(value => {
-      const button = document.createElement('button');
-      button.className = 'dsl-button dsl-graph-view-mode';
-      button.dataset.mode = value;
-      button.textContent = value === 'graph' ? 'Graph' : 'List';
-      button.addEventListener('click', () => {
-        mode = value;
-        viewStates[stateKey] = value;
-        saveViewStates();
-        renderBody();
-      });
-      modes.appendChild(button);
-    });
-    header.append(heading, modes);
-    element.append(header, body);
-    renderBody();
-  }
-
-  function renderTreeView(element, node, data, context) {
-	const tree = node.treeView || {};
-	const filter = tree.filter ? String(resolve(data, tree.filter) || 'all') : '';
-	const source = resolve(data, tree.nodes);
-
-	function prepared(raw, depth) {
-	  const itemData = Object.assign({}, data, {[tree.as]: raw});
-	  const rawChildren = resolve(itemData, tree.children);
-	  const children = preparedList(rawChildren, depth + 1);
-	  const filterValues = tree.filterValues ? resolve(itemData, tree.filterValues) : [];
-	  const values = Array.isArray(filterValues) ? filterValues.map(String) : [];
-	  if (filter && filter !== 'all' && values.length && !values.includes(filter)) return null;
-	  if (filter && filter !== 'all' && Array.isArray(rawChildren) && rawChildren.length && children.length === 0) return null;
-	  const key = String(resolve(itemData, tree.nodeKey) ?? '').trim();
-	  if (!key) throw new Error('Empty tree node key at ' + context.path);
-	  return {raw, itemData, children, depth, key};
-	}
-
-	function preparedList(values, depth) {
-	  const entries = (Array.isArray(values) ? values : []).map(item => prepared(item, depth)).filter(Boolean);
-	  const seen = new Set();
-	  entries.forEach(entry => {
-		if (seen.has(entry.key)) throw new Error('Duplicate tree node key "' + entry.key + '" at ' + context.path);
-		seen.add(entry.key);
-	  });
-	  return entries;
-	}
-
-  function renderEntry(entry, parentIdentity = context.identity) {
-	  const itemData = entry.itemData;
-	  const entryKey = entry.key;
-	  const entryIdentity = parentIdentity + '/tree-node:' + rendererKeyPart(entryKey);
-	  const row = document.createElement('div');
-	  row.className = 'dsl-tree-row';
-	  annotateRendererElement(row, 'tree-row', entryIdentity + '/row');
-	  row.style.setProperty('--ciwi-tree-depth', String(entry.depth));
-	  let link = tree.nodeLink ? String(resolve(itemData, tree.nodeLink) || '') : '';
-	  const fileDownload = (node.actions || []).find(action => action.command === 'download-artifact');
-	  if (!link && fileDownload) {
-		const args = Object.fromEntries(Object.entries(fileDownload.arguments || {}).map(([key, value]) => [key, renderText({template: value}, itemData)]));
-		if (String(args.kind || '') === 'file') {
-		  const jobID = encodeURIComponent(args.jobExecutionId || '');
-		  const artifactPath = String(args.path || '').split('/').map(encodeURIComponent).join('/');
-		  link = '/artifacts/' + jobID + '/' + artifactPath;
-		}
-	  }
-	  const label = renderText(tree.nodeLabel, itemData);
-	  const labelElement = document.createElement(link ? 'a' : 'span');
-	  labelElement.className = 'dsl-tree-label';
-	  labelElement.textContent = label;
-	  if (link) {
-		labelElement.href = link;
-		labelElement.target = '_blank';
-		labelElement.rel = 'noopener noreferrer';
-	  }
-	  row.appendChild(labelElement);
-	  const detail = tree.nodeDetail ? renderText(tree.nodeDetail, itemData) : '';
-	  if (detail) {
-		const detailElement = document.createElement('span');
-		detailElement.className = 'dsl-tree-detail';
-		detailElement.textContent = detail;
-		const tone = tree.nodeTone ? semanticTone(resolve(itemData, tree.nodeTone)) : '';
-		if (tone) detailElement.classList.add('dsl-' + tone);
-		row.appendChild(detailElement);
-	  }
-	  const actionLabel = tree.actionLabel ? renderText(tree.actionLabel, itemData) : '';
-	  if (actionLabel && Array.isArray(node.actions) && node.actions.length) {
-		const button = document.createElement('button');
-		button.className = 'dsl-button dsl-tree-action';
-		button.type = 'button';
-		button.textContent = actionLabel;
-		const actionIdentity = entryIdentity + '/action';
-		annotateRendererElement(button, 'button', actionIdentity);
-		bindActions(button, node.actions, itemData, {session: context.session, identity: actionIdentity});
-		row.appendChild(button);
-	  }
-	  if (!entry.children.length) return row;
-	  const details = document.createElement('details');
-	  details.className = 'dsl-tree-branch';
-	  annotateRendererElement(details, 'tree-branch', entryIdentity);
-	  const key = entryKey;
-	  const stateKey = String(tree.stateKey || '') + ':' + key;
-	  const fallback = tree.defaultExpanded ? !!resolve(itemData, tree.defaultExpanded) : false;
-	  details.open = disclosureStates.get(stateKey, fallback);
-	  details.dataset.disclosureKey = stateKey;
-	  details.addEventListener('toggle', () => disclosureStates.set(stateKey, details.open));
-	  const summary = document.createElement('summary');
-	  summary.appendChild(row);
-	  details.appendChild(summary);
-	  const children = document.createElement('div');
-	  children.className = 'dsl-tree-children';
-	  entry.children.forEach(child => children.appendChild(renderEntry(child, entryIdentity)));
-	  details.appendChild(children);
-	  return details;
-	}
-
-	const preparedNodes = preparedList(source, 0);
-	preparedNodes.forEach(entry => element.appendChild(renderEntry(entry)));
-  }
-
   function renderNode(rawNode, data, context) {
     const node = withWebOverride(rawNode);
     if (node.hidden) return document.createDocumentFragment();
@@ -1785,11 +1006,11 @@
     if (style.truncate) element.classList.add('dsl-truncate');
 	applyLayout(element, node.layout);
 	if (node.component === 'graph-view' && node.graphView) {
-	  renderGraphView(element, node, data, context);
+	  graphViewRenderer.render(element, node, data, context);
 	  return element;
 	}
 	if (node.component === 'tree-view' && node.treeView) {
-	  renderTreeView(element, node, data, context);
+	  treeViewRenderer.render(element, node, data, context);
 	  return element;
 	}
 	if (node.enabled) {
@@ -1888,7 +1109,7 @@
 		  label: String(resolve(optionData, node.select.optionLabel)),
 		};
       });
-	  configureBrowserSelect(element, renderedOptions, current);
+	  browserSelectControl.configure(element, renderedOptions, current);
     } else if (node.component === 'input' && node.input) {
 	  if (!node.input.multiline) element.type = 'text';
 	  if (node.input.minLines) {
@@ -1962,245 +1183,17 @@
     return element;
   }
 
-  function rendererNodeKey(node) {
-	return node && node.nodeType === Node.ELEMENT_NODE ? String(node.dataset.ciwiNodeKey || '') : '';
-  }
-
-  function compatibleRenderedNodes(current, next) {
-	if (!current || !next || current.nodeType !== next.nodeType) return false;
-	if (current.nodeType === Node.TEXT_NODE || current.nodeType === Node.COMMENT_NODE) return true;
-	if (current.nodeType !== Node.ELEMENT_NODE) return false;
-	if (current.namespaceURI !== next.namespaceURI || current.localName !== next.localName) return false;
-	const currentKey = rendererNodeKey(current);
-	const nextKey = rendererNodeKey(next);
-	if ((currentKey || nextKey) && currentKey !== nextKey) return false;
-	const currentComponent = String(current.dataset.ciwiComponent || '');
-	const nextComponent = String(next.dataset.ciwiComponent || '');
-	if ((currentComponent || nextComponent) && currentComponent !== nextComponent) return false;
-	const currentIcon = String(current.dataset.ciwiIcon || '');
-	const nextIcon = String(next.dataset.ciwiIcon || '');
-	return !((currentIcon || nextIcon) && currentIcon !== nextIcon);
-  }
-
-  function patchRenderedAttributes(current, next) {
-	Array.from(current.attributes).forEach(attribute => {
-	  if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
-	});
-	Array.from(next.attributes).forEach(attribute => {
-	  if (current.getAttribute(attribute.name) !== attribute.value) current.setAttribute(attribute.name, attribute.value);
-	});
-  }
-
-  function patchRenderedElement(current, next) {
-	const previousProgressState = String(current.__ciwiSemanticProgressState || '');
-	const nextProgressState = String(next.__ciwiSemanticProgressState || '');
-	const preserveProgressAnimation = previousProgressState !== '' && previousProgressState === nextProgressState;
-	const previousProgressDelay = preserveProgressAnimation
-	  ? current.style.getPropertyValue('--ciwi-progress-animation-delay')
-	  : '';
-	patchRenderedAttributes(current, next);
-	if (preserveProgressAnimation) {
-	  if (previousProgressDelay) current.style.setProperty('--ciwi-progress-animation-delay', previousProgressDelay);
-	  else current.style.removeProperty('--ciwi-progress-animation-delay');
-	}
-	if (Object.prototype.hasOwnProperty.call(next, '__ciwiRenderedValue')) {
-	  const previousValue = String(current.__ciwiRenderedValue ?? '');
-	  const nextValue = String(next.__ciwiRenderedValue ?? '');
-	  if (!Object.prototype.hasOwnProperty.call(current, '__ciwiRenderedValue') || previousValue !== nextValue) {
-		current.value = nextValue;
-	  }
-	  current.__ciwiRenderedValue = nextValue;
-	}
-	if (Object.prototype.hasOwnProperty.call(next, '__ciwiRenderedDisabled')) {
-	  current.__ciwiRenderedDisabled = !!next.__ciwiRenderedDisabled;
-	  current.disabled = current.__ciwiRenderedDisabled;
-	}
-	if (Object.prototype.hasOwnProperty.call(next, '__ciwiSemanticProgress')) {
-	  current.__ciwiSemanticProgress = next.__ciwiSemanticProgress;
-	  current.__ciwiSemanticProgressState = preserveProgressAnimation ? previousProgressState : nextProgressState;
-	}
-	if (Object.prototype.hasOwnProperty.call(next, '__ciwiPulseTimestamp')) {
-	  current.__ciwiPulseTimestamp = next.__ciwiPulseTimestamp;
-	}
-	if (Object.prototype.hasOwnProperty.call(next, '__ciwiSelectState')) {
-	  current.__ciwiSelectState = {
-		options: next.__ciwiSelectState.options.map(option => ({...option})),
-		selectedValue: next.__ciwiSelectState.selectedValue,
-	  };
-	  updateBrowserSelectTrigger(current);
-	  if (activeBrowserSelect && activeBrowserSelect.trigger === current) {
-		syncBrowserSelectMenu(activeBrowserSelect);
-		requestAnimationFrame(() => {
-		  if (activeBrowserSelect && activeBrowserSelect.trigger === current) {
-			layoutBrowserSelectMenu(current, activeBrowserSelect.menu);
-		  }
-		});
-	  }
-	}
-  }
-
-  function disposeRenderedNode(node) {
-	if (!node) return;
-	if (activeBrowserSelect && (
-	  node === activeBrowserSelect.trigger
-	  || (node.nodeType === Node.ELEMENT_NODE && node.contains(activeBrowserSelect.trigger))
-	)) closeBrowserSelect();
-	if (node.nodeType !== Node.ELEMENT_NODE) return;
-	const disposables = [node, ...node.querySelectorAll('*')].reverse();
-	disposables.forEach(element => {
-	  if (typeof element.__ciwiDispose !== 'function') return;
-	  const dispose = element.__ciwiDispose;
-	  element.__ciwiDispose = null;
-	  dispose();
-	});
-  }
-
-  function updateStatefulRenderedElement(current, next) {
-	if (next.__ciwiStatefulContents === 'graph-view') {
-	  const mountedViewports = new Map(Array.from(current.querySelectorAll('[data-ciwi-graph-viewport-key]')).map(viewport => [
-		String(viewport.dataset.ciwiGraphViewportKey || ''),
-		viewport,
-	  ]));
-	  const viewportKeys = node => {
-		if (!node || node.nodeType !== Node.ELEMENT_NODE) return [];
-		const result = node.matches('[data-ciwi-graph-viewport-key]') ? [node] : [];
-		return result.concat(Array.from(node.querySelectorAll('[data-ciwi-graph-viewport-key]')))
-		  .map(viewport => String(viewport.dataset.ciwiGraphViewportKey || ''));
-	  };
-	  const adoptViewport = nextViewport => {
-		const mountedViewport = mountedViewports.get(String(nextViewport.dataset.ciwiGraphViewportKey || ''));
-		if (!mountedViewport || typeof nextViewport.__ciwiAdoptGraphViewport !== 'function') return nextViewport;
-		const mountedScaler = mountedViewport.querySelector(':scope > .dsl-definition-graph-scaler');
-		const nextScaler = nextViewport.querySelector(':scope > .dsl-definition-graph-scaler');
-		const mountedStage = mountedScaler && mountedScaler.querySelector(':scope > .dsl-definition-graph-stage');
-		const nextStage = nextScaler && nextScaler.querySelector(':scope > .dsl-definition-graph-stage');
-		if (!mountedScaler || !nextScaler || !mountedStage || !nextStage) return nextViewport;
-		if (typeof mountedViewport.__ciwiDispose === 'function') mountedViewport.__ciwiDispose();
-		patchRenderedAttributes(mountedScaler, nextScaler);
-		patchRenderedAttributes(mountedStage, nextStage);
-		Array.from(mountedStage.childNodes).forEach(disposeRenderedNode);
-		mountedStage.replaceChildren(...Array.from(nextStage.childNodes));
-		patchRenderedAttributes(mountedViewport, nextViewport);
-		const adopt = nextViewport.__ciwiAdoptGraphViewport;
-		nextViewport.__ciwiDispose = null;
-		nextViewport.__ciwiAdoptGraphViewport = null;
-		adopt(mountedViewport, mountedScaler, mountedStage);
-		return mountedViewport;
-	  };
-	  const commitGraphSubtree = (mountedNode, nextNode) => {
-		if (nextNode.matches('[data-ciwi-graph-viewport-key]')) return adoptViewport(nextNode);
-		patchRenderedAttributes(mountedNode, nextNode);
-		const previousChildren = Array.from(mountedNode.childNodes);
-		const retained = new Set();
-		const desiredChildren = Array.from(nextNode.childNodes).map(nextChild => {
-		  const keys = viewportKeys(nextChild);
-		  if (!keys.length) return nextChild;
-		  const candidate = previousChildren.find(child => !retained.has(child) && viewportKeys(child).some(key => keys.includes(key)));
-		  if (!candidate || candidate.nodeType !== Node.ELEMENT_NODE || nextChild.nodeType !== Node.ELEMENT_NODE) return nextChild;
-		  retained.add(candidate);
-		  return commitGraphSubtree(candidate, nextChild);
-		});
-		previousChildren.forEach(child => {
-		  if (retained.has(child) || child.parentNode !== mountedNode) return;
-		  disposeRenderedNode(child);
-		  child.remove();
-		});
-		desiredChildren.forEach((child, index) => {
-		  const reference = mountedNode.childNodes[index] || null;
-		  if (child !== reference) mountedNode.insertBefore(child, reference);
-		});
-		return mountedNode;
-	  };
-	  commitGraphSubtree(current, next);
-	} else {
-	  Array.from(current.childNodes).forEach(disposeRenderedNode);
-	  current.replaceChildren(...Array.from(next.childNodes));
-	}
-	current.__ciwiStatefulContents = next.__ciwiStatefulContents;
-	current.__ciwiGraphRuntime = next.__ciwiGraphRuntime;
-  }
-
-  function reconcileRenderedChildren(current, next) {
-	const previousChildren = Array.from(current.childNodes);
-	const keyedChildren = new Map(previousChildren.map(child => [rendererNodeKey(child), child]).filter(([key]) => key));
-	const nextKeys = new Set(Array.from(next.childNodes).map(rendererNodeKey).filter(Boolean));
-	keyedChildren.forEach((child, key) => {
-	  if (!nextKeys.has(key)) {
-		disposeRenderedNode(child);
-		child.remove();
-	  }
-	});
-	const retained = new Set();
-	Array.from(next.childNodes).forEach((nextChild, index) => {
-	  const key = rendererNodeKey(nextChild);
-	  let candidate = key ? keyedChildren.get(key) : current.childNodes[index];
-	  if (candidate && retained.has(candidate)) candidate = null;
-	  if (candidate && !key && rendererNodeKey(candidate)) candidate = null;
-	  let committedChild = nextChild;
-	  if (candidate && compatibleRenderedNodes(candidate, nextChild)) {
-		committedChild = reconcileRenderedNode(candidate, nextChild);
-		retained.add(candidate);
-	  } else if (candidate && candidate.parentNode === current) {
-		disposeRenderedNode(candidate);
-		candidate.replaceWith(nextChild);
-	  }
-	  const reference = current.childNodes[index] || null;
-	  if (committedChild !== reference) current.insertBefore(committedChild, reference);
-	});
-	previousChildren.forEach(child => {
-	  if (!retained.has(child) && child.parentNode === current) {
-		disposeRenderedNode(child);
-		child.remove();
-	  }
-	});
-  }
-
-  function reconcileRenderedNode(current, next) {
-	if (!compatibleRenderedNodes(current, next)) {
-	  disposeRenderedNode(current);
-	  current.replaceWith(next);
-	  return next;
-	}
-	if (current.nodeType === Node.TEXT_NODE || current.nodeType === Node.COMMENT_NODE) {
-	  if (current.data !== next.data) {
-		const selection = current.nodeType === Node.TEXT_NODE && window.getSelection ? window.getSelection() : null;
-		const selectionTouchesCurrent = selection && (selection.anchorNode === current || selection.focusNode === current);
-		const anchorNode = selectionTouchesCurrent ? selection.anchorNode : null;
-		const focusNode = selectionTouchesCurrent ? selection.focusNode : null;
-		const anchorOffset = selectionTouchesCurrent ? selection.anchorOffset : 0;
-		const focusOffset = selectionTouchesCurrent ? selection.focusOffset : 0;
-		current.data = next.data;
-		if (selectionTouchesCurrent && selection.setBaseAndExtent) {
-		  const boundedOffset = (node, offset) => node === current ? Math.min(offset, current.data.length) : offset;
-		  selection.setBaseAndExtent(
-			anchorNode, boundedOffset(anchorNode, anchorOffset),
-			focusNode, boundedOffset(focusNode, focusOffset),
-		  );
-		}
-	  }
-	  return current;
-	}
-	if (next.__ciwiStatefulContents) {
-	  updateStatefulRenderedElement(current, next);
-	  return current;
-	}
-	patchRenderedElement(current, next);
-	reconcileRenderedChildren(current, next);
-	if (typeof window.ciwiSyncActionElement === 'function') window.ciwiSyncActionElement(current);
-	return current;
-  }
-
   function renderCurrent() {
     if (!currentDocument || !currentData) return;
 	const session = createRenderSession(currentDocument.metadata && currentDocument.metadata.name);
 	const nextRoot = renderNode(currentDocument.screen.root, currentData, rootRenderContext(session));
 	const nextSignature = session.screenName + ':' + currentPath;
 	const previousRoot = root.childNodes.length === 1 ? root.firstChild : null;
-	const reconcile = committedRenderSignature === nextSignature && compatibleRenderedNodes(previousRoot, nextRoot);
+	const reconcile = committedRenderSignature === nextSignature && domReconciler.compatible(previousRoot, nextRoot);
 	const viewState = reconcile ? null : window.ciwiCaptureViewState(root);
-	if (reconcile) reconcileRenderedNode(previousRoot, nextRoot);
+	if (reconcile) domReconciler.reconcile(previousRoot, nextRoot);
 	else {
-	  disposeRenderedNode(root);
+	  domReconciler.dispose(root);
 	  root.replaceChildren(nextRoot);
 	}
 	committedActionBindings = session.actionBindings;
@@ -2434,11 +1427,9 @@
 	view.system_output = previousView ? String(previousView.system_output || '') : '';
 	view.output_after_event_id = Number.isFinite(previousCursor) && previousCursor >= 0 ? previousCursor : 0;
     (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
-	  const previousGroup = previousGroups.get(String(group.id || ''));
+      const previousGroup = previousGroups.get(String(group.id || ''));
       group.output = previousGroup ? String(previousGroup.output || '') : '';
-      group.is_phase = group.kind === 'phase';
-      group.is_step = group.kind !== 'phase';
-	  group.empty_output_label = group.output ? '' : (group.reached ? '(no output)' : '(step was not reached)');
+      group.empty_output_label = group.output ? '' : (group.reached ? '(no output)' : '(step was not reached)');
       group.yaml_literal = group.yaml_literal || '(none)';
       group.expanded_command = group.expanded_command || '(none)';
       group.details = group.details || '(none)';
@@ -2642,7 +1633,7 @@
 		cachedView.ready = true;
 		cachedView.load_error = '';
 	  }
-	  const loadingView = options.showLoading ? (cachedView || browserLoadingBinding(nextRouteMatch)) : null;
+	  const loadingView = options.showLoading ? (cachedView || viewBindings.browserLoadingBinding(nextRouteMatch)) : null;
 	  if (loadingView) {
 		const [loadingDocument, loadingThemes, loadingControls] = await Promise.all([documentPromise, themesPromise, controlsPromise]);
 		if (loadGeneration !== routeLoadGeneration) return false;
@@ -2652,7 +1643,7 @@
 		currentRouteMatch = nextRouteMatch;
 		currentPath = routePath();
 		currentDocument = loadingDocument;
-		currentData = {[bindingRoot]: loadingView, client: browserClientBinding()};
+		currentData = {[bindingRoot]: loadingView, client: viewBindings.browserClientBinding()};
 		renderCurrent();
 		loadingCommitted = true;
 	  }
@@ -2662,14 +1653,14 @@
       applyContractTheme(themes);
 	  applyControlsContract(controls);
       let view = responseView;
-	  if (managedYAMLMatch) view = managedYAMLBinding(responseView);
-	  if (agentScriptMatch) view = agentScriptBinding(responseView, nextRouteMatch.params.agentId);
-	  if (vaultMatch) view = vaultBinding(responseView);
+	  if (managedYAMLMatch) view = viewBindings.managedYAMLBinding(responseView);
+	  if (agentScriptMatch) view = viewBindings.agentScriptBinding(responseView, nextRouteMatch.params.agentId);
+	  if (vaultMatch) view = viewBindings.vaultBinding(responseView);
 	  if (projectMatch) {
-		decorateProjectDetails(view);
+		viewBindings.decorateProjectDetails(view);
 	  }
 	  if (routeName === 'front-page') {
-		decorateFrontPageProjects(view.projects);
+		viewBindings.decorateFrontPageProjects(view.projects);
       }
       if (settingsMatch) {
         const selectedTheme = ciwiStoredTheme();
@@ -2694,8 +1685,8 @@
 		  const updatedUTC = String(project.updated_utc || '').trim();
 		  const updatedMilliseconds = Number(project.updated_unix_ms || 0);
 		  const updatedLabel = updatedUTC
-			? declarativeExecutionTimestamp(updatedUTC)
-			: (updatedMilliseconds > 0 ? declarativeExecutionTimestamp(new Date(updatedMilliseconds).toISOString()) : '');
+			? viewBindings.declarativeExecutionTimestamp(updatedUTC)
+			: (updatedMilliseconds > 0 ? viewBindings.declarativeExecutionTimestamp(new Date(updatedMilliseconds).toISOString()) : '');
 		  project.updated_label = updatedLabel || 'Unknown';
 		});
 		view = {
@@ -2726,7 +1717,7 @@
 		const previousJob = currentData && currentData.jobDetails;
 		const sameJob = previousJob && String(previousJob.id || '') === String(view.id || '');
 		if (!sameJob) completedOutputJobID = '';
-		decorateJobDetails(view);
+		viewBindings.decorateJobDetails(view);
 		view.output_search = sameJob ? String(previousJob.output_search || '') : '';
 		view.output_match_index = sameJob ? Number(previousJob.output_match_index || 0) : 0;
 		initializeJobOutputView(view, sameJob ? previousJob : null);
@@ -2744,12 +1735,12 @@
       }
 	  if (!jobMatch) completedOutputJobID = '';
 	  if (loadGeneration !== routeLoadGeneration) return false;
-	  markBrowserViewReady(view);
+	  viewBindings.markBrowserViewReady(view);
 	  setOutputWatchGeneration(generation);
 	  currentRouteMatch = nextRouteMatch;
 	  currentPath = routePath();
 	  currentDocument = documentContract;
-	  currentData = { [bindingRoot]: view, client: browserClientBinding() };
+	  currentData = { [bindingRoot]: view, client: viewBindings.browserClientBinding() };
 	  browserViewCache.set(cacheKey, view);
       renderCurrent();
       if (jobMatch) {
@@ -2785,7 +1776,7 @@
 	  message.textContent = error.message || String(error);
 	  committedRenderSignature = '';
 	  committedActionBindings = new Map();
-	  disposeRenderedNode(root);
+	  domReconciler.dispose(root);
       root.replaceChildren(message);
 	  return false;
     }
@@ -2794,6 +1785,41 @@
 	  if (scheduler) scheduler.endRefresh();
 	}
   }
+
+  viewBindings = window.ciwiCreateBrowserViewBindings({getCurrentData: () => currentData});
+
+  domReconciler = window.ciwiCreateDOMReconciler({selectControl: () => browserSelectControl});
+
+  treeViewRenderer = window.ciwiCreateTreeViewRenderer({
+    resolve,
+    renderText,
+    semanticTone,
+    bindActions,
+    rendererKeyPart,
+    annotateRendererElement,
+    disclosureStates,
+  });
+
+  graphViewRenderer = window.ciwiCreateGraphViewRenderer({
+    resolve,
+    renderText,
+    icon: declarativeIcon,
+    bindActions,
+    renderNode,
+    childRenderContext,
+    rendererKeyPart,
+    annotateRendererElement,
+    disposeRenderedNode: node => domReconciler.dispose(node),
+    graphRuntimeStates,
+    viewStates,
+    saveViewStates,
+  });
+
+  browserSelectControl = window.ciwiCreateBrowserSelectControl({
+    controls: () => activeControls,
+    appendPositionedIcon,
+    icon: declarativeIcon,
+  });
 
   window.addEventListener('popstate', () => {
 	const pending = pendingHistoryNavigation;

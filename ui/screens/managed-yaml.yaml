@@ -3,7 +3,7 @@ kind: Screen
 metadata: {name: managed-yaml, title: Managed YAML}
 screen:
   dataSources:
-    - {name: managedYAML, query: get-managed-yaml, watchTopics: [projects]}
+    - {name: managedYAML, watchTopics: [projects]}
   root:
     component: page
     id: managed-yaml

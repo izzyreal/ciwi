@@ -11,6 +11,7 @@ import (
 
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
+	sharedui "github.com/izzyreal/ciwi/ui"
 )
 
 func TestNextReconnectDelayBacksOffAndCaps(t *testing.T) {
@@ -94,32 +95,64 @@ func TestCaptureSSHHostKeyErrorRequiresExplicitDecision(t *testing.T) {
 
 func TestRunOptionsIgnoresHeartbeatOnlyAgentInvalidations(t *testing.T) {
 	navigation := navigationState{screen: "run-options", pipelineDBID: 1}
-	if relevantScreenChange(navigation, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS}}) {
+	screen, err := sharedui.LoadScreen(navigation.screen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relevantScreenChange(screen, navigation, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS}}) {
 		t.Fatal("ordinary agent heartbeat invalidated run options")
 	}
-	if !relevantScreenChange(navigation, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY}}) {
+	if !relevantScreenChange(screen, navigation, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY}}) {
 		t.Fatal("agent eligibility change did not invalidate run options")
 	}
 }
 
 func TestJobDetailsOnlyRefreshesForScopedNonOutputChanges(t *testing.T) {
 	navigation := navigationState{screen: "job-details", jobID: "job-1"}
-	if relevantScreenChange(navigation, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY}}) {
+	screen, err := sharedui.LoadScreen(navigation.screen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relevantScreenChange(screen, navigation, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY}}) {
 		t.Fatal("unscoped history invalidation refreshed job details")
 	}
-	if relevantScreenChange(navigation, &cnpv1.ChangeEvent{
+	if relevantScreenChange(screen, navigation, &cnpv1.ChangeEvent{
 		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY}, JobExecutionIds: []string{"job-2"},
 	}) {
 		t.Fatal("another execution refreshed job details")
 	}
-	if !relevantScreenChange(navigation, &cnpv1.ChangeEvent{
+	if !relevantScreenChange(screen, navigation, &cnpv1.ChangeEvent{
 		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY}, JobExecutionIds: []string{"job-1"},
 	}) {
 		t.Fatal("current execution history change did not refresh job details")
 	}
-	if relevantScreenChange(navigation, &cnpv1.ChangeEvent{
+	if relevantScreenChange(screen, navigation, &cnpv1.ChangeEvent{
 		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY, cnpv1.ChangeTopic_CHANGE_TOPIC_JOB_OUTPUT}, JobExecutionIds: []string{"job-1"},
 	}) {
 		t.Fatal("stream-owned output change refreshed job details")
+	}
+}
+
+func TestNativeRefreshUsesEverySharedScreenTopic(t *testing.T) {
+	tests := []struct {
+		screen string
+		topic  cnpv1.ChangeTopic
+	}{
+		{screen: "front-page", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS},
+		{screen: "project-details", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY},
+		{screen: "agent-script", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS},
+		{screen: "managed-yaml", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS},
+		{screen: "vault", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_VAULT},
+	}
+	for _, test := range tests {
+		t.Run(test.screen, func(t *testing.T) {
+			screen, err := sharedui.LoadScreen(test.screen)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !relevantScreenChange(screen, navigationState{screen: test.screen}, &cnpv1.ChangeEvent{Topics: []cnpv1.ChangeTopic{test.topic}}) {
+				t.Fatalf("%s did not refresh for its declared %q topic", test.screen, nativeChangeTopicName(test.topic))
+			}
+		})
 	}
 }

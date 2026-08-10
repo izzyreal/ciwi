@@ -32,6 +32,11 @@ var staticRoutes = map[string]embeddedAsset{
 	"/ui/notices.js":          {"assets/js/notices.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/view-state.js":       {"assets/js/view-state.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/change-refresh.js":   {"assets/js/change-refresh.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/view-bindings.js":    {"assets/js/view-bindings.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/select-control.js":   {"assets/js/select-control.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/graph-view.js":       {"assets/js/graph-view.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/tree-view.js":        {"assets/js/tree-view.js", "application/javascript; charset=utf-8", true, true},
+	"/ui/dom-reconciler.js":   {"assets/js/dom-reconciler.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/declarative.js":      {"assets/js/declarative.js", "application/javascript; charset=utf-8", true, true},
 	"/ui/css/chrome.css":      {"assets/css/chrome.css", "text/css; charset=utf-8", true, true},
 	"/ui/css/declarative.css": {"assets/css/declarative.css", "text/css; charset=utf-8", true, true},
@@ -74,6 +79,9 @@ func currentBrowserUIRevision() string {
 			return nil
 		})
 		_, _ = hash.Write([]byte(sharedui.Revision()))
+		if themes, err := sharedui.LoadThemes(); err == nil {
+			_, _ = hash.Write([]byte(browserThemeCSS(themes)))
+		}
 		browserUIRevision = hex.EncodeToString(hash.Sum(nil))[:16]
 	})
 	return browserUIRevision
@@ -99,6 +107,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/ui/css/typography.css" {
 		serveTypographyCSS(w, r)
+		return
+	}
+	if r.URL.Path == "/ui/css/themes.css" {
+		serveThemeCSS(w, r)
 		return
 	}
 	if r.URL.Path == "/ui/contracts/typography.json" {
@@ -139,10 +151,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.HasPrefix(r.URL.Path, "/declarative-preview") {
-		http.NotFound(w, r)
-		return
-	}
 	routes, err := loadRouteContract()
 	if err != nil {
 		http.Error(w, "shared UI routes unavailable", http.StatusInternalServerError)

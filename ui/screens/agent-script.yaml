@@ -6,7 +6,6 @@ metadata:
 screen:
   dataSources:
     - name: agentScript
-      query: get-agent-details
       watchTopics: [agents]
   root:
     component: page

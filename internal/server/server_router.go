@@ -19,8 +19,6 @@ func buildRouter(s *stateStore, artifactsDir string) http.Handler {
 	r.HandleFunc("/ciwi-logo.png", webui.Handler)
 	r.HandleFunc("/ui/*", webui.Handler)
 	r.HandleFunc("/settings", webui.Handler)
-	r.HandleFunc("/declarative-preview", webui.Handler)
-	r.HandleFunc("/declarative-preview/*", webui.Handler)
 	r.HandleFunc("/vault", webui.Handler)
 	r.HandleFunc("/managed-yaml/*", webui.Handler)
 	r.HandleFunc("/run-options/*", webui.Handler)

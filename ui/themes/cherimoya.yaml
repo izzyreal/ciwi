@@ -4,8 +4,6 @@ metadata: {name: cherimoya, title: Cherimoya, description: "Scaly spring green, 
 theme:
   colors:
     background: "#f4f8e8"
-    background-start: "#a9c95f"
-    background-end: "#dce8a5"
     background-glow-a: "#84ad40"
     background-glow-b: "#d2bc77"
     surface: "#fffef7"

@@ -13,13 +13,7 @@ metadata:
 screen:
   dataSources:
     - name: frontPage
-      query: get-front-page-view
       watchTopics: [server, projects]
-  persistence:
-    - name: projectsExpanded
-      storageKey: ciwi.front-page.projects-expanded.v1
-      defaultValue: "true"
-      scope: client
   root:
     component: page
     id: front-page

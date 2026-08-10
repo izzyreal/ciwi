@@ -4,8 +4,6 @@ metadata: {name: durian, title: Durian, description: "Spiked olive rind, rich cu
 theme:
   colors:
     background: "#f8f4dc"
-    background-start: "#a79d54"
-    background-end: "#e5cf77"
     background-glow-a: "#7f803f"
     background-glow-b: "#d5a74a"
     surface: "#fffdf2"

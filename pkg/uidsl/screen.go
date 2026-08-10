@@ -30,23 +30,13 @@ type ScreenDocument struct {
 }
 
 type Screen struct {
-	DataSources []DataSource        `yaml:"dataSources,omitempty" json:"dataSources,omitempty"`
-	Persistence []Persistence       `yaml:"persistence,omitempty" json:"persistence,omitempty"`
-	Root        Node                `yaml:"root" json:"root"`
-	Overrides   map[string]Override `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+	DataSources []DataSource `yaml:"dataSources,omitempty" json:"dataSources,omitempty"`
+	Root        Node         `yaml:"root" json:"root"`
 }
 
 type DataSource struct {
 	Name        string   `yaml:"name" json:"name"`
-	Query       string   `yaml:"query" json:"query"`
 	WatchTopics []string `yaml:"watchTopics,omitempty" json:"watchTopics,omitempty"`
-}
-
-type Persistence struct {
-	Name         string `yaml:"name" json:"name"`
-	StorageKey   string `yaml:"storageKey" json:"storageKey"`
-	DefaultValue string `yaml:"defaultValue,omitempty" json:"defaultValue,omitempty"`
-	Scope        string `yaml:"scope,omitempty" json:"scope,omitempty"`
 }
 
 type Node struct {
@@ -231,32 +221,6 @@ var components = map[string]bool{
 	"divider": true,
 }
 
-var commands = map[string]bool{
-	"navigate": true, "navigate-back": true, "run-pipeline": true, "run-chain": true,
-	"toggle": true, "refresh": true, "clear-queue": true,
-	"flush-history": true, "delete-execution": true, "remove-execution": true,
-	"cancel-execution": true, "rerun-execution": true,
-	"change-theme":         true,
-	"select-timeline-item": true, "change-output-search": true,
-	"find-output": true, "copy-output": true, "toggle-output-tailing": true,
-	"set-report-filter": true, "download-artifact": true, "download-job-log": true,
-	"set-disclosures":              true,
-	"set-run-option":               true,
-	"set-agent-script-field":       true,
-	"set-project-structure-filter": true,
-	"agent-action":                 true,
-	"run-agent-script":             true,
-	"project-action":               true,
-	"set-project-import-field":     true, "import-project": true,
-	"set-managed-yaml-field": true, "validate-managed-yaml": true, "save-managed-yaml": true,
-	"set-vault-field": true, "save-vault-connection": true, "test-vault-connection": true, "delete-vault-connection": true,
-	"set-server-update-option": true, "check-server-updates": true,
-	"refresh-rollback-versions": true, "server-update-action": true,
-	"set-connection-field": true, "save-connection": true, "retry-connection": true,
-	"generate-ssh-device-key": true, "trust-ssh-host-key": true, "reject-ssh-host-key": true, "copy-text": true,
-	"open-url": true,
-}
-
 func ParseScreen(payload []byte) (*ScreenDocument, error) {
 	var document ScreenDocument
 	if err := decodeStrict(payload, &document); err != nil {
@@ -286,12 +250,6 @@ func (d *ScreenDocument) Validate() error {
 		if !identifierPattern.MatchString(source.Name) {
 			return fmt.Errorf("dataSources[%d].name %q is not a valid identifier", i, source.Name)
 		}
-		if source.Query == "" {
-			return fmt.Errorf("dataSources[%d].query is required", i)
-		}
-		if source.Query != "get-front-page-view" && source.Query != "get-project-details" && source.Query != "get-job-details" && source.Query != "get-settings-view" && source.Query != "get-managed-yaml" && source.Query != "get-run-options" && source.Query != "get-agents-view" && source.Query != "get-agent-details" && source.Query != "get-vault-connections" && source.Query != "get-native-connection" && source.Query != "get-native-client-state" {
-			return fmt.Errorf("dataSources[%d].query %q is not supported", i, source.Query)
-		}
 		for _, topic := range source.WatchTopics {
 			if !changeTopics[topic] {
 				return fmt.Errorf("dataSources[%d].watchTopics contains unsupported topic %q", i, topic)
@@ -301,25 +259,6 @@ func (d *ScreenDocument) Validate() error {
 			return fmt.Errorf("duplicate data source %q", source.Name)
 		}
 		sources[source.Name] = struct{}{}
-	}
-	state := map[string]struct{}{}
-	for i, item := range d.Screen.Persistence {
-		if !identifierPattern.MatchString(item.Name) || item.StorageKey == "" {
-			return fmt.Errorf("persistence[%d] requires a valid name and storageKey", i)
-		}
-		if item.Scope != "" && item.Scope != "client" && item.Scope != "session" {
-			return fmt.Errorf("persistence[%d].scope must be client or session", i)
-		}
-		if _, exists := state[item.Name]; exists {
-			return fmt.Errorf("duplicate persistence name %q", item.Name)
-		}
-		state[item.Name] = struct{}{}
-		sources[item.Name] = struct{}{}
-	}
-	for platform := range d.Screen.Overrides {
-		if platform != "web" && platform != "gio" && platform != "compact" {
-			return fmt.Errorf("screen.overrides contains unsupported platform %q", platform)
-		}
 	}
 	ids := map[string]struct{}{}
 	return validateNode(d.Screen.Root, "screen.root", ids, sources)
@@ -539,8 +478,8 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 				if action.On != "activate" {
 					return fmt.Errorf("%s.graphView.root.actions[%d].on must be activate", path, i)
 				}
-				if !commands[action.Command] {
-					return fmt.Errorf("%s.graphView.root.actions[%d].command %q is not supported", path, i, action.Command)
+				if !identifierPattern.MatchString(action.Command) {
+					return fmt.Errorf("%s.graphView.root.actions[%d].command %q is malformed", path, i, action.Command)
 				}
 				for name, value := range action.Arguments {
 					if err := validateTemplate(value, rootScope); err != nil {
@@ -634,8 +573,8 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		if action.On != "activate" && action.On != "change" {
 			return fmt.Errorf("%s.actions[%d].on must be activate or change", path, i)
 		}
-		if !commands[action.Command] {
-			return fmt.Errorf("%s.actions[%d].command %q is not supported", path, i, action.Command)
+		if !identifierPattern.MatchString(action.Command) {
+			return fmt.Errorf("%s.actions[%d].command %q is malformed", path, i, action.Command)
 		}
 		if node.Component == "select" && action.On != "change" {
 			return fmt.Errorf("%s.actions[%d].on must be change for a select component", path, i)

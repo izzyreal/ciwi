@@ -4,8 +4,6 @@ metadata: {name: default, title: Default, description: "Bright mint with stronge
 theme:
   colors: &colors
     background: "#edf7f1"
-    background-start: "#bce8d0"
-    background-end: "#dff2e8"
     background-glow-a: "#79d5aa"
     background-glow-b: "#b8dcf0"
     surface: "#ffffff"

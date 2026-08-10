@@ -8,7 +8,7 @@ import (
 )
 
 func TestBrowserSettingsRestoresPersistedUpdateCheck(t *testing.T) {
-	payload, err := uiAssets.ReadFile("assets/js/declarative.js")
+	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}

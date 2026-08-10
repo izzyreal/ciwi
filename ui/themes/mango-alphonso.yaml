@@ -4,8 +4,6 @@ metadata: {name: mango-alphonso, title: Mango Alphonso, description: "Deep Alpho
 theme:
   colors:
     background: "#fff1dc"
-    background-start: "#df7728"
-    background-end: "#a94b18"
     background-glow-a: "#f59a35"
     background-glow-b: "#b65a1d"
     surface: "#fff9ef"

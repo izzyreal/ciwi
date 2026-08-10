@@ -211,6 +211,11 @@ async function installFixture(page, models) {
         <script src="/ui/view-state.js"></script>
         <script src="/ui/heartbeat.js"></script>
         <script src="/ui/change-refresh.js"></script>
+        <script src="/ui/view-bindings.js"></script>
+        <script src="/ui/select-control.js"></script>
+        <script src="/ui/graph-view.js"></script>
+        <script src="/ui/tree-view.js"></script>
+        <script src="/ui/dom-reconciler.js"></script>
         <script src="/ui/declarative.js"></script>
       </body></html>`});
       return;
@@ -286,7 +291,9 @@ async function installSettingsFixture(page) {
         </script>
         <script src="/ui/theme.js"></script><script src="/ui/actions.js"></script>
         <script src="/ui/view-state.js"></script><script src="/ui/heartbeat.js"></script>
-        <script src="/ui/change-refresh.js"></script><script src="/ui/declarative.js"></script>
+        <script src="/ui/change-refresh.js"></script><script src="/ui/view-bindings.js"></script>
+        <script src="/ui/select-control.js"></script><script src="/ui/graph-view.js"></script>
+        <script src="/ui/tree-view.js"></script><script src="/ui/dom-reconciler.js"></script><script src="/ui/declarative.js"></script>
       </body></html>`});
       return;
     }

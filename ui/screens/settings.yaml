@@ -7,15 +7,8 @@ metadata:
 screen:
   dataSources:
     - name: settings
-      query: get-settings-view
       watchTopics: [server, projects, updates]
     - name: client
-      query: get-native-client-state
-  persistence:
-    - name: selectedTheme
-      storageKey: ciwi.ui.theme.v1
-      defaultValue: default
-      scope: client
   root:
     component: page
     id: settings

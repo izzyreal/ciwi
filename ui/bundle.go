@@ -73,6 +73,13 @@ func LoadScreen(name string) (*uidsl.ScreenDocument, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse screen %q: %w", name, err)
 	}
+	catalog, err := LoadActionCatalog()
+	if err != nil {
+		return nil, err
+	}
+	if err := document.ValidateScreenActions(catalog); err != nil {
+		return nil, fmt.Errorf("validate screen %q actions: %w", name, err)
+	}
 	return document, nil
 }
 

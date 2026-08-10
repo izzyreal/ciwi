@@ -7,7 +7,6 @@ metadata:
 screen:
   dataSources:
     - name: connection
-      query: get-native-connection
   root:
     component: page
     id: connection

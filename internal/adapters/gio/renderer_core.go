@@ -56,6 +56,9 @@ type Renderer struct {
 	pageBackgroundReady    bool
 	surfaceBackground      paint.ImageOp
 	surfaceBackgroundReady bool
+	heroBackground         paint.ImageOp
+	heroBackgroundSize     image.Point
+	heroBackgroundReady    bool
 	onAction               ActionHandler
 	invalidate             func()
 	pending                *pendingConfirmation
@@ -119,14 +122,26 @@ type nativeNotice struct {
 }
 
 type palette struct {
-	background, backgroundStart, backgroundEnd, backgroundGlowA, backgroundGlowB color.NRGBA
-	heroStart, heroEnd, surface, surfaceRaised, surfaceGlow, subtle              color.NRGBA
-	text, muted, accent, accentStrong, pillBackground, pillText                  color.NRGBA
-	noticeBackground, noticeText, noticeBorder                                   color.NRGBA
-	awaitingSurface, awaitingBorder, awaitingText                                color.NRGBA
-	border, success, warning, danger, focus                                      color.NRGBA
-	consoleBackground, consoleSurface, consoleBorder                             color.NRGBA
-	consoleText, consoleMuted, consoleAccent, consoleSuccess                     color.NRGBA
+	background, backgroundGlowA, backgroundGlowB                color.NRGBA
+	surface, surfaceRaised, surfaceGlow, subtle                 color.NRGBA
+	text, muted, accent, accentStrong, pillBackground, pillText color.NRGBA
+	noticeBackground, noticeText, noticeBorder                  color.NRGBA
+	awaitingSurface, awaitingBorder, awaitingText               color.NRGBA
+	border, success, warning, danger, focus                     color.NRGBA
+	consoleBackground, consoleSurface, consoleBorder            color.NRGBA
+	consoleText, consoleMuted, consoleAccent, consoleSuccess    color.NRGBA
+	pageGradient, heroGradient                                  nativeGradient
+}
+
+type nativeGradient struct {
+	kind  string
+	angle float64
+	stops []nativeGradientStop
+}
+
+type nativeGradientStop struct {
+	color    color.NRGBA
+	position float64
 }
 
 type visualMetrics struct {
@@ -624,7 +639,7 @@ func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout
 	if r.pendingTheme != nil && r.pendingPalette != nil && r.pendingMetrics != nil {
 		r.theme, r.palette, r.metrics, r.themeName = r.pendingTheme, *r.pendingPalette, *r.pendingMetrics, r.pendingThemeName
 		r.pendingTheme, r.pendingPalette, r.pendingMetrics, r.pendingThemeName = nil, nil, nil, ""
-		r.pageBackgroundReady, r.surfaceBackgroundReady = false, false
+		r.pageBackgroundReady, r.surfaceBackgroundReady, r.heroBackgroundReady = false, false, false
 		r.dom = nil
 	}
 	screen, data, pendingSection := r.screen, r.data, r.pendingScrollSection

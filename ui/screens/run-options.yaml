@@ -7,7 +7,6 @@ metadata:
 screen:
   dataSources:
     - name: runOptions
-      query: get-run-options
       watchTopics: [projects, agent-eligibility]
   root:
     component: page
