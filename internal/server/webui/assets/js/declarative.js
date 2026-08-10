@@ -474,7 +474,11 @@
       element.style.padding = padding;
       element.style.setProperty('--dsl-layout-padding', padding);
     }
-    if (layout.align) element.style.alignItems = layout.align;
+    if (layout.align) {
+      const alignment = layout.align === 'middle' ? 'center' : layout.align;
+      element.style.alignItems = alignment;
+      element.classList.add('dsl-align-' + alignment);
+    }
     if (layout.justify) element.style.justifyContent = layout.justify;
     if (layout.wrap) element.style.flexWrap = 'wrap';
     if (layout.grow) {

@@ -739,7 +739,7 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 			OnClick: func() { r.dispatch(action, data) },
 		}, element)
 	}
-	if constraint, ok := r.domConstraint(node); ok {
+	if constraint, ok := r.domConstraint(node.Layout); ok {
 		element = giodom.Constrain(giodom.Key(path+"/constraint"), constraint, element)
 	}
 	element.Key = domNodeKey(node, path)
@@ -798,54 +798,27 @@ func (r *Renderer) domProgressBase(node uidsl.Node) color.NRGBA {
 	}
 }
 
-func (r *Renderer) domConstraint(node uidsl.Node) (giodom.ConstraintProps, bool) {
-	values := node.Layout
-	parse := func(value string) unit.Dp {
-		value = strings.TrimSpace(value)
-		if value == "page" {
-			return r.metrics.pageWidth
-		}
-		parsed, err := strconv.ParseFloat(value, 32)
-		if err != nil || parsed <= 0 {
-			return 0
-		}
-		return unit.Dp(parsed)
-	}
+func (r *Renderer) domConstraint(values uidsl.Layout) (giodom.ConstraintProps, bool) {
 	props := giodom.ConstraintProps{
-		MinWidth: parse(values.MinWidth), MaxWidth: parse(values.MaxWidth),
-		MinHeight: parse(values.MinHeight), MaxHeight: parse(values.MaxHeight),
+		MinWidth: r.domLayoutDimension(values.MinWidth), MaxWidth: r.domLayoutDimension(values.MaxWidth),
+		MinHeight: r.domLayoutDimension(values.MinHeight), MaxHeight: r.domLayoutDimension(values.MaxHeight),
 	}
-	// The browser's ordinary surfaces use the CSS content box for explicit
-	// min/max dimensions. Preserve that shared DSL meaning when Gio applies
-	// constraints around the already-padded, bordered surface.
-	padding, bordered := unit.Dp(0), false
-	switch {
-	case node.Style.Role == "hero":
-		padding, bordered = r.metrics.heroPadding, true
-	case node.Component == "card":
-		padding, bordered = r.metrics.cardPadding, true
-	case node.Component == "section" || node.Component == "disclosure" || node.Component == "graph-view":
-		padding, bordered = r.metrics.sectionPadding, true
-	}
-	if node.Layout.Padding != "" {
-		padding = r.spacing(node.Layout.Padding)
-	}
-	if bordered {
-		extra := 2 * (padding + 1)
-		if props.MinWidth > 0 {
-			props.MinWidth += extra
-		}
-		if props.MaxWidth > 0 {
-			props.MaxWidth += extra
-		}
-		if props.MinHeight > 0 {
-			props.MinHeight += extra
-		}
-		if props.MaxHeight > 0 {
-			props.MaxHeight += extra
-		}
-	}
+	// Layout dimensions describe the complete rendered box, matching the
+	// browser's global border-box sizing. Surface padding and borders therefore
+	// consume space inside these constraints rather than expanding them.
 	return props, props != (giodom.ConstraintProps{})
+}
+
+func (r *Renderer) domLayoutDimension(value string) unit.Dp {
+	value = strings.TrimSpace(value)
+	if value == "page" {
+		return r.metrics.pageWidth
+	}
+	parsed, err := strconv.ParseFloat(value, 32)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return unit.Dp(parsed)
 }
 
 func (r *Renderer) compileDOMText(node uidsl.Node, data any, path string) giodom.Element {
@@ -1015,13 +988,17 @@ func (r *Renderer) compileDOMButton(node uidsl.Node, data any, path string) giod
 				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
 				fade := paint.PushOpacity(gtx.Ops, connectionPulseOpacity(gtx.Now))
 				dimensions := r.layoutDOMControlWithOptions(gtx, &state.clickable, label, node.Icon, node.Style.Role, node.Style.Tone, domControlOptions{
-					Enabled: enabled, ReservedLabels: r.domButtonReservedLabels(node, data, label),
+					Enabled: enabled, FillWidth: node.Layout.Grow,
+					MinimumWidth: r.domLayoutDimension(node.Layout.MinWidth), MinimumHeight: r.domLayoutDimension(node.Layout.MinHeight),
+					ReservedLabels: r.domButtonReservedLabels(node, data, label),
 				})
 				fade.Pop()
 				return dimensions
 			}
 			return r.layoutDOMControlWithOptions(gtx, &state.clickable, label, node.Icon, node.Style.Role, node.Style.Tone, domControlOptions{
-				Enabled: enabled, ReservedLabels: r.domButtonReservedLabels(node, data, label),
+				Enabled: enabled, FillWidth: node.Layout.Grow,
+				MinimumWidth: r.domLayoutDimension(node.Layout.MinWidth), MinimumHeight: r.domLayoutDimension(node.Layout.MinHeight),
+				ReservedLabels: r.domButtonReservedLabels(node, data, label),
 			})
 		},
 	})
@@ -1029,6 +1006,9 @@ func (r *Renderer) compileDOMButton(node uidsl.Node, data any, path string) giod
 
 type domControlOptions struct {
 	Enabled        bool
+	FillWidth      bool
+	MinimumWidth   unit.Dp
+	MinimumHeight  unit.Dp
 	TrailingIcon   bool
 	ReservedLabels []string
 }
@@ -1057,11 +1037,15 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 		options.ReservedLabels = []string{label}
 	}
 	semantic.DescriptionOp(label).Add(gtx.Ops)
-	// Controls size to their own metric. A surrounding row may have a taller
-	// cross-axis minimum, but that height belongs to the row rather than each
-	// control inside it. Clear it before Clickable.Layout so the widget cannot
-	// re-apply the inherited minimum to the dimensions returned by its child.
+	// Controls size to their own metrics. A surrounding layout's cross-axis
+	// minimum belongs to that layout rather than each control inside it.
 	gtx.Constraints.Min.Y = 0
+	// Cross-axis constraints belong to the containing layout. Only controls
+	// explicitly marked grow inherit its horizontal minimum; all other controls
+	// size to their shared content metrics.
+	if !options.FillWidth {
+		gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, gtx.Dp(options.MinimumWidth))
+	}
 	return clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		minimum := unit.Dp(buttonMetrics.MinimumHeight.Native)
 		if role == "select" {
@@ -1074,6 +1058,7 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 			iconSize = r.controls.Disclosure.ChevronSize
 			minimum = unit.Dp(max(float32(24), iconSize+4))
 		}
+		minimum = max(minimum, options.MinimumHeight)
 		gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(minimum)))
 		if iconOnly {
 			gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, max(gtx.Constraints.Min.X, gtx.Dp(minimum)))
@@ -1150,6 +1135,14 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 					labelStyle.MaxLines = 1
 					return labelStyle.Layout(gtx)
 				}
+				labelSlot := func(gtx layout.Context) layout.Dimensions {
+					width := min(gtx.Constraints.Max.X, reservedWidth)
+					gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
+					if role == "select" {
+						return layout.W.Layout(gtx, labelWidget)
+					}
+					return layout.Center.Layout(gtx, labelWidget)
+				}
 				glyph := func(gtx layout.Context) layout.Dimensions {
 					return r.layoutGlyph(gtx, iconName, inkTone, unit.Dp(iconSize))
 				}
@@ -1160,15 +1153,19 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 				if iconName != "" && !trailingIcon {
 					children = append(children, layout.Rigid(glyph), layout.Rigid(gap))
 				}
-				if trailingIcon {
+				if trailingIcon && options.FillWidth {
 					children = append(children, layout.Flexed(1, labelWidget))
 				} else {
-					children = append(children, layout.Rigid(labelWidget))
+					children = append(children, layout.Rigid(labelSlot))
 				}
 				if iconName != "" && trailingIcon {
 					children = append(children, layout.Rigid(gap), layout.Rigid(glyph))
 				}
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+				spacing := layout.SpaceStart
+				if role != "select" {
+					spacing = layout.SpaceSides
+				}
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: spacing}.Layout(gtx, children...)
 			})
 		})
 	})
@@ -1308,6 +1305,12 @@ func (r *Renderer) compileDOMInput(node uidsl.Node, data any, path string) giodo
 					typography := r.nativeTextStyle(role, false)
 					style.Font, style.TextSize, style.LineHeightScale = typography.font, typography.size, typography.lineHeight
 					style.Color, style.HintColor = r.palette.text, r.palette.muted
+					if !node.Input.Multiline {
+						// Keep the outer input at its shared control height, but allow the
+						// editor to report its intrinsic line height. Background.Layout then
+						// centers that line within the complete input surface.
+						gtx.Constraints.Min.Y = 0
+					}
 					return style.Layout(gtx)
 				})
 			})
@@ -1411,7 +1414,9 @@ func (r *Renderer) layoutDOMSelect(gtx layout.Context, state *domSelectState, no
 			labels = append(labels, option.label)
 		}
 		return r.layoutDOMControlWithOptions(gtx, &state.toggle, selectedLabel, icon, "select", "muted", domControlOptions{
-			Enabled: enabled, TrailingIcon: true, ReservedLabels: labels,
+			Enabled: enabled, FillWidth: node.Layout.Grow,
+			MinimumWidth: r.domLayoutDimension(node.Layout.MinWidth), MinimumHeight: r.domLayoutDimension(node.Layout.MinHeight),
+			TrailingIcon: true, ReservedLabels: labels,
 		})
 	}
 	if !state.open {
@@ -1863,18 +1868,6 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 	}
 	if node.ID == "job-output-groups" && viewport > 2*r.metrics.spaceSmall && !r.compact {
 		viewport -= 2 * r.metrics.spaceSmall
-	}
-	if viewport <= 0 || (r.compact && node.ID == "job-output-groups") {
-		elements := make([]giodom.Element, 0, len(items))
-		for index := range items {
-			elements = append(elements, build(index))
-		}
-		result := giodom.Element{
-			Kind: giodom.KindFlex, Key: domNodeKey(node, path),
-			Flex:     giodom.FlexProps{Axis: axis, Alignment: layout.Start, Gap: r.spacing(node.Layout.Gap)},
-			Children: giodom.Keyed(revision, elements...),
-		}
-		return r.decorateDOMNode(result, node, data, path)
 	}
 	scrollTarget := giodom.Key("")
 	scrollRevision := uint64(0)

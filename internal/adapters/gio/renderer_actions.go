@@ -53,17 +53,19 @@ func (r *Renderer) notifyDisclosureChange() {
 }
 
 func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, data any) {
-	arguments, err := actionArguments(action, data)
-	if err != nil {
-		r.ShowAlert("Action unavailable", err.Error())
-		return
-	}
-	switch action.Command {
+	r.dispatchAction(&gtx, action, data)
+}
+
+// dispatchRendererAction handles renderer-owned local actions independently of
+// the component that emitted them. The optional layout context is only needed
+// for Gio commands such as clipboard writes and immediate focus changes.
+func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, arguments map[string]string, data any) bool {
+	switch command {
 	case "select-timeline-item":
 		items, resolveErr := resolveItems(data, "jobDetails.timeline")
 		if resolveErr != nil {
 			r.ShowAlert("Timeline unavailable", resolveErr.Error())
-			return
+			return true
 		}
 		for _, item := range items {
 			itemMap, ok := item.(map[string]any)
@@ -86,13 +88,15 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 			}
 			r.ShowNotice("Selected "+fmt.Sprint(itemMap["title"]), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			r.requestFrame()
-			return
+			return true
 		}
+		return true
 	case "change-output-search":
 		r.outputSearch, r.outputMatch = arguments["query"], 0
 		r.SetRootBinding("jobDetails", "output_search", r.outputSearch)
 		r.selectGroupedOutputMatch(data, r.outputSearch, 0, true)
 		r.requestFrame()
+		return true
 	case "find-output":
 		direction := 1
 		if arguments["direction"] == "previous" {
@@ -103,7 +107,7 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 			query = r.outputSearch
 		}
 		r.selectGroupedOutputMatch(data, query, direction, true)
-		if pending := r.pendingOutputSelection; pending == nil {
+		if gtx != nil && r.pendingOutputSelection == nil {
 			if matches := groupedOutputMatches(data, query); len(matches) > 0 {
 				if editor := r.outputEditors[matches[r.outputMatch].itemID]; editor != nil {
 					gtx.Execute(key.FocusCmd{Tag: editor})
@@ -111,17 +115,28 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 			}
 		}
 		r.requestFrame()
+		return true
 	case "copy-output":
+		if gtx == nil {
+			r.ShowAlert("Action unavailable", "Clipboard access requires a direct control event.")
+			return true
+		}
 		output, resolveErr := uidsl.Resolve(data, "jobDetails.output")
 		if resolveErr != nil {
 			r.ShowAlert("Output unavailable", resolveErr.Error())
-			return
+			return true
 		}
 		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(fmt.Sprint(output)))})
 		r.ShowNotice("Output copied", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+		return true
 	case "copy-text":
+		if gtx == nil {
+			r.ShowAlert("Action unavailable", "Clipboard access requires a direct control event.")
+			return true
+		}
 		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(arguments["text"]))})
 		r.ShowNotice("Copied", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+		return true
 	case "toggle-output-tailing":
 		r.outputTailing = !r.outputTailing
 		label, tone := "Tailing: Off", "warning"
@@ -131,12 +146,13 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 		r.SetRootBinding("jobDetails", "tailing_label", label)
 		r.SetRootBinding("jobDetails", "tailing_tone", tone)
 		r.requestFrame()
+		return true
 	case "set-disclosures":
 		prefix := arguments["prefix"]
 		expanded, parseErr := strconv.ParseBool(arguments["expanded"])
 		if parseErr != nil || prefix == "" {
 			r.ShowAlert("Action unavailable", "Invalid disclosure group")
-			return
+			return true
 		}
 		for key := range r.persistentDisclosures {
 			if strings.HasPrefix(key, prefix) {
@@ -145,8 +161,9 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 		}
 		r.notifyDisclosureChange()
 		r.requestFrame()
+		return true
 	default:
-		r.dispatch(action, data)
+		return false
 	}
 }
 
@@ -250,9 +267,10 @@ func outputMatches(output, query string) [][2]int {
 }
 
 func (r *Renderer) dispatch(action uidsl.Action, data any) {
-	if r.onAction == nil {
-		return
-	}
+	r.dispatchAction(nil, action, data)
+}
+
+func (r *Renderer) dispatchAction(gtx *layout.Context, action uidsl.Action, data any) {
 	arguments, err := actionArguments(action, data)
 	if err != nil {
 		r.ShowAlert("Action unavailable", err.Error())
@@ -271,6 +289,12 @@ func (r *Renderer) dispatch(action uidsl.Action, data any) {
 		}
 		r.pending = &pendingConfirmation{action: action, arguments: arguments, title: title, message: message}
 		r.requestFrame()
+		return
+	}
+	if r.dispatchRendererAction(gtx, action.Command, arguments, data) {
+		return
+	}
+	if r.onAction == nil {
 		return
 	}
 	r.onAction(action, arguments)
