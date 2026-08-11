@@ -117,7 +117,10 @@ async function serveAssets(route) {
     return true;
   }
   if (url.pathname === '/ui/contracts/actions.json') {
-    await route.fulfill({json: {actions: []}});
+    await route.fulfill({json: {actions: [
+      {command: 'remove-execution', class: 'mutation', scope: 'execution:{{jobExecutionId}}', pending: 'Removing execution…'},
+      {command: 'cancel-execution', class: 'mutation', scope: 'execution:{{jobExecutionId}}', pending: 'Cancelling execution…'},
+    ]}});
     return true;
   }
   if (url.pathname === '/ui/icons.svg') {
@@ -217,6 +220,55 @@ test('queued and history job rows navigate from passive cells while nested actio
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL('http://ciwi-rows.test/jobs/history-1');
   await expect(page.locator('#opened-job')).toHaveText('history-1');
+});
+
+test('constrained job action labels stay centered inside the web button', async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 720});
+  await installJobRowFixture(page);
+  const button = page.locator('#queued-cancel');
+
+  for (const action of [
+    {command: 'cancel-execution', label: 'Cancel', pending: 'Cancelling execution…'},
+    {command: 'remove-execution', label: 'Remove', pending: 'Removing execution…'},
+  ]) {
+    await button.evaluate((element, value) => {
+      element.querySelector('.dsl-button-label-current').textContent = value.label;
+      window.ciwiReservePendingLabel(element, value.command);
+    }, action);
+    await expect(button.locator('.dsl-button-label')).toHaveAttribute('data-ciwi-reserved-label', action.pending);
+    const geometry = await button.evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      const label = element.querySelector('.dsl-button-label').getBoundingClientRect();
+      const current = element.querySelector('.dsl-button-label-current').getBoundingClientRect();
+      return {
+        bounds: bounds.toJSON(), label: label.toJSON(), current: current.toJSON(),
+        centerDelta: (current.left + current.right - label.left - label.right) / 2,
+      };
+    });
+    expect(geometry.label.left).toBeGreaterThanOrEqual(geometry.bounds.left - 0.5);
+    expect(geometry.label.right).toBeLessThanOrEqual(geometry.bounds.right + 0.5);
+    expect(geometry.current.left).toBeGreaterThanOrEqual(geometry.bounds.left - 0.5);
+    expect(geometry.current.right).toBeLessThanOrEqual(geometry.bounds.right + 0.5);
+    expect(Math.abs(geometry.centerDelta)).toBeLessThanOrEqual(0.5);
+  }
+
+  await button.evaluate(element => {
+    const icon = document.createElement('span');
+    icon.className = 'dsl-icon';
+    element.prepend(icon);
+  });
+  const iconGeometry = await button.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    const label = element.querySelector('.dsl-button-label').getBoundingClientRect();
+    const current = element.querySelector('.dsl-button-label-current').getBoundingClientRect();
+    return {
+      bounds: bounds.toJSON(), label: label.toJSON(),
+      centerDelta: (current.left + current.right - label.left - label.right) / 2,
+    };
+  });
+  expect(iconGeometry.label.left).toBeGreaterThanOrEqual(iconGeometry.bounds.left - 0.5);
+  expect(iconGeometry.label.right).toBeLessThanOrEqual(iconGeometry.bounds.right + 0.5);
+  expect(Math.abs(iconGeometry.centerDelta)).toBeLessThanOrEqual(0.5);
 });
 
 test('Collapse remains reachable at the end of a long output group', async ({page}) => {
