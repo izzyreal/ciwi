@@ -39,6 +39,7 @@ const (
 	KindInset
 	KindAlign
 	KindNative
+	KindPassThroughScrollRegion
 )
 
 func (k Kind) String() string {
@@ -73,6 +74,8 @@ func (k Kind) String() string {
 		return "align"
 	case KindNative:
 		return "native"
+	case KindPassThroughScrollRegion:
+		return "pass-through-scroll-region"
 	default:
 		return "invalid"
 	}
@@ -360,6 +363,13 @@ func Control(key Key, props ButtonProps, child Element) Element {
 // Editor constructs a controlled native editor.
 func Editor(key Key, props EditorProps) Element {
 	return Element{Kind: KindEditor, Key: key, Editor: props}
+}
+
+// PassThroughScrollRegion lets the nearest pass-through viewport arbitrate
+// touch scrolling before its interactive child, while preserving child taps
+// and mouse gestures.
+func PassThroughScrollRegion(key Key, child Element) Element {
+	return Element{Kind: KindPassThroughScrollRegion, Key: key, Children: Static(child)}
 }
 
 // Spacer constructs fixed empty space.

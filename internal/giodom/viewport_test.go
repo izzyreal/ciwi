@@ -285,6 +285,154 @@ func TestPassThroughViewportTouchDragStartsOnControl(t *testing.T) {
 	}
 }
 
+func TestPassThroughScrollRegionTouchDragMatchesOrdinaryControl(t *testing.T) {
+	wrapped := passThroughDragOffsets(t, true)
+	ordinary := passThroughDragOffsets(t, false)
+	if len(wrapped) != len(ordinary) {
+		t.Fatalf("wrapped offsets = %v, ordinary offsets = %v", wrapped, ordinary)
+	}
+	for index := range wrapped {
+		if index > 0 && wrapped[index] < wrapped[index-1] {
+			t.Fatalf("wrapped offsets reversed: %v", wrapped)
+		}
+		if difference := wrapped[index] - ordinary[index]; difference < -1 || difference > 1 {
+			t.Fatalf("wrapped offsets = %v, ordinary offsets = %v", wrapped, ordinary)
+		}
+	}
+}
+
+func TestPassThroughScrollRegionFlingContinuesInViewportCoordinates(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	root := passThroughEditorTestPage()
+	started := time.Unix(1_800_000_000, 0)
+	layoutInteractiveFrameAt(runtime, router, root, nil, started)
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 150), Time: 0,
+	}}, started)
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 90), Time: 16 * time.Millisecond,
+	}}, started.Add(16*time.Millisecond))
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 40), Time: 32 * time.Millisecond,
+	}}, started.Add(32*time.Millisecond))
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Release, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 20), Time: 48 * time.Millisecond,
+	}}, started.Add(48*time.Millisecond))
+	releasedAt := viewportAbsoluteOffset(viewportState(t, runtime))
+	layoutInteractiveFrameAt(runtime, router, root, nil, started.Add(64*time.Millisecond))
+	if afterFling := viewportAbsoluteOffset(viewportState(t, runtime)); afterFling <= releasedAt {
+		t.Fatalf("fling offset = %d after release offset %d", afterFling, releasedAt)
+	}
+}
+
+func TestPassThroughScrollRegionTouchTapStillFocusesEditor(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	root := passThroughEditorTestPage()
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 150),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Release, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 150),
+	}})
+	state := onlyEditorState(t, runtime)
+	if !router.Source().Focused(&state.editor) {
+		t.Fatal("stationary touch tap did not focus wrapped editor")
+	}
+}
+
+func TestPassThroughScrollRegionMouseDragStaysWithEditor(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	root := passThroughEditorTestPage()
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: f32.Pt(40, 150),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: f32.Pt(40, 90),
+	}})
+	state := viewportState(t, runtime)
+	if state.anchorIndex != 0 || state.anchorOffset != 0 {
+		t.Fatalf("mouse editor drag moved parent to index %d offset %d", state.anchorIndex, state.anchorOffset)
+	}
+}
+
+func TestPassThroughScrollRegionWheelScrollsParent(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	root := passThroughEditorTestPage()
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(40, 150), Scroll: f32.Pt(0, 80),
+	}})
+	state := viewportState(t, runtime)
+	if state.anchorIndex == 0 && state.anchorOffset == 0 {
+		t.Fatal("wheel over pass-through scroll region did not move parent")
+	}
+}
+
+func passThroughEditorTestPage() Element {
+	return passThroughScrollRegionTestPage(true)
+}
+
+func passThroughScrollRegionTestPage(wrapped bool) Element {
+	rows := make([]Element, 12)
+	for index := range rows {
+		rows[index] = Spacer(Key(fmt.Sprintf("row-%d", index)), 0, 60)
+	}
+	if wrapped {
+		editor := Editor("editor", EditorProps{Value: "build output", Placeholder: "Search output", SingleLine: true})
+		editor = Constrain("editor-height", ConstraintProps{MinHeight: 60}, editor)
+		rows[2] = PassThroughScrollRegion("editor-region", editor)
+	} else {
+		rows[2] = Control("ordinary-control", ButtonProps{Enabled: true}, Spacer("ordinary-content", 0, 60))
+	}
+	return VirtualList("outer", ListProps{Axis: layout.Vertical, PassThroughScroll: true, Estimate: 60}, Static(rows...))
+}
+
+func passThroughDragOffsets(t *testing.T, wrapped bool) []int {
+	t.Helper()
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	root := passThroughScrollRegionTestPage(wrapped)
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 150),
+	}})
+	offsets := make([]int, 0, 3)
+	for _, y := range []float32{90, 40, 10} {
+		layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+			Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, y),
+		}})
+		offsets = append(offsets, viewportAbsoluteOffset(viewportState(t, runtime)))
+	}
+	return offsets
+}
+
+func viewportAbsoluteOffset(state *keyedViewportState) int {
+	return state.prefixAt(state.anchorIndex) + state.anchorOffset
+}
+
+func onlyEditorState(t *testing.T, runtime *Runtime) *editorState {
+	t.Helper()
+	var found *editorState
+	for _, entry := range runtime.states {
+		if state, ok := entry.value.(*editorState); ok {
+			if found != nil {
+				t.Fatal("multiple editor states found")
+			}
+			found = state
+		}
+	}
+	if found == nil {
+		t.Fatal("editor state not found")
+	}
+	return found
+}
+
 func TestPassThroughViewportTouchDragStartsOnPassiveText(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	router := new(input.Router)
@@ -651,6 +799,10 @@ func viewportStateWithPath(t *testing.T, runtime *Runtime, suffix string) *keyed
 }
 
 func layoutInteractiveFrame(runtime *Runtime, router *input.Router, root Element, events []pointer.Event) {
+	layoutInteractiveFrameAt(runtime, router, root, events, time.Unix(1_800_000_000, 0))
+}
+
+func layoutInteractiveFrameAt(runtime *Runtime, router *input.Router, root Element, events []pointer.Event, now time.Time) {
 	if len(events) > 0 {
 		for _, event := range events {
 			router.Queue(event)
@@ -659,7 +811,7 @@ func layoutInteractiveFrame(runtime *Runtime, router *input.Router, root Element
 	operations := new(op.Ops)
 	gtx := layout.Context{
 		Ops: operations, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
-		Now: time.Unix(1_800_000_000, 0), Constraints: layout.Exact(image.Pt(320, 200)),
+		Now: now, Constraints: layout.Exact(image.Pt(320, 200)),
 	}
 	runtime.Layout(gtx, root)
 	router.Frame(operations)

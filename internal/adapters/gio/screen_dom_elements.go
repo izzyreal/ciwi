@@ -167,6 +167,9 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 	if constraint, ok := r.domConstraint(node.Layout, constraintInsets); ok {
 		element = giodom.Constrain(giodom.Key(path+"/constraint"), constraint, element)
 	}
+	if node.Component == "input" || node.Style.Role == "output-system" {
+		element = giodom.PassThroughScrollRegion(giodom.Key(path+"/pass-through-scroll"), element)
+	}
 	element.Key = domNodeKey(node, path)
 	return &element
 }

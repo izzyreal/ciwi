@@ -119,6 +119,85 @@ type recordedViewportChild struct {
 	size image.Point
 }
 
+// passThroughScrollContext is available only while a pass-through viewport
+// lays out its children. Opt-in regions use a foremost hit gate to let this
+// stationary viewport claim touch-axis drags before an editor without changing
+// mouse or tap handling.
+type passThroughScrollContext struct {
+	axis           gesture.Axis
+	xRange, yRange pointer.ScrollRange
+	scroll         *gesture.Scroll
+	delta          int
+	updated        bool
+}
+
+type passThroughScrollRegionState struct {
+	gate passThroughScrollGate
+}
+
+type passThroughScrollGate struct {
+	tracking bool
+	pid      pointer.ID
+	scroll   float32
+}
+
+func (context *passThroughScrollContext) update(gtx layout.Context) {
+	if context.updated {
+		return
+	}
+	context.delta += context.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, context.axis, context.xRange, context.yRange)
+	context.updated = true
+}
+
+func (gate *passThroughScrollGate) Add(ops *op.Ops) {
+	event.Op(ops, gate)
+}
+
+func (gate *passThroughScrollGate) Update(source input.Source, axis gesture.Axis, xRange, yRange pointer.ScrollRange) (bool, int) {
+	prioritizeParent := gate.tracking
+	scrollDelta := 0
+	filter := pointer.Filter{
+		Target: gate, Kinds: pointer.Press | pointer.Drag | pointer.Release | pointer.Scroll | pointer.Cancel,
+		ScrollX: xRange, ScrollY: yRange,
+	}
+	for {
+		raw, ok := source.Event(filter)
+		if !ok {
+			break
+		}
+		pointerEvent, ok := raw.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch pointerEvent.Kind {
+		case pointer.Press:
+			if pointerEvent.Source == pointer.Touch && !gate.tracking {
+				gate.tracking, gate.pid = true, pointerEvent.PointerID
+				prioritizeParent = true
+			}
+		case pointer.Drag:
+			if gate.tracking && gate.pid == pointerEvent.PointerID {
+				prioritizeParent = true
+			}
+		case pointer.Release, pointer.Cancel:
+			if gate.tracking && gate.pid == pointerEvent.PointerID {
+				prioritizeParent = true
+				gate.tracking = false
+			}
+		case pointer.Scroll:
+			if axis == gesture.Horizontal {
+				gate.scroll += pointerEvent.Scroll.X
+			} else {
+				gate.scroll += pointerEvent.Scroll.Y
+			}
+			delta := int(gate.scroll)
+			gate.scroll -= float32(delta)
+			scrollDelta += delta
+		}
+	}
+	return prioritizeParent, scrollDelta
+}
+
 func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identity string) layout.Dimensions {
 	children := element.Children
 	if children == nil {
@@ -216,6 +295,14 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	endLimit := offset + mainViewport + props.Overscan*(estimate+gap)
 	recorded := make([]recordedViewportChild, 0, props.Overscan*2+8)
 	crossExtent := axisCross(props.Axis, gtx.Constraints.Min)
+	previousPassThroughScroll := r.passThroughScroll
+	var passThroughScroll *passThroughScrollContext
+	if props.PassThroughScroll {
+		passThroughScroll = &passThroughScrollContext{axis: axis, xRange: xRange, yRange: yRange, scroll: &state.scroll}
+		r.passThroughScroll = passThroughScroll
+	} else {
+		r.passThroughScroll = nil
+	}
 	for index := start; index < children.Len(); index++ {
 		position := state.prefixAt(index)
 		if position >= endLimit && index > firstVisible {
@@ -244,8 +331,10 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		recorded = append(recorded, recordedViewportChild{call: call, pos: pos, size: dimensions.Size})
 		crossExtent = max(crossExtent, axisCross(props.Axis, dimensions.Size))
 	}
+	r.passThroughScroll = previousPassThroughScroll
 	if props.PassThroughScroll {
-		parentDelta := state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
+		passThroughScroll.update(gtx)
+		parentDelta := passThroughScroll.delta
 		if !r.nestedScrollClaimed && parentDelta != 0 {
 			scrollDelta = parentDelta
 			offset = min(max(0, offset+scrollDelta), maxOffset)
@@ -324,6 +413,31 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	r.stats.VisibleListItems += len(recorded)
 	r.stats.MeasuredListItems += len(state.measurements)
 	return layout.Dimensions{Size: renderedViewport}
+}
+
+func (r *Runtime) layoutPassThroughScrollRegion(gtx layout.Context, element Element, identity string) layout.Dimensions {
+	context := r.passThroughScroll
+	if context == nil {
+		return r.layoutOnlyChild(gtx, element, identity)
+	}
+	state := r.useState(identity, "pass-through-scroll", KindPassThroughScrollRegion, func() any {
+		return new(passThroughScrollRegionState)
+	}).(*passThroughScrollRegionState)
+	prioritizeParent, scrollDelta := state.gate.Update(gtx.Source, context.axis, context.xRange, context.yRange)
+	context.delta += scrollDelta
+	if prioritizeParent {
+		context.update(gtx)
+	}
+	dimensions := r.layoutOnlyChild(gtx, element, identity)
+	if dimensions.Size.X <= 0 || dimensions.Size.Y <= 0 {
+		return dimensions
+	}
+	area := clip.Rect(image.Rectangle{Max: dimensions.Size}).Push(gtx.Ops)
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	state.gate.Add(gtx.Ops)
+	pass.Pop()
+	area.Pop()
+	return dimensions
 }
 
 func (s *keyedViewportState) reconcileIndex(children Children, estimate, gap, crossSize int) {

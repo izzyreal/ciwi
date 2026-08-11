@@ -30,6 +30,10 @@ iOS.
   boundary. Nested scroll recognizers are recorded below their child controls,
   allowing a child to retain an ordinary mouse or touch tap while the viewport
   still wins once that gesture becomes a drag.
+- Interactive editor surfaces can opt into a pass-through scroll region. A
+  touch drag along the page axis then scrolls the page after touch slop, while
+  stationary taps, perpendicular gestures, and mouse drags remain with the
+  editor.
 - Only visible rows plus bounded overscan are materialized. Cached row
   measurements and runtime state slots have explicit hard limits.
 - Geometry outside the configured range is rejected before recording paint

@@ -208,6 +208,33 @@ func TestNativePresentationTextIsPassiveButCodeRemainsSelectable(t *testing.T) {
 	}
 }
 
+func TestNativePageScrollRegionsWrapInputsAndSystemMessages(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	input := renderer.compileDOMNode(uidsl.Node{
+		Component: "input", Input: &uidsl.Input{Value: "item.query", Placeholder: "Search output"},
+	}, map[string]any{"item": map[string]any{"query": ""}}, "search")
+	if input == nil || input.Kind != giodom.KindPassThroughScrollRegion {
+		t.Fatalf("native input = %#v, want pass-through scroll region", input)
+	}
+
+	system := renderer.compileDOMNode(uidsl.Node{
+		Component: "card", Style: uidsl.Style{Role: "output-system"},
+		Children: []uidsl.Node{{
+			Component: "text", Text: &uidsl.Text{Literal: "System messages"}, Style: uidsl.Style{Role: "output-code"},
+		}},
+	}, map[string]any{}, "system")
+	if system == nil || system.Kind != giodom.KindPassThroughScrollRegion {
+		t.Fatalf("native system messages = %#v, want pass-through scroll region", system)
+	}
+
+	outputCode := renderer.compileDOMNode(uidsl.Node{
+		Component: "text", Text: &uidsl.Text{Literal: "nested output"}, Style: uidsl.Style{Role: "output-code"},
+	}, map[string]any{}, "output-code")
+	if outputCode == nil || outputCode.Kind != giodom.KindNative {
+		t.Fatalf("ordinary output code = %#v, want unchanged native editor", outputCode)
+	}
+}
+
 func TestNativeSettingsCardGapAndPendingButtonWidthContracts(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	catalog, err := sharedui.LoadActionCatalog()

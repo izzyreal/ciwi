@@ -66,6 +66,7 @@ type Runtime struct {
 	heapSys             uint64
 	stats               Stats
 	nestedScrollClaimed bool
+	passThroughScroll   *passThroughScrollContext
 	controlClicks       uint64
 }
 
@@ -167,6 +168,8 @@ func (r *Runtime) layoutElement(gtx layout.Context, element Element, identity st
 		})
 	case KindNative:
 		return r.layoutNative(gtx, element, identity)
+	case KindPassThroughScrollRegion:
+		return r.layoutPassThroughScrollRegion(gtx, element, identity)
 	default:
 		r.recordError(fmt.Errorf("%s: invalid element kind", identity))
 		return layout.Dimensions{}
