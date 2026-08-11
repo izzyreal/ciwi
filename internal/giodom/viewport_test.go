@@ -3,6 +3,7 @@ package giodom
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"strings"
 	"testing"
 	"time"
@@ -281,6 +282,78 @@ func TestPassThroughViewportTouchDragStartsOnControl(t *testing.T) {
 	state := viewportState(t, runtime)
 	if state.anchorIndex == 0 && state.anchorOffset == 0 {
 		t.Fatal("pass-through viewport did not scroll from a drag started on a control")
+	}
+}
+
+func TestPassThroughViewportTouchDragStartsOnPassiveText(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	rows := make([]Element, 30)
+	for index := range rows {
+		label := Text(Key(fmt.Sprintf("label-%d", index)), "Queued and In Progress Job Executions", 16, color.NRGBA{})
+		if label.Text.Selectable {
+			t.Fatal("ordinary presentation text is selectable")
+		}
+		rows[index] = label
+	}
+	root := VirtualList("outer", ListProps{Axis: layout.Vertical, PassThroughScroll: true, Estimate: 24}, Static(rows...))
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 160),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 80),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 40),
+	}})
+	state := viewportState(t, runtime)
+	if state.anchorIndex == 0 && state.anchorOffset == 0 {
+		t.Fatal("pass-through viewport did not scroll from a drag started on passive text")
+	}
+}
+
+func TestPassThroughViewportDragOnActionableTextScrollsWithoutClick(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	clicks := 0
+	rows := make([]Element, 20)
+	for index := range rows {
+		label := Text(Key(fmt.Sprintf("label-%d", index)), fmt.Sprintf("History job %d", index), 16, color.NRGBA{})
+		rows[index] = Control(Key(fmt.Sprintf("job-%d", index)), ButtonProps{
+			Enabled: true, OnClick: func() { clicks++ }, MinHeight: 44,
+		}, label)
+	}
+	root := VirtualList("outer", ListProps{Axis: layout.Vertical, PassThroughScroll: true, Estimate: 44}, Static(rows...))
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 160),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 80),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 40),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Release, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(40, 40),
+	}})
+	state := viewportState(t, runtime)
+	if state.anchorIndex == 0 && state.anchorOffset == 0 {
+		t.Fatal("pass-through viewport did not scroll from actionable job text")
+	}
+	if clicks != 0 {
+		t.Fatalf("drag over actionable job text produced %d click(s)", clicks)
+	}
+
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(40, 30),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Release, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(40, 30),
+	}})
+	if clicks != 1 {
+		t.Fatalf("stationary tap on actionable job text produced %d clicks, want 1", clicks)
 	}
 }
 

@@ -39,9 +39,9 @@ func TestDynamicChildrenRejectEmptyAndDuplicateKeys(t *testing.T) {
 		Key:  "root",
 		Flex: FlexProps{Axis: layout.Vertical},
 		Children: Keyed(1,
-			Text("same", "first", 14, color.NRGBA{}),
-			Text("same", "second", 14, color.NRGBA{}),
-			Text("", "empty", 14, color.NRGBA{}),
+			selectableTestText("same", "first"),
+			selectableTestText("same", "second"),
+			selectableTestText("", "empty"),
 		),
 	}
 	runtime.Layout(testContext(320, 240), root)
@@ -76,7 +76,7 @@ func TestStateTableHonorsHardLimit(t *testing.T) {
 	runtime := NewRuntime(nil, Options{MaxStateSlots: limit})
 	elements := make([]Element, 100)
 	for index := range elements {
-		elements[index] = Text(Key(fmt.Sprintf("text-%d", index)), "value", 14, color.NRGBA{})
+		elements[index] = selectableTestText(Key(fmt.Sprintf("text-%d", index)), "value")
 	}
 	root := Element{Kind: KindFlex, Key: "root", Flex: FlexProps{Axis: layout.Vertical}, Children: Keyed(1, elements...)}
 	runtime.Layout(testContext(320, 1200), root)
@@ -122,9 +122,15 @@ func BenchmarkKeyedRuntimeReorder(b *testing.B) {
 func dynamicColumn(revision uint64, keys ...string) Element {
 	elements := make([]Element, len(keys))
 	for index, key := range keys {
-		elements[index] = Text(Key(key), key, 14, color.NRGBA{})
+		elements[index] = selectableTestText(Key(key), key)
 	}
 	return Element{Kind: KindFlex, Key: "root", Flex: FlexProps{Axis: layout.Vertical}, Children: Keyed(revision, elements...)}
+}
+
+func selectableTestText(key Key, value string) Element {
+	element := Text(key, value, 14, color.NRGBA{})
+	element.Text.Selectable = true
+	return element
 }
 
 func stateValueWithPath(t *testing.T, runtime *Runtime, suffix string) any {

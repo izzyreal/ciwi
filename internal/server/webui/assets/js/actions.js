@@ -4,6 +4,7 @@
   const activeByFingerprint = new Map();
   const activeByScope = new Map();
   let catalogPromise;
+  let catalogSpecs;
 
   function uiResourceURL(path) {
     return typeof window.ciwiUIResourceURL === 'function' ? window.ciwiUIResourceURL(path) : path;
@@ -34,7 +35,8 @@
         .then(async response => {
           if (!response.ok) throw new Error(await response.text());
           const document = await response.json();
-          return new Map((document.actions || []).map(spec => [spec.command, spec]));
+          catalogSpecs = new Map((document.actions || []).map(spec => [spec.command, spec]));
+          return catalogSpecs;
         });
     }
     return catalogPromise;
@@ -42,12 +44,16 @@
 
   function reservePendingLabel(element, command) {
     if (!element || !command) return;
-    void catalog().then(specs => {
+    element.setAttribute('data-ciwi-action-command', command);
+    const apply = specs => {
       const spec = specs.get(command);
       const label = element.querySelector && element.querySelector('.dsl-button-label');
-      if (!label || !spec || !spec.pending) return;
-      label.setAttribute('data-ciwi-reserved-label', spec.pending);
-    }).catch(() => {});
+      if (!label) return;
+      if (spec && spec.pending) label.setAttribute('data-ciwi-reserved-label', spec.pending);
+      else label.removeAttribute('data-ciwi-reserved-label');
+    };
+    if (catalogSpecs) apply(catalogSpecs);
+    else void catalog().then(apply).catch(() => {});
   }
 
   function canonicalArguments(argumentsValue) {
@@ -92,6 +98,8 @@
 
   function syncActionElement(element) {
     if (!element) return;
+    const command = element.getAttribute && element.getAttribute('data-ciwi-action-command');
+    if (command) reservePendingLabel(element, command);
     const operation = element.__ciwiActionOperation;
     if (!operation) return;
     element.disabled = true;

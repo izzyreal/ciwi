@@ -85,7 +85,7 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 		if node.Style.Role == "output-group" {
 			role, tone = "output-summary", "console-accent"
 		}
-		labelElement := r.domText(giodom.Key(path+"/summary/label"), label, role, true, tone, false)
+		labelElement := r.domText(giodom.Key(path+"/summary/label"), label, role, true, tone)
 		summary = append([]giodom.Element{labelElement}, summary...)
 	}
 	var headerRow giodom.Element
@@ -176,7 +176,7 @@ func (r *Renderer) domDisclosureChevron(path, icon string) giodom.Element {
 
 func (r *Renderer) domExecutionDisclosureHeader(path, label string, leading, copyElements, actions []giodom.Element, chevron giodom.Element) giodom.Element {
 	gap := unit.Dp(r.controls.Disclosure.ChevronGap)
-	title := r.domText(giodom.Key(path+"/summary/label"), label, "control", false, "", false)
+	title := r.domText(giodom.Key(path+"/summary/label"), label, "control", false, "")
 
 	narrowCopyChildren := make([]giodom.Element, 0, len(copyElements)+1)
 	narrowCopyChildren = append(narrowCopyChildren, title)

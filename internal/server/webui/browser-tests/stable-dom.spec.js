@@ -165,31 +165,41 @@ const settingsScreen = {
       component: 'page',
       children: [{
         component: 'column', visible: {binding: 'settings.ready'},
-        children: [
-          {
-            component: 'button', id: 'settings-check-updates', text: {literal: 'Check for updates'},
-            enabled: {binding: 'settings.update_supported'},
-            actions: [{on: 'activate', command: 'check-server-updates'}],
-          },
-          {
-            component: 'select', id: 'settings-update-select', enabled: {binding: 'settings.update_supported'},
-            select: {
-              value: 'settings.selected_update_version', options: 'settings.update_versions', as: 'versionOption',
-              optionValue: 'versionOption.value', optionLabel: 'versionOption.label',
+        children: [{
+          component: 'card', id: 'settings-update-card', layout: {direction: 'vertical', gap: 'small', padding: 'medium'},
+          children: [
+            {
+              component: 'row', id: 'settings-update-controls', layout: {direction: 'horizontal', gap: 'small', align: 'center'},
+              children: [
+                {
+                  component: 'button', id: 'settings-check-updates', text: {literal: 'Check for updates'},
+                  enabled: {binding: 'settings.update_supported'},
+                  actions: [{on: 'activate', command: 'check-server-updates'}],
+                },
+                {
+                  component: 'select', id: 'settings-update-select', enabled: {binding: 'settings.update_supported'},
+                  select: {
+                    value: 'settings.selected_update_version', options: 'settings.update_versions', as: 'versionOption',
+                    optionValue: 'versionOption.value', optionLabel: 'versionOption.label',
+                  },
+                  actions: [{on: 'change', command: 'set-server-update-option', arguments: {field: 'update', value: '{{selection.value}}'}}],
+                },
+                {
+                  component: 'button', id: 'settings-update-action', text: {literal: 'Update now'},
+                  enabled: {binding: 'settings.selected_update_version', empty: true, not: true},
+                  actions: [{
+                    on: 'activate', command: 'server-update-action',
+                    arguments: {action: 'apply', targetVersion: '{{settings.selected_update_version}}'},
+                    confirm: {title: 'Apply Update', message: 'Update server and agents to {{settings.selected_update_version}} and restart ciwi?'},
+                  }],
+                },
+              ],
             },
-            actions: [{on: 'change', command: 'set-server-update-option', arguments: {field: 'update', value: '{{selection.value}}'}}],
-          },
-          {
-            component: 'button', id: 'settings-update-action', text: {literal: 'Update now'},
-            enabled: {binding: 'settings.selected_update_version', empty: true, not: true},
-            actions: [{
-              on: 'activate', command: 'server-update-action',
-              arguments: {action: 'apply', targetVersion: '{{settings.selected_update_version}}'},
-              confirm: {title: 'Apply Update', message: 'Update server and agents to {{settings.selected_update_version}} and restart ciwi?'},
-            }],
-          },
-          {component: 'text', id: 'settings-update-result', text: {binding: 'settings.update_result'}},
-        ],
+            {component: 'text', id: 'settings-update-result', text: {binding: 'settings.update_result'}},
+            {component: 'text', id: 'settings-agent-update-notice', text: {literal: 'Agents update after the server update.'}},
+            {component: 'text', id: 'settings-current-version', text: {literal: 'Current: v1.0.0'}},
+          ],
+        }],
       }],
     },
   },
@@ -309,7 +319,7 @@ async function installSettingsFixture(page) {
     const url = new URL(route.request().url());
     if (url.pathname === '/') {
       await route.fulfill({contentType: 'text/html', body: `<!doctype html>
-        <html><head><link rel="stylesheet" href="/ui/declarative.css"></head><body><div id="declarativeRoot"></div>
+        <html><head><link rel="stylesheet" href="/ui/declarative.css"><style>:root { --ciwi-space-small: 8px; --ciwi-space-medium: 14px; }</style></head><body><div id="declarativeRoot"></div>
         <script>
           window.ciwiUIResourceURL = path => path;
           window.confirmations = [];
@@ -351,7 +361,7 @@ async function installSettingsFixture(page) {
     }
     if (url.pathname === '/ui/contracts/actions.json') {
       await route.fulfill({json: {actions: [
-        {command: 'server-update-action', class: 'mutation', scope: 'server-update', pending: 'Updating…', refreshOnSuccess: false},
+        {command: 'server-update-action', class: 'mutation', scope: 'server-update', pending: 'Updating server…', refreshOnSuccess: false},
         {command: 'check-server-updates', class: 'query', scope: 'server-updates', pending: 'Checking for updates…'},
       ]}});
       return;
@@ -379,7 +389,7 @@ async function installSettingsFixture(page) {
     }
     if (url.pathname === '/api/v1/update/check') {
       await checkGate;
-      await route.fulfill({json: {current_version: 'v1.0.0', latest_version: 'v1.0.0', update_available: false, available_versions: []}});
+      await route.fulfill({json: {current_version: 'v1.0.0', latest_version: 'v1.1.0', update_available: true, available_versions: ['v1.1.0']}});
       return;
     }
     if (url.pathname === '/ciwi-logo.png' || url.pathname === '/ui/icons.svg') {
@@ -817,6 +827,44 @@ test('action buttons reserve their widest graphical pending label', async ({page
   await expect(button).toHaveAttribute('aria-busy', 'true');
   expect(await button.evaluate(element => element.getBoundingClientRect().width)).toBeCloseTo(before.width, 1);
   fixture.releaseCheck();
+  await expect(button).not.toHaveAttribute('aria-busy', 'true');
+});
+
+test('vertical cards apply their declared gap to adjacent status text', async ({page}) => {
+  await installSettingsFixture(page);
+  const gaps = await page.locator('#settings-update-result, #settings-agent-update-notice, #settings-current-version').evaluateAll(elements =>
+    elements.slice(1).map((element, index) => element.getBoundingClientRect().top - elements[index].getBoundingClientRect().bottom));
+  expect(gaps).toHaveLength(2);
+  for (const gap of gaps) expect(gap).toBeCloseTo(8, 1);
+});
+
+test('server update button keeps its widest pending label after reconciliation', async ({page}) => {
+  const fixture = await installSettingsFixture(page);
+  const check = page.locator('#settings-check-updates');
+  const button = page.locator('#settings-update-action');
+  await expect(button.locator('.dsl-button-label')).toHaveAttribute('data-ciwi-reserved-label', 'Updating server…');
+
+  await check.click();
+  await expect(check).toHaveAttribute('aria-busy', 'true');
+  fixture.releaseCheck();
+  await expect(check).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('#settings-update-select .dsl-select-label')).toHaveText('v1.1.0');
+  await expect(button.locator('.dsl-button-label')).toHaveAttribute('data-ciwi-reserved-label', 'Updating server…');
+
+  const before = await button.evaluate(element => element.getBoundingClientRect().width);
+  await button.click();
+  await expect(button).toHaveAttribute('aria-busy', 'true');
+  await expect(button.locator('.dsl-button-label')).toHaveAttribute('data-ciwi-reserved-label', 'Updating server…');
+  const pending = await button.evaluate(element => ({
+    width: element.getBoundingClientRect().width,
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    label: getComputedStyle(element, '::after').content,
+  }));
+  expect(pending.width).toBeCloseTo(before, 1);
+  expect(pending.scrollWidth).toBeLessThanOrEqual(pending.clientWidth + 1);
+  expect(pending.label).toContain('Updating server…');
+  fixture.releaseUpdate();
   await expect(button).not.toHaveAttribute('aria-busy', 'true');
 });
 

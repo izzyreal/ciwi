@@ -112,7 +112,7 @@ func (r *Renderer) domNotice(notice *nativeNotice) giodom.Element {
 	}
 	buttons = append(buttons, r.domCallbackButton("notice-dismiss", "Dismiss", "", r.dismissNotice))
 	wide := giodom.Row("notice-wide", r.metrics.spaceMedium,
-		giodom.Element{Kind: giodom.KindText, Key: "notice-message", Grow: true, Text: giodom.TextProps{Value: notice.message, Size: r.metrics.textBody, Color: r.palette.noticeText, Selectable: true}},
+		giodom.Element{Kind: giodom.KindText, Key: "notice-message", Grow: true, Text: giodom.TextProps{Value: notice.message, Size: r.metrics.textBody, Color: r.palette.noticeText}},
 		giodom.Flow("notice-actions", r.metrics.spaceSmall, buttons...),
 	)
 	compact := giodom.Column("notice-compact", r.metrics.spaceSmall,
@@ -130,8 +130,8 @@ func (r *Renderer) domNotice(notice *nativeNotice) giodom.Element {
 
 func (r *Renderer) domAlert(alert *nativeAlert) giodom.Element {
 	content := giodom.Column("alert-copy", r.metrics.spaceMedium,
-		r.domText("alert-title", defaultString(alert.title, "Something went wrong"), "heading", true, "danger", true),
-		r.domText("alert-message", alert.message, "body", false, "", true),
+		r.domText("alert-title", defaultString(alert.title, "Something went wrong"), "heading", true, "danger"),
+		r.domText("alert-message", alert.message, "body", false, ""),
 		r.domCallbackButton("alert-dismiss", "Dismiss", "", func() {
 			r.mu.Lock()
 			r.alert = nil
@@ -165,8 +165,8 @@ func (r *Renderer) domConfirmation(pending *pendingConfirmation) giodom.Element 
 		}),
 	)
 	content := giodom.Column("confirmation-copy", r.metrics.spaceMedium,
-		r.domText("confirmation-title", pending.title, "heading", true, "", true),
-		r.domText("confirmation-message", pending.message, "body", false, "", true),
+		r.domText("confirmation-title", pending.title, "heading", true, ""),
+		r.domText("confirmation-message", pending.message, "body", false, ""),
 		buttons,
 	)
 	return r.domModalCard("confirmation", content)
@@ -611,7 +611,7 @@ func (r *Renderer) compactDOMRecordChildren(node uidsl.Node, data any, path stri
 		if value == nil {
 			continue
 		}
-		label := r.domText(giodom.Key(fmt.Sprintf("%s/label/%d", path, index)), labels[index], "table-header", false, "muted", true)
+		label := r.domText(giodom.Key(fmt.Sprintf("%s/label/%d", path, index)), labels[index], "table-header", false, "muted")
 		label = giodom.Constrain(label.Key, giodom.ConstraintProps{MinWidth: 82}, label)
 		value.Grow = true
 		rows = append(rows, giodom.Row(giodom.Key(fmt.Sprintf("%s/row/%d", path, index)), r.metrics.spaceSmall, label, *value))

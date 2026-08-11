@@ -112,7 +112,8 @@ type SurfaceProps struct {
 	PaintBackground func(layout.Context, image.Point)
 }
 
-// TextProps configures selectable presentation text.
+// TextProps configures presentation text. Selectability is an explicit opt-in
+// because passive text must not compete with a containing touch scroller.
 type TextProps struct {
 	Value           string
 	Size            unit.Sp
@@ -341,9 +342,9 @@ func Surface(key Key, props SurfaceProps, child Element) Element {
 	return Element{Kind: KindSurface, Key: key, Surface: props, Children: Static(child)}
 }
 
-// Text constructs selectable text.
+// Text constructs passive presentation text.
 func Text(key Key, value string, size unit.Sp, ink color.NRGBA) Element {
-	return Element{Kind: KindText, Key: key, Text: TextProps{Value: value, Size: size, Color: ink, Selectable: true}}
+	return Element{Kind: KindText, Key: key, Text: TextProps{Value: value, Size: size, Color: ink}}
 }
 
 // Button constructs a native material button.

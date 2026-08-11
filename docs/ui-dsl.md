@@ -87,12 +87,13 @@ expands or collapses inline; an explicitly linked child such as a project name
 still navigates without changing the surrounding disclosure.
 
 Ordinary non-control text, including headings, disclosure labels, and status
-copy, is selectable in the Gio adapter. The semantic `code` text role renders
-as a selectable read-only native editor and as a scrollable monospace region in
-the browser adapter; it does not embed or execute source code. Buttons remain
-native controls, so their captions follow platform interaction behavior rather
-than document-text selection behavior, while their dimensions, icon placement,
-and typography come from the shared control contract.
+copy, is passive in the Gio adapter so a touch drag that starts on its glyphs
+scrolls the containing viewport. The semantic `code` text role renders as a
+selectable read-only native editor and as a scrollable monospace region in the
+browser adapter; it does not embed or execute source code. Buttons remain native
+controls, so their captions follow platform interaction behavior rather than
+document-text selection behavior, while their dimensions, icon placement, and
+typography come from the shared control contract.
 
 It intentionally does not contain selectors, arbitrary CSS properties, DOM
 APIs, Gio types, scripts, URLs to executable resources, protobuf messages, or

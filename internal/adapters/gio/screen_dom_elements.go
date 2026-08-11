@@ -269,7 +269,7 @@ func (r *Renderer) compileDOMText(node uidsl.Node, data any, path string) giodom
 	if role == "code" || role == "code-inline" || role == "output-code" {
 		return r.compileDOMCodeText(node, data, path, value, role, strong)
 	}
-	text := r.domText(domNodeKey(node, path), value, role, strong, node.Style.Tone, true)
+	text := r.domText(domNodeKey(node, path), value, role, strong, node.Style.Tone)
 	if node.Style.Truncate || role == "badge" || role == "table-header" || node.Style.Role == "execution-row" {
 		text.Text.MaxLines = 1
 	}
@@ -325,13 +325,13 @@ func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, ro
 	})
 }
 
-func (r *Renderer) domText(key giodom.Key, value, role string, strong bool, tone string, selectable bool) giodom.Element {
+func (r *Renderer) domText(key giodom.Key, value, role string, strong bool, tone string) giodom.Element {
 	style := r.nativeTextStyle(role, strong)
 	return giodom.Element{
 		Kind: giodom.KindText, Key: key,
 		Text: giodom.TextProps{
 			Value: value, Size: style.size, Color: r.domTextColor(role, tone),
-			Font: style.font, LineHeightScale: style.lineHeight, Selectable: selectable,
+			Font: style.font, LineHeightScale: style.lineHeight,
 		},
 	}
 }
@@ -392,7 +392,7 @@ func (r *Renderer) compileDOMBadge(node uidsl.Node, data any, path string) giodo
 		fill = mixColorSRGB(r.palette.surface, tone, float64(r.controls.Badge.TintOpacity))
 		border.A = uint8(math.Round(0xff * float64(r.controls.Badge.BorderOpacity)))
 	}
-	text := r.domText(giodom.Key(path+"/text"), value, "badge", node.Style.Emphasis == "strong", textTone, true)
+	text := r.domText(giodom.Key(path+"/text"), value, "badge", node.Style.Emphasis == "strong", textTone)
 	badge := giodom.Surface(domNodeKey(node, path), giodom.SurfaceProps{
 		Fill: fill, Border: border, BorderWidth: borderWidth, Radius: 100,
 		Padding: giodom.Insets{

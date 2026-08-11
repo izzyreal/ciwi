@@ -27,7 +27,7 @@ func TestExecutionDisclosureHeaderAdaptsWithoutExcessiveHeight(t *testing.T) {
 		giodom.Spacer("status", 20, 20),
 	}
 	copyElements := []giodom.Element{
-		renderer.domText("summary", "1/15 successful, 7 in progress, 7 waiting", "control", true, "warning", false),
+		renderer.domText("summary", "1/15 successful, 7 in progress, 7 waiting", "control", true, "warning"),
 	}
 	header := renderer.domExecutionDisclosureHeader(
 		"execution", "VMPC2000XL Full cross-platform release Mon 10 Aug, 21:15:00 v0.9.17",
@@ -188,6 +188,56 @@ func TestNativeSelectUsesSharedOptionHeight(t *testing.T) {
 	}
 	if longWidth <= shortWidth || longWidth >= gtx.Constraints.Max.X {
 		t.Fatalf("long native select menu width = %d, want intrinsic width between %d and %d", longWidth, shortWidth, gtx.Constraints.Max.X)
+	}
+}
+
+func TestNativePresentationTextIsPassiveButCodeRemainsSelectable(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	ordinary := renderer.compileDOMNode(uidsl.Node{
+		Component: "text", Text: &uidsl.Text{Literal: "Queued and In Progress Job Executions"},
+		Style: uidsl.Style{Role: "heading", Emphasis: "strong"},
+	}, map[string]any{}, "heading")
+	if ordinary == nil || ordinary.Kind != giodom.KindText || ordinary.Text.Selectable {
+		t.Fatalf("ordinary native text = %#v, want passive text", ordinary)
+	}
+	code := renderer.compileDOMNode(uidsl.Node{
+		Component: "text", Text: &uidsl.Text{Literal: "selectable output"}, Style: uidsl.Style{Role: "code"},
+	}, map[string]any{}, "code")
+	if code == nil || code.Kind != giodom.KindNative {
+		t.Fatalf("native code text = %#v, want selectable read-only native editor", code)
+	}
+}
+
+func TestNativeSettingsCardGapAndPendingButtonWidthContracts(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	catalog, err := sharedui.LoadActionCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer.SetActionCatalog(catalog)
+
+	card := uidsl.Node{
+		Component: "card", Layout: uidsl.Layout{Direction: "vertical", Gap: "small"},
+		Children: []uidsl.Node{
+			{Component: "spacer", Layout: uidsl.Layout{MinHeight: "20"}},
+			{Component: "spacer", Layout: uidsl.Layout{MinHeight: "20"}},
+		},
+	}
+	withoutGap := card
+	withoutGap.Layout.Gap = "0"
+	withGapDimensions := layoutResponsiveLooseElement(renderer, *renderer.compileDOMNode(card, map[string]any{}, "card-gap"), 400, 200)
+	withoutGapDimensions := layoutResponsiveLooseElement(renderer, *renderer.compileDOMNode(withoutGap, map[string]any{}, "card-no-gap"), 400, 200)
+	if got, want := withGapDimensions.Size.Y-withoutGapDimensions.Size.Y, int(renderer.metrics.spaceSmall); got != want {
+		t.Fatalf("native card gap contribution = %d, want %d", got, want)
+	}
+
+	plain := uidsl.Node{Component: "button", Text: &uidsl.Text{Literal: "Update now"}}
+	updating := plain
+	updating.Actions = []uidsl.Action{{On: "activate", Command: "server-update-action"}}
+	plainDimensions := layoutResponsiveLooseElement(renderer, *renderer.compileDOMNode(plain, map[string]any{}, "plain-update"), 400, 100)
+	updatingDimensions := layoutResponsiveLooseElement(renderer, *renderer.compileDOMNode(updating, map[string]any{}, "reserved-update"), 400, 100)
+	if updatingDimensions.Size.X <= plainDimensions.Size.X {
+		t.Fatalf("pending-label button width = %d, want wider than ordinary width %d", updatingDimensions.Size.X, plainDimensions.Size.X)
 	}
 }
 
