@@ -191,35 +191,11 @@ func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressP
 		fill = r.palette.consoleSuccess
 	}
 	track := color.NRGBA{}
-	base := r.domProgressBase(node)
 	tintOpacity := float64(r.controls.Progress.TintOpacity)
-	if base.A == 0xff {
-		fill = mixColorSRGB(base, fill, tintOpacity)
-	} else {
-		fill.A = uint8(math.Round(0xff * tintOpacity))
-	}
+	fill.A = uint8(math.Round(0xff * tintOpacity))
 	return &giodom.ProgressProps{
 		Mode: mode, Fraction: float32(fraction), Animate: state == "determinate" && progress.ratePerMS > 0, Color: fill,
 		Track: track, Radius: r.metrics.surfaceRadius, Phase: -time.Duration(progress.snapshotUnixMS) * time.Millisecond,
-	}
-}
-
-func (r *Renderer) domProgressBase(node uidsl.Node) color.NRGBA {
-	switch node.Style.Role {
-	case "execution-row":
-		return r.palette.surfaceRaised
-	case "execution-section-header":
-		return r.palette.subtle
-	case "output-group":
-		return r.palette.consoleSurface
-	}
-	switch node.Component {
-	case "card", "section", "graph-view":
-		return r.palette.surface
-	case "disclosure":
-		return r.palette.surfaceRaised
-	default:
-		return color.NRGBA{}
 	}
 }
 
