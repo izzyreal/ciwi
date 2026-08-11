@@ -59,6 +59,9 @@ func TestDeclarativeControlsContract(t *testing.T) {
 	if got := controls.Controls.Button.PaddingY; got.Web != 8 || got.Native != 8 {
 		t.Fatalf("button vertical padding = %#v", got)
 	}
+	if got := controls.Controls.Input.PlaceholderColor; got != "#757575" {
+		t.Fatalf("input placeholder color = %q, want #757575", got)
+	}
 }
 
 func TestEveryWebCommandHasABrowserAdapter(t *testing.T) {
@@ -665,7 +668,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		".dsl-scheduling-awaiting", ".dsl-awaiting", "--awaiting-bg", "--awaiting-ink",
 		"/ui/contracts/controls.json", "controls().select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-select-chevron-gap",
 		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) var(--ciwi-progress-tint, 18%)",
-		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", ".dsl-output-group:not([open]) > summary",
+		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", "overscroll-behavior-y:auto", ".dsl-output-group:not([open]) > summary",
 		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-output-group > summary { color:var(--console-accent)",
 		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
@@ -742,7 +745,8 @@ func TestDeclarativeNavigationCommitsTargetBeforeRemoteData(t *testing.T) {
 	for _, expected := range []string{
 		"navigateBrowser", "window.history.pushState", "window.addEventListener('popstate'", "aria-busy",
 		"browserLoadingBinding", "browserViewCache", "loadingCommitted = true", "loadingRoot.load_error", "showLoading: true",
-		"settingsProjectsPromise", "settingsUpdateStatusPromise",
+		"settingsProjectsPromise", "settingsUpdateStatusPromise", "await navigateBrowser(args.successRoute, {replace: true})",
+		"pendingActionRemovesCurrentRoute()",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative navigation does not contain %q", expected)

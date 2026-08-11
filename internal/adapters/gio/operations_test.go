@@ -143,6 +143,7 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 		wantSection       string
 		wantNoticeEnabled bool
 		wantNavigateBack  bool
+		wantReplaceRoute  bool
 		wantCancel        string
 	}{
 		{command: "run-pipeline", arguments: map[string]string{"pipelineDbId": "7", "pipelineJobId": "unit-tests", "dryRun": "true", "backOnSuccess": "true"}, wantCall: "run-pipeline", wantNotice: "/", wantSection: "queued-executions", wantNoticeEnabled: true, wantNavigateBack: true},
@@ -154,6 +155,7 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 		{command: "cancel-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "cancel-execution", wantCancel: "job-1"},
 		{command: "rerun-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "rerun-execution", wantNotice: "/jobs/job-1-rerun", wantNoticeEnabled: true},
 		{command: "agent-action", arguments: map[string]string{"agentId": "agent-1", "action": "restart"}, wantCall: "agent-action", wantNoticeEnabled: true},
+		{command: "agent-action", arguments: map[string]string{"agentId": "agent-1", "action": "delete", "successRoute": "/agents"}, wantCall: "agent-action", wantRoute: "/agents", wantNoticeEnabled: true, wantReplaceRoute: true},
 		{command: "run-agent-script", arguments: map[string]string{"agentId": "agent-1", "shell": "posix", "script": "uname -a"}, wantCall: "run-agent-script", wantRoute: "/jobs/job-script", wantNotice: "/jobs/job-script", wantNoticeEnabled: true},
 		{command: "project-action", arguments: map[string]string{"projectId": "2", "action": "reload"}, wantCall: "project-action"},
 		{command: "import-project", arguments: map[string]string{"repoUrl": "https://example.com/ciwi.git"}, wantCall: "import-project"},
@@ -184,6 +186,9 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 			}
 			if effect.NavigateBack != test.wantNavigateBack {
 				t.Fatalf("navigate back = %v, want %v", effect.NavigateBack, test.wantNavigateBack)
+			}
+			if effect.ReplaceRoute != test.wantReplaceRoute {
+				t.Fatalf("replace route = %v, want %v", effect.ReplaceRoute, test.wantReplaceRoute)
 			}
 			if effect.NoticeRoute != test.wantNotice {
 				t.Fatalf("notice route = %q, want %q", effect.NoticeRoute, test.wantNotice)
@@ -223,6 +228,30 @@ func TestNativeRunOptionsBackTargetsAndDelayedOperationGuard(t *testing.T) {
 	}
 	if nativeRunOptionsOperationMatches(project, chainOperation) || nativeRunOptionsOperationMatches(navigationState{screen: "run-options", projectID: 2, chainID: "other"}, chainOperation) {
 		t.Fatal("delayed chain operation matched a different navigation target")
+	}
+}
+
+func TestNativeAgentDeletionOwnsObsoleteDetailsRefresh(t *testing.T) {
+	navigation := navigationState{screen: "agent-details", agentDetailsID: "agent-1"}
+	deletion := operations.Operation{
+		Command: "agent-action", State: operations.StateRunning,
+		Arguments: map[string]string{"agentId": "agent-1", "action": "delete", "successRoute": "/agents"},
+	}
+	if !nativeAgentDeletionOwnsCurrentRoute([]operations.Operation{deletion}, navigation) {
+		t.Fatal("running deletion did not own its obsolete details refresh")
+	}
+	deletion.State = operations.StateSucceeded
+	if !nativeAgentDeletionOwnsCurrentRoute([]operations.Operation{deletion}, navigation) {
+		t.Fatal("unapplied successful deletion did not own its obsolete details refresh")
+	}
+	deletion.State = operations.StateFailed
+	if nativeAgentDeletionOwnsCurrentRoute([]operations.Operation{deletion}, navigation) {
+		t.Fatal("failed deletion suppressed a later details refresh")
+	}
+	deletion.State = operations.StateRunning
+	deletion.Arguments["agentId"] = "agent-2"
+	if nativeAgentDeletionOwnsCurrentRoute([]operations.Operation{deletion}, navigation) {
+		t.Fatal("another agent's deletion suppressed the current details refresh")
 	}
 }
 

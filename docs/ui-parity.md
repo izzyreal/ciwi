@@ -75,7 +75,13 @@ control text share the bundled Geist Sans faces.
 Job output uses theme-owned console tokens in both renderers. Its controls,
 execution path, system messages, and grouped phase/step output now live in one
 `Output / Error` section; selecting a path item reveals its corresponding output
-instead of maintaining a second selected-item details card.
+instead of maintaining a second selected-item details card. Timeline cards use
+the same fixed outer geometry in both adapters, and collapsed output rows use
+the shared passive-chevron and border-box contracts. The complete collapsed
+phase/step row expands and collapses by mouse or touch, including while nested
+inside the output scroller. Timeline selection changes selection and disclosure
+state without creating a snackbar; bounded queue notices remain part of running
+jobs, chains, pipelines, and ad-hoc scripts.
 
 Job reports use one recursive `tree-view` declaration and one presentation
 model in both clients. Artifact directories expose ZIP downloads at every
@@ -88,8 +94,17 @@ overwriting an existing file.
 Settings, managed-YAML editing, agent details, and ad-hoc agent scripts now use
 the same presentation/action contracts. Both adapters expose asynchronous busy
 state and bounded success/error notices; agent heartbeat icons use the shared
-event-timestamp pulse binding. Compact overrides provide phone-width reflow and
-touch scrolling without separate mobile screen definitions.
+event-timestamp pulse binding. Select triggers and options use the exact shared
+outer heights and menu metrics, and both adapters allow only one select popup
+at a time. Popup width follows the widest trigger/option content within the
+viewport, and any outside press dismisses it even when another component owns
+that press. A successful agent deletion replaces the removed details route with
+the shared Agents route; its expected change invalidation is not reported as a
+failed stale-data refresh. Compact overrides provide narrow-width reflow
+and touch scrolling without separate mobile screen definitions. Their width
+boundaries are declared once in `ui/controls.yaml` and apply identically in a
+browser, desktop window, tablet, or phone; platform and orientation do not
+participate in responsive classification.
 
 Tests enforce the renderer boundary: populated browser binding fixtures cover
 every shared route, every web-visible command must have a browser adapter, and
@@ -105,12 +120,16 @@ is deliberately limited to transport representation and interaction state such
 as project-icon bytes versus URLs, graph/list selection, output search and
 tailing, connection settings, and pending notices.
 
-Lifecycle regression tests exercise browser page and nested-scroll retention,
-focused-control selection, persistent disclosures, confirmation cancellation,
-and incremental output refresh. Gio DOM tests cover keyed state retention,
-state pruning, bounded virtualization, responsive geometry, and scroll-anchor
-reconciliation independently of ciwi screens. Native interaction and visual
-parity remain device-level checks.
+Lifecycle regression tests exercise browser page and bidirectional nested
+scroll chaining, focused-control selection, persistent disclosures,
+confirmation cancellation, exact shared card/collapsed-row geometry,
+width-boundary reflow, and incremental output refresh. Gio DOM tests cover
+keyed state retention, state pruning, bounded virtualization, width-only
+responsive geometry, interactive child taps and touch drags, bidirectional
+boundary handoff, and scroll-anchor reconciliation independently of ciwi
+screens. These deterministic regressions run once; repetition is reserved for
+an explicitly diagnosed timing or ordering problem. Native interaction and
+visual parity remain device-level checks.
 
 The browser adapter is divided into the screen renderer, view-binding
 decoration, select control, graph/tree renderers, and DOM reconciler. The Gio

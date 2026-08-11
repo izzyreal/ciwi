@@ -89,9 +89,9 @@ names.
 The focused `Build and publish iOS client` chain builds the Gio
 client as an arm64 static framework, links it into the minimal UIKit host in
 `packaging/ios`, archives the app with automatic Xcode signing, validates the
-archive, and uploads it to TestFlight. Compact overrides provide phone-width
-reflow, touch scrolling, and compact job-detail navigation while retaining the
-same screen definitions used on desktop.
+archive, and uploads it to TestFlight. Shared width thresholds provide narrow
+reflow and touch scrolling on every platform while retaining the same screen
+definitions and inline disclosure behavior used on desktop and in the browser.
 
 The macOS build agent must have Xcode signed into the Apple developer account
 for team `KFBA7Q5H76`, automatic signing access, and permission to upload the
@@ -181,6 +181,10 @@ details can authorize, activate, refresh tools, restart, update, wipe caches,
 flush per-agent history, delete snapshots, and queue ad-hoc scripts in any shell
 the agent advertises. Mutations and queries run asynchronously, expose busy
 state, and report short-lived success/error notices without blocking navigation.
+Deleting an agent replaces its now-invalid details route with the Agents screen;
+the deletion change event is deliberately not treated as a failed details
+refresh. Native select triggers, menu options, padding, and gaps consume the
+shared control metrics, and opening a select closes any previously open select.
 
 Theme changes apply immediately and are stored in the user's config directory
 as `ciwi/native-ui.json`, alongside disclosure and graph/list state, connection
@@ -196,5 +200,9 @@ tree in `internal/giodom`. The runtime owns bounded widget and viewport state;
 the adapter owns only semantic interaction state such as disclosures, graph
 mode, output search, tailing, notices, and confirmations. Responsive reflow
 changes layout axis without carrying axis-specific growth into the new axis.
+Its compact and condensed thresholds come from `ui/controls.yaml` and depend
+only on the available logical width. Page viewports scroll continuously through
+card gaps, accept touch drags that start over interactive children, and nested
+viewports hand outward movement to the page at their top and bottom boundaries.
 The native client deliberately has no HTTP fallback: missing CNP capabilities
 fail visibly instead of silently coupling the native UI to browser endpoints.

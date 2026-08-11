@@ -10,6 +10,7 @@ const cssDirectory = path.join(repositoryRoot, 'internal/server/webui/assets/css
 
 const controls = {
   controls: {
+    viewport: {compactMaximumWidth: 760, condensedDisclosureMaximumWidth: 560},
     button: {
       iconPosition: 'leading', minimumHeight: {web: 44, native: 44},
       paddingX: {web: 12, native: 12}, paddingY: {web: 8, native: 8},
@@ -19,13 +20,13 @@ const controls = {
     badge: {paddingX: 9, paddingY: 4, tintOpacity: 0.12, borderOpacity: 0.55},
     input: {
       minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12},
-      paddingY: {web: 9, native: 8},
+      paddingY: {web: 9, native: 8}, placeholderColor: '#757575',
     },
     select: {
-      chevronPosition: 'trailing', chevronSize: 16, chevronGap: 6, minimumHeight: 44, menuPadding: 4,
-      menuItemGap: 2, optionGap: 6, optionPaddingX: 8, optionPaddingY: 6,
-      optionMinimumHeight: 28, selectionIndicatorWidth: 16,
-      viewportInset: 8, menuGap: 4, menuMinimumWidth: 120,
+      chevronPosition: 'trailing', chevronSize: 19, chevronGap: 12, minimumHeight: 44, menuPadding: 6,
+      menuItemGap: 2, optionGap: 8, optionPaddingX: 10, optionPaddingY: 7,
+      optionMinimumHeight: 40, selectionIndicatorWidth: 20,
+      viewportInset: 8, menuGap: 6, menuMinimumWidth: 120, menuMinimumHeight: 120, menuMaximumHeight: 420,
     },
     disclosure: {chevronPosition: 'trailing', chevronSize: 20, chevronGap: 8},
     progress: {tintOpacity: 0.18},
@@ -47,9 +48,26 @@ const screen = {
           {component: 'text', id: 'probe-version', text: {binding: 'probe.version'}},
           {component: 'input', id: 'probe-input', input: {value: 'probe.input', placeholder: 'Edit'}},
           {
-            component: 'select', id: 'probe-select',
-            visible: {binding: 'probe.select_visible'},
-            select: {options: 'probe.options', value: 'probe.selected', as: 'option', optionValue: 'option.value', optionLabel: 'option.label'},
+            component: 'scroller', id: 'probe-timeline', layout: {direction: 'horizontal', gap: 'small', maxHeight: '118'},
+            repeat: {source: 'probe.timeline', as: 'item', key: 'item.id'}, children: [{
+              component: 'card', layout: {direction: 'vertical', gap: 'small', padding: 'small', minWidth: '235', maxWidth: '235', minHeight: '86'},
+              children: [
+                {component: 'text', text: {binding: 'item.title'}, style: {emphasis: 'strong', truncate: true}},
+                {component: 'badge', text: {binding: 'item.status'}},
+              ],
+            }],
+          },
+          {
+            component: 'row', layout: {direction: 'horizontal', gap: 'small'}, visible: {binding: 'probe.select_visible'}, children: [
+              {
+                component: 'select', id: 'probe-select',
+                select: {options: 'probe.options', value: 'probe.selected', as: 'option', optionValue: 'option.value', optionLabel: 'option.label'},
+              },
+              {
+                component: 'select', id: 'probe-select-two',
+                select: {options: 'probe.options', value: 'probe.selected_two', as: 'option', optionValue: 'option.value', optionLabel: 'option.label'},
+              },
+            ],
           },
           {
             component: 'disclosure', id: 'probe-disclosure', text: {literal: 'Disclosure'},
@@ -99,6 +117,14 @@ const screen = {
             children: [
               {component: 'text', text: {literal: 'Agent one'}},
               {component: 'badge', id: 'probe-badge', text: {literal: 'Healthy'}, layout: {grow: true}},
+            ],
+          },
+          {
+            component: 'row', id: 'probe-responsive-row', layout: {direction: 'horizontal'},
+            overrides: {compact: {layout: {direction: 'vertical'}}},
+            children: [
+              {component: 'text', text: {literal: 'Responsive one'}},
+              {component: 'text', text: {literal: 'Responsive two'}},
             ],
           },
           {
@@ -171,10 +197,11 @@ const settingsScreen = {
 
 function model(overrides = {}) {
   return Object.assign({
-    version: 'one', input: 'draft', detail: 'details', selected: 'a', select_visible: true, action_id: '1', action_visible: true,
+    version: 'one', input: 'draft', detail: 'details', selected: 'a', selected_two: 'b', select_visible: true, action_id: '1', action_visible: true,
     graph_visible: false, graph_nodes: [], tree_visible: false, tree_nodes: [], output_visible: false, output: '',
     log_visible: false, log: '', selection_start: 'Select from here', selection_end: 'through here',
     options: [{value: 'a', label: 'Alpha'}, {value: 'b', label: 'Beta'}],
+    timeline: Array.from({length: 6}, (_, index) => ({id: `phase-${index}`, title: `Ciwi phase ${index + 1}/6: Prepare workspace`, status: 'Succeeded'})),
     rows: [
       {key: 'a', label: 'Execution A', summary: '1/3 successful, 1 in progress, 1 waiting', status: 'running'},
       {key: 'b', label: 'Execution B', summary: '0/1 successful, 1 waiting', status: 'waiting'},
@@ -191,6 +218,7 @@ async function installFixture(page, models) {
       await route.fulfill({contentType: 'text/html', body: `<!doctype html>
         <html><head><link rel="stylesheet" href="/ui/declarative.css"><style>
           .dsl-execution-row-status.dsl-status-accent { animation: ciwi-test-spin 10s linear infinite; }
+          #probe-timeline > .dsl-card { box-sizing: border-box; }
           #probe-graph .dsl-definition-graph-viewport { width: 180px; height: 110px; overflow: auto; }
           #probe-nested-graph .dsl-definition-graph-viewport { width: 160px; height: 100px; }
           #probe-output { display: block; width: 220px; height: 40px; overflow: auto; white-space: pre; }
@@ -501,6 +529,33 @@ test('open custom select and its option identities survive a compatible refresh'
   await expect(page.locator('.dsl-select-option[data-value="c"]')).toHaveText('Gamma');
 });
 
+test('custom selects use shared geometry and close on every outside target', async ({page}) => {
+  await installFixture(page, [model({options: [
+    {value: 'a', label: 'Alpha'},
+    {value: 'b', label: 'A considerably longer option'},
+  ]})]);
+  await page.locator('#probe-select').click();
+  await expect(page.locator('#probe-select')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.dsl-select-menu')).toHaveCount(1);
+  await expect.poll(() => page.locator('.dsl-select-option').evaluateAll(options => options.map(option => option.getBoundingClientRect().height))).toEqual([40, 40]);
+  const widths = await page.locator('.dsl-select-menu').evaluate(menu => ({
+    menu: menu.getBoundingClientRect().width,
+    trigger: document.querySelector('#probe-select').getBoundingClientRect().width,
+    options: Math.max(...Array.from(menu.querySelectorAll('.dsl-select-option'), option => option.getBoundingClientRect().width)),
+  }));
+  expect(widths.menu).toBeGreaterThanOrEqual(widths.trigger);
+  expect(widths.menu).toBe(widths.options + controls.controls.select.menuPadding * 2);
+
+  await page.locator('#probe-select-two').click();
+  await expect(page.locator('#probe-select')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#probe-select-two')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.dsl-select-menu')).toHaveCount(1);
+
+  await page.locator('#probe-input').click();
+  await expect(page.locator('#probe-select-two')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('.dsl-select-menu')).toHaveCount(0);
+});
+
 test('removing an open custom select disposes its portal', async ({page}) => {
   await installFixture(page, [model(), model({version: 'two', select_visible: false})]);
   await page.locator('#probe-select').click();
@@ -675,6 +730,11 @@ test('shared table, badge, and control sizing contracts are intrinsic and aligne
       badgeWidth: bounds('probe-badge').width,
       rowWidth: bounds('probe-table-row').width,
       heights: [bounds('probe-input').height, bounds('probe-select').height, bounds('probe-refresh').height],
+      placeholderColor: getComputedStyle(document.getElementById('probe-input'), '::placeholder').color,
+      timelineCards: Array.from(document.querySelectorAll('#probe-timeline > .dsl-card')).map(card => {
+        const bounds = card.getBoundingClientRect();
+        return [bounds.width, bounds.height];
+      }),
     };
   });
   expect(metrics.headerFontSize).toBe('16px');
@@ -682,6 +742,32 @@ test('shared table, badge, and control sizing contracts are intrinsic and aligne
   expect(metrics.rowAlign).toBe('center');
   expect(metrics.badgeWidth).toBeLessThan(metrics.rowWidth / 2);
   expect(metrics.heights).toEqual([44, 44, 44]);
+  expect(metrics.placeholderColor).toBe('rgb(117, 117, 117)');
+  expect(metrics.timelineCards).toEqual(Array.from({length: 6}, () => [235, 86]));
+});
+
+test('shared width contract applies compact node overrides at the same boundary', async ({page}) => {
+  await page.setViewportSize({width: 761, height: 667});
+  await installFixture(page, [model()]);
+  await expect(page.locator('html')).not.toHaveClass(/ciwi-compact/);
+  await expect(page.locator('#probe-responsive-row')).toHaveCSS('flex-direction', 'row');
+
+  await page.locator('#probe-disclosure > summary').click();
+  await expect(page.locator('#probe-disclosure')).not.toHaveAttribute('open', '');
+  await expect.poll(() => page.evaluate(() => {
+    const states = JSON.parse(localStorage.getItem('ciwi.declarative.disclosures.v1') || '{}');
+    return states['probe-disclosure'];
+  })).toBe(false);
+  await page.setViewportSize({width: 760, height: 667});
+  await expect(page.locator('html')).toHaveClass(/ciwi-compact/);
+  await expect(page.locator('#probe-responsive-row')).toHaveCSS('flex-direction', 'column');
+  await expect(page.locator('#probe-disclosure')).not.toHaveAttribute('open', '');
+  await page.locator('#probe-disclosure > summary').click();
+  await expect(page.locator('#probe-disclosure')).toHaveAttribute('open', '');
+
+  await page.setViewportSize({width: 761, height: 667});
+  await expect(page.locator('html')).not.toHaveClass(/ciwi-compact/);
+  await expect(page.locator('#probe-responsive-row')).toHaveCSS('flex-direction', 'row');
 });
 
 test('execution summaries stack in portrait and split without collapsing in landscape', async ({page}) => {
@@ -701,6 +787,7 @@ test('execution summaries stack in portrait and split without collapsing in land
   expect(portrait.status.right).toBeLessThanOrEqual(portrait.bounds.right + 1);
 
   await page.setViewportSize({width: 667, height: 375});
+  await expect(page.locator('html')).not.toHaveClass(/ciwi-condensed-disclosure/);
   const landscape = await page.locator('.dsl-execution-row > summary').evaluate(summary => {
     const label = summary.querySelector('.dsl-execution-row-label').getBoundingClientRect();
     const status = summary.querySelector('.dsl-execution-row-summary').getBoundingClientRect();

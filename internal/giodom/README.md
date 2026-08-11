@@ -22,12 +22,22 @@ iOS.
   values, not retained widgets, remain authoritative.
 - The custom viewport anchors scrolling to a child key and pixel offset, so a
   reorder does not silently attach the position to another row.
+- A pass-through page viewport observes child gestures before applying its own
+  movement, persists pixel-continuous anchors in both directions (including
+  positions inside inter-item gaps), and accepts drags that start over
+  interactive children. Nested viewports consume movement while they have room
+  and yield a new outward touch drag or wheel movement to the page at either
+  boundary. Nested scroll recognizers are recorded below their child controls,
+  allowing a child to retain an ordinary mouse or touch tap while the viewport
+  still wins once that gesture becomes a drag.
 - Only visible rows plus bounded overscan are materialized. Cached row
   measurements and runtime state slots have explicit hard limits.
 - Geometry outside the configured range is rejected before recording paint
   operations.
 - Rounded borders use nested filled shapes. The evaluated runtime does not use
   stroked curves.
+- Surface padding and border widths participate in outer-box measurement;
+  application constraints therefore describe the complete rendered box.
 - Surface background painters run only after geometry validation and inside the
   rounded interior clip; applications remain responsible for keeping their
   image resources bounded.

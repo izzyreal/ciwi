@@ -4,6 +4,8 @@ import (
 	"image"
 
 	"gioui.org/gesture"
+	"gioui.org/io/event"
+	"gioui.org/io/input"
 	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
@@ -19,6 +21,7 @@ type measurement struct {
 
 type keyedViewportState struct {
 	scroll           gesture.Scroll
+	boundaryGate     scrollBoundaryGate
 	anchor           Key
 	anchorIndex      int
 	anchorOffset     int
@@ -37,6 +40,71 @@ type keyedViewportState struct {
 	scrollRevision   uint64
 	forceEndRevision uint64
 	resetRevision    uint64
+}
+
+// scrollBoundaryGate keeps a nested touch scroller from grabbing a gesture
+// that starts by moving out through one of its exhausted boundaries. The
+// pass-through parent can then claim the same drag. Interior drags continue to
+// use Gio's gesture.Scroll, including its normal touch slop and fling behavior.
+type scrollBoundaryGate struct {
+	tracking bool
+	delegate bool
+	pid      pointer.ID
+	last     float32
+}
+
+func (gate *scrollBoundaryGate) Add(ops *op.Ops) {
+	event.Op(ops, gate)
+}
+
+func (gate *scrollBoundaryGate) Update(source input.Source, axis gesture.Axis, xRange, yRange pointer.ScrollRange) bool {
+	delegated := gate.delegate
+	filter := pointer.Filter{Target: gate, Kinds: pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel}
+	for {
+		raw, ok := source.Event(filter)
+		if !ok {
+			break
+		}
+		pointerEvent, ok := raw.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch pointerEvent.Kind {
+		case pointer.Press:
+			if pointerEvent.Source != pointer.Touch || gate.tracking {
+				continue
+			}
+			gate.tracking, gate.delegate, gate.pid = true, false, pointerEvent.PointerID
+			gate.last = scrollAxisPosition(axis, pointerEvent.Position.X, pointerEvent.Position.Y)
+		case pointer.Drag:
+			if !gate.tracking || gate.pid != pointerEvent.PointerID || gate.delegate || pointerEvent.Priority == pointer.Grabbed {
+				continue
+			}
+			current := scrollAxisPosition(axis, pointerEvent.Position.X, pointerEvent.Position.Y)
+			delta := gate.last - current
+			gate.last = current
+			rangeForAxis := yRange
+			if axis == gesture.Horizontal {
+				rangeForAxis = xRange
+			}
+			if (delta > 0 && rangeForAxis.Max <= 0) || (delta < 0 && rangeForAxis.Min >= 0) {
+				gate.delegate = true
+				delegated = true
+			}
+		case pointer.Release, pointer.Cancel:
+			if gate.pid == pointerEvent.PointerID {
+				gate.tracking, gate.delegate = false, false
+			}
+		}
+	}
+	return delegated
+}
+
+func scrollAxisPosition(axis gesture.Axis, x, y float32) float32 {
+	if axis == gesture.Horizontal {
+		return x
+	}
+	return y
 }
 
 type stockListState struct {
@@ -127,10 +195,18 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	}
 	scrollDelta := 0
 	if !props.PassThroughScroll {
-		scrollDelta = state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
+		delegateTouch := false
+		if props.NestedScroll {
+			delegateTouch = state.boundaryGate.Update(gtx.Source, axis, xRange, yRange)
+		}
+		if delegateTouch {
+			state.scroll = gesture.Scroll{}
+		} else {
+			scrollDelta = state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
+		}
 		offset += scrollDelta
 		offset = min(max(0, offset), maxOffset)
-		if props.NestedScroll && (scrollDelta != 0 || state.scroll.State() == gesture.StateDragging) {
+		if props.NestedScroll && scrollDelta != 0 {
 			r.nestedScrollClaimed = true
 		}
 	}
@@ -168,9 +244,10 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		recorded = append(recorded, recordedViewportChild{call: call, pos: pos, size: dimensions.Size})
 		crossExtent = max(crossExtent, axisCross(props.Axis, dimensions.Size))
 	}
-	if props.PassThroughScroll && !r.nestedScrollClaimed {
-		scrollDelta = state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
-		if scrollDelta != 0 {
+	if props.PassThroughScroll {
+		parentDelta := state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
+		if !r.nestedScrollClaimed && parentDelta != 0 {
+			scrollDelta = parentDelta
 			offset = min(max(0, offset+scrollDelta), maxOffset)
 			gtx.Execute(op.InvalidateCmd{})
 		}
@@ -193,14 +270,19 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		} else {
 			state.scroll.Add(gtx.Ops)
 		}
+	} else {
+		// Keep both gesture observers below row controls. The boundary observer
+		// is pass-through, while the scroll gesture still competes normally once
+		// a tap turns into a drag.
+		pass := pointer.PassOp{}.Push(gtx.Ops)
+		state.boundaryGate.Add(gtx.Ops)
+		pass.Pop()
+		state.scroll.Add(gtx.Ops)
 	}
 	for _, child := range recorded {
 		translation := op.Offset(child.pos).Push(gtx.Ops)
 		child.call.Add(gtx.Ops)
 		translation.Pop()
-	}
-	if props.NestedScroll {
-		state.scroll.Add(gtx.Ops)
 	}
 	if props.PinnedOverlay != nil && firstVisible >= 0 && firstVisible < children.Len() {
 		position := state.prefixAt(firstVisible)
@@ -222,10 +304,11 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	}
 	area.Pop()
 
-	if firstVisible < children.Len() {
-		state.anchor = children.KeyAt(firstVisible)
-		state.anchorIndex = firstVisible
-		state.anchorOffset = max(0, offset-state.prefixAt(firstVisible))
+	anchorIndex = state.anchorAt(offset)
+	if anchorIndex < children.Len() {
+		state.anchor = children.KeyAt(anchorIndex)
+		state.anchorIndex = anchorIndex
+		state.anchorOffset = max(0, offset-state.prefixAt(anchorIndex))
 	} else {
 		state.anchor = ""
 		state.anchorIndex = children.Len()
@@ -326,6 +409,18 @@ func (s *keyedViewportState) firstVisible(offset int) int {
 		}
 	}
 	return low
+}
+
+// anchorAt returns the item whose leading edge owns offset. Unlike
+// firstVisible, the preceding item continues to own the gap after it so an
+// offset inside that gap can be reconstructed without snapping forward to the
+// next item.
+func (s *keyedViewportState) anchorAt(offset int) int {
+	index := s.firstVisible(offset)
+	if index > 0 && (index == len(s.extents) || s.prefixAt(index) > offset) {
+		index--
+	}
+	return index
 }
 
 func (s *keyedViewportState) setExtent(index, size int) {

@@ -963,8 +963,14 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+parseErr.Error())
 				return
 			}
-			if err := beginForwardNavigation(next); err != nil {
-				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+err.Error())
+			var navigationErr error
+			if effect.ReplaceRoute {
+				navigationErr = beginNavigation(next)
+			} else {
+				navigationErr = beginForwardNavigation(next)
+			}
+			if navigationErr != nil {
+				renderer.ShowAlert("Navigation failed", effect.Message+", but navigation failed: "+navigationErr.Error())
 				return
 			}
 			navigated = true
@@ -1049,9 +1055,17 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				scheduleReconnect("")
 				continue
 			}
-			if change.ResyncRequired || relevantScreenChange(screens[navigation.screen], navigation, change) {
+			if change.ResyncRequired {
 				requestScreenLoad(navigation)
 				window.Invalidate()
+			} else if relevantScreenChange(screens[navigation.screen], navigation, change) {
+				// Deleting the resource that owns the current route publishes its
+				// invalidation before the command response can navigate away. That
+				// obsolete refresh would only observe the expected not-found result.
+				if !nativeAgentDeletionOwnsCurrentRoute(coordinator.Snapshot(), navigation) {
+					requestScreenLoad(navigation)
+					window.Invalidate()
+				}
 			}
 		case watchErr, ok := <-watchErrors:
 			if !ok {
@@ -1796,4 +1810,21 @@ func nativeRunOptionsOperationMatches(navigation navigationState, operation oper
 	default:
 		return false
 	}
+}
+
+func nativeAgentDeletionOwnsCurrentRoute(snapshot []operations.Operation, navigation navigationState) bool {
+	if navigation.screen != "agent-details" || navigation.agentDetailsID == "" {
+		return false
+	}
+	for _, operation := range snapshot {
+		if operation.Command != "agent-action" || strings.TrimSpace(operation.Arguments["action"]) != "delete" ||
+			strings.TrimSpace(operation.Arguments["agentId"]) != navigation.agentDetailsID ||
+			strings.TrimSpace(operation.Arguments["successRoute"]) == "" {
+			continue
+		}
+		if operation.State != operations.StateFailed && operation.State != operations.StateOutcomeUnknown {
+			return true
+		}
+	}
+	return false
 }

@@ -174,5 +174,14 @@ Integration evidence recorded on 2026-08-10:
   used roughly 133 MiB after startup, 136 MiB at one minute, and 140 MiB at
   2:13. It showed no accelerating growth or recurrence of the prior 2 GiB OOM.
 
+Follow-up regression evidence recorded on 2026-08-11:
+
+- Compact and condensed reflow use the same width-only thresholds as the
+  browser, sourced from the shared control contract rather than platform or
+  orientation checks.
+- Page viewports preserve pixel-continuous upward and downward anchors through
+  inter-card gaps, accept touch drags over controls, and hand outward
+  nested-scroll gestures to the page at both boundaries.
+
 The integration result is still not a release claim. Direct interaction checks
 and a short physical-iPhone production run remain before release readiness.

@@ -134,20 +134,6 @@ func treeEntryNode(node uidsl.Node, data any, key string) (uidsl.Node, error) {
 	}, nil
 }
 
-func disclosureNavigationAction(disclosure *uidsl.Disclosure) (uidsl.Action, bool) {
-	if disclosure == nil {
-		return uidsl.Action{}, false
-	}
-	for _, summaryNode := range disclosure.Summary {
-		for _, action := range summaryNode.Actions {
-			if action.On == "activate" && action.Command == "navigate" {
-				return action, true
-			}
-		}
-	}
-	return uidsl.Action{}, false
-}
-
 func disclosureDefaultExpanded(disclosure *uidsl.Disclosure, data any) bool {
 	if disclosure == nil {
 		return false

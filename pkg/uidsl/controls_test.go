@@ -10,6 +10,9 @@ func TestParseControls(t *testing.T) {
 apiVersion: ciwi.ui/v1
 kind: Controls
 controls:
+  viewport:
+    compactMaximumWidth: 760
+    condensedDisclosureMaximumWidth: 560
   button:
     iconPosition: leading
     minimumHeight: {web: 44, native: 44}
@@ -27,6 +30,7 @@ controls:
     minimumHeight: {web: 44, native: 44}
     paddingX: {web: 12, native: 12}
     paddingY: {web: 9, native: 8}
+    placeholderColor: "#757575"
   select:
     chevronPosition: trailing
     chevronSize: 19
@@ -70,6 +74,16 @@ func TestControlsValidationRejectsInvalidVisualMetrics(t *testing.T) {
 	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "menuMaximumHeight") {
 		t.Fatalf("invalid menu height error = %v", err)
 	}
+	document = validControlsDocument()
+	document.Controls.Viewport.CondensedDisclosureMaximumWidth = 800
+	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "condensedDisclosureMaximumWidth") {
+		t.Fatalf("invalid viewport boundary error = %v", err)
+	}
+	document = validControlsDocument()
+	document.Controls.Input.PlaceholderColor = "gray"
+	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "placeholderColor") {
+		t.Fatalf("invalid placeholder color error = %v", err)
+	}
 }
 
 func validControlsDocument() *ControlsDocument {
@@ -77,6 +91,7 @@ func validControlsDocument() *ControlsDocument {
 		APIVersion: APIVersion,
 		Kind:       "Controls",
 		Controls: Controls{
+			Viewport: ViewportControl{CompactMaximumWidth: 760, CondensedDisclosureMaximumWidth: 560},
 			Button: ButtonControl{
 				IconPosition:  "leading",
 				MinimumHeight: PlatformMetric{Web: 44, Native: 44},
@@ -88,9 +103,10 @@ func validControlsDocument() *ControlsDocument {
 			},
 			Badge: BadgeControl{PaddingX: 9, PaddingY: 4, TintOpacity: 0.12, BorderOpacity: 0.55},
 			Input: InputControl{
-				MinimumHeight: PlatformMetric{Web: 44, Native: 44},
-				PaddingX:      PlatformMetric{Web: 12, Native: 12},
-				PaddingY:      PlatformMetric{Web: 9, Native: 8},
+				MinimumHeight:    PlatformMetric{Web: 44, Native: 44},
+				PaddingX:         PlatformMetric{Web: 12, Native: 12},
+				PaddingY:         PlatformMetric{Web: 9, Native: 8},
+				PlaceholderColor: "#757575",
 			},
 			Select: SelectControl{
 				ChevronPosition: "trailing", ChevronSize: 19, ChevronGap: 12, MinimumHeight: 44,

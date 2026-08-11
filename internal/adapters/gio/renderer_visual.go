@@ -254,19 +254,12 @@ func (glow radialGlow) composite(background color.NRGBA, x, y float64) color.NRG
 	return mixColorSRGB(background, glow.color, alpha)
 }
 
-func compactLayoutForPlatform(gtx layout.Context, platform string) bool {
+func compactLayoutForWidth(gtx layout.Context, maximumWidth float32) bool {
 	pxPerDp := gtx.Metric.PxPerDp
 	if pxPerDp <= 0 {
 		pxPerDp = 1
 	}
-	return compactViewport(platform, float32(gtx.Constraints.Max.X)/pxPerDp, float32(gtx.Constraints.Max.Y)/pxPerDp)
-}
-
-func compactViewport(platform string, width, height float32) bool {
-	if width <= float32(compactLayoutWidth) {
-		return true
-	}
-	return platform == "ios" && min(width, height) <= float32(compactLayoutWidth)
+	return float32(gtx.Constraints.Max.X)/pxPerDp <= maximumWidth
 }
 
 func (r *Renderer) pageInset() unit.Dp {
@@ -447,7 +440,6 @@ const (
 	connectionPulseMinimum        = .58
 	heartbeatPulseDuration        = protocol.AgentHeartbeatFadeDuration
 	heartbeatPulseMinimum         = .18
-	compactLayoutWidth            = unit.Dp(520)
 )
 
 func activeSemanticProgress(data any, binding *uidsl.Progress) (semanticProgress, bool) {

@@ -34,7 +34,7 @@ The `ciwi.ui/v1` schema contains:
 - named semantic commands with string arguments and confirmation copy;
 - data-source binding roots and topic-scoped refresh invalidations;
 - narrow node-level `web`, `gio`, and compact-viewport overrides;
-- semantic color, gradient, and dimension tokens.
+- semantic color, gradient, dimension, control, and viewport-breakpoint tokens.
 
 Icons and bundled images are semantic asset names resolved by each renderer;
 screen documents never contain renderer-specific vector paths or filesystem
@@ -49,14 +49,30 @@ families declare their browser fallback list and native Gio typeface name,
 while button metrics carry explicit web and native values where the two layout
 engines require different numbers to produce the same visual result. Both
 renderers load the actual Geist Sans and Geist Mono faces from `ui/assets`.
+The same `ui/controls.yaml` document defines compact and condensed-disclosure
+maximum widths. Browsers interpret those values as CSS pixels and Gio as dp;
+classification depends only on available width, never on operating system,
+device type, or orientation. It also owns input placeholder color and passive
+disclosure-chevron geometry, so neither adapter needs a local visual default.
+Declared minimum and maximum dimensions describe the complete border box;
+renderer-owned padding and borders must fit inside those dimensions.
 
 The `select` component binds its value and option list to view data, exposes a
 renderer-neutral `selection` value to its change action, and is rendered as a
 native expandable choice control or an accessible browser popup control as
-appropriate.
+appropriate. Trigger height, menu padding/gaps/bounds, option height/padding,
+and selection-indicator geometry all come from `ui/controls.yaml`. Each
+renderer owns one active select popup: opening another transfers ownership and
+closes the previous popup. A popup sizes intrinsically to the widest option or
+trigger, subject to its shared minimum and viewport cap, and any pointer press
+outside its trigger and menu dismisses it without consuming the target click.
 The single-line `input` component similarly exposes `input.value` to a change
-action. A repeated `scroller` describes a bounded horizontal collection while
-leaving native gesture handling and browser overflow behavior to each adapter.
+action. A repeated `scroller` describes a bounded collection in its declared
+direction while leaving native gesture handling and browser overflow mechanics
+to each adapter. Nested vertical scrollers consume available movement first and
+chain movement to the page at either boundary. Their gesture observers remain
+behind child controls until a tap becomes a drag, so an entire disclosure
+summary remains activatable even when it is inside a nested scroller.
 `graph-view` describes a dependency graph plus its complete list fallback;
 renderers own layout, selection, pan/zoom, and local Graph/List persistence.
 `tree-view` describes recursive report data with stable keys, disclosure state,
@@ -65,9 +81,10 @@ coverage hierarchies therefore remain presentation data instead of being
 rebuilt independently by JavaScript and Gio.
 Disclosures can declare a renderer-neutral initial state and a templated stable
 state key. Clients persist only keyed disclosure state; unkeyed disclosures
-retain ordinary screen-session behavior. Compact clients render the same
-disclosure hierarchy with responsive reflow; project summaries may navigate to
-the existing project route rather than expanding inline.
+retain ordinary screen-session behavior. Narrow viewports render the same
+disclosure hierarchy with responsive reflow. A disclosure summary always
+expands or collapses inline; an explicitly linked child such as a project name
+still navigates without changing the surrounding disclosure.
 
 Ordinary non-control text, including headings, disclosure labels, and status
 copy, is selectable in the Gio adapter. The semantic `code` text role renders

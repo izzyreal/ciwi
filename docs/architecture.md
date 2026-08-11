@@ -79,7 +79,7 @@ The browser and native clients use the following single-authority boundaries:
 | Routes | `ui/routes.yaml` | Browser history and native navigation stacks |
 | Screen hierarchy, copy, bindings, actions, visibility, and semantic layout | `ui/screens/*.yaml` | DOM/Gio widget mechanics and accessibility |
 | Action class, pending label, conflict scope, navigation, and recovery | `ui/actions.yaml` | Mapping a command to HTTP or typed CNP operations |
-| Colors, gradients, dimensions, typography, and control geometry | `ui/themes/*.yaml`, `ui/typography.yaml`, and `ui/controls.yaml` | CSS variables or Gio drawing primitives |
+| Colors, gradients, dimensions, typography, control geometry, and responsive width boundaries | `ui/themes/*.yaml`, `ui/typography.yaml`, and `ui/controls.yaml` | CSS variables or Gio drawing primitives |
 | Renderer-facing business data | `internal/presentation` | Transport representation and local interaction state |
 | Refresh invalidations | Screen data-source `watchTopics` | Route-specific HTTP/CNP loading and scheduling |
 
@@ -118,6 +118,18 @@ actions to different transports. Cross-adapter binding fixtures and command
 coverage tests guard those seams. Interaction-heavy output buffering and
 selection also have separate implementations because their lifecycle and I/O
 models differ; their visible structure and command vocabulary stay shared.
+
+A parity follow-up on 2026-08-11 moved compact and condensed breakpoints into
+the shared control contract, made both renderers classify solely by width, and
+removed the compact-only disclosure-navigation declaration and adapter path.
+Project summaries now retain one inline disclosure behavior at every width,
+while explicit project-name links remain ordinary shared navigation actions.
+The same follow-up made declared dimensions outer-border-box constraints,
+moved passive disclosure-chevron and placeholder color metrics into the shared
+control contract, and fixed nested viewport input ordering so child disclosure
+controls retain taps. Selecting execution-path nodes now changes local
+selection/disclosure state without manufacturing user notifications; execution
+queueing continues to use the shared bounded-notice path.
 
 ## High-level architecture
 
@@ -315,8 +327,9 @@ even while internal Go and pre-1.0 protocol APIs continue to evolve.
 - Continue moving renderer-independent labels, semantic state, and validation
   through application/presentation slices; keep only transport representation
   and interaction state in the HTTP/browser and CNP/Gio adapters.
-- Extend graph and compact/mobile interactions through the existing shared
-  graph/detail declarations without forking screen definitions.
+- Extend graph and narrow/wide interactions through the existing shared
+  graph/detail declarations and width-only viewport contract without forking
+  screen definitions or classifying by platform.
 - Treat the shared declarative routes as the production UI contract. Add new
   browser and native behavior to the shared screen/action definitions first,
   with explicit platform overrides only when the interaction is inherently

@@ -234,6 +234,13 @@ func flowSpacingOffset(spacing layout.Spacing, extra, index, count int) int {
 }
 
 func (r *Runtime) layoutSurface(gtx layout.Context, element Element, identity string) layout.Dimensions {
+	contentInsets := element.Surface.Padding
+	if border := element.Surface.BorderWidth; border > 0 {
+		contentInsets.Top += border
+		contentInsets.Right += border
+		contentInsets.Bottom += border
+		contentInsets.Left += border
+	}
 	return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		size := gtx.Constraints.Min
 		if r.rejectGeometry(identity, size.X, size.Y) || size.X == 0 || size.Y == 0 {
@@ -242,7 +249,7 @@ func (r *Runtime) layoutSurface(gtx layout.Context, element Element, identity st
 		paintSafeSurface(gtx, size, element.Surface)
 		return layout.Dimensions{Size: size}
 	}, func(gtx layout.Context) layout.Dimensions {
-		return applyInsets(element.Surface.Padding, gtx, func(gtx layout.Context) layout.Dimensions {
+		return applyInsets(contentInsets, gtx, func(gtx layout.Context) layout.Dimensions {
 			return r.layoutOnlyChild(gtx, element, identity)
 		})
 	})

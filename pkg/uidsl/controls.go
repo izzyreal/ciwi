@@ -9,12 +9,20 @@ type ControlsDocument struct {
 }
 
 type Controls struct {
+	Viewport   ViewportControl   `yaml:"viewport" json:"viewport"`
 	Button     ButtonControl     `yaml:"button" json:"button"`
 	Badge      BadgeControl      `yaml:"badge" json:"badge"`
 	Input      InputControl      `yaml:"input" json:"input"`
 	Select     SelectControl     `yaml:"select" json:"select"`
 	Disclosure DisclosureControl `yaml:"disclosure" json:"disclosure"`
 	Progress   ProgressControl   `yaml:"progress" json:"progress"`
+}
+
+// ViewportControl defines width-only responsive boundaries in logical pixels.
+// Browsers interpret them as CSS pixels and Gio interprets them as dp.
+type ViewportControl struct {
+	CompactMaximumWidth             float32 `yaml:"compactMaximumWidth" json:"compactMaximumWidth"`
+	CondensedDisclosureMaximumWidth float32 `yaml:"condensedDisclosureMaximumWidth" json:"condensedDisclosureMaximumWidth"`
 }
 
 // PlatformMetric allows the shared control contract to account for the
@@ -43,9 +51,10 @@ type BadgeControl struct {
 }
 
 type InputControl struct {
-	MinimumHeight PlatformMetric `yaml:"minimumHeight" json:"minimumHeight"`
-	PaddingX      PlatformMetric `yaml:"paddingX" json:"paddingX"`
-	PaddingY      PlatformMetric `yaml:"paddingY" json:"paddingY"`
+	MinimumHeight    PlatformMetric `yaml:"minimumHeight" json:"minimumHeight"`
+	PaddingX         PlatformMetric `yaml:"paddingX" json:"paddingX"`
+	PaddingY         PlatformMetric `yaml:"paddingY" json:"paddingY"`
+	PlaceholderColor string         `yaml:"placeholderColor" json:"placeholderColor"`
 }
 
 type SelectControl struct {
@@ -108,15 +117,20 @@ func (d *ControlsDocument) Validate() error {
 	if err := validateIconPosition("disclosure chevronPosition", d.Controls.Disclosure.ChevronPosition); err != nil {
 		return err
 	}
+	if !colorPattern.MatchString(d.Controls.Input.PlaceholderColor) {
+		return fmt.Errorf("input placeholderColor must be a six- or eight-digit hex color")
+	}
 	positive := map[string]float32{
-		"disclosure chevronSize":         d.Controls.Disclosure.ChevronSize,
-		"select chevronSize":             d.Controls.Select.ChevronSize,
-		"select minimumHeight":           d.Controls.Select.MinimumHeight,
-		"select menuMinimumWidth":        d.Controls.Select.MenuMinimumWidth,
-		"select menuMinimumHeight":       d.Controls.Select.MenuMinimumHeight,
-		"select menuMaximumHeight":       d.Controls.Select.MenuMaximumHeight,
-		"select optionMinimumHeight":     d.Controls.Select.OptionMinimumHeight,
-		"select selectionIndicatorWidth": d.Controls.Select.SelectionIndicatorWidth,
+		"viewport compactMaximumWidth":             d.Controls.Viewport.CompactMaximumWidth,
+		"viewport condensedDisclosureMaximumWidth": d.Controls.Viewport.CondensedDisclosureMaximumWidth,
+		"disclosure chevronSize":                   d.Controls.Disclosure.ChevronSize,
+		"select chevronSize":                       d.Controls.Select.ChevronSize,
+		"select minimumHeight":                     d.Controls.Select.MinimumHeight,
+		"select menuMinimumWidth":                  d.Controls.Select.MenuMinimumWidth,
+		"select menuMinimumHeight":                 d.Controls.Select.MenuMinimumHeight,
+		"select menuMaximumHeight":                 d.Controls.Select.MenuMaximumHeight,
+		"select optionMinimumHeight":               d.Controls.Select.OptionMinimumHeight,
+		"select selectionIndicatorWidth":           d.Controls.Select.SelectionIndicatorWidth,
 	}
 	for name, value := range positive {
 		if value <= 0 {
@@ -164,6 +178,9 @@ func (d *ControlsDocument) Validate() error {
 	}
 	if d.Controls.Select.MenuMaximumHeight < d.Controls.Select.MenuMinimumHeight {
 		return fmt.Errorf("select menuMaximumHeight must be at least menuMinimumHeight")
+	}
+	if d.Controls.Viewport.CondensedDisclosureMaximumWidth > d.Controls.Viewport.CompactMaximumWidth {
+		return fmt.Errorf("viewport condensedDisclosureMaximumWidth must not exceed compactMaximumWidth")
 	}
 	if opacity := d.Controls.Progress.TintOpacity; opacity <= 0 || opacity > 1 {
 		return fmt.Errorf("progress tintOpacity must be greater than zero and at most one")

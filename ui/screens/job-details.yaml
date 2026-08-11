@@ -331,7 +331,7 @@ screen:
                       gap: small
                       padding: small
                       minWidth: "235"
-                      maxWidth: "300"
+                      maxWidth: "235"
                       minHeight: "86"
                     actions:
                       - on: activate

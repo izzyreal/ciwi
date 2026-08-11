@@ -166,7 +166,7 @@ screen:
                 actions:
                   - on: activate
                     command: agent-action
-                    arguments: {agentId: "{{agentDetails.agent.id}}", action: delete}
+                    arguments: {agentId: "{{agentDetails.agent.id}}", action: delete, successRoute: /agents}
                     confirm: {title: "Delete agent record?", message: "Removes the stored record. It does not uninstall or stop the agent."}
       - component: section
         visible: {binding: agentDetails.ready}

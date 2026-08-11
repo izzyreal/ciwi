@@ -105,7 +105,6 @@ type Disclosure struct {
 	DefaultExpanded        bool   `yaml:"defaultExpanded,omitempty" json:"defaultExpanded,omitempty"`
 	DefaultExpandedBinding string `yaml:"defaultExpandedBinding,omitempty" json:"defaultExpandedBinding,omitempty"`
 	StateKey               string `yaml:"stateKey,omitempty" json:"stateKey,omitempty"`
-	CompactPresentation    string `yaml:"compactPresentation,omitempty" json:"compactPresentation,omitempty"`
 	Summary                []Node `yaml:"summary,omitempty" json:"summary,omitempty"`
 }
 
@@ -391,25 +390,9 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 				return fmt.Errorf("%s.disclosure.stateKey: %w", path, err)
 			}
 		}
-		if presentation := node.Disclosure.CompactPresentation; presentation != "" && presentation != "inline" && presentation != "navigate" {
-			return fmt.Errorf("%s.disclosure.compactPresentation must be inline or navigate", path)
-		}
 		for i, summaryNode := range node.Disclosure.Summary {
 			if err := validateNode(summaryNode, fmt.Sprintf("%s.disclosure.summary[%d]", path, i), ids, scope); err != nil {
 				return err
-			}
-		}
-		if node.Disclosure.CompactPresentation == "navigate" {
-			navigationActions := 0
-			for _, summaryNode := range node.Disclosure.Summary {
-				for _, action := range summaryNode.Actions {
-					if action.On == "activate" && action.Command == "navigate" {
-						navigationActions++
-					}
-				}
-			}
-			if navigationActions != 1 {
-				return fmt.Errorf("%s.disclosure.compactPresentation navigate requires exactly one activate navigation action in disclosure.summary", path)
 			}
 		}
 	}

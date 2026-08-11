@@ -16,6 +16,9 @@
   let themeContractPromise = null;
   let controlsContractPromise = null;
   let activeControls = null;
+  let compactViewport = false;
+  let condensedDisclosureViewport = false;
+  let responsiveViewportBound = false;
   const screenContractPromises = new Map();
   const browserViewCache = new Map();
   let screenContractsPreloaded = false;
@@ -218,6 +221,7 @@
 	metric('--ciwi-input-min-height', activeControls.input.minimumHeight.web);
 	metric('--ciwi-input-padding-x', activeControls.input.paddingX.web);
 	metric('--ciwi-input-padding-y', activeControls.input.paddingY.web);
+	style.setProperty('--ciwi-input-placeholder', activeControls.input.placeholderColor);
 	metric('--ciwi-select-chevron-size', activeControls.select.chevronSize);
 	metric('--ciwi-select-chevron-gap', activeControls.select.chevronGap);
 	metric('--ciwi-select-min-height', activeControls.select.minimumHeight);
@@ -231,6 +235,24 @@
 	metric('--ciwi-disclosure-chevron-size', activeControls.disclosure.chevronSize);
 	metric('--ciwi-disclosure-chevron-gap', activeControls.disclosure.chevronGap);
 	style.setProperty('--ciwi-progress-tint', String(activeControls.progress.tintOpacity * 100) + '%');
+	updateResponsiveViewport();
+	if (!responsiveViewportBound) {
+	  responsiveViewportBound = true;
+	  window.addEventListener('resize', updateResponsiveViewport, {passive: true});
+	}
+  }
+
+  function updateResponsiveViewport() {
+	if (!activeControls || !activeControls.viewport) return;
+	const width = window.innerWidth;
+	const nextCompact = width <= Number(activeControls.viewport.compactMaximumWidth);
+	const nextCondensed = width <= Number(activeControls.viewport.condensedDisclosureMaximumWidth);
+	const changed = nextCompact !== compactViewport || nextCondensed !== condensedDisclosureViewport;
+	compactViewport = nextCompact;
+	condensedDisclosureViewport = nextCondensed;
+	document.documentElement.classList.toggle('ciwi-compact', compactViewport);
+	document.documentElement.classList.toggle('ciwi-condensed-disclosure', condensedDisclosureViewport);
+	if (changed && currentDocument && currentData) renderCurrent();
   }
 
   function appendPositionedIcon(element, label, icon, position) {
@@ -282,13 +304,15 @@
   }
 
   function withWebOverride(node) {
-    const override = node.overrides && node.overrides.web;
-    if (!override) return node;
-    return Object.assign({}, node, {
-      hidden: !!override.hidden,
-      layout: Object.assign({}, node.layout || {}, override.layout || {}),
-      style: Object.assign({}, node.style || {}, override.style || {}),
-    });
+	const overrides = [];
+	if (node.overrides && node.overrides.web) overrides.push(node.overrides.web);
+	if (compactViewport && node.overrides && node.overrides.compact) overrides.push(node.overrides.compact);
+	if (!overrides.length) return node;
+	return overrides.reduce((resolved, override) => Object.assign({}, resolved, {
+	  hidden: !!resolved.hidden || !!override.hidden,
+	  layout: Object.assign({}, resolved.layout || {}, override.layout || {}),
+	  style: Object.assign({}, resolved.style || {}, override.style || {}),
+	}), node);
   }
 
   function applyLayout(element, layout) {
@@ -339,6 +363,11 @@
     if (result && result.notice && typeof window.ciwiShowNotice === 'function') {
       window.ciwiShowNotice(result.notice);
     }
+  }
+
+  function showResponseMessageNotice(result) {
+	const message = String(result && result.message || '').trim();
+	if (message && typeof window.ciwiShowNotice === 'function') window.ciwiShowNotice({message});
   }
 
   function routePath() {
@@ -736,7 +765,12 @@
 		    signal: runtime.signal,
 		  });
 		  if (!response.ok) throw new Error(await response.text());
-		  await refresh();
+		  const result = await response.json();
+		  showResponseMessageNotice(result);
+		  if (args.action === 'delete' && args.successRoute) {
+			await navigateBrowser(args.successRoute, {replace: true});
+			navigatedAfterSuccess = true;
+		  } else await refresh();
 		}
 		else if (action.command === 'project-action') {
 		  const path = '/api/v1/projects/' + encodeURIComponent(args.projectId) + (args.action === 'reload' ? '/reload' : '');
@@ -1559,6 +1593,15 @@
 	if (changeRefreshScheduler) changeRefreshScheduler.schedule();
   }
 
+  function pendingActionRemovesCurrentRoute() {
+	if (!currentRouteMatch || currentRouteMatch.route.name !== 'agent-details' || typeof window.ciwiActiveOperations !== 'function') return false;
+	const agentID = String(currentRouteMatch.params.agentId || '');
+	return window.ciwiActiveOperations().some(operation => operation.command === 'agent-action' &&
+	  String(operation.arguments && operation.arguments.action || '') === 'delete' &&
+	  String(operation.arguments && operation.arguments.agentId || '') === agentID &&
+	  String(operation.arguments && operation.arguments.successRoute || '') !== '');
+  }
+
   function startChangeWatch() {
 	if (typeof window.EventSource !== 'function') return;
 	const source = new EventSource('/api/v1/ui/changes');
@@ -1580,7 +1623,7 @@
 		  if (!changedIDs.length && topics.some(topic => topic === 'queue' || topic === 'history')) return;
 		  if (topics.includes('agent-eligibility') && String(view && view.status || '') !== 'queued') return;
 		}
-		if (topics.some(topic => watched.has(topic))) scheduleChangeRefresh();
+		if (topics.some(topic => watched.has(topic)) && !pendingActionRemovesCurrentRoute()) scheduleChangeRefresh();
 	  } catch (_) {}
 	};
   }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"github.com/izzyreal/ciwi/internal/giodom"
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	"github.com/izzyreal/ciwi/internal/protocol"
@@ -36,6 +36,7 @@ type Renderer struct {
 	typography             uidsl.Typography
 	controls               uidsl.Controls
 	palette                palette
+	inputPlaceholder       color.NRGBA
 	metrics                visualMetrics
 	themeName              string
 	pendingTheme           *material.Theme
@@ -82,6 +83,7 @@ type Renderer struct {
 	viewportSize           image.Point
 	viewportHeight         unit.Dp
 	domInteractionRevision uint64
+	openSelectKey          giodom.Key
 	dom                    *screenDOMRenderer
 }
 
@@ -165,6 +167,10 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	if err != nil {
 		return nil, err
 	}
+	inputPlaceholder, err := parseColor(controlsDocument.Controls.Input.PlaceholderColor)
+	if err != nil {
+		return nil, fmt.Errorf("input placeholder color: %w", err)
+	}
 	materialTheme, colors, err := rendererTheme(theme, typographyDocument.Typography)
 	if err != nil {
 		return nil, err
@@ -175,7 +181,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 	}
 	return &Renderer{
 		screen: screen, theme: materialTheme, typography: typographyDocument.Typography, controls: controlsDocument.Controls,
-		palette: colors, metrics: metricsFromTheme(theme.Theme, typographyDocument.Typography),
+		palette: colors, inputPlaceholder: inputPlaceholder, metrics: metricsFromTheme(theme.Theme, typographyDocument.Typography),
 		themeName: theme.Metadata.Name, onAction: onAction,
 		disclosures: map[string]bool{}, persistentDisclosures: map[string]bool{},
 		viewModes: map[string]string{}, persistentViews: map[string]bool{},
@@ -223,6 +229,7 @@ func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 		// Screen identity is the lifecycle boundary for its keyed widget and
 		// viewport state. Recreating the runtime also guarantees a top scroll.
 		r.dom = nil
+		r.openSelectKey = ""
 	}
 	if screen != nil && screen.Metadata.Name == "project-details" && r.projectStructureFilter != "" {
 		r.setProjectStructureFilterLocked(r.projectStructureFilter)
@@ -625,13 +632,13 @@ func (r *Renderer) SetViewStates(states map[string]string) {
 func (r *Renderer) SetViewChange(handler func(map[string]string)) { r.onViewChange = handler }
 
 func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
-	return r.layoutForPlatform(gtx, runtime.GOOS)
+	return r.layoutFrame(gtx)
 }
 
-func (r *Renderer) layoutForPlatform(gtx layout.Context, platform string) layout.Dimensions {
+func (r *Renderer) layoutFrame(gtx layout.Context) layout.Dimensions {
 	r.viewportSize = gtx.Constraints.Max
 	r.viewportHeight = gtx.Metric.PxToDp(r.viewportSize.Y)
-	r.compact = compactLayoutForPlatform(gtx, platform)
+	r.compact = compactLayoutForWidth(gtx, r.controls.Viewport.CompactMaximumWidth)
 	r.mu.Lock()
 	if r.notice != nil && !r.notice.expires.IsZero() && !gtx.Now.Before(r.notice.expires) {
 		r.advanceNoticeLocked(gtx.Now)

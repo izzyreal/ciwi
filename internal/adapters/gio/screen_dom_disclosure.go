@@ -32,34 +32,12 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	if persistent {
 		r.persistentDisclosures[stateKey] = true
 	}
-	navigatePresentation := r.compact && node.Disclosure != nil && node.Disclosure.CompactPresentation == "navigate"
-	navigateAction, hasNavigateAction := disclosureNavigationAction(node.Disclosure)
 	iconOnlyToggle := node.Style.Role == "project-row" || node.Style.Role == "execution-row"
 	icon := "chevron-right"
 	if expanded {
 		icon = "chevron-down"
 	}
-	toggleNode := uidsl.Node{
-		Component: "button", Text: &uidsl.Text{Literal: label}, Icon: icon,
-		Style: uidsl.Style{Role: "disclosure-chevron", Tone: node.Style.Tone},
-	}
-	if navigatePresentation && hasNavigateAction {
-		toggleNode.Actions = []uidsl.Action{navigateAction}
-	} else {
-		toggleNode.Actions = []uidsl.Action{{Command: "toggle"}}
-	}
-	header := r.compileDOMButton(toggleNode, data, path+"/toggle")
-	if !(navigatePresentation && hasNavigateAction) {
-		header.Native.Layout = func(original func(layout.Context, any) layout.Dimensions) func(layout.Context, any) layout.Dimensions {
-			return func(gtx layout.Context, raw any) layout.Dimensions {
-				state := raw.(*domButtonState)
-				for state.clickable.Clicked(gtx) {
-					r.setDisclosureState(stateKey, !expanded, persistent)
-				}
-				return r.layoutDOMControl(gtx, &state.clickable, label, icon, "disclosure-chevron", node.Style.Tone)
-			}
-		}(header.Native.Layout)
-	}
+	chevron := r.domDisclosureChevron(path, icon)
 	summary := []giodom.Element{}
 	executionLeading := []giodom.Element{}
 	executionCopy := []giodom.Element{}
@@ -112,20 +90,26 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	}
 	var headerRow giodom.Element
 	if node.Style.Role == "execution-row" {
-		headerRow = r.domExecutionDisclosureHeader(path, label, executionLeading, executionCopy, executionActions, header)
+		headerRow = r.domExecutionDisclosureHeader(path, label, executionLeading, executionCopy, executionActions, chevron)
 	} else {
-		if r.controls.Disclosure.ChevronPosition == "leading" {
-			summary = append([]giodom.Element{header}, summary...)
-		} else {
-			summary = append(summary, header)
-		}
-		headerRow = giodom.Element{
-			Kind: giodom.KindFlex, Key: giodom.Key(path + "/header"),
+		summaryContent := giodom.Element{
+			Kind: giodom.KindFlex, Key: giodom.Key(path + "/header/content"), Grow: true,
 			Flex: giodom.FlexProps{
 				Axis: layout.Horizontal, Alignment: layout.Middle, Gap: unit.Dp(r.controls.Disclosure.ChevronGap),
 				Wrap: node.Style.Role == "project-row",
 			},
 			Children: giodom.Static(summary...),
+		}
+		headerChildren := []giodom.Element{summaryContent, chevron}
+		if r.controls.Disclosure.ChevronPosition == "leading" {
+			headerChildren = []giodom.Element{chevron, summaryContent}
+		}
+		headerRow = giodom.Element{
+			Kind: giodom.KindFlex, Key: giodom.Key(path + "/header"),
+			Flex: giodom.FlexProps{
+				Axis: layout.Horizontal, Alignment: layout.Middle, Gap: unit.Dp(r.controls.Disclosure.ChevronGap),
+			},
+			Children: giodom.Static(headerChildren...),
 		}
 	}
 	activateHeader := func(header giodom.Element) giodom.Element {
@@ -133,16 +117,12 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 		return giodom.Control(giodom.Key(path+"/summary-activate"), giodom.ButtonProps{
 			Enabled: true, Description: label,
 			OnClick: func() {
-				if navigatePresentation && hasNavigateAction {
-					r.dispatch(navigateAction, data)
-					return
-				}
 				r.setDisclosureState(stateKey, !expanded, persistent)
 			},
 		}, header)
 	}
 	bodyChildren := []giodom.Element{}
-	if expanded && !navigatePresentation {
+	if expanded {
 		if node.Style.Role == "output-group" {
 			bodyChildren = r.compileDOMChildrenOmittingRole(node.Children, data, path+"/body", childStyle, "floating-collapse")
 		} else {
@@ -186,7 +166,15 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	}
 }
 
-func (r *Renderer) domExecutionDisclosureHeader(path, label string, leading, copyElements, actions []giodom.Element, toggle giodom.Element) giodom.Element {
+func (r *Renderer) domDisclosureChevron(path, icon string) giodom.Element {
+	return giodom.Native(giodom.Key(path+"/chevron"), giodom.NativeProps{
+		Layout: func(gtx layout.Context, _ any) layout.Dimensions {
+			return r.layoutGlyph(gtx, icon, "muted", unit.Dp(r.controls.Disclosure.ChevronSize))
+		},
+	})
+}
+
+func (r *Renderer) domExecutionDisclosureHeader(path, label string, leading, copyElements, actions []giodom.Element, chevron giodom.Element) giodom.Element {
 	gap := unit.Dp(r.controls.Disclosure.ChevronGap)
 	title := r.domText(giodom.Key(path+"/summary/label"), label, "control", false, "", false)
 
@@ -199,7 +187,7 @@ func (r *Renderer) domExecutionDisclosureHeader(path, label string, leading, cop
 	narrowChildren = append(narrowChildren, leading...)
 	narrowChildren = append(narrowChildren, narrowCopy)
 	narrowChildren = append(narrowChildren, actions...)
-	narrowChildren = append(narrowChildren, toggle)
+	narrowChildren = append(narrowChildren, chevron)
 	narrow := giodom.Element{
 		Kind: giodom.KindFlex, Key: giodom.Key(path + "/header/narrow"),
 		Flex:     giodom.FlexProps{Axis: layout.Horizontal, Alignment: layout.Start, Gap: gap},
@@ -217,13 +205,15 @@ func (r *Renderer) domExecutionDisclosureHeader(path, label string, leading, cop
 		wideChildren = append(wideChildren, wideCopy)
 	}
 	wideChildren = append(wideChildren, actions...)
-	wideChildren = append(wideChildren, toggle)
+	wideChildren = append(wideChildren, chevron)
 	wide := giodom.Element{
 		Kind: giodom.KindFlex, Key: giodom.Key(path + "/header/wide"),
 		Flex:     giodom.FlexProps{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gap},
 		Children: giodom.Static(wideChildren...),
 	}
-	return giodom.Responsive(giodom.Key(path+"/header"), 560, narrow, wide)
+	return giodom.Responsive(
+		giodom.Key(path+"/header"), unit.Dp(r.controls.Viewport.CondensedDisclosureMaximumWidth), narrow, wide,
+	)
 }
 
 func (r *Renderer) rememberDOMDisclosure(key string, expanded, persistent bool) {
@@ -445,8 +435,9 @@ func (r *Renderer) domOutputGroupsViewport(declared unit.Dp) unit.Dp {
 			viewport = responsive
 		}
 	}
-	if viewport > 2*r.metrics.spaceSmall {
-		viewport -= 2 * r.metrics.spaceSmall
+	consoleInset := r.metrics.spaceSmall + 1
+	if viewport > 2*consoleInset {
+		viewport -= 2 * consoleInset
 	}
 	return viewport
 }

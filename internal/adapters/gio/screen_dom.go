@@ -4,11 +4,13 @@ package gio
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"math"
 	"strings"
 	"time"
 
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
@@ -21,8 +23,10 @@ import (
 const domSemanticStateLimit = 4096
 
 type screenDOMRenderer struct {
-	theme   *material.Theme
-	runtime *giodom.Runtime
+	theme               *material.Theme
+	runtime             *giodom.Runtime
+	selectDismiss       domSelectDismiss
+	selectInsidePresses map[pointer.ID]struct{}
 }
 
 type domButtonState struct {
@@ -40,7 +44,7 @@ type domImageState struct {
 
 type domSelectState struct {
 	toggle  widget.Clickable
-	dismiss widget.Clickable
+	dismiss domSelectDismiss
 	options map[string]*widget.Clickable
 	list    layout.List
 	open    bool
@@ -60,9 +64,27 @@ func (r *Renderer) layoutScreenDOMFrame(gtx layout.Context, screen *uidsl.Screen
 			}),
 		}
 	}
+	// A select can live inside a later virtual-list item, whose local hit region
+	// cannot reach earlier items such as the screen header. Observe presses once
+	// at the screen root, then let the active select mark its own trigger/menu
+	// presses during DOM layout before deciding whether the press was outside.
+	rootPresses := r.dom.selectDismiss.Presses(gtx.Source)
+	r.dom.selectInsidePresses = make(map[pointer.ID]struct{}, len(rootPresses))
 	document := r.buildScreenDOM(screen, data, pendingScrollSection)
 	document = r.decorateDOMOverlays(document, notice, alert)
-	return r.dom.runtime.Layout(gtx, document)
+	dimensions := r.dom.runtime.Layout(gtx, document)
+	if r.openSelectKey != "" {
+		addDOMSelectPressArea(gtx.Ops, &r.dom.selectDismiss, image.Rectangle{Max: gtx.Constraints.Max})
+	}
+	for _, pointerID := range rootPresses {
+		if _, inside := r.dom.selectInsidePresses[pointerID]; inside {
+			continue
+		}
+		r.openSelectKey = ""
+		r.requestFrame()
+		break
+	}
+	return dimensions
 }
 
 func (r *Renderer) decorateDOMOverlays(document giodom.Element, notice *nativeNotice, alert *nativeAlert) giodom.Element {

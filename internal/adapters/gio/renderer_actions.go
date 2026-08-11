@@ -87,7 +87,6 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 					break
 				}
 			}
-			r.ShowNotice("Selected "+fmt.Sprint(itemMap["title"]), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			r.requestFrame()
 			return true
 		}

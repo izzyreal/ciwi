@@ -4,17 +4,18 @@ const path = require('node:path');
 
 const repositoryRoot = path.resolve(__dirname, '../../../..');
 const scriptDirectory = path.join(repositoryRoot, 'internal/server/webui/assets/js');
-const cssFile = path.join(repositoryRoot, 'internal/server/webui/assets/css/declarative.css');
+const cssDirectory = path.join(repositoryRoot, 'internal/server/webui/assets/css');
 
 const controls = {
   controls: {
+    viewport: {compactMaximumWidth: 760, condensedDisclosureMaximumWidth: 560},
     button: {
       iconPosition: 'leading', minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12},
       paddingY: {web: 8, native: 8}, iconSize: {web: 19, native: 19}, iconGap: {web: 8, native: 8},
       iconOnlySize: {web: 34, native: 34},
     },
     badge: {paddingX: 9, paddingY: 4, tintOpacity: 0.12, borderOpacity: 0.55},
-    input: {minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12}, paddingY: {web: 9, native: 8}},
+    input: {minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12}, paddingY: {web: 9, native: 8}, placeholderColor: '#757575'},
     select: {
       chevronPosition: 'trailing', chevronSize: 16, chevronGap: 6, minimumHeight: 44, menuPadding: 4,
       menuItemGap: 2, optionGap: 6, optionPaddingX: 8, optionPaddingY: 6, optionMinimumHeight: 28,
@@ -75,21 +76,26 @@ const detailsScreen = {
 
 const outputScreen = {
   apiVersion: 'ciwi.ui/v1', kind: 'Screen', metadata: {name: 'output-test'},
-  screen: {dataSources: [{name: 'jobDetails'}], root: {component: 'page', children: [{
-    component: 'scroller', id: 'job-output-groups', layout: {direction: 'vertical', gap: 'small', maxHeight: '660'},
-    repeat: {source: 'jobDetails.output_groups', as: 'outputGroup', key: 'outputGroup.id'},
-    children: [{
-      component: 'disclosure', text: {binding: 'outputGroup.title'}, style: {role: 'output-group'},
-      disclosure: {defaultExpandedBinding: 'outputGroup.default_expanded', stateKey: '{{outputGroup.state_key}}'},
-      children: [
-        {
-          component: 'button', text: {literal: 'Collapse'}, icon: 'arrow-up', style: {role: 'floating-collapse'},
-          actions: [{on: 'activate', command: 'set-disclosures', arguments: {prefix: '{{outputGroup.state_key}}', expanded: 'false'}}],
-        },
-        {component: 'text', id: 'long-output', text: {binding: 'outputGroup.output'}, style: {role: 'output-code'}},
-      ],
-    }],
-  }] }},
+  screen: {dataSources: [{name: 'jobDetails'}], root: {component: 'page', children: [
+    {component: 'spacer', layout: {minHeight: '520'}},
+    {
+      component: 'scroller', id: 'job-output-groups', layout: {direction: 'vertical', gap: 'small', maxHeight: '660'},
+      repeat: {source: 'jobDetails.output_groups', as: 'outputGroup', key: 'outputGroup.id'},
+      children: [{
+        component: 'disclosure', text: {binding: 'outputGroup.title'}, style: {role: 'output-group'}, progress: {binding: 'outputGroup.progress'},
+        layout: {direction: 'vertical', gap: '0', padding: 'section-padding'},
+        disclosure: {defaultExpandedBinding: 'outputGroup.default_expanded', stateKey: '{{outputGroup.state_key}}'},
+        children: [
+          {
+            component: 'button', text: {literal: 'Collapse'}, icon: 'arrow-up', style: {role: 'floating-collapse'},
+            actions: [{on: 'activate', command: 'set-disclosures', arguments: {prefix: '{{outputGroup.state_key}}', expanded: 'false'}}],
+          },
+          {component: 'text', id: 'long-output', text: {binding: 'outputGroup.output'}, style: {role: 'output-code'}},
+        ],
+      }],
+    },
+    {component: 'spacer', layout: {minHeight: '800'}},
+  ] }},
 };
 
 async function serveAssets(route) {
@@ -98,8 +104,8 @@ async function serveAssets(route) {
     await route.fulfill({contentType: 'application/javascript', body: fs.readFileSync(path.join(scriptDirectory, path.basename(url.pathname)), 'utf8')});
     return true;
   }
-  if (url.pathname === '/ui/declarative.css') {
-    await route.fulfill({contentType: 'text/css', body: fs.readFileSync(cssFile, 'utf8')});
+  if (url.pathname === '/ui/declarative.css' || url.pathname === '/ui/chrome.css') {
+    await route.fulfill({contentType: 'text/css', body: fs.readFileSync(path.join(cssDirectory, path.basename(url.pathname)), 'utf8')});
     return true;
   }
   if (url.pathname === '/ui/contracts/themes.json') {
@@ -122,7 +128,8 @@ async function serveAssets(route) {
 }
 
 function documentHTML() {
-  return `<!doctype html><html><head><link rel="stylesheet" href="/ui/declarative.css"></head>
+  return `<!doctype html><html><head><link rel="stylesheet" href="/ui/chrome.css"><link rel="stylesheet" href="/ui/declarative.css">
+    <style>:root { --ciwi-section-padding: 14px; --ciwi-space-small: 8px; --line: #334155; }</style></head>
     <body><div id="declarativeRoot"></div><script>
       window.ciwiUIResourceURL = value => value;
       window.alert = () => {};
@@ -185,6 +192,7 @@ async function installOutputFixture(page) {
     } else if (url.pathname === '/api/v1/views/front-page') {
       await route.fulfill({json: {output_groups: [{
         id: 'step-1', title: 'Long build step', state_key: 'job-output:step-1', default_expanded: true, output,
+        progress: {state: 'complete', fraction: 1},
       }]}});
     } else {
       await route.fulfill({status: 404, body: 'not found'});
@@ -228,4 +236,40 @@ test('Collapse remains reachable at the end of a long output group', async ({pag
   await page.locator('.dsl-floating-collapse').click();
   await expect(page.locator('details.dsl-output-group')).not.toHaveAttribute('open', '');
   await expect(page.locator('.dsl-floating-collapse')).toBeHidden();
+  await expect.poll(() => page.locator('details.dsl-output-group').evaluate(element => element.getBoundingClientRect().height)).toBe(50);
+});
+
+test('output scrolling chains to the page in both directions at its boundaries', async ({page}) => {
+  await page.setViewportSize({width: 800, height: 500});
+  await installOutputFixture(page);
+  const container = page.locator('#job-output-groups');
+
+  await container.evaluate(element => {
+    element.scrollTop = 0;
+    element.scrollIntoView({block: 'center'});
+  });
+  const initialPageScroll = await page.evaluate(() => window.scrollY);
+  await container.hover();
+  await page.mouse.wheel(0, 240);
+  await expect.poll(() => container.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(initialPageScroll);
+
+  await container.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    element.scrollIntoView({block: 'center'});
+  });
+  const beforeDownwardChain = await page.evaluate(() => window.scrollY);
+  await container.hover();
+  await page.mouse.wheel(0, 240);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(beforeDownwardChain);
+
+  await container.evaluate(element => {
+    element.scrollTop = 0;
+    element.scrollIntoView({block: 'center'});
+  });
+  const beforeUpwardChain = await page.evaluate(() => window.scrollY);
+  expect(beforeUpwardChain).toBeGreaterThan(0);
+  await container.hover();
+  await page.mouse.wheel(0, -240);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThan(beforeUpwardChain);
 });

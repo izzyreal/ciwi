@@ -185,6 +185,55 @@ func TestNestedViewportPassesBoundaryScrollToParent(t *testing.T) {
 	}
 }
 
+func TestNestedViewportPassesBoundaryTouchDragToParent(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	inner := VirtualList("inner", ListProps{
+		Axis: layout.Vertical, Viewport: 100, NestedScroll: true, Estimate: 40, ScrollToEnd: true,
+	}, orderedRows(1, 20, 0))
+	root := VirtualList("outer", ListProps{Axis: layout.Vertical, PassThroughScroll: true, Estimate: 200}, Static(inner, Spacer("after", 0, 400)))
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 80),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 20),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 0),
+	}})
+	outerState := viewportStateWithPath(t, runtime, "/key:outer/state:viewport")
+	if outerState.anchorIndex == 0 && outerState.anchorOffset == 0 {
+		t.Fatal("outer viewport did not continue a touch drag at the nested end boundary")
+	}
+}
+
+func TestNestedViewportPassesUpwardBoundaryTouchDragToParent(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	inner := VirtualList("inner", ListProps{
+		Axis: layout.Vertical, Viewport: 100, NestedScroll: true, Estimate: 40,
+	}, orderedRows(1, 20, 0))
+	root := VirtualList("outer", ListProps{Axis: layout.Vertical, PassThroughScroll: true, Estimate: 200}, Static(inner, Spacer("after", 0, 400)))
+	layoutInteractiveFrame(runtime, router, root, nil)
+	outerState := viewportStateWithPath(t, runtime, "/key:outer/state:viewport")
+	outerState.anchor, outerState.anchorIndex, outerState.anchorOffset = "after", 1, 100
+	layoutInteractiveFrame(runtime, router, root, nil)
+	beforeIndex, beforeOffset := outerState.anchorIndex, outerState.anchorOffset
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 20),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 80),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 100),
+	}})
+	if outerState.anchorIndex > beforeIndex || (outerState.anchorIndex == beforeIndex && outerState.anchorOffset >= beforeOffset) {
+		t.Fatalf("outer viewport did not scroll upward from nested top boundary: before %d/%d after %d/%d", beforeIndex, beforeOffset, outerState.anchorIndex, outerState.anchorOffset)
+	}
+}
+
 func TestPassThroughParentStillHandlesTouchOutsideNestedViewport(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	router := new(input.Router)
@@ -202,10 +251,103 @@ func TestPassThroughParentStillHandlesTouchOutsideNestedViewport(t *testing.T) {
 	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
 		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 80),
 	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 40),
+	}})
 	outerState := viewportStateWithPath(t, runtime, "/key:outer/state:viewport")
 	if outerState.anchorIndex == 0 && outerState.anchorOffset == 0 {
 		t.Fatal("pass-through parent did not handle touch outside nested viewport")
 	}
+}
+
+func TestPassThroughViewportTouchDragStartsOnControl(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	rows := make([]Element, 12)
+	for index := range rows {
+		rows[index] = Control(Key(fmt.Sprintf("control-%d", index)), ButtonProps{Enabled: true}, Spacer("content", 0, 60))
+	}
+	root := VirtualList("outer", ListProps{Axis: layout.Vertical, PassThroughScroll: true, Estimate: 60}, Static(rows...))
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 160),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 80),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(10, 40),
+	}})
+	state := viewportState(t, runtime)
+	if state.anchorIndex == 0 && state.anchorOffset == 0 {
+		t.Fatal("pass-through viewport did not scroll from a drag started on a control")
+	}
+}
+
+func TestPassThroughViewportScrollsDownAndBackUp(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	root := VirtualList("outer", ListProps{Axis: layout.Vertical, PassThroughScroll: true, Estimate: 40}, orderedRows(1, 30, 0))
+	layoutInteractiveFrame(runtime, router, root, nil)
+	for range 20 {
+		layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+			Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(10, 100), Scroll: f32.Pt(0, 80),
+		}})
+	}
+	state := viewportState(t, runtime)
+	if state.anchorIndex == 0 && state.anchorOffset == 0 {
+		t.Fatal("pass-through viewport did not scroll down")
+	}
+	for range 20 {
+		layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+			Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(10, 100), Scroll: f32.Pt(0, -80),
+		}})
+	}
+	if state.anchorIndex != 0 || state.anchorOffset != 0 {
+		t.Fatalf("pass-through viewport did not return to top: index %d offset %d", state.anchorIndex, state.anchorOffset)
+	}
+}
+
+func TestPassThroughViewportPreservesOffsetsBetweenPageCards(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	root := VirtualList("page", ListProps{
+		Axis: layout.Vertical, PassThroughScroll: true, Estimate: 120, Gap: 16,
+	}, Static(
+		Spacer("masthead", 0, 120),
+		Spacer("projects", 0, 120),
+		Spacer("queued-and-in-progress", 0, 120),
+		Spacer("job-execution-history", 0, 120),
+		Spacer("page-end", 0, 120),
+	))
+	layoutInteractiveFrame(runtime, router, root, nil)
+	state := viewportState(t, runtime)
+	assertOffset := func(want int, wantAnchor Key) {
+		t.Helper()
+		got := state.prefixAt(state.anchorIndex) + state.anchorOffset
+		if got != want || state.anchor != wantAnchor {
+			t.Fatalf("page offset = %d at %q (%d/%d), want %d at %q", got, state.anchor, state.anchorIndex, state.anchorOffset, want, wantAnchor)
+		}
+	}
+	scroll := func(delta, want int, wantAnchor Key) {
+		t.Helper()
+		layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+			Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(10, 100), Scroll: f32.Pt(0, float32(delta)),
+		}})
+		assertOffset(want, wantAnchor)
+		// An input-free frame reconstructs the offset from the retained anchor;
+		// this is where gap positions previously snapped to the next card.
+		layoutInteractiveFrame(runtime, router, root, nil)
+		assertOffset(want, wantAnchor)
+	}
+
+	// Each target is inside the 16 px gap immediately before the named card.
+	scroll(125, 125, "masthead")
+	scroll(136, 261, "projects")
+	scroll(136, 397, "queued-and-in-progress")
+	scroll(-136, 261, "projects")
+	scroll(-136, 125, "masthead")
+	scroll(-125, 0, "masthead")
 }
 
 func TestViewportReportsLeavingFollowedEnd(t *testing.T) {
@@ -282,6 +424,34 @@ func TestPinnedViewportControlOwnsTapAboveNestedScroll(t *testing.T) {
 	state := viewportState(t, runtime)
 	if state.anchorIndex != 0 || state.anchorOffset != 0 {
 		t.Fatalf("nested viewport moved during pinned tap: index %d offset %d", state.anchorIndex, state.anchorOffset)
+	}
+}
+
+func TestNestedViewportChildControlReceivesMouseAndTouchTaps(t *testing.T) {
+	for _, source := range []pointer.Source{pointer.Mouse, pointer.Touch} {
+		t.Run(source.String(), func(t *testing.T) {
+			runtime := NewRuntime(nil, Options{})
+			router := new(input.Router)
+			clicks := 0
+			row := Control("row", ButtonProps{Enabled: true, OnClick: func() { clicks++ }}, Spacer("label", 300, 60))
+			root := VirtualList("viewport", ListProps{
+				Axis: layout.Vertical, Viewport: 200, NestedScroll: true, Estimate: 60,
+			}, Static(row))
+			layoutInteractiveFrame(runtime, router, root, nil)
+			press := pointer.Event{
+				Kind: pointer.Press, Source: source, PointerID: 1, Position: f32.Pt(280, 30),
+			}
+			if source == pointer.Mouse {
+				press.Buttons = pointer.ButtonPrimary
+			}
+			layoutInteractiveFrame(runtime, router, root, []pointer.Event{press})
+			layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+				Kind: pointer.Release, Source: source, PointerID: 1, Position: f32.Pt(280, 30),
+			}})
+			if clicks != 1 {
+				t.Fatalf("nested row clicks = %d, want 1", clicks)
+			}
+		})
 	}
 }
 

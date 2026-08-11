@@ -70,6 +70,7 @@ type nativeOperationEffect struct {
 	Message       string
 	Refresh       bool
 	NavigateRoute string
+	ReplaceRoute  bool
 	NavigateBack  bool
 	Notice        bool
 	NoticeRoute   string
@@ -329,7 +330,13 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if message == "" {
 			message = "Agent request accepted"
 		}
-		return nativeOperationEffect{Message: message, Refresh: true, Notice: true}, nil
+		effect := nativeOperationEffect{Message: message, Refresh: true, Notice: true}
+		if action == "delete" && strings.TrimSpace(arguments["successRoute"]) != "" {
+			effect.Refresh = false
+			effect.NavigateRoute = strings.TrimSpace(arguments["successRoute"])
+			effect.ReplaceRoute = true
+		}
+		return effect, nil
 	case "run-agent-script":
 		agentID := strings.TrimSpace(arguments["agentId"])
 		shell := strings.TrimSpace(arguments["shell"])

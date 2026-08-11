@@ -107,6 +107,12 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if got := controls.Controls.Button.MinimumHeight; got.Web != 44 || got.Native != 44 {
 		t.Fatalf("shared button minimum height = %#v", got)
 	}
+	if got := controls.Controls.Viewport; got.CompactMaximumWidth != 760 || got.CondensedDisclosureMaximumWidth != 560 {
+		t.Fatalf("shared viewport controls = %#v", got)
+	}
+	if got := controls.Controls.Input.PlaceholderColor; got != "#757575" {
+		t.Fatalf("shared input placeholder color = %q, want #757575", got)
+	}
 	if len(themes) != 23 {
 		t.Fatalf("theme count = %d, want 23", len(themes))
 	}
@@ -524,6 +530,45 @@ func TestJobOutputGroupsUseAuthoritativeStepContentTypography(t *testing.T) {
 		if got := rolesByLiteral[literal]; got != wantRole {
 			t.Errorf("%q typography role = %q, want %q", literal, got, wantRole)
 		}
+	}
+}
+
+func TestJobTimelineUsesFixedSharedCardGeometry(t *testing.T) {
+	screen, err := LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var timelineCard *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if timelineCard != nil || node.Component != "scroller" || node.Repeat == nil || node.Repeat.Source != "jobDetails.timeline" || len(node.Children) == 0 {
+			return
+		}
+		timelineCard = &node.Children[0]
+	})
+	if timelineCard == nil {
+		t.Fatal("job timeline card declaration is missing")
+	}
+	if layout := timelineCard.Layout; layout.MinWidth != "235" || layout.MaxWidth != "235" || layout.MinHeight != "86" {
+		t.Fatalf("job timeline card geometry = %#v, want fixed 235x86", layout)
+	}
+}
+
+func TestAgentDeletionDeclaresItsSharedSuccessRoute(t *testing.T) {
+	screen, err := LoadScreen("agent-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var deleteAction *uidsl.Action
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		for index := range node.Actions {
+			action := &node.Actions[index]
+			if action.Command == "agent-action" && action.Arguments["action"] == "delete" {
+				deleteAction = action
+			}
+		}
+	})
+	if deleteAction == nil || deleteAction.Arguments["successRoute"] != "/agents" {
+		t.Fatalf("delete agent action = %#v, want shared /agents success route", deleteAction)
 	}
 }
 

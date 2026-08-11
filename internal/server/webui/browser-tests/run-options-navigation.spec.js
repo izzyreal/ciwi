@@ -7,9 +7,10 @@ const repositoryRoot = path.resolve(__dirname, '../../../..');
 const scriptDirectory = path.join(repositoryRoot, 'internal/server/webui/assets/js');
 
 const controls = {controls: {
+  viewport: {compactMaximumWidth: 760, condensedDisclosureMaximumWidth: 560},
   button: {iconPosition: 'leading', minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12}, paddingY: {web: 8, native: 8}, iconSize: {web: 19, native: 19}, iconGap: {web: 8, native: 8}, iconOnlySize: {web: 34, native: 34}},
   badge: {paddingX: 9, paddingY: 4, tintOpacity: 0.12, borderOpacity: 0.55},
-  input: {minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12}, paddingY: {web: 9, native: 8}},
+  input: {minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12}, paddingY: {web: 9, native: 8}, placeholderColor: '#757575'},
   select: {chevronPosition: 'trailing', chevronSize: 16, chevronGap: 6, minimumHeight: 44, menuPadding: 4, menuItemGap: 2, optionGap: 6, optionPaddingX: 8, optionPaddingY: 6, optionMinimumHeight: 28, selectionIndicatorWidth: 16, viewportInset: 8, menuGap: 4, menuMinimumWidth: 120},
   disclosure: {chevronPosition: 'trailing', chevronSize: 20, chevronGap: 8}, progress: {tintOpacity: 0.18},
 }};

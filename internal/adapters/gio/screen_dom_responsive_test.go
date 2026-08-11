@@ -4,6 +4,7 @@ package gio
 
 import (
 	"image"
+	"image/color"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"github.com/izzyreal/ciwi/internal/giodom"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedui "github.com/izzyreal/ciwi/ui"
@@ -45,6 +47,301 @@ func TestExecutionDisclosureHeaderAdaptsWithoutExcessiveHeight(t *testing.T) {
 	}
 }
 
+func TestCompactLayoutUsesSharedWidthBoundary(t *testing.T) {
+	context := layout.Context{
+		Metric:      unit.Metric{PxPerDp: 2, PxPerSp: 2},
+		Constraints: layout.Constraints{Max: image.Pt(1520, 4000)},
+	}
+	if !compactLayoutForWidth(context, 760) {
+		t.Fatal("760dp viewport was not compact")
+	}
+	context.Constraints.Max.X = 1522
+	if compactLayoutForWidth(context, 760) {
+		t.Fatal("761dp viewport was compact")
+	}
+}
+
+func TestNativeProjectDisclosureUsesTrailingPassiveChevronAndInlineExpansion(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	node := uidsl.Node{
+		Component: "disclosure", Text: &uidsl.Text{Literal: "Project"}, Style: uidsl.Style{Role: "project-row"},
+		Disclosure: &uidsl.Disclosure{
+			StateKey: "front-project:1",
+			Summary: []uidsl.Node{
+				{
+					Component: "text", Text: &uidsl.Text{Literal: "Project"},
+					Actions: []uidsl.Action{{On: "activate", Command: "navigate", Arguments: map[string]string{"route": "/projects/1"}}},
+				},
+				{Component: "spacer", Layout: uidsl.Layout{Grow: true}},
+				{Component: "badge", Text: &uidsl.Text{Literal: "2 pipelines"}},
+			},
+		},
+		Children: []uidsl.Node{{Component: "text", Text: &uidsl.Text{Literal: "Project details"}}},
+	}
+	compiled := renderer.compileDOMNode(node, map[string]any{}, "project")
+	header := findResponsiveTestElementByKey(compiled, "project/header")
+	if header == nil || header.Kind != giodom.KindFlex || header.Children == nil || header.Children.Len() != 2 {
+		t.Fatalf("project disclosure header = %#v", header)
+	}
+	content, chevron := header.Children.At(0), header.Children.At(1)
+	if !content.Grow {
+		t.Fatal("project disclosure summary does not grow to the trailing edge")
+	}
+	if chevron.Kind != giodom.KindNative || chevron.Key != "project/chevron" || chevron.Native.NewState != nil {
+		t.Fatalf("project disclosure chevron = %#v, want passive native leaf", chevron)
+	}
+	link := findResponsiveTestElementByKey(compiled, "project/summary/0")
+	if link == nil || link.Kind != giodom.KindButton || link.Children == nil || link.Children.Len() != 1 {
+		t.Fatalf("project name link = %#v, want retained nested navigation action", link)
+	}
+	linkLeaf := link.Children.At(0)
+	if linkLeaf.Kind != giodom.KindNative || linkLeaf.Native.InteractionRevision == nil {
+		t.Fatalf("project name link leaf = %#v, want retained native navigation action", linkLeaf)
+	}
+	activation := findResponsiveTestElementByKey(compiled, "project/summary-activate")
+	if activation == nil || activation.Kind != giodom.KindButton || activation.Button.OnClick == nil {
+		t.Fatalf("project disclosure activation = %#v", activation)
+	}
+	activation.Button.OnClick()
+	if !renderer.disclosures["front-project:1"] {
+		t.Fatal("project disclosure did not expand inline")
+	}
+	recompiled := renderer.compileDOMNode(node, map[string]any{}, "project")
+	if body := findResponsiveTestElementByKey(recompiled, "project/body/0"); body == nil {
+		t.Fatal("expanded project disclosure did not render its inline body")
+	}
+}
+
+func TestNativeSharedTimelineAndCollapsedDisclosureGeometry(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	if renderer.inputPlaceholder != (color.NRGBA{R: 0x75, G: 0x75, B: 0x75, A: 0xff}) {
+		t.Fatalf("native input placeholder = %#v, want #757575", renderer.inputPlaceholder)
+	}
+	jobScreen, err := sharedui.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	timelineCard, ok := findResponsiveTestNodeByRepeatSource(jobScreen.Screen.Root, "jobDetails.timeline")
+	if !ok || len(timelineCard.Children) == 0 {
+		t.Fatal("job timeline card declaration not found")
+	}
+	cardData := map[string]any{"item": map[string]any{
+		"id": "phase-1", "title": "Ciwi phase 1/4: Prepare workspace", "status_label": "Succeeded",
+		"progress": map[string]any{"state": "complete", "fraction": 1},
+	}}
+	card := renderer.compileDOMNode(timelineCard.Children[0], cardData, "timeline/card")
+	if card == nil {
+		t.Fatal("timeline card did not compile")
+	}
+	if dimensions := layoutResponsiveElement(renderer, *card, 1000, 500); dimensions.Size != image.Pt(235, 86) {
+		t.Fatalf("timeline card dimensions = %v, want (235,86)", dimensions.Size)
+	}
+
+	chevron := renderer.domDisclosureChevron("geometry", "chevron-right")
+	if dimensions := layoutResponsiveLooseElement(renderer, chevron, 100, 100); dimensions.Size != image.Pt(20, 20) {
+		t.Fatalf("passive disclosure chevron dimensions = %v, want (20,20)", dimensions.Size)
+	}
+
+	output := uidsl.Node{
+		Component: "disclosure", Text: &uidsl.Text{Literal: "Ciwi phase 1/4: Prepare workspace"},
+		Style:      uidsl.Style{Role: "output-group"},
+		Layout:     uidsl.Layout{Direction: "vertical", Gap: "0", Padding: "section-padding"},
+		Disclosure: &uidsl.Disclosure{StateKey: "output:geometry"},
+	}
+	compiledOutput := renderer.compileDOMNode(output, map[string]any{}, "output-geometry")
+	if dimensions := layoutResponsiveElement(renderer, *compiledOutput, 1000, 500); dimensions.Size.Y != 50 {
+		t.Fatalf("collapsed output row height = %d, want 50", dimensions.Size.Y)
+	}
+}
+
+func TestNativeSelectUsesSharedOptionHeight(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	node := uidsl.Node{
+		Component: "select", ID: "geometry-select",
+		Select: &uidsl.Select{
+			Value: "form.selected", Options: "form.options", As: "option",
+			OptionValue: "option.value", OptionLabel: "option.label",
+		},
+	}
+	data := map[string]any{"form": map[string]any{
+		"selected": "one", "options": []any{map[string]any{"value": "one", "label": "One"}},
+	}}
+	compiled := renderer.compileDOMNode(node, data, "geometry-select")
+	if dimensions := layoutResponsiveLooseElement(renderer, *compiled, 300, 100); dimensions.Size.Y != int(renderer.controls.Select.MinimumHeight) || dimensions.Size.Y != 44 {
+		t.Fatalf("native select height = %d, shared minimum = %.0f", dimensions.Size.Y, renderer.controls.Select.MinimumHeight)
+	}
+
+	operations := new(op.Ops)
+	gtx := layout.Context{
+		Ops: operations, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Now: time.Unix(1_800_000_000, 0),
+		Constraints: layout.Constraints{Max: image.Pt(300, 100)},
+	}
+	dimensions := renderer.layoutDOMSelectOption(gtx, new(widget.Clickable), nativeSelectOption{value: "one", label: "One"}, true)
+	if dimensions.Size.Y != int(renderer.controls.Select.OptionMinimumHeight) || dimensions.Size.Y != 40 {
+		t.Fatalf("native select option height = %d, shared minimum = %.0f", dimensions.Size.Y, renderer.controls.Select.OptionMinimumHeight)
+	}
+
+	shortWidth := renderer.domSelectMenuWidth(gtx, 0, []nativeSelectOption{{value: "one", label: "One"}})
+	longWidth := renderer.domSelectMenuWidth(gtx, 0, []nativeSelectOption{{value: "long", label: "A considerably longer option"}})
+	if shortWidth != int(renderer.controls.Select.MenuMinimumWidth) {
+		t.Fatalf("short native select menu width = %d, shared minimum = %.0f", shortWidth, renderer.controls.Select.MenuMinimumWidth)
+	}
+	if longWidth <= shortWidth || longWidth >= gtx.Constraints.Max.X {
+		t.Fatalf("long native select menu width = %d, want intrinsic width between %d and %d", longWidth, shortWidth, gtx.Constraints.Max.X)
+	}
+}
+
+func TestNativeSelectOwnershipAndOutsideDismissal(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	options := []any{
+		map[string]any{"value": "one", "label": "One"},
+		map[string]any{"value": "two", "label": "Two"},
+	}
+	selectNode := func(id, valueBinding string) uidsl.Node {
+		return uidsl.Node{
+			Component: "select", ID: id,
+			Select: &uidsl.Select{
+				Value: valueBinding, Options: "form.options", As: "option",
+				OptionValue: "option.value", OptionLabel: "option.label",
+			},
+			Actions: []uidsl.Action{{
+				On: "change", Command: "test-select",
+				Arguments: map[string]string{"value": "{{selection.value}}"},
+			}},
+		}
+	}
+	screen := &uidsl.ScreenDocument{
+		APIVersion: uidsl.APIVersion, Kind: "Screen", Metadata: uidsl.Metadata{Name: "select-dismissal"},
+		Screen: uidsl.Screen{Root: uidsl.Node{
+			Component: "page", Layout: uidsl.Layout{Direction: "vertical", Gap: "small"},
+			Children: []uidsl.Node{
+				{Component: "button", ID: "screen-header", Text: &uidsl.Text{Literal: "Screen header"}},
+				{
+					Component: "row", Layout: uidsl.Layout{Direction: "horizontal", Gap: "small"},
+					Children: []uidsl.Node{selectNode("first-select", "form.first"), selectNode("second-select", "form.second")},
+				},
+			},
+		}},
+	}
+	data := map[string]any{"form": map[string]any{"first": "one", "second": "two", "options": options}}
+	renderer.metrics.pageInset = 0
+	renderer.metrics.spaceLarge = 0
+	renderer.metrics.pageWidth = 0
+	selectedValue := ""
+	renderer.onAction = func(_ uidsl.Action, arguments map[string]string) {
+		selectedValue = arguments["value"]
+	}
+	router := new(input.Router)
+	frame := func(events ...pointer.Event) {
+		for _, event := range events {
+			router.Queue(event)
+		}
+		operations := new(op.Ops)
+		gtx := layout.Context{
+			Ops: operations, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Now: time.Unix(1_800_000_000, 0), Constraints: layout.Constraints{Max: image.Pt(320, 240)},
+		}
+		renderer.layoutScreenDOMFrame(gtx, screen, data, "", nil, nil)
+		router.Frame(operations)
+	}
+	tap := func(pointerID pointer.ID, x, y float32) {
+		frame(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, PointerID: pointerID, Buttons: pointer.ButtonPrimary, Position: f32.Pt(x, y)})
+		frame(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, PointerID: pointerID, Position: f32.Pt(x, y)})
+	}
+	frame()
+	tap(1, 20, 74)
+	if renderer.openSelectKey != "first-select" {
+		t.Fatalf("open select = %q, want first-select", renderer.openSelectKey)
+	}
+	tap(2, 120, 74)
+	if renderer.openSelectKey != "second-select" {
+		t.Fatalf("open select after second tap = %q, want second-select", renderer.openSelectKey)
+	}
+	// If the first state remained independently open, tapping it would close
+	// instead of reopening it and claiming global ownership.
+	tap(3, 20, 74)
+	if renderer.openSelectKey != "first-select" {
+		t.Fatalf("reopened select = %q, want first-select", renderer.openSelectKey)
+	}
+	tap(4, 20, 22)
+	if renderer.openSelectKey != "" {
+		t.Fatalf("open select after tapping screen header = %q, want closed", renderer.openSelectKey)
+	}
+	tap(5, 20, 74)
+	if renderer.openSelectKey != "first-select" {
+		t.Fatalf("reopened select before outside touch = %q, want first-select", renderer.openSelectKey)
+	}
+	frame(pointer.Event{Kind: pointer.Press, Source: pointer.Touch, PointerID: 6, Position: f32.Pt(300, 220)})
+	frame(pointer.Event{Kind: pointer.Release, Source: pointer.Touch, PointerID: 6, Position: f32.Pt(300, 220)})
+	if renderer.openSelectKey != "" {
+		t.Fatalf("open select after touching blank content = %q, want closed", renderer.openSelectKey)
+	}
+	tap(7, 20, 74)
+	tap(8, 20, 170)
+	if selectedValue != "two" {
+		t.Fatalf("selected value after tapping popup option = %q, want two", selectedValue)
+	}
+	if renderer.openSelectKey != "" {
+		t.Fatalf("open select after choosing popup option = %q, want closed", renderer.openSelectKey)
+	}
+}
+
+func TestNativeOutputDisclosureHeaderTogglesAcrossNestedViewport(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = false
+	screen, err := sharedui.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	if !ok {
+		t.Fatal("job output scroller not found")
+	}
+	data := map[string]any{"jobDetails": map[string]any{"output_groups": []any{map[string]any{
+		"id": "step-1", "title": "Ciwi phase 1/4: Prepare workspace", "state_key": "job-output:step-1",
+		"default_expanded": false, "progress": map[string]any{"state": "complete", "fraction": 1},
+		"reached": true, "started": "now", "status_label": "Succeeded", "duration": "1s",
+		"command_label": "", "output": "ok", "error": "", "exit_code": "0", "details": "",
+		"yaml_literal": "", "expanded_command": "",
+	}}}}
+	runtime := giodom.NewRuntime(renderer.theme, giodom.Options{})
+	router := new(input.Router)
+	frame := func(events ...pointer.Event) {
+		for _, event := range events {
+			router.Queue(event)
+		}
+		compiled := renderer.compileDOMNode(scroller, data, "job-output")
+		operations := new(op.Ops)
+		gtx := layout.Context{
+			Ops: operations, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+			Now: time.Unix(1_800_000_000, 0), Constraints: layout.Constraints{Min: image.Pt(320, 0), Max: image.Pt(320, 200)},
+		}
+		runtime.Layout(gtx, *compiled)
+		router.Frame(operations)
+	}
+	frame()
+	frame(pointer.Event{
+		Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: f32.Pt(40, 30),
+	})
+	frame(pointer.Event{
+		Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: f32.Pt(40, 30),
+	})
+	if !renderer.disclosures["job-output:step-1"] {
+		t.Fatal("mouse tap on output label did not expand the disclosure")
+	}
+
+	frame()
+	frame(pointer.Event{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(280, 30),
+	})
+	frame(pointer.Event{
+		Kind: pointer.Release, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(280, 30),
+	})
+	if renderer.disclosures["job-output:step-1"] {
+		t.Fatal("touch tap on the trailing output row area did not collapse the disclosure")
+	}
+}
+
 func TestOutputGroupsViewportTracksWindowHeight(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	renderer.metrics.spaceSmall = 8
@@ -54,9 +351,9 @@ func TestOutputGroupsViewportTracksWindowHeight(t *testing.T) {
 		minimum unit.Dp
 		maximum unit.Dp
 	}{
-		{name: "portrait phone", height: 667, minimum: 450, maximum: 452},
-		{name: "landscape phone", height: 375, minimum: 246, maximum: 248},
-		{name: "desktop cap", height: 1000, minimum: 644, maximum: 644},
+		{name: "portrait phone", height: 667, minimum: 448, maximum: 450},
+		{name: "landscape phone", height: 375, minimum: 244, maximum: 246},
+		{name: "desktop cap", height: 1000, minimum: 642, maximum: 642},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			renderer.viewportHeight = test.height
@@ -184,6 +481,18 @@ func findResponsiveTestNode(node uidsl.Node, id string) (uidsl.Node, bool) {
 	return uidsl.Node{}, false
 }
 
+func findResponsiveTestNodeByRepeatSource(node uidsl.Node, source string) (uidsl.Node, bool) {
+	if node.Repeat != nil && node.Repeat.Source == source {
+		return node, true
+	}
+	for _, child := range node.Children {
+		if found, ok := findResponsiveTestNodeByRepeatSource(child, source); ok {
+			return found, true
+		}
+	}
+	return uidsl.Node{}, false
+}
+
 func findResponsiveTestElement(element *giodom.Element, kind giodom.Kind) *giodom.Element {
 	if element == nil {
 		return nil
@@ -195,6 +504,34 @@ func findResponsiveTestElement(element *giodom.Element, kind giodom.Kind) *giodo
 		for index := 0; index < element.Children.Len(); index++ {
 			child := element.Children.At(index)
 			if found := findResponsiveTestElement(&child, kind); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
+}
+
+func findResponsiveTestElementByKey(element *giodom.Element, key giodom.Key) *giodom.Element {
+	if element == nil {
+		return nil
+	}
+	if element.Key == key {
+		return element
+	}
+	if element.Responsive.Compact != nil {
+		if found := findResponsiveTestElementByKey(element.Responsive.Compact, key); found != nil {
+			return found
+		}
+	}
+	if element.Responsive.Wide != nil {
+		if found := findResponsiveTestElementByKey(element.Responsive.Wide, key); found != nil {
+			return found
+		}
+	}
+	if element.Children != nil {
+		for index := 0; index < element.Children.Len(); index++ {
+			child := element.Children.At(index)
+			if found := findResponsiveTestElementByKey(&child, key); found != nil {
 				return found
 			}
 		}
@@ -227,6 +564,15 @@ func layoutResponsiveElement(renderer *Renderer, element giodom.Element, width, 
 	gtx := layout.Context{
 		Ops: operations, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Now: time.Unix(1_800_000_000, 0),
 		Constraints: layout.Constraints{Min: image.Pt(width, 0), Max: image.Pt(width, height)},
+	}
+	return giodom.NewRuntime(renderer.theme, giodom.Options{}).Layout(gtx, element)
+}
+
+func layoutResponsiveLooseElement(renderer *Renderer, element giodom.Element, width, height int) layout.Dimensions {
+	operations := new(op.Ops)
+	gtx := layout.Context{
+		Ops: operations, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Now: time.Unix(1_800_000_000, 0),
+		Constraints: layout.Constraints{Min: image.Point{}, Max: image.Pt(width, height)},
 	}
 	return giodom.NewRuntime(renderer.theme, giodom.Options{}).Layout(gtx, element)
 }

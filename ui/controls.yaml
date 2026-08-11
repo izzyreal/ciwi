@@ -1,6 +1,9 @@
 apiVersion: ciwi.ui/v1
 kind: Controls
 controls:
+  viewport:
+    compactMaximumWidth: 760
+    condensedDisclosureMaximumWidth: 560
   button:
     iconPosition: leading
     minimumHeight: {web: 44, native: 44}
@@ -18,6 +21,7 @@ controls:
     minimumHeight: {web: 44, native: 44}
     paddingX: {web: 12, native: 12}
     paddingY: {web: 9, native: 8}
+    placeholderColor: "#757575"
   select:
     chevronPosition: trailing
     chevronSize: 19

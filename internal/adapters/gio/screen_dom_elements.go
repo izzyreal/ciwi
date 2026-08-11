@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"gioui.org/io/event"
+	"gioui.org/io/input"
+	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -25,7 +28,47 @@ import (
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
+type domSelectDismiss struct{}
+
+func (dismiss *domSelectDismiss) Add(ops *op.Ops) {
+	event.Op(ops, dismiss)
+}
+
+func (dismiss *domSelectDismiss) Presses(source input.Source) []pointer.ID {
+	var presses []pointer.ID
+	filter := pointer.Filter{Target: dismiss, Kinds: pointer.Press}
+	for {
+		raw, ok := source.Event(filter)
+		if !ok {
+			return presses
+		}
+		pointerEvent, ok := raw.(pointer.Event)
+		if !ok {
+			continue
+		}
+		presses = append(presses, pointerEvent.PointerID)
+	}
+}
+
+func addDOMSelectPressArea(ops *op.Ops, dismiss *domSelectDismiss, bounds image.Rectangle) {
+	area := clip.Rect(bounds).Push(ops)
+	pass := pointer.PassOp{}.Push(ops)
+	dismiss.Add(ops)
+	pass.Pop()
+	area.Pop()
+}
+
 func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data any, path string) *giodom.Element {
+	constraintInsets := giodom.Insets{}
+	if element.Kind == giodom.KindFlex {
+		constraintInsets = element.Flex.Padding
+	}
+	if node.Component == "input" {
+		constraintInsets = giodom.Insets{
+			Top: unit.Dp(r.controls.Input.PaddingY.Native), Right: unit.Dp(r.controls.Input.PaddingX.Native),
+			Bottom: unit.Dp(r.controls.Input.PaddingY.Native), Left: unit.Dp(r.controls.Input.PaddingX.Native),
+		}
+	}
 	if element.Kind == giodom.KindNative && len(node.Actions) > 0 {
 		element.Native.InteractionRevision = func() uint64 { return r.domInteractionRevision }
 	}
@@ -77,6 +120,7 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 			props.Fill, props.Border, props.Padding = r.palette.consoleBackground, r.palette.consoleBorder, giodom.UniformInsets(r.metrics.spaceSmall)
 			props.PaintBackground = nil
 		}
+		surfaceConstraintInsets := props.Padding
 		if progressProps != nil {
 			content := element
 			if props.Padding != (giodom.Insets{}) {
@@ -88,6 +132,11 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 			progressProps = nil
 		} else {
 			element = giodom.Surface(giodom.Key(path+"/surface"), props, element)
+		}
+		constraintInsets = addDOMInsets(constraintInsets, surfaceConstraintInsets)
+		if props.BorderWidth > 0 {
+			border := giodom.UniformInsets(props.BorderWidth)
+			constraintInsets = addDOMInsets(constraintInsets, border)
 		}
 	}
 	if progressProps != nil {
@@ -115,7 +164,7 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 	if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {
 		element = giodom.Constrain(giodom.Key(path+"/row-width"), giodom.ConstraintProps{FillWidth: true}, element)
 	}
-	if constraint, ok := r.domConstraint(node.Layout); ok {
+	if constraint, ok := r.domConstraint(node.Layout, constraintInsets); ok {
 		element = giodom.Constrain(giodom.Key(path+"/constraint"), constraint, element)
 	}
 	element.Key = domNodeKey(node, path)
@@ -174,15 +223,24 @@ func (r *Renderer) domProgressBase(node uidsl.Node) color.NRGBA {
 	}
 }
 
-func (r *Renderer) domConstraint(values uidsl.Layout) (giodom.ConstraintProps, bool) {
+func (r *Renderer) domConstraint(values uidsl.Layout, insets giodom.Insets) (giodom.ConstraintProps, bool) {
 	props := giodom.ConstraintProps{
 		MinWidth: r.domLayoutDimension(values.MinWidth), MaxWidth: r.domLayoutDimension(values.MaxWidth),
 		MinHeight: r.domLayoutDimension(values.MinHeight), MaxHeight: r.domLayoutDimension(values.MaxHeight),
 	}
-	// Layout dimensions describe the complete rendered box, matching the
-	// browser's global border-box sizing. Surface padding and borders therefore
-	// consume space inside these constraints rather than expanding them.
+	// Gio insets are added after a child's minimum constraint, whereas the
+	// browser contract uses border-box minimums. Remove every renderer-owned
+	// inset here so the declared minimum still describes the complete box.
+	props.MinWidth = max(0, props.MinWidth-insets.Left-insets.Right)
+	props.MinHeight = max(0, props.MinHeight-insets.Top-insets.Bottom)
 	return props, props != (giodom.ConstraintProps{})
+}
+
+func addDOMInsets(left, right giodom.Insets) giodom.Insets {
+	return giodom.Insets{
+		Top: left.Top + right.Top, Right: left.Right + right.Right,
+		Bottom: left.Bottom + right.Bottom, Left: left.Left + right.Left,
+	}
 }
 
 func (r *Renderer) domLayoutDimension(value string) unit.Dp {
@@ -396,8 +454,7 @@ func (r *Renderer) layoutDOMControl(gtx layout.Context, clickable *widget.Clicka
 }
 
 func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *widget.Clickable, label, iconName, role, tone string, options domControlOptions) layout.Dimensions {
-	disclosureChevron := role == "disclosure-chevron"
-	iconOnly := role == "icon-button" || role == "tailing-toggle" || disclosureChevron
+	iconOnly := role == "icon-button" || role == "tailing-toggle"
 	buttonMetrics := r.controls.Button
 	iconSize := buttonMetrics.IconSize.Native
 	iconGap := buttonMetrics.IconGap.Native
@@ -430,28 +487,24 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 		if iconOnly {
 			minimum = unit.Dp(buttonMetrics.IconOnlySize.Native)
 		}
-		if disclosureChevron {
-			iconSize = r.controls.Disclosure.ChevronSize
-			minimum = unit.Dp(max(float32(24), iconSize+4))
-		}
 		minimum = max(minimum, options.MinimumHeight)
 		gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(minimum)))
+		if role == "select" {
+			// Selects are single-line controls. Keep the shared height as their
+			// complete outer box instead of letting Gio's generous label line box
+			// add another platform-specific vertical expansion.
+			gtx.Constraints.Max.Y = gtx.Constraints.Min.Y
+		}
 		if iconOnly {
 			gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, max(gtx.Constraints.Min.X, gtx.Dp(minimum)))
 		}
 		fill, border := r.palette.surface, r.palette.border
 		inkTone := defaultString(tone, "accent")
-		if clickable.Pressed() && !disclosureChevron {
+		if clickable.Pressed() {
 			fill = r.palette.subtle
 		}
-		if (clickable.Hovered() || gtx.Focused(clickable)) && !disclosureChevron {
+		if clickable.Hovered() || gtx.Focused(clickable) {
 			border = r.palette.accent
-		}
-		if disclosureChevron {
-			fill, border, inkTone = color.NRGBA{}, color.NRGBA{}, "muted"
-			if clickable.Hovered() || gtx.Focused(clickable) {
-				inkTone = "accent"
-			}
 		}
 		if role == "tailing-toggle" {
 			if toned, ok := r.toneColor(tone); ok {
@@ -491,9 +544,6 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 			if iconOnly {
 				inset := max(float32(0), (buttonMetrics.IconOnlySize.Native-iconSize)/2)
 				paddingX, paddingY = unit.Dp(inset), unit.Dp(inset)
-			}
-			if disclosureChevron {
-				paddingX, paddingY = 2, 2
 			}
 			return layout.Inset{Top: paddingY, Right: paddingX, Bottom: paddingY, Left: paddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				if iconOnly {
@@ -688,7 +738,7 @@ func (r *Renderer) compileDOMInput(node uidsl.Node, data any, path string) giodo
 					}
 					typography := r.nativeTextStyle(role, false)
 					style.Font, style.TextSize, style.LineHeightScale = typography.font, typography.size, typography.lineHeight
-					style.Color, style.HintColor = r.palette.text, r.palette.muted
+					style.Color, style.HintColor = r.palette.text, r.inputPlaceholder
 					if !node.Input.Multiline {
 						// Keep the outer input at its shared control height, but allow the
 						// editor to report its intrinsic line height. Background.Layout then
@@ -734,12 +784,23 @@ func (r *Renderer) compileDOMSelect(node uidsl.Node, data any, path string) giod
 		}
 	}
 	enabled := conditionEnabled(node.Enabled, data)
-	return giodom.Native(domNodeKey(node, path), giodom.NativeProps{
+	selectKey := domNodeKey(node, path)
+	return giodom.Native(selectKey, giodom.NativeProps{
 		NewState: func() any {
 			return &domSelectState{options: map[string]*widget.Clickable{}, list: layout.List{Axis: layout.Vertical}}
 		},
 		Layout: func(gtx layout.Context, raw any) layout.Dimensions {
 			state := raw.(*domSelectState)
+			if state.open && r.openSelectKey != selectKey {
+				state.open = false
+			}
+			if state.open && r.openSelectKey == selectKey && r.dom != nil && r.dom.selectInsidePresses != nil {
+				// These pass-through hit areas cover only the trigger and menu. The
+				// screen-root observer treats every other press as outside.
+				for _, pointerID := range state.dismiss.Presses(gtx.Source) {
+					r.dom.selectInsidePresses[pointerID] = struct{}{}
+				}
+			}
 			seen := make(map[string]bool, len(options))
 			for _, option := range options {
 				seen[option.value] = true
@@ -750,6 +811,9 @@ func (r *Renderer) compileDOMSelect(node uidsl.Node, data any, path string) giod
 				}
 				for button.Clicked(gtx) {
 					state.open = false
+					if r.openSelectKey == selectKey {
+						r.openSelectKey = ""
+					}
 					if len(node.Actions) > 0 && option.value != selectedValue {
 						selectionData := mergeData(data, "selection", map[string]any{"value": option.value, "label": option.label})
 						r.dispatchFromLayout(gtx, node.Actions[0], selectionData)
@@ -764,16 +828,23 @@ func (r *Renderer) compileDOMSelect(node uidsl.Node, data any, path string) giod
 			}
 			for state.toggle.Clicked(gtx) {
 				if enabled {
-					state.open = !state.open
+					if state.open {
+						state.open = false
+						if r.openSelectKey == selectKey {
+							r.openSelectKey = ""
+						}
+					} else {
+						state.open = true
+						r.openSelectKey = selectKey
+					}
 					r.requestFrame()
 				}
 			}
 			if !enabled {
 				state.open = false
-			}
-			for state.dismiss.Clicked(gtx) {
-				state.open = false
-				r.requestFrame()
+				if r.openSelectKey == selectKey {
+					r.openSelectKey = ""
+				}
 			}
 			return r.layoutDOMSelect(gtx, state, node, options, selectedLabel, selectedValue, enabled)
 		},
@@ -800,7 +871,7 @@ func (r *Renderer) layoutDOMSelect(gtx layout.Context, state *domSelectState, no
 		return r.layoutDOMControlWithOptions(gtx, &state.toggle, selectedLabel, icon, "select", "muted", domControlOptions{
 			Enabled: enabled, FillWidth: node.Layout.Grow,
 			MinimumWidth: r.domLayoutDimension(node.Layout.MinWidth), MinimumHeight: r.domLayoutDimension(node.Layout.MinHeight),
-			TrailingIcon: true, ReservedLabels: labels,
+			TrailingIcon: r.controls.Select.ChevronPosition == "trailing", ReservedLabels: labels,
 		})
 	}
 	if !state.open {
@@ -810,61 +881,115 @@ func (r *Renderer) layoutDOMSelect(gtx layout.Context, state *domSelectState, no
 	headerDimensions := header(gtx)
 	headerCall := headerMacro.Stop()
 	overlayMacro := op.Record(gtx.Ops)
-	scrimContext := gtx
-	scrimContext.Constraints = layout.Exact(gtx.Constraints.Max)
-	state.dismiss.Layout(scrimContext, func(gtx layout.Context) layout.Dimensions {
-		return layout.Dimensions{Size: gtx.Constraints.Min}
-	})
 	menuMacro := op.Record(gtx.Ops)
 	menuContext := gtx
 	menuContext.Constraints.Min = image.Point{}
-	menuContext.Constraints.Max.X = min(menuContext.Constraints.Max.X, gtx.Dp(420))
-	menuContext.Constraints.Min.X = min(menuContext.Constraints.Max.X, max(headerDimensions.Size.X, gtx.Dp(160)))
-	menuContext.Constraints.Max.Y = min(menuContext.Constraints.Max.Y, gtx.Dp(320))
+	selectMetrics := r.controls.Select
+	viewportInset := gtx.Dp(unit.Dp(selectMetrics.ViewportInset))
+	menuGap := gtx.Dp(unit.Dp(selectMetrics.MenuGap))
+	menuContext.Constraints.Max.X = max(0, menuContext.Constraints.Max.X-2*viewportInset)
+	menuWidth := min(menuContext.Constraints.Max.X, r.domSelectMenuWidth(menuContext, headerDimensions.Size.X, options))
+	menuContext.Constraints.Min.X, menuContext.Constraints.Max.X = menuWidth, menuWidth
+	availableMenuHeight := max(0, gtx.Constraints.Max.Y-headerDimensions.Size.Y-menuGap-viewportInset)
+	menuHeightCap := max(
+		gtx.Dp(unit.Dp(selectMetrics.MenuMinimumHeight)),
+		min(gtx.Dp(unit.Dp(selectMetrics.MenuMaximumHeight)), availableMenuHeight),
+	)
+	menuContext.Constraints.Max.Y = min(menuContext.Constraints.Max.Y, menuHeightCap)
 	menuDimensions := layout.Background{}.Layout(menuContext, func(gtx layout.Context) layout.Dimensions {
 		size := gtx.Constraints.Min
 		paintDOMSurface(gtx, size, r.palette.surface, r.palette.border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
 		return layout.Dimensions{Size: size}
 	}, func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(6).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(unit.Dp(selectMetrics.MenuPadding)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return state.list.Layout(gtx, len(options), func(gtx layout.Context, index int) layout.Dimensions {
 				option := options[index]
 				button := state.options[option.value]
-				return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					fill := r.palette.surface
-					if option.value == selectedValue {
-						fill = r.palette.subtle
-					}
-					border := color.NRGBA{}
-					if button.Hovered() || gtx.Focused(button) {
-						fill, border = r.palette.subtle, r.palette.accent
-					}
-					gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, gtx.Dp(40)))
-					return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						size := gtx.Constraints.Min
-						paintDOMSurface(gtx, size, fill, border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
-						return layout.Dimensions{Size: size}
-					}, func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: 8, Right: 10, Bottom: 8, Left: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							label := r.materialTextLabel(option.label, "control", option.value == selectedValue)
-							label.Color = r.palette.text
-							return label.Layout(gtx)
-						})
-					})
-				})
+				optionWidget := func(gtx layout.Context) layout.Dimensions {
+					return r.layoutDOMSelectOption(gtx, button, option, option.value == selectedValue)
+				}
+				if index+1 < len(options) && selectMetrics.MenuItemGap > 0 {
+					return layout.Inset{Bottom: unit.Dp(selectMetrics.MenuItemGap)}.Layout(gtx, optionWidget)
+				}
+				return optionWidget(gtx)
 			})
 		})
 	})
 	menuCall := menuMacro.Stop()
-	menuY := headerDimensions.Size.Y + gtx.Dp(4)
-	if menuY+menuDimensions.Size.Y > gtx.Constraints.Max.Y && menuDimensions.Size.Y+gtx.Dp(4) < gtx.Constraints.Max.Y {
-		menuY = -menuDimensions.Size.Y - gtx.Dp(4)
+	menuY := headerDimensions.Size.Y + menuGap
+	if menuY+menuDimensions.Size.Y+viewportInset > gtx.Constraints.Max.Y && menuDimensions.Size.Y+menuGap+viewportInset < gtx.Constraints.Max.Y {
+		menuY = -menuDimensions.Size.Y - menuGap
 	}
-	op.Offset(image.Pt(0, menuY)).Add(gtx.Ops)
+	menuOffset := op.Offset(image.Pt(0, menuY)).Push(gtx.Ops)
 	menuCall.Add(gtx.Ops)
+	addDOMSelectPressArea(gtx.Ops, &state.dismiss, image.Rectangle{Max: menuDimensions.Size})
+	menuOffset.Pop()
 	op.Defer(gtx.Ops, overlayMacro.Stop())
 	headerCall.Add(gtx.Ops)
+	addDOMSelectPressArea(gtx.Ops, &state.dismiss, image.Rectangle{Max: headerDimensions.Size})
 	return headerDimensions
+}
+
+func (r *Renderer) domSelectMenuWidth(gtx layout.Context, headerWidth int, options []nativeSelectOption) int {
+	labels := make([]string, 0, len(options))
+	for _, option := range options {
+		labels = append(labels, option.label)
+	}
+	metrics := r.controls.Select
+	optionWidth := r.domWidestControlLabel(gtx, labels) +
+		2*gtx.Dp(unit.Dp(metrics.OptionPaddingX)) +
+		gtx.Dp(unit.Dp(metrics.SelectionIndicatorWidth)) +
+		gtx.Dp(unit.Dp(metrics.OptionGap))
+	menuWidth := optionWidth + 2*gtx.Dp(unit.Dp(metrics.MenuPadding))
+	return max(headerWidth, gtx.Dp(unit.Dp(metrics.MenuMinimumWidth)), menuWidth)
+}
+
+func (r *Renderer) layoutDOMSelectOption(gtx layout.Context, button *widget.Clickable, option nativeSelectOption, selected bool) layout.Dimensions {
+	metrics := r.controls.Select
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		fill := r.palette.surface
+		if selected {
+			fill = r.palette.subtle
+		}
+		border := color.NRGBA{}
+		if button.Hovered() || gtx.Focused(button) {
+			fill, border = r.palette.subtle, r.palette.accent
+		}
+		minimumHeight := gtx.Dp(unit.Dp(metrics.OptionMinimumHeight))
+		gtx.Constraints.Min.Y = min(gtx.Constraints.Max.Y, max(gtx.Constraints.Min.Y, minimumHeight))
+		gtx.Constraints.Max.Y = gtx.Constraints.Min.Y
+		return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			size := gtx.Constraints.Min
+			paintDOMSurface(gtx, size, fill, border, gtx.Dp(1), gtx.Dp(r.metrics.controlRadius))
+			return layout.Dimensions{Size: size}
+		}, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.Y = 0
+			paddingX, paddingY := unit.Dp(metrics.OptionPaddingX), unit.Dp(metrics.OptionPaddingY)
+			return layout.Inset{Top: paddingY, Right: paddingX, Bottom: paddingY, Left: paddingX}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				indicatorWidth := gtx.Dp(unit.Dp(metrics.SelectionIndicatorWidth))
+				indicator := func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X, gtx.Constraints.Max.X = indicatorWidth, indicatorWidth
+					if !selected {
+						return layout.Dimensions{Size: gtx.Constraints.Min}
+					}
+					glyphSize := unit.Dp(min(float32(16), metrics.SelectionIndicatorWidth))
+					return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return r.layoutGlyph(gtx, "check", "accent", glyphSize)
+					})
+				}
+				label := func(gtx layout.Context) layout.Dimensions {
+					style := r.materialTextLabel(option.label, "control", selected)
+					style.Color = r.palette.text
+					return style.Layout(gtx)
+				}
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(indicator),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(metrics.OptionGap)}.Layout),
+					layout.Flexed(1, label),
+				)
+			})
+		})
+	})
 }
 
 func (r *Renderer) compileDOMImage(node uidsl.Node, data any, path string) giodom.Element {
