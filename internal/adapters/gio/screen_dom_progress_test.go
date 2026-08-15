@@ -5,6 +5,7 @@ package gio
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/giodom"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
@@ -38,5 +39,46 @@ func TestNativeProgressUsesTranslucentSharedTintAndSemanticMode(t *testing.T) {
 				t.Fatalf("color = %#v, want translucent shared tint %#v", props.Color, wantColor)
 			}
 		})
+	}
+}
+
+func TestNativeAnimatedProgressIgnoresSnapshotRefreshes(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	node := uidsl.Node{Component: "card", Progress: &uidsl.Progress{Binding: "item.progress"}}
+
+	for _, state := range []string{"indeterminate", "overrun"} {
+		t.Run(state, func(t *testing.T) {
+			propsAt := func(snapshot int64) giodom.ProgressProps {
+				t.Helper()
+				data := map[string]any{"item": map[string]any{"progress": map[string]any{
+					"state": state, "fraction": 1, "snapshot_unix_ms": snapshot,
+				}}}
+				props := renderer.domProgressProps(node, data)
+				if props == nil {
+					t.Fatal("progress props are nil")
+				}
+				return *props
+			}
+			first := propsAt(1_000)
+			refreshed := propsAt(9_000)
+			if first != refreshed {
+				t.Fatalf("snapshot refresh changed animated progress props: first=%+v refreshed=%+v", first, refreshed)
+			}
+		})
+	}
+}
+
+func TestNativeDeterminateProgressIsContinuousAcrossEquivalentSnapshots(t *testing.T) {
+	now := time.UnixMilli(4_500)
+	before := semanticProgress{state: "determinate", fraction: .2, snapshotUnixMS: 1_000, ratePerMS: .0001}
+	refreshed := semanticProgress{state: "determinate", fraction: .5, snapshotUnixMS: 4_000, ratePerMS: .0001}
+
+	beforeState, beforeFraction := evaluateSemanticProgress(before, now)
+	refreshedState, refreshedFraction := evaluateSemanticProgress(refreshed, now)
+	if beforeState != "determinate" || refreshedState != "determinate" {
+		t.Fatalf("states = %q and %q", beforeState, refreshedState)
+	}
+	if math.Abs(beforeFraction-refreshedFraction) > .000001 {
+		t.Fatalf("refresh changed visible fraction from %g to %g", beforeFraction, refreshedFraction)
 	}
 }

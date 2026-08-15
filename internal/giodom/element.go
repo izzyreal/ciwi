@@ -8,7 +8,6 @@ package giodom
 import (
 	"image"
 	"image/color"
-	"time"
 
 	"gioui.org/font"
 	"gioui.org/layout"
@@ -180,7 +179,6 @@ type ProgressProps struct {
 	Color    color.NRGBA
 	Track    color.NRGBA
 	Radius   unit.Dp
-	Phase    time.Duration
 }
 
 // ListProps configures stock and keyed scrolling lists.

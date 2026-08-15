@@ -198,7 +198,7 @@ func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressP
 	fill.A = uint8(math.Round(0xff * tintOpacity))
 	return &giodom.ProgressProps{
 		Mode: mode, Fraction: float32(fraction), Animate: state == "determinate" && progress.ratePerMS > 0, Color: fill,
-		Track: track, Radius: r.metrics.surfaceRadius, Phase: -time.Duration(progress.snapshotUnixMS) * time.Millisecond,
+		Track: track, Radius: r.metrics.surfaceRadius,
 	}
 }
 

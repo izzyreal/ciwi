@@ -436,7 +436,7 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 		switch props.Mode {
 		case ProgressIndeterminate:
 			const cycle = 4 * time.Second
-			elapsed := gtx.Now.UnixNano() + int64(props.Phase)
+			elapsed := gtx.Now.UnixNano()
 			phase := float64(elapsed%int64(cycle)) / float64(cycle)
 			position := .5 - .5*math.Cos(2*math.Pi*phase)
 			width := max(1, int(float64(size.X)*.22))
@@ -445,7 +445,7 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 60)})
 		case ProgressOverrun:
 			const cycle = 2 * time.Second
-			elapsed := gtx.Now.UnixNano() + int64(props.Phase)
+			elapsed := gtx.Now.UnixNano()
 			phase := float64(elapsed%int64(cycle)) / float64(cycle)
 			opacity := .58 + .42*(.5-.5*math.Cos(2*math.Pi*phase))
 			progressColor.A = uint8(math.Round(float64(progressColor.A) * opacity))
