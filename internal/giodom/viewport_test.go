@@ -568,6 +568,59 @@ func TestPassThroughViewportScrollsDownAndBackUp(t *testing.T) {
 	}
 }
 
+func TestFullWidthViewportScrollsFromBothCenteredGutters(t *testing.T) {
+	centeredRows := func() Children {
+		rows := make([]Element, 12)
+		for index := range rows {
+			key := Key(fmt.Sprintf("row-%d", index))
+			content := Inset(key+"-inset", Insets{Left: 16, Right: 16}, Spacer(key+"-content", 0, 60))
+			content = Constrain(key+"-width", ConstraintProps{MaxWidth: 200}, content)
+			row := Align(key, layout.N, content)
+			row.Key = key
+			rows[index] = row
+		}
+		return Static(rows...)
+	}
+	for _, test := range []struct {
+		name  string
+		x     float32
+		touch bool
+	}{
+		{name: "left wheel", x: 5},
+		{name: "right wheel", x: 315},
+		{name: "left touch", x: 5, touch: true},
+		{name: "right touch", x: 315, touch: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runtime := NewRuntime(nil, Options{})
+			router := new(input.Router)
+			root := VirtualList("page", ListProps{
+				Axis: layout.Vertical, PassThroughScroll: true, Estimate: 60,
+			}, centeredRows())
+			layoutInteractiveFrame(runtime, router, root, nil)
+			if test.touch {
+				layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+					Kind: pointer.Press, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(test.x, 160),
+				}})
+				layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+					Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(test.x, 80),
+				}})
+				layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+					Kind: pointer.Move, Source: pointer.Touch, PointerID: 1, Position: f32.Pt(test.x, 40),
+				}})
+			} else {
+				layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+					Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(test.x, 100), Scroll: f32.Pt(0, 80),
+				}})
+			}
+			state := viewportState(t, runtime)
+			if state.anchorIndex == 0 && state.anchorOffset == 0 {
+				t.Fatal("full-width viewport did not scroll from centered-content gutter")
+			}
+		})
+	}
+}
+
 func TestPassThroughViewportPreservesOffsetsBetweenPageCards(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	router := new(input.Router)

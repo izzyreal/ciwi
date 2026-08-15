@@ -237,6 +237,43 @@ func TestNativePageScrollRegionsWrapInputsAndSystemMessages(t *testing.T) {
 	}
 }
 
+func TestNativePageViewportOwnsFullWidthAroundCenteredRows(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.compact = false
+	renderer.metrics.pageWidth = 200
+	renderer.metrics.pageInset = 16
+	renderer.metrics.spaceLarge = 24
+	screen := &uidsl.ScreenDocument{
+		APIVersion: uidsl.APIVersion, Kind: "Screen", Metadata: uidsl.Metadata{Name: "full-width-scroll"},
+		Screen: uidsl.Screen{Root: uidsl.Node{
+			Component: "page", Children: []uidsl.Node{{
+				Component: "card", ID: "centered-content",
+				Children: []uidsl.Node{{Component: "text", Text: &uidsl.Text{Literal: "Content"}}},
+			}},
+		}},
+	}
+	document := renderer.buildScreenDOM(screen, map[string]any{}, "")
+	if document.Kind != giodom.KindVirtualList || !document.List.PassThroughScroll {
+		t.Fatalf("page root = %#v, want a full-width pass-through viewport", document)
+	}
+	if document.Children == nil || document.Children.Len() != 1 {
+		t.Fatalf("page children = %#v, want one centered row", document.Children)
+	}
+	row := document.Children.At(0)
+	if row.Kind != giodom.KindAlign || row.Align.Direction != layout.N || row.Key != "centered-content" {
+		t.Fatalf("page row = %#v, want keyed centered content inside the viewport", row)
+	}
+	constraint := findResponsiveTestElement(&row, giodom.KindConstrain)
+	if constraint == nil || constraint.Constraint.MaxWidth != 200 {
+		t.Fatalf("page row width constraint = %#v, want existing 200dp maximum", constraint)
+	}
+	inset := findResponsiveTestElement(&row, giodom.KindInset)
+	wantInset := renderer.pageInset()
+	if inset == nil || inset.Inset.Left != wantInset || inset.Inset.Right != wantInset {
+		t.Fatalf("page row inset = %#v, want preserved horizontal inset %v", inset, wantInset)
+	}
+}
+
 func TestNativeSettingsCardGapAndPendingButtonWidthContracts(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	catalog, err := sharedui.LoadActionCatalog()

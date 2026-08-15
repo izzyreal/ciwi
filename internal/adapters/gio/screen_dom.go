@@ -234,23 +234,25 @@ func (r *Renderer) buildScreenDOM(screen *uidsl.ScreenDocument, data any, pendin
 		r.mu.Unlock()
 	}
 	pageInset := r.pageInset()
-	if len(children) > 0 {
-		first := children[0]
-		children[0] = giodom.Inset(first.Key, giodom.Insets{Top: pageInset}, first)
-		lastIndex := len(children) - 1
-		last := children[lastIndex]
-		children[lastIndex] = giodom.Inset(last.Key, giodom.Insets{Bottom: pageInset}, last)
+	for index := range children {
+		key := children[index].Key
+		insets := giodom.Insets{Right: pageInset, Left: pageInset}
+		if index == 0 {
+			insets.Top = pageInset
+		}
+		if index == len(children)-1 {
+			insets.Bottom = pageInset
+		}
+		row := giodom.Inset(giodom.Key("page-row-inset:"+string(key)), insets, children[index])
+		if r.metrics.pageWidth > 0 {
+			row = giodom.Constrain(giodom.Key("page-row-width:"+string(key)), giodom.ConstraintProps{MaxWidth: r.metrics.pageWidth}, row)
+			row = giodom.Align(key, layout.N, row)
+		}
+		row.Key = key
+		children[index] = row
 	}
 	props.PassThroughScroll = true
-	page := giodom.VirtualList(giodom.Key("page-list:"+screen.Metadata.Name), props, giodom.Keyed(domElementsRevision(children), children...))
-	page = giodom.Inset(giodom.Key("page-inset:"+screen.Metadata.Name), giodom.Insets{
-		Right: pageInset, Left: pageInset,
-	}, page)
-	if r.metrics.pageWidth > 0 {
-		page = giodom.Constrain(giodom.Key("page-width:"+screen.Metadata.Name), giodom.ConstraintProps{MaxWidth: r.metrics.pageWidth}, page)
-		page = giodom.Align(giodom.Key("page-center:"+screen.Metadata.Name), layout.N, page)
-	}
-	return page
+	return giodom.VirtualList(giodom.Key("page-list:"+screen.Metadata.Name), props, giodom.Keyed(domElementsRevision(children), children...))
 }
 
 func (r *Renderer) compileDOMNode(raw uidsl.Node, data any, path string) *giodom.Element {
