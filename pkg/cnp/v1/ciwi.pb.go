@@ -3206,6 +3206,7 @@ type ExecutionCardJob struct {
 	ProjectId           int64                  `protobuf:"varint,15,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	CreatedLabel        string                 `protobuf:"bytes,16,opt,name=created_label,json=createdLabel,proto3" json:"created_label,omitempty"`
 	DurationLabel       string                 `protobuf:"bytes,17,opt,name=duration_label,json=durationLabel,proto3" json:"duration_label,omitempty"`
+	StatusLabel         string                 `protobuf:"bytes,18,opt,name=status_label,json=statusLabel,proto3" json:"status_label,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -3355,6 +3356,13 @@ func (x *ExecutionCardJob) GetCreatedLabel() string {
 func (x *ExecutionCardJob) GetDurationLabel() string {
 	if x != nil {
 		return x.DurationLabel
+	}
+	return ""
+}
+
+func (x *ExecutionCardJob) GetStatusLabel() string {
+	if x != nil {
+		return x.StatusLabel
 	}
 	return ""
 }
@@ -9064,7 +9072,7 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x124\n" +
 	"\x04jobs\x18\x03 \x03(\v2 .ciwi.native.v1.ExecutionCardJobR\x04jobs\x124\n" +
-	"\bprogress\x18\x04 \x01(\v2\x18.ciwi.native.v1.ProgressR\bprogress\"\xde\x04\n" +
+	"\bprogress\x18\x04 \x01(\v2\x18.ciwi.native.v1.ProgressR\bprogress\"\x81\x05\n" +
 	"\x10ExecutionCardJob\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x16\n" +
@@ -9088,7 +9096,8 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x0f \x01(\x03R\tprojectId\x12#\n" +
 	"\rcreated_label\x18\x10 \x01(\tR\fcreatedLabel\x12%\n" +
-	"\x0eduration_label\x18\x11 \x01(\tR\rdurationLabel\"\x86\x01\n" +
+	"\x0eduration_label\x18\x11 \x01(\tR\rdurationLabel\x12!\n" +
+	"\fstatus_label\x18\x12 \x01(\tR\vstatusLabel\"\x86\x01\n" +
 	"\bProgress\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1a\n" +
 	"\bfraction\x18\x02 \x01(\x01R\bfraction\x12(\n" +

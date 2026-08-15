@@ -78,3 +78,15 @@ func TestFrontPageProjectResponseUsesSharedChainSequenceLabel(t *testing.T) {
 		t.Fatalf("sequence label = %q", got)
 	}
 }
+
+func TestExecutionCardResponseIncludesTestAwareStatusLabel(t *testing.T) {
+	response := executionCardsToResponse([]domain.ExecutionCard{{
+		Sections: []domain.ExecutionCardSection{{Jobs: []domain.ExecutionCardJob{{
+			ID: "job-1", Status: "failed", TestSummary: &domain.JobTestSummary{Total: 20, Passed: 18, Failed: 2},
+		}}}},
+	}}, false)
+	job := response[0].Sections[0].Jobs[0]
+	if job.Status != "failed" || job.StatusLabel != "failed (18/20 passed)" {
+		t.Fatalf("execution card job = %+v", job)
+	}
+}

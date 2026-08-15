@@ -71,6 +71,27 @@ func TestJobDetailsViewExposesEligibleControls(t *testing.T) {
 	}
 }
 
+func TestJobDetailsViewIncludesTestCountsInStatus(t *testing.T) {
+	failed := presentJobDetails(domain.JobExecutionDetails{
+		ID: "failed", Status: "failed",
+		TestReport: &domain.JobTestReport{Total: 20, Passed: 18, Failed: 2},
+	})
+	if failed.StatusLabel != "Failed (18/20 passed)" || failed.Context != "Status: Failed (18/20 passed)" {
+		t.Fatalf("failed status = label %q context %q", failed.StatusLabel, failed.Context)
+	}
+	succeeded := presentJobDetails(domain.JobExecutionDetails{
+		ID: "succeeded", Status: "succeeded",
+		TestReport: &domain.JobTestReport{Total: 20, Passed: 20},
+	})
+	if succeeded.StatusLabel != "Succeeded (20/20 passed)" || succeeded.Context != "Status: Succeeded (20/20 passed)" {
+		t.Fatalf("succeeded status = label %q context %q", succeeded.StatusLabel, succeeded.Context)
+	}
+	withoutTests := presentJobDetails(domain.JobExecutionDetails{ID: "plain", Status: "succeeded"})
+	if withoutTests.StatusLabel != "Succeeded" || withoutTests.Context != "Status: Succeeded" {
+		t.Fatalf("plain status = label %q context %q", withoutTests.StatusLabel, withoutTests.Context)
+	}
+}
+
 func TestAdhocJobDetailsDefaultItsScriptOutputOpen(t *testing.T) {
 	view := presentJobDetails(domain.JobExecutionDetails{
 		ID: "adhoc-1", Status: "running", Metadata: domain.ExecutionMetadata{domain.ExecutionMetadataAdhoc: "1"},

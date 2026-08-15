@@ -161,6 +161,8 @@ func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 		{ID: "finished", Status: "succeeded", CreatedUTC: now.Add(-2 * time.Second), Metadata: map[string]string{
 			"project": "ciwi", "project_id": "41", "pipeline_id": "test", "pipeline_run_id": "run-test",
 		}},
+	}, testReport: map[string]protocol.JobExecutionTestReport{
+		"finished": {Total: 20, Passed: 20},
 	}}, 40)
 	queued, history, err := repository.ListFrontPageExecutionCards(context.Background())
 	if err != nil {
@@ -180,6 +182,9 @@ func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 	}
 	if len(history) != 1 || history[0].Summary.Succeeded != 1 {
 		t.Fatalf("history cards = %+v", history)
+	}
+	if got := history[0].Sections[0].Jobs[0].TestSummary; got == nil || got.Total != 20 || got.Passed != 20 {
+		t.Fatalf("history test summary = %+v", got)
 	}
 }
 

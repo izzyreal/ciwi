@@ -18,10 +18,23 @@ func TestDeclarativeExecutionPresentationIsTransportIndependent(t *testing.T) {
 	}
 	started := time.Date(2026, 8, 7, 12, 0, 0, 0, time.Local)
 	job := PresentExecutionCardJob(domain.ExecutionCardJob{
+		Status: "failed", CreatedUTC: started.Add(-time.Minute), StartedUTC: started,
+		TestSummary: &domain.JobTestSummary{Total: 20, Passed: 18, Failed: 2},
+	}, started.Add(65*time.Second))
+	if job.CreatedLabel == "" || job.DurationLabel != "" || job.StatusLabel != "failed (18/20 passed)" {
+		t.Fatalf("job display = %+v", job)
+	}
+	running := PresentExecutionCardJob(domain.ExecutionCardJob{
 		Status: "running", CreatedUTC: started.Add(-time.Minute), StartedUTC: started,
 	}, started.Add(65*time.Second))
-	if job.CreatedLabel == "" || job.DurationLabel != "01m 05s" {
-		t.Fatalf("job display = %+v", job)
+	if running.DurationLabel != "01m 05s" || running.StatusLabel != "running" {
+		t.Fatalf("running job display = %+v", running)
+	}
+	withoutTests := PresentExecutionCardJob(domain.ExecutionCardJob{
+		Status: "succeeded", TestSummary: &domain.JobTestSummary{},
+	}, started)
+	if withoutTests.StatusLabel != "succeeded" {
+		t.Fatalf("zero-total job display = %+v", withoutTests)
 	}
 }
 

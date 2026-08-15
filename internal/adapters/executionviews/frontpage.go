@@ -341,6 +341,9 @@ func (r *Repository) ListFrontPageExecutionCards(ctx context.Context) ([]domain.
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := r.attachTestSummaries(jobs); err != nil {
+		return nil, nil, err
+	}
 	if r.progress != nil {
 		r.progress.AttachJobEstimates(jobs)
 	}
@@ -350,6 +353,21 @@ func (r *Repository) ListFrontPageExecutionCards(ctx context.Context) ([]domain.
 	queued := mapCards(jobhistory.SummaryCards(jobs, true, r.limit))
 	history := mapCards(jobhistory.SummaryCards(jobs, false, r.limit))
 	return queued, history, nil
+}
+
+func (r *Repository) attachTestSummaries(jobs []protocol.JobExecution) error {
+	for i := range jobs {
+		report, found, err := r.store.GetJobExecutionTestReport(jobs[i].ID)
+		if err != nil {
+			return fmt.Errorf("load test summary for job %s: %w", jobs[i].ID, err)
+		}
+		if found {
+			jobs[i].TestSummary = &protocol.JobExecutionTestSummary{
+				Total: report.Total, Passed: report.Passed, Failed: report.Failed, Skipped: report.Skipped,
+			}
+		}
+	}
+	return nil
 }
 
 func mapCards(cards []jobhistory.CardView) []domain.ExecutionCard {
@@ -418,7 +436,7 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 			BuildLabel: executionBuildLabel(item.Job.Metadata), AgentID: strings.TrimSpace(item.Job.LeasedByAgentID),
 			CreatedUTC: item.Job.CreatedUTC, StartedUTC: timeValue(item.Job.StartedUTC), FinishedUTC: timeValue(item.Job.FinishedUTC),
 			Reason: executionReason(item.Job), Action: executionAction(status),
-			CurrentStep: strings.TrimSpace(item.Job.CurrentStep), SchedulingDiagnosis: item.Job.SchedulingDiagnosis,
+			CurrentStep: strings.TrimSpace(item.Job.CurrentStep), TestSummary: mapJobTestSummary(item.Job.TestSummary), SchedulingDiagnosis: item.Job.SchedulingDiagnosis,
 			ExpectedDurationMS: item.Job.ExpectedDurationMS,
 			Waiting: status == protocol.JobExecutionStatusQueued &&
 				(domain.ExecutionMetadata(item.Job.Metadata).Flag(domain.ExecutionMetadataChainBlocked) || domain.ExecutionMetadata(item.Job.Metadata).Flag(domain.ExecutionMetadataNeedsBlocked)),
@@ -429,6 +447,15 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 		out = append(out, mapCardItemJobs(child)...)
 	}
 	return out
+}
+
+func mapJobTestSummary(summary *protocol.JobExecutionTestSummary) *domain.JobTestSummary {
+	if summary == nil {
+		return nil
+	}
+	return &domain.JobTestSummary{
+		Total: summary.Total, Passed: summary.Passed, Failed: summary.Failed, Skipped: summary.Skipped,
+	}
 }
 
 func metadataInt64(metadata domain.ExecutionMetadata, key string) int64 {

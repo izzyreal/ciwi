@@ -286,7 +286,7 @@ func executionCardSectionsToProto(sections []domain.ExecutionCardSection, now ti
 				diagnosis = &cnpv1.SchedulingDiagnosis{}
 			}
 			jobs = append(jobs, &cnpv1.ExecutionCardJob{
-				Id: job.ID, ProjectId: job.ProjectID, Label: job.Label, Status: job.Status, CurrentStep: job.CurrentStep,
+				Id: job.ID, ProjectId: job.ProjectID, Label: job.Label, Status: job.Status, StatusLabel: display.StatusLabel, CurrentStep: job.CurrentStep,
 				PipelineId: job.PipelineID, BuildLabel: job.BuildLabel, AgentId: job.AgentID,
 				CreatedUtc: formatProtoTime(job.CreatedUTC), StartedUtc: formatProtoTime(job.StartedUTC),
 				FinishedUtc: formatProtoTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,

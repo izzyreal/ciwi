@@ -200,9 +200,15 @@ func (q *JobDetailsQueries) GetJobDetailsView(ctx context.Context, jobID string)
 
 func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
 	now := time.Now().UTC()
+	statusLabel := humanStatus(details.Status)
+	if details.TestReport != nil {
+		statusLabel = statusWithTestCounts(statusLabel, &domain.JobTestSummary{
+			Total: details.TestReport.Total, Passed: details.TestReport.Passed,
+		})
+	}
 	view := JobDetailsView{
-		ID: details.ID, ProjectID: details.ProjectID, Title: jobHeaderTitle(details), Context: jobHeaderContext(details),
-		Status: details.Status, StatusLabel: humanStatus(details.Status), CurrentStep: details.CurrentStep,
+		ID: details.ID, ProjectID: details.ProjectID, Title: jobHeaderTitle(details), Context: jobHeaderContext(details, statusLabel),
+		Status: details.Status, StatusLabel: statusLabel, CurrentStep: details.CurrentStep,
 		Agent: details.AgentID, Created: formatTimestamp(details.CreatedUTC), Started: formatTimestamp(details.StartedUTC),
 		Finished: formatTimestamp(details.FinishedUTC), ExitCode: formatExitCode(details.ExitCode), Error: details.Error,
 		CanCancel: canCancelJob(details), CanRerun: canRerunJob(details),
@@ -371,8 +377,8 @@ func jobHeaderTitle(details domain.JobExecutionDetails) string {
 	return strings.Join(parts, " / ")
 }
 
-func jobHeaderContext(details domain.JobExecutionDetails) string {
-	context := "Status: " + humanStatus(details.Status)
+func jobHeaderContext(details domain.JobExecutionDetails, statusLabel string) string {
+	context := "Status: " + statusLabel
 	if step := strings.TrimSpace(details.CurrentStep); step != "" {
 		context += " · " + step
 	}

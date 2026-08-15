@@ -43,10 +43,18 @@ type ExecutionCardJob struct {
 	Reason              string
 	Action              string
 	CurrentStep         string
+	TestSummary         *JobTestSummary
 	ExpectedDurationMS  int64
 	Waiting             bool
 	Progress            Progress
 	SchedulingDiagnosis *SchedulingDiagnosis
+}
+
+type JobTestSummary struct {
+	Total   int
+	Passed  int
+	Failed  int
+	Skipped int
 }
 
 type ExecutionSummary struct {

@@ -49,6 +49,17 @@ func TestExecutionCardMappingCarriesTableMetadata(t *testing.T) {
 	if cards[0].SummaryLabel != "0/1 successful, 1 waiting" || cards[0].Status != "waiting" || cards[0].JobExecutionIdsCsv != "job-1" || job.CreatedLabel == "" {
 		t.Fatalf("execution card presentation = %+v job=%+v", cards[0], job)
 	}
+	if job.StatusLabel != "queued" {
+		t.Fatalf("execution card status label = %q", job.StatusLabel)
+	}
+	testJob := executionCardsToProto([]domain.ExecutionCard{{
+		Sections: []domain.ExecutionCardSection{{Jobs: []domain.ExecutionCardJob{{
+			Status: "succeeded", TestSummary: &domain.JobTestSummary{Total: 20, Passed: 20},
+		}}}},
+	}}, false)[0].Sections[0].Jobs[0]
+	if testJob.StatusLabel != "succeeded (20/20 passed)" {
+		t.Fatalf("test-aware status label = %q", testJob.StatusLabel)
+	}
 }
 
 func TestProgressMappingsPreserveSharedSemanticSnapshot(t *testing.T) {

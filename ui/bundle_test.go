@@ -665,6 +665,18 @@ func TestFrontPageMatchesBrowserProjectAndEmptyTableSummaries(t *testing.T) {
 	}
 }
 
+func TestExecutionHistoryUsesPresentedStatusLabels(t *testing.T) {
+	for _, screenName := range []string{"front-page", "project-details"} {
+		payload, err := Read("screens/" + screenName + ".yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(payload), "binding: job.status_label") {
+			t.Errorf("%s does not bind execution rows to job.status_label", screenName)
+		}
+	}
+}
+
 func TestExecutionSummariesDeclareRightAlignedContent(t *testing.T) {
 	wantRows := map[string]int{"front-page": 2, "project-details": 1}
 	for screenName, want := range wantRows {

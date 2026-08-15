@@ -674,7 +674,7 @@ screen:
                                       emphasis: strong
                                   - component: text
                                     text:
-                                      binding: job.status
+                                      binding: job.status_label
                                     style:
                                       toneBinding: job.status
                                       emphasis: strong
@@ -944,7 +944,7 @@ screen:
                                       emphasis: strong
                                   - component: text
                                     text:
-                                      binding: job.status
+                                      binding: job.status_label
                                     style:
                                       toneBinding: job.status
                                       emphasis: strong

@@ -360,6 +360,7 @@ message ExecutionCardJob {
   int64 project_id = 15;
   string created_label = 16;
   string duration_label = 17;
+  string status_label = 18;
 }
 
 message Progress {

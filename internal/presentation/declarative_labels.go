@@ -21,6 +21,7 @@ type ExecutionCardDisplay struct {
 type ExecutionCardJobDisplay struct {
 	CreatedLabel  string
 	DurationLabel string
+	StatusLabel   string
 }
 
 func PresentExecutionCard(card domain.ExecutionCard, queued bool) ExecutionCardDisplay {
@@ -65,7 +66,15 @@ func PresentExecutionCardJob(job domain.ExecutionCardJob, now time.Time) Executi
 	return ExecutionCardJobDisplay{
 		CreatedLabel:  DeclarativeTimestamp(job.CreatedUTC),
 		DurationLabel: duration,
+		StatusLabel:   statusWithTestCounts(job.Status, job.TestSummary),
 	}
+}
+
+func statusWithTestCounts(status string, summary *domain.JobTestSummary) string {
+	if summary == nil || summary.Total <= 0 {
+		return status
+	}
+	return fmt.Sprintf("%s (%d/%d passed)", status, summary.Passed, summary.Total)
 }
 
 func DeclarativeTimestamp(value time.Time) string {

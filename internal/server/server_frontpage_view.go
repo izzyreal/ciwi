@@ -79,6 +79,7 @@ type executionCardJobResponse struct {
 	ID            string          `json:"id"`
 	Label         string          `json:"label"`
 	Status        string          `json:"status"`
+	StatusLabel   string          `json:"status_label"`
 	PipelineID    string          `json:"pipeline_id"`
 	BuildLabel    string          `json:"build_label"`
 	AgentID       string          `json:"agent_id"`
@@ -184,7 +185,7 @@ func executionCardSectionsToResponse(sections []domain.ExecutionCardSection) []e
 		for _, job := range section.Jobs {
 			display := presentation.PresentExecutionCardJob(job, now)
 			jobs = append(jobs, executionCardJobResponse{
-				ID: job.ID, Label: job.Label, Status: job.Status,
+				ID: job.ID, Label: job.Label, Status: job.Status, StatusLabel: display.StatusLabel,
 				PipelineID: job.PipelineID, BuildLabel: job.BuildLabel, AgentID: job.AgentID,
 				CreatedUTC: formatExecutionCardTime(job.CreatedUTC), StartedUTC: formatExecutionCardTime(job.StartedUTC),
 				FinishedUTC: formatExecutionCardTime(job.FinishedUTC), Reason: job.Reason, Action: job.Action,
