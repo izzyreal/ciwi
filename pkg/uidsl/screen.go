@@ -50,6 +50,7 @@ type Node struct {
 	Disclosure *Disclosure         `yaml:"disclosure,omitempty" json:"disclosure,omitempty"`
 	GraphView  *GraphView          `yaml:"graphView,omitempty" json:"graphView,omitempty"`
 	TreeView   *TreeView           `yaml:"treeView,omitempty" json:"treeView,omitempty"`
+	LogView    *LogView            `yaml:"logView,omitempty" json:"logView,omitempty"`
 	Progress   *Progress           `yaml:"progress,omitempty" json:"progress,omitempty"`
 	Pulse      *Pulse              `yaml:"pulse,omitempty" json:"pulse,omitempty"`
 	Layout     Layout              `yaml:"layout,omitempty" json:"layout,omitempty"`
@@ -156,6 +157,13 @@ type TreeView struct {
 	ActionLabel     Text   `yaml:"actionLabel,omitempty" json:"actionLabel,omitempty"`
 }
 
+// LogView identifies one server-backed execution log stream. Renderers own
+// paging, virtual scrolling, search highlighting, and their bounded caches.
+type LogView struct {
+	JobExecutionID string `yaml:"jobExecutionId" json:"jobExecutionId"`
+	ItemID         string `yaml:"itemId,omitempty" json:"itemId,omitempty"`
+}
+
 type Layout struct {
 	Direction string `yaml:"direction,omitempty" json:"direction,omitempty"`
 	Gap       string `yaml:"gap,omitempty" json:"gap,omitempty"`
@@ -215,7 +223,7 @@ var templateBindingPattern = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
 var components = map[string]bool{
 	"page": true, "column": true, "row": true, "section": true,
 	"card": true, "text": true, "icon": true, "image": true,
-	"disclosure": true, "graph-view": true, "tree-view": true,
+	"disclosure": true, "graph-view": true, "tree-view": true, "log-view": true,
 	"button": true, "select": true, "input": true, "list": true, "scroller": true, "badge": true, "spacer": true,
 	"divider": true,
 }
@@ -528,6 +536,21 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 		actionScope = treeScope
 	} else if node.Component == "tree-view" {
 		return fmt.Errorf("%s.treeView is required for the tree-view component", path)
+	}
+	if node.LogView != nil {
+		if node.Component != "log-view" {
+			return fmt.Errorf("%s.logView is only valid for the log-view component", path)
+		}
+		if err := validateBinding(node.LogView.JobExecutionID, scope); err != nil {
+			return fmt.Errorf("%s.logView.jobExecutionId: %w", path, err)
+		}
+		if node.LogView.ItemID != "" {
+			if err := validateBinding(node.LogView.ItemID, scope); err != nil {
+				return fmt.Errorf("%s.logView.itemId: %w", path, err)
+			}
+		}
+	} else if node.Component == "log-view" {
+		return fmt.Errorf("%s.logView is required for the log-view component", path)
 	}
 	if node.Visible != nil {
 		if err := validateBinding(node.Visible.Binding, scope); err != nil {

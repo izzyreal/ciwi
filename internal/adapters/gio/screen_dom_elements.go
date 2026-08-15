@@ -260,7 +260,7 @@ func (r *Renderer) compileDOMText(node uidsl.Node, data any, path string) giodom
 
 func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, role string, strong bool) giodom.Element {
 	displayValue := value
-	if role == "output-code" {
+	if role == "output-code" && !strings.Contains(path, "/job-log-chunk:") {
 		displayValue = strings.TrimSuffix(displayValue, "\n")
 		displayValue = strings.TrimSuffix(displayValue, "\r")
 	}

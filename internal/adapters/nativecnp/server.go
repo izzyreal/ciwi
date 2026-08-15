@@ -57,6 +57,11 @@ type Services struct {
 		GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error)
 		GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error)
 	}
+	JobLogs interface {
+		GetJobLogDescriptor(context.Context, string) (domain.JobLogDescriptor, error)
+		GetJobLogPage(context.Context, string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
+		SearchJobLog(context.Context, string, string, int64) (domain.JobLogSearchResult, error)
+	}
 	ArtifactDownloads application.ArtifactDownloadService
 	JobContexts       interface {
 		GetJobExecutionGraphContext(context.Context, string) (protocol.JobExecutionGraphContext, error)
@@ -127,7 +132,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerInstanceId:     snapshot.InstanceID,
 		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "job_output_stream", "job_log_v1", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -171,6 +176,10 @@ func (s *Handler) handleRequestStream(parent context.Context, stream cnp.Stream)
 	}
 	if operation, watch := request.Operation.(*cnpv1.Request_WatchJobOutput); watch {
 		s.writeJobOutput(ctx, stream, request.Metadata.RequestId, operation.WatchJobOutput, monitorPeerClose(stream))
+		return
+	}
+	if operation, watch := request.Operation.(*cnpv1.Request_WatchJobLog); watch {
+		s.writeJobLog(ctx, stream, request.Metadata.RequestId, operation.WatchJobLog, monitorPeerClose(stream))
 		return
 	}
 	started := time.Now()
@@ -271,6 +280,48 @@ func (s *Handler) writeJobOutput(ctx context.Context, stream cnp.Stream, request
 		}
 		if view.HasMore {
 			continue
+		}
+		if !waitForExecutionChange(ctx, peerDone, changes, request.GetJobExecutionId()) {
+			return
+		}
+	}
+}
+
+func (s *Handler) writeJobLog(ctx context.Context, stream cnp.Stream, requestID string, request *cnpv1.WatchJobLogRequest, peerDone <-chan struct{}) {
+	if request == nil || request.GetAfterChunkId() < 0 {
+		response := &cnpv1.Response{RequestId: requestID, Result: &cnpv1.Response_Error{
+			Error: errorToProto(application.NewError(application.ErrorInvalidArgument, "valid job log request is required", nil)),
+		}}
+		_ = writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}})
+		return
+	}
+	afterChunkID := request.GetAfterChunkId()
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
+	changes := s.services.Changes.Watch(watchCtx)
+	for {
+		if s.services.JobLogs == nil {
+			response := &cnpv1.Response{RequestId: requestID, Result: &cnpv1.Response_Error{
+				Error: errorToProto(application.NewError(application.ErrorUnavailable, "job log service unavailable", nil)),
+			}}
+			_ = writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}})
+			return
+		}
+		descriptor, err := s.services.JobLogs.GetJobLogDescriptor(ctx, request.GetJobExecutionId())
+		if err != nil || descriptor.LatestChunkID > afterChunkID || descriptor.Terminal {
+			response := &cnpv1.Response{RequestId: requestID}
+			if err != nil {
+				response.Result = &cnpv1.Response_Error{Error: errorToProto(err)}
+			} else {
+				response.Result = &cnpv1.Response_JobLogDescriptor{JobLogDescriptor: jobLogDescriptorToProto(descriptor)}
+			}
+			if writeErr := writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}}); writeErr != nil {
+				return
+			}
+			if err != nil || descriptor.Terminal {
+				return
+			}
+			afterChunkID = descriptor.LatestChunkID
 		}
 		if !waitForExecutionChange(ctx, peerDone, changes, request.GetJobExecutionId()) {
 			return
@@ -422,6 +473,41 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 			if err == nil {
 				response.Result = &cnpv1.Response_JobDetails{JobDetails: result}
 			}
+		}
+	case *cnpv1.Request_GetJobLogDescriptor:
+		var descriptor domain.JobLogDescriptor
+		if s.services.JobLogs == nil {
+			err = application.NewError(application.ErrorUnavailable, "job log service unavailable", nil)
+		} else {
+			descriptor, err = s.services.JobLogs.GetJobLogDescriptor(ctx, operation.GetJobLogDescriptor.GetJobExecutionId())
+		}
+		if err == nil {
+			response.Result = &cnpv1.Response_JobLogDescriptor{JobLogDescriptor: jobLogDescriptorToProto(descriptor)}
+		}
+	case *cnpv1.Request_GetJobLogPage:
+		var page domain.JobLogPage
+		if s.services.JobLogs == nil {
+			err = application.NewError(application.ErrorUnavailable, "job log service unavailable", nil)
+		} else {
+			page, err = s.services.JobLogs.GetJobLogPage(
+				ctx, operation.GetJobLogPage.GetJobExecutionId(), operation.GetJobLogPage.GetItemId(),
+				jobLogPageModeFromProto(operation.GetJobLogPage.GetMode()), operation.GetJobLogPage.GetCursor(),
+			)
+		}
+		if err == nil {
+			response.Result = &cnpv1.Response_JobLogPage{JobLogPage: jobLogPageToProto(page)}
+		}
+	case *cnpv1.Request_SearchJobLog:
+		var result domain.JobLogSearchResult
+		if s.services.JobLogs == nil {
+			err = application.NewError(application.ErrorUnavailable, "job log service unavailable", nil)
+		} else {
+			result, err = s.services.JobLogs.SearchJobLog(
+				ctx, operation.SearchJobLog.GetJobExecutionId(), operation.SearchJobLog.GetQuery(), operation.SearchJobLog.GetSelectedIndex(),
+			)
+		}
+		if err == nil {
+			response.Result = &cnpv1.Response_JobLogSearch{JobLogSearch: jobLogSearchToProto(result)}
 		}
 	case *cnpv1.Request_DownloadArtifact:
 		var chunk application.ArtifactDownloadChunk
@@ -673,6 +759,21 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		response.Result = &cnpv1.Response_Error{Error: errorToProto(err)}
 	}
 	return response
+}
+
+func jobLogPageModeFromProto(mode cnpv1.JobLogPageMode) domain.JobLogPageMode {
+	switch mode {
+	case cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_TAIL:
+		return domain.JobLogPageTail
+	case cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_BEFORE:
+		return domain.JobLogPageBefore
+	case cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_AFTER:
+		return domain.JobLogPageAfter
+	case cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_AROUND:
+		return domain.JobLogPageAround
+	default:
+		return domain.JobLogPageHead
+	}
 }
 
 func (s *Handler) populateProjectIcons(ctx context.Context, projects []*cnpv1.ProjectSummary, projectIDs []int64) error {

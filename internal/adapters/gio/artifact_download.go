@@ -37,6 +37,32 @@ func downloadArtifact(ctx context.Context, client *cnpclient.Client, picker arti
 	return downloadArtifactWithPicker(ctx, client, picker, arguments)
 }
 
+func downloadJobLogText(ctx context.Context, client artifactChunkClient, jobID string) (string, error) {
+	request := &cnpv1.ArtifactDownloadRequest{JobExecutionId: strings.TrimSpace(jobID), Kind: "log-clean"}
+	if client == nil || request.JobExecutionId == "" {
+		return "", fmt.Errorf("job execution log is unavailable")
+	}
+	var output strings.Builder
+	for {
+		chunk, err := client.DownloadArtifactChunk(ctx, request)
+		if err != nil {
+			if request.Token != "" {
+				cancelArtifactDownload(ctx, client, request.Token)
+			}
+			return "", err
+		}
+		output.Write(chunk.GetData())
+		if chunk.GetComplete() {
+			return output.String(), nil
+		}
+		if chunk.GetToken() == "" || chunk.GetNextOffset() <= request.GetOffset() {
+			cancelArtifactDownload(ctx, client, chunk.GetToken())
+			return "", fmt.Errorf("server returned invalid log download progress")
+		}
+		request.Token, request.Offset = chunk.GetToken(), chunk.GetNextOffset()
+	}
+}
+
 func downloadArtifactWithPicker(ctx context.Context, client artifactChunkClient, picker artifactDestinationPicker, arguments map[string]string) (resultName string, resultErr error) {
 	if client == nil {
 		return "", fmt.Errorf("server is offline")

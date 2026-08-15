@@ -94,6 +94,22 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 	case "change-output-search":
 		r.outputSearch, r.outputMatch = arguments["query"], 0
 		r.SetRootBinding("jobDetails", "output_search", r.outputSearch)
+		if nativeInteractiveJobLog(data) {
+			if utf8.RuneCountInString(r.outputSearch) < 3 {
+				r.outputTotalMatches = 0
+				count := "0/0"
+				if r.outputSearch != "" {
+					count = "Enter 3+ characters"
+				}
+				r.SetRootBinding("jobDetails", "output_search_count", count)
+			} else if r.onAction != nil {
+				r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
+					"jobExecutionId": bindingString(data, "jobDetails.id"), "query": r.outputSearch, "selectedIndex": "0",
+				})
+			}
+			r.requestFrame()
+			return true
+		}
 		r.selectGroupedOutputMatch(data, r.outputSearch, 0, true)
 		r.requestFrame()
 		return true
@@ -106,6 +122,18 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		if query == "" {
 			query = r.outputSearch
 		}
+		if nativeInteractiveJobLog(data) {
+			if utf8.RuneCountInString(query) >= 3 && r.onAction != nil {
+				target := r.outputMatch
+				if r.outputTotalMatches > 0 {
+					target = (target + direction + r.outputTotalMatches) % r.outputTotalMatches
+				}
+				r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
+					"jobExecutionId": bindingString(data, "jobDetails.id"), "query": query, "selectedIndex": strconv.Itoa(target),
+				})
+			}
+			return true
+		}
 		r.selectGroupedOutputMatch(data, query, direction, true)
 		if gtx != nil && r.pendingOutputSelection == nil {
 			if matches := groupedOutputMatches(data, query); len(matches) > 0 {
@@ -117,6 +145,12 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		r.requestFrame()
 		return true
 	case "copy-output":
+		if r.onAction != nil {
+			r.onAction(uidsl.Action{On: "activate", Command: "copy-full-job-log"}, map[string]string{
+				"jobExecutionId": bindingString(data, "jobDetails.id"),
+			})
+			return true
+		}
 		if gtx == nil {
 			r.ShowAlert("Action unavailable", "Clipboard access requires a direct control event.")
 			return true
@@ -166,6 +200,11 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 	default:
 		return false
 	}
+}
+
+func nativeInteractiveJobLog(data any) bool {
+	value, err := uidsl.Resolve(data, "jobDetails.interactive_log_available")
+	return err == nil && strings.EqualFold(fmt.Sprint(value), "true")
 }
 
 func (r *Renderer) scrollOutputTo(itemID string) {

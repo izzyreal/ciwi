@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
@@ -14,6 +15,11 @@ import (
 // no synchronous renderer result; nativeUI queues them for the Gio event owner.
 type nativeRenderer interface {
 	ApplyJobOutput(jobOutputSnapshot)
+	ApplyJobLogPage(jobLogStreamSnapshot)
+	ApplyJobLogDescriptor(jobLogDescriptorSnapshot)
+	FailJobLogPage(string, string, string)
+	WriteClipboard(string)
+	ApplyJobLogSearch(jobLogSearchSnapshot)
 	ScrollToSection(string)
 	SetDataBinding(string, any)
 	SetNestedBinding(string, string, string, any)
@@ -68,6 +74,39 @@ func (u *nativeUI) ApplyJobOutput(snapshot jobOutputSnapshot) {
 	snapshot.Errors = cloneStringMap(snapshot.Errors)
 	snapshot.ExitCodes = cloneStringMap(snapshot.ExitCodes)
 	u.post(func(renderer *Renderer) { renderer.ApplyJobOutput(snapshot) })
+}
+
+func (u *nativeUI) ApplyJobLogPage(snapshot jobLogStreamSnapshot) {
+	snapshot.Chunks = append([]jobLogChunkSnapshot(nil), snapshot.Chunks...)
+	u.post(func(renderer *Renderer) { renderer.ApplyJobLogPage(snapshot) })
+}
+
+func (u *nativeUI) ApplyJobLogDescriptor(snapshot jobLogDescriptorSnapshot) {
+	snapshot.Streams = cloneInt64Map(snapshot.Streams)
+	u.post(func(renderer *Renderer) { renderer.ApplyJobLogDescriptor(snapshot) })
+}
+
+func (u *nativeUI) FailJobLogPage(jobID, itemID, mode string) {
+	u.post(func(renderer *Renderer) { renderer.FailJobLogPage(jobID, itemID, mode) })
+}
+
+func (u *nativeUI) WriteClipboard(value string) {
+	u.post(func(renderer *Renderer) {
+		renderer.pendingClipboard = &value
+		renderer.ShowNotice("Output copied", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+	})
+}
+
+func (u *nativeUI) ApplyJobLogSearch(snapshot jobLogSearchSnapshot) {
+	u.post(func(renderer *Renderer) { renderer.ApplyJobLogSearch(snapshot) })
+}
+
+func cloneInt64Map(source map[string]int64) map[string]int64 {
+	result := make(map[string]int64, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func (u *nativeUI) ScrollToSection(section string) {

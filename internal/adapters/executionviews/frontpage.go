@@ -25,6 +25,12 @@ type Store interface {
 	GetJobExecutionTestReport(string) (protocol.JobExecutionTestReport, bool, error)
 }
 
+type jobLogStore interface {
+	GetJobLogDescriptor(string) (domain.JobLogDescriptor, error)
+	GetJobLogPage(string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
+	SearchJobLog(string, string, int64) (domain.JobLogSearchResult, error)
+}
+
 type SchedulingAgentSource interface {
 	ListSchedulingAgents(context.Context) ([]requirements.AgentSnapshot, error)
 }
@@ -38,6 +44,39 @@ const (
 	outputPageSize  = 128
 	outputPageBytes = 512 * 1024
 )
+
+func (r *Repository) GetJobLogDescriptor(ctx context.Context, jobID string) (domain.JobLogDescriptor, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.JobLogDescriptor{}, err
+	}
+	store, ok := r.store.(jobLogStore)
+	if !ok {
+		return domain.JobLogDescriptor{}, fmt.Errorf("job log store unavailable")
+	}
+	return store.GetJobLogDescriptor(jobID)
+}
+
+func (r *Repository) GetJobLogPage(ctx context.Context, jobID, itemID string, mode domain.JobLogPageMode, cursor int64) (domain.JobLogPage, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.JobLogPage{}, err
+	}
+	store, ok := r.store.(jobLogStore)
+	if !ok {
+		return domain.JobLogPage{}, fmt.Errorf("job log store unavailable")
+	}
+	return store.GetJobLogPage(jobID, itemID, mode, cursor)
+}
+
+func (r *Repository) SearchJobLog(ctx context.Context, jobID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.JobLogSearchResult{}, err
+	}
+	store, ok := r.store.(jobLogStore)
+	if !ok {
+		return domain.JobLogSearchResult{}, fmt.Errorf("job log store unavailable")
+	}
+	return store.SearchJobLog(jobID, query, selectedIndex)
+}
 
 func (r *Repository) ListJobOutputAfter(ctx context.Context, jobID string, afterEventID int64) (domain.JobOutputBatch, error) {
 	if err := ctx.Err(); err != nil {

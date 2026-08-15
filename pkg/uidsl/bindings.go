@@ -113,6 +113,14 @@ func validateNodeInstanceBindings(node Node, data, locals map[string]any, platfo
 			return err
 		}
 	}
+	if node.LogView != nil {
+		if err := check("logView.jobExecutionId", node.LogView.JobExecutionID); err != nil {
+			return err
+		}
+		if err := check("logView.itemId", node.LogView.ItemID); err != nil {
+			return err
+		}
+	}
 	if node.Disclosure != nil {
 		if node.Disclosure.DefaultExpandedBinding != "" {
 			if err := check("disclosure.defaultExpandedBinding", node.Disclosure.DefaultExpandedBinding); err != nil {

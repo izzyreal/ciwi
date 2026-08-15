@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io"
 	"strings"
 	"sync"
 	"time"
 
+	"gioui.org/io/clipboard"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
@@ -68,12 +70,16 @@ type Renderer struct {
 	outputTailing          bool
 	outputSearch           string
 	outputMatch            int
+	outputTotalMatches     int
 	outputEditors          map[string]*widget.Editor
 	pendingOutputSelection *outputSelection
 	pendingOutputScroll    string
 	outputScrollRevision   uint64
 	outputResetRevision    uint64
 	outputTailRevision     uint64
+	jobLogStreams          map[string]jobLogStreamSnapshot
+	jobLogLoads            map[string]bool
+	pendingClipboard       *string
 	renderedJobID          string
 	activeOperations       map[string]operations.Operation
 	actionCatalog          *uidsl.ActionCatalogDocument
@@ -99,6 +105,32 @@ type jobOutputSnapshot struct {
 	Outputs   map[string]string
 	Errors    map[string]string
 	ExitCodes map[string]string
+}
+
+type jobLogChunkSnapshot struct {
+	ID   int64
+	Text string
+}
+
+type jobLogStreamSnapshot struct {
+	JobID, ItemID       string
+	Chunks              []jobLogChunkSnapshot
+	HasBefore, HasAfter bool
+	Terminal            bool
+	SelectedChunkID     int64
+	LoadedMode          string
+}
+
+type jobLogSearchSnapshot struct {
+	JobID, ItemID               string
+	SelectedIndex, TotalMatches int
+	ChunkID                     int64
+}
+
+type jobLogDescriptorSnapshot struct {
+	JobID    string
+	Terminal bool
+	Streams  map[string]int64
 }
 
 type pendingConfirmation struct {
@@ -188,6 +220,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		viewModes: map[string]string{}, persistentViews: map[string]bool{},
 		icons: tablerIcons(), images: images, outputEditors: map[string]*widget.Editor{},
 		activeOperations: map[string]operations.Operation{}, outputTailing: true,
+		jobLogStreams: map[string]jobLogStreamSnapshot{}, jobLogLoads: map[string]bool{},
 	}, nil
 }
 
@@ -643,7 +676,16 @@ func (r *Renderer) layoutFrame(gtx layout.Context) layout.Dimensions {
 		copy := *r.alert
 		alert = &copy
 	}
+	var clipboardValue *string
+	if r.pendingClipboard != nil {
+		value := *r.pendingClipboard
+		clipboardValue = &value
+		r.pendingClipboard = nil
+	}
 	r.mu.Unlock()
+	if clipboardValue != nil {
+		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(*clipboardValue))})
+	}
 	if notice != nil && !notice.expires.IsZero() {
 		gtx.Execute(op.InvalidateCmd{At: notice.expires})
 	}
@@ -652,6 +694,7 @@ func (r *Renderer) layoutFrame(gtx layout.Context) layout.Dimensions {
 		jobID := bindingString(data, "jobDetails.id")
 		if jobID != r.renderedJobID {
 			r.renderedJobID, r.outputTailing, r.outputSearch, r.outputMatch = jobID, jobOutputStartsAtTail(bindingString(data, "jobDetails.status")), "", 0
+			r.jobLogStreams, r.jobLogLoads = map[string]jobLogStreamSnapshot{}, map[string]bool{}
 			r.outputResetRevision++
 			if r.outputTailing {
 				r.outputTailRevision++

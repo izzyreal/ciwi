@@ -104,6 +104,7 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 			}},
 		},
 		"output_search": "test", "output_search_count": "1/1", "tailing_label": "Tailing: On", "tailing_tone": "success",
+		"interactive_log_available": true, "interactive_log_version": 1, "legacy_log_notice": "",
 		"timeline":      []any{map[string]any{"id": "step:0", "title": "Compile", "status": "running", "status_label": "Running", "progress": progress}},
 		"system_output": "starting", "output_groups": []any{map[string]any{
 			"id": "step:0", "kind": "step", "title": "Compile", "state_key": "job-output:job-1:step:0", "status": "running", "progress": progress,

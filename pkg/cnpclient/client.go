@@ -106,7 +106,7 @@ func (c *Client) hello(ctx context.Context, clientName, clientVersion string) er
 	defer stopCancellation()
 	message := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Hello{Hello: &cnpv1.Hello{
 		ClientName: clientName, ClientVersion: clientVersion,
-		Capabilities: []string{"protobuf", "invalidation_stream", "job_output_stream"},
+		Capabilities: []string{"protobuf", "invalidation_stream", "job_output_stream", "job_log_v1"},
 	}}}
 	if err := cnp.Write(stream, message); err != nil {
 		stream.CancelRead()
@@ -567,6 +567,41 @@ func (c *Client) GetJobDetails(ctx context.Context, jobExecutionID string) (*cnp
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) GetJobLogDescriptor(ctx context.Context, jobExecutionID string) (*cnpv1.JobLogDescriptor, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetJobLogDescriptor{
+		GetJobLogDescriptor: &cnpv1.JobLogDescriptorRequest{JobExecutionId: jobExecutionID},
+	}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetJobLogDescriptor(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) GetJobLogPage(ctx context.Context, request *cnpv1.JobLogPageRequest) (*cnpv1.JobLogPage, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetJobLogPage{GetJobLogPage: request}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetJobLogPage(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
+func (c *Client) SearchJobLog(ctx context.Context, request *cnpv1.JobLogSearchRequest) (*cnpv1.JobLogSearchResult, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_SearchJobLog{SearchJobLog: request}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetJobLogSearch(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) DownloadArtifactChunk(ctx context.Context, request *cnpv1.ArtifactDownloadRequest) (*cnpv1.ArtifactDownloadChunk, error) {
 	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_DownloadArtifact{DownloadArtifact: request}}, "")
 	if err != nil {
@@ -806,6 +841,68 @@ func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afte
 		}
 	}()
 	return batches, errorsOut, nil
+}
+
+func (c *Client) WatchJobLog(ctx context.Context, jobExecutionID string, afterChunkID int64) (<-chan *cnpv1.JobLogDescriptor, <-chan error, error) {
+	stream, err := c.session.OpenStream(ctx)
+	if err != nil {
+		return nil, nil, contextualIOError(ctx, "open job log stream", err)
+	}
+	stopCancellation := interruptStreamOnCancel(ctx, stream)
+	requestID := uuid.NewString()
+	request := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Request{Request: &cnpv1.Request{
+		Metadata: &cnpv1.RequestMetadata{RequestId: requestID},
+		Operation: &cnpv1.Request_WatchJobLog{WatchJobLog: &cnpv1.WatchJobLogRequest{
+			JobExecutionId: jobExecutionID, AfterChunkId: afterChunkID,
+		}},
+	}}}
+	if err := cnp.Write(stream, request); err != nil {
+		stopCancellation()
+		_ = stream.Close()
+		stream.CancelRead()
+		stream.CancelWrite()
+		return nil, nil, contextualIOError(ctx, "write job log request", err)
+	}
+	descriptors := make(chan *cnpv1.JobLogDescriptor, 1)
+	errorsOut := make(chan error, 1)
+	go func() {
+		defer close(descriptors)
+		defer close(errorsOut)
+		defer stream.Close()
+		defer stopCancellation()
+		reader := cnp.NewReader(stream)
+		for {
+			var message cnpv1.ServerMessage
+			if err := reader.Read(&message); err != nil {
+				if ctx.Err() == nil && !errors.Is(err, io.EOF) {
+					errorsOut <- err
+				}
+				return
+			}
+			response := message.GetResponse()
+			if response == nil || response.RequestId != requestID {
+				errorsOut <- fmt.Errorf("invalid job log response")
+				return
+			}
+			if status := response.GetError(); status != nil {
+				errorsOut <- &Error{Code: status.Code, Message: status.Message}
+				return
+			}
+			descriptor := response.GetJobLogDescriptor()
+			if descriptor == nil {
+				errorsOut <- unexpectedResult(response)
+				return
+			}
+			select {
+			case descriptors <- descriptor:
+			case <-ctx.Done():
+				_ = stream.Close()
+				stream.CancelRead()
+				return
+			}
+		}
+	}()
+	return descriptors, errorsOut, nil
 }
 
 func (c *Client) call(ctx context.Context, request *cnpv1.Request, idempotencyKey string) (*cnpv1.Response, error) {

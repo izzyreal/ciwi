@@ -223,23 +223,17 @@ func (s *artifactDownloadService) startJobLogLocked(jobID, format string) (strin
 	if err != nil {
 		return "", artifactDownloadSession{}, application.NewError(application.ErrorNotFound, "job not found", err)
 	}
-	events, err := s.store.ListJobExecutionEvents(jobID)
-	if err != nil {
-		return "", artifactDownloadSession{}, application.WrapInternal("list job log events", err)
-	}
-	body, fileName, err := jobexecution.RenderJobLog(job, events, format)
-	if err != nil {
-		return "", artifactDownloadSession{}, application.NewError(application.ErrorInvalidArgument, err.Error(), err)
-	}
 	file, err := os.CreateTemp("", "ciwi-job-log-*.log")
 	if err != nil {
 		return "", artifactDownloadSession{}, application.WrapInternal("create job log download", err)
 	}
 	path := file.Name()
-	if _, err = file.WriteString(body); err == nil {
+	fileName, renderErr := jobexecution.WriteJobLog(file, s.store, job, format)
+	if renderErr == nil {
 		err = file.Close()
 	} else {
 		_ = file.Close()
+		err = renderErr
 	}
 	if err != nil {
 		_ = os.Remove(path)
@@ -247,8 +241,14 @@ func (s *artifactDownloadService) startJobLogLocked(jobID, format string) (strin
 	}
 	session := artifactDownloadSession{
 		path: path, fileName: fileName, contentType: "text/plain; charset=utf-8", temporary: true,
-		totalSize: int64(len(body)), lastUsed: s.now(),
+		lastUsed: s.now(),
 	}
+	info, err := os.Stat(path)
+	if err != nil {
+		_ = os.Remove(path)
+		return "", artifactDownloadSession{}, application.WrapInternal("stat job log download", err)
+	}
+	session.totalSize = info.Size()
 	token, err := randomDownloadToken()
 	if err != nil {
 		_ = os.Remove(path)

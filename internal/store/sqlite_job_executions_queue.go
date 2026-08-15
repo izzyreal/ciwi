@@ -83,9 +83,9 @@ func insertJobExecution(tx *sql.Tx, req protocol.CreateJobExecutionRequest, jobI
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json, status, created_utc)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(dependencyArtifactJobIDsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), string(stepPlanJSON), protocol.JobExecutionStatusQueued, now.Format(time.RFC3339Nano)); err != nil {
+		INSERT INTO job_executions (id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json, status, created_utc, interactive_log_version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, jobID, req.Script, string(envJSON), string(requiredJSON), req.TimeoutSeconds, string(artifactGlobsJSON), string(dependencyArtifactJobIDsJSON), string(cachesJSON), sourceRepo, sourceRef, string(metadataJSON), string(stepPlanJSON), protocol.JobExecutionStatusQueued, now.Format(time.RFC3339Nano), domain.InteractiveJobLogVersion); err != nil {
 		return protocol.JobExecution{}, err
 	}
 

@@ -237,6 +237,9 @@ message JobDetailsView {
   ReportDetails artifacts = 32;
   ReportDetails test_report = 33;
   ReportDetails coverage_report = 34;
+  bool interactive_log_available = 35;
+  int32 interactive_log_version = 36;
+  string legacy_log_notice = 37;
 }
 
 message SchedulingDiagnosis {
@@ -325,6 +328,88 @@ message JobOutputEvent {
   string text = 4;
   string error = 5;
   string exit_code = 6;
+}
+
+message JobLogDescriptorRequest {
+  string job_execution_id = 1;
+}
+
+enum JobLogPageMode {
+  JOB_LOG_PAGE_MODE_UNSPECIFIED = 0;
+  JOB_LOG_PAGE_MODE_HEAD = 1;
+  JOB_LOG_PAGE_MODE_TAIL = 2;
+  JOB_LOG_PAGE_MODE_BEFORE = 3;
+  JOB_LOG_PAGE_MODE_AFTER = 4;
+  JOB_LOG_PAGE_MODE_AROUND = 5;
+}
+
+message JobLogPageRequest {
+  string job_execution_id = 1;
+  string item_id = 2;
+  JobLogPageMode mode = 3;
+  int64 cursor = 4;
+}
+
+message JobLogSearchRequest {
+  string job_execution_id = 1;
+  string query = 2;
+  int64 selected_index = 3;
+}
+
+message WatchJobLogRequest {
+  string job_execution_id = 1;
+  int64 after_chunk_id = 2;
+}
+
+message JobLogDescriptor {
+  string job_execution_id = 1;
+  int32 version = 2;
+  bool available = 3;
+  bool terminal = 4;
+  int64 latest_chunk_id = 5;
+  repeated JobLogStream streams = 6;
+}
+
+message JobLogStream {
+  string item_id = 1;
+  int64 first_chunk_id = 2;
+  int64 last_chunk_id = 3;
+  int64 chunk_count = 4;
+  int64 byte_count = 5;
+}
+
+message JobLogPage {
+  string job_execution_id = 1;
+  string item_id = 2;
+  repeated JobLogChunk chunks = 3;
+  int64 first_cursor = 4;
+  int64 last_cursor = 5;
+  bool has_before = 6;
+  bool has_after = 7;
+  bool terminal = 8;
+}
+
+message JobLogChunk {
+  int64 id = 1;
+  string item_id = 2;
+  string text = 3;
+  int32 byte_count = 4;
+  int32 rune_count = 5;
+}
+
+message JobLogSearchResult {
+  string job_execution_id = 1;
+  string query = 2;
+  int64 selected_index = 3;
+  int64 total_matches = 4;
+  JobLogMatch match = 5;
+}
+
+message JobLogMatch {
+  string item_id = 1;
+  int64 chunk_id = 2;
+  int32 start_rune = 3;
+  int32 end_rune = 4;
 }
 
 message ExecutionSummary {
@@ -748,6 +833,10 @@ message Request {
     VaultConnectionIDRequest delete_vault_connection = 42;
     ArtifactDownloadRequest download_artifact = 43;
     GetProjectIconsRequest get_project_icons = 44;
+    JobLogDescriptorRequest get_job_log_descriptor = 45;
+    JobLogPageRequest get_job_log_page = 46;
+    JobLogSearchRequest search_job_log = 47;
+    WatchJobLogRequest watch_job_log = 48;
   }
 }
 
@@ -788,6 +877,9 @@ message Response {
     DeleteVaultConnectionResult delete_vault_connection = 41;
     ArtifactDownloadChunk artifact_download = 42;
     ProjectIconList project_icons = 43;
+    JobLogDescriptor job_log_descriptor = 44;
+    JobLogPage job_log_page = 45;
+    JobLogSearchResult job_log_search = 46;
   }
 }
 

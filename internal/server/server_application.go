@@ -125,6 +125,36 @@ type executionDetailsStore struct {
 	artifactsDir string
 }
 
+func (s executionDetailsStore) GetJobLogDescriptor(jobID string) (domain.JobLogDescriptor, error) {
+	store, ok := s.Store.(interface {
+		GetJobLogDescriptor(string) (domain.JobLogDescriptor, error)
+	})
+	if !ok {
+		return domain.JobLogDescriptor{}, domain.ErrJobExecutionNotFound
+	}
+	return store.GetJobLogDescriptor(jobID)
+}
+
+func (s executionDetailsStore) GetJobLogPage(jobID, itemID string, mode domain.JobLogPageMode, cursor int64) (domain.JobLogPage, error) {
+	store, ok := s.Store.(interface {
+		GetJobLogPage(string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
+	})
+	if !ok {
+		return domain.JobLogPage{}, domain.ErrJobExecutionNotFound
+	}
+	return store.GetJobLogPage(jobID, itemID, mode, cursor)
+}
+
+func (s executionDetailsStore) SearchJobLog(jobID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+	store, ok := s.Store.(interface {
+		SearchJobLog(string, string, int64) (domain.JobLogSearchResult, error)
+	})
+	if !ok {
+		return domain.JobLogSearchResult{}, domain.ErrJobExecutionNotFound
+	}
+	return store.SearchJobLog(jobID, query, selectedIndex)
+}
+
 func (s executionDetailsStore) ListJobExecutionArtifacts(jobID string) ([]protocol.JobExecutionArtifact, error) {
 	artifacts, err := s.Store.ListJobExecutionArtifacts(jobID)
 	if err != nil {

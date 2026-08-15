@@ -106,6 +106,7 @@ func Run(ctx context.Context) error {
 			ProjectDetails:    app.projectDetails,
 			ProjectIcons:      s,
 			JobDetails:        app.jobDetails,
+			JobLogs:           app.jobDetails,
 			ArtifactDownloads: artifactDownloads,
 			JobContexts:       s,
 			Pipelines:         app.pipelines, PipelineChains: app.pipelineChains,

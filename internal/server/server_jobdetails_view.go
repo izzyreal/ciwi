@@ -29,6 +29,9 @@ type jobDetailsViewResponse struct {
 	Error                     string                         `json:"error"`
 	CanCancel                 bool                           `json:"can_cancel"`
 	CanRerun                  bool                           `json:"can_rerun"`
+	InteractiveLogAvailable   bool                           `json:"interactive_log_available"`
+	InteractiveLogVersion     int                            `json:"interactive_log_version"`
+	LegacyLogNotice           string                         `json:"legacy_log_notice"`
 	Output                    string                         `json:"output"`
 	Timeline                  []jobTimelineViewResponse      `json:"timeline"`
 	OutputGroups              []jobOutputGroupViewResponse   `json:"output_groups"`
@@ -199,11 +202,15 @@ func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Reques
 	}
 	jobID := strings.TrimSpace(parts[0])
 	if len(parts) == 3 {
-		if parts[1] != "output" || parts[2] != "stream" {
-			http.NotFound(w, r)
+		if parts[1] == "output" && parts[2] == "stream" {
+			s.jobOutputStreamHandler(w, r, jobID)
 			return
 		}
-		s.jobOutputStreamHandler(w, r, jobID)
+		if parts[1] == "log" {
+			s.jobLogViewHandler(w, r, jobID, parts[2])
+			return
+		}
+		http.NotFound(w, r)
 		return
 	}
 	if len(parts) == 2 {
@@ -283,7 +290,9 @@ func jobDetailsToResponse(view presentation.JobDetailsView, runContext protocol.
 		ID: view.ID, ProjectID: view.ProjectID, Title: view.Title, Context: view.Context, Status: view.Status, StatusLabel: view.StatusLabel,
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
-		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun, Timeline: timeline, OutputGroups: outputGroups,
+		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun,
+		InteractiveLogAvailable: view.InteractiveLogAvailable, InteractiveLogVersion: view.InteractiveLogVersion,
+		LegacyLogNotice: view.LegacyLogNotice, Timeline: timeline, OutputGroups: outputGroups,
 		JobProperties:   jobDetailRowsToResponse(view.JobProperties),
 		CacheStatistics: jobDetailRowsToResponse(view.CacheStatistics), CacheStatisticsEmpty: view.CacheStatisticsEmpty,
 		HostToolRequirements:      jobToolRequirementsToResponse(view.HostToolRequirements),

@@ -199,6 +199,8 @@ type ListProps struct {
 	ScrollRevision    uint64
 	SemanticLabel     string
 	OnLeaveEnd        func()
+	OnReachStart      func()
+	OnReachEnd        func()
 	PinnedOverlay     func(ListViewportItem) *Element
 	PinnedAlignment   layout.Direction
 	PinnedInsets      Insets

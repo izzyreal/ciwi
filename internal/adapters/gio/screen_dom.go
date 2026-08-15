@@ -287,6 +287,8 @@ func (r *Renderer) compileDOMNodeWithStyle(raw uidsl.Node, data any, path string
 		element = r.compileDOMTree(node, data, path, childStyle)
 	case "graph-view":
 		element = r.compileDOMGraph(node, data, path)
+	case "log-view":
+		element = r.compileDOMLogView(node, data, path)
 	case "text":
 		element = r.compileDOMText(node, data, path)
 	case "badge":

@@ -47,6 +47,9 @@ type JobDetailsView struct {
 	TestReport                ReportDetailsView
 	CoverageReport            ReportDetailsView
 	Progress                  domain.Progress
+	InteractiveLogAvailable   bool
+	InteractiveLogVersion     int
+	LegacyLogNotice           string
 	Timeline                  []JobTimelineView
 	OutputGroups              []JobOutputGroupView
 }
@@ -161,11 +164,41 @@ type JobDetailsQueries struct {
 	}
 }
 
+type jobLogSource interface {
+	GetJobLogDescriptor(context.Context, string) (domain.JobLogDescriptor, error)
+	GetJobLogPage(context.Context, string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
+	SearchJobLog(context.Context, string, string, int64) (domain.JobLogSearchResult, error)
+}
+
 func NewJobDetailsQueries(executions interface {
 	GetJobExecutionDetails(context.Context, string) (domain.JobExecutionDetails, error)
 	GetJobOutput(context.Context, string, int64) (domain.JobOutputBatch, error)
 }) *JobDetailsQueries {
 	return &JobDetailsQueries{executions: executions}
+}
+
+func (q *JobDetailsQueries) GetJobLogDescriptor(ctx context.Context, jobID string) (domain.JobLogDescriptor, error) {
+	source, ok := q.executions.(jobLogSource)
+	if !ok {
+		return domain.JobLogDescriptor{}, fmt.Errorf("job log source unavailable")
+	}
+	return source.GetJobLogDescriptor(ctx, jobID)
+}
+
+func (q *JobDetailsQueries) GetJobLogPage(ctx context.Context, jobID, itemID string, mode domain.JobLogPageMode, cursor int64) (domain.JobLogPage, error) {
+	source, ok := q.executions.(jobLogSource)
+	if !ok {
+		return domain.JobLogPage{}, fmt.Errorf("job log source unavailable")
+	}
+	return source.GetJobLogPage(ctx, jobID, itemID, mode, cursor)
+}
+
+func (q *JobDetailsQueries) SearchJobLog(ctx context.Context, jobID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+	source, ok := q.executions.(jobLogSource)
+	if !ok {
+		return domain.JobLogSearchResult{}, fmt.Errorf("job log source unavailable")
+	}
+	return source.SearchJobLog(ctx, jobID, query, selectedIndex)
 }
 
 func (q *JobDetailsQueries) GetJobOutputView(ctx context.Context, jobID string, afterEventID int64) (JobOutputView, error) {
@@ -195,7 +228,18 @@ func (q *JobDetailsQueries) GetJobDetailsView(ctx context.Context, jobID string)
 	if err != nil {
 		return JobDetailsView{}, err
 	}
-	return presentJobDetails(details), nil
+	view := presentJobDetails(details)
+	if source, ok := q.executions.(jobLogSource); ok {
+		descriptor, descriptorErr := source.GetJobLogDescriptor(ctx, jobID)
+		if descriptorErr == nil {
+			view.InteractiveLogAvailable = descriptor.Available
+			view.InteractiveLogVersion = descriptor.Version
+			if !descriptor.Available {
+				view.LegacyLogNotice = "Interactive output is partial for this pre-upgrade execution. Copy Output and Clean/Raw downloads include the complete log."
+			}
+		}
+	}
+	return view, nil
 }
 
 func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {

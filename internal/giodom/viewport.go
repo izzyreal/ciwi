@@ -40,6 +40,8 @@ type keyedViewportState struct {
 	scrollRevision   uint64
 	forceEndRevision uint64
 	resetRevision    uint64
+	reachedStartKey  Key
+	reachedEndKey    Key
 }
 
 // scrollBoundaryGate keeps a nested touch scroller from grabbing a gesture
@@ -406,6 +408,20 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	maxOffset = max(0, state.totalExtent()-mainViewport)
 	wasAtEnd := state.atEnd
 	state.atEnd = offset >= maxOffset-1
+	if props.OnReachStart != nil && children.Len() > 0 && offset <= 1 {
+		key := children.KeyAt(0)
+		if state.reachedStartKey != key {
+			state.reachedStartKey = key
+			props.OnReachStart()
+		}
+	}
+	if props.OnReachEnd != nil && children.Len() > 0 && state.atEnd {
+		key := children.KeyAt(children.Len() - 1)
+		if state.reachedEndKey != key {
+			state.reachedEndKey = key
+			props.OnReachEnd()
+		}
+	}
 	if scrollDelta != 0 && wasAtEnd && !state.atEnd && props.OnLeaveEnd != nil {
 		props.OnLeaveEnd()
 	}

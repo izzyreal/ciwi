@@ -258,3 +258,72 @@ type JobOutputEvent struct {
 	ItemIndex int
 	ItemTotal int
 }
+
+const InteractiveJobLogVersion = 1
+
+type JobLogDescriptor struct {
+	JobExecutionID string
+	Version        int
+	Available      bool
+	Terminal       bool
+	LatestChunkID  int64
+	Streams        []JobLogStream
+}
+
+type JobLogStream struct {
+	ItemID       string
+	FirstChunkID int64
+	LastChunkID  int64
+	ChunkCount   int64
+	ByteCount    int64
+}
+
+type JobLogChunk struct {
+	ID        int64
+	ItemID    string
+	Text      string
+	ByteCount int
+	RuneCount int
+}
+
+type JobLogPageMode string
+
+const (
+	JobLogPageHead   JobLogPageMode = "head"
+	JobLogPageTail   JobLogPageMode = "tail"
+	JobLogPageBefore JobLogPageMode = "before"
+	JobLogPageAfter  JobLogPageMode = "after"
+	JobLogPageAround JobLogPageMode = "around"
+)
+
+type JobLogPage struct {
+	JobExecutionID string
+	ItemID         string
+	Chunks         []JobLogChunk
+	FirstCursor    int64
+	LastCursor     int64
+	HasBefore      bool
+	HasAfter       bool
+	Terminal       bool
+}
+
+type JobLogMatch struct {
+	ItemID    string
+	ChunkID   int64
+	StartRune int
+	EndRune   int
+}
+
+type JobLogSearchResult struct {
+	JobExecutionID string
+	Query          string
+	SelectedIndex  int64
+	TotalMatches   int64
+	Match          *JobLogMatch
+}
+
+type JobLogChange struct {
+	JobExecutionID string
+	LatestChunkID  int64
+	Terminal       bool
+}

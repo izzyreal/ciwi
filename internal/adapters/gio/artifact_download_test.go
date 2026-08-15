@@ -85,6 +85,17 @@ func TestDownloadJobLogUsesSharedNativeDownloadTransport(t *testing.T) {
 	}
 }
 
+func TestDownloadJobLogTextCollectsEveryTransportChunk(t *testing.T) {
+	client := &artifactChunkClientStub{}
+	text, err := downloadJobLogText(t.Context(), client, "job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "first-second" || len(client.requests) != 2 || client.requests[0].GetKind() != "log-clean" {
+		t.Fatalf("copied text = %q, requests = %+v", text, client.requests)
+	}
+}
+
 func TestDownloadArtifactCancellationAbortsServerSession(t *testing.T) {
 	client := &artifactChunkClientStub{}
 	picker := &artifactPickerStub{err: explorer.ErrUserDecline}

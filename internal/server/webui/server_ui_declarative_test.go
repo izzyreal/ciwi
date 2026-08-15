@@ -263,7 +263,13 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if toolbar.Children[2].ID != "job-output-tailing-toggle" || toolbar.Children[4].ID != "job-output-search" || toolbar.Children[7].ID != "job-output-search-count" {
 		t.Fatalf("stable job output controls = %#v", toolbar.Children)
 	}
-	groups := output.Children[4]
+	var groups uidsl.Node
+	for _, child := range output.Children {
+		if child.ID == "job-output-groups" {
+			groups = child
+			break
+		}
+	}
 	if groups.ID != "job-output-groups" || groups.Layout.MaxHeight != "660" || groups.Children[0].Children[0].Style.Role != "floating-collapse" {
 		t.Fatalf("job output groups = %#v", groups)
 	}

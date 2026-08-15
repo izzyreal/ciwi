@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -177,6 +178,13 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 			return fmt.Errorf("begin tx: %w", err)
 		}
 		defer func() { _ = tx.Rollback() }()
+		var interactiveLogVersion int
+		if err := tx.QueryRow(`SELECT interactive_log_version FROM job_executions WHERE id = ?`, jobID).Scan(&interactiveLogVersion); err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("job not found")
+			}
+			return fmt.Errorf("read interactive log version: %w", err)
+		}
 
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		for _, event := range events {
@@ -212,15 +220,29 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 			}
 			payloadJSON, _ := json.Marshal(payload)
 			tsRaw := ts.UTC().Format(time.RFC3339Nano)
-			if _, err := tx.Exec(`
+			result, err := tx.Exec(`
 				INSERT INTO job_execution_events (job_execution_id, event_type, timestamp_utc, payload_json, created_utc)
 				SELECT ?, ?, ?, ?, ?
 				WHERE NOT EXISTS (
 					SELECT 1 FROM job_execution_events
 					WHERE job_execution_id = ? AND event_type = ? AND timestamp_utc = ? AND payload_json = ?
 				)
-			`, jobID, eventType, tsRaw, string(payloadJSON), now, jobID, eventType, tsRaw, string(payloadJSON)); err != nil {
+			`, jobID, eventType, tsRaw, string(payloadJSON), now, jobID, eventType, tsRaw, string(payloadJSON))
+			if err != nil {
 				return fmt.Errorf("insert event: %w", err)
+			}
+			inserted, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("event rows affected: %w", err)
+			}
+			if inserted == 1 && interactiveLogVersion == domain.InteractiveJobLogVersion {
+				eventID, err := result.LastInsertId()
+				if err != nil {
+					return fmt.Errorf("event id: %w", err)
+				}
+				if err := appendIndexedLogEvent(tx, jobID, eventID, event); err != nil {
+					return err
+				}
 			}
 		}
 		if err := tx.Commit(); err != nil {

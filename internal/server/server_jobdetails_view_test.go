@@ -49,6 +49,9 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if view.Progress.State != domain.ProgressIndeterminate {
 		t.Fatalf("job progress = %+v", view.Progress)
 	}
+	if !view.InteractiveLogAvailable || view.InteractiveLogVersion != domain.InteractiveJobLogVersion || view.LegacyLogNotice != "" {
+		t.Fatalf("interactive log capability = available %v version %d notice %q", view.InteractiveLogAvailable, view.InteractiveLogVersion, view.LegacyLogNotice)
+	}
 	if len(view.JobProperties) == 0 || view.CacheStatisticsEmpty == "" {
 		t.Fatalf("job detail rows = properties %+v cache empty %q", view.JobProperties, view.CacheStatisticsEmpty)
 	}
@@ -68,7 +71,7 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 		t.Fatalf("run context current execution = %+v", view.RunContext)
 	}
 	if err := state.db.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
-		Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "Run tests"}, Output: "\x1b[32mok\x1b[0m\n",
+		Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 1, Total: 1, Name: "Run tests"}, Output: "\x1b[32mcompiled output\x1b[0m\n",
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,8 +84,32 @@ func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	if err := json.NewDecoder(outputResponse.Body).Decode(&output); err != nil {
 		t.Fatal(err)
 	}
-	if output.NextEventID <= 0 || output.Terminal || len(output.Events) != 1 || output.Events[0].Text != "ok\n" {
+	if output.NextEventID <= 0 || output.Terminal || len(output.Events) != 1 || output.Events[0].Text != "compiled output\n" {
 		t.Fatalf("output = %+v", output)
+	}
+	pageResponse := mustJSONRequest(t, server.Client(), http.MethodGet, server.URL+"/api/v1/views/jobs/"+job.ID+"/log/page?item_id=step%3A1&mode=head", nil)
+	if pageResponse.StatusCode != http.StatusOK {
+		t.Fatalf("log page status = %d: %s", pageResponse.StatusCode, readBody(t, pageResponse))
+	}
+	defer pageResponse.Body.Close()
+	var page jobLogPageResponse
+	if err := json.NewDecoder(pageResponse.Body).Decode(&page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Chunks) != 1 || page.Chunks[0].Text != "compiled output\n" {
+		t.Fatalf("log page = %+v", page)
+	}
+	searchResponse := mustJSONRequest(t, server.Client(), http.MethodPost, server.URL+"/api/v1/views/jobs/"+job.ID+"/log/search", map[string]any{"query": "compiled", "selected_index": 0})
+	if searchResponse.StatusCode != http.StatusOK {
+		t.Fatalf("log search status = %d: %s", searchResponse.StatusCode, readBody(t, searchResponse))
+	}
+	defer searchResponse.Body.Close()
+	var search jobLogSearchResponse
+	if err := json.NewDecoder(searchResponse.Body).Decode(&search); err != nil {
+		t.Fatal(err)
+	}
+	if search.TotalMatches != 1 || search.Match == nil || search.Match.ItemID != "step:1" {
+		t.Fatalf("log search = %+v", search)
 	}
 }
 

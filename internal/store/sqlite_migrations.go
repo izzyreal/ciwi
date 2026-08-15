@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const currentSchemaVersion = 2
+const currentSchemaVersion = 3
 
 type schemaMigration struct {
 	version int
@@ -25,6 +25,65 @@ var schemaMigrations = []schemaMigration{
 		name:    "materialize test report summaries",
 		apply:   migrateTestReportSummaries,
 	},
+	{
+		version: 3,
+		name:    "add indexed interactive job logs",
+		apply:   migrateInteractiveJobLogs,
+	},
+}
+
+func migrateInteractiveJobLogs(tx *sql.Tx) error {
+	if err := addColumnIfMissing(tx, "job_executions", "interactive_log_version", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS job_execution_log_streams (
+			job_execution_id TEXT NOT NULL,
+			item_id TEXT NOT NULL,
+			first_chunk_id INTEGER NOT NULL DEFAULT 0,
+			last_chunk_id INTEGER NOT NULL DEFAULT 0,
+			chunk_count INTEGER NOT NULL DEFAULT 0,
+			byte_count INTEGER NOT NULL DEFAULT 0,
+			tail_text TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY(job_execution_id, item_id),
+			FOREIGN KEY(job_execution_id) REFERENCES job_executions(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS job_execution_log_chunks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			job_execution_id TEXT NOT NULL,
+			event_id INTEGER NOT NULL,
+			item_id TEXT NOT NULL,
+			event_chunk_index INTEGER NOT NULL,
+			text TEXT NOT NULL,
+			indexed_text TEXT NOT NULL,
+			overlap_runes INTEGER NOT NULL DEFAULT 0,
+			byte_count INTEGER NOT NULL,
+			rune_count INTEGER NOT NULL,
+			FOREIGN KEY(job_execution_id) REFERENCES job_executions(id) ON DELETE CASCADE,
+			FOREIGN KEY(event_id) REFERENCES job_execution_events(id) ON DELETE CASCADE,
+			UNIQUE(event_id, event_chunk_index)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_job_log_chunks_stream ON job_execution_log_chunks(job_execution_id, item_id, id)`,
+		`CREATE VIRTUAL TABLE IF NOT EXISTS job_execution_log_chunks_fts USING fts5(
+			job_execution_id, indexed_text,
+			content='job_execution_log_chunks', content_rowid='id',
+			tokenize='trigram case_sensitive 1'
+		)`,
+		`CREATE TRIGGER IF NOT EXISTS job_log_chunks_fts_insert AFTER INSERT ON job_execution_log_chunks BEGIN
+			INSERT INTO job_execution_log_chunks_fts(rowid, job_execution_id, indexed_text)
+			VALUES (new.id, new.job_execution_id, new.indexed_text);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS job_log_chunks_fts_delete AFTER DELETE ON job_execution_log_chunks BEGIN
+			INSERT INTO job_execution_log_chunks_fts(job_execution_log_chunks_fts, rowid, job_execution_id, indexed_text)
+			VALUES ('delete', old.id, old.job_execution_id, old.indexed_text);
+		END`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return fmt.Errorf("create interactive job log schema: %w", err)
+		}
+	}
+	return nil
 }
 
 func migrateTestReportSummaries(tx *sql.Tx) error {

@@ -363,6 +363,50 @@ func (b *jobOutputBuffer) apply(renderer nativeRenderer) {
 	b.dirty = false
 }
 
+func jobLogDescriptorFromProto(descriptor *cnpv1.JobLogDescriptor) jobLogDescriptorSnapshot {
+	snapshot := jobLogDescriptorSnapshot{Streams: map[string]int64{}}
+	if descriptor == nil {
+		return snapshot
+	}
+	snapshot.JobID, snapshot.Terminal = descriptor.GetJobExecutionId(), descriptor.GetTerminal()
+	for _, stream := range descriptor.GetStreams() {
+		if stream != nil {
+			snapshot.Streams[stream.GetItemId()] = stream.GetLastChunkId()
+		}
+	}
+	return snapshot
+}
+
+func jobLogPageFromProto(page *cnpv1.JobLogPage) jobLogStreamSnapshot {
+	snapshot := jobLogStreamSnapshot{}
+	if page == nil {
+		return snapshot
+	}
+	snapshot.JobID, snapshot.ItemID = page.GetJobExecutionId(), page.GetItemId()
+	snapshot.HasBefore, snapshot.HasAfter, snapshot.Terminal = page.GetHasBefore(), page.GetHasAfter(), page.GetTerminal()
+	for _, chunk := range page.GetChunks() {
+		if chunk != nil {
+			snapshot.Chunks = append(snapshot.Chunks, jobLogChunkSnapshot{ID: chunk.GetId(), Text: chunk.GetText()})
+		}
+	}
+	return snapshot
+}
+
+func nativeJobLogPageMode(value string) cnpv1.JobLogPageMode {
+	switch strings.TrimSpace(value) {
+	case "tail":
+		return cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_TAIL
+	case "before":
+		return cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_BEFORE
+	case "after":
+		return cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_AFTER
+	case "around":
+		return cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_AROUND
+	default:
+		return cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_HEAD
+	}
+}
+
 func Run(options Options) error {
 	if strings.TrimSpace(options.Route) != "" {
 		if _, err := navigationForRoute(options.Route); err != nil {
@@ -569,6 +613,8 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 	var handledInactiveEpoch uint64
 	var outputBatches <-chan *cnpv1.JobOutputBatch
 	var outputErrors <-chan error
+	var logDescriptors <-chan *cnpv1.JobLogDescriptor
+	var logErrors <-chan error
 	var outputCancel context.CancelFunc
 	outputBuffer := &jobOutputBuffer{}
 	var outputApplyTimer *time.Timer
@@ -588,6 +634,8 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 		outputCancel = nil
 		outputBatches = nil
 		outputErrors = nil
+		logDescriptors = nil
+		logErrors = nil
 		stopOutputApplyTimer()
 	}
 	startOutput := func(jobID string) {
@@ -605,6 +653,19 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			return
 		}
 		streamCtx, cancelStream := context.WithCancel(sessionCtx)
+		descriptor, descriptorErr := client.GetJobLogDescriptor(streamCtx, jobID)
+		if descriptorErr == nil && descriptor.GetAvailable() {
+			descriptors, errorsOut, streamErr := client.WatchJobLog(streamCtx, jobID, descriptor.GetLatestChunkId())
+			if streamErr != nil {
+				cancelStream()
+				renderer.ShowNotice("Output stream unavailable: "+streamErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+				return
+			}
+			outputCancel = cancelStream
+			logDescriptors, logErrors = descriptors, errorsOut
+			renderer.ApplyJobLogDescriptor(jobLogDescriptorFromProto(descriptor))
+			return
+		}
 		batches, errorsOut, streamErr := client.WatchJobOutput(streamCtx, jobID, 0)
 		if streamErr != nil {
 			cancelStream()
@@ -1214,6 +1275,27 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 				window.Invalidate()
 			}
 			outputErrors = nil
+		case descriptor, ok := <-logDescriptors:
+			if !ok {
+				logDescriptors = nil
+				continue
+			}
+			renderer.ApplyJobLogDescriptor(jobLogDescriptorFromProto(descriptor))
+			if descriptor.GetTerminal() && navigation.screen == "job-details" && navigation.jobID == descriptor.GetJobExecutionId() && terminalOutputRefreshedJobID != navigation.jobID {
+				terminalOutputRefreshedJobID = navigation.jobID
+				requestPassiveScreenLoad(navigation)
+			}
+			window.Invalidate()
+		case logErr, ok := <-logErrors:
+			if !ok {
+				logErrors = nil
+				continue
+			}
+			if logErr != nil && !expectedNativeDisconnect(logErr) {
+				renderer.ShowNotice("Output stream stopped: "+logErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+				window.Invalidate()
+			}
+			logErrors = nil
 		case result := <-screenLoads:
 			expectedNavigation := navigation
 			if pendingNavigation != nil {
@@ -1372,6 +1454,71 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			window.Invalidate()
 		case command := <-commands:
 			switch command.action.Command {
+			case "search-job-log":
+				selected, parseErr := strconv.ParseInt(command.arguments["selectedIndex"], 10, 64)
+				if client == nil || parseErr != nil || selected < 0 {
+					continue
+				}
+				result, searchErr := client.SearchJobLog(ctx, &cnpv1.JobLogSearchRequest{
+					JobExecutionId: command.arguments["jobExecutionId"], Query: command.arguments["query"], SelectedIndex: selected,
+				})
+				if searchErr != nil {
+					renderer.ShowNotice("Output search failed: "+searchErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+					window.Invalidate()
+					continue
+				}
+				snapshot := jobLogSearchSnapshot{JobID: result.GetJobExecutionId(), SelectedIndex: int(result.GetSelectedIndex()), TotalMatches: int(result.GetTotalMatches())}
+				if match := result.GetMatch(); match != nil {
+					snapshot.ItemID, snapshot.ChunkID = match.GetItemId(), match.GetChunkId()
+					page, pageErr := client.GetJobLogPage(ctx, &cnpv1.JobLogPageRequest{
+						JobExecutionId: snapshot.JobID, ItemId: snapshot.ItemID, Mode: cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_AROUND, Cursor: snapshot.ChunkID,
+					})
+					if pageErr != nil {
+						renderer.ShowNotice("Search result unavailable: "+pageErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+						window.Invalidate()
+						continue
+					}
+					pageSnapshot := jobLogPageFromProto(page)
+					pageSnapshot.LoadedMode, pageSnapshot.SelectedChunkID = "around", snapshot.ChunkID
+					renderer.ApplyJobLogPage(pageSnapshot)
+				}
+				renderer.ApplyJobLogSearch(snapshot)
+				window.Invalidate()
+				continue
+			case "copy-full-job-log":
+				if client == nil {
+					continue
+				}
+				output, copyErr := downloadJobLogText(ctx, client, command.arguments["jobExecutionId"])
+				if copyErr != nil {
+					renderer.ShowNotice("Copy output failed: "+copyErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+					window.Invalidate()
+					continue
+				}
+				renderer.WriteClipboard(output)
+				window.Invalidate()
+				continue
+			case "load-job-log-page":
+				jobID, itemID, mode := command.arguments["jobExecutionId"], command.arguments["itemId"], command.arguments["mode"]
+				cursor, parseErr := strconv.ParseInt(command.arguments["cursor"], 10, 64)
+				if client == nil || parseErr != nil || cursor < 0 {
+					renderer.FailJobLogPage(jobID, itemID, mode)
+					continue
+				}
+				page, pageErr := client.GetJobLogPage(ctx, &cnpv1.JobLogPageRequest{
+					JobExecutionId: jobID, ItemId: itemID, Mode: nativeJobLogPageMode(mode), Cursor: cursor,
+				})
+				if pageErr != nil {
+					renderer.FailJobLogPage(jobID, itemID, mode)
+					renderer.ShowNotice("Output page unavailable: "+pageErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+					window.Invalidate()
+					continue
+				}
+				snapshot := jobLogPageFromProto(page)
+				snapshot.LoadedMode = mode
+				renderer.ApplyJobLogPage(snapshot)
+				window.Invalidate()
+				continue
 			case "refresh":
 				if client == nil {
 					renderer.ShowAlert("Server offline", "Reconnect is in progress.")

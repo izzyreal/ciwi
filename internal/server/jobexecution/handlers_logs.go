@@ -2,6 +2,7 @@ package jobexecution
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/httpx"
 )
@@ -51,20 +53,432 @@ func handleJobLog(w http.ResponseWriter, r *http.Request, deps HandlerDeps, jobI
 		http.Error(w, "job not found", http.StatusNotFound)
 		return
 	}
-	events, err := deps.Store.ListJobExecutionEvents(jobID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
-	body, fileName, renderErr := RenderJobLog(job, events, format)
-	if renderErr != nil {
+	if format == "" {
+		format = "clean"
+	}
+	if format != "clean" && format != "raw" {
 		http.Error(w, "format must be clean or raw", http.StatusBadRequest)
 		return
 	}
+	fileName := fmt.Sprintf("ciwi-%s-%s.log", sanitizeDownloadToken(job.ID), format)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
-	_, _ = w.Write([]byte(body))
+	_, _ = WriteJobLog(w, deps.Store, job, format)
+}
+
+type indexedJobLogStore interface {
+	GetJobLogDescriptor(string) (domain.JobLogDescriptor, error)
+	GetJobLogPage(string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
+	ListJobExecutionTimelineEvents(string) ([]protocol.JobExecutionEvent, error)
+}
+
+type pagedJobEventStore interface {
+	ListJobExecutionEventsPageAfter(string, int64, int) ([]protocol.JobExecutionEvent, error)
+}
+
+// WriteJobLog writes a complete log without retaining the complete rendered
+// body in memory. Indexed executions stream clean chunks; raw event histories
+// stream in bounded event pages.
+func WriteJobLog(w io.Writer, store interface {
+	ListJobExecutionEvents(string) ([]protocol.JobExecutionEvent, error)
+}, job protocol.JobExecution, format string) (string, error) {
+	format = strings.ToLower(strings.TrimSpace(format))
+	if format == "" {
+		format = "clean"
+	}
+	if format != "clean" && format != "raw" {
+		return "", fmt.Errorf("format must be clean or raw")
+	}
+	fileName := fmt.Sprintf("ciwi-%s-%s.log", sanitizeDownloadToken(job.ID), format)
+	if format == "clean" {
+		if indexed, ok := store.(indexedJobLogStore); ok {
+			descriptor, err := indexed.GetJobLogDescriptor(job.ID)
+			if err == nil && descriptor.Available {
+				return fileName, writeIndexedCleanJobLog(w, indexed, job, descriptor)
+			}
+		}
+	}
+	if paged, ok := store.(pagedJobEventStore); ok {
+		if format == "raw" {
+			return fileName, writePagedJobLog(w, paged, job, format)
+		}
+		return fileName, writePagedCleanJobLog(w, paged, job)
+	}
+	events, err := store.ListJobExecutionEvents(job.ID)
+	if err != nil {
+		return "", err
+	}
+	body, _, err := RenderJobLog(job, events, format)
+	if err != nil {
+		return "", err
+	}
+	_, err = io.WriteString(w, body)
+	return fileName, err
+}
+
+func writePagedJobLog(w io.Writer, store pagedJobEventStore, job protocol.JobExecution, format string) error {
+	cursor := int64(0)
+	for {
+		events, err := store.ListJobExecutionEventsPageAfter(job.ID, cursor, 128)
+		if err != nil {
+			return err
+		}
+		if len(events) == 0 {
+			return nil
+		}
+		var body string
+		if format == "raw" {
+			body = renderRawJobLog(job, events)
+		} else {
+			body = renderCleanJobLog(job, events)
+		}
+		if _, err := io.WriteString(w, body); err != nil {
+			return err
+		}
+		next := events[len(events)-1].ID
+		if next <= cursor {
+			return nil
+		}
+		cursor = next
+		if len(events) < 128 {
+			return nil
+		}
+	}
+}
+
+func writePagedCleanJobLog(w io.Writer, store pagedJobEventStore, job protocol.JobExecution) error {
+	if _, err := io.WriteString(w, cleanJobLogHeader(job)); err != nil {
+		return err
+	}
+	cursor := int64(0)
+	openItem := ""
+	openKind := ""
+	closeOpen := func(finished *protocol.JobExecutionEvent) error {
+		if openItem == "" {
+			return nil
+		}
+		label := "Ciwi phase"
+		if openKind == "step" {
+			label = "Job step"
+		}
+		if finished != nil {
+			var metadata strings.Builder
+			if finished.DurationMS > 0 {
+				metadata.WriteString("Duration: " + formatDurationMS(finished.DurationMS) + "\n")
+			}
+			if finished.ExitCode != nil {
+				fmt.Fprintf(&metadata, "Exit code: %d\n", *finished.ExitCode)
+			}
+			if strings.TrimSpace(finished.Error) != "" {
+				metadata.WriteString("Error: " + stripANSIAndControls(finished.Error) + "\n")
+			}
+			if metadata.Len() > 0 {
+				if _, err := io.WriteString(w, "\n"+metadata.String()); err != nil {
+					return err
+				}
+			}
+		}
+		if err := writeIndexedFinish(w, finished, label); err != nil {
+			return err
+		}
+		openItem, openKind = "", ""
+		return nil
+	}
+	openEvent := func(event protocol.JobExecutionEvent, itemID, kind string) error {
+		if openItem == itemID {
+			return nil
+		}
+		if err := closeOpen(nil); err != nil {
+			return err
+		}
+		openItem, openKind = itemID, kind
+		var b strings.Builder
+		sep := strings.Repeat("-", 80)
+		if kind == "step" {
+			b.WriteString(sep + "\n" + stepEventTitle(event.Step) + "\n" + sep + "\n")
+			if event.Type == protocol.JobExecutionEventTypeStepStarted && !event.TimestampUTC.IsZero() {
+				b.WriteString("Start time: " + event.TimestampUTC.UTC().Format(time.RFC3339Nano) + "\n")
+			}
+			yamlLiteral, script := "", ""
+			if event.Step != nil {
+				yamlLiteral, script = event.Step.YAMLLiteral, event.Step.Script
+				if strings.TrimSpace(yamlLiteral) == "" {
+					yamlLiteral = script
+				}
+			}
+			b.WriteString("\nYAML literal:\n'''\n" + stripANSIAndControls(yamlLiteral))
+			if !strings.HasSuffix(yamlLiteral, "\n") {
+				b.WriteByte('\n')
+			}
+			b.WriteString("'''\n\nExpanded command:\n'''\n" + stripANSIAndControls(script))
+			if !strings.HasSuffix(script, "\n") {
+				b.WriteByte('\n')
+			}
+			b.WriteString("'''\n\nOutput:\n'''\n")
+		} else {
+			b.WriteString(sep + "\n" + phaseEventTitle(event.Phase) + "\n" + sep + "\n")
+			if event.Type == protocol.JobExecutionEventTypePhaseStarted && !event.TimestampUTC.IsZero() {
+				b.WriteString("Start time: " + event.TimestampUTC.UTC().Format(time.RFC3339Nano) + "\n")
+			}
+			description := ""
+			if event.Phase != nil {
+				description = event.Phase.Description
+			}
+			b.WriteString("\nDetails:\n" + stripANSIAndControls(description))
+			if !strings.HasSuffix(description, "\n") {
+				b.WriteByte('\n')
+			}
+			b.WriteString("\nOutput:\n'''\n")
+		}
+		_, err := io.WriteString(w, b.String())
+		return err
+	}
+	for {
+		events, err := store.ListJobExecutionEventsPageAfter(job.ID, cursor, 128)
+		if err != nil {
+			return err
+		}
+		for _, event := range events {
+			if event.Type == protocol.JobExecutionEventTypeSystemMessage {
+				if err := closeOpen(nil); err != nil {
+					return err
+				}
+				message := strings.TrimSpace(stripANSIAndControls(event.Message))
+				if message != "" {
+					if _, err := io.WriteString(w, message+"\n\n"); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			itemID, kind := "", ""
+			if event.Step != nil {
+				itemID, kind = fmt.Sprintf("step:%d", event.Step.Index), "step"
+			} else if event.Phase != nil {
+				itemID, kind = strings.TrimSpace(event.Phase.ID), "phase"
+			}
+			if itemID == "" {
+				continue
+			}
+			if err := openEvent(event, itemID, kind); err != nil {
+				return err
+			}
+			if event.Type == protocol.JobExecutionEventTypeStepOutput || event.Type == protocol.JobExecutionEventTypePhaseOutput {
+				if _, err := io.WriteString(w, stripANSIAndControls(event.Output)); err != nil {
+					return err
+				}
+			}
+			if event.Type == protocol.JobExecutionEventTypeStepFinished || event.Type == protocol.JobExecutionEventTypePhaseFinished {
+				finished := event
+				if err := closeOpen(&finished); err != nil {
+					return err
+				}
+			}
+		}
+		if len(events) == 0 {
+			break
+		}
+		next := events[len(events)-1].ID
+		if next <= cursor {
+			break
+		}
+		cursor = next
+		if len(events) < 128 {
+			break
+		}
+	}
+	return closeOpen(nil)
+}
+
+func writeIndexedCleanJobLog(w io.Writer, store indexedJobLogStore, job protocol.JobExecution, descriptor domain.JobLogDescriptor) error {
+	if _, err := io.WriteString(w, cleanJobLogHeader(job)); err != nil {
+		return err
+	}
+	lifecycle, err := store.ListJobExecutionTimelineEvents(job.ID)
+	if err != nil {
+		return err
+	}
+	byItem := make(map[string][]protocol.JobExecutionEvent)
+	for _, event := range lifecycle {
+		itemID := ""
+		if event.Step != nil {
+			itemID = fmt.Sprintf("step:%d", event.Step.Index)
+		} else if event.Phase != nil {
+			itemID = strings.TrimSpace(event.Phase.ID)
+		}
+		if itemID != "" {
+			byItem[itemID] = append(byItem[itemID], event)
+		}
+	}
+	streams := make(map[string]bool, len(descriptor.Streams))
+	for _, stream := range descriptor.Streams {
+		streams[stream.ItemID] = true
+	}
+	if streams[""] {
+		if err := writeIndexedLogStream(w, store, job.ID, ""); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, "\n\n"); err != nil {
+			return err
+		}
+	}
+	for _, item := range protocol.BuildJobExecutionTimeline(job) {
+		events := byItem[item.ID]
+		if len(events) == 0 && !streams[item.ID] {
+			continue
+		}
+		if item.Kind == "step" {
+			var step protocol.JobStepPlanItem
+			for _, candidate := range job.StepPlan {
+				if candidate.Index == item.StepIndex {
+					step = candidate
+					break
+				}
+			}
+			step.Index, step.Total = item.StepIndex, len(job.StepPlan)
+			if err := writeIndexedStepLog(w, store, job.ID, item.ID, step, events); err != nil {
+				return err
+			}
+			continue
+		}
+		phase, _ := protocol.TimelinePhase(protocol.BuildJobExecutionTimeline(job), item.ID)
+		if err := writeIndexedPhaseLog(w, store, job.ID, item.ID, phase, events); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cleanJobLogHeader(job protocol.JobExecution) string {
+	var b strings.Builder
+	b.WriteString("ciwi job log\n")
+	b.WriteString("Job execution ID: " + job.ID + "\n")
+	b.WriteString("Status: " + protocol.NormalizeJobExecutionStatus(job.Status) + "\n")
+	if !job.StartedUTC.IsZero() {
+		b.WriteString("Started: " + job.StartedUTC.UTC().Format(time.RFC3339Nano) + "\n")
+	}
+	if !job.FinishedUTC.IsZero() {
+		b.WriteString("Finished: " + job.FinishedUTC.UTC().Format(time.RFC3339Nano) + "\n")
+	}
+	if job.ExitCode != nil {
+		fmt.Fprintf(&b, "Exit code: %d\n", *job.ExitCode)
+	}
+	if strings.TrimSpace(job.Error) != "" {
+		b.WriteString("Error: " + stripANSIAndControls(job.Error) + "\n")
+	}
+	b.WriteByte('\n')
+	return b.String()
+}
+
+func writeIndexedLogStream(w io.Writer, store indexedJobLogStore, jobID, itemID string) error {
+	mode, cursor := domain.JobLogPageHead, int64(0)
+	for {
+		page, err := store.GetJobLogPage(jobID, itemID, mode, cursor)
+		if err != nil {
+			return err
+		}
+		for _, chunk := range page.Chunks {
+			if _, err := io.WriteString(w, chunk.Text); err != nil {
+				return err
+			}
+		}
+		if !page.HasAfter || page.LastCursor <= cursor {
+			return nil
+		}
+		mode, cursor = domain.JobLogPageAfter, page.LastCursor
+	}
+}
+
+func logLifecycle(events []protocol.JobExecutionEvent) (time.Time, *protocol.JobExecutionEvent) {
+	var started time.Time
+	var finished *protocol.JobExecutionEvent
+	for _, event := range events {
+		switch event.Type {
+		case protocol.JobExecutionEventTypeStepStarted, protocol.JobExecutionEventTypePhaseStarted:
+			started = event.TimestampUTC
+		case protocol.JobExecutionEventTypeStepFinished, protocol.JobExecutionEventTypePhaseFinished:
+			copy := event
+			finished = &copy
+		}
+	}
+	return started, finished
+}
+
+func writeIndexedStepLog(w io.Writer, store indexedJobLogStore, jobID, itemID string, step protocol.JobStepPlanItem, events []protocol.JobExecutionEvent) error {
+	started, finished := logLifecycle(events)
+	var b strings.Builder
+	sep := strings.Repeat("-", 80)
+	b.WriteString(sep + "\n" + stepEventTitle(&step) + "\n" + sep + "\n")
+	writeLifecycleMetadata(&b, started, finished, "Job step duration")
+	b.WriteString("\nYAML literal:\n'''\n")
+	yamlLiteral := step.YAMLLiteral
+	if strings.TrimSpace(yamlLiteral) == "" {
+		yamlLiteral = step.Script
+	}
+	b.WriteString(stripANSIAndControls(yamlLiteral))
+	if !strings.HasSuffix(yamlLiteral, "\n") {
+		b.WriteByte('\n')
+	}
+	b.WriteString("'''\n\nExpanded command:\n'''\n" + stripANSIAndControls(step.Script))
+	if !strings.HasSuffix(step.Script, "\n") {
+		b.WriteByte('\n')
+	}
+	b.WriteString("'''\n\nOutput:\n'''\n")
+	if _, err := io.WriteString(w, b.String()); err != nil {
+		return err
+	}
+	if err := writeIndexedLogStream(w, store, jobID, itemID); err != nil {
+		return err
+	}
+	return writeIndexedFinish(w, finished, "Job step")
+}
+
+func writeIndexedPhaseLog(w io.Writer, store indexedJobLogStore, jobID, itemID string, phase protocol.JobExecutionPhase, events []protocol.JobExecutionEvent) error {
+	started, finished := logLifecycle(events)
+	var b strings.Builder
+	sep := strings.Repeat("-", 80)
+	b.WriteString(sep + "\n" + phaseEventTitle(&phase) + "\n" + sep + "\n")
+	writeLifecycleMetadata(&b, started, finished, "Ciwi phase duration")
+	b.WriteString("\nDetails:\n" + stripANSIAndControls(phase.Description))
+	if !strings.HasSuffix(phase.Description, "\n") {
+		b.WriteByte('\n')
+	}
+	b.WriteString("\nOutput:\n'''\n")
+	if _, err := io.WriteString(w, b.String()); err != nil {
+		return err
+	}
+	if err := writeIndexedLogStream(w, store, jobID, itemID); err != nil {
+		return err
+	}
+	return writeIndexedFinish(w, finished, "Ciwi phase")
+}
+
+func writeLifecycleMetadata(b *strings.Builder, started time.Time, finished *protocol.JobExecutionEvent, durationLabel string) {
+	if !started.IsZero() {
+		b.WriteString("Start time: " + started.UTC().Format(time.RFC3339Nano) + "\n")
+	}
+	if finished != nil && finished.DurationMS > 0 {
+		b.WriteString(durationLabel + ": " + formatDurationMS(finished.DurationMS) + "\n")
+	}
+	if finished != nil && finished.ExitCode != nil {
+		fmt.Fprintf(b, "Exit code: %d\n", *finished.ExitCode)
+	}
+	if finished != nil && strings.TrimSpace(finished.Error) != "" {
+		b.WriteString("Error: " + stripANSIAndControls(finished.Error) + "\n")
+	}
+}
+
+func writeIndexedFinish(w io.Writer, finished *protocol.JobExecutionEvent, label string) error {
+	status := "not reported"
+	if finished != nil {
+		status = "succeeded"
+		if strings.TrimSpace(finished.Error) != "" || (finished.ExitCode != nil && *finished.ExitCode != 0) {
+			status = "failed"
+		}
+	}
+	_, err := fmt.Fprintf(w, "\n'''\n\n%s finished: %s\n\n", label, status)
+	return err
 }
 
 // RenderJobLog generates the same downloadable log used by the HTTP and native clients.

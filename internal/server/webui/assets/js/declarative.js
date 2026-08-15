@@ -8,6 +8,10 @@
   let programmaticOutputScroll = false;
   let routeLoadGeneration = 0;
   const maxOutputCharacters = 1024 * 1024;
+  const maxLogViewCacheBytes = 4 * 1024 * 1024;
+  const logViewStates = new Map();
+  let fullLogSearchGeneration = 0;
+  let fullLogSearchTimer = 0;
   let currentDocument = null;
   let currentData = null;
   let currentRouteMatch = null;
@@ -591,20 +595,37 @@
         }
         else if (action.command === 'change-output-search') {
           data.jobDetails.output_search = args.query || '';
-          updateOutputSearch(data.jobDetails, 0);
-		  patchJobOutputRegion(data.jobDetails);
+		  if (data.jobDetails.interactive_log_available) scheduleFullLogSearch(data.jobDetails);
+		  else {
+			updateOutputSearch(data.jobDetails, 0);
+			patchJobOutputRegion(data.jobDetails);
+		  }
         }
         else if (action.command === 'find-output') {
-          updateOutputSearch(data.jobDetails, args.direction === 'previous' ? -1 : 1);
-		  patchJobOutputRegion(data.jobDetails);
-          selectBrowserOutputMatch(data.jobDetails);
+		  if (data.jobDetails.interactive_log_available) {
+			await findFullLogMatch(data.jobDetails, args.direction === 'previous' ? -1 : 1);
+		  } else {
+			updateOutputSearch(data.jobDetails, args.direction === 'previous' ? -1 : 1);
+			patchJobOutputRegion(data.jobDetails);
+			selectBrowserOutputMatch(data.jobDetails);
+		  }
         }
         else if (action.command === 'copy-output') {
-          await navigator.clipboard.writeText(String(data.jobDetails.output || ''));
+		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(data.jobDetails.id || '') + '/log?format=clean');
+		  if (!response.ok) throw new Error(await response.text());
+		  await navigator.clipboard.writeText(await response.text());
         }
         else if (action.command === 'toggle-output-tailing') {
 		  setOutputTailing(data.jobDetails, !data.jobDetails.output_tailing);
-		  if (data.jobDetails.output_tailing) scrollJobOutputToEnd(document.getElementById('job-output-groups'));
+		  if (data.jobDetails.output_tailing) {
+			if (data.jobDetails.interactive_log_available) {
+			  logViewStates.forEach(state => {
+				if (state.jobID !== String(data.jobDetails.id || '')) return;
+				const last = state.chunks.length ? Number(state.chunks[state.chunks.length - 1].id) : 0;
+				loadLogViewPage(state, state.hasAfter && last ? 'after' : 'tail', last);
+			  });
+			} else scrollJobOutputToEnd(document.getElementById('job-output-groups'));
+		  }
         }
 		else if (action.command === 'set-disclosures') {
           const expanded = args.expanded === 'true';
@@ -1047,6 +1068,10 @@
 	  treeViewRenderer.render(element, node, data, context);
 	  return element;
 	}
+	if (node.component === 'log-view' && node.logView) {
+	  renderBrowserLogView(element, node.logView, data);
+	  return element;
+	}
 	if (node.enabled) {
 	  const equal = node.enabled.empty
 	    ? String(resolve(data, node.enabled.binding)) === ''
@@ -1283,6 +1308,165 @@
 	return compareDeclarativeVersions(candidate, current) === -1;
   }
 
+  function logViewKey(jobID, itemID) {
+	return String(jobID || '') + '\n' + String(itemID || '');
+  }
+
+  function logViewState(jobID, itemID, view) {
+	const key = logViewKey(jobID, itemID);
+	let state = logViewStates.get(key);
+	if (!state) {
+	  state = {
+		key, jobID: String(jobID || ''), itemID: String(itemID || ''), view,
+		chunks: [], bytes: 0, hasBefore: false, hasAfter: false, terminal: false,
+		loaded: false, loading: false, touched: Date.now(), elements: new Set(), match: null,
+	  };
+	  logViewStates.set(key, state);
+	}
+	state.view = view;
+	state.touched = Date.now();
+	return state;
+  }
+
+  function renderLogText(pre, state) {
+	const text = state.chunks.map(chunk => String(chunk.text || '')).join('');
+	const match = state.match;
+	if (!match) {
+	  pre.textContent = text || (state.loaded ? '(no output)' : 'Loading output…');
+	  return;
+	}
+	const anchorIndex = state.chunks.findIndex(chunk => Number(chunk.id) === Number(match.chunk_id));
+	if (anchorIndex < 0) {
+	  pre.textContent = text;
+	  return;
+	}
+	let start = Number(match.start_rune || 0);
+	for (let index = 0; index < anchorIndex; index += 1) {
+	  start += Array.from(String(state.chunks[index].text || '')).length;
+	}
+	const runes = Array.from(text);
+	const length = Math.max(0, Number(match.end_rune || 0) - Number(match.start_rune || 0));
+	if (start < 0 || start + length > runes.length || length === 0) {
+	  pre.textContent = text;
+	  return;
+	}
+	pre.appendChild(document.createTextNode(runes.slice(0, start).join('')));
+	const mark = document.createElement('mark');
+	mark.className = 'ciwi-search-hit ciwi-search-hit-active';
+	mark.textContent = runes.slice(start, start + length).join('');
+	pre.appendChild(mark);
+	pre.appendChild(document.createTextNode(runes.slice(start + length).join('')));
+  }
+
+  function paintLogViewState(state, preserve) {
+	state.elements.forEach(element => {
+	  if (!element.isConnected) {
+		state.elements.delete(element);
+		return;
+	  }
+	  const oldHeight = element.scrollHeight;
+	  const oldTop = element.scrollTop;
+	  element.textContent = '';
+	  const pre = document.createElement('pre');
+	  pre.className = 'dsl-log-view-text';
+	  renderLogText(pre, state);
+	  element.appendChild(pre);
+	  if (preserve === 'before') element.scrollTop = oldTop + Math.max(0, element.scrollHeight - oldHeight);
+	  else if (preserve === 'tail') element.scrollTop = element.scrollHeight;
+	  if (state.match) requestAnimationFrame(() => {
+		const mark = element.querySelector('.ciwi-search-hit-active');
+		if (mark) mark.scrollIntoView({block: 'center', inline: 'nearest'});
+	  });
+	});
+  }
+
+  function trimLogViewCache() {
+	let total = 0;
+	logViewStates.forEach(state => { total += state.bytes; });
+	if (total <= maxLogViewCacheBytes) return;
+	const states = Array.from(logViewStates.values()).sort((left, right) => left.touched - right.touched);
+	for (const state of states) {
+	  let changed = false;
+	  while (total > maxLogViewCacheBytes && state.chunks.length > 1) {
+		const matchIndex = state.match ? state.chunks.findIndex(chunk => Number(chunk.id) === Number(state.match.chunk_id)) : -1;
+		const removeFromEnd = (matchIndex >= 0 ? matchIndex < state.chunks.length / 2 : false) || state.lastMode === 'before' || state.lastMode === 'head';
+		const chunk = removeFromEnd ? state.chunks.pop() : state.chunks.shift();
+		state.bytes -= Number(chunk.byte_count || new TextEncoder().encode(String(chunk.text || '')).length);
+		total -= Number(chunk.byte_count || new TextEncoder().encode(String(chunk.text || '')).length);
+		if (removeFromEnd) state.hasAfter = true;
+		else state.hasBefore = true;
+		changed = true;
+	  }
+	  if (changed) paintLogViewState(state, 'before');
+	  if (total <= maxLogViewCacheBytes) break;
+	}
+  }
+
+  async function loadLogViewPage(state, mode, cursor) {
+	if (!state) return;
+	if (state.loading) {
+	  state.pendingLoad = {mode, cursor};
+	  return;
+	}
+	state.loading = true;
+	state.touched = Date.now();
+	try {
+	  const query = new URLSearchParams({item_id: state.itemID, mode});
+	  if (cursor) query.set('cursor', String(cursor));
+	  const response = await fetch('/api/v1/views/jobs/' + encodeURIComponent(state.jobID) + '/log/page?' + query.toString());
+	  if (!response.ok) throw new Error(await response.text());
+	  const page = await response.json();
+	  const byID = new Map(state.chunks.map(chunk => [Number(chunk.id), chunk]));
+	  (Array.isArray(page.chunks) ? page.chunks : []).forEach(chunk => byID.set(Number(chunk.id), chunk));
+	  state.chunks = Array.from(byID.values()).sort((left, right) => Number(left.id) - Number(right.id));
+	  state.lastMode = mode;
+	  state.bytes = state.chunks.reduce((sum, chunk) => sum + Number(chunk.byte_count || new TextEncoder().encode(String(chunk.text || '')).length), 0);
+	  state.hasBefore = !!page.has_before;
+	  state.hasAfter = !!page.has_after;
+	  state.terminal = !!page.terminal;
+	  state.loaded = true;
+	  const preserve = mode === 'before' ? 'before' : ((mode === 'tail' || (mode === 'after' && state.view && state.view.output_tailing)) ? 'tail' : 'none');
+	  paintLogViewState(state, preserve);
+	  trimLogViewCache();
+	} catch (error) {
+	  state.loaded = true;
+	  state.elements.forEach(element => {
+		element.textContent = 'Unable to load output: ' + (error.message || String(error));
+	  });
+	} finally {
+	  state.loading = false;
+	  const pending = state.pendingLoad;
+	  state.pendingLoad = null;
+	  if (pending) loadLogViewPage(state, pending.mode, pending.cursor);
+	}
+  }
+
+  function renderBrowserLogView(element, logView, data) {
+	const jobID = String(resolve(data, logView.jobExecutionId) || '');
+	const itemID = logView.itemId ? String(resolve(data, logView.itemId) || '') : '';
+	const view = data.jobDetails;
+	const state = logViewState(jobID, itemID, view);
+	element.dataset.logKey = state.key;
+	element.tabIndex = 0;
+	state.elements.add(element);
+	paintLogViewState(state, 'none');
+	element.addEventListener('scroll', () => {
+	  state.touched = Date.now();
+	  if (element.scrollTop < 96 && state.hasBefore && state.chunks.length) {
+		loadLogViewPage(state, 'before', Number(state.chunks[0].id));
+	  }
+	  if (element.scrollHeight - element.clientHeight - element.scrollTop < 96 && state.hasAfter && state.chunks.length) {
+		loadLogViewPage(state, 'after', Number(state.chunks[state.chunks.length - 1].id));
+	  }
+	  if (view && view.output_tailing && element.scrollHeight - element.clientHeight - element.scrollTop > 3) {
+		setOutputTailing(view, false);
+	  }
+	}, {passive: true});
+	if (!state.loaded && !state.loading) {
+	  loadLogViewPage(state, jobOutputStartsAtTail(view) ? 'tail' : 'head', 0);
+	}
+  }
+
   function declarativePersistedUpdateBinding(status) {
 	const source = status && typeof status === 'object' ? status : {};
 	const current = String(source.update_current_version || '').trim();
@@ -1368,6 +1552,59 @@
     const target = disclosure || document.getElementById('job-output-system');
     const active = target && target.querySelector('.ciwi-search-hit-active');
     if (active) active.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'});
+  }
+
+  async function updateFullLogSearch(view, selectedIndex) {
+	const query = String(view.output_search || '');
+	const generation = ++fullLogSearchGeneration;
+	if (Array.from(query).length < 3) {
+	  view.output_match_index = 0;
+	  view.output_total_matches = 0;
+	  view.output_search_count = query ? 'Enter 3+ characters' : '0/0';
+	  updateJobOutputSearchCount(view);
+	  return;
+	}
+	const response = await fetch('/api/v1/views/jobs/' + encodeURIComponent(view.id) + '/log/search', {
+	  method: 'POST', headers: {'Content-Type': 'application/json'},
+	  body: JSON.stringify({query, selected_index: Math.max(0, Number(selectedIndex || 0))}),
+	});
+	if (!response.ok) throw new Error(await response.text());
+	const result = await response.json();
+	if (generation !== fullLogSearchGeneration || query !== String(view.output_search || '')) return;
+	view.output_match_index = Number(result.selected_index || 0);
+	view.output_total_matches = Number(result.total_matches || 0);
+	view.output_search_count = view.output_total_matches
+	  ? String(view.output_match_index + 1) + '/' + String(view.output_total_matches)
+	  : '0/0';
+	updateJobOutputSearchCount(view);
+	if (!result.match) return;
+	if (result.match.item_id) revealBrowserOutputGroup(view, result.match.item_id);
+	const state = logViewState(view.id, result.match.item_id || '', view);
+	state.match = result.match;
+	await loadLogViewPage(state, 'around', Number(result.match.chunk_id));
+	requestAnimationFrame(() => {
+	  state.elements.forEach(element => {
+		const mark = element.querySelector('.ciwi-search-hit-active');
+		if (mark) mark.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'});
+	  });
+	});
+  }
+
+  function scheduleFullLogSearch(view) {
+	window.clearTimeout(fullLogSearchTimer);
+	fullLogSearchTimer = window.setTimeout(() => {
+	  updateFullLogSearch(view, 0).catch(error => {
+		view.output_search_count = error.message || String(error);
+		updateJobOutputSearchCount(view);
+	  });
+	}, 250);
+  }
+
+  function findFullLogMatch(view, direction) {
+	const total = Number(view.output_total_matches || 0);
+	let target = Number(view.output_match_index || 0);
+	if (total > 0) target = (target + (direction < 0 ? -1 : 1) + total) % total;
+	return updateFullLogSearch(view, target);
   }
 
   function renderBrowserOutputText(element, text, itemID, view) {
@@ -1575,6 +1812,60 @@
 	  appendBoundedOutput(view, '', message + '\n');
 	  rebuildJobOutputText(view);
 	  patchJobOutputRegion(view);
+	  source.close();
+	  if (outputEventSource === source) outputEventSource = null;
+	});
+  }
+
+  function watchFullJobLog(jobID, generation) {
+	if (typeof window.EventSource !== 'function') throw new Error('Live output requires EventSource support');
+	stopJobOutputWatch();
+	const source = new EventSource('/api/v1/views/jobs/' + encodeURIComponent(jobID) + '/log/stream');
+	outputEventSource = source;
+	const currentJob = () => {
+	  if (generation !== outputWatchGeneration) return null;
+	  const view = currentData && currentData.jobDetails;
+	  return view && String(view.id || '') === String(jobID) ? view : null;
+	};
+	source.addEventListener('change', event => {
+	  const view = currentJob();
+	  if (!view) { source.close(); return; }
+	  try {
+		const descriptor = JSON.parse(event.data || '{}');
+		const streams = new Map((Array.isArray(descriptor.streams) ? descriptor.streams : [])
+		  .map(stream => [String(stream.item_id || ''), stream]));
+		logViewStates.forEach(state => {
+		  if (state.jobID !== String(jobID)) return;
+		  const stream = streams.get(state.itemID);
+		  if (!stream) return;
+		  state.terminal = !!descriptor.terminal;
+		  const last = state.chunks.length ? Number(state.chunks[state.chunks.length - 1].id) : 0;
+		  if (Number(stream.last_chunk_id || 0) <= last) return;
+		  if (!view.output_tailing) {
+			state.hasAfter = true;
+			return;
+		  }
+		  loadLogViewPage(state, last ? 'after' : 'tail', last);
+		});
+	  } catch (error) {
+		console.error('Invalid full job log event', error);
+	  }
+	});
+	source.addEventListener('complete', () => {
+	  if (currentJob()) {
+		completedOutputJobID = String(jobID);
+		scheduleChangeRefresh();
+	  }
+	  source.close();
+	  if (outputEventSource === source) outputEventSource = null;
+	});
+	source.addEventListener('stream-error', event => {
+	  let message = 'Output stream failed';
+	  try { message = JSON.parse(event.data || '{}').message || message; } catch (_) {}
+	  logViewStates.forEach(state => {
+		if (state.jobID !== String(jobID)) return;
+		state.elements.forEach(element => { element.dataset.logError = message; });
+	  });
 	  source.close();
 	  if (outputEventSource === source) outputEventSource = null;
 	});
@@ -1789,13 +2080,19 @@
       if (jobMatch) {
 		const jobID = nextRouteMatch.params.jobId;
 		if (completedOutputJobID !== String(jobID)) try {
-		  watchJobOutput(jobID, generation);
+		  if (view.interactive_log_available) watchFullJobLog(jobID, generation);
+		  else watchJobOutput(jobID, generation);
 		} catch (error) {
           if (generation !== outputWatchGeneration) return;
           if (currentData && currentData.jobDetails) {
-            appendBoundedOutput(currentData.jobDetails, '', 'Output stream failed: ' + (error.message || String(error)) + '\n');
-            rebuildJobOutputText(currentData.jobDetails);
-			patchJobOutputRegion(currentData.jobDetails);
+			if (currentData.jobDetails.interactive_log_available) {
+			  currentData.jobDetails.output_search_count = 'Output stream failed: ' + (error.message || String(error));
+			  updateJobOutputSearchCount(currentData.jobDetails);
+			} else {
+			  appendBoundedOutput(currentData.jobDetails, '', 'Output stream failed: ' + (error.message || String(error)) + '\n');
+			  rebuildJobOutputText(currentData.jobDetails);
+			  patchJobOutputRegion(currentData.jobDetails);
+			}
           }
 		}
       }

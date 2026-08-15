@@ -103,6 +103,21 @@ func TestKeyedViewportInitiallyFollowsEnd(t *testing.T) {
 	}
 }
 
+func TestKeyedViewportReportsEachReachedEdgeOncePerBoundaryKey(t *testing.T) {
+	starts, ends := 0, 0
+	runtime := NewRuntime(nil, Options{})
+	children := Static(Spacer("first", 0, 20), Spacer("last", 0, 20))
+	root := VirtualList("viewport", ListProps{
+		Axis: layout.Vertical, Viewport: 200, Estimate: 20,
+		OnReachStart: func() { starts++ }, OnReachEnd: func() { ends++ },
+	}, children)
+	runtime.Layout(testContext(320, 200), root)
+	runtime.Layout(testContext(320, 200), root)
+	if starts != 1 || ends != 1 {
+		t.Fatalf("edge callbacks = start %d end %d, want 1 each", starts, ends)
+	}
+}
+
 func TestKeyedViewportForceEndAndResetRevisions(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	children := orderedRows(1, 100, 0)
