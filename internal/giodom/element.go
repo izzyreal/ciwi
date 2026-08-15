@@ -186,6 +186,8 @@ type ListProps struct {
 	Axis              layout.Axis
 	Gap               unit.Dp
 	Viewport          unit.Dp
+	MinimumViewport   unit.Dp
+	ShrinkMain        bool
 	ShrinkCross       bool
 	NestedScroll      bool
 	PassThroughScroll bool

@@ -127,7 +127,7 @@ a.dsl-tree-label { color:var(--accent); }
 .dsl-output-meta { font:var(--ciwi-type-output-meta-weight) var(--ciwi-type-output-meta-size)/var(--ciwi-type-output-meta-line-height) var(--ciwi-type-output-meta-family); }
 .dsl-output-label { font:var(--ciwi-type-output-label-weight) var(--ciwi-type-output-label-size)/var(--ciwi-type-output-label-line-height) var(--ciwi-type-output-label-family); }
 .dsl-output-code { white-space:pre-wrap; overflow-wrap:anywhere; font:var(--ciwi-type-output-code-weight) var(--ciwi-type-output-code-size)/var(--ciwi-type-output-code-line-height) var(--ciwi-type-output-code-family); }
-.dsl-log-view { min-height:3rem; max-height:28rem; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; color:var(--console-ink); background:var(--console-surface); }
+.dsl-log-view { min-height:var(--ciwi-log-view-min-height, 48px); max-height:var(--ciwi-log-view-max-height, 420px); overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; color:var(--console-ink); background:var(--console-surface); }
 .dsl-log-view-text { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font:var(--ciwi-type-output-code-weight) var(--ciwi-type-output-code-size)/var(--ciwi-type-output-code-line-height) var(--ciwi-type-output-code-family); }
 .dsl-output-system { color:var(--console-ink); background:var(--console-surface); border-color:var(--console-line); }
 .dsl-output-system .dsl-code { color:var(--console-ink); background:transparent; }

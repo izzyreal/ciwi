@@ -48,6 +48,9 @@ controls:
     optionPaddingY: 7
     optionMinimumHeight: 40
     selectionIndicatorWidth: 20
+  logView:
+    minimumHeight: 48
+    maximumHeight: 420
   disclosure:
     chevronPosition: trailing
     chevronSize: 20
@@ -61,6 +64,9 @@ controls:
 	if document.Controls.Button.IconPosition != "leading" || document.Controls.Select.ChevronPosition != "trailing" {
 		t.Fatalf("controls = %#v", document.Controls)
 	}
+	if got := document.Controls.LogView; got.MinimumHeight != 48 || got.MaximumHeight != 420 {
+		t.Fatalf("log view controls = %#v", got)
+	}
 }
 
 func TestControlsValidationRejectsInvalidVisualMetrics(t *testing.T) {
@@ -73,6 +79,11 @@ func TestControlsValidationRejectsInvalidVisualMetrics(t *testing.T) {
 	document.Controls.Select.MenuMaximumHeight = 80
 	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "menuMaximumHeight") {
 		t.Fatalf("invalid menu height error = %v", err)
+	}
+	document = validControlsDocument()
+	document.Controls.LogView.MaximumHeight = 40
+	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "logView maximumHeight") {
+		t.Fatalf("invalid log view height error = %v", err)
 	}
 	document = validControlsDocument()
 	document.Controls.Viewport.CondensedDisclosureMaximumWidth = 800
@@ -115,6 +126,7 @@ func validControlsDocument() *ControlsDocument {
 				OptionGap: 8, OptionPaddingX: 10, OptionPaddingY: 7, OptionMinimumHeight: 40,
 				SelectionIndicatorWidth: 20,
 			},
+			LogView:    LogViewControl{MinimumHeight: 48, MaximumHeight: 420},
 			Disclosure: DisclosureControl{ChevronPosition: "trailing", ChevronSize: 20, ChevronGap: 8},
 			Progress:   ProgressControl{TintOpacity: 0.18},
 		},

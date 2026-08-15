@@ -28,6 +28,7 @@ const controls = {
       optionMinimumHeight: 40, selectionIndicatorWidth: 20,
       viewportInset: 8, menuGap: 6, menuMinimumWidth: 120, menuMinimumHeight: 120, menuMaximumHeight: 420,
     },
+    logView: {minimumHeight: 48, maximumHeight: 420},
     disclosure: {chevronPosition: 'trailing', chevronSize: 20, chevronGap: 8},
     progress: {tintOpacity: 0.18},
   },
@@ -106,6 +107,10 @@ const screen = {
             children: [{component: 'text', id: 'probe-output-text', text: {binding: 'probe.output'}}],
           },
           {component: 'text', id: 'probe-log', visible: {binding: 'probe.log_visible'}, text: {binding: 'probe.log'}, style: {role: 'code'}},
+          {
+            component: 'log-view', id: 'probe-indexed-log', visible: {binding: 'probe.indexed_log_visible'},
+            logView: {jobExecutionId: 'probe.log_job_id', itemId: 'probe.log_item_id'},
+          },
           {component: 'text', id: 'probe-selection-start', text: {binding: 'probe.selection_start'}},
           {component: 'text', id: 'probe-selection-end', text: {binding: 'probe.selection_end'}},
           {
@@ -209,7 +214,8 @@ function model(overrides = {}) {
   return Object.assign({
     version: 'one', input: 'draft', detail: 'details', selected: 'a', selected_two: 'b', select_visible: true, action_id: '1', action_visible: true,
     graph_visible: false, graph_nodes: [], tree_visible: false, tree_nodes: [], output_visible: false, output: '',
-    log_visible: false, log: '', selection_start: 'Select from here', selection_end: 'through here',
+    log_visible: false, log: '', indexed_log_visible: false, log_job_id: '', log_item_id: '',
+    selection_start: 'Select from here', selection_end: 'through here',
     options: [{value: 'a', label: 'Alpha'}, {value: 'b', label: 'Beta'}],
     timeline: Array.from({length: 6}, (_, index) => ({id: `phase-${index}`, title: `Ciwi phase ${index + 1}/6: Prepare workspace`, status: 'Succeeded'})),
     rows: [
@@ -291,6 +297,14 @@ async function installFixture(page, models) {
       const value = models[Math.min(viewIndex, models.length - 1)];
       viewIndex += 1;
       await route.fulfill({json: JSON.parse(JSON.stringify(value))});
+      return;
+    }
+    if (url.pathname === '/api/v1/views/jobs/job-log/log/page') {
+      await route.fulfill({json: {
+        job_execution_id: 'job-log', item_id: url.searchParams.get('item_id') || '', terminal: true,
+        chunks: [{id: 41, item_id: 'step:1', text: 'indexed output arrived', byte_count: 22, rune_count: 22}],
+        first_cursor: 41, last_cursor: 41, has_before: false, has_after: false,
+      }});
       return;
     }
     if (/^\/api\/v1\/pipelines\/[^/]+\/run-selection$/.test(url.pathname)) {
@@ -704,6 +718,15 @@ test('agent-style log scrolling survives periodic appended text', async ({page})
   expect(await page.evaluate(() => window.previousLog === document.getElementById('probe-log'))).toBe(true);
   expect(await page.locator('#probe-log').evaluate(log => log.scrollTop)).toBe(45);
   await expect(page.locator('#probe-log')).toContainText('new agent line');
+});
+
+test('indexed log view paints its initial page after DOM attachment', async ({page}) => {
+  await installFixture(page, [model({
+    indexed_log_visible: true, log_job_id: 'job-log', log_item_id: 'step:1',
+  })]);
+  await expect(page.locator('#probe-indexed-log')).toContainText('indexed output arrived');
+  await expect(page.locator('#probe-indexed-log')).toHaveCSS('min-height', '48px');
+  await expect(page.locator('#probe-indexed-log')).toHaveCSS('max-height', '420px');
 });
 
 test('a selection spanning multiple rendered elements survives refresh', async ({page}) => {

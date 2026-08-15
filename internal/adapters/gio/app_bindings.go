@@ -612,15 +612,19 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 			root["tailing_tone"] = "success"
 		}
 		if groups, ok := root["output_groups"].([]any); ok {
+			interactiveLogs := strings.EqualFold(fmt.Sprint(root["interactive_log_available"]), "true")
 			for _, raw := range groups {
 				entry, entryOK := raw.(map[string]any)
 				if !entryOK {
 					continue
 				}
 				entry["output"] = ""
-				entry["empty_output_label"] = "(no output)"
-				if reached, _ := entry["reached"].(bool); !reached {
-					entry["empty_output_label"] = "(step was not reached)"
+				entry["empty_output_label"] = ""
+				if !interactiveLogs {
+					entry["empty_output_label"] = "(no output)"
+					if reached, _ := entry["reached"].(bool); !reached {
+						entry["empty_output_label"] = "(step was not reached)"
+					}
 				}
 				for _, field := range []string{"details", "yaml_literal", "expanded_command"} {
 					if strings.TrimSpace(fmt.Sprint(entry[field])) == "" {

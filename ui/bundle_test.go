@@ -113,6 +113,9 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if got := controls.Controls.Input.PlaceholderColor; got != "#757575" {
 		t.Fatalf("shared input placeholder color = %q, want #757575", got)
 	}
+	if got := controls.Controls.LogView; got.MinimumHeight != 48 || got.MaximumHeight != 420 {
+		t.Fatalf("shared log view controls = %#v", got)
+	}
 	if len(themes) != 23 {
 		t.Fatalf("theme count = %d, want 23", len(themes))
 	}

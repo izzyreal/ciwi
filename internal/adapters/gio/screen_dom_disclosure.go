@@ -417,7 +417,8 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		}
 	}
 	result := giodom.VirtualList(domNodeKey(node, path), giodom.ListProps{
-		Axis: axis, Gap: r.spacing(node.Layout.Gap), Viewport: viewport, ShrinkCross: axis == layout.Horizontal,
+		Axis: axis, Gap: r.spacing(node.Layout.Gap), Viewport: viewport,
+		ShrinkMain: axis == layout.Vertical && viewport > 0, ShrinkCross: axis == layout.Horizontal,
 		NestedScroll: isOutputGroups, Estimate: 100, Overscan: 2, MaxMeasured: 512,
 		ScrollToEnd: isOutputGroups && r.outputTailing, ForceEndRevision: r.outputTailRevision, ResetRevision: r.outputResetRevision,
 		ScrollTo: scrollTarget, ScrollRevision: scrollRevision, OnLeaveEnd: onLeaveEnd,

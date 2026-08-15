@@ -39,6 +39,9 @@ controls:
     optionPaddingY: 7
     optionMinimumHeight: 40
     selectionIndicatorWidth: 20
+  logView:
+    minimumHeight: 48
+    maximumHeight: 420
   disclosure:
     chevronPosition: trailing
     chevronSize: 20

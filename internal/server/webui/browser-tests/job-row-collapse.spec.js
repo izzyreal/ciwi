@@ -21,6 +21,7 @@ const controls = {
       menuItemGap: 2, optionGap: 6, optionPaddingX: 8, optionPaddingY: 6, optionMinimumHeight: 28,
       selectionIndicatorWidth: 16, viewportInset: 8, menuGap: 4, menuMinimumWidth: 120,
     },
+    logView: {minimumHeight: 48, maximumHeight: 420},
     disclosure: {chevronPosition: 'trailing', chevronSize: 20, chevronGap: 8},
     progress: {tintOpacity: 0.18},
   },

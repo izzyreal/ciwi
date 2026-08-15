@@ -14,6 +14,7 @@ type Controls struct {
 	Badge      BadgeControl      `yaml:"badge" json:"badge"`
 	Input      InputControl      `yaml:"input" json:"input"`
 	Select     SelectControl     `yaml:"select" json:"select"`
+	LogView    LogViewControl    `yaml:"logView" json:"logView"`
 	Disclosure DisclosureControl `yaml:"disclosure" json:"disclosure"`
 	Progress   ProgressControl   `yaml:"progress" json:"progress"`
 }
@@ -76,6 +77,13 @@ type SelectControl struct {
 	SelectionIndicatorWidth float32 `yaml:"selectionIndicatorWidth" json:"selectionIndicatorWidth"`
 }
 
+// LogViewControl defines the intrinsic-height bounds for paged execution
+// output. Browsers interpret them as CSS pixels and Gio interprets them as dp.
+type LogViewControl struct {
+	MinimumHeight float32 `yaml:"minimumHeight" json:"minimumHeight"`
+	MaximumHeight float32 `yaml:"maximumHeight" json:"maximumHeight"`
+}
+
 type DisclosureControl struct {
 	ChevronPosition string  `yaml:"chevronPosition" json:"chevronPosition"`
 	ChevronSize     float32 `yaml:"chevronSize" json:"chevronSize"`
@@ -131,6 +139,8 @@ func (d *ControlsDocument) Validate() error {
 		"select menuMaximumHeight":                 d.Controls.Select.MenuMaximumHeight,
 		"select optionMinimumHeight":               d.Controls.Select.OptionMinimumHeight,
 		"select selectionIndicatorWidth":           d.Controls.Select.SelectionIndicatorWidth,
+		"logView minimumHeight":                    d.Controls.LogView.MinimumHeight,
+		"logView maximumHeight":                    d.Controls.LogView.MaximumHeight,
 	}
 	for name, value := range positive {
 		if value <= 0 {
@@ -178,6 +188,9 @@ func (d *ControlsDocument) Validate() error {
 	}
 	if d.Controls.Select.MenuMaximumHeight < d.Controls.Select.MenuMinimumHeight {
 		return fmt.Errorf("select menuMaximumHeight must be at least menuMinimumHeight")
+	}
+	if d.Controls.LogView.MaximumHeight < d.Controls.LogView.MinimumHeight {
+		return fmt.Errorf("logView maximumHeight must be at least minimumHeight")
 	}
 	if d.Controls.Viewport.CondensedDisclosureMaximumWidth > d.Controls.Viewport.CompactMaximumWidth {
 		return fmt.Errorf("viewport condensedDisclosureMaximumWidth must not exceed compactMaximumWidth")

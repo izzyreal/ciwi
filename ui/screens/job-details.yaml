@@ -666,8 +666,9 @@ screen:
                     text:
                       binding: outputGroup.empty_output_label
                     visible:
-                      binding: outputGroup.output
+                      binding: outputGroup.empty_output_label
                       empty: true
+                      not: true
                     style:
                       role: output-code
                       tone: console-muted

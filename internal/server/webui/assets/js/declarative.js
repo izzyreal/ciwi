@@ -236,6 +236,8 @@
 	metric('--ciwi-select-option-padding-y', activeControls.select.optionPaddingY);
 	metric('--ciwi-select-option-min-height', activeControls.select.optionMinimumHeight);
 	metric('--ciwi-select-indicator-width', activeControls.select.selectionIndicatorWidth);
+	metric('--ciwi-log-view-min-height', activeControls.logView.minimumHeight);
+	metric('--ciwi-log-view-max-height', activeControls.logView.maximumHeight);
 	metric('--ciwi-disclosure-chevron-size', activeControls.disclosure.chevronSize);
 	metric('--ciwi-disclosure-chevron-gap', activeControls.disclosure.chevronGap);
 	style.setProperty('--ciwi-progress-tint', String(activeControls.progress.tintOpacity * 100) + '%');
@@ -1332,7 +1334,7 @@
 	const text = state.chunks.map(chunk => String(chunk.text || '')).join('');
 	const match = state.match;
 	if (!match) {
-	  pre.textContent = text || (state.loaded ? '(no output)' : 'Loading output…');
+	  pre.textContent = text || (state.loaded ? (state.terminal ? '(no output)' : 'Waiting for output…') : 'Loading output…');
 	  return;
 	}
 	const anchorIndex = state.chunks.findIndex(chunk => Number(chunk.id) === Number(match.chunk_id));
@@ -1358,12 +1360,7 @@
 	pre.appendChild(document.createTextNode(runes.slice(start + length).join('')));
   }
 
-  function paintLogViewState(state, preserve) {
-	state.elements.forEach(element => {
-	  if (!element.isConnected) {
-		state.elements.delete(element);
-		return;
-	  }
+  function paintLogViewElement(element, state, preserve) {
 	  const oldHeight = element.scrollHeight;
 	  const oldTop = element.scrollTop;
 	  element.textContent = '';
@@ -1377,6 +1374,15 @@
 		const mark = element.querySelector('.ciwi-search-hit-active');
 		if (mark) mark.scrollIntoView({block: 'center', inline: 'nearest'});
 	  });
+	}
+
+  function paintLogViewState(state, preserve) {
+	state.elements.forEach(element => {
+	  if (!element.isConnected) {
+		state.elements.delete(element);
+		return;
+	  }
+	  paintLogViewElement(element, state, preserve);
 	});
   }
 
@@ -1448,8 +1454,8 @@
 	const state = logViewState(jobID, itemID, view);
 	element.dataset.logKey = state.key;
 	element.tabIndex = 0;
+	paintLogViewElement(element, state, 'none');
 	state.elements.add(element);
-	paintLogViewState(state, 'none');
 	element.addEventListener('scroll', () => {
 	  state.touched = Date.now();
 	  if (element.scrollTop < 96 && state.hasBefore && state.chunks.length) {
@@ -1700,7 +1706,7 @@
     (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
       const previousGroup = previousGroups.get(String(group.id || ''));
       group.output = previousGroup ? String(previousGroup.output || '') : '';
-      group.empty_output_label = group.output ? '' : (group.reached ? '(no output)' : '(step was not reached)');
+      group.empty_output_label = view.interactive_log_available ? '' : (group.output ? '' : (group.reached ? '(no output)' : '(step was not reached)'));
       group.yaml_literal = group.yaml_literal || '(none)';
       group.expanded_command = group.expanded_command || '(none)';
       group.details = group.details || '(none)';
@@ -1841,11 +1847,11 @@
 		  state.terminal = !!descriptor.terminal;
 		  const last = state.chunks.length ? Number(state.chunks[state.chunks.length - 1].id) : 0;
 		  if (Number(stream.last_chunk_id || 0) <= last) return;
-		  if (!view.output_tailing) {
+		  if (!view.output_tailing && last) {
 			state.hasAfter = true;
 			return;
 		  }
-		  loadLogViewPage(state, last ? 'after' : 'tail', last);
+		  loadLogViewPage(state, last ? 'after' : (view.output_tailing ? 'tail' : 'head'), last);
 		});
 	  } catch (error) {
 		console.error('Invalid full job log event', error);

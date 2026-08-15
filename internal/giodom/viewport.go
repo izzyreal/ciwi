@@ -229,6 +229,10 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	estimate := max(1, gtx.Dp(props.Estimate))
 	gap := max(0, gtx.Dp(props.Gap))
 	state.reconcileIndex(children, estimate, gap, axisCross(props.Axis, viewport))
+	if props.ShrinkMain {
+		viewport = r.intrinsicListViewport(gtx, props, viewport, children, state, identity, gap)
+	}
+	mainViewport = axisMain(props.Axis, viewport)
 	if props.ScrollTo != "" && props.ScrollRevision != state.scrollRevision {
 		for index := 0; index < children.Len(); index++ {
 			if children.KeyAt(index) == props.ScrollTo {
@@ -429,6 +433,48 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	r.stats.VisibleListItems += len(recorded)
 	r.stats.MeasuredListItems += len(state.measurements)
 	return layout.Dimensions{Size: renderedViewport}
+}
+
+// intrinsicListViewport measures only enough leading content to decide whether
+// a bounded list fits below its cap. The measurement pass has no input source,
+// so interactive children cannot consume a gesture before their visible pass.
+func (r *Runtime) intrinsicListViewport(
+	gtx layout.Context,
+	props ListProps,
+	viewport image.Point,
+	children Children,
+	state *keyedViewportState,
+	identity string,
+	gap int,
+) image.Point {
+	maximum := axisMain(props.Axis, viewport)
+	if maximum <= 0 {
+		return viewport
+	}
+	extent := 0
+	for index := 0; index < children.Len() && extent < maximum; index++ {
+		childIdentity, valid := r.childIdentity(identity, children, index)
+		if !valid {
+			continue
+		}
+		childContext := listChildContext(gtx, props.Axis, viewport, r.maxGeometryPixels, !props.ShrinkCross)
+		childContext.Source = input.Source{}
+		macro := op.Record(gtx.Ops)
+		dimensions := r.layoutElement(childContext, children.At(index), childIdentity)
+		_ = macro.Stop()
+		mainSize := max(1, axisMain(props.Axis, dimensions.Size))
+		if r.rejectGeometry(childIdentity, dimensions.Size.X, dimensions.Size.Y, mainSize) {
+			continue
+		}
+		state.setExtent(index, mainSize)
+		state.remember(children.KeyAt(index), index, mainSize, props.MaxMeasured)
+		if index > 0 {
+			extent += gap
+		}
+		extent += mainSize
+	}
+	minimum := min(maximum, max(0, gtx.Dp(props.MinimumViewport)))
+	return setAxisMain(props.Axis, viewport, min(maximum, max(minimum, extent)))
 }
 
 func (r *Runtime) layoutPassThroughScrollRegion(gtx layout.Context, element Element, identity string) layout.Dimensions {

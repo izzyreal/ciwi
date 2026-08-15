@@ -42,6 +42,30 @@ func TestKeyedViewportBuildsOnlyVisibleRows(t *testing.T) {
 	}
 }
 
+func TestKeyedViewportShrinkMainFitsContentAndCapsLongContent(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	short := VirtualList("short", ListProps{
+		Axis: layout.Vertical, Viewport: 200, MinimumViewport: 48, ShrinkMain: true, Estimate: 120,
+	}, Static(Spacer("line", 0, 18)))
+	if dimensions := runtime.Layout(testLooseContext(320, 500), short); dimensions.Size.Y != 48 {
+		t.Fatalf("short intrinsic viewport height = %d, want shared minimum 48", dimensions.Size.Y)
+	}
+
+	medium := VirtualList("medium", ListProps{
+		Axis: layout.Vertical, Gap: 5, Viewport: 200, MinimumViewport: 48, ShrinkMain: true, Estimate: 120,
+	}, Static(Spacer("first", 0, 40), Spacer("second", 0, 30)))
+	if dimensions := runtime.Layout(testLooseContext(320, 500), medium); dimensions.Size.Y != 75 {
+		t.Fatalf("medium intrinsic viewport height = %d, want content height 75", dimensions.Size.Y)
+	}
+
+	long := VirtualList("long", ListProps{
+		Axis: layout.Vertical, Viewport: 200, MinimumViewport: 48, ShrinkMain: true, Estimate: 120,
+	}, Static(Spacer("large", 0, 360)))
+	if dimensions := runtime.Layout(testLooseContext(320, 500), long); dimensions.Size.Y != 200 {
+		t.Fatalf("long intrinsic viewport height = %d, want cap 200", dimensions.Size.Y)
+	}
+}
+
 func TestKeyedViewportPreservesAnchorAcrossReorder(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	first := orderedRows(1, 100, 0)

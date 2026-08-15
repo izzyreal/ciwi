@@ -117,6 +117,8 @@ type jobLogStreamSnapshot struct {
 	Chunks              []jobLogChunkSnapshot
 	HasBefore, HasAfter bool
 	Terminal            bool
+	PageLoaded          bool
+	LatestChunkID       int64
 	SelectedChunkID     int64
 	LoadedMode          string
 }

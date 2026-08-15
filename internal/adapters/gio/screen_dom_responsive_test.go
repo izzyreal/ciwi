@@ -3,8 +3,10 @@
 package gio
 
 import (
+	"fmt"
 	"image"
 	"image/color"
+	"strings"
 	"testing"
 	"time"
 
@@ -442,6 +444,41 @@ func TestOutputGroupsViewportTracksWindowHeight(t *testing.T) {
 	}
 }
 
+func TestNativeOutputGroupsMaxHeightRemainsACap(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	screen, err := sharedui.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	if !ok {
+		t.Fatal("job output scroller not found")
+	}
+	groups := func(count int) []any {
+		result := make([]any, 0, count)
+		for index := 0; index < count; index++ {
+			result = append(result, map[string]any{
+				"id": fmt.Sprintf("phase-%d", index), "title": fmt.Sprintf("Phase %d", index+1),
+				"state_key": fmt.Sprintf("job-output:phase-%d", index), "status": "succeeded",
+				"progress": map[string]any{"state": "complete", "fraction": 1},
+			})
+		}
+		return result
+	}
+	compile := func(count int) giodom.Element {
+		compiled := renderer.compileDOMNode(scroller, map[string]any{
+			"jobDetails": map[string]any{"output_groups": groups(count)},
+		}, fmt.Sprintf("output-groups-%d", count))
+		return *compiled
+	}
+	if dimensions := layoutResponsiveLooseElement(renderer, compile(1), 800, 1000); dimensions.Size.Y >= 200 {
+		t.Fatalf("one collapsed output group height = %d, want intrinsic content height", dimensions.Size.Y)
+	}
+	if dimensions := layoutResponsiveLooseElement(renderer, compile(20), 800, 1000); dimensions.Size.Y != 660 {
+		t.Fatalf("many output groups height = %d, want declared cap 660", dimensions.Size.Y)
+	}
+}
+
 func TestJobOutputStartsAtTailOnlyForActiveStatuses(t *testing.T) {
 	for _, status := range []string{"queued", "leased", "running", "waiting", "in progress", "active"} {
 		if !jobOutputStartsAtTail(status) {
@@ -452,6 +489,128 @@ func TestJobOutputStartsAtTailOnlyForActiveStatuses(t *testing.T) {
 		if jobOutputStartsAtTail(status) {
 			t.Errorf("%q unexpectedly started at tail", status)
 		}
+	}
+}
+
+func TestNativeJobLogDescriptorStillTriggersInitialPageLoad(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = false
+	requests := make([]map[string]string, 0, 1)
+	renderer.onAction = func(action uidsl.Action, arguments map[string]string) {
+		if action.Command == "load-job-log-page" {
+			requests = append(requests, cloneStringMap(arguments))
+		}
+	}
+	renderer.ApplyJobLogDescriptor(jobLogDescriptorSnapshot{
+		JobID: "job-1", Streams: map[string]int64{"step:1": 7},
+	})
+
+	node := uidsl.Node{Component: "log-view", LogView: &uidsl.LogView{
+		JobExecutionID: "jobDetails.id", ItemID: "outputGroup.id",
+	}}
+	data := map[string]any{
+		"jobDetails":  map[string]any{"id": "job-1"},
+		"outputGroup": map[string]any{"id": "step:1"},
+	}
+	renderer.compileDOMLogView(node, data, "log")
+	renderer.compileDOMLogView(node, data, "log")
+
+	if len(requests) != 1 {
+		t.Fatalf("page requests = %d, want one deduplicated request", len(requests))
+	}
+	if requests[0]["mode"] != "head" || requests[0]["cursor"] != "0" {
+		t.Fatalf("page request = %+v, want initial head page", requests[0])
+	}
+	stream := renderer.jobLogStreams[nativeJobLogKey("job-1", "step:1")]
+	if stream.PageLoaded {
+		t.Fatal("descriptor incorrectly marked the log page loaded")
+	}
+}
+
+func TestNativeEmptyJobLogPageReloadsWhenChunksArrive(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = true
+	requests := make([]map[string]string, 0, 1)
+	renderer.onAction = func(action uidsl.Action, arguments map[string]string) {
+		if action.Command == "load-job-log-page" {
+			requests = append(requests, cloneStringMap(arguments))
+		}
+	}
+	key := nativeJobLogKey("job-2", "step:1")
+	renderer.ApplyJobLogPage(jobLogStreamSnapshot{JobID: "job-2", ItemID: "step:1"})
+	renderer.ApplyJobLogDescriptor(jobLogDescriptorSnapshot{
+		JobID: "job-2", Streams: map[string]int64{"step:1": 11},
+	})
+
+	node := uidsl.Node{Component: "log-view", LogView: &uidsl.LogView{
+		JobExecutionID: "jobDetails.id", ItemID: "outputGroup.id",
+	}}
+	data := map[string]any{
+		"jobDetails":  map[string]any{"id": "job-2"},
+		"outputGroup": map[string]any{"id": "step:1"},
+	}
+	renderer.compileDOMLogView(node, data, "log")
+
+	if len(requests) != 1 || requests[0]["mode"] != "tail" {
+		t.Fatalf("page requests = %+v, want one tail reload", requests)
+	}
+	if stream := renderer.jobLogStreams[key]; !stream.PageLoaded || !stream.HasAfter || stream.LatestChunkID != 11 {
+		t.Fatalf("empty stream after descriptor = %+v", stream)
+	}
+}
+
+func TestNativeShortJobLogUsesIntrinsicHeightInsteadOfViewportCap(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.ApplyJobLogPage(jobLogStreamSnapshot{
+		JobID: "job-short", ItemID: "", Terminal: true,
+		Chunks: []jobLogChunkSnapshot{{ID: 1, Text: "one short line\n"}},
+	})
+	node := uidsl.Node{Component: "log-view", LogView: &uidsl.LogView{JobExecutionID: "jobDetails.id"}}
+	compiled := renderer.compileDOMNode(node, map[string]any{
+		"jobDetails": map[string]any{"id": "job-short"},
+	}, "short-log")
+	dimensions := layoutResponsiveLooseElement(renderer, *compiled, 800, 800)
+	minimum, maximum := int(renderer.controls.LogView.MinimumHeight), int(renderer.controls.LogView.MaximumHeight)
+	if dimensions.Size.Y < minimum || dimensions.Size.Y >= maximum {
+		t.Fatalf("short native log height = %d, want intrinsic height in [%d,%d)", dimensions.Size.Y, minimum, maximum)
+	}
+}
+
+func TestNativeLongJobLogStopsAtSharedViewportCap(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.ApplyJobLogPage(jobLogStreamSnapshot{
+		JobID: "job-long", Terminal: true,
+		Chunks: []jobLogChunkSnapshot{{ID: 1, Text: strings.Repeat("a long output line\n", 80)}},
+	})
+	node := uidsl.Node{Component: "log-view", LogView: &uidsl.LogView{JobExecutionID: "jobDetails.id"}}
+	compiled := renderer.compileDOMNode(node, map[string]any{
+		"jobDetails": map[string]any{"id": "job-long"},
+	}, "long-log")
+	dimensions := layoutResponsiveLooseElement(renderer, *compiled, 800, 800)
+	if want := int(renderer.controls.LogView.MaximumHeight); dimensions.Size.Y != want {
+		t.Fatalf("long native log height = %d, want shared cap %d", dimensions.Size.Y, want)
+	}
+}
+
+func TestNativeJobLogPagePreservesNewerDescriptorState(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.ApplyJobLogDescriptor(jobLogDescriptorSnapshot{
+		JobID: "job-3", Terminal: true, Streams: map[string]int64{"step:1": 9},
+	})
+	renderer.ApplyJobLogPage(jobLogStreamSnapshot{
+		JobID: "job-3", ItemID: "step:1", Chunks: []jobLogChunkSnapshot{{ID: 5, Text: "older"}},
+	})
+
+	stream := renderer.jobLogStreams[nativeJobLogKey("job-3", "step:1")]
+	if !stream.PageLoaded || !stream.Terminal || !stream.HasAfter || stream.LatestChunkID != 9 {
+		t.Fatalf("merged stream = %+v, want terminal page with newer data pending", stream)
+	}
+	renderer.ApplyJobLogPage(jobLogStreamSnapshot{
+		JobID: "job-3", ItemID: "step:1", LoadedMode: "after",
+		Chunks: []jobLogChunkSnapshot{{ID: 9, Text: "newest"}},
+	})
+	if stream = renderer.jobLogStreams[nativeJobLogKey("job-3", "step:1")]; stream.HasAfter {
+		t.Fatalf("caught-up stream still reports newer data: %+v", stream)
 	}
 }
 

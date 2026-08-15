@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gioui.org/layout"
+	"gioui.org/unit"
 	"github.com/izzyreal/ciwi/internal/giodom"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
@@ -22,6 +23,9 @@ func (r *Renderer) ApplyJobLogPage(page jobLogStreamSnapshot) {
 	defer r.mu.Unlock()
 	key := nativeJobLogKey(page.JobID, page.ItemID)
 	current := r.jobLogStreams[key]
+	page.PageLoaded = true
+	page.Terminal = page.Terminal || current.Terminal
+	page.LatestChunkID = max(page.LatestChunkID, current.LatestChunkID)
 	if page.SelectedChunkID == 0 {
 		page.SelectedChunkID = current.SelectedChunkID
 	}
@@ -37,6 +41,12 @@ func (r *Renderer) ApplyJobLogPage(page jobLogStreamSnapshot) {
 		page.Chunks = append(page.Chunks, chunk)
 	}
 	sort.Slice(page.Chunks, func(i, j int) bool { return page.Chunks[i].ID < page.Chunks[j].ID })
+	if len(page.Chunks) > 0 {
+		page.LatestChunkID = max(page.LatestChunkID, page.Chunks[len(page.Chunks)-1].ID)
+		page.HasAfter = page.HasAfter || page.Chunks[len(page.Chunks)-1].ID < page.LatestChunkID
+	} else if page.LatestChunkID > 0 {
+		page.HasAfter = true
+	}
 	r.jobLogStreams[key] = page
 	for loadKey := range r.jobLogLoads {
 		if strings.HasPrefix(loadKey, key+"\n") {
@@ -76,10 +86,17 @@ func (r *Renderer) ApplyJobLogSearch(result jobLogSearchSnapshot) {
 func (r *Renderer) ApplyJobLogDescriptor(descriptor jobLogDescriptorSnapshot) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for key, stream := range r.jobLogStreams {
+		if stream.JobID == descriptor.JobID {
+			stream.Terminal = descriptor.Terminal
+			r.jobLogStreams[key] = stream
+		}
+	}
 	for itemID, latest := range descriptor.Streams {
 		key := nativeJobLogKey(descriptor.JobID, itemID)
 		stream := r.jobLogStreams[key]
 		stream.JobID, stream.ItemID, stream.Terminal = descriptor.JobID, itemID, descriptor.Terminal
+		stream.LatestChunkID = max(stream.LatestChunkID, latest)
 		if len(stream.Chunks) == 0 || stream.Chunks[len(stream.Chunks)-1].ID < latest {
 			stream.HasAfter = true
 		}
@@ -166,8 +183,8 @@ func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) gio
 		itemID = fmt.Sprint(itemValue)
 	}
 	key := nativeJobLogKey(jobID, itemID)
-	stream, loaded := r.jobLogStreams[key]
-	if !loaded {
+	stream, known := r.jobLogStreams[key]
+	if !known || !stream.PageLoaded {
 		mode := "head"
 		if r.outputTailing {
 			mode = "tail"
@@ -176,7 +193,19 @@ func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) gio
 		return r.domMessage(giodom.Key(path+"/loading"), "Loading output…", r.palette.consoleMuted)
 	}
 	if len(stream.Chunks) == 0 {
-		return r.domMessage(giodom.Key(path+"/empty"), "(no output)", r.palette.consoleMuted)
+		if stream.HasAfter || stream.LatestChunkID > 0 {
+			mode := "head"
+			if r.outputTailing {
+				mode = "tail"
+			}
+			r.requestJobLogPage(jobID, itemID, mode, 0)
+			return r.domMessage(giodom.Key(path+"/loading"), "Loading output…", r.palette.consoleMuted)
+		}
+		label := "Waiting for output…"
+		if stream.Terminal {
+			label = "(no output)"
+		}
+		return r.domMessage(giodom.Key(path+"/empty"), label, r.palette.consoleMuted)
 	}
 	children := make([]giodom.Element, 0, len(stream.Chunks))
 	for _, chunk := range stream.Chunks {
@@ -185,7 +214,9 @@ func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) gio
 	}
 	first, last := stream.Chunks[0].ID, stream.Chunks[len(stream.Chunks)-1].ID
 	props := giodom.ListProps{
-		Axis: layout.Vertical, Viewport: 420, NestedScroll: true, Estimate: 120, Overscan: 2, MaxMeasured: 128,
+		Axis: layout.Vertical, Viewport: unit.Dp(r.controls.LogView.MaximumHeight),
+		MinimumViewport: unit.Dp(r.controls.LogView.MinimumHeight), ShrinkMain: true,
+		NestedScroll: true, Estimate: 120, Overscan: 2, MaxMeasured: 128,
 		ScrollToEnd: r.outputTailing, ForceEndRevision: r.outputTailRevision, SemanticLabel: "Execution output",
 	}
 	if stream.SelectedChunkID > 0 {

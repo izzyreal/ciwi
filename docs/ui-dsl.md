@@ -73,6 +73,11 @@ to each adapter. Nested vertical scrollers consume available movement first and
 chain movement to the page at either boundary. Their gesture observers remain
 behind child controls until a tap becomes a drag, so an entire disclosure
 summary remains activatable even when it is inside a nested scroller.
+Declared maximum dimensions are caps rather than requested sizes: bounded
+scrollers remain intrinsic when their content is shorter. The shared `logView`
+control geometry follows the same rule, growing from its minimum to its maximum
+before enabling nested scrolling.
+
 `graph-view` describes a dependency graph plus its complete list fallback;
 renderers own layout, selection, pan/zoom, and local Graph/List persistence.
 `tree-view` describes recursive report data with stable keys, disclosure state,
