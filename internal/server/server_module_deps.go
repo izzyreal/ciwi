@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/store"
@@ -14,6 +16,7 @@ type agentJobExecutionStore interface {
 	RequeueLeasedJobExecution(jobID, agentID string, metadataPatch map[string]string) (protocol.JobExecution, error)
 	AgentHasActiveJobExecution(agentID string) (bool, error)
 	ListActiveJobExecutionAgentIDs() (map[string]bool, error)
+	ListActiveJobExecutionAgentIDsContext(context.Context) (map[string]bool, error)
 	UpdateJobExecutionStatus(jobID string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error)
 	MergeJobExecutionEnv(jobID string, patch map[string]string) (map[string]string, error)
 	MergeJobExecutionMetadata(jobID string, patch map[string]string) (map[string]string, error)

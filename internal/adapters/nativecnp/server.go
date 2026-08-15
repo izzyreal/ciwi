@@ -127,7 +127,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerInstanceId:     snapshot.InstanceID,
 		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_details", "job_details", "artifact_downloads", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "job_output_stream", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -173,10 +173,51 @@ func (s *Handler) handleRequestStream(parent context.Context, stream cnp.Stream)
 		s.writeJobOutput(ctx, stream, request.Metadata.RequestId, operation.WatchJobOutput, monitorPeerClose(stream))
 		return
 	}
+	started := time.Now()
 	response := s.execute(ctx, request)
+	logNativeUnaryRequest(ctx, request, response, time.Since(started))
 	if err := writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}}); err != nil && !errors.Is(err, io.EOF) {
 		slog.Debug("write native response failed", "error", err)
 	}
+}
+
+func logNativeUnaryRequest(ctx context.Context, request *cnpv1.Request, response *cnpv1.Response, elapsed time.Duration) {
+	failed := response != nil && response.GetError() != nil
+	if elapsed < time.Second && !failed && ctx.Err() == nil {
+		return
+	}
+	operation := "unknown"
+	if request != nil {
+		message := request.ProtoReflect()
+		if oneof := message.Descriptor().Oneofs().ByName("operation"); oneof != nil {
+			if field := message.WhichOneof(oneof); field != nil {
+				operation = string(field.Name())
+			}
+		}
+	}
+	attributes := []any{
+		"operation", operation,
+		"elapsed_ms", elapsed.Milliseconds(),
+	}
+	if request != nil && request.Metadata != nil {
+		attributes = append(attributes,
+			"request_id", request.Metadata.RequestId,
+			"timeout_ms", request.Metadata.TimeoutMs,
+		)
+	}
+	if frontPage := request.GetGetFrontPageView(); frontPage != nil {
+		attributes = append(attributes, "requested_icon_count", len(frontPage.IncludeProjectIconIds))
+	}
+	if projectIcons := request.GetGetProjectIcons(); projectIcons != nil {
+		attributes = append(attributes, "requested_icon_count", len(projectIcons.ProjectIds))
+	}
+	if ctx.Err() != nil {
+		attributes = append(attributes, "context_error", ctx.Err())
+	}
+	if failed {
+		attributes = append(attributes, "status_code", response.GetError().Code.String())
+	}
+	slog.Warn("native request slow, canceled, or failed", attributes...)
 }
 
 func monitorPeerClose(stream cnp.Stream) <-chan struct{} {
@@ -305,6 +346,33 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 			if err == nil {
 				response.Result = &cnpv1.Response_FrontPageView{FrontPageView: result}
 			}
+		}
+	case *cnpv1.Request_GetProjectIcons:
+		icons := make([]*cnpv1.ProjectIcon, 0)
+		if s.services.ProjectIcons != nil {
+			seen := make(map[int64]struct{})
+			for _, projectID := range operation.GetProjectIcons.GetProjectIds() {
+				if projectID <= 0 {
+					continue
+				}
+				if _, exists := seen[projectID]; exists {
+					continue
+				}
+				seen[projectID] = struct{}{}
+				var contentType string
+				var data []byte
+				var found bool
+				contentType, data, found, err = s.services.ProjectIcons.GetProjectIcon(ctx, projectID)
+				if err != nil {
+					break
+				}
+				if found {
+					icons = append(icons, &cnpv1.ProjectIcon{ProjectId: projectID, Data: append([]byte(nil), data...), ContentType: contentType})
+				}
+			}
+		}
+		if err == nil {
+			response.Result = &cnpv1.Response_ProjectIcons{ProjectIcons: &cnpv1.ProjectIconList{Icons: icons}}
 		}
 	case *cnpv1.Request_GetProjectDetails:
 		var view presentation.ProjectDetailsView

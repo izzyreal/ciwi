@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -9,6 +10,50 @@ import (
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
+
+func TestContextAwareFrontPageReadsCancelWhileSQLiteConnectionBusy(t *testing.T) {
+	tests := []struct {
+		name string
+		read func(context.Context, *Store) error
+	}{
+		{name: "projects", read: func(ctx context.Context, store *Store) error {
+			_, err := store.ListProjectsContext(ctx)
+			return err
+		}},
+		{name: "executions", read: func(ctx context.Context, store *Store) error {
+			_, err := store.ListJobExecutionsContext(ctx)
+			return err
+		}},
+		{name: "test summaries", read: func(ctx context.Context, store *Store) error {
+			_, err := store.ListJobExecutionTestSummaries(ctx, []string{"job-1"})
+			return err
+		}},
+		{name: "active agents", read: func(ctx context.Context, store *Store) error {
+			_, err := store.ListActiveJobExecutionAgentIDsContext(ctx)
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := openTestStore(t)
+			tx, err := store.db.Begin()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+			defer cancel()
+			started := time.Now()
+			err = test.read(ctx, store)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("read error = %v, want deadline exceeded", err)
+			}
+			if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+				t.Fatalf("cancellation took %s", elapsed)
+			}
+		})
+	}
+}
 
 func TestParseRFC3339OrZero(t *testing.T) {
 	if got := parseRFC3339OrZero(""); !got.IsZero() {

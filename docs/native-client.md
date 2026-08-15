@@ -70,6 +70,14 @@ always starts a fresh session generation. Screen loads, live watches, output
 streams, receipt checks, and downloads from an older generation are discarded;
 ordinary cancellation/`EOF` teardown is not shown as an error notice.
 
+Project icons are cached for the app lifetime rather than the transport-session
+lifetime, namespaced by server installation and loaded commit. A reconnect can
+therefore reuse icons without repeating the front-page query. Servers that
+advertise `project_icons_batch` hydrate cold or stale icon entries through a
+separate best-effort request; an icon timeout never discards valid front-page
+data. Passive screen invalidations are coalesced, and a deadline while cached
+data is visible retries with bounded backoff instead of showing a snackbar.
+
 The client verifies journaled mutation receipts before admitting newly initiated
 remote actions to a reconnected session. Safe actions are replayed only when the
 server installation identity matches and the server confirms that no receipt
@@ -129,6 +137,8 @@ Store Connect.
   streams directly and Yamux supplies the same abstraction over TCP
 - Live state: a long-lived `WatchChanges` stream of coalescible invalidations
 - Live output: a cursor-based `WatchJobOutput` stream of bounded event pages
+- Optional project assets: negotiated `project_icons_batch` requests keep icon
+  hydration independent from the main front-page snapshot
 - 0-RTT and QUIC datagrams: disabled in v1
 
 The transport-neutral CNP handler owns the hello exchange, framing, request

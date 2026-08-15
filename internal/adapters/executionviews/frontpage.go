@@ -16,7 +16,8 @@ import (
 )
 
 type Store interface {
-	ListJobExecutions() ([]protocol.JobExecution, error)
+	ListJobExecutionsContext(context.Context) ([]protocol.JobExecution, error)
+	ListJobExecutionTestSummaries(context.Context, []string) (map[string]protocol.JobExecutionTestSummary, error)
 	GetJobExecution(string) (protocol.JobExecution, error)
 	ListJobExecutionTimelineEvents(string) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionEventsPageAfter(string, int64, int) ([]protocol.JobExecutionEvent, error)
@@ -337,35 +338,62 @@ func (r *Repository) ListFrontPageExecutionCards(ctx context.Context) ([]domain.
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	jobs, err := r.store.ListJobExecutions()
+	jobs, err := r.store.ListJobExecutionsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := r.attachTestSummaries(jobs); err != nil {
+	queuedSelection := jobhistory.SelectSummaryCards(jobs, true, r.limit)
+	historySelection := jobhistory.SelectSummaryCards(jobs, false, r.limit)
+	visibleJobIDs := append(queuedSelection.VisibleJobIDs(jobs), historySelection.VisibleJobIDs(jobs)...)
+	if err := r.attachTestSummaries(ctx, jobs, visibleJobIDs); err != nil {
 		return nil, nil, err
 	}
 	if r.progress != nil {
 		r.progress.AttachJobEstimates(jobs)
 	}
-	if err := r.attachSchedulingDiagnoses(ctx, jobs); err != nil {
+	if err := r.attachSelectedSchedulingDiagnoses(ctx, jobs, queuedSelection.VisibleJobIDs(jobs)); err != nil {
 		return nil, nil, err
 	}
-	queued := mapCards(jobhistory.SummaryCards(jobs, true, r.limit))
-	history := mapCards(jobhistory.SummaryCards(jobs, false, r.limit))
+	queued := mapCards(queuedSelection.Views(jobs))
+	history := mapCards(historySelection.Views(jobs))
 	return queued, history, nil
 }
 
-func (r *Repository) attachTestSummaries(jobs []protocol.JobExecution) error {
+func (r *Repository) attachTestSummaries(ctx context.Context, jobs []protocol.JobExecution, jobIDs []string) error {
+	summaries, err := r.store.ListJobExecutionTestSummaries(ctx, jobIDs)
+	if err != nil {
+		return fmt.Errorf("load front-page test summaries: %w", err)
+	}
 	for i := range jobs {
-		report, found, err := r.store.GetJobExecutionTestReport(jobs[i].ID)
-		if err != nil {
-			return fmt.Errorf("load test summary for job %s: %w", jobs[i].ID, err)
+		if summary, found := summaries[jobs[i].ID]; found {
+			copy := summary
+			jobs[i].TestSummary = &copy
 		}
-		if found {
-			jobs[i].TestSummary = &protocol.JobExecutionTestSummary{
-				Total: report.Total, Passed: report.Passed, Failed: report.Failed, Skipped: report.Skipped,
-			}
+	}
+	return nil
+}
+
+func (r *Repository) attachSelectedSchedulingDiagnoses(ctx context.Context, jobs []protocol.JobExecution, jobIDs []string) error {
+	if len(jobIDs) == 0 {
+		return nil
+	}
+	wanted := make(map[string]struct{}, len(jobIDs))
+	for _, jobID := range jobIDs {
+		wanted[jobID] = struct{}{}
+	}
+	indices := make([]int, 0, len(wanted))
+	selected := make([]protocol.JobExecution, 0, len(wanted))
+	for i := range jobs {
+		if _, ok := wanted[jobs[i].ID]; ok {
+			indices = append(indices, i)
+			selected = append(selected, jobs[i])
 		}
+	}
+	if err := r.attachSchedulingDiagnoses(ctx, selected); err != nil {
+		return err
+	}
+	for i, index := range indices {
+		jobs[index] = selected[i]
 	}
 	return nil
 }

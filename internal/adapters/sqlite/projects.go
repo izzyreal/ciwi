@@ -36,7 +36,7 @@ func (r *ProjectRepository) ListProjects(ctx context.Context) ([]domain.Project,
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	projects, err := r.store.ListProjects()
+	projects, err := r.store.ListProjectsContext(ctx)
 	if err != nil {
 		return nil, err
 	}

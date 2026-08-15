@@ -44,11 +44,15 @@ func tcpSession(ctx context.Context, connection net.Conn) (cnp.Session, error) {
 // by connection adapters such as SSH direct-tcpip without opening a local TCP
 // listener or changing the CNP application protocol.
 func DialTCPConn(ctx context.Context, connection net.Conn, clientName, clientVersion string) (*Client, error) {
+	return DialTCPConnWithProjectIconCache(ctx, connection, clientName, clientVersion, nil)
+}
+
+func DialTCPConnWithProjectIconCache(ctx context.Context, connection net.Conn, clientName, clientVersion string, icons *ProjectIconCache) (*Client, error) {
 	session, err := tcpSession(ctx, connection)
 	if err != nil {
 		return nil, fmt.Errorf("dial ciwi native endpoint: %w", err)
 	}
-	return newClient(ctx, session, clientName, clientVersion)
+	return newClient(ctx, session, clientName, clientVersion, icons)
 }
 
 type clientYamuxLogger struct{}

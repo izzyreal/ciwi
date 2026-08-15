@@ -13,12 +13,20 @@ func (a schedulingAgentSourceAdapter) ListSchedulingAgents(ctx context.Context) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return a.state.schedulingAgentSnapshots(time.Now().UTC()), nil
+	return a.state.schedulingAgentSnapshotsContext(ctx, time.Now().UTC())
 }
 
 func (s *stateStore) schedulingAgentSnapshots(now time.Time) []requirements.AgentSnapshot {
-	busy, err := s.agentJobExecutionStore().ListActiveJobExecutionAgentIDs()
+	snapshots, _ := s.schedulingAgentSnapshotsContext(context.Background(), now)
+	return snapshots
+}
+
+func (s *stateStore) schedulingAgentSnapshotsContext(ctx context.Context, now time.Time) ([]requirements.AgentSnapshot, error) {
+	busy, err := s.agentJobExecutionStore().ListActiveJobExecutionAgentIDsContext(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		busy = map[string]bool{}
 	}
 	s.mu.Lock()
@@ -32,5 +40,5 @@ func (s *stateStore) schedulingAgentSnapshots(now time.Time) []requirements.Agen
 			Busy: busy[id],
 		})
 	}
-	return snapshots
+	return snapshots, nil
 }

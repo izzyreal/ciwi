@@ -7,7 +7,7 @@ metadata:
 screen:
   dataSources:
     - name: frontPage
-      watchTopics: [server, projects, agents, agent-eligibility, queue, history]
+      watchTopics: [server, projects, agent-eligibility, queue, history]
     - name: client
   root:
     component: page

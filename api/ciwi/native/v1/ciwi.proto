@@ -111,6 +111,20 @@ message GetFrontPageViewRequest {
   repeated int64 include_project_icon_ids = 1;
 }
 
+message GetProjectIconsRequest {
+  repeated int64 project_ids = 1;
+}
+
+message ProjectIcon {
+  int64 project_id = 1;
+  bytes data = 2;
+  string content_type = 3;
+}
+
+message ProjectIconList {
+  repeated ProjectIcon icons = 1;
+}
+
 message ProjectDetailsView {
   ProjectSummary project = 1;
   repeated ProjectPipelineDetails pipelines = 2;
@@ -733,6 +747,7 @@ message Request {
     TestVaultConnectionRequest test_vault_connection = 41;
     VaultConnectionIDRequest delete_vault_connection = 42;
     ArtifactDownloadRequest download_artifact = 43;
+    GetProjectIconsRequest get_project_icons = 44;
   }
 }
 
@@ -772,6 +787,7 @@ message Response {
     TestVaultConnectionResult test_vault_connection = 40;
     DeleteVaultConnectionResult delete_vault_connection = 41;
     ArtifactDownloadChunk artifact_download = 42;
+    ProjectIconList project_icons = 43;
   }
 }
 

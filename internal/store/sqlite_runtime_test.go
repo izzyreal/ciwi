@@ -171,6 +171,13 @@ func TestStoreSaveAndGetJobTestReport(t *testing.T) {
 	if got.Coverage == nil || got.Coverage.Format != "go-coverprofile" || got.Coverage.TotalStatements != 10 {
 		t.Fatalf("unexpected coverage report: %+v", got.Coverage)
 	}
+	summaries, err := s.ListJobExecutionTestSummaries(t.Context(), []string{job.ID, job.ID, "missing"})
+	if err != nil {
+		t.Fatalf("list test summaries: %v", err)
+	}
+	if summary, ok := summaries[job.ID]; !ok || summary.Total != 2 || summary.Passed != 1 || summary.Failed != 1 {
+		t.Fatalf("materialized test summary = %+v, found=%v", summary, ok)
+	}
 }
 
 func TestStoreIgnoresLateRunningAfterSucceeded(t *testing.T) {

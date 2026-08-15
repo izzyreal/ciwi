@@ -65,6 +65,10 @@ func RestrictedAuthorizedKey(publicKey, destination string) string {
 }
 
 func DialSSH(ctx context.Context, config SSHConfig, clientName, clientVersion string) (*Client, error) {
+	return DialSSHWithProjectIconCache(ctx, config, clientName, clientVersion, nil)
+}
+
+func DialSSHWithProjectIconCache(ctx context.Context, config SSHConfig, clientName, clientVersion string, icons *ProjectIconCache) (*Client, error) {
 	jumpAddress, err := normalizedHostPort(config.JumpAddress, "22")
 	if err != nil {
 		return nil, fmt.Errorf("invalid SSH jump host: %w", err)
@@ -118,7 +122,7 @@ func DialSSH(ctx context.Context, config SSHConfig, clientName, clientVersion st
 		_ = sshClient.Close()
 		return nil, fmt.Errorf("open SSH route to %s: %w", destination, err)
 	}
-	client, err := DialTCPConn(ctx, &sshTunnelConn{Conn: tunnel, client: sshClient}, clientName, clientVersion)
+	client, err := DialTCPConnWithProjectIconCache(ctx, &sshTunnelConn{Conn: tunnel, client: sshClient}, clientName, clientVersion, icons)
 	if err != nil {
 		_ = tunnel.Close()
 		_ = sshClient.Close()

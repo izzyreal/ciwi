@@ -55,6 +55,7 @@ type screenLoadResult struct {
 	navigation          navigationState
 	generation          uint64
 	recoverMissingRoute bool
+	refresh             screenRefreshRequest
 	data                map[string]any
 	err                 error
 }
@@ -89,13 +90,19 @@ type nativeConnectionState struct {
 }
 
 func connectNativeSession(ctx context.Context, address, version string) (*nativeSession, error) {
+	return connectNativeSessionWithProjectIconCache(ctx, address, version, nil)
+}
+
+func connectNativeSessionWithProjectIconCache(ctx context.Context, address, version string, icons *cnpclient.ProjectIconCache) (*nativeSession, error) {
 	targets, err := nativeTargets(ctx, address)
 	if err != nil {
 		return nil, err
 	}
 	connectCtx, cancelConnect := context.WithTimeout(ctx, 8*time.Second)
 	defer cancelConnect()
-	client, target, err := dialNativeTargets(connectCtx, targets, version)
+	client, target, err := dialNativeTargetsWith(connectCtx, targets, version, func(ctx context.Context, address, name, version string) (*cnpclient.Client, error) {
+		return cnpclient.DialWithProjectIconCache(ctx, address, name, version, icons)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("connect to ciwi native endpoint: %w", err)
 	}
@@ -103,12 +110,16 @@ func connectNativeSession(ctx context.Context, address, version string) (*native
 }
 
 func connectSSHNativeSession(ctx context.Context, settings sshConnectionSettings, version string) (*nativeSession, error) {
+	return connectSSHNativeSessionWithProjectIconCache(ctx, settings, version, nil)
+}
+
+func connectSSHNativeSessionWithProjectIconCache(ctx context.Context, settings sshConnectionSettings, version string, icons *cnpclient.ProjectIconCache) (*nativeSession, error) {
 	connectCtx, cancelConnect := context.WithTimeout(ctx, 15*time.Second)
 	defer cancelConnect()
-	client, err := cnpclient.DialSSH(connectCtx, cnpclient.SSHConfig{
+	client, err := cnpclient.DialSSHWithProjectIconCache(connectCtx, cnpclient.SSHConfig{
 		JumpAddress: settings.JumpAddress, Username: settings.Username, Destination: settings.Destination,
 		PrivateKeyPEM: settings.PrivateKey, HostKeyFingerprint: settings.HostKeyFingerprint,
-	}, "ciwi-desktop", version)
+	}, "ciwi-desktop", version, icons)
 	if err != nil {
 		return nil, fmt.Errorf("connect through remote server: %w", err)
 	}
@@ -128,17 +139,21 @@ func watchNativeSession(ctx context.Context, client *cnpclient.Client, address s
 }
 
 func connectConfiguredNativeSession(ctx context.Context, settings nativeConnectionSettings, version string) (*nativeSession, error) {
+	return connectConfiguredNativeSessionWithProjectIconCache(ctx, settings, version, nil)
+}
+
+func connectConfiguredNativeSessionWithProjectIconCache(ctx context.Context, settings nativeConnectionSettings, version string, icons *cnpclient.ProjectIconCache) (*nativeSession, error) {
 	if settings.Mode == connectionModeSSH {
-		return connectSSHNativeSession(ctx, settings.SSH, version)
+		return connectSSHNativeSessionWithProjectIconCache(ctx, settings.SSH, version, icons)
 	}
 	preferred := strings.TrimSpace(settings.PreferredAddress)
 	if preferred != "" {
-		connected, err := connectNativeSession(ctx, preferred, version)
+		connected, err := connectNativeSessionWithProjectIconCache(ctx, preferred, version, icons)
 		if err == nil || !settings.DiscoverFallback {
 			return connected, err
 		}
 	}
-	return connectNativeSession(ctx, "", version)
+	return connectNativeSessionWithProjectIconCache(ctx, "", version, icons)
 }
 
 func (s nativeConnectionState) binding() map[string]any {
@@ -541,7 +556,10 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 		sshSettings.PrivateKey = privateKey
 		connectionSettings.SSH.PrivateKey = privateKey
 	}
-	sessionSupervisor := newNativeSessionSupervisor(ctx, options.Version, nil, nil)
+	projectIcons := cnpclient.NewProjectIconCache()
+	sessionSupervisor := newNativeSessionSupervisor(ctx, options.Version, func(ctx context.Context, settings nativeConnectionSettings, version string) (*nativeSession, error) {
+		return connectConfiguredNativeSessionWithProjectIconCache(ctx, settings, version, projectIcons)
+	}, nil)
 	defer sessionSupervisor.Close()
 	var client *cnpclient.Client
 	var changes <-chan *cnpv1.ChangeEvent
@@ -603,7 +621,48 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 	var screenLoadCancel context.CancelFunc
 	var screenLoadGeneration uint64
 	var screenRefreshes screenRefreshCoordinator
-	launchScreenLoad := func(target navigationState, recoverMissingRoute bool) {
+	var refreshDelayTimer *time.Timer
+	var refreshDelayWake <-chan time.Time
+	var delayedRefresh screenRefreshRequest
+	var delayedRefreshTarget navigationState
+	stopRefreshDelay := func() {
+		if refreshDelayTimer != nil && !refreshDelayTimer.Stop() {
+			select {
+			case <-refreshDelayTimer.C:
+			default:
+			}
+		}
+		refreshDelayWake = nil
+		delayedRefresh = screenRefreshRequest{}
+		delayedRefreshTarget = navigationState{}
+	}
+	scheduleRefreshDelay := func(target navigationState, request screenRefreshRequest, delay time.Duration) {
+		if refreshDelayWake != nil && delayedRefreshTarget == target {
+			delayedRefresh = mergeScreenRefreshRequest(delayedRefresh, request)
+			// Preserve an already-armed failure backoff when more passive
+			// invalidations arrive. A debounce may still be reset by a newer
+			// invalidation so a burst settles into one request.
+			if delayedRefresh.origin == screenRefreshRetry {
+				return
+			}
+		} else {
+			delayedRefresh = request
+			delayedRefreshTarget = target
+		}
+		if refreshDelayTimer == nil {
+			refreshDelayTimer = time.NewTimer(delay)
+		} else {
+			if !refreshDelayTimer.Stop() {
+				select {
+				case <-refreshDelayTimer.C:
+				default:
+				}
+			}
+			refreshDelayTimer.Reset(delay)
+		}
+		refreshDelayWake = refreshDelayTimer.C
+	}
+	launchScreenLoad := func(target navigationState, request screenRefreshRequest) {
 		if screenLoadCancel != nil {
 			// launchScreenLoad is only called after the previous load completed or
 			// after its cancellation was explicitly requested by navigation.
@@ -626,32 +685,50 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			data, loadErr := loadScreenData(loadCtx, activeClient, target, themeName)
 			select {
 			case screenLoads <- screenLoadResult{
-				navigation: target, generation: generation, recoverMissingRoute: recoverMissingRoute,
+				navigation: target, generation: generation, recoverMissingRoute: request.recoverMissingRoute, refresh: request,
 				data: data, err: loadErr,
 			}:
 			case <-ctx.Done():
 			}
 		}()
 	}
-	queueScreenLoad := func(target navigationState, recoverMissingRoute bool) {
+	queueScreenLoad := func(target navigationState, request screenRefreshRequest) {
+		stopRefreshDelay()
 		if screenLoadCancel != nil {
 			screenLoadCancel()
 			screenLoadCancel = nil
 		}
-		screenRefreshes.supersede()
-		launchScreenLoad(target, recoverMissingRoute)
+		screenRefreshes.supersede(request)
+		launchScreenLoad(target, request)
 	}
-	requestScreenRefresh := func(target navigationState, recoverMissingRoute bool) {
-		if screenRefreshes.request(recoverMissingRoute) {
-			launchScreenLoad(target, recoverMissingRoute)
+	requestScreenRefresh := func(target navigationState, request screenRefreshRequest) {
+		if request.origin.passive() {
+			scheduleRefreshDelay(target, request, passiveRefreshDebounce)
+			return
+		}
+		stopRefreshDelay()
+		if screenRefreshes.request(request) {
+			launchScreenLoad(target, request)
 		}
 	}
-	startScreenLoad := func(target navigationState) { queueScreenLoad(target, false) }
-	startResyncLoad := func(target navigationState) { queueScreenLoad(target, true) }
-	requestScreenLoad := func(target navigationState) { requestScreenRefresh(target, false) }
-	requestResyncLoad := func(target navigationState) { requestScreenRefresh(target, true) }
+	startScreenLoad := func(target navigationState) {
+		queueScreenLoad(target, screenRefreshRequest{origin: screenRefreshNavigation})
+	}
+	startResyncLoad := func(target navigationState) {
+		queueScreenLoad(target, screenRefreshRequest{origin: screenRefreshNavigation, recoverMissingRoute: true})
+	}
+	requestPassiveScreenLoad := func(target navigationState) {
+		requestScreenRefresh(target, screenRefreshRequest{origin: screenRefreshPassive})
+	}
+	requestExplicitScreenLoad := func(target navigationState) {
+		requestScreenRefresh(target, screenRefreshRequest{origin: screenRefreshExplicit})
+	}
+	requestResyncLoad := func(target navigationState) {
+		requestScreenRefresh(target, screenRefreshRequest{origin: screenRefreshOperation, recoverMissingRoute: true})
+	}
 	var pendingNavigation *navigationState
 	defer func() {
+		stopRefreshDelay()
 		if screenLoadCancel != nil {
 			screenLoadCancel()
 		}
@@ -812,6 +889,7 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			screenLoadCancel = nil
 			screenLoadGeneration++
 		}
+		stopRefreshDelay()
 		screenRefreshes.cancel()
 	}
 	pauseReconnect := func(status string) {
@@ -1069,20 +1147,29 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			sessionSupervisor.Resume(connectionSettings)
 			applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: "Returning to Ciwi; reconnecting…"})
 			window.Invalidate()
+		case <-refreshDelayWake:
+			request := delayedRefresh
+			target := delayedRefreshTarget
+			refreshDelayWake = nil
+			delayedRefresh = screenRefreshRequest{}
+			delayedRefreshTarget = navigationState{}
+			if client != nil && target == navigation && screenRefreshes.request(request) {
+				launchScreenLoad(target, request)
+			}
 		case change, ok := <-changes:
 			if !ok {
 				scheduleReconnect("")
 				continue
 			}
 			if change.ResyncRequired {
-				requestScreenLoad(navigation)
+				requestPassiveScreenLoad(navigation)
 				window.Invalidate()
 			} else if relevantScreenChange(screens[navigation.screen], navigation, change) {
 				// Deleting the resource that owns the current route publishes its
 				// invalidation before the command response can navigate away. That
 				// obsolete refresh would only observe the expected not-found result.
 				if !nativeAgentDeletionOwnsCurrentRoute(coordinator.Snapshot(), navigation) {
-					requestScreenLoad(navigation)
+					requestPassiveScreenLoad(navigation)
 					window.Invalidate()
 				}
 			}
@@ -1105,7 +1192,7 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 				outputBuffer.apply(renderer)
 				if navigation.screen == "job-details" && navigation.jobID == batch.GetJobExecutionId() && terminalOutputRefreshedJobID != navigation.jobID {
 					terminalOutputRefreshedJobID = navigation.jobID
-					requestScreenLoad(navigation)
+					requestPassiveScreenLoad(navigation)
 				}
 				window.Invalidate()
 			} else if outputApplyTimer == nil {
@@ -1136,15 +1223,27 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 				continue
 			}
 			screenLoadCancel = nil
-			if startTrailing, recoverMissingRoute := screenRefreshes.complete(); startTrailing && client != nil {
-				launchScreenLoad(result.navigation, recoverMissingRoute)
-			}
+			pendingRefresh, hasPendingRefresh := screenRefreshes.complete()
 			if expectedNativeDisconnect(result.err) {
 				pendingNavigation = nil
 				scheduleReconnect("")
 				continue
 			}
 			if result.err != nil {
+				if quietPassiveRefreshFailure(result.refresh, result.err, screenCache.Has(result.navigation)) {
+					retry := screenRefreshRequest{origin: screenRefreshRetry}
+					if hasPendingRefresh {
+						if !pendingRefresh.origin.passive() {
+							requestScreenRefresh(result.navigation, pendingRefresh)
+							window.Invalidate()
+							continue
+						}
+						retry = mergeScreenRefreshRequest(retry, pendingRefresh)
+					}
+					scheduleRefreshDelay(result.navigation, retry, screenRefreshes.nextRetry())
+					window.Invalidate()
+					continue
+				}
 				if result.recoverMissingRoute && result.navigation.screen != "front-page" {
 					if err := beginResyncNavigation(navigationState{screen: "front-page"}); err != nil {
 						renderer.ShowAlert("Loading failed", result.err.Error())
@@ -1179,6 +1278,7 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					renderer.ShowAlert("Loading failed", result.err.Error())
 				}
 			} else {
+				screenRefreshes.resetRetry()
 				if err := validateNativeBindings(screens[result.navigation.screen], result.data); err != nil {
 					if navigation == result.navigation && pendingNavigation != nil {
 						pendingNavigation = nil
@@ -1233,6 +1333,9 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					outputBuffer.apply(renderer)
 				}
 			}
+			if hasPendingRefresh && client != nil {
+				requestScreenRefresh(navigation, pendingRefresh)
+			}
 			window.Invalidate()
 		case result := <-artifactDownloads:
 			if result.generation != sessionSupervisor.Generation() || (expectedNativeDisconnect(result.err) && !errors.Is(result.err, errArtifactDownloadCancelled)) {
@@ -1282,7 +1385,7 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					pending := navigation
 					pendingNavigation = &pending
 				}
-				requestScreenLoad(navigation)
+				requestExplicitScreenLoad(navigation)
 				window.Invalidate()
 				continue
 			case "set-connection-field":

@@ -24,6 +24,16 @@ type executionStoreStub struct {
 	testReport map[string]protocol.JobExecutionTestReport
 }
 
+type trackingSummaryStore struct {
+	executionStoreStub
+	requested []string
+}
+
+func (s *trackingSummaryStore) ListJobExecutionTestSummaries(ctx context.Context, ids []string) (map[string]protocol.JobExecutionTestSummary, error) {
+	s.requested = append([]string(nil), ids...)
+	return s.executionStoreStub.ListJobExecutionTestSummaries(ctx, ids)
+}
+
 func (s executionStoreStub) GetJobExecution(id string) (protocol.JobExecution, error) {
 	for _, job := range s.jobs {
 		if job.ID == id {
@@ -50,6 +60,28 @@ func (s executionStoreStub) ListJobExecutionEventsPageAfter(id string, after int
 
 func (s executionStoreStub) ListJobExecutions() ([]protocol.JobExecution, error) {
 	return append([]protocol.JobExecution(nil), s.jobs...), nil
+}
+
+func (s executionStoreStub) ListJobExecutionsContext(ctx context.Context) ([]protocol.JobExecution, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return append([]protocol.JobExecution(nil), s.jobs...), nil
+}
+
+func (s executionStoreStub) ListJobExecutionTestSummaries(ctx context.Context, ids []string) (map[string]protocol.JobExecutionTestSummary, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result := make(map[string]protocol.JobExecutionTestSummary)
+	for _, id := range ids {
+		if report, found := s.testReport[id]; found {
+			result[id] = protocol.JobExecutionTestSummary{
+				Total: report.Total, Passed: report.Passed, Failed: report.Failed, Skipped: report.Skipped,
+			}
+		}
+	}
+	return result, nil
 }
 
 func (s executionStoreStub) ListJobExecutionArtifacts(id string) ([]protocol.JobExecutionArtifact, error) {
@@ -185,6 +217,31 @@ func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 	}
 	if got := history[0].Sections[0].Jobs[0].TestSummary; got == nil || got.Total != 20 || got.Passed != 20 {
 		t.Fatalf("history test summary = %+v", got)
+	}
+}
+
+func TestRepositoryEnrichesOnlyJobsVisibleWithinCardLimit(t *testing.T) {
+	now := time.Now().UTC()
+	store := &trackingSummaryStore{executionStoreStub: executionStoreStub{
+		jobs: []protocol.JobExecution{
+			{ID: "newest", Status: "succeeded", CreatedUTC: now},
+			{ID: "older", Status: "failed", CreatedUTC: now.Add(-time.Minute)},
+			{ID: "oldest", Status: "succeeded", CreatedUTC: now.Add(-2 * time.Minute)},
+		},
+		testReport: map[string]protocol.JobExecutionTestReport{
+			"newest": {Total: 3, Passed: 3}, "older": {Total: 2, Failed: 2}, "oldest": {Total: 1, Passed: 1},
+		},
+	}}
+	repository := NewRepository(store, 1)
+	_, history, err := repository.ListFrontPageExecutionCards(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || len(history[0].Sections) != 1 || history[0].Sections[0].Jobs[0].ID != "newest" {
+		t.Fatalf("history = %+v", history)
+	}
+	if len(store.requested) != 1 || store.requested[0] != "newest" {
+		t.Fatalf("summary IDs = %v, want only newest visible job", store.requested)
 	}
 }
 

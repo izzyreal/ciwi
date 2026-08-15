@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -106,7 +107,11 @@ func insertJobExecution(tx *sql.Tx, req protocol.CreateJobExecutionRequest, jobI
 }
 
 func (s *Store) ListJobExecutions() ([]protocol.JobExecution, error) {
-	rows, err := s.db.Query(`
+	return s.ListJobExecutionsContext(context.Background())
+}
+
+func (s *Store) ListJobExecutionsContext(ctx context.Context) ([]protocol.JobExecution, error) {
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, script, env_json, required_capabilities_json, timeout_seconds, artifact_globs_json, dependency_artifact_job_ids_json, caches_json, source_repo, source_ref, metadata_json, step_plan_json,
 		       status, created_utc, started_utc, finished_utc, leased_by_agent_id, leased_utc, exit_code, error_text, cache_stats_json, runtime_capabilities_json, current_step_text
 		FROM job_executions
@@ -211,7 +216,11 @@ func (s *Store) AgentHasActiveJobExecution(agentID string) (bool, error) {
 }
 
 func (s *Store) ListActiveJobExecutionAgentIDs() (map[string]bool, error) {
-	rows, err := s.db.Query(`
+	return s.ListActiveJobExecutionAgentIDsContext(context.Background())
+}
+
+func (s *Store) ListActiveJobExecutionAgentIDsContext(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT leased_by_agent_id
 		FROM job_executions
 		WHERE status IN (?, ?)

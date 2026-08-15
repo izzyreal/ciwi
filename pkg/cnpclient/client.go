@@ -5,7 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,7 +14,10 @@ import (
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
 )
 
-const ALPN = cnp.ALPN
+const (
+	ALPN                        = cnp.ALPN
+	projectIconsBatchCapability = "project_icons_batch"
+)
 
 type Error struct {
 	Code    cnpv1.StatusCode
@@ -30,17 +34,14 @@ func (e *Error) Error() string {
 type Client struct {
 	session      cnp.Session
 	welcome      *cnpv1.Welcome
-	projectMu    sync.Mutex
-	projectIcons map[int64]projectIcon
-}
-
-type projectIcon struct {
-	contentType  string
-	data         []byte
-	loadedCommit string
+	projectIcons *ProjectIconCache
 }
 
 func Dial(ctx context.Context, address, clientName, clientVersion string) (*Client, error) {
+	return DialWithProjectIconCache(ctx, address, clientName, clientVersion, nil)
+}
+
+func DialWithProjectIconCache(ctx context.Context, address, clientName, clientVersion string, icons *ProjectIconCache) (*Client, error) {
 	target, err := ParseTarget(address)
 	if err != nil {
 		return nil, err
@@ -57,11 +58,14 @@ func Dial(ctx context.Context, address, clientName, clientVersion string) (*Clie
 	if err != nil {
 		return nil, fmt.Errorf("dial ciwi native endpoint: %w", err)
 	}
-	return newClient(ctx, session, clientName, clientVersion)
+	return newClient(ctx, session, clientName, clientVersion, icons)
 }
 
-func newClient(ctx context.Context, session cnp.Session, clientName, clientVersion string) (*Client, error) {
-	client := &Client{session: session, projectIcons: map[int64]projectIcon{}}
+func newClient(ctx context.Context, session cnp.Session, clientName, clientVersion string, icons *ProjectIconCache) (*Client, error) {
+	if icons == nil {
+		icons = NewProjectIconCache()
+	}
+	client := &Client{session: session, projectIcons: icons}
 	if err := client.hello(ctx, clientName, clientVersion); err != nil {
 		_ = session.CloseWithError(fmt.Errorf("hello failed: %w", err))
 		return nil, err
@@ -70,6 +74,20 @@ func newClient(ctx context.Context, session cnp.Session, clientName, clientVersi
 }
 
 func (c *Client) Welcome() *cnpv1.Welcome { return c.welcome }
+
+func (c *Client) serverInstallationID() string {
+	if c == nil || c.welcome == nil {
+		return ""
+	}
+	if installationID := strings.TrimSpace(c.welcome.ServerInstallationId); installationID != "" {
+		return installationID
+	}
+	return strings.TrimSpace(c.welcome.ServerInstanceId)
+}
+
+func (c *Client) hasCapability(capability string) bool {
+	return c != nil && c.welcome != nil && slices.Contains(c.welcome.Capabilities, capability)
+}
 
 func (c *Client) Close() error {
 	if c == nil || c.session == nil {
@@ -201,25 +219,59 @@ func (c *Client) GetFrontPageView(ctx context.Context) (*cnpv1.FrontPageView, er
 		return nil, err
 	}
 	missing := make([]int64, 0, len(result.Projects))
-	c.projectMu.Lock()
+	iconHydrationSucceeded := true
+	installationID := c.serverInstallationID()
 	for _, project := range result.Projects {
 		if project == nil {
 			continue
 		}
-		icon, ok := c.projectIcons[project.Id]
+		icon, ok := c.projectIcons.get(installationID, project.Id)
 		if !ok || icon.loadedCommit != project.LoadedCommit {
 			missing = append(missing, project.Id)
 		}
 	}
-	c.projectMu.Unlock()
 	if len(missing) > 0 {
-		result, err = c.getFrontPageView(ctx, missing)
-		if err != nil {
-			return nil, err
+		iconHydrationSucceeded = false
+		if c.hasCapability(projectIconsBatchCapability) {
+			if icons, iconErr := c.GetProjectIcons(ctx, missing); iconErr == nil {
+				iconHydrationSucceeded = true
+				commits := make(map[int64]string, len(result.Projects))
+				for _, project := range result.Projects {
+					if project != nil {
+						commits[project.Id] = project.LoadedCommit
+					}
+				}
+				for _, icon := range icons.Icons {
+					if icon == nil || icon.ProjectId <= 0 || len(icon.Data) == 0 {
+						continue
+					}
+					c.projectIcons.put(installationID, icon.ProjectId, projectIcon{
+						contentType: icon.ContentType, data: icon.Data, loadedCommit: commits[icon.ProjectId],
+					})
+				}
+			}
+		} else if hydrated, hydrateErr := c.getFrontPageView(ctx, missing); hydrateErr == nil {
+			// Legacy servers can only return icons as part of another complete
+			// front-page response. Treat that optional response as best-effort.
+			result = hydrated
+			iconHydrationSucceeded = true
 		}
 	}
-	c.decorateProjectIcons(result.Projects)
+	c.decorateProjectIcons(result.Projects, iconHydrationSucceeded)
 	return result, nil
+}
+
+func (c *Client) GetProjectIcons(ctx context.Context, projectIDs []int64) (*cnpv1.ProjectIconList, error) {
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_GetProjectIcons{
+		GetProjectIcons: &cnpv1.GetProjectIconsRequest{ProjectIds: append([]int64(nil), projectIDs...)},
+	}}, "")
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetProjectIcons(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
 }
 
 func (c *Client) getFrontPageView(ctx context.Context, projectIconIDs []int64) (*cnpv1.FrontPageView, error) {
@@ -236,9 +288,8 @@ func (c *Client) getFrontPageView(ctx context.Context, projectIconIDs []int64) (
 }
 
 func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1.ProjectDetailsView, error) {
-	c.projectMu.Lock()
-	cachedIcon, hasCachedIcon := c.projectIcons[projectID]
-	c.projectMu.Unlock()
+	installationID := c.serverInstallationID()
+	cachedIcon, hasCachedIcon := c.projectIcons.get(installationID, projectID)
 	// A front-page response from a server predating summary icons leaves a
 	// negative cache entry. Still ask the project-details operation for its
 	// established top-level icon so details-page logos remain compatible.
@@ -270,17 +321,13 @@ func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1
 			loadedCommit: loadedCommit,
 		}
 		hasCachedIcon = true
-		c.projectMu.Lock()
-		c.projectIcons[projectID] = cachedIcon
-		c.projectMu.Unlock()
+		c.projectIcons.put(installationID, projectID, cachedIcon)
 	} else if hasCachedIcon && cachedIcon.loadedCommit == loadedCommit {
 		result.ProjectIcon = append([]byte(nil), cachedIcon.data...)
 		result.ProjectIconContentType = cachedIcon.contentType
 	} else {
 		cachedIcon = projectIcon{loadedCommit: loadedCommit}
-		c.projectMu.Lock()
-		c.projectIcons[projectID] = cachedIcon
-		c.projectMu.Unlock()
+		c.projectIcons.put(installationID, projectID, cachedIcon)
 	}
 	if result.Project != nil {
 		result.Project.ProjectIcon = append([]byte(nil), result.ProjectIcon...)
@@ -289,26 +336,27 @@ func (c *Client) GetProjectDetails(ctx context.Context, projectID int64) (*cnpv1
 	return result, nil
 }
 
-func (c *Client) decorateProjectIcons(projects []*cnpv1.ProjectSummary) {
-	c.projectMu.Lock()
-	defer c.projectMu.Unlock()
+func (c *Client) decorateProjectIcons(projects []*cnpv1.ProjectSummary, cacheMissing bool) {
+	installationID := c.serverInstallationID()
 	for _, project := range projects {
 		if project == nil {
 			continue
 		}
 		if len(project.ProjectIcon) > 0 {
-			c.projectIcons[project.Id] = projectIcon{
+			c.projectIcons.put(installationID, project.Id, projectIcon{
 				contentType: project.ProjectIconContentType,
 				data:        append([]byte(nil), project.ProjectIcon...), loadedCommit: project.LoadedCommit,
-			}
+			})
 			continue
 		}
-		if cached, ok := c.projectIcons[project.Id]; ok && cached.loadedCommit == project.LoadedCommit {
+		if cached, ok := c.projectIcons.get(installationID, project.Id); ok && cached.loadedCommit == project.LoadedCommit {
 			project.ProjectIcon = append([]byte(nil), cached.data...)
 			project.ProjectIconContentType = cached.contentType
 			continue
 		}
-		c.projectIcons[project.Id] = projectIcon{loadedCommit: project.LoadedCommit}
+		if cacheMissing {
+			c.projectIcons.put(installationID, project.Id, projectIcon{loadedCommit: project.LoadedCommit})
+		}
 	}
 }
 

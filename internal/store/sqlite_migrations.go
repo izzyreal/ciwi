@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const currentSchemaVersion = 1
+const currentSchemaVersion = 2
 
 type schemaMigration struct {
 	version int
@@ -20,6 +20,37 @@ var schemaMigrations = []schemaMigration{
 		name:    "baseline current schema",
 		apply:   migrateToCurrentSchema,
 	},
+	{
+		version: 2,
+		name:    "materialize test report summaries",
+		apply:   migrateTestReportSummaries,
+	},
+}
+
+func migrateTestReportSummaries(tx *sql.Tx) error {
+	for _, column := range []struct {
+		name       string
+		definition string
+	}{
+		{"total_count", "INTEGER NOT NULL DEFAULT 0"},
+		{"passed_count", "INTEGER NOT NULL DEFAULT 0"},
+		{"failed_count", "INTEGER NOT NULL DEFAULT 0"},
+		{"skipped_count", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := addColumnIfMissing(tx, "job_execution_test_reports", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`
+		UPDATE job_execution_test_reports
+		SET total_count = COALESCE(CAST(json_extract(report_json, '$.total') AS INTEGER), 0),
+		    passed_count = COALESCE(CAST(json_extract(report_json, '$.passed') AS INTEGER), 0),
+		    failed_count = COALESCE(CAST(json_extract(report_json, '$.failed') AS INTEGER), 0),
+		    skipped_count = COALESCE(CAST(json_extract(report_json, '$.skipped') AS INTEGER), 0)
+	`); err != nil {
+		return fmt.Errorf("backfill test report summaries: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) migrateSchema() error {

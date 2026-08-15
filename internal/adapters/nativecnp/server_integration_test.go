@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -61,6 +62,9 @@ func TestClientServerVerticalSlice(t *testing.T) {
 
 	if got := client.Welcome(); got.ServerVersion != "v0.2.0" || got.ServerInstanceId == "" {
 		t.Fatalf("welcome = %#v", got)
+	}
+	if !slices.Contains(client.Welcome().Capabilities, "project_icons_batch") {
+		t.Fatalf("welcome capabilities = %v", client.Welcome().Capabilities)
 	}
 	info, err := client.GetServerInfo(ctx)
 	if err != nil {
@@ -252,6 +256,33 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	rerun, err := client.RerunExecution(ctx, "job-1", "rerun-command-key")
 	if err != nil || rerun.JobExecutionId != "job-rerun" {
 		t.Fatalf("rerun execution = %#v, %v", rerun, err)
+	}
+}
+
+func TestProjectIconCacheSurvivesCNPReconnect(t *testing.T) {
+	services := completeTestServices(application.NewChangeHub())
+	icons := &projectIconService{}
+	services.ProjectIcons = icons
+	server := startServer(t, services)
+	cache := cnpclient.NewProjectIconCache()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	for attempt := 0; attempt < 2; attempt++ {
+		client, err := cnpclient.DialWithProjectIconCache(ctx, server.Addr(), "ciwi-test", "test", cache)
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, err := client.GetFrontPageView(ctx)
+		_ = client.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(view.Projects) != 1 || string(view.Projects[0].ProjectIcon) != "project-icon" {
+			t.Fatalf("front page after connection %d = %+v", attempt+1, view)
+		}
+	}
+	if got := icons.callCount(); got != 1 {
+		t.Fatalf("project icon server calls across reconnect = %d, want 1", got)
 	}
 }
 

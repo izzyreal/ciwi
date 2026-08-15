@@ -189,6 +189,10 @@ func initializeCurrentSchema(tx *sql.Tx) error {
 		`CREATE TABLE IF NOT EXISTS job_execution_test_reports (
 			job_execution_id TEXT PRIMARY KEY,
 			report_json TEXT NOT NULL,
+			total_count INTEGER NOT NULL DEFAULT 0,
+			passed_count INTEGER NOT NULL DEFAULT 0,
+			failed_count INTEGER NOT NULL DEFAULT 0,
+			skipped_count INTEGER NOT NULL DEFAULT 0,
 			created_utc TEXT NOT NULL,
 			FOREIGN KEY(job_execution_id) REFERENCES job_executions(id) ON DELETE CASCADE
 		);`,

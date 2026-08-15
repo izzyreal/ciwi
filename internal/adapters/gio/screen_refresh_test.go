@@ -2,47 +2,78 @@
 
 package gio
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+)
 
-func TestScreenRefreshCoordinatorCoalescesInvalidations(t *testing.T) {
+func TestScreenRefreshCoordinatorCoalescesAndPrioritizesRequests(t *testing.T) {
 	var coordinator screenRefreshCoordinator
-	if !coordinator.request(false) {
+	passive := screenRefreshRequest{origin: screenRefreshPassive}
+	if !coordinator.request(passive) {
 		t.Fatal("first refresh request did not start")
 	}
-	if coordinator.request(false) || coordinator.request(true) {
+	if coordinator.request(screenRefreshRequest{origin: screenRefreshRetry}) || coordinator.request(screenRefreshRequest{origin: screenRefreshOperation, recoverMissingRoute: true}) {
 		t.Fatal("in-flight refresh was superseded instead of coalesced")
 	}
-	startTrailing, recoverMissingRoute := coordinator.complete()
-	if !startTrailing || !recoverMissingRoute {
-		t.Fatalf("trailing refresh = (%v, %v), want (true, true)", startTrailing, recoverMissingRoute)
+	pending, ok := coordinator.complete()
+	if !ok || pending.origin != screenRefreshOperation || !pending.recoverMissingRoute {
+		t.Fatalf("pending refresh = (%+v, %v)", pending, ok)
 	}
-	if coordinator.request(false) {
-		t.Fatal("trailing refresh did not retain the active slot")
+	if !coordinator.request(pending) {
+		t.Fatal("completed coordinator did not accept its trailing refresh")
 	}
-	startTrailing, recoverMissingRoute = coordinator.complete()
-	if !startTrailing || recoverMissingRoute {
-		t.Fatalf("second trailing refresh = (%v, %v), want (true, false)", startTrailing, recoverMissingRoute)
-	}
-	if start, _ := coordinator.complete(); start {
-		t.Fatal("refresh without in-flight invalidations started another load")
-	}
-	if !coordinator.request(false) {
-		t.Fatal("coordinator did not become idle after the final refresh")
+	if _, ok := coordinator.complete(); ok {
+		t.Fatal("refresh without in-flight invalidations retained a trailing load")
 	}
 }
 
 func TestScreenRefreshCoordinatorNavigationSupersedesPendingRefresh(t *testing.T) {
 	var coordinator screenRefreshCoordinator
-	if !coordinator.request(false) {
-		t.Fatal("initial refresh did not start")
-	}
-	coordinator.request(true)
-	coordinator.supersede()
-	if start, recover := coordinator.complete(); start || recover {
-		t.Fatalf("superseding navigation retained stale refresh: (%v, %v)", start, recover)
+	coordinator.request(screenRefreshRequest{origin: screenRefreshPassive})
+	coordinator.request(screenRefreshRequest{origin: screenRefreshOperation, recoverMissingRoute: true})
+	coordinator.supersede(screenRefreshRequest{origin: screenRefreshNavigation})
+	if pending, ok := coordinator.complete(); ok {
+		t.Fatalf("superseding navigation retained stale refresh: %+v", pending)
 	}
 	coordinator.cancel()
-	if !coordinator.request(false) {
+	if !coordinator.request(screenRefreshRequest{origin: screenRefreshExplicit}) {
 		t.Fatal("cancelled coordinator did not accept a new refresh")
+	}
+}
+
+func TestScreenRefreshCoordinatorBoundsAndResetsRetry(t *testing.T) {
+	var coordinator screenRefreshCoordinator
+	want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 8 * time.Second}
+	for i, delay := range want {
+		if got := coordinator.nextRetry(); got != delay {
+			t.Fatalf("retry %d = %s, want %s", i, got, delay)
+		}
+	}
+	coordinator.resetRetry()
+	if got := coordinator.nextRetry(); got != time.Second {
+		t.Fatalf("retry after reset = %s", got)
+	}
+}
+
+func TestQuietPassiveRefreshFailureRequiresCachedDeadline(t *testing.T) {
+	wrapped := fmt.Errorf("read native response: %w", context.DeadlineExceeded)
+	if !quietPassiveRefreshFailure(screenRefreshRequest{origin: screenRefreshPassive}, wrapped, true) {
+		t.Fatal("cached passive deadline was not quiet")
+	}
+	for _, test := range []struct {
+		request screenRefreshRequest
+		err     error
+		cached  bool
+	}{
+		{screenRefreshRequest{origin: screenRefreshExplicit}, wrapped, true},
+		{screenRefreshRequest{origin: screenRefreshPassive}, wrapped, false},
+		{screenRefreshRequest{origin: screenRefreshPassive}, context.Canceled, true},
+	} {
+		if quietPassiveRefreshFailure(test.request, test.err, test.cached) {
+			t.Fatalf("unexpected quiet failure for %+v", test)
+		}
 	}
 }

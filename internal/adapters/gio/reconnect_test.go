@@ -151,7 +151,7 @@ func TestNativeRefreshUsesEverySharedScreenTopic(t *testing.T) {
 		screen string
 		topic  cnpv1.ChangeTopic
 	}{
-		{screen: "front-page", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS},
+		{screen: "front-page", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY},
 		{screen: "project-details", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY},
 		{screen: "agent-script", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS},
 		{screen: "managed-yaml", topic: cnpv1.ChangeTopic_CHANGE_TOPIC_PROJECTS},
@@ -167,5 +167,22 @@ func TestNativeRefreshUsesEverySharedScreenTopic(t *testing.T) {
 				t.Fatalf("%s did not refresh for its declared %q topic", test.screen, nativeChangeTopicName(test.topic))
 			}
 		})
+	}
+}
+
+func TestFrontPageIgnoresHeartbeatOnlyAgentChanges(t *testing.T) {
+	screen, err := sharedui.LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relevantScreenChange(screen, navigationState{screen: "front-page"}, &cnpv1.ChangeEvent{
+		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_AGENTS},
+	}) {
+		t.Fatal("front page refreshed for a heartbeat-only agent change")
+	}
+	if !relevantScreenChange(screen, navigationState{screen: "front-page"}, &cnpv1.ChangeEvent{
+		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_AGENT_ELIGIBILITY},
+	}) {
+		t.Fatal("front page ignored an agent eligibility change")
 	}
 }

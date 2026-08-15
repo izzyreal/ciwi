@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -76,7 +77,11 @@ func upsertPipeline(tx *sql.Tx, projectID int64, p config.Pipeline, now string) 
 }
 
 func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
-	rows, err := s.db.Query(`
+	return s.ListProjectsContext(context.Background())
+}
+
+func (s *Store) ListProjectsContext(ctx context.Context) ([]protocol.ProjectSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.id, p.name, p.source_kind, p.config_path, p.repo_url, p.repo_ref, p.config_file, p.loaded_commit, p.updated_utc, pl.id, pl.pipeline_id, pl.trigger_mode, pl.depends_on_json, pl.source_repo, pl.source_ref, pl.versioning_json
 		FROM projects p
 		LEFT JOIN pipelines pl ON pl.project_id = p.id
@@ -85,8 +90,6 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
-	defer rows.Close()
-
 	projectsByID := map[int64]*protocol.ProjectSummary{}
 	order := make([]int64, 0)
 
@@ -137,45 +140,109 @@ func (s *Store) ListProjects() ([]protocol.ProjectSummary, error) {
 		}
 	}
 	if err := rows.Err(); err != nil {
+		_ = rows.Close()
 		return nil, fmt.Errorf("iterate project rows: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close project rows: %w", err)
+	}
+
+	pipelineSupportsByID := make(map[int64]bool)
+	jobRows, err := s.db.QueryContext(ctx, `
+		SELECT pipeline_id, steps_json
+		FROM pipeline_jobs
+		ORDER BY pipeline_id, position, id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list pipeline dry-run definitions: %w", err)
+	}
+	for jobRows.Next() {
+		var pipelineID int64
+		var stepsJSON string
+		if err := jobRows.Scan(&pipelineID, &stepsJSON); err != nil {
+			_ = jobRows.Close()
+			return nil, fmt.Errorf("scan pipeline dry-run definition: %w", err)
+		}
+		if pipelineSupportsByID[pipelineID] {
+			continue
+		}
+		var steps []config.PipelineJobStep
+		if err := json.Unmarshal([]byte(stepsJSON), &steps); err != nil {
+			_ = jobRows.Close()
+			return nil, fmt.Errorf("decode pipeline dry-run definition: %w", err)
+		}
+		for _, step := range steps {
+			if step.SkipDryRun {
+				pipelineSupportsByID[pipelineID] = true
+				break
+			}
+		}
+	}
+	if err := jobRows.Err(); err != nil {
+		_ = jobRows.Close()
+		return nil, fmt.Errorf("iterate pipeline dry-run definitions: %w", err)
+	}
+	if err := jobRows.Close(); err != nil {
+		return nil, fmt.Errorf("close pipeline dry-run definitions: %w", err)
+	}
+
+	chainsByProject := make(map[int64][]PersistedPipelineChain)
+	chainRows, err := s.db.QueryContext(ctx, `
+		SELECT id, project_id, chain_id, chain_name, position, pipelines_json
+		FROM pipeline_chains
+		ORDER BY project_id, position, id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list project pipeline chains: %w", err)
+	}
+	for chainRows.Next() {
+		var chain PersistedPipelineChain
+		var pipelinesJSON string
+		if err := chainRows.Scan(&chain.DBID, &chain.ProjectID, &chain.ChainID, &chain.ChainName, &chain.Position, &pipelinesJSON); err != nil {
+			_ = chainRows.Close()
+			return nil, fmt.Errorf("scan project pipeline chain: %w", err)
+		}
+		if err := json.Unmarshal([]byte(pipelinesJSON), &chain.Pipelines); err != nil {
+			_ = chainRows.Close()
+			return nil, fmt.Errorf("decode project pipeline chain: %w", err)
+		}
+		chainsByProject[chain.ProjectID] = append(chainsByProject[chain.ProjectID], chain)
+	}
+	if err := chainRows.Err(); err != nil {
+		_ = chainRows.Close()
+		return nil, fmt.Errorf("iterate project pipeline chains: %w", err)
+	}
+	if err := chainRows.Close(); err != nil {
+		return nil, fmt.Errorf("close project pipeline chains: %w", err)
 	}
 
 	projects := make([]protocol.ProjectSummary, 0, len(order))
 	for _, id := range order {
 		project := projectsByID[id]
-		pipelineSupports := map[string]bool{}
-		pipelineIDByName := map[string]int64{}
+		pipelineSupports := make(map[string]bool, len(project.Pipelines))
+		pipelineIDByName := make(map[string]int64, len(project.Pipelines))
 		for i := range project.Pipelines {
-			supports, err := s.pipelineSupportsDryRun(project.Pipelines[i].ID)
-			if err != nil {
-				return nil, err
-			}
+			supports := pipelineSupportsByID[project.Pipelines[i].ID]
 			project.Pipelines[i].SupportsDryRun = supports
 			pipelineSupports[project.Pipelines[i].PipelineID] = supports
 			pipelineIDByName[project.Pipelines[i].PipelineID] = project.Pipelines[i].ID
 		}
-		chains, err := s.listPipelineChainsByProjectID(id)
-		if err != nil {
-			return nil, err
-		}
+		chains := chainsByProject[id]
 		project.PipelineChains = make([]protocol.PipelineChainSummary, 0, len(chains))
-		for _, ch := range chains {
+		for _, chain := range chains {
 			supports := false
 			var versionPipelineID int64
-			for _, pid := range ch.Pipelines {
+			for _, pipelineID := range chain.Pipelines {
 				if versionPipelineID == 0 {
-					versionPipelineID = pipelineIDByName[pid]
+					versionPipelineID = pipelineIDByName[pipelineID]
 				}
-				if pipelineSupports[pid] {
+				if pipelineSupports[pipelineID] {
 					supports = true
 				}
 			}
 			project.PipelineChains = append(project.PipelineChains, protocol.PipelineChainSummary{
-				ID:                ch.ChainID,
-				Name:              ch.ChainName,
-				Pipelines:         append([]string(nil), ch.Pipelines...),
-				SupportsDryRun:    supports,
-				VersionPipelineID: versionPipelineID,
+				ID: chain.ChainID, Name: chain.ChainName, Pipelines: append([]string(nil), chain.Pipelines...),
+				SupportsDryRun: supports, VersionPipelineID: versionPipelineID,
 			})
 		}
 		projects = append(projects, *project)

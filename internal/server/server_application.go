@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,6 +66,7 @@ func newServerApplication(s *stateStore) *serverApplication {
 	agentQueries := application.NewAgentQueries(agentRepositoryAdapter{state: s})
 	changes := application.NewChangeHub()
 	receipts := sqliteadapter.NewCommandReceiptRepository(s.db)
+	frontPageQueries := presentation.NewFrontPageQueriesWithObserver(serverQueries, projectQueries, executionQueries, observeFrontPageTiming)
 	return &serverApplication{
 		server:          serverQueries,
 		projects:        projectQueries,
@@ -85,11 +87,33 @@ func newServerApplication(s *stateStore) *serverApplication {
 		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),
 		commandReceipts:   application.NewCommandReceiptQueries(receipts),
 		receipts:          receipts,
-		frontPage:         presentation.NewFrontPageQueries(serverQueries, projectQueries, executionQueries),
+		frontPage:         frontPageQueries,
 		projectDetails:    presentation.NewProjectDetailsQueries(projectQueries, executionQueries),
 		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),
 		changes:           changes,
 	}
+}
+
+func observeFrontPageTiming(_ context.Context, timing presentation.FrontPageTiming) {
+	if timing.Err == nil && timing.Total < time.Second {
+		return
+	}
+	attributes := []any{
+		"elapsed_ms", timing.Total.Milliseconds(),
+		"server_info_ms", timing.ServerInfo.Milliseconds(),
+		"projects_ms", timing.Projects.Milliseconds(),
+		"executions_ms", timing.Executions.Milliseconds(),
+		"project_count", timing.ProjectCount,
+		"queued_card_count", timing.QueuedCardCount,
+		"history_card_count", timing.HistoryCardCount,
+	}
+	if timing.FailedPhase != "" {
+		attributes = append(attributes, "failed_phase", timing.FailedPhase)
+	}
+	if timing.Err != nil {
+		attributes = append(attributes, "error", timing.Err)
+	}
+	slog.Warn("front-page query slow or failed", attributes...)
 }
 
 // executionDetailsStore keeps every presentation surface on the same artifact

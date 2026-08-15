@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -77,15 +78,73 @@ func (s *Store) SaveJobExecutionTestReport(jobID string, report protocol.JobExec
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if err := retrySQLiteBusy(func() error {
 		_, err := s.db.Exec(`
-			INSERT INTO job_execution_test_reports (job_execution_id, report_json, created_utc)
-			VALUES (?, ?, ?)
-			ON CONFLICT(job_execution_id) DO UPDATE SET report_json=excluded.report_json, created_utc=excluded.created_utc
-		`, jobID, string(reportJSON), now)
+			INSERT INTO job_execution_test_reports (job_execution_id, report_json, total_count, passed_count, failed_count, skipped_count, created_utc)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(job_execution_id) DO UPDATE SET
+				report_json=excluded.report_json,
+				total_count=excluded.total_count,
+				passed_count=excluded.passed_count,
+				failed_count=excluded.failed_count,
+				skipped_count=excluded.skipped_count,
+				created_utc=excluded.created_utc
+		`, jobID, string(reportJSON), report.Total, report.Passed, report.Failed, report.Skipped, now)
 		return err
 	}); err != nil {
 		return fmt.Errorf("save test report: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) ListJobExecutionTestSummaries(ctx context.Context, jobIDs []string) (map[string]protocol.JobExecutionTestSummary, error) {
+	result := make(map[string]protocol.JobExecutionTestSummary)
+	unique := make([]string, 0, len(jobIDs))
+	seen := make(map[string]struct{}, len(jobIDs))
+	for _, jobID := range jobIDs {
+		jobID = strings.TrimSpace(jobID)
+		if jobID == "" {
+			continue
+		}
+		if _, exists := seen[jobID]; exists {
+			continue
+		}
+		seen[jobID] = struct{}{}
+		unique = append(unique, jobID)
+	}
+	const chunkSize = 250
+	for start := 0; start < len(unique); start += chunkSize {
+		end := min(start+chunkSize, len(unique))
+		chunk := unique[start:end]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
+		arguments := make([]any, len(chunk))
+		for i, jobID := range chunk {
+			arguments[i] = jobID
+		}
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT job_execution_id, total_count, passed_count, failed_count, skipped_count
+			FROM job_execution_test_reports
+			WHERE job_execution_id IN (`+placeholders+`)
+		`, arguments...)
+		if err != nil {
+			return nil, fmt.Errorf("list test summaries: %w", err)
+		}
+		for rows.Next() {
+			var jobID string
+			var summary protocol.JobExecutionTestSummary
+			if err := rows.Scan(&jobID, &summary.Total, &summary.Passed, &summary.Failed, &summary.Skipped); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("scan test summary: %w", err)
+			}
+			result[jobID] = summary
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("iterate test summaries: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, fmt.Errorf("close test summaries: %w", err)
+		}
+	}
+	return result, nil
 }
 
 func (s *Store) GetJobExecutionTestReport(jobID string) (protocol.JobExecutionTestReport, bool, error) {

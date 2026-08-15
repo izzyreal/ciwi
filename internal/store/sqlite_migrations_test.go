@@ -13,7 +13,7 @@ func TestOpenRecordsCurrentSchemaVersion(t *testing.T) {
 
 	var version int
 	var name string
-	if err := s.db.QueryRow(`SELECT version, name FROM schema_migrations`).Scan(&version, &name); err != nil {
+	if err := s.db.QueryRow(`SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1`).Scan(&version, &name); err != nil {
 		t.Fatalf("read schema migration: %v", err)
 	}
 	if version != currentSchemaVersion {
@@ -61,7 +61,7 @@ func TestOpenUpgradesPreLedgerDatabase(t *testing.T) {
 		t.Fatalf("unexpected upgraded defaults: source_kind=%q config_yaml=%q", sourceKind, configYAML)
 	}
 	var version int
-	if err := s.db.QueryRow(`SELECT version FROM schema_migrations`).Scan(&version); err != nil {
+	if err := s.db.QueryRow(`SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1`).Scan(&version); err != nil {
 		t.Fatalf("read upgraded schema version: %v", err)
 	}
 	if version != currentSchemaVersion {
@@ -132,5 +132,41 @@ func TestSchemaMigrationRollsBackOnFailure(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatal("failed migration left its table behind")
+	}
+}
+
+func TestTestReportSummaryMigrationBackfillsExistingReports(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "summary-migration.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE job_execution_test_reports (
+		job_execution_id TEXT PRIMARY KEY,
+		report_json TEXT NOT NULL,
+		created_utc TEXT NOT NULL
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO job_execution_test_reports VALUES ('job-1', '{"total":9,"passed":6,"failed":2,"skipped":1}', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateTestReportSummaries(tx); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var total, passed, failed, skipped int
+	if err := db.QueryRow(`SELECT total_count, passed_count, failed_count, skipped_count FROM job_execution_test_reports WHERE job_execution_id = 'job-1'`).Scan(&total, &passed, &failed, &skipped); err != nil {
+		t.Fatal(err)
+	}
+	if total != 9 || passed != 6 || failed != 2 || skipped != 1 {
+		t.Fatalf("backfilled summary = %d/%d/%d/%d", total, passed, failed, skipped)
 	}
 }
