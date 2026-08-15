@@ -100,10 +100,17 @@ func TestNativeMutationFailureDistinguishesKnownAndAmbiguousOutcomes(t *testing.
 	if query.State != operations.StateFailed {
 		t.Fatalf("query transport failure state = %s", query.State)
 	}
+	cancelled := nativeOperationFailure(operations.Operation{Class: operations.ClassQuery}, context.Canceled)
+	if cancelled.State != operations.StateCancelled {
+		t.Fatalf("cancelled query state = %s", cancelled.State)
+	}
 }
 
 func TestNativeClientBrokerAndExecutorHonorCancellationAndValidation(t *testing.T) {
 	broker := newNativeClientBroker()
+	if broker.Ready() {
+		t.Fatal("empty broker reported ready before recovery admission")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := broker.Wait(ctx); !errors.Is(err, context.Canceled) {

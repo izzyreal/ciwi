@@ -28,58 +28,108 @@ type nativeJournalEntry struct {
 	Operation            operations.Operation `json:"operation"`
 }
 
-// reconcile verifies journaled mutations against the connected server before
-// resuming anything. A safe mutation is only replayed when the stable server
-// identity matches and that server has no receipt for its idempotency key.
-func (j *nativeOperationJournal) reconcile(ctx context.Context, client journalReceiptClient, coordinator *operations.Coordinator) (int, string, error) {
+// nativeReconciliationPlan is deliberately inert. Receipt I/O may run off the
+// controller goroutine, while journal and coordinator mutations are applied by
+// the controller only after it has verified the session generation.
+type nativeReconciliationPlan struct {
+	deleteIDs []string
+	restore   []operations.Operation
+	unknown   int
+}
+
+func (p nativeReconciliationPlan) message() string {
+	if p.unknown == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d earlier action(s) have an unknown outcome and were not repeated", p.unknown)
+}
+
+// inspect verifies journaled mutations against the connected server without
+// changing local state. A safe mutation is eligible for replay only when the
+// stable server identity matches and that server has no receipt for its key.
+func (j *nativeOperationJournal) inspect(ctx context.Context, client journalReceiptClient) (nativeReconciliationPlan, error) {
+	var plan nativeReconciliationPlan
 	serverID := ""
 	if client != nil && client.Welcome() != nil {
 		serverID = client.Welcome().ServerInstallationId
 	}
 	if serverID == "" {
-		return 0, "", nil
+		return plan, nil
 	}
 	entries, err := j.Entries()
 	if err != nil {
-		return 0, "", err
+		return plan, err
 	}
-	resumed := 0
-	unknown := 0
+	restoreScopes := map[string]bool{}
+	restoreFingerprints := map[string]bool{}
 	for _, entry := range entries {
 		operation := entry.Operation
 		if entry.ServerInstallationID == "" || entry.ServerInstallationID != serverID {
-			unknown++
+			plan.unknown++
 			continue
 		}
 		requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		receipt, receiptErr := client.GetCommandReceiptStatus(requestCtx, operation.IdempotencyKey)
 		cancel()
 		if receiptErr != nil {
-			return resumed, "", receiptErr
+			return nativeReconciliationPlan{}, receiptErr
+		}
+		if receipt == nil {
+			return nativeReconciliationPlan{}, fmt.Errorf("receipt status for %q was empty", operation.IdempotencyKey)
 		}
 		if receipt.Found {
 			switch receipt.Status {
 			case "completed", "failed":
-				_ = j.Delete(operation.ID)
+				plan.deleteIDs = append(plan.deleteIDs, operation.ID)
 			case "outcome_unknown", "pending":
-				unknown++
+				plan.unknown++
+			default:
+				plan.unknown++
 			}
 			continue
 		}
 		if operation.Persistence != uidsl.ActionPersistenceSafe || len(operation.Arguments) == 0 {
-			unknown++
+			plan.unknown++
 			continue
 		}
-		if _, restoreErr := coordinator.Restore(operation); restoreErr != nil {
-			return resumed, "", restoreErr
+		if (operation.Scope != "" && restoreScopes[operation.Scope]) || (operation.Fingerprint != "" && restoreFingerprints[operation.Fingerprint]) {
+			plan.unknown++
+			continue
 		}
-		resumed++
+		plan.restore = append(plan.restore, operation)
+		restoreScopes[operation.Scope] = operation.Scope != ""
+		restoreFingerprints[operation.Fingerprint] = operation.Fingerprint != ""
 	}
-	message := ""
-	if unknown > 0 {
-		message = fmt.Sprintf("%d earlier action(s) have an unknown outcome and were not repeated", unknown)
+	return plan, nil
+}
+
+func (j *nativeOperationJournal) apply(plan nativeReconciliationPlan, coordinator *operations.Coordinator) (int, error) {
+	for _, id := range plan.deleteIDs {
+		if err := j.Delete(id); err != nil {
+			return 0, err
+		}
 	}
-	return resumed, message, nil
+	resumed := 0
+	for _, operation := range plan.restore {
+		if coordinator == nil {
+			return resumed, fmt.Errorf("restore operation %q: coordinator is unavailable", operation.ID)
+		}
+		submission, err := coordinator.Restore(operation)
+		if err != nil {
+			return resumed, err
+		}
+		switch submission.Disposition {
+		case operations.DispositionAccepted:
+			resumed++
+		case operations.DispositionDuplicate:
+			// The exact operation is already owned by the coordinator.
+		case operations.DispositionConflict:
+			return resumed, fmt.Errorf("restore operation %q conflicts with an active operation", operation.ID)
+		default:
+			return resumed, fmt.Errorf("restore operation %q returned disposition %q", operation.ID, submission.Disposition)
+		}
+	}
+	return resumed, nil
 }
 
 type nativeJournalDocument struct {

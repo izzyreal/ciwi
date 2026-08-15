@@ -740,7 +740,7 @@ func offlineSettingsBindingData(clientVersion, selectedTheme, mode, endpoint str
 	return data, nil
 }
 
-func refreshOfflineScreen(renderer *Renderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState, clientVersion, mode, endpoint string, sshSettings sshConnectionSettings) error {
+func refreshOfflineScreen(renderer nativeRenderer, screens map[string]*uidsl.ScreenDocument, navigation navigationState, clientVersion, themeName, mode, endpoint string, sshSettings sshConnectionSettings) error {
 	switch navigation.screen {
 	case "front-page":
 		data, err := offlineFrontPageBindingData()
@@ -749,7 +749,7 @@ func refreshOfflineScreen(renderer *Renderer, screens map[string]*uidsl.ScreenDo
 		}
 		renderer.SetScreenAndData(screens["front-page"], data)
 	case "settings":
-		data, err := offlineSettingsBindingData(clientVersion, renderer.ThemeName(), mode, endpoint, sshSettings)
+		data, err := offlineSettingsBindingData(clientVersion, themeName, mode, endpoint, sshSettings)
 		if err != nil {
 			return err
 		}

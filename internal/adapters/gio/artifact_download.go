@@ -19,9 +19,10 @@ import (
 var errArtifactDownloadCancelled = errors.New("artifact download cancelled")
 
 type artifactDownloadResult struct {
-	path  string
-	label string
-	err   error
+	path       string
+	label      string
+	generation uint64
+	err        error
 }
 
 type artifactChunkClient interface {
@@ -61,7 +62,7 @@ func downloadArtifactWithPicker(ctx context.Context, client artifactChunkClient,
 	writer, err := picker.CreateFile(fileName)
 	if err != nil {
 		if !chunk.GetComplete() {
-			cancelArtifactDownload(client, chunk.GetToken())
+			cancelArtifactDownload(ctx, client, chunk.GetToken())
 		}
 		if errors.Is(err, explorer.ErrUserDecline) {
 			return "", errArtifactDownloadCancelled
@@ -77,7 +78,7 @@ func downloadArtifactWithPicker(ctx context.Context, client artifactChunkClient,
 			}
 		}
 		if resultErr != nil && !complete {
-			cancelArtifactDownload(client, activeToken)
+			cancelArtifactDownload(ctx, client, activeToken)
 		}
 	}()
 
@@ -109,12 +110,12 @@ func downloadArtifactWithPicker(ctx context.Context, client artifactChunkClient,
 	return fileName, nil
 }
 
-func cancelArtifactDownload(client artifactChunkClient, token string) {
+func cancelArtifactDownload(ctx context.Context, client artifactChunkClient, token string) {
 	token = strings.TrimSpace(token)
-	if client == nil || token == "" {
+	if client == nil || token == "" || ctx == nil || ctx.Err() != nil {
 		return
 	}
-	cancelCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	cancelCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	_, _ = client.DownloadArtifactChunk(cancelCtx, &cnpv1.ArtifactDownloadRequest{Token: token, Cancel: true})
 }

@@ -81,25 +81,30 @@ func (c *Client) Close() error {
 func (c *Client) hello(ctx context.Context, clientName, clientVersion string) error {
 	stream, err := c.session.OpenStream(ctx)
 	if err != nil {
-		return fmt.Errorf("open hello stream: %w", err)
+		return contextualIOError(ctx, "open hello stream", err)
 	}
 	defer stream.Close()
+	stopCancellation := interruptStreamOnCancel(ctx, stream)
+	defer stopCancellation()
 	message := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Hello{Hello: &cnpv1.Hello{
 		ClientName: clientName, ClientVersion: clientVersion,
 		Capabilities: []string{"protobuf", "invalidation_stream", "job_output_stream"},
 	}}}
 	if err := cnp.Write(stream, message); err != nil {
 		stream.CancelRead()
-		return fmt.Errorf("write hello: %w", err)
+		return contextualIOError(ctx, "write hello", err)
 	}
 	_ = stream.Close()
 	var response cnpv1.ServerMessage
 	if err := cnp.NewReader(stream).Read(&response); err != nil {
-		return fmt.Errorf("read welcome: %w", err)
+		return contextualIOError(ctx, "read welcome", err)
 	}
 	welcome := response.GetWelcome()
 	if welcome == nil {
 		return fmt.Errorf("native endpoint did not return welcome")
+	}
+	if !stopCancellation() {
+		return fmt.Errorf("complete hello: %w", ctx.Err())
 	}
 	c.welcome = welcome
 	return nil
@@ -636,17 +641,20 @@ func (c *Client) RerunExecution(ctx context.Context, jobExecutionID, idempotency
 func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <-chan error, error) {
 	stream, err := c.session.OpenStream(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open watch stream: %w", err)
+		return nil, nil, contextualIOError(ctx, "open watch stream", err)
 	}
+	stopCancellation := interruptStreamOnCancel(ctx, stream)
 	requestID := uuid.NewString()
 	request := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Request{Request: &cnpv1.Request{
 		Metadata:  &cnpv1.RequestMetadata{RequestId: requestID},
 		Operation: &cnpv1.Request_WatchChanges{WatchChanges: &cnpv1.WatchChangesRequest{}},
 	}}}
 	if err := cnp.Write(stream, request); err != nil {
+		stopCancellation()
 		_ = stream.Close()
 		stream.CancelRead()
-		return nil, nil, fmt.Errorf("write watch request: %w", err)
+		stream.CancelWrite()
+		return nil, nil, contextualIOError(ctx, "write watch request", err)
 	}
 	events := make(chan *cnpv1.ChangeEvent, 1)
 	errorsOut := make(chan error, 1)
@@ -654,10 +662,6 @@ func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <
 		defer close(events)
 		defer close(errorsOut)
 		defer stream.Close()
-		stopCancellation := context.AfterFunc(ctx, func() {
-			_ = stream.Close()
-			stream.CancelRead()
-		})
 		defer stopCancellation()
 		reader := cnp.NewReader(stream)
 		for {
@@ -697,8 +701,9 @@ func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <
 func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afterEventID int64) (<-chan *cnpv1.JobOutputBatch, <-chan error, error) {
 	stream, err := c.session.OpenStream(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open job output stream: %w", err)
+		return nil, nil, contextualIOError(ctx, "open job output stream", err)
 	}
+	stopCancellation := interruptStreamOnCancel(ctx, stream)
 	requestID := uuid.NewString()
 	request := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Request{Request: &cnpv1.Request{
 		Metadata: &cnpv1.RequestMetadata{RequestId: requestID},
@@ -707,9 +712,11 @@ func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afte
 		}},
 	}}}
 	if err := cnp.Write(stream, request); err != nil {
+		stopCancellation()
 		_ = stream.Close()
 		stream.CancelRead()
-		return nil, nil, fmt.Errorf("write job output request: %w", err)
+		stream.CancelWrite()
+		return nil, nil, contextualIOError(ctx, "write job output request", err)
 	}
 	batches := make(chan *cnpv1.JobOutputBatch, 1)
 	errorsOut := make(chan error, 1)
@@ -717,10 +724,6 @@ func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afte
 		defer close(batches)
 		defer close(errorsOut)
 		defer stream.Close()
-		stopCancellation := context.AfterFunc(ctx, func() {
-			_ = stream.Close()
-			stream.CancelRead()
-		})
 		defer stopCancellation()
 		reader := cnp.NewReader(stream)
 		for {
@@ -760,9 +763,11 @@ func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afte
 func (c *Client) call(ctx context.Context, request *cnpv1.Request, idempotencyKey string) (*cnpv1.Response, error) {
 	stream, err := c.session.OpenStream(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("open native request stream: %w", err)
+		return nil, contextualIOError(ctx, "open native request stream", err)
 	}
 	defer stream.Close()
+	stopCancellation := interruptStreamOnCancel(ctx, stream)
+	defer stopCancellation()
 	requestID := uuid.NewString()
 	metadata := &cnpv1.RequestMetadata{RequestId: requestID, IdempotencyKey: idempotencyKey}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -775,12 +780,12 @@ func (c *Client) call(ctx context.Context, request *cnpv1.Request, idempotencyKe
 	message := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Request{Request: request}}
 	if err := cnp.Write(stream, message); err != nil {
 		stream.CancelRead()
-		return nil, fmt.Errorf("write native request: %w", err)
+		return nil, contextualIOError(ctx, "write native request", err)
 	}
 	_ = stream.Close()
 	var serverMessage cnpv1.ServerMessage
 	if err := cnp.NewReader(stream).Read(&serverMessage); err != nil {
-		return nil, fmt.Errorf("read native response: %w", err)
+		return nil, contextualIOError(ctx, "read native response", err)
 	}
 	response := serverMessage.GetResponse()
 	if response == nil || response.RequestId != requestID {
@@ -789,7 +794,25 @@ func (c *Client) call(ctx context.Context, request *cnpv1.Request, idempotencyKe
 	if status := response.GetError(); status != nil {
 		return nil, &Error{Code: status.Code, Message: status.Message}
 	}
+	if !stopCancellation() {
+		return nil, fmt.Errorf("complete native request: %w", ctx.Err())
+	}
 	return response, nil
+}
+
+func interruptStreamOnCancel(ctx context.Context, stream cnp.Stream) func() bool {
+	return context.AfterFunc(ctx, func() {
+		stream.CancelRead()
+		stream.CancelWrite()
+		_ = stream.Close()
+	})
+}
+
+func contextualIOError(ctx context.Context, operation string, err error) error {
+	if contextErr := ctx.Err(); contextErr != nil {
+		return fmt.Errorf("%s: %w", operation, contextErr)
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func unexpectedResult(response *cnpv1.Response) error {

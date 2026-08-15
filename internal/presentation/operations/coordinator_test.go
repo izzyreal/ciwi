@@ -189,6 +189,7 @@ func TestCoordinatorOnlyRetainsAmbiguousMutationOutcomes(t *testing.T) {
 		wantDelete bool
 	}{
 		{name: "known failure", state: StateFailed, wantDelete: true},
+		{name: "cancelled before execution", state: StateCancelled, wantDelete: true},
 		{name: "unknown outcome", state: StateOutcomeUnknown, wantDelete: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -209,6 +210,37 @@ func TestCoordinatorOnlyRetainsAmbiguousMutationOutcomes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCoordinatorCancelActiveCancelsQueriesAndMarksSentMutationsUnknown(t *testing.T) {
+	started := make(chan Operation, 2)
+	coordinator := New(context.Background(), 2, executorFunc(func(ctx context.Context, operation Operation) Result {
+		started <- operation
+		<-ctx.Done()
+		if operation.Class == ClassQuery {
+			return Result{State: StateCancelled, Err: ctx.Err()}
+		}
+		return Result{State: StateOutcomeUnknown, Err: ctx.Err()}
+	}), nil)
+	defer coordinator.Close()
+	query, err := coordinator.Submit(Request{Definition: Definition{Command: "refresh", Class: ClassQuery, Scope: "screen"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation, err := coordinator.Submit(Request{Definition: Definition{Command: "clear-queue", Class: ClassMutation, Scope: "queue"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("operations did not enter the executor")
+		}
+	}
+	coordinator.CancelActive()
+	waitForState(t, coordinator, query.Operation.ID, StateCancelled)
+	waitForState(t, coordinator, mutation.Operation.ID, StateOutcomeUnknown)
 }
 
 func waitForState(t *testing.T, coordinator *Coordinator, id string, state State) {

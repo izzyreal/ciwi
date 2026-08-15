@@ -2,7 +2,16 @@
 
 package gio
 
-import "testing"
+import (
+	"image"
+	"testing"
+	"time"
+
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/unit"
+	"github.com/izzyreal/ciwi/pkg/uidsl"
+)
 
 func TestTimelineSelectionDoesNotCreateTransientNotice(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
@@ -26,5 +35,22 @@ func TestTimelineSelectionDoesNotCreateTransientNotice(t *testing.T) {
 	selected := root["selected_timeline_item"].(map[string]any)
 	if selected["id"] != "phase-2" {
 		t.Fatalf("selected timeline item = %#v", selected)
+	}
+}
+
+func TestTransientNoticeExpiresDuringRendererFrame(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.ShowNotice("temporary", "", uidsl.Action{}, nil, time.Second)
+	renderer.mu.RLock()
+	expires := renderer.notice.expires
+	renderer.mu.RUnlock()
+	renderer.layoutFrame(layout.Context{
+		Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Now: expires.Add(time.Millisecond),
+		Constraints: layout.Constraints{Max: image.Pt(320, 480)},
+	})
+	renderer.mu.RLock()
+	defer renderer.mu.RUnlock()
+	if renderer.notice != nil {
+		t.Fatalf("expired notice remains active: %#v", renderer.notice)
 	}
 }

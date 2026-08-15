@@ -62,6 +62,21 @@ Key**. Reconnects remain paused for an unknown or changed host key. Apple builds
 store the device private key in Keychain; Windows and Linux store it beside the
 native preferences with user-only permissions. See [`files.md`](files.md).
 
+### iOS background and recovery lifecycle
+
+When the iOS app becomes inactive, Ciwi cancels active queries and mutations,
+closes the complete native session, and pauses retry timing. Foregrounding
+always starts a fresh session generation. Screen loads, live watches, output
+streams, receipt checks, and downloads from an older generation are discarded;
+ordinary cancellation/`EOF` teardown is not shown as an error notice.
+
+The client verifies journaled mutation receipts before admitting newly initiated
+remote actions to a reconnected session. Safe actions are replayed only when the
+server installation identity matches and the server confirms that no receipt
+exists. Ambiguous or receipt-only actions remain unrepeated. See
+[`ADR 0003`](adr/0003-native-client-lifecycle-ownership.md) for the ownership
+rules and the required physical-iPhone release soak.
+
 The browser and native client now render the same shared screen declarations.
 The established browser routes (`/`, `/projects/{projectId}`,
 `/jobs/{jobExecutionId}`, `/settings`, `/agents`, and `/vault`) are resolved by

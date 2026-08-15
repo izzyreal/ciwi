@@ -20,13 +20,17 @@ type journalReceiptFake struct {
 	serverID string
 	receipts map[string]*cnpv1.CommandReceiptStatus
 	err      error
+	get      func(context.Context, string) (*cnpv1.CommandReceiptStatus, error)
 }
 
 func (f journalReceiptFake) Welcome() *cnpv1.Welcome {
 	return &cnpv1.Welcome{ServerInstallationId: f.serverID}
 }
 
-func (f journalReceiptFake) GetCommandReceiptStatus(_ context.Context, key string) (*cnpv1.CommandReceiptStatus, error) {
+func (f journalReceiptFake) GetCommandReceiptStatus(ctx context.Context, key string) (*cnpv1.CommandReceiptStatus, error) {
+	if f.get != nil {
+		return f.get(ctx, key)
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -122,11 +126,19 @@ func TestNativeOperationJournalReconcileDeletesTerminalReceipt(t *testing.T) {
 		return operations.Result{}
 	}), journal)
 	defer coordinator.Close()
-	resumed, message, err := journal.reconcile(context.Background(), journalReceiptFake{
+	plan, err := journal.inspect(context.Background(), journalReceiptFake{
 		serverID: "server-1", receipts: map[string]*cnpv1.CommandReceiptStatus{
 			"command-1": {Found: true, Status: "completed"},
 		},
-	}, coordinator)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries, entriesErr := journal.Entries(); entriesErr != nil || len(entries) != 1 {
+		t.Fatalf("read-only inspection changed journal: %#v, %v", entries, entriesErr)
+	}
+	resumed, err := journal.apply(plan, coordinator)
+	message := plan.message()
 	if err != nil || resumed != 0 || message != "" {
 		t.Fatalf("reconcile = %d, %q, %v", resumed, message, err)
 	}
@@ -162,7 +174,15 @@ func TestNativeOperationJournalReconcileReplaysOnlySafeMatchingOperation(t *test
 		return operations.Result{State: operations.StateSucceeded}
 	}), journal)
 	defer coordinator.Close()
-	resumed, message, err := journal.reconcile(context.Background(), journalReceiptFake{serverID: "server-1"}, coordinator)
+	plan, err := journal.inspect(context.Background(), journalReceiptFake{serverID: "server-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executions := len(executed); executions != 0 {
+		t.Fatalf("read-only inspection started %d operation(s)", executions)
+	}
+	resumed, err := journal.apply(plan, coordinator)
+	message := plan.message()
 	if err != nil || resumed != 1 || message == "" {
 		t.Fatalf("reconcile = %d, %q, %v", resumed, message, err)
 	}
@@ -194,9 +214,29 @@ func TestNativeOperationJournalReconcilePropagatesReceiptFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := errors.New("receipt unavailable")
-	_, _, err := journal.reconcile(context.Background(), journalReceiptFake{serverID: "server-1", err: want}, nil)
+	_, err := journal.inspect(context.Background(), journalReceiptFake{serverID: "server-1", err: want})
 	if !errors.Is(err, want) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestNativeOperationJournalInspectionHonorsSessionCancellation(t *testing.T) {
+	journal := newNativeOperationJournal(filepath.Join(t.TempDir(), "preferences.json"), func() string { return "server-1" })
+	if err := journal.Put(operations.Operation{
+		ID: "operation-1", IdempotencyKey: "command-1", Command: "clear-queue",
+		Class: operations.ClassMutation, Persistence: uidsl.ActionPersistenceSafe,
+		Arguments: map[string]string{"confirm": "true"}, CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := journal.inspect(ctx, journalReceiptFake{serverID: "server-1", get: func(ctx context.Context, _ string) (*cnpv1.CommandReceiptStatus, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("inspection error = %v, want cancellation", err)
 	}
 }
 

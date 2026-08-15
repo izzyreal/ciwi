@@ -50,6 +50,12 @@ func (b *nativeClientBroker) ServerInstallationID() string {
 	return b.serverInstallationID
 }
 
+func (b *nativeClientBroker) Ready() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.client != nil
+}
+
 func (b *nativeClientBroker) Wait(ctx context.Context) (*cnpclient.Client, error) {
 	for {
 		b.mu.RLock()
@@ -130,6 +136,9 @@ func (e nativeOperationExecutor) Execute(ctx context.Context, operation operatio
 }
 
 func nativeOperationFailure(operation operations.Operation, err error) operations.Result {
+	if operation.Class == operations.ClassQuery && errors.Is(err, context.Canceled) {
+		return operations.Result{State: operations.StateCancelled, Err: err}
+	}
 	state := operations.StateFailed
 	message := ""
 	var remoteError *cnpclient.Error

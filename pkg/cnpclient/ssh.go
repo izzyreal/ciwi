@@ -98,6 +98,11 @@ func DialSSH(ctx context.Context, config SSHConfig, clientName, clientVersion st
 	if err != nil {
 		return nil, fmt.Errorf("dial SSH jump host: %w", err)
 	}
+	// ssh.NewClientConn and ssh.Client.Dial don't accept a context. Closing the
+	// underlying transport makes an iOS suspension or superseding connection
+	// attempt interrupt every remaining handshake stage promptly.
+	stopCancellation := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stopCancellation()
 	sshConnection, channels, requests, err := ssh.NewClientConn(connection, jumpAddress, sshConfig)
 	if err != nil {
 		_ = connection.Close()
@@ -118,6 +123,10 @@ func DialSSH(ctx context.Context, config SSHConfig, clientName, clientVersion st
 		_ = tunnel.Close()
 		_ = sshClient.Close()
 		return nil, err
+	}
+	if !stopCancellation() {
+		_ = client.Close()
+		return nil, fmt.Errorf("connect SSH jump host: %w", ctx.Err())
 	}
 	return client, nil
 }

@@ -32,11 +32,12 @@ const (
 	StateVerifying            State = "verifying"
 	StateSucceeded            State = "succeeded"
 	StateFailed               State = "failed"
+	StateCancelled            State = "cancelled"
 	StateOutcomeUnknown       State = "outcome-unknown"
 )
 
 func (s State) Terminal() bool {
-	return s == StateSucceeded || s == StateFailed || s == StateOutcomeUnknown
+	return s == StateSucceeded || s == StateFailed || s == StateCancelled || s == StateOutcomeUnknown
 }
 
 type Definition struct {
@@ -260,7 +261,7 @@ func (c *Coordinator) execute(ctx context.Context, id string) {
 	select {
 	case c.workers <- struct{}{}:
 	case <-ctx.Done():
-		c.finish(id, Result{State: StateFailed, Err: ctx.Err()})
+		c.finish(id, Result{State: StateCancelled, Err: ctx.Err()})
 		return
 	}
 	defer func() { <-c.workers }()
@@ -317,7 +318,7 @@ func (c *Coordinator) finish(id string, result Result) {
 	delete(c.cancels, id)
 	if operation.Class == ClassMutation && c.journal != nil {
 		switch operation.State {
-		case StateSucceeded, StateFailed:
+		case StateSucceeded, StateFailed, StateCancelled:
 			_ = c.journal.Delete(id)
 		case StateOutcomeUnknown:
 			_ = c.journal.Put(cloneOperation(*operation))
@@ -327,11 +328,14 @@ func (c *Coordinator) finish(id string, result Result) {
 	c.notify()
 }
 
-func (c *Coordinator) CancelQueries() {
+// CancelActive asks every active operation to stop. Executors distinguish
+// queries, which are safely cancelled, from mutations whose server outcome may
+// require receipt reconciliation.
+func (c *Coordinator) CancelActive() {
 	c.mu.RLock()
 	cancels := make([]context.CancelFunc, 0)
 	for id, operation := range c.operations {
-		if operation.Class == ClassQuery && !operation.State.Terminal() {
+		if !operation.State.Terminal() {
 			if cancel := c.cancels[id]; cancel != nil {
 				cancels = append(cancels, cancel)
 			}

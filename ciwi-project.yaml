@@ -186,6 +186,8 @@ pipelines:
           - dist/ios/Ciwi.xcarchive/**
           - dist/ios/ExportOptions.plist
         steps:
+          - name: Race-test native lifecycle boundaries
+            run: go test -race ./pkg/cnpclient ./internal/presentation/operations ./internal/adapters/gio
           - name: Prepare iOS output
             run: rm -rf dist/ios dist/ios-build dist/ios-check && mkdir -p dist/ios dist/ios-build dist/ios-check
           - name: Build iOS Gio framework

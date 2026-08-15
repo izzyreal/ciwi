@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -153,7 +155,7 @@ func (s nativeConnectionState) binding() map[string]any {
 	}
 }
 
-func applyNativeConnectionState(renderer *Renderer, state nativeConnectionState) {
+func applyNativeConnectionState(renderer nativeRenderer, state nativeConnectionState) {
 	renderer.SetDataBinding("client", state.binding())
 }
 
@@ -173,6 +175,18 @@ type nativeDialResult struct {
 	target string
 	client *cnpclient.Client
 	err    error
+}
+
+type nativeConnectResult struct {
+	generation uint64
+	session    *nativeSession
+	err        error
+}
+
+type nativeReconciliationResult struct {
+	generation uint64
+	plan       nativeReconciliationPlan
+	err        error
 }
 
 func dialNativeTargets(ctx context.Context, targets []string, version string) (*cnpclient.Client, string, error) {
@@ -249,6 +263,17 @@ func nextReconnectDelay(current time.Duration) time.Duration {
 	return next
 }
 
+func expectedNativeDisconnect(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return message == "eof" || strings.Contains(message, "closed network connection") || strings.Contains(message, "use of closed connection")
+}
+
 func (b *jobOutputBuffer) reset(jobID string) {
 	b.jobID = jobID
 	b.events = nil
@@ -303,7 +328,7 @@ func (b *jobOutputBuffer) append(batch *cnpv1.JobOutputBatch) {
 	}
 }
 
-func (b *jobOutputBuffer) apply(renderer *Renderer) {
+func (b *jobOutputBuffer) apply(renderer nativeRenderer) {
 	if !b.dirty {
 		return
 	}
@@ -410,10 +435,15 @@ func Run(options Options) error {
 	coordinator := operations.New(ctx, 4, nativeOperationExecutor{clients: clientBroker}, operationJournal)
 	defer coordinator.Close()
 	commands := make(chan commandRequest, 256)
+	ui := newNativeUI(window.Invalidate)
 	var renderer *Renderer
 	renderer, err = NewRenderer(frontPageScreen, theme, func(action uidsl.Action, arguments map[string]string) {
 		spec, ok := actionCatalog.Spec(action.Command)
 		if ok && spec.Class != uidsl.ActionClassLocal {
+			if !clientBroker.Ready() {
+				ui.ShowAlert("Server connection not ready", "Ciwi is reconnecting and checking interrupted actions.")
+				return
+			}
 			submission, submitErr := coordinator.Submit(operations.Request{
 				Definition: operations.Definition{
 					Command: action.Command, Class: operations.Class(spec.Class), Scope: spec.ResolveScope(arguments),
@@ -422,28 +452,28 @@ func Run(options Options) error {
 				Arguments: arguments,
 			})
 			if submitErr != nil {
-				renderer.ShowAlert("Action could not be started", submitErr.Error())
+				ui.ShowAlert("Action could not be started", submitErr.Error())
 				window.Invalidate()
 				return
 			}
 			switch submission.Disposition {
 			case operations.DispositionDuplicate:
-				renderer.ShowAlert("Action already in progress", "That action is already in progress.")
+				ui.ShowAlert("Action already in progress", "That action is already in progress.")
 			case operations.DispositionConflict:
 				message := "A conflicting action is already in progress"
 				if submission.Conflict != nil && strings.TrimSpace(submission.Conflict.PendingLabel) != "" {
 					message = submission.Conflict.PendingLabel
 				}
-				renderer.ShowAlert("Action unavailable", message)
+				ui.ShowAlert("Action unavailable", message)
 			}
-			renderer.SetOperations(coordinator.Snapshot())
+			ui.SetOperations(coordinator.Snapshot())
 			window.Invalidate()
 			return
 		}
 		select {
 		case commands <- commandRequest{action: action, arguments: arguments}:
 		default:
-			renderer.ShowAlert("Action unavailable", "Another command is already being processed.")
+			ui.ShowAlert("Action unavailable", "Another command is already being processed.")
 			window.Invalidate()
 		}
 	})
@@ -456,7 +486,7 @@ func Run(options Options) error {
 		return err
 	}
 	renderer.SetScreenAndData(frontPageScreen, initialData)
-	applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: "Trying to connect…"})
+	applyNativeConnectionState(ui, nativeConnectionState{connecting: true, status: "Trying to connect…"})
 	renderer.SetDisclosureStates(preferences.Disclosures)
 	renderer.SetDisclosureChange(func(states map[string]bool) {
 		if err := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
@@ -479,7 +509,8 @@ func Run(options Options) error {
 		}
 	})
 	renderer.SetInvalidate(window.Invalidate)
-	go runController(ctx, window, renderer, commands, screens, actionCatalog, options, preferencesPath, preferences, coordinator, clientBroker, operationJournal, fileExplorer)
+	lifecycle := newNativeLifecycleMailbox()
+	go runController(ctx, window, ui, commands, lifecycle, screens, actionCatalog, options, theme.Metadata.Name, preferencesPath, preferences, coordinator, clientBroker, operationJournal, fileExplorer)
 
 	var operations op.Ops
 	for {
@@ -488,7 +519,10 @@ func Run(options Options) error {
 		switch event := event.(type) {
 		case app.DestroyEvent:
 			return event.Err
+		case app.ConfigEvent:
+			publishNativeLifecycle(lifecycle, event.Config.Focused)
 		case app.FrameEvent:
+			ui.drain(renderer)
 			gtx := app.NewContext(&operations, event)
 			renderer.Layout(gtx)
 			event.Frame(&operations)
@@ -496,7 +530,7 @@ func Run(options Options) error {
 	}
 }
 
-func runController(ctx context.Context, window *app.Window, renderer *Renderer, commands <-chan commandRequest, screens map[string]*uidsl.ScreenDocument, actionCatalog *uidsl.ActionCatalogDocument, options Options, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal, artifactPicker artifactDestinationPicker) {
+func runController(ctx context.Context, window *app.Window, renderer nativeRenderer, commands <-chan commandRequest, lifecycle *nativeLifecycleMailbox, screens map[string]*uidsl.ScreenDocument, actionCatalog *uidsl.ActionCatalogDocument, options Options, themeName, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal, artifactPicker artifactDestinationPicker) {
 	screenCache := newNativeScreenCache()
 	pendingCancellations := map[string]bool{}
 	connectionSettings := nativeConnectionSettingsForLaunch(preferences, options.Address)
@@ -507,31 +541,14 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		sshSettings.PrivateKey = privateKey
 		connectionSettings.SSH.PrivateKey = privateKey
 	}
-	var session *nativeSession
+	sessionSupervisor := newNativeSessionSupervisor(ctx, options.Version, nil, nil)
+	defer sessionSupervisor.Close()
 	var client *cnpclient.Client
 	var changes <-chan *cnpv1.ChangeEvent
 	var watchErrors <-chan error
 	address := ""
-	reconnectDelay := time.Second
-	var connected *nativeSession
-	var initialConnectErr error
-	if mode == connectionModeSSH {
-		initialConnectErr = privateKeyErr
-	}
-	if initialConnectErr == nil {
-		connected, initialConnectErr = connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
-	}
-	initialHostKeyPending := captureSSHHostKeyError(&sshSettings, initialConnectErr)
-	connectionSettings.SSH = sshSettings
-	if initialConnectErr == nil {
-		session = connected
-		client = connected.client
-		clientBroker.Set(client)
-		changes = connected.changes
-		watchErrors = connected.watchErrors
-		address = connected.address
-		screenCache.SetServerInstallationID(client.Welcome().GetServerInstallationId())
-	}
+	suspended := false
+	var handledInactiveEpoch uint64
 	var outputBatches <-chan *cnpv1.JobOutputBatch
 	var outputErrors <-chan error
 	var outputCancel context.CancelFunc
@@ -565,7 +582,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		if client == nil {
 			return
 		}
-		streamCtx, cancelStream := context.WithCancel(ctx)
+		sessionCtx := sessionSupervisor.Context()
+		if sessionCtx == nil {
+			return
+		}
+		streamCtx, cancelStream := context.WithCancel(sessionCtx)
 		batches, errorsOut, streamErr := client.WatchJobOutput(streamCtx, jobID, 0)
 		if streamErr != nil {
 			cancelStream()
@@ -577,11 +598,6 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		outputErrors = errorsOut
 	}
 	defer stopOutput()
-	defer func() {
-		if session != nil {
-			session.close()
-		}
-	}()
 	screenLoads := make(chan screenLoadResult, 8)
 	artifactDownloads := make(chan artifactDownloadResult, 4)
 	var screenLoadCancel context.CancelFunc
@@ -593,12 +609,15 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			// after its cancellation was explicitly requested by navigation.
 			screenLoadCancel = nil
 		}
-		loadCtx, cancelLoad := context.WithCancel(ctx)
+		sessionCtx := sessionSupervisor.Context()
+		if sessionCtx == nil {
+			return
+		}
+		loadCtx, cancelLoad := context.WithCancel(sessionCtx)
 		screenLoadCancel = cancelLoad
 		screenLoadGeneration++
 		generation := screenLoadGeneration
 		activeClient := client
-		themeName := renderer.ThemeName()
 		go func() {
 			defer cancelLoad()
 			if activeClient == nil {
@@ -642,39 +661,18 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		navigation, _ = navigationForRoute(options.Route)
 	}
 	navigationHistory := []navigationState{}
-	if initialConnectErr != nil {
-		if navigation.screen != "front-page" && navigation.screen != "settings" {
-			navigation = navigationState{screen: "front-page"}
-		}
-		if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint, sshSettings); err != nil {
+	if navigation.screen == "front-page" || navigation.screen == "settings" {
+		if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, themeName, mode, endpoint, sshSettings); err != nil {
 			renderer.ShowAlert("Screen unavailable", err.Error())
 		}
-		state := nativeConnectionState{connecting: true, status: "Server unavailable; reconnecting…"}
-		if initialHostKeyPending {
-			state = nativeConnectionState{status: "SSH host key verification required. Connection attempts are paused."}
-		}
-		applyNativeConnectionState(renderer, state)
-	} else {
-		if mode != connectionModeSSH {
-			rememberSuccessfulEndpoint(preferencesPath, address)
-			preferences.LastSuccessfulEndpoint = address
-		}
-		if mode == connectionModeDiscover {
-			connectionSettings.PreferredAddress = address
-			connectionSettings.DiscoverFallback = true
-		}
-		applyNativeConnectionState(renderer, nativeConnectionState{connected: true, address: address, status: "Connected to " + address})
-		if navigation.screen == "settings" {
-			applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
-			renderer.SetRootBinding("settings", "client_version", options.Version)
-		}
 	}
+	applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: "Trying to connect…"})
 	showScreenLoading := func(target navigationState) error {
 		screen := screens[target.screen]
 		if screen == nil {
 			return fmt.Errorf("screen %q is unavailable", target.screen)
 		}
-		data, loadErr := screenLoadingData(target, options.Version, renderer.ThemeName(), mode, endpoint, sshSettings)
+		data, loadErr := screenLoadingData(target, options.Version, themeName, mode, endpoint, sshSettings)
 		if loadErr != nil {
 			return loadErr
 		}
@@ -765,72 +763,45 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		}
 		return nil
 	}
-	if client != nil {
-		if err := beginResyncNavigation(navigation); err != nil {
-			renderer.ShowAlert("Could not load the initial screen", err.Error())
-		}
-	}
 	window.Invalidate()
-	var noticeTimer *time.Timer
-	var noticeExpiry <-chan time.Time
-	scheduleNoticeExpiry := func() {
-		expires := renderer.NoticeExpiry()
-		if expires.IsZero() {
-			if noticeTimer != nil {
-				noticeTimer.Stop()
+	suspendedMutations := map[string]bool{}
+	reconcilePending := false
+	reconciliationResults := make(chan nativeReconciliationResult, 1)
+	var reconciliationCancel context.CancelFunc
+	reconciliationRunning := false
+	cancelReconciliation := func() {
+		if reconciliationCancel != nil {
+			reconciliationCancel()
+		}
+		reconciliationCancel = nil
+		reconciliationRunning = false
+		reconcilePending = false
+	}
+	startReconciliation := func() {
+		if !reconcilePending || reconciliationRunning || client == nil || operationJournal == nil || len(suspendedMutations) != 0 {
+			return
+		}
+		sessionCtx := sessionSupervisor.Context()
+		if sessionCtx == nil {
+			return
+		}
+		reconcileCtx, cancel := context.WithCancel(sessionCtx)
+		reconciliationCancel = cancel
+		reconciliationRunning = true
+		generation := sessionSupervisor.Generation()
+		activeClient := client
+		go func() {
+			plan, reconcileErr := operationJournal.inspect(reconcileCtx, activeClient)
+			result := nativeReconciliationResult{generation: generation, plan: plan, err: reconcileErr}
+			select {
+			case reconciliationResults <- result:
+			case <-reconcileCtx.Done():
+			case <-ctx.Done():
 			}
-			noticeExpiry = nil
-			return
-		}
-		delay := time.Until(expires)
-		if delay < 0 {
-			delay = 0
-		}
-		if noticeTimer == nil {
-			noticeTimer = time.NewTimer(delay)
-		} else {
-			if !noticeTimer.Stop() {
-				select {
-				case <-noticeTimer.C:
-				default:
-				}
-			}
-			noticeTimer.Reset(delay)
-		}
-		noticeExpiry = noticeTimer.C
+		}()
 	}
-	scheduleNoticeExpiry()
-	defer func() {
-		if noticeTimer != nil {
-			noticeTimer.Stop()
-		}
-	}()
-	reconcileOperations := func() {
-		if client == nil || operationJournal == nil {
-			return
-		}
-		resumed, message, reconcileErr := operationJournal.reconcile(ctx, client, coordinator)
-		if reconcileErr != nil {
-			renderer.ShowNotice("Could not reconcile earlier actions: "+reconcileErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-			return
-		}
-		if resumed > 0 {
-			renderer.ShowNotice(fmt.Sprintf("Resumed %d interrupted action(s)", resumed), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-		} else if message != "" {
-			renderer.ShowNotice(message, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-		}
-	}
-	if initialConnectErr == nil {
-		reconcileOperations()
-	}
-
-	var reconnectTimer *time.Timer
-	var reconnect <-chan time.Time
-	disconnect := func() {
-		if session != nil {
-			session.close()
-			session = nil
-		}
+	clearConnection := func() {
+		cancelReconciliation()
 		client = nil
 		clientBroker.Set(nil)
 		changes = nil
@@ -844,56 +815,48 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		screenRefreshes.cancel()
 	}
 	pauseReconnect := func(status string) {
-		disconnect()
-		if reconnectTimer != nil {
-			if !reconnectTimer.Stop() {
-				select {
-				case <-reconnectTimer.C:
-				default:
-				}
-			}
-		}
-		reconnect = nil
+		sessionSupervisor.Disconnect()
+		clearConnection()
+		applyNativeConnectionState(renderer, nativeConnectionState{status: status})
+		window.Invalidate()
+	}
+	suspendConnection := func(status string) {
+		sessionSupervisor.Suspend()
+		clearConnection()
 		applyNativeConnectionState(renderer, nativeConnectionState{status: status})
 		window.Invalidate()
 	}
 	scheduleReconnectAfter := func(status string, delay time.Duration) {
-		disconnect()
-		applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: status})
-		if reconnectTimer == nil {
-			reconnectTimer = time.NewTimer(delay)
-		} else {
-			if !reconnectTimer.Stop() {
-				select {
-				case <-reconnectTimer.C:
-				default:
-				}
-			}
-			reconnectTimer.Reset(delay)
+		clearConnection()
+		if suspended {
+			sessionSupervisor.Suspend()
+			applyNativeConnectionState(renderer, nativeConnectionState{status: "Paused while Ciwi is in the background"})
+			window.Invalidate()
+			return
 		}
-		reconnect = reconnectTimer.C
+		applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: status})
+		sessionSupervisor.Schedule(connectionSettings, delay)
 		window.Invalidate()
 	}
 	scheduleReconnect := func(reason string) {
+		if suspended {
+			return
+		}
 		status := "Connection lost; reconnecting…"
 		if reason != "" {
 			status = "Connection lost: " + reason
 		}
-		scheduleReconnectAfter(status, reconnectDelay)
+		scheduleReconnectAfter(status, sessionSupervisor.Backoff())
 	}
-	if initialConnectErr != nil {
-		if initialHostKeyPending {
-			pauseReconnect("SSH host key verification required. Connection attempts are paused.")
-		} else {
-			scheduleReconnectAfter("Server unavailable: "+initialConnectErr.Error(), reconnectDelay)
-		}
+	if mode == connectionModeSSH && privateKeyErr != nil {
+		pauseReconnect("SSH device key could not be loaded: " + privateKeyErr.Error() + ". Connection attempts are paused.")
+	} else {
+		scheduleReconnectAfter("Trying to connect…", 0)
 	}
-	defer func() {
-		if reconnectTimer != nil {
-			reconnectTimer.Stop()
-		}
-	}()
 	applyOperationOutcome := func(operation operations.Operation) {
+		if operation.State == operations.StateCancelled {
+			return
+		}
 		if operation.State != operations.StateSucceeded {
 			message := strings.TrimSpace(operation.Message)
 			if message == "" {
@@ -995,15 +958,13 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-noticeExpiry:
-			if renderer.ClearExpiredNotice(now) {
-				window.Invalidate()
+		case <-sessionSupervisor.Retry():
+			sessionSupervisor.RetryNow()
+		case result := <-sessionSupervisor.Results():
+			connected, connectErr, current := sessionSupervisor.Accept(result)
+			if !current {
+				continue
 			}
-			noticeExpiry = nil
-			scheduleNoticeExpiry()
-		case <-reconnect:
-			reconnect = nil
-			connected, connectErr := connectConfiguredNativeSession(ctx, connectionSettings, options.Version)
 			if connectErr != nil {
 				hostKeyPending := captureSSHHostKeyError(&sshSettings, connectErr)
 				connectionSettings.SSH = sshSettings
@@ -1014,17 +975,19 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					pauseReconnect("SSH host key verification required. Connection attempts are paused.")
 					continue
 				}
-				reconnectDelay = nextReconnectDelay(reconnectDelay)
-				scheduleReconnect(connectErr.Error())
+				sessionSupervisor.AdvanceBackoff()
+				reason := connectErr.Error()
+				if expectedNativeDisconnect(connectErr) {
+					reason = ""
+				}
+				scheduleReconnect(reason)
 				continue
 			}
-			session = connected
 			client = connected.client
-			clientBroker.Set(client)
 			changes = connected.changes
 			watchErrors = connected.watchErrors
 			address = connected.address
-			reconnectDelay = time.Second
+			sessionSupervisor.ResetBackoff()
 			if screenCache.SetServerInstallationID(client.Welcome().GetServerInstallationId()) {
 				if err := showScreenLoading(navigation); err != nil {
 					renderer.ShowAlert("Screen unavailable", err.Error())
@@ -1039,7 +1002,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				connectionSettings.PreferredAddress = address
 				connectionSettings.DiscoverFallback = true
 			}
-			applyNativeConnectionState(renderer, nativeConnectionState{connected: true, address: address, status: "Connected to " + address})
+			applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, address: address, status: "Connected; checking interrupted actions…"})
 			if navigation.screen == "settings" {
 				applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 				renderer.SetRootBinding("settings", "client_version", options.Version)
@@ -1047,8 +1010,64 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			if navigation.screen == "job-details" {
 				startOutput(navigation.jobID)
 			}
-			reconcileOperations()
-			scheduleNoticeExpiry()
+			reconcilePending = true
+			startReconciliation()
+			window.Invalidate()
+		case result := <-reconciliationResults:
+			if result.generation != sessionSupervisor.Generation() || !reconciliationRunning || client == nil || suspended {
+				continue
+			}
+			if reconciliationCancel != nil {
+				reconciliationCancel()
+			}
+			reconciliationCancel = nil
+			reconciliationRunning = false
+			if result.err != nil {
+				if expectedNativeDisconnect(result.err) {
+					scheduleReconnect("")
+				} else {
+					scheduleReconnect("verify interrupted actions: " + result.err.Error())
+				}
+				continue
+			}
+			resumed, applyErr := operationJournal.apply(result.plan, coordinator)
+			if applyErr != nil {
+				pauseReconnect("Interrupted actions could not be recovered: " + applyErr.Error() + ". Connection attempts are paused.")
+				continue
+			}
+			reconcilePending = false
+			clientBroker.Set(client)
+			applyNativeConnectionState(renderer, nativeConnectionState{connected: true, address: address, status: "Connected to " + address})
+			if resumed > 0 {
+				renderer.ShowNotice(fmt.Sprintf("Resumed %d interrupted action(s)", resumed), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+			} else if message := result.plan.message(); message != "" {
+				renderer.ShowNotice(message, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+			}
+			window.Invalidate()
+		case <-lifecycle.Wake():
+			lifecycleState := lifecycle.Snapshot()
+			if lifecycleState.InactiveEpoch > handledInactiveEpoch {
+				handledInactiveEpoch = lifecycleState.InactiveEpoch
+				if suspended {
+					// The newest state may already be focused again. Teardown was
+					// nevertheless required for the intervening inactive edge.
+				} else {
+					suspended = true
+					for _, operation := range coordinator.Snapshot() {
+						if operation.Class == operations.ClassMutation && !operation.State.Terminal() {
+							suspendedMutations[operation.ID] = true
+						}
+					}
+					coordinator.CancelActive()
+					suspendConnection("Paused while Ciwi is in the background")
+				}
+			}
+			if !lifecycleState.Focused || !suspended {
+				continue
+			}
+			suspended = false
+			sessionSupervisor.Resume(connectionSettings)
+			applyNativeConnectionState(renderer, nativeConnectionState{connecting: true, status: "Returning to Ciwi; reconnecting…"})
 			window.Invalidate()
 		case change, ok := <-changes:
 			if !ok {
@@ -1103,7 +1122,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				outputErrors = nil
 				continue
 			}
-			if outputErr != nil {
+			if outputErr != nil && !expectedNativeDisconnect(outputErr) {
 				renderer.ShowNotice("Output stream stopped: "+outputErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 				window.Invalidate()
 			}
@@ -1119,6 +1138,11 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			screenLoadCancel = nil
 			if startTrailing, recoverMissingRoute := screenRefreshes.complete(); startTrailing && client != nil {
 				launchScreenLoad(result.navigation, recoverMissingRoute)
+			}
+			if expectedNativeDisconnect(result.err) {
+				pendingNavigation = nil
+				scheduleReconnect("")
+				continue
 			}
 			if result.err != nil {
 				if result.recoverMissingRoute && result.navigation.screen != "front-page" {
@@ -1211,6 +1235,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			}
 			window.Invalidate()
 		case result := <-artifactDownloads:
+			if result.generation != sessionSupervisor.Generation() || (expectedNativeDisconnect(result.err) && !errors.Is(result.err, errArtifactDownloadCancelled)) {
+				continue
+			}
 			label := strings.TrimSpace(result.label)
 			if label == "" {
 				label = "Artifact"
@@ -1222,7 +1249,6 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 			} else {
 				renderer.ShowNotice("Downloaded "+strings.ToLower(label)+": "+result.path, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			}
-			scheduleNoticeExpiry()
 			window.Invalidate()
 		case <-coordinator.Changed():
 			snapshot := coordinator.Snapshot()
@@ -1231,11 +1257,15 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				if !operation.State.Terminal() {
 					continue
 				}
-				applyOperationOutcome(operation)
+				wasSuspended := suspendedMutations[operation.ID]
+				delete(suspendedMutations, operation.ID)
+				if !wasSuspended || operation.State != operations.StateOutcomeUnknown {
+					applyOperationOutcome(operation)
+				}
 				coordinator.Forget(operation.ID)
 			}
+			startReconciliation()
 			renderer.SetOperations(coordinator.Snapshot())
-			scheduleNoticeExpiry()
 			window.Invalidate()
 		case command := <-commands:
 			switch command.action.Command {
@@ -1286,6 +1316,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 				sshSettings.PrivateKey = privateKey
 				sshSettings.PublicKey = publicKey
+				privateKeyErr = nil
 				connectionSettings.SSH = sshSettings
 				if saveErr := updateNativePreferences(preferencesPath, func(preferences *nativePreferences) {
 					preferences.SSH.PublicKey = publicKey
@@ -1318,7 +1349,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 				preferences.SSH.HostKeyFingerprint = fingerprint
 				applyConnectionBindings(renderer, navigation.screen, mode, endpoint, sshSettings)
-				reconnectDelay = time.Second
+				sessionSupervisor.ResetBackoff()
 				scheduleReconnectAfter("SSH host key trusted; reconnecting…", 0)
 				continue
 			case "reject-ssh-host-key":
@@ -1395,11 +1426,15 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					Destination: strings.TrimSpace(sshSettings.Destination), PublicKey: sshSettings.PublicKey,
 					HostKeyFingerprint: sshSettings.HostKeyFingerprint,
 				}
-				reconnectDelay = time.Second
+				sessionSupervisor.ResetBackoff()
 				scheduleReconnectAfter("Connection settings saved; reconnecting…", 0)
 				continue
 			case "retry-connection":
-				reconnectDelay = time.Second
+				if mode == connectionModeSSH && privateKeyErr != nil {
+					pauseReconnect("SSH device key could not be loaded: " + privateKeyErr.Error() + ". Connection attempts are paused.")
+					continue
+				}
+				sessionSupervisor.ResetBackoff()
 				scheduleReconnectAfter("Retrying connection…", 0)
 				continue
 			case "set-report-filter":
@@ -1407,19 +1442,43 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				window.Invalidate()
 				continue
 			case "download-artifact":
+				if !clientBroker.Ready() {
+					renderer.ShowAlert("Artifact unavailable", "Ciwi is reconnecting and checking interrupted actions.")
+					window.Invalidate()
+					continue
+				}
 				activeClient := client
+				downloadCtx := sessionSupervisor.Context()
+				downloadGeneration := sessionSupervisor.Generation()
+				if activeClient == nil || downloadCtx == nil {
+					renderer.ShowAlert("Artifact unavailable", "The server connection is not ready.")
+					window.Invalidate()
+					continue
+				}
 				arguments := command.arguments
 				go func() {
-					path, downloadErr := downloadArtifact(ctx, activeClient, artifactPicker, arguments)
+					path, downloadErr := downloadArtifact(downloadCtx, activeClient, artifactPicker, arguments)
 					select {
-					case artifactDownloads <- artifactDownloadResult{path: path, label: "Artifact", err: downloadErr}:
+					case artifactDownloads <- artifactDownloadResult{path: path, label: "Artifact", generation: downloadGeneration, err: downloadErr}:
 					case <-ctx.Done():
 					}
 				}()
 				window.Invalidate()
 				continue
 			case "download-job-log":
+				if !clientBroker.Ready() {
+					renderer.ShowAlert("Log unavailable", "Ciwi is reconnecting and checking interrupted actions.")
+					window.Invalidate()
+					continue
+				}
 				activeClient := client
+				downloadCtx := sessionSupervisor.Context()
+				downloadGeneration := sessionSupervisor.Generation()
+				if activeClient == nil || downloadCtx == nil {
+					renderer.ShowAlert("Log unavailable", "The server connection is not ready.")
+					window.Invalidate()
+					continue
+				}
 				format := strings.ToLower(strings.TrimSpace(command.arguments["format"]))
 				if format != "clean" && format != "raw" {
 					renderer.ShowAlert("Log download unavailable", "Log format must be clean or raw.")
@@ -1432,9 +1491,9 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				}
 				label := strings.ToUpper(format[:1]) + format[1:] + " log"
 				go func() {
-					path, downloadErr := downloadArtifact(ctx, activeClient, artifactPicker, arguments)
+					path, downloadErr := downloadArtifact(downloadCtx, activeClient, artifactPicker, arguments)
 					select {
-					case artifactDownloads <- artifactDownloadResult{path: path, label: label, err: downloadErr}:
+					case artifactDownloads <- artifactDownloadResult{path: path, label: label, generation: downloadGeneration, err: downloadErr}:
 					case <-ctx.Done():
 					}
 				}()
@@ -1485,10 +1544,10 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 						navigationHistory = append(navigationHistory, previous)
 					}
 					stopOutput()
-					if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, mode, endpoint, sshSettings); err != nil {
+					if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, themeName, mode, endpoint, sshSettings); err != nil {
 						renderer.ShowAlert("Screen unavailable", err.Error())
 					}
-					applyNativeConnectionState(renderer, nativeConnectionState{connecting: reconnect != nil, status: "Server unavailable; reconnecting…"})
+					applyNativeConnectionState(renderer, nativeConnectionState{connecting: !suspended, status: "Server unavailable; reconnecting…"})
 					window.Invalidate()
 					continue
 				}
@@ -1522,7 +1581,7 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 				continue
 			}
 			previous := navigation
-			handleCommand(renderer, &navigation, command, preferencesPath)
+			handleCommand(renderer, &navigation, command, &themeName, preferencesPath)
 			if navigation.screen == "settings" {
 				applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 				renderer.SetRootBinding("settings", "client_version", options.Version)
@@ -1534,7 +1593,6 @@ func runController(ctx context.Context, window *app.Window, renderer *Renderer, 
 					stopOutput()
 				}
 			}
-			scheduleNoticeExpiry()
 			window.Invalidate()
 		}
 	}
@@ -1582,7 +1640,7 @@ func connectionStatusTone(status string) string {
 	return "danger"
 }
 
-func applyConnectionBindings(renderer *Renderer, screen, mode, endpoint string, sshSettings sshConnectionSettings) {
+func applyConnectionBindings(renderer nativeRenderer, screen, mode, endpoint string, sshSettings sshConnectionSettings) {
 	explicit := mode == connectionModeExplicit
 	remote := mode == connectionModeSSH
 	values := map[string]any{
@@ -1621,14 +1679,15 @@ func captureSSHHostKeyError(settings *sshConnectionSettings, err error) bool {
 	return true
 }
 
-func handleCommand(renderer *Renderer, navigation *navigationState, command commandRequest, preferencesPath string) {
+func handleCommand(renderer nativeRenderer, navigation *navigationState, command commandRequest, themeName *string, preferencesPath string) {
 	switch command.action.Command {
 	case "set-project-structure-filter":
 		filter := strings.TrimSpace(command.arguments["value"])
-		if filter == "" || !renderer.SetProjectStructureFilter(filter) {
+		if filter == "" {
 			renderer.ShowAlert("Project structure unavailable", "The selected project structure filter is unavailable.")
 			return
 		}
+		renderer.SetProjectStructureFilter(filter)
 	case "set-agent-script-field":
 		field := strings.TrimSpace(command.arguments["field"])
 		value := command.arguments["value"]
@@ -1679,9 +1738,9 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 			renderer.ShowAlert("Theme change failed", err.Error())
 			return
 		}
-		if err := renderer.SetTheme(theme); err != nil {
-			renderer.ShowAlert("Theme change failed", err.Error())
-			return
+		renderer.SetTheme(theme)
+		if themeName != nil {
+			*themeName = theme.Metadata.Name
 		}
 		renderer.SetRootBinding("settings", "selected_theme", theme.Metadata.Name)
 		renderer.SetRootBinding("settings", "selected_theme_description", theme.Metadata.Description)
@@ -1696,7 +1755,7 @@ func handleCommand(renderer *Renderer, navigation *navigationState, command comm
 	}
 }
 
-func applyRunOptionSelection(renderer *Renderer, navigation *navigationState, field, value string) (bool, error) {
+func applyRunOptionSelection(renderer nativeRenderer, navigation *navigationState, field, value string) (bool, error) {
 	switch field {
 	case "sourceRef":
 		navigation.sourceRef = value
@@ -1822,7 +1881,7 @@ func nativeAgentDeletionOwnsCurrentRoute(snapshot []operations.Operation, naviga
 			strings.TrimSpace(operation.Arguments["successRoute"]) == "" {
 			continue
 		}
-		if operation.State != operations.StateFailed && operation.State != operations.StateOutcomeUnknown {
+		if operation.State != operations.StateFailed && operation.State != operations.StateCancelled && operation.State != operations.StateOutcomeUnknown {
 			return true
 		}
 	}

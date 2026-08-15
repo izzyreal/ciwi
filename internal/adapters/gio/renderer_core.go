@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -470,25 +471,6 @@ func sameNativeNotice(left, right nativeNotice) bool {
 	return true
 }
 
-func (r *Renderer) NoticeExpiry() time.Time {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if r.notice != nil {
-		return r.notice.expires
-	}
-	return time.Time{}
-}
-
-func (r *Renderer) ClearExpiredNotice(now time.Time) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.notice != nil && !r.notice.expires.IsZero() && !now.Before(r.notice.expires) {
-		r.advanceNoticeLocked(now)
-		return true
-	}
-	return false
-}
-
 func (r *Renderer) SetTheme(theme *uidsl.ThemeDocument) error {
 	materialTheme, colors, err := rendererTheme(theme, r.typography)
 	if err != nil {
@@ -662,6 +644,9 @@ func (r *Renderer) layoutFrame(gtx layout.Context) layout.Dimensions {
 		alert = &copy
 	}
 	r.mu.Unlock()
+	if notice != nil && !notice.expires.IsZero() {
+		gtx.Execute(op.InvalidateCmd{At: notice.expires})
+	}
 
 	if screen != nil && screen.Metadata.Name == "job-details" {
 		jobID := bindingString(data, "jobDetails.id")

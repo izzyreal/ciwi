@@ -5,6 +5,8 @@ package gio
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +30,17 @@ func TestNextReconnectDelayBacksOffAndCaps(t *testing.T) {
 		if got := nextReconnectDelay(test.current); got != test.want {
 			t.Errorf("nextReconnectDelay(%s) = %s, want %s", test.current, got, test.want)
 		}
+	}
+}
+
+func TestExpectedNativeDisconnectSuppressesLifecycleNoise(t *testing.T) {
+	for _, err := range []error{context.Canceled, io.EOF, net.ErrClosed, errors.New("use of closed network connection")} {
+		if !expectedNativeDisconnect(err) {
+			t.Errorf("expected disconnect %q was not classified", err)
+		}
+	}
+	if expectedNativeDisconnect(errors.New("permission denied")) {
+		t.Fatal("application error was classified as an expected disconnect")
 	}
 }
 

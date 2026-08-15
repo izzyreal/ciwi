@@ -101,6 +101,50 @@ func TestDialSSHValidatesConfigurationBeforeNetwork(t *testing.T) {
 	}
 }
 
+func TestDialSSHCancellationInterruptsStalledHandshake(t *testing.T) {
+	privateKey, _, err := GenerateSSHDeviceKey("ciwi-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		connection, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			accepted <- connection
+		}
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, dialErr := DialSSH(ctx, SSHConfig{
+			JumpAddress: listener.Addr().String(), Username: "ciwi", Destination: "127.0.0.1:8113",
+			PrivateKeyPEM: privateKey, HostKeyFingerprint: "SHA256:test",
+		}, "ciwi-test", "test")
+		result <- dialErr
+	}()
+	var serverConnection net.Conn
+	select {
+	case serverConnection = <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("SSH test connection was not accepted")
+	}
+	t.Cleanup(func() { _ = serverConnection.Close() })
+	cancel()
+	select {
+	case dialErr := <-result:
+		if dialErr == nil {
+			t.Fatal("cancelled SSH handshake unexpectedly succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled SSH handshake did not stop promptly")
+	}
+}
+
 func startSSHHandshakeServer(t *testing.T, rejectClientKey bool) (string, string) {
 	t.Helper()
 	_, hostPrivateKey, err := ed25519.GenerateKey(rand.Reader)
