@@ -11,6 +11,8 @@ VERSION=${VERSION#V}
 OUTPUT_FRAMEWORK=$2
 ROOT_DIRECTORY=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 GOGIO_VERSION=${GOGIO_VERSION:-v0.10.0}
+GOFLAGS="${GOFLAGS:+$GOFLAGS }-trimpath"
+export GOFLAGS
 
 case "$VERSION" in
     [0-9]*.[0-9]*.[0-9]*) ;;
@@ -29,8 +31,13 @@ go run "gioui.org/cmd/gogio@${GOGIO_VERSION}" \
     -minsdk 16 \
     -name GioDOMLab \
     -version "${VERSION}.1" \
+    -ldflags "-s=false -w=false -compressdwarf=false" \
     -o "$OUTPUT_FRAMEWORK" \
     "$ROOT_DIRECTORY/cmd/giodom-lab"
 
 test -f "$OUTPUT_FRAMEWORK/Versions/A/GioDOMLab"
 test -f "$OUTPUT_FRAMEWORK/Versions/A/Headers/GioDOMLab.h"
+"$ROOT_DIRECTORY/packaging/verify-apple-debug-info.sh" \
+    "$OUTPUT_FRAMEWORK/Versions/A/GioDOMLab" \
+    arm64 \
+    "main.main"

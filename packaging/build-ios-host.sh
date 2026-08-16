@@ -19,6 +19,7 @@ APP_DISPLAY_NAME=${CIWI_IOS_DISPLAY_NAME:-Ciwi}
 OFFLINE_APP=${CIWI_IOS_OFFLINE_APP:-0}
 FRAMEWORK_NAME=${CIWI_IOS_FRAMEWORK_NAME:-Ciwi}
 EXPECTED_BINARY_MARKER=${CIWI_IOS_EXPECTED_BINARY_MARKER:-}
+EXPECTED_DEBUG_SYMBOL=${CIWI_IOS_EXPECTED_DEBUG_SYMBOL:-github.com/izzyreal/ciwi/internal/adapters/gio.(*Renderer).SetOperations}
 WORK_DIRECTORY=$(mktemp -d "${TMPDIR:-/tmp}/ciwi-ios-host.XXXXXX")
 DERIVED_DATA="$WORK_DIRECTORY/DerivedData"
 
@@ -83,6 +84,17 @@ verify_app() {
     fi
 }
 
+verify_debug_info() {
+    app_executable=$1
+    dsym_bundle=$2
+    "$ROOT_DIRECTORY/packaging/verify-apple-debug-info.sh" \
+        "$app_executable" \
+        arm64 \
+        "$EXPECTED_DEBUG_SYMBOL" \
+        --dwarf-in-dsym \
+        "$dsym_bundle"
+}
+
 if [ "$MODE" = "check" ]; then
     # shellcheck disable=SC2086
     xcodebuild \
@@ -98,6 +110,7 @@ if [ "$MODE" = "check" ]; then
         build
     BUILT_APP="$DERIVED_DATA/Build/Products/Release-iphoneos/Ciwi.app"
     verify_app "$BUILT_APP/Ciwi"
+    verify_debug_info "$BUILT_APP/Ciwi" "$DERIVED_DATA/Build/Products/Release-iphoneos/Ciwi.app.dSYM"
     rm -rf "$OUTPUT"
     mkdir -p "$(dirname "$OUTPUT")"
     cp -R "$BUILT_APP" "$OUTPUT"
@@ -121,3 +134,4 @@ xcodebuild \
     archive
 
 verify_app "$OUTPUT/Products/Applications/Ciwi.app/Ciwi"
+verify_debug_info "$OUTPUT/Products/Applications/Ciwi.app/Ciwi" "$OUTPUT/dSYMs/Ciwi.app.dSYM"

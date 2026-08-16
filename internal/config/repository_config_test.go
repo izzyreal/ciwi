@@ -70,18 +70,32 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	}
 
 	desktopBuild := pipelineByID("build-desktop")
-	jobByID(desktopBuild, "macos-unsigned")
+	macOSUnsigned := jobByID(desktopBuild, "macos-unsigned")
+	if !slices.Contains(macOSUnsigned.Artifacts, "dist/desktop-macos-unsigned/**") {
+		t.Fatalf("macOS desktop build must publish its app and dSYM directory: %+v", macOSUnsigned.Artifacts)
+	}
 	jobByID(desktopBuild, "windows-amd64")
 	jobByID(desktopBuild, "linux-amd64")
 	desktopSign := pipelineByID("codesign-desktop-macos")
 	if !slices.Contains(desktopSign.DependsOn, "build-desktop") {
 		t.Fatalf("unexpected macOS desktop signing dependencies: %+v", desktopSign.DependsOn)
 	}
+	macOSSign := jobByID(desktopSign, "macos-app")
+	if !slices.Contains(macOSSign.Artifacts, "dist/codesigned-macos/Ciwi.app.dSYM/**") {
+		t.Fatalf("macOS signing must preserve the matching dSYM: %+v", macOSSign.Artifacts)
+	}
+	macOSPackage := jobByID(pipelineByID("package-macos"), "macos-dmg")
+	if !slices.Contains(macOSPackage.Artifacts, "dist/Ciwi-Client-macos-v*.dSYM.zip") {
+		t.Fatalf("macOS packaging must retain a versioned dSYM artifact: %+v", macOSPackage.Artifacts)
+	}
 
 	iosBuild := pipelineByID("ios")
 	iosArchive := jobByID(iosBuild, "ios-archive")
 	if iosArchive.RunsOn["os"] != "darwin" || iosArchive.RunsOn["arch"] != "arm64" || iosArchive.GoCache == nil {
 		t.Fatalf("unexpected iOS archive runtime: %+v", iosArchive)
+	}
+	if !slices.Contains(iosArchive.Artifacts, "dist/ios/Ciwi.xcarchive/**") || !strings.Contains(iosArchive.Steps[len(iosArchive.Steps)-2].Run, "validate-ios-archive.sh") {
+		t.Fatalf("iOS release must publish and validate the symbol-bearing xcarchive: %+v", iosArchive)
 	}
 	iosRelease := pipelineByID("release-ios")
 	testFlight := jobByID(iosRelease, "testflight")

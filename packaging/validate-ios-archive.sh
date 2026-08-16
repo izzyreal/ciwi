@@ -27,4 +27,10 @@ test "$($PLIST_BUDDY -c 'Print :ITSAppUsesNonExemptEncryption' "$PLIST")" = "fal
 test "$($PLIST_BUDDY -c 'Print :UIDeviceFamily:0' "$PLIST")" = "1"
 test "$($PLIST_BUDDY -c 'Print :UIDeviceFamily:1' "$PLIST")" = "2"
 lipo "$APP/Ciwi" -verify_arch arm64
+"$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/packaging/verify-apple-debug-info.sh" \
+    "$APP/Ciwi" \
+    arm64 \
+    "github.com/izzyreal/ciwi/internal/adapters/gio.(*Renderer).SetOperations" \
+    --dwarf-in-dsym \
+    "$ARCHIVE/dSYMs/Ciwi.app.dSYM"
 codesign --verify --deep --strict -v "$APP"

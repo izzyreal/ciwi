@@ -9,15 +9,17 @@ fi
 VERSION=${1#v}
 VERSION=${VERSION#V}
 OUTPUT_DIRECTORY=$2
+ROOT_DIRECTORY=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 GOGIO_VERSION=${GOGIO_VERSION:-v0.10.0}
 MINIMUM_MACOS_VERSION=11.0
 WORK_DIRECTORY=$(mktemp -d "${TMPDIR:-/tmp}/ciwi-macos-app.XXXXXX")
+GOFLAGS="${GOFLAGS:+$GOFLAGS }-trimpath"
 
 # Keep the universal bundle compatible with the first macOS release that
 # supports Apple Silicon. Without this, cgo inherits the build machine's SDK
 # version and the resulting app may require that newer macOS release.
 MACOSX_DEPLOYMENT_TARGET=$MINIMUM_MACOS_VERSION
-export MACOSX_DEPLOYMENT_TARGET
+export GOFLAGS MACOSX_DEPLOYMENT_TARGET
 
 cleanup() {
     rm -rf "$WORK_DIRECTORY"
@@ -32,7 +34,7 @@ go run "gioui.org/cmd/gogio@${GOGIO_VERSION}" \
     -name Ciwi \
     -version "${VERSION}.1" \
     -icon packaging/icons/ciwi.png \
-    -ldflags "-s -w -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" \
+    -ldflags "-compressdwarf=false -X github.com/izzyreal/ciwi/internal/version.Version=v${VERSION}" \
     -o "$WORK_DIRECTORY/apps/Ciwi.app" \
     ./cmd/ciwi-desktop
 
@@ -68,6 +70,19 @@ chmod +x "$FINAL_APP/Contents/MacOS/Ciwi"
     /usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription Ciwi discovers and connects to your Ciwi server on the local network." "$FINAL_APP/Contents/Info.plist"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$FINAL_APP/Contents/Info.plist")" = "APPL"
 lipo "$FINAL_APP/Contents/MacOS/Ciwi" -verify_arch arm64 x86_64
+
+FINAL_DSYM="$OUTPUT_DIRECTORY/Ciwi.app.dSYM"
+rm -rf "$FINAL_DSYM"
+xcrun dsymutil --quiet "$FINAL_APP/Contents/MacOS/Ciwi" -o "$FINAL_DSYM"
+# Go links its DWARF directly into the final Mach-O instead of leaving the
+# object-file debug map that dsymutil normally consumes. Keep an UUID-identical
+# debug Mach-O in the conventional dSYM bundle produced above.
+cp "$FINAL_APP/Contents/MacOS/Ciwi" "$FINAL_DSYM/Contents/Resources/DWARF/Ciwi"
+"$ROOT_DIRECTORY/packaging/verify-apple-debug-info.sh" \
+    "$FINAL_APP/Contents/MacOS/Ciwi" \
+    "arm64 x86_64" \
+    "github.com/izzyreal/ciwi/internal/adapters/gio.(*Renderer).SetOperations" \
+    "$FINAL_DSYM"
 
 for ARCH in arm64 x86_64; do
     ACTUAL_MINIMUM=$(vtool -show-build -arch "$ARCH" "$FINAL_APP/Contents/MacOS/Ciwi" | awk '$1 == "minos" { print $2; exit }')

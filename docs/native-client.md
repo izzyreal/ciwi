@@ -116,6 +116,18 @@ archive, and uploads it to TestFlight. Shared width thresholds provide narrow
 reflow and touch scrolling on every platform while retaining the same screen
 definitions and inline disclosure behavior used on desktop and in the browser.
 
+The Apple release builds use an optimized, RelWithDebInfo-style symbol policy,
+with Go source paths trimmed for reproducibility. Go function symbols and
+uncompressed DWARF remain embedded in the macOS executable. Xcode retains Go
+function symbols in the iOS executable while placing source-level DWARF in its
+matching dSYM, as required by Apple's native link model. The iOS dSYM stays in the
+`.xcarchive` and is uploaded to App Store Connect automatically; the universal
+macOS dSYM is a versioned CI artifact and is deliberately not included in the
+public GitHub release assets. Apple may still process the installed TestFlight
+binary, so the uploaded dSYM remains necessary for reliable automatic crash
+report symbolication. These builds and their internal artifacts are larger by
+design.
+
 The macOS build agent must have Xcode signed into the Apple developer account
 for team `KFBA7Q5H76`, automatic signing access, and permission to upload the
 `nl.izmar.ciwi` application. The App Store Connect application record is a
