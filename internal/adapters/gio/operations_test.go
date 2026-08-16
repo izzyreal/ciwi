@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/izzyreal/ciwi/internal/presentation/operations"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
@@ -16,6 +17,7 @@ import (
 type recordingNativeActionClient struct {
 	called         string
 	idempotencyKey string
+	deadline       time.Time
 	err            error
 }
 
@@ -24,14 +26,19 @@ func (c *recordingNativeActionClient) record(command, key string) error {
 	return c.err
 }
 
-func (c *recordingNativeActionClient) RunPipeline(_ context.Context, _ *cnpv1.RunPipelineRequest, key string) (*cnpv1.RunPipelineResult, error) {
-	return &cnpv1.RunPipelineResult{PipelineId: "build", Enqueued: 2}, c.record("run-pipeline", key)
+func (c *recordingNativeActionClient) recordContext(ctx context.Context, command, key string) error {
+	c.deadline, _ = ctx.Deadline()
+	return c.record(command, key)
 }
-func (c *recordingNativeActionClient) RunPipelineChain(_ context.Context, _ *cnpv1.RunPipelineChainRequest, key string) (*cnpv1.RunPipelineChainResult, error) {
-	return &cnpv1.RunPipelineChainResult{ChainId: "release", ChainName: "Build and release", Enqueued: 3}, c.record("run-chain", key)
+
+func (c *recordingNativeActionClient) RunPipeline(ctx context.Context, _ *cnpv1.RunPipelineRequest, key string) (*cnpv1.RunPipelineResult, error) {
+	return &cnpv1.RunPipelineResult{PipelineId: "build", Enqueued: 2}, c.recordContext(ctx, "run-pipeline", key)
 }
-func (c *recordingNativeActionClient) ClearExecutionQueue(_ context.Context, key string) (*cnpv1.ClearExecutionQueueResult, error) {
-	return &cnpv1.ClearExecutionQueueResult{Cleared: 4}, c.record("clear-queue", key)
+func (c *recordingNativeActionClient) RunPipelineChain(ctx context.Context, _ *cnpv1.RunPipelineChainRequest, key string) (*cnpv1.RunPipelineChainResult, error) {
+	return &cnpv1.RunPipelineChainResult{ChainId: "release", ChainName: "Build and release", Enqueued: 3}, c.recordContext(ctx, "run-chain", key)
+}
+func (c *recordingNativeActionClient) ClearExecutionQueue(ctx context.Context, key string) (*cnpv1.ClearExecutionQueueResult, error) {
+	return &cnpv1.ClearExecutionQueueResult{Cleared: 4}, c.recordContext(ctx, "clear-queue", key)
 }
 func (c *recordingNativeActionClient) RemoveQueuedExecution(_ context.Context, id, key string) (*cnpv1.RemoveQueuedExecutionResult, error) {
 	return &cnpv1.RemoveQueuedExecutionResult{JobExecutionId: id}, c.record("remove-execution", key)
@@ -103,6 +110,47 @@ func TestNativeMutationFailureDistinguishesKnownAndAmbiguousOutcomes(t *testing.
 	cancelled := nativeOperationFailure(operations.Operation{Class: operations.ClassQuery}, context.Canceled)
 	if cancelled.State != operations.StateCancelled {
 		t.Fatalf("cancelled query state = %s", cancelled.State)
+	}
+}
+
+func TestNativeQueueingOperationsAllowThirtySeconds(t *testing.T) {
+	tests := []struct {
+		name      string
+		operation operations.Operation
+		want      time.Duration
+	}{
+		{
+			name: "pipeline",
+			operation: operations.Operation{
+				Command: "run-pipeline", Arguments: map[string]string{"pipelineDbId": "7"},
+			},
+			want: nativeQueueActionTimeout,
+		},
+		{
+			name: "chain",
+			operation: operations.Operation{
+				Command: "run-chain", Arguments: map[string]string{"projectId": "2", "chainId": "release"},
+			},
+			want: nativeQueueActionTimeout,
+		},
+		{
+			name:      "other action unchanged",
+			operation: operations.Operation{Command: "clear-queue"},
+			want:      15 * time.Second,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &recordingNativeActionClient{}
+			started := time.Now()
+			if _, err := executeNativeOperation(context.Background(), client, test.operation); err != nil {
+				t.Fatal(err)
+			}
+			got := client.deadline.Sub(started)
+			if got < test.want-time.Second || got > test.want+time.Second {
+				t.Fatalf("command deadline = %v, want approximately %v", got, test.want)
+			}
+		})
 	}
 }
 

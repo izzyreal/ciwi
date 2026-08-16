@@ -120,6 +120,8 @@ type nativeActionClient interface {
 
 type nativeOperationExecutor struct{ clients *nativeClientBroker }
 
+const nativeQueueActionTimeout = 30 * time.Second
+
 func (e nativeOperationExecutor) Execute(ctx context.Context, operation operations.Operation) operations.Result {
 	if err := validateNativeOperation(operation); err != nil {
 		return operations.Result{State: operations.StateFailed, Err: err}
@@ -228,7 +230,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, err
 		}
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		commandCtx, cancel := context.WithTimeout(ctx, nativeQueueActionTimeout)
 		defer cancel()
 		result, err := client.RunPipeline(commandCtx, &cnpv1.RunPipelineRequest{
 			PipelineDbId: pipelineID, Selection: pipelineRunSelection(arguments),
@@ -248,7 +250,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil || chainID == "" {
 			return nativeOperationEffect{}, fmt.Errorf("invalid pipeline chain identifier")
 		}
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		commandCtx, cancel := context.WithTimeout(ctx, nativeQueueActionTimeout)
 		defer cancel()
 		result, err := client.RunPipelineChain(commandCtx, &cnpv1.RunPipelineChainRequest{
 			ProjectId: projectID, ChainId: chainID, Selection: pipelineRunSelection(arguments),
