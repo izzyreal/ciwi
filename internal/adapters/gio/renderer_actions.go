@@ -38,6 +38,7 @@ func (r *Renderer) setDisclosureState(key string, expanded, persistent bool) {
 		r.persistentDisclosures[key] = true
 		r.notifyDisclosureChange()
 	}
+	r.markDOMDirty()
 	r.requestFrame()
 }
 
@@ -194,6 +195,7 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 			}
 		}
 		r.notifyDisclosureChange()
+		r.markDOMDirty()
 		r.requestFrame()
 		return true
 	default:
@@ -206,6 +208,7 @@ func (r *Renderer) setOutputTailing(enabled bool) {
 		return
 	}
 	r.outputTailing = enabled
+	r.markDOMDirty()
 	label, tone := "Tailing: Off", "warning"
 	if enabled {
 		label, tone = "Tailing: On", "success"
@@ -226,6 +229,7 @@ func (r *Renderer) scrollOutputTo(itemID string) {
 	}
 	r.pendingOutputScroll = itemID
 	r.outputScrollRevision++
+	r.markDOMDirty()
 }
 
 type groupedOutputMatch struct {

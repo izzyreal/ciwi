@@ -356,7 +356,7 @@ func (r *Renderer) layoutIcon(gtx layout.Context, node uidsl.Node, data any) lay
 	}
 	opacity := heartbeatPulseOpacity(heartbeatUnixMillis(value), gtx.Now)
 	if opacity > heartbeatPulseMinimum {
-		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+		r.requestAnimationFrame(gtx)
 	}
 	semantic.DescriptionOp("Heartbeat").Add(gtx.Ops)
 	fade := paint.PushOpacity(gtx.Ops, opacity)
@@ -433,7 +433,6 @@ type semanticProgress struct {
 }
 
 const (
-	progressFrameInterval         = time.Second / 60
 	determinateProgressLimit      = .999
 	indeterminateProgressDuration = 4 * time.Second
 	connectionPulseDuration       = 4 * time.Second

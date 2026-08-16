@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/io/input"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -147,6 +148,39 @@ func TestGeometryGuardRejectsOutOfRangeValues(t *testing.T) {
 	}
 	if got := runtime.stats.GeometryRejects; got != 1 {
 		t.Fatalf("geometry rejects = %d, want 1", got)
+	}
+}
+
+func TestAnimatedProgressUsesLayoutTimeAndRequestsImmediateFrame(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	operations := new(op.Ops)
+	now := time.Unix(1_800_000_000, 0)
+	resolvedAt := time.Time{}
+	progress := Progress("progress", ProgressProps{
+		Mode: ProgressDeterminate, Fraction: .2, Animate: true,
+		FractionAt: func(at time.Time) float32 {
+			resolvedAt = at
+			return .6
+		},
+		Color: color.NRGBA{A: 0xff}, Track: color.NRGBA{A: 0xff}, Radius: 4,
+	}, Spacer("content", 100, 20))
+	disabled := Element{
+		Kind: KindButton, Key: "disabled-progress", Button: ButtonProps{Enabled: false},
+		Children: Static(progress),
+	}
+	gtx := layout.Context{
+		Ops: operations, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Now: now,
+		Constraints: layout.Exact(image.Pt(100, 20)),
+	}
+	runtime.Layout(gtx, disabled)
+	if resolvedAt != now {
+		t.Fatalf("progress fraction resolved at %v, want %v", resolvedAt, now)
+	}
+	router.Frame(operations)
+	at, wake := router.WakeupTime()
+	if !wake || !at.IsZero() {
+		t.Fatalf("progress wakeup = (%v, %v), want immediate", at, wake)
 	}
 }
 

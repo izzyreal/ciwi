@@ -113,7 +113,7 @@ func Run() error {
 			state.advance(gtx.Now)
 			renderer.Layout(gtx, state.root(renderer.Stats()))
 			if state.stress {
-				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 60)})
+				gtx.Execute(op.InvalidateCmd{})
 			}
 			if lastReport.IsZero() || gtx.Now.Sub(lastReport) >= time.Second {
 				reportDiagnostics(state, renderer.Stats())
@@ -215,9 +215,9 @@ func (m *model) labHeader(stats giodom.Stats) giodom.Element {
 		giodom.Button("toggle-stress", stressLabel(m.stress), true, m.action(func() { m.stress = !m.stress })),
 		giodom.Button("show-modal", "Modal", true, m.action(func() { m.modal = true })),
 	)
-	metrics := fmt.Sprintf("frame=%d  DOM=%d  states=%d  visible=%d  measured=%d  heap=%s  frame-time=%s  errors=%d",
+	metrics := fmt.Sprintf("frame=%d  DOM=%d  states=%d  visible=%d  measured=%d  frame-time=%s  errors=%d",
 		stats.Frame, stats.Elements, stats.LiveStates, stats.VisibleListItems, stats.MeasuredListItems,
-		bytesLabel(stats.HeapAlloc), stats.FrameDuration.Round(time.Microsecond), stats.Errors)
+		stats.FrameDuration.Round(time.Microsecond), stats.Errors)
 	return card("lab-header", giodom.Column("lab-header-copy", 8,
 		label("lab-title", "Gio DOM viability lab", 24, labPalette.text),
 		navigation,

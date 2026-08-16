@@ -9,9 +9,11 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gioui.org/io/clipboard"
+	"gioui.org/io/input"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
@@ -90,6 +92,8 @@ type Renderer struct {
 	viewportSize           image.Point
 	viewportHeight         unit.Dp
 	domInteractionRevision uint64
+	domContentRevision     atomic.Uint64
+	animationSource        input.Source
 	openSelectKey          giodom.Key
 	dom                    *screenDOMRenderer
 }
@@ -239,18 +243,21 @@ func (r *Renderer) SetOperations(snapshot []operations.Operation) {
 	r.mu.Lock()
 	r.activeOperations = active
 	r.mu.Unlock()
+	r.markDOMDirty()
 }
 
 func (r *Renderer) SetActionCatalog(catalog *uidsl.ActionCatalogDocument) {
 	r.mu.Lock()
 	r.actionCatalog = catalog
 	r.mu.Unlock()
+	r.markDOMDirty()
 }
 
 func (r *Renderer) SetData(data any) {
 	r.mu.Lock()
 	r.data = data
 	r.mu.Unlock()
+	r.markDOMDirty()
 }
 
 func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
@@ -279,6 +286,7 @@ func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 		}
 	}
 	r.mu.Unlock()
+	r.markDOMDirty()
 }
 
 func preserveTopLevelBinding(previous, next any, key string) {
@@ -330,6 +338,7 @@ func (r *Renderer) SetRepeatedItemBinding(root, collection, keyField, keyValue, 
 	nextData := cloneAnyMap(data)
 	nextData[root] = nextRoot
 	r.data = nextData
+	r.markDOMDirty()
 	return true
 }
 
@@ -383,6 +392,7 @@ func (r *Renderer) ApplyJobOutput(snapshot jobOutputSnapshot) bool {
 		}
 	}
 	r.data = nextData
+	r.markDOMDirty()
 	return true
 }
 
@@ -468,6 +478,7 @@ func (r *Renderer) ScrollToSection(section string) {
 	r.mu.Lock()
 	r.pendingScrollSection = strings.TrimSpace(section)
 	r.mu.Unlock()
+	r.markDOMDirty()
 	r.requestFrame()
 }
 
@@ -547,6 +558,7 @@ func (r *Renderer) SetRootBinding(root, key string, value any) bool {
 	nextData := cloneAnyMap(data)
 	nextData[root] = nextRoot
 	r.data = nextData
+	r.markDOMDirty()
 	return true
 }
 
@@ -572,6 +584,7 @@ func (r *Renderer) SetNestedBinding(root, objectKey, key string, value any) bool
 	nextData := cloneAnyMap(data)
 	nextData[root] = nextRoot
 	r.data = nextData
+	r.markDOMDirty()
 	return true
 }
 
@@ -585,6 +598,7 @@ func (r *Renderer) SetDataBinding(key string, value any) bool {
 	next := cloneAnyMap(data)
 	next[key] = value
 	r.data = next
+	r.markDOMDirty()
 	return true
 }
 
@@ -599,6 +613,7 @@ func (r *Renderer) SetProjectStructureFilter(filter string) bool {
 			r.projectStructureFilter = fmt.Sprint(root["structure_filter"])
 		}
 	}
+	r.markDOMDirty()
 	return true
 }
 
@@ -624,13 +639,18 @@ func (r *Renderer) setProjectStructureFilterLocked(filter string) bool {
 func (r *Renderer) SetInvalidate(invalidate func()) { r.invalidate = invalidate }
 
 func (r *Renderer) SetDisclosureStates(states map[string]bool) {
+	changed := false
 	for key, expanded := range states {
 		if len(r.disclosures) >= domSemanticStateLimit {
 			break
 		}
 		if strings.TrimSpace(key) != "" {
 			r.disclosures[key], r.persistentDisclosures[key] = expanded, true
+			changed = true
 		}
+	}
+	if changed {
+		r.markDOMDirty()
 	}
 }
 
@@ -639,13 +659,18 @@ func (r *Renderer) SetDisclosureChange(handler func(map[string]bool)) {
 }
 
 func (r *Renderer) SetViewStates(states map[string]string) {
+	changed := false
 	for key, mode := range states {
 		if len(r.viewModes) >= domSemanticStateLimit {
 			break
 		}
 		if strings.TrimSpace(key) != "" && (mode == "graph" || mode == "list") {
 			r.viewModes[key], r.persistentViews[key] = mode, true
+			changed = true
 		}
+	}
+	if changed {
+		r.markDOMDirty()
 	}
 }
 
@@ -656,6 +681,7 @@ func (r *Renderer) Layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (r *Renderer) layoutFrame(gtx layout.Context) layout.Dimensions {
+	r.animationSource = gtx.Source
 	r.viewportSize = gtx.Constraints.Max
 	r.viewportHeight = gtx.Metric.PxToDp(r.viewportSize.Y)
 	r.compact = compactLayoutForWidth(gtx, r.controls.Viewport.CompactMaximumWidth)
@@ -727,6 +753,16 @@ func (r *Renderer) requestFrame() {
 		r.invalidate()
 	}
 }
+
+func (r *Renderer) requestAnimationFrame(gtx layout.Context) {
+	if r.animationSource.Enabled() {
+		r.animationSource.Execute(op.InvalidateCmd{})
+		return
+	}
+	gtx.Execute(op.InvalidateCmd{})
+}
+
+func (r *Renderer) markDOMDirty() { r.domContentRevision.Add(1) }
 
 func cloneStringMap(values map[string]string) map[string]string {
 	if values == nil {

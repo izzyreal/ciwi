@@ -12,7 +12,8 @@ iOS.
 
 ## Runtime contract
 
-- Application code creates a fresh immutable `Element` tree for each frame.
+- Application code supplies an immutable `Element` tree. It may reuse that
+  description across frames while its inputs are unchanged.
 - Runtime-owned widget state is addressed by parent-scoped element key, state
   slot, and element kind.
 - Dynamic siblings require non-empty, unique keys. Their `Revision` changes

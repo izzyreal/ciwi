@@ -179,7 +179,7 @@ func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressP
 	if !active {
 		return nil
 	}
-	state, fraction := evaluateSemanticProgress(progress, time.Now())
+	state, fraction := evaluateSemanticProgress(progress, time.UnixMilli(progress.snapshotUnixMS))
 	mode := giodom.ProgressDeterminate
 	switch state {
 	case "indeterminate":
@@ -196,10 +196,17 @@ func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressP
 	track := color.NRGBA{}
 	tintOpacity := float64(r.controls.Progress.TintOpacity)
 	fill.A = uint8(math.Round(0xff * tintOpacity))
-	return &giodom.ProgressProps{
+	props := &giodom.ProgressProps{
 		Mode: mode, Fraction: float32(fraction), Animate: state == "determinate" && progress.ratePerMS > 0, Color: fill,
 		Track: track, Radius: r.metrics.surfaceRadius,
 	}
+	if props.Animate {
+		props.FractionAt = func(now time.Time) float32 {
+			_, current := evaluateSemanticProgress(progress, now)
+			return float32(current)
+		}
+	}
+	return props
 }
 
 func (r *Renderer) domConstraint(values uidsl.Layout, insets giodom.Insets) (giodom.ConstraintProps, bool) {
@@ -417,7 +424,7 @@ func (r *Renderer) compileDOMButton(node uidsl.Node, data any, path string) giod
 				gtx = gtx.Disabled()
 			}
 			if node.Style.Role == "connection-pulse" {
-				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+				r.requestAnimationFrame(gtx)
 				fade := paint.PushOpacity(gtx.Ops, connectionPulseOpacity(gtx.Now))
 				dimensions := r.layoutDOMControlWithOptions(gtx, &state.clickable, label, node.Icon, node.Style.Role, node.Style.Tone, domControlOptions{
 					Enabled: enabled, FillWidth: node.Layout.Grow,

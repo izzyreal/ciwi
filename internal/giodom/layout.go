@@ -431,7 +431,11 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 		area := rounded.Push(gtx.Ops)
 		defer area.Pop()
 		paint.FillShape(gtx.Ops, props.Track, rounded.Op(gtx.Ops))
-		fraction := max(float32(0), min(float32(1), props.Fraction))
+		fraction := props.Fraction
+		if props.FractionAt != nil {
+			fraction = props.FractionAt(gtx.Now)
+		}
+		fraction = max(float32(0), min(float32(1), fraction))
 		progressColor := props.Color
 		switch props.Mode {
 		case ProgressIndeterminate:
@@ -442,7 +446,7 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 			width := max(1, int(float64(size.X)*.22))
 			start := int(float64(max(0, size.X-width)) * position)
 			paint.FillShape(gtx.Ops, progressColor, clip.Rect(image.Rect(start, 0, min(size.X, start+width), size.Y)).Op())
-			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 60)})
+			r.requestAnimationFrame(gtx)
 		case ProgressOverrun:
 			const cycle = 2 * time.Second
 			elapsed := gtx.Now.UnixNano()
@@ -450,7 +454,7 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 			opacity := .58 + .42*(.5-.5*math.Cos(2*math.Pi*phase))
 			progressColor.A = uint8(math.Round(float64(progressColor.A) * opacity))
 			paint.FillShape(gtx.Ops, progressColor, clip.UniformRRect(image.Rectangle{Max: size}, clampRadius(gtx.Dp(props.Radius), size)).Op(gtx.Ops))
-			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 60)})
+			r.requestAnimationFrame(gtx)
 		case ProgressComplete:
 			paint.FillShape(gtx.Ops, progressColor, clip.UniformRRect(image.Rectangle{Max: size}, clampRadius(gtx.Dp(props.Radius), size)).Op(gtx.Ops))
 		default:
@@ -458,7 +462,7 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 				paint.FillShape(gtx.Ops, progressColor, clip.Rect(image.Rect(0, 0, min(width, size.X), size.Y)).Op())
 			}
 			if props.Animate {
-				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(time.Second / 60)})
+				r.requestAnimationFrame(gtx)
 			}
 		}
 		return layout.Dimensions{Size: size}

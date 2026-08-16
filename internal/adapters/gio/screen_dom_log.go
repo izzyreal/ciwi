@@ -57,6 +57,7 @@ func (r *Renderer) ApplyJobLogPage(page jobLogStreamSnapshot) {
 		}
 	}
 	r.trimJobLogCacheLocked(key)
+	r.markDOMDirty()
 	r.requestFrame()
 }
 
@@ -100,6 +101,7 @@ func (r *Renderer) ApplyJobLogSearch(result jobLogSearchSnapshot) {
 	} else {
 		r.outputScrollRevision++
 	}
+	r.markDOMDirty()
 	r.requestFrame()
 }
 
@@ -117,6 +119,7 @@ func (r *Renderer) clearJobLogSearchSelection(jobID string) {
 	}
 	if changed {
 		r.outputScrollRevision++
+		r.markDOMDirty()
 	}
 }
 
@@ -139,6 +142,7 @@ func (r *Renderer) ApplyJobLogDescriptor(descriptor jobLogDescriptorSnapshot) {
 		}
 		r.jobLogStreams[key] = stream
 	}
+	r.markDOMDirty()
 	r.requestFrame()
 }
 
@@ -146,6 +150,7 @@ func (r *Renderer) FailJobLogPage(jobID, itemID, mode string) {
 	r.mu.Lock()
 	delete(r.jobLogLoads, nativeJobLogKey(jobID, itemID)+"\n"+mode)
 	r.mu.Unlock()
+	r.markDOMDirty()
 	r.requestFrame()
 }
 

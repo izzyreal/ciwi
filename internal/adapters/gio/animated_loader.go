@@ -25,7 +25,7 @@ func (r *Renderer) layoutAnimatedLoader(gtx layout.Context, ink color.NRGBA) lay
 	if icon == nil {
 		return layout.Dimensions{Size: size}
 	}
-	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+	r.requestAnimationFrame(gtx)
 	center := f32.Pt(float32(size.X)/2, float32(size.Y)/2)
 	angle := float32(float64(gtx.Now.UnixNano()%int64(time.Second)) / float64(time.Second) * 2 * math.Pi)
 	bounds := clip.Rect(image.Rectangle{Max: size}).Push(gtx.Ops)

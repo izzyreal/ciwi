@@ -12,8 +12,8 @@ import (
 
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
-	"gioui.org/op"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/izzyreal/ciwi/internal/giodom"
@@ -27,6 +27,18 @@ type screenDOMRenderer struct {
 	runtime             *giodom.Runtime
 	selectDismiss       domSelectDismiss
 	selectInsidePresses map[pointer.ID]struct{}
+	compiled            compiledScreenDOM
+}
+
+type compiledScreenDOM struct {
+	ready    bool
+	revision uint64
+	screen   *uidsl.ScreenDocument
+	compact  bool
+	viewport image.Point
+	metric   unit.Metric
+	document giodom.Element
+	builds   uint64
 }
 
 type domButtonState struct {
@@ -71,7 +83,19 @@ func (r *Renderer) layoutScreenDOMFrame(gtx layout.Context, screen *uidsl.Screen
 	// presses during DOM layout before deciding whether the press was outside.
 	rootPresses := r.dom.selectDismiss.Presses(gtx.Source)
 	r.dom.selectInsidePresses = make(map[pointer.ID]struct{}, len(rootPresses))
-	document := r.buildScreenDOM(screen, data, pendingScrollSection)
+	revision := r.domContentRevision.Load()
+	cache := &r.dom.compiled
+	if !cache.ready || cache.revision != revision || cache.screen != screen || cache.compact != r.compact || cache.viewport != r.viewportSize || cache.metric != gtx.Metric {
+		cache.document = r.buildScreenDOM(screen, data, pendingScrollSection)
+		cache.ready = true
+		cache.revision = revision
+		cache.screen = screen
+		cache.compact = r.compact
+		cache.viewport = r.viewportSize
+		cache.metric = gtx.Metric
+		cache.builds++
+	}
+	document := cache.document
 	document = r.decorateDOMOverlays(document, notice, alert)
 	dimensions := r.dom.runtime.Layout(gtx, document)
 	if r.openSelectKey != "" {
@@ -641,7 +665,7 @@ func (r *Renderer) compileDOMSkeleton(node uidsl.Node, path string) giodom.Eleme
 			const cycle = 2200 * time.Millisecond
 			phase := float64(gtx.Now.UnixNano()%int64(cycle)) / float64(cycle)
 			opacity := float32(.35 + .55*(.5-.5*math.Cos(2*math.Pi*phase)))
-			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(progressFrameInterval)})
+			r.requestAnimationFrame(gtx)
 			fade := paint.PushOpacity(gtx.Ops, opacity)
 			paintDOMSurface(gtx, size, r.palette.border, color.NRGBA{}, 0, gtx.Dp(r.metrics.controlRadius))
 			fade.Pop()

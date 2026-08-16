@@ -82,7 +82,7 @@ compact and wide window sizes, then repeat with **Start churn** enabled.
   output.
 
 Use Instruments' frame and allocation tracks for the device result. The lab's
-`frame_duration` and heap fields are useful corroboration, but they do not
+`frame_duration` and heap watchdog are useful corroboration, but they do not
 include every Gio, driver, or GPU cost.
 
 ## Interpreting the control

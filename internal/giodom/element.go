@@ -1,13 +1,15 @@
 // Package giodom provides a small keyed declarative runtime for Gio.
 //
 // It deliberately has no dependency on ciwi screens, presentation models, or
-// application state. Applications build an immutable Element tree for each
-// frame; Runtime owns only Gio widget and viewport state keyed by identity.
+// application state. Applications provide immutable Element trees and may
+// reuse them while their inputs are unchanged; Runtime owns only Gio widget
+// and viewport state keyed by identity.
 package giodom
 
 import (
 	"image"
 	"image/color"
+	"time"
 
 	"gioui.org/font"
 	"gioui.org/layout"
@@ -175,10 +177,13 @@ const (
 type ProgressProps struct {
 	Mode     ProgressMode
 	Fraction float32
-	Animate  bool
-	Color    color.NRGBA
-	Track    color.NRGBA
-	Radius   unit.Dp
+	// FractionAt overrides Fraction when progress must advance from the
+	// current frame time without rebuilding its immutable element tree.
+	FractionAt func(time.Time) float32
+	Animate    bool
+	Color      color.NRGBA
+	Track      color.NRGBA
+	Radius     unit.Dp
 }
 
 // ListProps configures stock and keyed scrolling lists.

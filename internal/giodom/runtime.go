@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"image"
 	"net/url"
-	"runtime"
 	"time"
 
+	"gioui.org/io/input"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/widget/material"
 )
 
@@ -35,9 +36,6 @@ type Stats struct {
 	Errors            int
 	LastError         string
 	FrameDuration     time.Duration
-	HeapAlloc         uint64
-	HeapObjects       uint64
-	HeapSys           uint64
 }
 
 type stateEntry struct {
@@ -61,10 +59,8 @@ type Runtime struct {
 	frame               uint64
 	maxStateSlots       int
 	maxGeometryPixels   int
-	heapAlloc           uint64
-	heapObjects         uint64
-	heapSys             uint64
 	stats               Stats
+	animationSource     input.Source
 	nestedScrollClaimed bool
 	passThroughScroll   *passThroughScrollContext
 	controlClicks       uint64
@@ -91,6 +87,7 @@ func NewRuntime(theme *material.Theme, options Options) *Runtime {
 func (r *Runtime) Layout(gtx layout.Context, root Element) layout.Dimensions {
 	started := time.Now()
 	r.frame++
+	r.animationSource = gtx.Source
 	r.nestedScrollClaimed = false
 	r.stats = Stats{Frame: r.frame}
 	identity := "root"
@@ -101,16 +98,6 @@ func (r *Runtime) Layout(gtx layout.Context, root Element) layout.Dimensions {
 	r.sweepStates()
 	r.stats.LiveStates = len(r.states)
 	r.stats.FrameDuration = time.Since(started)
-	if r.frame == 1 || r.frame%30 == 0 {
-		var memory runtime.MemStats
-		runtime.ReadMemStats(&memory)
-		r.heapAlloc = memory.HeapAlloc
-		r.heapObjects = memory.HeapObjects
-		r.heapSys = memory.HeapSys
-	}
-	r.stats.HeapAlloc = r.heapAlloc
-	r.stats.HeapObjects = r.heapObjects
-	r.stats.HeapSys = r.heapSys
 	return dimensions
 }
 
@@ -119,14 +106,19 @@ func (r *Runtime) Reset() {
 	r.states = make(map[string]*stateEntry)
 	r.frame = 0
 	r.controlClicks = 0
-	r.heapAlloc = 0
-	r.heapObjects = 0
-	r.heapSys = 0
 	r.stats = Stats{}
 }
 
 // Stats returns the most recent diagnostic snapshot.
 func (r *Runtime) Stats() Stats { return r.stats }
+
+func (r *Runtime) requestAnimationFrame(gtx layout.Context) {
+	if r.animationSource.Enabled() {
+		r.animationSource.Execute(op.InvalidateCmd{})
+		return
+	}
+	gtx.Execute(op.InvalidateCmd{})
+}
 
 func (r *Runtime) layoutElement(gtx layout.Context, element Element, identity string) layout.Dimensions {
 	r.stats.Elements++
