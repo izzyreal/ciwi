@@ -264,6 +264,17 @@ func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, ro
 		displayValue = strings.TrimSuffix(displayValue, "\n")
 		displayValue = strings.TrimSuffix(displayValue, "\r")
 	}
+	selectionStart, selectionEnd := 0, 0
+	selectionRevision := ""
+	if start, startErr := uidsl.Resolve(data, "jobLogMatch.start"); startErr == nil {
+		if end, endErr := uidsl.Resolve(data, "jobLogMatch.end"); endErr == nil {
+			selectionStart, _ = strconv.Atoi(fmt.Sprint(start))
+			selectionEnd, _ = strconv.Atoi(fmt.Sprint(end))
+			if selectionEnd > selectionStart {
+				selectionRevision = fmt.Sprintf("%d:%d", selectionStart, selectionEnd)
+			}
+		}
+	}
 	return giodom.Native(domNodeKey(node, path), giodom.NativeProps{
 		NewState: func() any {
 			state := &domEditorState{}
@@ -276,6 +287,14 @@ func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, ro
 			state.editor.SingleLine = role == "code-inline" && node.Style.Truncate
 			if state.editor.Text() != displayValue {
 				state.editor.SetText(displayValue)
+				state.selectionRevision = ""
+			}
+			if selectionRevision != "" && state.selectionRevision != selectionRevision {
+				state.editor.SetCaret(selectionStart, selectionEnd)
+				state.selectionRevision = selectionRevision
+			} else if selectionRevision == "" && state.selectionRevision != "" {
+				state.editor.ClearSelection()
+				state.selectionRevision = ""
 			}
 			outputID := ""
 			if node.ID == "job-output-group-text" {

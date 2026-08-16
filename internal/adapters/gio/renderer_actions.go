@@ -97,14 +97,19 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		if nativeInteractiveJobLog(data) {
 			if utf8.RuneCountInString(r.outputSearch) < 3 {
 				r.outputTotalMatches = 0
+				r.clearJobLogSearchSelection(bindingString(data, "jobDetails.id"))
 				count := "0/0"
 				if r.outputSearch != "" {
 					count = "Enter 3+ characters"
 				}
 				r.SetRootBinding("jobDetails", "output_search_count", count)
+				if r.onAction != nil {
+					r.onAction(uidsl.Action{On: "activate", Command: "cancel-job-log-search"}, nil)
+				}
 			} else if r.onAction != nil {
 				r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
-					"jobExecutionId": bindingString(data, "jobDetails.id"), "query": r.outputSearch, "selectedIndex": "0",
+					"jobExecutionId": bindingString(data, "jobDetails.id"), "query": r.outputSearch,
+					"selectedIndex": "0", "debounce": "true",
 				})
 			}
 			r.requestFrame()
@@ -129,7 +134,8 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 					target = (target + direction + r.outputTotalMatches) % r.outputTotalMatches
 				}
 				r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
-					"jobExecutionId": bindingString(data, "jobDetails.id"), "query": query, "selectedIndex": strconv.Itoa(target),
+					"jobExecutionId": bindingString(data, "jobDetails.id"), "query": query,
+					"selectedIndex": strconv.Itoa(target), "debounce": "false",
 				})
 			}
 			return true
@@ -172,14 +178,7 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		r.ShowNotice("Copied", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 		return true
 	case "toggle-output-tailing":
-		r.outputTailing = !r.outputTailing
-		label, tone := "Tailing: Off", "warning"
-		if r.outputTailing {
-			label, tone = "Tailing: On", "success"
-			r.outputTailRevision++
-		}
-		r.SetRootBinding("jobDetails", "tailing_label", label)
-		r.SetRootBinding("jobDetails", "tailing_tone", tone)
+		r.setOutputTailing(!r.outputTailing)
 		r.requestFrame()
 		return true
 	case "set-disclosures":
@@ -200,6 +199,20 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 	default:
 		return false
 	}
+}
+
+func (r *Renderer) setOutputTailing(enabled bool) {
+	if r.outputTailing == enabled {
+		return
+	}
+	r.outputTailing = enabled
+	label, tone := "Tailing: Off", "warning"
+	if enabled {
+		label, tone = "Tailing: On", "success"
+		r.outputTailRevision++
+	}
+	r.SetRootBinding("jobDetails", "tailing_label", label)
+	r.SetRootBinding("jobDetails", "tailing_tone", tone)
 }
 
 func nativeInteractiveJobLog(data any) bool {

@@ -34,7 +34,8 @@ type domButtonState struct {
 }
 
 type domEditorState struct {
-	editor widget.Editor
+	editor            widget.Editor
+	selectionRevision string
 }
 
 type domImageState struct {

@@ -375,6 +375,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		viewport = unit.Dp(parsed)
 	}
 	isOutputGroups := node.ID == "job-output-groups"
+	interactiveOutput := isOutputGroups && nativeInteractiveJobLog(data)
 	if isOutputGroups {
 		viewport = r.domOutputGroupsViewport(viewport)
 	}
@@ -386,14 +387,12 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		r.pendingOutputScroll = ""
 	}
 	var onLeaveEnd func()
-	if isOutputGroups {
+	if isOutputGroups && !interactiveOutput {
 		onLeaveEnd = func() {
 			if !r.outputTailing {
 				return
 			}
-			r.outputTailing = false
-			r.SetRootBinding("jobDetails", "tailing_label", "Tailing: Off")
-			r.SetRootBinding("jobDetails", "tailing_tone", "warning")
+			r.setOutputTailing(false)
 			r.requestFrame()
 		}
 	}
@@ -420,7 +419,8 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		Axis: axis, Gap: r.spacing(node.Layout.Gap), Viewport: viewport,
 		ShrinkMain: axis == layout.Vertical && viewport > 0, ShrinkCross: axis == layout.Horizontal,
 		NestedScroll: isOutputGroups, Estimate: 100, Overscan: 2, MaxMeasured: 512,
-		ScrollToEnd: isOutputGroups && r.outputTailing, ForceEndRevision: r.outputTailRevision, ResetRevision: r.outputResetRevision,
+		ScrollToEnd:      isOutputGroups && !interactiveOutput && r.outputTailing,
+		ForceEndRevision: r.outputTailRevision, ResetRevision: r.outputResetRevision,
 		ScrollTo: scrollTarget, ScrollRevision: scrollRevision, OnLeaveEnd: onLeaveEnd,
 		PinnedOverlay: pinnedOverlay, PinnedAlignment: layout.NE,
 		PinnedInsets: giodom.Insets{Top: r.metrics.spaceSmall, Right: r.metrics.spaceSmall},

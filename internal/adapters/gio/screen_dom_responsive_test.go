@@ -735,6 +735,95 @@ func TestOutputGroupsUseSharedPinnedCollapseControl(t *testing.T) {
 	}
 }
 
+func TestInteractiveLogOwnsTailingInsteadOfOutputGroupScroller(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = true
+	screen, err := sharedui.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	if !ok {
+		t.Fatal("job output scroller not found")
+	}
+	data := func(interactive bool) map[string]any {
+		return map[string]any{"jobDetails": map[string]any{
+			"interactive_log_available": interactive,
+			"output_groups": []any{map[string]any{
+				"id": "step:1", "title": "Step", "state_key": "job-output:step:1",
+			}},
+		}}
+	}
+	interactive := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(true), "interactive-output"), giodom.KindVirtualList)
+	if interactive == nil || interactive.List.ScrollToEnd || interactive.List.OnLeaveEnd != nil {
+		t.Fatalf("interactive output list tail props = %#v, want no outer follow ownership", interactive)
+	}
+	legacy := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(false), "legacy-output"), giodom.KindVirtualList)
+	if legacy == nil || !legacy.List.ScrollToEnd || legacy.List.OnLeaveEnd == nil {
+		t.Fatalf("legacy output list tail props = %#v, want retained outer follow behavior", legacy)
+	}
+
+	renderer.ApplyJobLogPage(jobLogStreamSnapshot{
+		JobID: "job-1", ItemID: "step:1", Chunks: []jobLogChunkSnapshot{{ID: 1, Text: "output\n"}},
+	})
+	log := renderer.compileDOMLogView(uidsl.Node{Component: "log-view", LogView: &uidsl.LogView{
+		JobExecutionID: "jobDetails.id", ItemID: "outputGroup.id",
+	}}, map[string]any{
+		"jobDetails":  map[string]any{"id": "job-1"},
+		"outputGroup": map[string]any{"id": "step:1"},
+	}, "running-log")
+	if !log.List.ScrollToEnd || log.List.OnLeaveEnd == nil {
+		t.Fatalf("interactive log tail props = %#v, want nested follow ownership", log.List)
+	}
+}
+
+func TestNativeLogSearchHighlightsReturnedRuneSpan(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = false
+	renderer.jobLogStreams[nativeJobLogKey("job-1", "step:1")] = jobLogStreamSnapshot{
+		JobID: "job-1", ItemID: "step:1", PageLoaded: true,
+		Chunks:            []jobLogChunkSnapshot{{ID: 7, Text: "prefix needle suffix"}},
+		SelectedChunkID:   7,
+		SelectedStartRune: 7,
+		SelectedEndRune:   13,
+	}
+	log := renderer.compileDOMLogView(uidsl.Node{Component: "log-view", LogView: &uidsl.LogView{
+		JobExecutionID: "jobDetails.id", ItemID: "outputGroup.id",
+	}}, map[string]any{
+		"jobDetails":  map[string]any{"id": "job-1"},
+		"outputGroup": map[string]any{"id": "step:1"},
+	}, "searched-log")
+	if log.Children == nil || log.Children.Len() != 1 {
+		t.Fatalf("compiled searched log children = %#v", log.Children)
+	}
+	chunk := log.Children.At(0)
+	if chunk.Kind != giodom.KindNative || chunk.Native.NewState == nil || chunk.Native.Layout == nil {
+		t.Fatalf("compiled searched chunk = %#v", chunk)
+	}
+	state := chunk.Native.NewState()
+	chunk.Native.Layout(layout.Context{
+		Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Constraints{Max: image.Pt(800, 2000)},
+	}, state)
+	start, end := state.(*domEditorState).editor.Selection()
+	if start != 7 || end != 13 {
+		t.Fatalf("highlighted selection = %d:%d, want 7:13", start, end)
+	}
+}
+
+func TestNativeLogSearchHighlightsCrossChunkRuneSpan(t *testing.T) {
+	ranges := jobLogSelectionRanges(jobLogStreamSnapshot{
+		Chunks: []jobLogChunkSnapshot{
+			{ID: 4, Text: "abc"},
+			{ID: 5, Text: "def"},
+		},
+		SelectedChunkID: 5, SelectedStartRune: -2, SelectedEndRune: 2,
+	})
+	if ranges[4] != [2]int{1, 3} || ranges[5] != [2]int{0, 2} {
+		t.Fatalf("cross-chunk highlight ranges = %#v", ranges)
+	}
+}
+
 func TestNativeExecutionJobRowActionFillsAvailableWidth(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	row := uidsl.Node{

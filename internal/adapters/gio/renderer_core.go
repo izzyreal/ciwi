@@ -120,13 +120,16 @@ type jobLogStreamSnapshot struct {
 	PageLoaded          bool
 	LatestChunkID       int64
 	SelectedChunkID     int64
+	SelectedStartRune   int
+	SelectedEndRune     int
 	LoadedMode          string
 }
 
 type jobLogSearchSnapshot struct {
-	JobID, ItemID               string
+	JobID, ItemID, Query        string
 	SelectedIndex, TotalMatches int
 	ChunkID                     int64
+	StartRune, EndRune          int
 }
 
 type jobLogDescriptorSnapshot struct {

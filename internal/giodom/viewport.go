@@ -244,6 +244,11 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		}
 		state.scrollRevision = props.ScrollRevision
 	}
+	forceEnd := props.ScrollToEnd && props.ForceEndRevision != 0 && props.ForceEndRevision != state.forceEndRevision
+	followEnd := props.ScrollToEnd && (!state.initialized || state.atEnd || forceEnd)
+	if followEnd {
+		r.measureListTail(gtx, props, viewport, children, state, identity, gap)
+	}
 	total := state.totalExtent()
 
 	anchorIndex := state.anchorIndex
@@ -260,8 +265,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		offset = state.prefixAt(anchorIndex) + max(0, state.anchorOffset)
 	}
 	maxOffset := max(0, total-mainViewport)
-	forceEnd := props.ScrollToEnd && props.ForceEndRevision != 0 && props.ForceEndRevision != state.forceEndRevision
-	if props.ScrollToEnd && (!state.initialized || state.atEnd || forceEnd) {
+	if followEnd {
 		offset = maxOffset
 	}
 	if forceEnd {
@@ -433,6 +437,44 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	r.stats.VisibleListItems += len(recorded)
 	r.stats.MeasuredListItems += len(state.measurements)
 	return layout.Dimensions{Size: renderedViewport}
+}
+
+// measureListTail resolves the variable-height children that can intersect a
+// followed viewport before its end offset is calculated. Without this pass a
+// newly appended log chunk is positioned using its estimate, then grows during
+// visible layout and leaves the retained viewport hundreds of lines above the
+// real end.
+func (r *Runtime) measureListTail(
+	gtx layout.Context,
+	props ListProps,
+	viewport image.Point,
+	children Children,
+	state *keyedViewportState,
+	identity string,
+	gap int,
+) {
+	remaining := axisMain(props.Axis, viewport)
+	for index := children.Len() - 1; index >= 0 && remaining > 0; index-- {
+		childIdentity, valid := r.childIdentity(identity, children, index)
+		if !valid {
+			continue
+		}
+		childContext := listChildContext(gtx, props.Axis, viewport, r.maxGeometryPixels, !props.ShrinkCross)
+		childContext.Source = input.Source{}
+		macro := op.Record(gtx.Ops)
+		dimensions := r.layoutElement(childContext, children.At(index), childIdentity)
+		_ = macro.Stop()
+		mainSize := max(1, axisMain(props.Axis, dimensions.Size))
+		if r.rejectGeometry(childIdentity, dimensions.Size.X, dimensions.Size.Y, mainSize) {
+			continue
+		}
+		state.setExtent(index, mainSize)
+		evictedIndex, evicted := state.remember(children.KeyAt(index), index, mainSize, props.MaxMeasured)
+		if evicted && evictedIndex >= 0 {
+			state.setExtent(evictedIndex, max(1, gtx.Dp(props.Estimate)))
+		}
+		remaining -= mainSize + gap
+	}
 }
 
 // intrinsicListViewport measures only enough leading content to decide whether

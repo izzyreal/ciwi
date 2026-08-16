@@ -677,6 +677,70 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 		outputErrors = errorsOut
 	}
 	defer stopOutput()
+	jobLogSearchResults := make(chan nativeJobLogSearchResult, 8)
+	var jobLogSearchTimer *time.Timer
+	var jobLogSearchWake <-chan time.Time
+	var pendingJobLogSearch *nativeJobLogSearchRequest
+	var jobLogSearchCancel context.CancelFunc
+	var jobLogSearchGeneration uint64
+	stopJobLogSearchTimer := func() {
+		if jobLogSearchTimer != nil && !jobLogSearchTimer.Stop() {
+			select {
+			case <-jobLogSearchTimer.C:
+			default:
+			}
+		}
+		jobLogSearchWake = nil
+		pendingJobLogSearch = nil
+	}
+	cancelJobLogSearch := func() {
+		jobLogSearchGeneration++
+		stopJobLogSearchTimer()
+		if jobLogSearchCancel != nil {
+			jobLogSearchCancel()
+		}
+		jobLogSearchCancel = nil
+	}
+	startJobLogSearch := func(request nativeJobLogSearchRequest) {
+		if client == nil {
+			return
+		}
+		sessionCtx := sessionSupervisor.Context()
+		if sessionCtx == nil {
+			return
+		}
+		searchCtx, cancel := context.WithCancel(sessionCtx)
+		jobLogSearchCancel = cancel
+		activeClient := client
+		go func() {
+			result := executeNativeJobLogSearch(searchCtx, activeClient, request)
+			select {
+			case jobLogSearchResults <- result:
+			case <-ctx.Done():
+			}
+		}()
+	}
+	scheduleJobLogSearch := func(request nativeJobLogSearchRequest, debounce bool) {
+		jobLogSearchGeneration++
+		request.generation = jobLogSearchGeneration
+		stopJobLogSearchTimer()
+		if jobLogSearchCancel != nil {
+			jobLogSearchCancel()
+			jobLogSearchCancel = nil
+		}
+		if !debounce {
+			startJobLogSearch(request)
+			return
+		}
+		pendingJobLogSearch = &request
+		if jobLogSearchTimer == nil {
+			jobLogSearchTimer = time.NewTimer(nativeJobLogSearchDebounce)
+		} else {
+			jobLogSearchTimer.Reset(nativeJobLogSearchDebounce)
+		}
+		jobLogSearchWake = jobLogSearchTimer.C
+	}
+	defer cancelJobLogSearch()
 	screenLoads := make(chan screenLoadResult, 8)
 	artifactDownloads := make(chan artifactDownloadResult, 4)
 	var screenLoadCancel context.CancelFunc
@@ -845,6 +909,7 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 		return nil
 	}
 	beginNavigationWith := func(target navigationState, recoverMissingRoute bool) error {
+		cancelJobLogSearch()
 		if cached, ok := screenCache.Get(target); ok {
 			navigation = target
 			pending := target
@@ -1452,38 +1517,48 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			startReconciliation()
 			renderer.SetOperations(coordinator.Snapshot())
 			window.Invalidate()
+		case <-jobLogSearchWake:
+			request := pendingJobLogSearch
+			pendingJobLogSearch = nil
+			jobLogSearchWake = nil
+			if request != nil && request.generation == jobLogSearchGeneration {
+				startJobLogSearch(*request)
+			}
+		case result := <-jobLogSearchResults:
+			if result.request.generation != jobLogSearchGeneration ||
+				navigation.screen != "job-details" || navigation.jobID != result.request.jobID {
+				continue
+			}
+			if jobLogSearchCancel != nil {
+				jobLogSearchCancel()
+				jobLogSearchCancel = nil
+			}
+			if result.err != nil {
+				if !errors.Is(result.err, context.Canceled) {
+					renderer.ShowNotice(result.failure+": "+result.err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+					window.Invalidate()
+				}
+				continue
+			}
+			if result.page != nil {
+				renderer.ApplyJobLogPage(*result.page)
+			}
+			renderer.ApplyJobLogSearch(result.search)
+			window.Invalidate()
 		case command := <-commands:
 			switch command.action.Command {
+			case "cancel-job-log-search":
+				cancelJobLogSearch()
+				continue
 			case "search-job-log":
 				selected, parseErr := strconv.ParseInt(command.arguments["selectedIndex"], 10, 64)
 				if client == nil || parseErr != nil || selected < 0 {
 					continue
 				}
-				result, searchErr := client.SearchJobLog(ctx, &cnpv1.JobLogSearchRequest{
-					JobExecutionId: command.arguments["jobExecutionId"], Query: command.arguments["query"], SelectedIndex: selected,
-				})
-				if searchErr != nil {
-					renderer.ShowNotice("Output search failed: "+searchErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-					window.Invalidate()
-					continue
-				}
-				snapshot := jobLogSearchSnapshot{JobID: result.GetJobExecutionId(), SelectedIndex: int(result.GetSelectedIndex()), TotalMatches: int(result.GetTotalMatches())}
-				if match := result.GetMatch(); match != nil {
-					snapshot.ItemID, snapshot.ChunkID = match.GetItemId(), match.GetChunkId()
-					page, pageErr := client.GetJobLogPage(ctx, &cnpv1.JobLogPageRequest{
-						JobExecutionId: snapshot.JobID, ItemId: snapshot.ItemID, Mode: cnpv1.JobLogPageMode_JOB_LOG_PAGE_MODE_AROUND, Cursor: snapshot.ChunkID,
-					})
-					if pageErr != nil {
-						renderer.ShowNotice("Search result unavailable: "+pageErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-						window.Invalidate()
-						continue
-					}
-					pageSnapshot := jobLogPageFromProto(page)
-					pageSnapshot.LoadedMode, pageSnapshot.SelectedChunkID = "around", snapshot.ChunkID
-					renderer.ApplyJobLogPage(pageSnapshot)
-				}
-				renderer.ApplyJobLogSearch(snapshot)
-				window.Invalidate()
+				debounce, _ := strconv.ParseBool(command.arguments["debounce"])
+				scheduleJobLogSearch(nativeJobLogSearchRequest{
+					jobID: command.arguments["jobExecutionId"], query: command.arguments["query"], selectedIndex: selected,
+				}, debounce)
 				continue
 			case "copy-full-job-log":
 				if client == nil {

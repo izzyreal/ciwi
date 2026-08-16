@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -298,54 +299,74 @@ func (s *Store) SearchJobLog(jobID, query string, selectedIndex int64) (domain.J
 	result := domain.JobLogSearchResult{JobExecutionID: jobID, Query: query, SelectedIndex: selectedIndex}
 	lowerQuery := []rune(strings.ToLower(query))
 	ftsQuery := `job_execution_id : "` + escapeFTSPhrase(jobID) + `" AND indexed_text : "` + escapeFTSPhrase(strings.ToLower(query)) + `"`
-	var first *domain.JobLogMatch
+	candidateQuery := jobLogSearchCandidateQuery(order)
+	queryArguments := make([]any, 0, len(order)+2)
+	queryArguments = append(queryArguments, ftsQuery, jobID)
 	for _, itemID := range order {
-		rows, queryErr := s.db.Query(`
-			SELECT c.id, c.item_id, c.indexed_text, c.overlap_runes
-			FROM job_execution_log_chunks_fts AS f
-			JOIN job_execution_log_chunks AS c ON c.id = f.rowid
-			WHERE job_execution_log_chunks_fts MATCH ?
-			  AND c.job_execution_id = ? AND c.item_id = ?
-			ORDER BY c.id ASC
-		`, ftsQuery, jobID, itemID)
-		if queryErr != nil {
-			return domain.JobLogSearchResult{}, fmt.Errorf("search job log: %w", queryErr)
+		queryArguments = append(queryArguments, itemID)
+	}
+	rows, err := s.db.Query(candidateQuery, queryArguments...)
+	if err != nil {
+		return domain.JobLogSearchResult{}, fmt.Errorf("search job log: %w", err)
+	}
+	defer rows.Close()
+	var first *domain.JobLogMatch
+	for rows.Next() {
+		var chunkID int64
+		var foundItem, indexed string
+		var overlap int
+		if scanErr := rows.Scan(&chunkID, &foundItem, &indexed, &overlap); scanErr != nil {
+			return domain.JobLogSearchResult{}, fmt.Errorf("scan job log search candidate: %w", scanErr)
 		}
-		for rows.Next() {
-			var chunkID int64
-			var foundItem, indexed string
-			var overlap int
-			if scanErr := rows.Scan(&chunkID, &foundItem, &indexed, &overlap); scanErr != nil {
-				_ = rows.Close()
-				return domain.JobLogSearchResult{}, fmt.Errorf("scan job log search candidate: %w", scanErr)
+		for _, span := range runeSubstringMatches([]rune(indexed), lowerQuery) {
+			if span[1] <= overlap {
+				continue
 			}
-			for _, span := range runeSubstringMatches([]rune(indexed), lowerQuery) {
-				if span[1] <= overlap {
-					continue
-				}
-				match := domain.JobLogMatch{ItemID: foundItem, ChunkID: chunkID, StartRune: span[0] - overlap, EndRune: span[1] - overlap}
-				if first == nil {
-					copy := match
-					first = &copy
-				}
-				if result.TotalMatches == selectedIndex {
-					copy := match
-					result.Match = &copy
-				}
-				result.TotalMatches++
+			match := domain.JobLogMatch{ItemID: foundItem, ChunkID: chunkID, StartRune: span[0] - overlap, EndRune: span[1] - overlap}
+			if first == nil {
+				copy := match
+				first = &copy
 			}
+			if result.TotalMatches == selectedIndex {
+				copy := match
+				result.Match = &copy
+			}
+			result.TotalMatches++
 		}
-		if rowsErr := rows.Err(); rowsErr != nil {
-			_ = rows.Close()
-			return domain.JobLogSearchResult{}, fmt.Errorf("iterate job log search candidates: %w", rowsErr)
-		}
-		_ = rows.Close()
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return domain.JobLogSearchResult{}, fmt.Errorf("iterate job log search candidates: %w", rowsErr)
 	}
 	if result.TotalMatches > 0 && result.Match == nil {
 		result.SelectedIndex = 0
 		result.Match = first
 	}
 	return result, nil
+}
+
+// jobLogSearchCandidateQuery forces FTS to produce the selective candidate
+// rowids before the ordinary table is consulted. CROSS JOIN is intentional:
+// without it SQLite prefers idx_job_log_chunks_stream and probes FTS once for
+// every chunk, which defeats the trigram index. The CASE expression preserves
+// the user-visible system/timeline stream order without issuing one FTS query
+// per stream.
+func jobLogSearchCandidateQuery(itemOrder []string) string {
+	var query strings.Builder
+	query.WriteString(`
+		SELECT c.id, c.item_id, c.indexed_text, c.overlap_runes
+		FROM job_execution_log_chunks_fts AS f
+		CROSS JOIN job_execution_log_chunks AS c ON c.id = f.rowid
+		WHERE job_execution_log_chunks_fts MATCH ?
+		  AND c.job_execution_id = ?
+		ORDER BY CASE c.item_id`)
+	for index := range itemOrder {
+		query.WriteString(" WHEN ? THEN ")
+		query.WriteString(strconv.Itoa(index))
+	}
+	query.WriteString(" ELSE ")
+	query.WriteString(strconv.Itoa(len(itemOrder)))
+	query.WriteString(" END, c.id ASC")
+	return query.String()
 }
 
 func escapeFTSPhrase(value string) string {

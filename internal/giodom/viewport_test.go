@@ -160,6 +160,19 @@ func TestKeyedViewportForceEndAndResetRevisions(t *testing.T) {
 	}
 }
 
+func TestKeyedViewportMeasuresVariableHeightTailBeforeFollowingEnd(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	root := VirtualList("viewport", ListProps{
+		Axis: layout.Vertical, Viewport: 100, Estimate: 40, ScrollToEnd: true,
+	}, Static(Spacer("first", 0, 40), Spacer("large-tail", 0, 400)))
+	runtime.Layout(testContext(320, 100), root)
+	state := viewportState(t, runtime)
+	if state.anchor != "large-tail" || state.anchorOffset != 300 || !state.atEnd {
+		t.Fatalf("followed variable tail = anchor %q offset %d atEnd %v, want large-tail/300/true",
+			state.anchor, state.anchorOffset, state.atEnd)
+	}
+}
+
 func TestNestedViewportConsumesAvailableScrollBeforeParent(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	router := new(input.Router)

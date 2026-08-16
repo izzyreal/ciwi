@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -74,5 +75,57 @@ func TestInteractiveJobLogDoesNotBackfillLegacyExecution(t *testing.T) {
 	}
 	if descriptor.Available || descriptor.LatestChunkID != 0 || len(descriptor.Streams) != 0 {
 		t.Fatalf("legacy descriptor = %+v", descriptor)
+	}
+}
+
+func TestInteractiveJobLogSearchUsesFTSFirstAndPreservesTimelineOrder(t *testing.T) {
+	s := openTestStore(t)
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{
+		Script: "echo test",
+		StepPlan: []protocol.JobStepPlanItem{
+			{Index: 1, Name: "First"},
+			{Index: 2, Name: "Second"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Store the second step first so row-id order differs from presentation
+	// order. Search results must continue to follow the job timeline.
+	if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{
+		{Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 2}, Output: "shared needle", TimestampUTC: time.Now().UTC()},
+		{Type: protocol.JobExecutionEventTypeStepOutput, Step: &protocol.JobStepPlanItem{Index: 1}, Output: "shared needle", TimestampUTC: time.Now().UTC().Add(time.Nanosecond)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.SearchJobLog(job.ID, "needle", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalMatches != 2 || result.Match == nil || result.Match.ItemID != "step:1" {
+		t.Fatalf("timeline-ordered search = %+v, want first match in step:1", result)
+	}
+
+	query := jobLogSearchCandidateQuery([]string{"", "step:1", "step:2"})
+	rows, err := s.db.Query("EXPLAIN QUERY PLAN "+query,
+		`job_execution_id : "missing" AND indexed_text : "needle"`, job.ID, "", "step:1", "step:2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var details []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		details = append(details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(details) == 0 || !strings.Contains(details[0], "SCAN f VIRTUAL TABLE") {
+		t.Fatalf("search query plan = %s, want FTS as the outer candidate scan", fmt.Sprint(details))
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -28,6 +29,8 @@ func (r *Renderer) ApplyJobLogPage(page jobLogStreamSnapshot) {
 	page.LatestChunkID = max(page.LatestChunkID, current.LatestChunkID)
 	if page.SelectedChunkID == 0 {
 		page.SelectedChunkID = current.SelectedChunkID
+		page.SelectedStartRune = current.SelectedStartRune
+		page.SelectedEndRune = current.SelectedEndRune
 	}
 	byID := make(map[int64]jobLogChunkSnapshot, len(current.Chunks)+len(page.Chunks))
 	for _, chunk := range current.Chunks {
@@ -58,16 +61,31 @@ func (r *Renderer) ApplyJobLogPage(page jobLogStreamSnapshot) {
 }
 
 func (r *Renderer) ApplyJobLogSearch(result jobLogSearchSnapshot) {
+	r.outputSearch = result.Query
 	r.outputMatch, r.outputTotalMatches = result.SelectedIndex, result.TotalMatches
 	count := "0/0"
 	if result.TotalMatches > 0 {
 		count = fmt.Sprintf("%d/%d", result.SelectedIndex+1, result.TotalMatches)
 	}
 	r.SetRootBinding("jobDetails", "output_search_count", count)
+	for key, stream := range r.jobLogStreams {
+		if stream.JobID != result.JobID {
+			continue
+		}
+		stream.SelectedChunkID = 0
+		stream.SelectedStartRune = 0
+		stream.SelectedEndRune = 0
+		r.jobLogStreams[key] = stream
+	}
 	key := nativeJobLogKey(result.JobID, result.ItemID)
 	stream := r.jobLogStreams[key]
 	stream.SelectedChunkID = result.ChunkID
+	stream.SelectedStartRune = result.StartRune
+	stream.SelectedEndRune = result.EndRune
 	r.jobLogStreams[key] = stream
+	if result.ChunkID > 0 {
+		r.setOutputTailing(false)
+	}
 	if result.ItemID != "" {
 		if groups, err := resolveItems(r.data, "jobDetails.output_groups"); err == nil {
 			for _, raw := range groups {
@@ -78,9 +96,28 @@ func (r *Renderer) ApplyJobLogSearch(result jobLogSearchSnapshot) {
 				}
 			}
 		}
+		r.scrollOutputTo(result.ItemID)
+	} else {
+		r.outputScrollRevision++
 	}
-	r.outputScrollRevision++
 	r.requestFrame()
+}
+
+func (r *Renderer) clearJobLogSearchSelection(jobID string) {
+	changed := false
+	for key, stream := range r.jobLogStreams {
+		if stream.JobID != jobID || stream.SelectedChunkID == 0 {
+			continue
+		}
+		stream.SelectedChunkID = 0
+		stream.SelectedStartRune = 0
+		stream.SelectedEndRune = 0
+		r.jobLogStreams[key] = stream
+		changed = true
+	}
+	if changed {
+		r.outputScrollRevision++
+	}
 }
 
 func (r *Renderer) ApplyJobLogDescriptor(descriptor jobLogDescriptorSnapshot) {
@@ -207,10 +244,15 @@ func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) gio
 		}
 		return r.domMessage(giodom.Key(path+"/empty"), label, r.palette.consoleMuted)
 	}
+	selectionRanges := jobLogSelectionRanges(stream)
 	children := make([]giodom.Element, 0, len(stream.Chunks))
 	for _, chunk := range stream.Chunks {
 		chunkNode := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: chunk.Text}, Style: uidsl.Style{Role: "output-code", Tone: "console-text"}}
-		children = append(children, r.compileDOMText(chunkNode, data, path+"/job-log-chunk:"+strconv.FormatInt(chunk.ID, 10)))
+		chunkData := data
+		if selection, ok := selectionRanges[chunk.ID]; ok {
+			chunkData = mergeData(data, "jobLogMatch", map[string]any{"start": selection[0], "end": selection[1]})
+		}
+		children = append(children, r.compileDOMText(chunkNode, chunkData, path+"/job-log-chunk:"+strconv.FormatInt(chunk.ID, 10)))
 	}
 	first, last := stream.Chunks[0].ID, stream.Chunks[len(stream.Chunks)-1].ID
 	props := giodom.ListProps{
@@ -218,6 +260,15 @@ func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) gio
 		MinimumViewport: unit.Dp(r.controls.LogView.MinimumHeight), ShrinkMain: true,
 		NestedScroll: true, Estimate: 120, Overscan: 2, MaxMeasured: 128,
 		ScrollToEnd: r.outputTailing, ForceEndRevision: r.outputTailRevision, SemanticLabel: "Execution output",
+	}
+	if r.outputTailing {
+		props.OnLeaveEnd = func() {
+			if !r.outputTailing {
+				return
+			}
+			r.setOutputTailing(false)
+			r.requestFrame()
+		}
 	}
 	if stream.SelectedChunkID > 0 {
 		props.ScrollTo = giodom.Key(path + "/job-log-chunk:" + strconv.FormatInt(stream.SelectedChunkID, 10))
@@ -230,4 +281,35 @@ func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) gio
 		props.OnReachEnd = func() { r.requestJobLogPage(jobID, itemID, "after", last) }
 	}
 	return giodom.VirtualList(giodom.Key(path+"/log"), props, giodom.Static(children...))
+}
+
+func jobLogSelectionRanges(stream jobLogStreamSnapshot) map[int64][2]int {
+	selectedIndex := -1
+	for index, chunk := range stream.Chunks {
+		if chunk.ID == stream.SelectedChunkID {
+			selectedIndex = index
+			break
+		}
+	}
+	if selectedIndex < 0 || stream.SelectedEndRune <= stream.SelectedStartRune {
+		return nil
+	}
+	starts := make([]int, len(stream.Chunks))
+	for index := selectedIndex - 1; index >= 0; index-- {
+		starts[index] = starts[index+1] - utf8.RuneCountInString(stream.Chunks[index].Text)
+	}
+	for index := selectedIndex + 1; index < len(stream.Chunks); index++ {
+		starts[index] = starts[index-1] + utf8.RuneCountInString(stream.Chunks[index-1].Text)
+	}
+	ranges := make(map[int64][2]int)
+	for index, chunk := range stream.Chunks {
+		chunkRunes := utf8.RuneCountInString(chunk.Text)
+		chunkStart, chunkEnd := starts[index], starts[index]+chunkRunes
+		start := max(stream.SelectedStartRune, chunkStart)
+		end := min(stream.SelectedEndRune, chunkEnd)
+		if end > start {
+			ranges[chunk.ID] = [2]int{start - chunkStart, end - chunkStart}
+		}
+	}
+	return ranges
 }
