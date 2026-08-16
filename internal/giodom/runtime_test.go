@@ -32,6 +32,48 @@ func TestKeyedStateSurvivesReorderAndRemovedStateIsSwept(t *testing.T) {
 	}
 }
 
+func TestStableOverlayRetainsBodyViewportAndSweepsRemovedModalState(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	rows := make([]Element, 12)
+	for index := range rows {
+		rows[index] = Spacer(Key(fmt.Sprintf("row-%d", index)), 0, 40)
+	}
+	body := VirtualList("page", ListProps{Axis: layout.Vertical, Viewport: 120, Estimate: 40}, Static(rows...))
+	root := func(modal ...Element) Element {
+		return Overlay("overlay-shell", OverlayProps{}, body, modal...)
+	}
+
+	runtime.Layout(testContext(320, 240), root())
+	pageState := viewportState(t, runtime)
+	pageState.anchor = "row-4"
+	pageState.anchorIndex = 4
+	pageState.anchorOffset = 7
+	pageState.initialized = true
+
+	modal := selectableTestText("modal", "Modal")
+	runtime.Layout(testContext(320, 240), root(modal))
+	if current := viewportState(t, runtime); current != pageState {
+		t.Fatal("page viewport state changed when modal appeared")
+	}
+	if pageState.anchor != "row-4" || pageState.anchorIndex != 4 || pageState.anchorOffset != 7 {
+		t.Fatalf("page viewport moved when modal appeared: anchor=%q index=%d offset=%d", pageState.anchor, pageState.anchorIndex, pageState.anchorOffset)
+	}
+	modalState := stateValueWithPath(t, runtime, "/key:modal/state:selectable")
+
+	runtime.Layout(testContext(320, 240), root())
+	if current := viewportState(t, runtime); current != pageState {
+		t.Fatal("page viewport state changed when modal disappeared")
+	}
+	if pageState.anchor != "row-4" || pageState.anchorIndex != 4 || pageState.anchorOffset != 7 {
+		t.Fatalf("page viewport moved when modal disappeared: anchor=%q index=%d offset=%d", pageState.anchor, pageState.anchorIndex, pageState.anchorOffset)
+	}
+	for path, entry := range runtime.states {
+		if entry.value == modalState || strings.Contains(path, "/key:modal/") {
+			t.Fatalf("removed modal retained state at %q", path)
+		}
+	}
+}
+
 func TestDynamicChildrenRejectEmptyAndDuplicateKeys(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	root := Element{

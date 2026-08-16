@@ -399,7 +399,9 @@ func StockList(key Key, props ListProps, children Children) Element {
 	return Element{Kind: KindStockList, Key: key, List: props, Children: children}
 }
 
-// Overlay lays modal over body. Omitting modal leaves only body.
+// Overlay lays modal over body. Omitting modal leaves only body. Keep the
+// keyed overlay mounted while toggling its optional modal so retained body
+// state remains under a stable structural identity.
 func Overlay(key Key, props OverlayProps, body Element, modal ...Element) Element {
 	children := []Element{body}
 	children = append(children, modal...)

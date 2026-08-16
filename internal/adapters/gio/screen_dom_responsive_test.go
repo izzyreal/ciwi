@@ -274,6 +274,58 @@ func TestNativePageViewportOwnsFullWidthAroundCenteredRows(t *testing.T) {
 	}
 }
 
+func TestNativeOverlaySpineKeepsPageIdentityStable(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	body := giodom.Column("page-list:settings", 0, giodom.Text("content", "Content", 14, color.NRGBA{}))
+	tests := []struct {
+		name                  string
+		notice                *nativeNotice
+		alert                 *nativeAlert
+		pending               *pendingConfirmation
+		wantNoticeModal       bool
+		wantAlertModal        bool
+		wantConfirmationModal bool
+	}{
+		{name: "none"},
+		{name: "notice", notice: &nativeNotice{message: "Saved"}, wantNoticeModal: true},
+		{name: "alert", alert: &nativeAlert{title: "Failed", message: "Try again"}, wantAlertModal: true},
+		{name: "confirmation", pending: &pendingConfirmation{title: "Confirm", message: "Continue?"}, wantConfirmationModal: true},
+		{
+			name: "all", notice: &nativeNotice{message: "Saved"}, alert: &nativeAlert{title: "Failed", message: "Try again"},
+			pending:         &pendingConfirmation{title: "Confirm", message: "Continue?"},
+			wantNoticeModal: true, wantAlertModal: true, wantConfirmationModal: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			renderer.pending = test.pending
+			document := renderer.decorateDOMOverlays(body, test.notice, test.alert)
+			confirmationBody := assertOverlayShell(t, document, "confirmation-overlay", test.wantConfirmationModal)
+			alertBody := assertOverlayShell(t, confirmationBody, "alert-overlay", test.wantAlertModal)
+			noticeBody := assertOverlayShell(t, alertBody, "notice-overlay", test.wantNoticeModal)
+			if noticeBody.Key != body.Key {
+				t.Fatalf("overlay body key = %q, want stable page key %q", noticeBody.Key, body.Key)
+			}
+		})
+	}
+}
+
+func assertOverlayShell(t *testing.T, element giodom.Element, key giodom.Key, wantModal bool) giodom.Element {
+	t.Helper()
+	if element.Kind != giodom.KindOverlay || element.Key != key {
+		t.Fatalf("overlay = kind %v key %q, want key %q", element.Kind, element.Key, key)
+	}
+	wantChildren := 1
+	if wantModal {
+		wantChildren = 2
+	}
+	if element.Children == nil || element.Children.Len() != wantChildren {
+		t.Fatalf("overlay %q children = %v, want %d", key, element.Children, wantChildren)
+	}
+	return element.Children.At(0)
+}
+
 func TestNativeSettingsCardGapAndPendingButtonWidthContracts(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	catalog, err := sharedui.LoadActionCatalog()

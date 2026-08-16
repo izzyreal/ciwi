@@ -20,6 +20,9 @@ iOS.
 - Index identity is permitted only for structurally static children.
 - Removed and offscreen state is swept after the frame. Controlled application
   values, not retained widgets, remain authoritative.
+- Keyed structural wrappers remain mounted while optional content toggles. In
+  particular, an `Overlay` stays in the tree and varies only its optional modal
+  child so the body keeps the same parent-scoped identity.
 - The custom viewport anchors scrolling to a child key and pixel offset, so a
   reorder does not silently attach the position to another row.
 - A pass-through page viewport observes child gestures before applying its own

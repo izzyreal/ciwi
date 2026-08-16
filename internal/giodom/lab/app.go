@@ -192,16 +192,17 @@ func (m *model) root(stats giodom.Stats) giodom.Element {
 	content.Grow = true
 	body := giodom.Column("lab-root", 12, header, content)
 	body.Flex.Padding = giodom.UniformInsets(12)
-	if !m.modal {
-		return body
+	modalElements := []giodom.Element{}
+	if m.modal {
+		modal := card("modal", giodom.Column("modal-copy", 12,
+			label("modal-title", "Standalone modal", 22, labPalette.text),
+			label("modal-message", "Focus, overlay layout, and retained button state remain inside the keyed runtime.", 16, labPalette.muted),
+			giodom.Button("close-modal", "Close", true, m.action(func() { m.modal = false })),
+		))
+		modal = giodom.Constrain("modal-width", giodom.ConstraintProps{MinWidth: 280, MaxWidth: 480}, modal)
+		modalElements = append(modalElements, modal)
 	}
-	modal := card("modal", giodom.Column("modal-copy", 12,
-		label("modal-title", "Standalone modal", 22, labPalette.text),
-		label("modal-message", "Focus, overlay layout, and retained button state remain inside the keyed runtime.", 16, labPalette.muted),
-		giodom.Button("close-modal", "Close", true, m.action(func() { m.modal = false })),
-	))
-	modal = giodom.Constrain("modal-width", giodom.ConstraintProps{MinWidth: 280, MaxWidth: 480}, modal)
-	return giodom.Overlay("lab-overlay", giodom.OverlayProps{Scrim: labPalette.scrim}, body, modal)
+	return giodom.Overlay("lab-overlay", giodom.OverlayProps{Scrim: labPalette.scrim}, body, modalElements...)
 }
 
 func (m *model) labHeader(stats giodom.Stats) giodom.Element {

@@ -88,16 +88,23 @@ func (r *Renderer) layoutScreenDOMFrame(gtx layout.Context, screen *uidsl.Screen
 }
 
 func (r *Renderer) decorateDOMOverlays(document giodom.Element, notice *nativeNotice, alert *nativeAlert) giodom.Element {
+	noticeModal := []giodom.Element{}
 	if notice != nil {
-		document = giodom.Overlay("notice-overlay", giodom.OverlayProps{Alignment: layout.SE, Align: true}, document, r.domNotice(notice))
+		noticeModal = append(noticeModal, r.domNotice(notice))
 	}
+	document = giodom.Overlay("notice-overlay", giodom.OverlayProps{Alignment: layout.SE, Align: true}, document, noticeModal...)
+
+	alertModal := []giodom.Element{}
 	if alert != nil {
-		document = giodom.Overlay("alert-overlay", giodom.OverlayProps{Scrim: color.NRGBA{A: 0x70}}, document, r.domAlert(alert))
+		alertModal = append(alertModal, r.domAlert(alert))
 	}
+	document = giodom.Overlay("alert-overlay", giodom.OverlayProps{Scrim: color.NRGBA{A: 0x70}}, document, alertModal...)
+
+	confirmationModal := []giodom.Element{}
 	if r.pending != nil {
-		document = giodom.Overlay("confirmation-overlay", giodom.OverlayProps{Scrim: color.NRGBA{A: 0x70}}, document, r.domConfirmation(r.pending))
+		confirmationModal = append(confirmationModal, r.domConfirmation(r.pending))
 	}
-	return document
+	return giodom.Overlay("confirmation-overlay", giodom.OverlayProps{Scrim: color.NRGBA{A: 0x70}}, document, confirmationModal...)
 }
 
 func (r *Renderer) domNotice(notice *nativeNotice) giodom.Element {
