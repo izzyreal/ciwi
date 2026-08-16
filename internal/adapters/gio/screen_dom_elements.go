@@ -271,15 +271,11 @@ func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, ro
 		displayValue = strings.TrimSuffix(displayValue, "\n")
 		displayValue = strings.TrimSuffix(displayValue, "\r")
 	}
-	selectionStart, selectionEnd := 0, 0
-	selectionRevision := ""
+	highlightStart, highlightEnd := 0, 0
 	if start, startErr := uidsl.Resolve(data, "jobLogMatch.start"); startErr == nil {
 		if end, endErr := uidsl.Resolve(data, "jobLogMatch.end"); endErr == nil {
-			selectionStart, _ = strconv.Atoi(fmt.Sprint(start))
-			selectionEnd, _ = strconv.Atoi(fmt.Sprint(end))
-			if selectionEnd > selectionStart {
-				selectionRevision = fmt.Sprintf("%d:%d", selectionStart, selectionEnd)
-			}
+			highlightStart, _ = strconv.Atoi(fmt.Sprint(start))
+			highlightEnd, _ = strconv.Atoi(fmt.Sprint(end))
 		}
 	}
 	return giodom.Native(domNodeKey(node, path), giodom.NativeProps{
@@ -294,14 +290,6 @@ func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, ro
 			state.editor.SingleLine = role == "code-inline" && node.Style.Truncate
 			if state.editor.Text() != displayValue {
 				state.editor.SetText(displayValue)
-				state.selectionRevision = ""
-			}
-			if selectionRevision != "" && state.selectionRevision != selectionRevision {
-				state.editor.SetCaret(selectionStart, selectionEnd)
-				state.selectionRevision = selectionRevision
-			} else if selectionRevision == "" && state.selectionRevision != "" {
-				state.editor.ClearSelection()
-				state.selectionRevision = ""
 			}
 			outputID := ""
 			if node.ID == "job-output-group-text" {
@@ -322,10 +310,18 @@ func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, ro
 			style.Color = r.domTextColor(role, node.Style.Tone)
 			style.SelectionColor = r.palette.focus
 			style.SelectionColor.A = 0xc0
-			if role == "code" {
-				return layout.UniformInset(12).Layout(gtx, style.Layout)
+			layoutEditor := func(gtx layout.Context) layout.Dimensions {
+				if highlightEnd > highlightStart {
+					highlight := r.palette.focus
+					highlight.A = 0xc0
+					paintDOMTextHighlight(gtx, r.theme.Shaper, typography, displayValue, highlightStart, highlightEnd, highlight)
+				}
+				return style.Layout(gtx)
 			}
-			return style.Layout(gtx)
+			if role == "code" {
+				return layout.UniformInset(12).Layout(gtx, layoutEditor)
+			}
+			return layoutEditor(gtx)
 		},
 	})
 }

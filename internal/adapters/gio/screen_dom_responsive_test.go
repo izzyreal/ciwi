@@ -9,17 +9,20 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"gioui.org/f32"
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"github.com/izzyreal/ciwi/internal/giodom"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedui "github.com/izzyreal/ciwi/ui"
+	"golang.org/x/image/math/fixed"
 )
 
 func TestExecutionDisclosureHeaderAdaptsWithoutExcessiveHeight(t *testing.T) {
@@ -777,6 +780,43 @@ func TestInteractiveLogOwnsTailingInsteadOfOutputGroupScroller(t *testing.T) {
 	}
 }
 
+func TestInteractiveOutputGroupScrollsMetadataAndLogUnderFixedHeader(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = true
+	renderer.viewportHeight = 400
+	renderer.ApplyJobLogPage(jobLogStreamSnapshot{
+		JobID: "job-1", ItemID: "step:1", PageLoaded: true,
+		Chunks: []jobLogChunkSnapshot{{ID: 7, Text: strings.Repeat("output line\n", 80)}},
+	})
+	screen, err := sharedui.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	if !ok {
+		t.Fatal("job output scroller not found")
+	}
+	compiled := renderer.compileDOMNode(scroller, map[string]any{"jobDetails": map[string]any{
+		"id": "job-1", "interactive_log_available": true,
+		"output_groups": []any{map[string]any{
+			"id": "step:1", "title": "Job step 1/1: Build", "state_key": "job-output:step:1",
+			"default_expanded": true, "reached": true, "started": "now", "duration": "1s",
+			"kind": "step", "yaml_literal": "run: build", "expanded_command": "build",
+		}},
+	}}, "interactive-output")
+	body := findResponsiveTestListByLabel(compiled, "Execution output")
+	if body == nil || !body.List.ScrollToEnd || body.List.Viewport != renderer.domJobLogViewport(true) || body.List.Viewport >= unit.Dp(renderer.controls.LogView.MaximumHeight) {
+		t.Fatalf("interactive step body = %#v, want bounded tail-owning viewport", body)
+	}
+	if body.Children == nil || body.Children.Len() < 2 {
+		t.Fatalf("interactive step body children = %#v, want metadata preamble plus log blocks", body.Children)
+	}
+	preamble := body.Children.At(0)
+	if !responsiveTestContainsText(&preamble, "Started: now") || responsiveTestContainsText(&preamble, "Job step 1/1: Build") {
+		t.Fatalf("interactive preamble = %#v, want metadata below a fixed disclosure header", preamble)
+	}
+}
+
 func TestNativeLogSearchHighlightsReturnedRuneSpan(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	renderer.outputTailing = false
@@ -796,6 +836,10 @@ func TestNativeLogSearchHighlightsReturnedRuneSpan(t *testing.T) {
 	if log.Children == nil || log.Children.Len() != 1 {
 		t.Fatalf("compiled searched log children = %#v", log.Children)
 	}
+	wantTarget := giodom.Key("searched-log/job-log-chunk:7:block:0")
+	if log.List.ScrollTo != wantTarget {
+		t.Fatalf("searched log target = %q, want bounded match block %q", log.List.ScrollTo, wantTarget)
+	}
 	chunk := log.Children.At(0)
 	if chunk.Kind != giodom.KindNative || chunk.Native.NewState == nil || chunk.Native.Layout == nil {
 		t.Fatalf("compiled searched chunk = %#v", chunk)
@@ -805,22 +849,76 @@ func TestNativeLogSearchHighlightsReturnedRuneSpan(t *testing.T) {
 		Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
 		Constraints: layout.Constraints{Max: image.Pt(800, 2000)},
 	}, state)
-	start, end := state.(*domEditorState).editor.Selection()
-	if start != 7 || end != 13 {
-		t.Fatalf("highlighted selection = %d:%d, want 7:13", start, end)
+	editor := &state.(*domEditorState).editor
+	if editor.Text() != "prefix needle suffix" {
+		t.Fatalf("target display block text = %q", editor.Text())
+	}
+	if start, end := editor.Selection(); start != end {
+		t.Fatalf("search highlight stole editor selection focus state: %d:%d", start, end)
+	}
+}
+
+func TestDOMTextHighlightRegionsDoNotDependOnEditorFocus(t *testing.T) {
+	glyphs := make([]text.Glyph, 4)
+	for index := range glyphs {
+		glyphs[index] = text.Glyph{
+			X: fixed.I(index * 10), Y: 12, Advance: fixed.I(10),
+			Ascent: fixed.I(10), Descent: fixed.I(3), Runes: 1, Flags: text.FlagClusterBreak,
+		}
+	}
+	regions := domTextHighlightRegions(glyphs, 1, 3)
+	if len(regions) != 1 || regions[0] != image.Rect(10, 2, 30, 15) {
+		t.Fatalf("highlight regions = %#v, want one focus-independent rectangle", regions)
+	}
+	clustered := []text.Glyph{
+		{X: 0, Y: 12, Advance: fixed.I(12), Ascent: fixed.I(10), Descent: fixed.I(3), Runes: 2, Flags: text.FlagClusterBreak | text.FlagLineBreak},
+		{X: 0, Y: 32, Advance: fixed.I(10), Ascent: fixed.I(10), Descent: fixed.I(3), Runes: 1, Flags: text.FlagClusterBreak},
+	}
+	regions = domTextHighlightRegions(clustered, 1, 3)
+	if len(regions) != 2 || regions[0] != image.Rect(0, 2, 12, 15) || regions[1] != image.Rect(0, 22, 10, 35) {
+		t.Fatalf("clustered wrapped highlight regions = %#v", regions)
 	}
 }
 
 func TestNativeLogSearchHighlightsCrossChunkRuneSpan(t *testing.T) {
-	ranges := jobLogSelectionRanges(jobLogStreamSnapshot{
+	stream := jobLogStreamSnapshot{
 		Chunks: []jobLogChunkSnapshot{
 			{ID: 4, Text: "abc"},
 			{ID: 5, Text: "def"},
 		},
 		SelectedChunkID: 5, SelectedStartRune: -2, SelectedEndRune: 2,
-	})
+	}
+	ranges := jobLogSelectionRanges(stream)
 	if ranges[4] != [2]int{1, 3} || ranges[5] != [2]int{0, 2} {
 		t.Fatalf("cross-chunk highlight ranges = %#v", ranges)
+	}
+	blocks, target := nativeJobLogDisplayBlocks(stream, "cross-chunk")
+	if target != "cross-chunk/job-log-chunk:4:block:0" || len(blocks) != 2 {
+		t.Fatalf("cross-chunk display blocks = %#v target %q", blocks, target)
+	}
+	if blocks[0].Text != "abc" || blocks[0].HighlightStart != 1 || blocks[0].HighlightEnd != 3 ||
+		blocks[1].Text != "def" || blocks[1].HighlightStart != 0 || blocks[1].HighlightEnd != 2 {
+		t.Fatalf("cross-chunk highlighted blocks = %#v", blocks)
+	}
+}
+
+func TestNativeLogSearchTargetsExactBlockInsideMaximumStorageChunk(t *testing.T) {
+	prefix := strings.Repeat("x", 1200)
+	stream := jobLogStreamSnapshot{
+		Chunks:          []jobLogChunkSnapshot{{ID: 9, Text: prefix + "needle" + strings.Repeat("y", 600)}},
+		SelectedChunkID: 9, SelectedStartRune: len(prefix), SelectedEndRune: len(prefix) + len("needle"),
+	}
+	blocks, target := nativeJobLogDisplayBlocks(stream, "deep-search")
+	if target != "deep-search/job-log-chunk:9:block:1024" {
+		t.Fatalf("deep search target = %q, want bounded block containing the exact match", target)
+	}
+	for _, block := range blocks {
+		if utf8.RuneCountInString(block.Text) > nativeJobLogDisplayRunesMax {
+			t.Fatalf("display block at %d contains %d runes", block.StartRune, utf8.RuneCountInString(block.Text))
+		}
+		if block.Key == target && (block.HighlightStart != 176 || block.HighlightEnd != 176+len("needle")) {
+			t.Fatalf("deep search target block = %#v", block)
+		}
 	}
 }
 
@@ -923,6 +1021,42 @@ func findResponsiveTestElement(element *giodom.Element, kind giodom.Kind) *giodo
 		}
 	}
 	return nil
+}
+
+func findResponsiveTestListByLabel(element *giodom.Element, label string) *giodom.Element {
+	if element == nil {
+		return nil
+	}
+	if element.Kind == giodom.KindVirtualList && element.List.SemanticLabel == label {
+		return element
+	}
+	if element.Children != nil {
+		for index := 0; index < element.Children.Len(); index++ {
+			child := element.Children.At(index)
+			if found := findResponsiveTestListByLabel(&child, label); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
+}
+
+func responsiveTestContainsText(element *giodom.Element, value string) bool {
+	if element == nil {
+		return false
+	}
+	if element.Kind == giodom.KindText && element.Text.Value == value {
+		return true
+	}
+	if element.Children != nil {
+		for index := 0; index < element.Children.Len(); index++ {
+			child := element.Children.At(index)
+			if responsiveTestContainsText(&child, value) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func findResponsiveTestElementByKey(element *giodom.Element, key giodom.Key) *giodom.Element {

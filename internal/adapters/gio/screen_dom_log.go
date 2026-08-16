@@ -15,7 +15,10 @@ import (
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
-const maxNativeJobLogCacheBytes = 4 * 1024 * 1024
+const (
+	maxNativeJobLogCacheBytes   = 4 * 1024 * 1024
+	nativeJobLogDisplayRunesMax = 512
+)
 
 func nativeJobLogKey(jobID, itemID string) string { return jobID + "\n" + itemID }
 
@@ -208,7 +211,56 @@ func (r *Renderer) requestJobLogPage(jobID, itemID, mode string, cursor int64) {
 	})
 }
 
+func (r *Renderer) compileDOMInteractiveOutputGroupBody(nodes []uidsl.Node, data any, path string, inherited domStyleContext) (giodom.Element, bool) {
+	for nodeIndex, rawBody := range nodes {
+		body, hidden := applyGioOverride(rawBody, r.compact)
+		if hidden || body.Style.Role != "output-group-body" || !domNodeVisible(body, data) {
+			continue
+		}
+		_, childStyle := r.resolveDOMStyle(body.Component, body.Style, data, inherited)
+		bodyPath := fmt.Sprintf("%s/%d", path, nodeIndex)
+		preambleChildren := make([]giodom.Element, 0, len(body.Children))
+		var logNode *uidsl.Node
+		logPath := ""
+		for childIndex, rawChild := range body.Children {
+			child, childHidden := applyGioOverride(rawChild, r.compact)
+			childPath := fmt.Sprintf("%s/%d", bodyPath, childIndex)
+			if childHidden || !domNodeVisible(child, data) {
+				continue
+			}
+			if child.Component == "log-view" && child.LogView != nil {
+				copy := child
+				logNode, logPath = &copy, childPath
+				continue
+			}
+			compiled := r.compileDOMNodeWithStyle(child, data, childPath, childStyle)
+			if compiled != nil {
+				preambleChildren = append(preambleChildren, *compiled)
+			}
+		}
+		if logNode == nil {
+			return giodom.Element{}, false
+		}
+		preamble := giodom.Element{
+			Kind: giodom.KindFlex, Key: giodom.Key(bodyPath + "/preamble"),
+			Flex: giodom.FlexProps{
+				Axis: layout.Vertical, Alignment: layout.Start,
+				Gap: r.spacing(body.Layout.Gap), Padding: giodom.UniformInsets(r.spacing(body.Layout.Padding)),
+			},
+			Children: giodom.Static(preambleChildren...),
+		}
+		compiled := r.compileDOMLogViewWithPreamble(*logNode, data, logPath, &preamble)
+		compiled.Key = domNodeKey(*logNode, logPath)
+		return *r.decorateDOMNode(compiled, *logNode, data, logPath), true
+	}
+	return giodom.Element{}, false
+}
+
 func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) giodom.Element {
+	return r.compileDOMLogViewWithPreamble(node, data, path, nil)
+}
+
+func (r *Renderer) compileDOMLogViewWithPreamble(node uidsl.Node, data any, path string, preamble *giodom.Element) giodom.Element {
 	if node.LogView == nil {
 		return r.domMessage(giodom.Key(path+"/missing"), "Log view unavailable", r.palette.danger)
 	}
@@ -226,42 +278,49 @@ func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) gio
 	}
 	key := nativeJobLogKey(jobID, itemID)
 	stream, known := r.jobLogStreams[key]
+	children := make([]giodom.Element, 0, len(stream.Chunks)+1)
+	if preamble != nil {
+		children = append(children, *preamble)
+	}
+	selectionTarget := giodom.Key("")
 	if !known || !stream.PageLoaded {
 		mode := "head"
 		if r.outputTailing {
 			mode = "tail"
 		}
 		r.requestJobLogPage(jobID, itemID, mode, 0)
-		return r.domMessage(giodom.Key(path+"/loading"), "Loading output…", r.palette.consoleMuted)
-	}
-	if len(stream.Chunks) == 0 {
+		children = append(children, r.domMessage(giodom.Key(path+"/loading"), "Loading output…", r.palette.consoleMuted))
+	} else if len(stream.Chunks) == 0 {
 		if stream.HasAfter || stream.LatestChunkID > 0 {
 			mode := "head"
 			if r.outputTailing {
 				mode = "tail"
 			}
 			r.requestJobLogPage(jobID, itemID, mode, 0)
-			return r.domMessage(giodom.Key(path+"/loading"), "Loading output…", r.palette.consoleMuted)
+			children = append(children, r.domMessage(giodom.Key(path+"/loading"), "Loading output…", r.palette.consoleMuted))
+		} else {
+			label := "Waiting for output…"
+			if stream.Terminal {
+				label = "(no output)"
+			}
+			children = append(children, r.domMessage(giodom.Key(path+"/empty"), label, r.palette.consoleMuted))
 		}
-		label := "Waiting for output…"
-		if stream.Terminal {
-			label = "(no output)"
+	} else {
+		blocks, target := nativeJobLogDisplayBlocks(stream, path)
+		selectionTarget = target
+		for _, block := range blocks {
+			chunkNode := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: block.Text}, Style: uidsl.Style{Role: "output-code", Tone: "console-text"}}
+			chunkData := data
+			if block.HighlightEnd > block.HighlightStart {
+				chunkData = mergeData(data, "jobLogMatch", map[string]any{"start": block.HighlightStart, "end": block.HighlightEnd})
+			}
+			compiled := r.compileDOMText(chunkNode, chunkData, string(block.Key))
+			compiled.Key = block.Key
+			children = append(children, compiled)
 		}
-		return r.domMessage(giodom.Key(path+"/empty"), label, r.palette.consoleMuted)
 	}
-	selectionRanges := jobLogSelectionRanges(stream)
-	children := make([]giodom.Element, 0, len(stream.Chunks))
-	for _, chunk := range stream.Chunks {
-		chunkNode := uidsl.Node{Component: "text", Text: &uidsl.Text{Literal: chunk.Text}, Style: uidsl.Style{Role: "output-code", Tone: "console-text"}}
-		chunkData := data
-		if selection, ok := selectionRanges[chunk.ID]; ok {
-			chunkData = mergeData(data, "jobLogMatch", map[string]any{"start": selection[0], "end": selection[1]})
-		}
-		children = append(children, r.compileDOMText(chunkNode, chunkData, path+"/job-log-chunk:"+strconv.FormatInt(chunk.ID, 10)))
-	}
-	first, last := stream.Chunks[0].ID, stream.Chunks[len(stream.Chunks)-1].ID
 	props := giodom.ListProps{
-		Axis: layout.Vertical, Viewport: unit.Dp(r.controls.LogView.MaximumHeight),
+		Axis: layout.Vertical, Viewport: r.domJobLogViewport(preamble != nil),
 		MinimumViewport: unit.Dp(r.controls.LogView.MinimumHeight), ShrinkMain: true,
 		NestedScroll: true, Estimate: 120, Overscan: 2, MaxMeasured: 128,
 		ScrollToEnd: r.outputTailing, ForceEndRevision: r.outputTailRevision, SemanticLabel: "Execution output",
@@ -275,17 +334,101 @@ func (r *Renderer) compileDOMLogView(node uidsl.Node, data any, path string) gio
 			r.requestFrame()
 		}
 	}
-	if stream.SelectedChunkID > 0 {
-		props.ScrollTo = giodom.Key(path + "/job-log-chunk:" + strconv.FormatInt(stream.SelectedChunkID, 10))
+	if selectionTarget != "" {
+		props.ScrollTo = selectionTarget
 		props.ScrollRevision = r.outputScrollRevision
 	}
-	if stream.HasBefore {
+	if stream.HasBefore && len(stream.Chunks) > 0 {
+		first := stream.Chunks[0].ID
 		props.OnReachStart = func() { r.requestJobLogPage(jobID, itemID, "before", first) }
 	}
-	if stream.HasAfter {
+	if stream.HasAfter && len(stream.Chunks) > 0 {
+		last := stream.Chunks[len(stream.Chunks)-1].ID
 		props.OnReachEnd = func() { r.requestJobLogPage(jobID, itemID, "after", last) }
 	}
-	return giodom.VirtualList(giodom.Key(path+"/log"), props, giodom.Static(children...))
+	return giodom.VirtualList(giodom.Key(path+"/log"), props, giodom.Keyed(domElementsRevision(children), children...))
+}
+
+func (r *Renderer) domJobLogViewport(inOutputGroup bool) unit.Dp {
+	maximum := unit.Dp(r.controls.LogView.MaximumHeight)
+	if !inOutputGroup {
+		return maximum
+	}
+	headerStyle := r.nativeTextStyle("output-summary", true)
+	lineHeightScale := headerStyle.lineHeight
+	if lineHeightScale <= 0 {
+		lineHeightScale = 1
+	}
+	fixedChrome := 4*r.metrics.sectionPadding + unit.Dp(float32(headerStyle.size)*lineHeightScale)
+	available := r.domOutputGroupsViewport(660) - fixedChrome
+	minimum := unit.Dp(r.controls.LogView.MinimumHeight)
+	return max(minimum, min(maximum, available))
+}
+
+type nativeJobLogDisplayBlock struct {
+	Key                          giodom.Key
+	ChunkID                      int64
+	StartRune                    int
+	Text                         string
+	HighlightStart, HighlightEnd int
+}
+
+func nativeJobLogDisplayBlocks(stream jobLogStreamSnapshot, path string) ([]nativeJobLogDisplayBlock, giodom.Key) {
+	selections := jobLogSelectionRanges(stream)
+	blocks := make([]nativeJobLogDisplayBlock, 0, len(stream.Chunks)*2)
+	target := giodom.Key("")
+	for _, chunk := range stream.Chunks {
+		selection, selected := selections[chunk.ID]
+		chunkBlocks := splitNativeJobLogDisplayChunk(chunk, path, selection, selected)
+		for _, block := range chunkBlocks {
+			if target == "" && block.HighlightEnd > block.HighlightStart {
+				target = block.Key
+			}
+			blocks = append(blocks, block)
+		}
+	}
+	return blocks, target
+}
+
+func splitNativeJobLogDisplayChunk(chunk jobLogChunkSnapshot, path string, selection [2]int, selected bool) []nativeJobLogDisplayBlock {
+	runes := []rune(chunk.Text)
+	if len(runes) == 0 {
+		return nil
+	}
+	if selected {
+		selection[0] = min(max(0, selection[0]), len(runes))
+		selection[1] = min(max(selection[0], selection[1]), len(runes))
+	}
+	blocks := make([]nativeJobLogDisplayBlock, 0, len(runes)/nativeJobLogDisplayRunesMax+1)
+	for start := 0; start < len(runes); {
+		end := min(len(runes), start+nativeJobLogDisplayRunesMax)
+		if end < len(runes) {
+			for index := end - 1; index >= start; index-- {
+				if runes[index] == '\n' {
+					end = index + 1
+					break
+				}
+			}
+		}
+		if end <= start {
+			end = min(len(runes), start+nativeJobLogDisplayRunesMax)
+		}
+		block := nativeJobLogDisplayBlock{
+			Key:     giodom.Key(fmt.Sprintf("%s/job-log-chunk:%d:block:%d", path, chunk.ID, start)),
+			ChunkID: chunk.ID, StartRune: start, Text: string(runes[start:end]),
+		}
+		if selected {
+			highlightStart := max(start, selection[0])
+			highlightEnd := min(end, selection[1])
+			if highlightEnd > highlightStart {
+				block.HighlightStart = highlightStart - start
+				block.HighlightEnd = highlightEnd - start
+			}
+		}
+		blocks = append(blocks, block)
+		start = end
+	}
+	return blocks
 }
 
 func jobLogSelectionRanges(stream jobLogStreamSnapshot) map[int64][2]int {

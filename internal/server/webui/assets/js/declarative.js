@@ -1056,6 +1056,9 @@
     if (node.id) element.id = node.id;
     const style = node.style || {};
     if (style.role) element.classList.add('dsl-' + style.role);
+	if (style.role === 'output-group-body' && data.jobDetails && data.jobDetails.interactive_log_available) {
+	  element.classList.add('dsl-interactive-log-body');
+	}
 	if (style.role === 'floating-collapse') element.hidden = true;
     const tone = style.toneBinding ? semanticTone(resolve(data, style.toneBinding)) : style.tone;
     if (tone) element.classList.add('dsl-' + tone);
@@ -1129,6 +1132,7 @@
           element.open = disclosureStates.get(stateKey, defaultExpanded);
           element.addEventListener('toggle', () => {
 			disclosureStates.set(stateKey, element.open);
+			requestAnimationFrame(bindRenderedLogViews);
 			requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
           });
         } else {
@@ -1261,6 +1265,7 @@
 	committedRenderSignature = nextSignature;
 	if (viewState) window.ciwiRestoreViewState(root, viewState);
 	if (currentData.jobDetails) bindJobOutputScrollIntent(currentData.jobDetails);
+	requestAnimationFrame(bindRenderedLogViews);
 	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
   }
 
@@ -1360,20 +1365,32 @@
 	pre.appendChild(document.createTextNode(runes.slice(start + length).join('')));
   }
 
+  function logViewScrollOwner(element) {
+	return element.closest('.dsl-interactive-log-body') || element;
+  }
+
+  function centerLogViewMatch(element, smooth) {
+	const mark = element.querySelector('.ciwi-search-hit-active');
+	if (!mark) return;
+	const owner = logViewScrollOwner(element);
+	const ownerBounds = owner.getBoundingClientRect();
+	const markBounds = mark.getBoundingClientRect();
+	const target = owner.scrollTop + markBounds.top - ownerBounds.top - Math.max(0, (owner.clientHeight - markBounds.height) / 2);
+	owner.scrollTo({top: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto'});
+  }
+
   function paintLogViewElement(element, state, preserve) {
-	  const oldHeight = element.scrollHeight;
-	  const oldTop = element.scrollTop;
+	  const owner = logViewScrollOwner(element);
+	  const oldHeight = owner.scrollHeight;
+	  const oldTop = owner.scrollTop;
 	  element.textContent = '';
 	  const pre = document.createElement('pre');
 	  pre.className = 'dsl-log-view-text';
 	  renderLogText(pre, state);
 	  element.appendChild(pre);
-	  if (preserve === 'before') element.scrollTop = oldTop + Math.max(0, element.scrollHeight - oldHeight);
-	  else if (preserve === 'tail') element.scrollTop = element.scrollHeight;
-	  if (state.match) requestAnimationFrame(() => {
-		const mark = element.querySelector('.ciwi-search-hit-active');
-		if (mark) mark.scrollIntoView({block: 'center', inline: 'nearest'});
-	  });
+	  if (preserve === 'before') owner.scrollTop = oldTop + Math.max(0, owner.scrollHeight - oldHeight);
+	  else if (preserve === 'tail') owner.scrollTop = owner.scrollHeight;
+	  if (state.match) requestAnimationFrame(() => centerLogViewMatch(element, false));
 	}
 
   function paintLogViewState(state, preserve) {
@@ -1383,6 +1400,50 @@
 		return;
 	  }
 	  paintLogViewElement(element, state, preserve);
+	});
+  }
+
+  function clearLogViewSearchMatches(jobID) {
+	logViewStates.forEach(state => {
+	  if (state.jobID !== String(jobID || '') || !state.match) return;
+	  state.match = null;
+	  paintLogViewState(state, 'none');
+	});
+  }
+
+  function bindLogViewScrollOwner(element, state, view) {
+	if (!element.isConnected) return;
+	const scrollOwner = logViewScrollOwner(element);
+	scrollOwner.tabIndex = 0;
+	scrollOwner.__ciwiLogElement = element;
+	scrollOwner.__ciwiLogState = state;
+	scrollOwner.__ciwiOutputView = view;
+	if (scrollOwner.dataset.ciwiLogScrollIntent !== '1') {
+	  scrollOwner.dataset.ciwiLogScrollIntent = '1';
+	  scrollOwner.addEventListener('scroll', () => {
+		const currentElement = scrollOwner.__ciwiLogElement;
+		const currentState = scrollOwner.__ciwiLogState;
+		const currentView = scrollOwner.__ciwiOutputView;
+		if (!currentElement || !currentState) return;
+		currentState.touched = Date.now();
+		if (scrollOwner.scrollTop < 96 && currentState.hasBefore && currentState.chunks.length) {
+		  loadLogViewPage(currentState, 'before', Number(currentState.chunks[0].id));
+		}
+		if (scrollOwner.scrollHeight - scrollOwner.clientHeight - scrollOwner.scrollTop < 96 && currentState.hasAfter && currentState.chunks.length) {
+		  loadLogViewPage(currentState, 'after', Number(currentState.chunks[currentState.chunks.length - 1].id));
+		}
+		if (currentView && currentView.output_tailing && scrollOwner.scrollHeight - scrollOwner.clientHeight - scrollOwner.scrollTop > 3) {
+		  setOutputTailing(currentView, false);
+		}
+	  }, {passive: true});
+	}
+	if (view && view.output_tailing) scrollOwner.scrollTop = scrollOwner.scrollHeight;
+  }
+
+  function bindRenderedLogViews() {
+	root.querySelectorAll('.dsl-log-view[data-log-key]').forEach(element => {
+	  const state = logViewStates.get(element.dataset.logKey);
+	  if (state) bindLogViewScrollOwner(element, state, state.view);
 	});
   }
 
@@ -1453,21 +1514,8 @@
 	const view = data.jobDetails;
 	const state = logViewState(jobID, itemID, view);
 	element.dataset.logKey = state.key;
-	element.tabIndex = 0;
 	paintLogViewElement(element, state, 'none');
 	state.elements.add(element);
-	element.addEventListener('scroll', () => {
-	  state.touched = Date.now();
-	  if (element.scrollTop < 96 && state.hasBefore && state.chunks.length) {
-		loadLogViewPage(state, 'before', Number(state.chunks[0].id));
-	  }
-	  if (element.scrollHeight - element.clientHeight - element.scrollTop < 96 && state.hasAfter && state.chunks.length) {
-		loadLogViewPage(state, 'after', Number(state.chunks[state.chunks.length - 1].id));
-	  }
-	  if (view && view.output_tailing && element.scrollHeight - element.clientHeight - element.scrollTop > 3) {
-		setOutputTailing(view, false);
-	  }
-	}, {passive: true});
 	if (!state.loaded && !state.loading) {
 	  loadLogViewPage(state, jobOutputStartsAtTail(view) ? 'tail' : 'head', 0);
 	}
@@ -1564,6 +1612,7 @@
 	const query = String(view.output_search || '');
 	const generation = ++fullLogSearchGeneration;
 	if (Array.from(query).length < 3) {
+	  clearLogViewSearchMatches(view.id);
 	  view.output_match_index = 0;
 	  view.output_total_matches = 0;
 	  view.output_search_count = query ? 'Enter 3+ characters' : '0/0';
@@ -1583,15 +1632,16 @@
 	  ? String(view.output_match_index + 1) + '/' + String(view.output_total_matches)
 	  : '0/0';
 	updateJobOutputSearchCount(view);
+	clearLogViewSearchMatches(view.id);
 	if (!result.match) return;
 	if (result.match.item_id) revealBrowserOutputGroup(view, result.match.item_id);
 	const state = logViewState(view.id, result.match.item_id || '', view);
 	state.match = result.match;
+	setOutputTailing(view, false);
 	await loadLogViewPage(state, 'around', Number(result.match.chunk_id));
 	requestAnimationFrame(() => {
 	  state.elements.forEach(element => {
-		const mark = element.querySelector('.ciwi-search-hit-active');
-		if (mark) mark.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'});
+		centerLogViewMatch(element, true);
 	  });
 	});
   }
@@ -1671,7 +1721,7 @@
 	container.dataset.ciwiScrollIntent = '1';
 	container.addEventListener('scroll', () => {
 	  const currentView = container.__ciwiOutputView;
-	  if (!currentView || programmaticOutputScroll || !currentView.output_tailing || outputIsAtBottom(container)) return;
+	  if (!currentView || currentView.interactive_log_available || programmaticOutputScroll || !currentView.output_tailing || outputIsAtBottom(container)) return;
 	  setOutputTailing(currentView, false);
 	}, {passive: true});
   }
@@ -1692,7 +1742,7 @@
 	renderCurrent();
 	const currentScroller = document.getElementById('job-output-groups');
 	bindJobOutputScrollIntent(view);
-	if (view.output_tailing) scrollJobOutputToEnd(currentScroller);
+	if (view.output_tailing && !view.interactive_log_available) scrollJobOutputToEnd(currentScroller);
 	updateJobOutputSearchCount(view);
 	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
   }

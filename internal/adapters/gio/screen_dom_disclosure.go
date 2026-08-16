@@ -124,7 +124,15 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	bodyChildren := []giodom.Element{}
 	if expanded {
 		if node.Style.Role == "output-group" {
-			bodyChildren = r.compileDOMChildrenOmittingRole(node.Children, data, path+"/body", childStyle, "floating-collapse")
+			if nativeInteractiveJobLog(data) {
+				if body, ok := r.compileDOMInteractiveOutputGroupBody(node.Children, data, path+"/body", childStyle); ok {
+					bodyChildren = []giodom.Element{body}
+				} else {
+					bodyChildren = r.compileDOMChildrenOmittingRole(node.Children, data, path+"/body", childStyle, "floating-collapse")
+				}
+			} else {
+				bodyChildren = r.compileDOMChildrenOmittingRole(node.Children, data, path+"/body", childStyle, "floating-collapse")
+			}
 		} else {
 			bodyChildren = r.compileDOMChildren(node.Children, data, path+"/body", childStyle)
 		}

@@ -511,13 +511,17 @@ func TestJobOutputGroupsUseAuthoritativeStepContentTypography(t *testing.T) {
 		t.Fatalf("output-group layout = gap %q padding %q, want compact shared spacing", outputGroup.Layout.Gap, outputGroup.Layout.Padding)
 	}
 	rolesByLiteral := map[string]string{}
-	for index := range outputGroup.Children {
-		child := &outputGroup.Children[index]
+	var outputBody *uidsl.Node
+	walkNodes(*outputGroup, func(child *uidsl.Node) {
 		if child.Component == "badge" {
 			t.Error("expanded output group must not duplicate the job-step status pill")
 		}
+		if child.Style.Role == "output-group-body" {
+			copy := *child
+			outputBody = &copy
+		}
 		if child.Text == nil {
-			continue
+			return
 		}
 		if child.Text.Binding == "outputGroup.command_summary" {
 			t.Error("expanded output group must not duplicate the raw command before its YAML section")
@@ -525,6 +529,9 @@ func TestJobOutputGroupsUseAuthoritativeStepContentTypography(t *testing.T) {
 		if child.Text.Literal != "" {
 			rolesByLiteral[child.Text.Literal] = child.Style.Role
 		}
+	})
+	if outputBody == nil || outputBody.Component != "column" || outputBody.Layout.Direction != "vertical" {
+		t.Fatalf("output-group body = %#v, want an explicit vertical scroll boundary", outputBody)
 	}
 	for literal, wantRole := range map[string]string{
 		"YAML literal":     "output-label",

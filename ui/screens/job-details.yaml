@@ -539,139 +539,146 @@ screen:
                         arguments:
                           prefix: "{{outputGroup.state_key}}"
                           expanded: "false"
-                  - component: text
-                    text: {literal: "Status: Not reached"}
-                    visible: {binding: outputGroup.reached, equals: "false"}
-                    style: {role: output-meta, tone: console-muted}
-                  - component: text
-                    text:
-                      template: "Started: {{outputGroup.started}}"
-                    visible:
-                      binding: outputGroup.started
-                      empty: true
-                      not: true
+                  - component: column
                     style:
-                      role: output-meta
-                      tone: console-muted
-                  - component: text
-                    text:
-                      template: "Duration: {{outputGroup.duration}}"
-                    visible:
-                      binding: outputGroup.duration
-                      empty: true
-                      not: true
-                    style:
-                      role: output-meta
-                      tone: console-muted
-                  - component: text
-                    text:
-                      template: "Exit code: {{outputGroup.exit_code}}"
-                    visible:
-                      binding: outputGroup.exit_code
-                      empty: true
-                      not: true
-                    style: {role: output-meta, tone: console-text}
-                  - component: text
-                    text:
-                      template: "Error: {{outputGroup.error}}"
-                    visible:
-                      binding: outputGroup.error
-                      empty: true
-                      not: true
-                    style:
-                      role: output-meta
-                      tone: danger
-                  - component: text
-                    text:
-                      literal: Details
-                    visible:
-                      binding: outputGroup.kind
-                      equals: phase
-                    style:
-                      role: output-label
-                      tone: console-accent
-                  - component: text
-                    text:
-                      binding: outputGroup.details
-                    visible:
-                      binding: outputGroup.kind
-                      equals: phase
-                    style:
-                      role: output-code
-                      tone: console-text
-                  - component: text
-                    text:
-                      literal: YAML literal
-                    visible:
-                      binding: outputGroup.kind
-                      equals: phase
-                      not: true
-                    style:
-                      role: output-label
-                      tone: console-accent
-                  - component: text
-                    text:
-                      binding: outputGroup.yaml_literal
-                    visible:
-                      binding: outputGroup.kind
-                      equals: phase
-                      not: true
-                    style:
-                      role: output-code
-                      tone: console-text
-                  - component: text
-                    text:
-                      literal: Expanded command
-                    visible:
-                      binding: outputGroup.kind
-                      equals: phase
-                      not: true
-                    style:
-                      role: output-label
-                      tone: console-accent
-                  - component: text
-                    text:
-                      binding: outputGroup.expanded_command
-                    visible:
-                      binding: outputGroup.kind
-                      equals: phase
-                      not: true
-                    style:
-                      role: output-code
-                      tone: console-text
-                  - component: text
-                    text:
-                      literal: Output
-                    style:
-                      role: output-label
-                      tone: console-accent
-                  - component: text
-                    id: job-output-group-text
-                    text:
-                      binding: outputGroup.output
-                    visible:
-                      binding: outputGroup.output
-                      empty: true
-                      not: true
-                  - component: log-view
-                    visible:
-                      binding: jobDetails.interactive_log_available
-                    logView:
-                      jobExecutionId: jobDetails.id
-                      itemId: outputGroup.id
-                    style:
-                      role: output-code
-                      tone: console-text
-                  - component: text
-                    text:
-                      binding: outputGroup.empty_output_label
-                    visible:
-                      binding: outputGroup.empty_output_label
-                      empty: true
-                      not: true
-                    style:
-                      role: output-code
-                      tone: console-muted
+                      role: output-group-body
+                    layout:
+                      direction: vertical
+                      gap: "0"
+                    children:
+                      - component: text
+                        text: {literal: "Status: Not reached"}
+                        visible: {binding: outputGroup.reached, equals: "false"}
+                        style: {role: output-meta, tone: console-muted}
+                      - component: text
+                        text:
+                          template: "Started: {{outputGroup.started}}"
+                        visible:
+                          binding: outputGroup.started
+                          empty: true
+                          not: true
+                        style:
+                          role: output-meta
+                          tone: console-muted
+                      - component: text
+                        text:
+                          template: "Duration: {{outputGroup.duration}}"
+                        visible:
+                          binding: outputGroup.duration
+                          empty: true
+                          not: true
+                        style:
+                          role: output-meta
+                          tone: console-muted
+                      - component: text
+                        text:
+                          template: "Exit code: {{outputGroup.exit_code}}"
+                        visible:
+                          binding: outputGroup.exit_code
+                          empty: true
+                          not: true
+                        style: {role: output-meta, tone: console-text}
+                      - component: text
+                        text:
+                          template: "Error: {{outputGroup.error}}"
+                        visible:
+                          binding: outputGroup.error
+                          empty: true
+                          not: true
+                        style:
+                          role: output-meta
+                          tone: danger
+                      - component: text
+                        text:
+                          literal: Details
+                        visible:
+                          binding: outputGroup.kind
+                          equals: phase
+                        style:
+                          role: output-label
+                          tone: console-accent
+                      - component: text
+                        text:
+                          binding: outputGroup.details
+                        visible:
+                          binding: outputGroup.kind
+                          equals: phase
+                        style:
+                          role: output-code
+                          tone: console-text
+                      - component: text
+                        text:
+                          literal: YAML literal
+                        visible:
+                          binding: outputGroup.kind
+                          equals: phase
+                          not: true
+                        style:
+                          role: output-label
+                          tone: console-accent
+                      - component: text
+                        text:
+                          binding: outputGroup.yaml_literal
+                        visible:
+                          binding: outputGroup.kind
+                          equals: phase
+                          not: true
+                        style:
+                          role: output-code
+                          tone: console-text
+                      - component: text
+                        text:
+                          literal: Expanded command
+                        visible:
+                          binding: outputGroup.kind
+                          equals: phase
+                          not: true
+                        style:
+                          role: output-label
+                          tone: console-accent
+                      - component: text
+                        text:
+                          binding: outputGroup.expanded_command
+                        visible:
+                          binding: outputGroup.kind
+                          equals: phase
+                          not: true
+                        style:
+                          role: output-code
+                          tone: console-text
+                      - component: text
+                        text:
+                          literal: Output
+                        style:
+                          role: output-label
+                          tone: console-accent
+                      - component: text
+                        id: job-output-group-text
+                        text:
+                          binding: outputGroup.output
+                        visible:
+                          binding: outputGroup.output
+                          empty: true
+                          not: true
+                      - component: log-view
+                        visible:
+                          binding: jobDetails.interactive_log_available
+                        logView:
+                          jobExecutionId: jobDetails.id
+                          itemId: outputGroup.id
+                        style:
+                          role: output-code
+                          tone: console-text
+                      - component: text
+                        text:
+                          binding: outputGroup.empty_output_label
+                        visible:
+                          binding: outputGroup.empty_output_label
+                          empty: true
+                          not: true
+                        style:
+                          role: output-code
+                          tone: console-muted
       - component: column
         visible: {binding: jobDetails.ready}
         id: execution-reports

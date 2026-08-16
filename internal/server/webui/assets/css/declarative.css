@@ -129,6 +129,8 @@ a.dsl-tree-label { color:var(--accent); }
 .dsl-output-code { white-space:pre-wrap; overflow-wrap:anywhere; font:var(--ciwi-type-output-code-weight) var(--ciwi-type-output-code-size)/var(--ciwi-type-output-code-line-height) var(--ciwi-type-output-code-family); }
 .dsl-log-view { min-height:var(--ciwi-log-view-min-height, 48px); max-height:var(--ciwi-log-view-max-height, 420px); overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; color:var(--console-ink); background:var(--console-surface); }
 .dsl-log-view-text { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font:var(--ciwi-type-output-code-weight) var(--ciwi-type-output-code-size)/var(--ciwi-type-output-code-line-height) var(--ciwi-type-output-code-family); }
+.dsl-output-group-body.dsl-interactive-log-body { box-sizing:border-box; min-height:var(--ciwi-log-view-min-height, 48px); max-height:min(var(--ciwi-log-view-max-height, 420px), calc(clamp(240px, 70dvh, 660px) - 96px)); overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.dsl-output-group-body.dsl-interactive-log-body > .dsl-log-view { min-height:0; max-height:none; overflow:visible; scrollbar-gutter:auto; }
 .dsl-output-system { color:var(--console-ink); background:var(--console-surface); border-color:var(--console-line); }
 .dsl-output-system .dsl-code { color:var(--console-ink); background:transparent; }
 #job-output-groups { position:relative; box-sizing:border-box; max-height:clamp(240px, 70dvh, 660px) !important; padding:8px; overflow-x:hidden; overflow-y:auto; overscroll-behavior-y:auto; border:1px solid var(--console-line); border-radius:var(--ciwi-surface-radius, 12px); background:var(--console-background); }

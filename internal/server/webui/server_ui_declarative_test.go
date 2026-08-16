@@ -273,6 +273,9 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if groups.ID != "job-output-groups" || groups.Layout.MaxHeight != "660" || groups.Children[0].Children[0].Style.Role != "floating-collapse" {
 		t.Fatalf("job output groups = %#v", groups)
 	}
+	if len(groups.Children[0].Children) < 2 || groups.Children[0].Children[1].Style.Role != "output-group-body" {
+		t.Fatalf("job output group body = %#v, want explicit shared scroll boundary", groups.Children[0].Children)
+	}
 }
 
 func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
@@ -675,6 +678,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"/ui/contracts/controls.json", "controls().select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-select-chevron-gap",
 		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) var(--ciwi-progress-tint, 18%)",
 		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", "overscroll-behavior-y:auto", ".dsl-output-group:not([open]) > summary",
+		".dsl-output-group-body.dsl-interactive-log-body", "logViewScrollOwner", "centerLogViewMatch", "bindRenderedLogViews", "clearLogViewSearchMatches", "currentView.interactive_log_available",
 		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-output-group > summary { color:var(--console-accent)",
 		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
