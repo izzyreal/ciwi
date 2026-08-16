@@ -71,18 +71,10 @@ chmod +x "$FINAL_APP/Contents/MacOS/Ciwi"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$FINAL_APP/Contents/Info.plist")" = "APPL"
 lipo "$FINAL_APP/Contents/MacOS/Ciwi" -verify_arch arm64 x86_64
 
-FINAL_DSYM="$OUTPUT_DIRECTORY/Ciwi.app.dSYM"
-rm -rf "$FINAL_DSYM"
-xcrun dsymutil --quiet "$FINAL_APP/Contents/MacOS/Ciwi" -o "$FINAL_DSYM"
-# Go links its DWARF directly into the final Mach-O instead of leaving the
-# object-file debug map that dsymutil normally consumes. Keep an UUID-identical
-# debug Mach-O in the conventional dSYM bundle produced above.
-cp "$FINAL_APP/Contents/MacOS/Ciwi" "$FINAL_DSYM/Contents/Resources/DWARF/Ciwi"
 "$ROOT_DIRECTORY/packaging/verify-apple-debug-info.sh" \
     "$FINAL_APP/Contents/MacOS/Ciwi" \
     "arm64 x86_64" \
-    "github.com/izzyreal/ciwi/internal/adapters/gio.(*Renderer).SetOperations" \
-    "$FINAL_DSYM"
+    "github.com/izzyreal/ciwi/internal/adapters/gio.(*Renderer).SetOperations"
 
 for ARCH in arm64 x86_64; do
     ACTUAL_MINIMUM=$(vtool -show-build -arch "$ARCH" "$FINAL_APP/Contents/MacOS/Ciwi" | awk '$1 == "minos" { print $2; exit }')

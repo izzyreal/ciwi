@@ -750,7 +750,6 @@ pipelines:
         timeout_seconds: 1200
         artifacts:
           - dist/codesigned-macos/Ciwi.app/**
-          - dist/codesigned-macos/Ciwi.app.dSYM/**
         steps:
           - name: Check Apple signing credentials
             run: test -n "$DEV_IDENTITY_APP"
@@ -765,11 +764,11 @@ pipelines:
             env:
               DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
           - name: Verify unsigned macOS desktop app
-            run: test -d dist/desktop-macos-unsigned/Ciwi.app && test -d dist/desktop-macos-unsigned/Ciwi.app.dSYM
+            run: test -d dist/desktop-macos-unsigned/Ciwi.app
           - name: Restore macOS desktop executable permissions
             run: chmod +x dist/desktop-macos-unsigned/Ciwi.app/Contents/MacOS/Ciwi && test -x dist/desktop-macos-unsigned/Ciwi.app/Contents/MacOS/Ciwi
           - name: Prepare signed macOS desktop output
-            run: rm -rf dist/codesigned-macos/Ciwi.app dist/codesigned-macos/Ciwi.app.dSYM && mkdir -p dist/codesigned-macos
+            run: rm -rf dist/codesigned-macos/Ciwi.app && mkdir -p dist/codesigned-macos
             skip_dry_run: true
           - name: Sign macOS desktop app
             run: codesign --force --deep --strict --options=runtime --runtime-version 11.0 --entitlements packaging/macos-entitlements.plist --timestamp --sign "$DEV_IDENTITY_APP" dist/desktop-macos-unsigned/Ciwi.app
@@ -793,7 +792,7 @@ pipelines:
               fi
             skip_dry_run: true
           - name: Publish signed macOS desktop app
-            run: cp -R dist/desktop-macos-unsigned/Ciwi.app dist/codesigned-macos/Ciwi.app && cp -R dist/desktop-macos-unsigned/Ciwi.app.dSYM dist/codesigned-macos/Ciwi.app.dSYM
+            run: cp -R dist/desktop-macos-unsigned/Ciwi.app dist/codesigned-macos/Ciwi.app
             skip_dry_run: true
 
   - id: package-macos
@@ -820,7 +819,6 @@ pipelines:
         timeout_seconds: 2400
         artifacts:
           - dist/Ciwi-Client-macos-v*.dmg
-          - dist/Ciwi-Client-macos-v*.dSYM.zip
         steps:
           - name: Check Apple notarization credentials
             run: test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
@@ -845,10 +843,7 @@ pipelines:
               APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
               APPLE_ID: "{{ secret.apple-id }}"
           - name: Verify signed macOS desktop app
-            run: test -d dist/codesigned-macos/Ciwi.app && test -d dist/codesigned-macos/Ciwi.app.dSYM && chmod +x dist/codesigned-macos/Ciwi.app/Contents/MacOS/Ciwi && test -x dist/codesigned-macos/Ciwi.app/Contents/MacOS/Ciwi && codesign --verify --deep --strict -v dist/codesigned-macos/Ciwi.app && sh packaging/verify-apple-debug-info.sh dist/codesigned-macos/Ciwi.app/Contents/MacOS/Ciwi "arm64 x86_64" "github.com/izzyreal/ciwi/internal/adapters/gio.(*Renderer).SetOperations" dist/codesigned-macos/Ciwi.app.dSYM
-            skip_dry_run: true
-          - name: Package macOS desktop debug symbols
-            run: VERSION="${CIWI_PIPELINE_VERSION#v}" && rm -f "dist/Ciwi-Client-macos-v${VERSION}.dSYM.zip" && ditto -c -k --sequesterRsrc --keepParent dist/codesigned-macos/Ciwi.app.dSYM "dist/Ciwi-Client-macos-v${VERSION}.dSYM.zip"
+            run: test -d dist/codesigned-macos/Ciwi.app && chmod +x dist/codesigned-macos/Ciwi.app/Contents/MacOS/Ciwi && test -x dist/codesigned-macos/Ciwi.app/Contents/MacOS/Ciwi && codesign --verify --deep --strict -v dist/codesigned-macos/Ciwi.app && sh packaging/verify-apple-debug-info.sh dist/codesigned-macos/Ciwi.app/Contents/MacOS/Ciwi "arm64 x86_64" "github.com/izzyreal/ciwi/internal/adapters/gio.(*Renderer).SetOperations"
             skip_dry_run: true
           - name: Build macOS desktop disk image
             run: VERSION="${CIWI_PIPELINE_VERSION#v}" && sh packaging/build-macos-dmg.sh dist/codesigned-macos/Ciwi.app "$VERSION" "dist/Ciwi-Client-macos-v${VERSION}.dmg"

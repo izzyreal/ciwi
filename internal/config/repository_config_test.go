@@ -72,7 +72,7 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	desktopBuild := pipelineByID("build-desktop")
 	macOSUnsigned := jobByID(desktopBuild, "macos-unsigned")
 	if !slices.Contains(macOSUnsigned.Artifacts, "dist/desktop-macos-unsigned/**") {
-		t.Fatalf("macOS desktop build must publish its app and dSYM directory: %+v", macOSUnsigned.Artifacts)
+		t.Fatalf("macOS desktop build must publish its app bundle: %+v", macOSUnsigned.Artifacts)
 	}
 	jobByID(desktopBuild, "windows-amd64")
 	jobByID(desktopBuild, "linux-amd64")
@@ -81,12 +81,12 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 		t.Fatalf("unexpected macOS desktop signing dependencies: %+v", desktopSign.DependsOn)
 	}
 	macOSSign := jobByID(desktopSign, "macos-app")
-	if !slices.Contains(macOSSign.Artifacts, "dist/codesigned-macos/Ciwi.app.dSYM/**") {
-		t.Fatalf("macOS signing must preserve the matching dSYM: %+v", macOSSign.Artifacts)
+	if slices.Contains(macOSSign.Artifacts, "dist/codesigned-macos/Ciwi.app.dSYM/**") {
+		t.Fatalf("macOS signing must not duplicate embedded debug information in a dSYM artifact: %+v", macOSSign.Artifacts)
 	}
 	macOSPackage := jobByID(pipelineByID("package-macos"), "macos-dmg")
-	if !slices.Contains(macOSPackage.Artifacts, "dist/Ciwi-Client-macos-v*.dSYM.zip") {
-		t.Fatalf("macOS packaging must retain a versioned dSYM artifact: %+v", macOSPackage.Artifacts)
+	if slices.Contains(macOSPackage.Artifacts, "dist/Ciwi-Client-macos-v*.dSYM.zip") {
+		t.Fatalf("macOS packaging must not duplicate embedded debug information in a dSYM ZIP: %+v", macOSPackage.Artifacts)
 	}
 
 	iosBuild := pipelineByID("ios")
