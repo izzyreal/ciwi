@@ -550,7 +550,7 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 				if iconOnly {
 					return r.layoutGlyph(gtx, iconName, inkTone, unit.Dp(iconSize))
 				}
-				reservedWidth := r.domWidestControlLabel(gtx, options.ReservedLabels)
+				reservedWidth := r.domWidestControlLabel(gtx, options.ReservedLabels, false)
 				iconWidth := 0
 				if iconName != "" {
 					iconWidth = gtx.Dp(unit.Dp(iconSize + iconGap))
@@ -606,13 +606,13 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 	})
 }
 
-func (r *Renderer) domWidestControlLabel(gtx layout.Context, labels []string) int {
+func (r *Renderer) domWidestControlLabel(gtx layout.Context, labels []string, strong bool) int {
 	widest := 0
 	for _, value := range labels {
 		measure := gtx
 		measure.Constraints.Min = image.Point{}
 		macro := op.Record(gtx.Ops)
-		label := r.materialTextLabel(value, "control", false)
+		label := r.materialTextLabel(value, "control", strong)
 		label.MaxLines = 1
 		dimensions := label.Layout(measure)
 		_ = macro.Stop()
@@ -937,7 +937,14 @@ func (r *Renderer) domSelectMenuWidth(gtx layout.Context, headerWidth int, optio
 		labels = append(labels, option.label)
 	}
 	metrics := r.controls.Select
-	optionWidth := r.domWidestControlLabel(gtx, labels) +
+	// Every option can become selected, and selected options use strong
+	// typography. Reserve the widest rendering across both visual states so
+	// changing the selection cannot make a label wrap.
+	labelWidth := max(
+		r.domWidestControlLabel(gtx, labels, false),
+		r.domWidestControlLabel(gtx, labels, true),
+	)
+	optionWidth := labelWidth +
 		2*gtx.Dp(unit.Dp(metrics.OptionPaddingX)) +
 		gtx.Dp(unit.Dp(metrics.SelectionIndicatorWidth)) +
 		gtx.Dp(unit.Dp(metrics.OptionGap))

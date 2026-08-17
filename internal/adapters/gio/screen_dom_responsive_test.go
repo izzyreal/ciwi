@@ -196,6 +196,40 @@ func TestNativeSelectUsesSharedOptionHeight(t *testing.T) {
 	}
 }
 
+func TestNativeSelectMenuWidthIncludesSelectedTypography(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	options := []nativeSelectOption{
+		{value: "discover", label: "Automatic discovery"},
+		{value: "explicit", label: "Explicit endpoint"},
+		{value: "ssh", label: "Remote server (SSH)"},
+	}
+	operations := new(op.Ops)
+	gtx := layout.Context{
+		Ops: operations, Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Now: time.Unix(1_800_000_000, 0),
+		Constraints: layout.Constraints{Max: image.Pt(300, 100)},
+	}
+	menuWidth := renderer.domSelectMenuWidth(gtx, 0, options)
+	metrics := renderer.controls.Select
+	labelWidth := menuWidth -
+		2*gtx.Dp(unit.Dp(metrics.MenuPadding)) -
+		2*gtx.Dp(unit.Dp(metrics.OptionPaddingX)) -
+		gtx.Dp(unit.Dp(metrics.SelectionIndicatorWidth)) -
+		gtx.Dp(unit.Dp(metrics.OptionGap))
+
+	for _, option := range options {
+		measure := gtx
+		measure.Constraints.Min = image.Point{}
+		macro := op.Record(gtx.Ops)
+		selectedLabel := renderer.materialTextLabel(option.label, "control", true)
+		selectedLabel.MaxLines = 1
+		selectedWidth := selectedLabel.Layout(measure).Size.X
+		_ = macro.Stop()
+		if selectedWidth > labelWidth {
+			t.Errorf("selected option %q width = %d, menu label width = %d", option.label, selectedWidth, labelWidth)
+		}
+	}
+}
+
 func TestNativePresentationTextIsPassiveButCodeRemainsSelectable(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	ordinary := renderer.compileDOMNode(uidsl.Node{
