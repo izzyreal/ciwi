@@ -2,6 +2,7 @@ apiVersion: ciwi.ui/v1
 kind: Routes
 routes:
   - {name: front-page, pattern: /, screen: front-page, bindingRoot: frontPage, platforms: [web, gio]}
+  - {name: downloads, pattern: /downloads, screen: downloads, bindingRoot: downloads, platforms: [gio]}
   - {name: project-details, pattern: "/projects/{projectId}", screen: project-details, bindingRoot: projectDetails, platforms: [web, gio]}
   - {name: job-details, pattern: "/jobs/{jobId}", screen: job-details, bindingRoot: jobDetails, platforms: [web, gio]}
   - {name: pipeline-run-options, pattern: "/run-options/projects/{projectId}/pipelines/{pipelineId}", screen: run-options, bindingRoot: runOptions, platforms: [web, gio]}

@@ -417,6 +417,10 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
+	downloadsScreen, err := sharedUI.LoadScreen("downloads")
+	if err != nil {
+		return err
+	}
 	projectDetailsScreen, err := sharedUI.LoadScreen("project-details")
 	if err != nil {
 		return err
@@ -454,7 +458,7 @@ func Run(options Options) error {
 		return err
 	}
 	screens := map[string]*uidsl.ScreenDocument{
-		"front-page": frontPageScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
+		"front-page": frontPageScreen, "downloads": downloadsScreen, "project-details": projectDetailsScreen, "job-details": jobDetailsScreen,
 		"settings": settingsScreen, "managed-yaml": managedYAMLScreen, "run-options": runOptionsScreen, "agents": agentsScreen, "agent-details": agentDetailsScreen,
 		"agent-script": agentScriptScreen, "vault": vaultScreen,
 	}
@@ -592,14 +596,34 @@ func Run(options Options) error {
 func runController(ctx context.Context, window *app.Window, renderer nativeRenderer, commands <-chan commandRequest, lifecycle *nativeLifecycleMailbox, screens map[string]*uidsl.ScreenDocument, actionCatalog *uidsl.ActionCatalogDocument, options Options, themeName, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal, artifactPicker artifactDestinationPicker) {
 	downloadManager, downloadManagerErr := newArtifactDownloadManager(ctx, preferencesPath, artifactPicker)
 	var downloadChanges <-chan struct{}
-	var downloadCompletions <-chan nativeDownloadCompletion
+	var downloadEvents <-chan nativeDownloadEvent
 	if downloadManagerErr != nil {
 		renderer.ShowAlert("Downloads could not be restored", downloadManagerErr.Error())
 	} else {
 		defer downloadManager.Close()
 		downloadChanges = downloadManager.Changed()
-		downloadCompletions = downloadManager.Completed()
-		renderer.SetDownloads(downloadManager.Snapshot())
+		downloadEvents = downloadManager.Events()
+	}
+	showDownloadsScreen := func() error {
+		snapshot := []nativeDownloadSnapshot(nil)
+		if downloadManager != nil {
+			snapshot = downloadManager.Snapshot()
+		}
+		data := downloadsBindingData(snapshot)
+		if err := validateNativeBindings(screens["downloads"], data); err != nil {
+			return err
+		}
+		renderer.SetScreenAndData(screens["downloads"], data)
+		return nil
+	}
+	applyDownloadBindings := func() {
+		if downloadManager == nil {
+			return
+		}
+		root := downloadsBindingData(downloadManager.Snapshot())["downloads"].(map[string]any)
+		for _, key := range []string{"items", "empty", "summary"} {
+			renderer.SetRootBinding("downloads", key, root[key])
+		}
 	}
 	screenCache := newNativeScreenCache()
 	pendingCancellations := map[string]bool{}
@@ -837,6 +861,9 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 		launchScreenLoad(target, request)
 	}
 	requestScreenRefresh := func(target navigationState, request screenRefreshRequest) {
+		if target.screen == "downloads" {
+			return
+		}
 		if request.origin.passive() {
 			scheduleRefreshDelay(target, request, passiveRefreshDebounce)
 			return
@@ -873,7 +900,11 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 		navigation, _ = navigationForRoute(options.Route)
 	}
 	navigationHistory := []navigationState{}
-	if navigation.screen == "front-page" || navigation.screen == "settings" {
+	if navigation.screen == "downloads" {
+		if err := showDownloadsScreen(); err != nil {
+			renderer.ShowAlert("Screen unavailable", err.Error())
+		}
+	} else if navigation.screen == "front-page" || navigation.screen == "settings" {
 		if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, themeName, mode, endpoint, sshSettings); err != nil {
 			renderer.ShowAlert("Screen unavailable", err.Error())
 		}
@@ -920,6 +951,17 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 	}
 	beginNavigationWith := func(target navigationState, recoverMissingRoute bool) error {
 		cancelJobLogSearch()
+		if target.screen == "downloads" {
+			if screenLoadCancel != nil {
+				screenLoadCancel()
+				screenLoadCancel = nil
+			}
+			stopRefreshDelay()
+			navigation = target
+			pendingNavigation = nil
+			stopOutput()
+			return showDownloadsScreen()
+		}
 		if cached, ok := screenCache.Get(target); ok {
 			navigation = target
 			pending := target
@@ -1208,12 +1250,19 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			watchErrors = connected.watchErrors
 			address = connected.address
 			sessionSupervisor.ResetBackoff()
-			if screenCache.SetServerInstallationID(client.Welcome().GetServerInstallationId()) {
+			cacheServerChanged := screenCache.SetServerInstallationID(client.Welcome().GetServerInstallationId())
+			if navigation.screen != "downloads" && cacheServerChanged {
 				if err := showScreenLoading(navigation); err != nil {
 					renderer.ShowAlert("Screen unavailable", err.Error())
 				}
 			}
-			startScreenLoad(navigation)
+			if navigation.screen == "downloads" {
+				if err := showDownloadsScreen(); err != nil {
+					renderer.ShowAlert("Screen unavailable", err.Error())
+				}
+			} else {
+				startScreenLoad(navigation)
+			}
 			if mode != connectionModeSSH {
 				rememberSuccessfulEndpoint(preferencesPath, address)
 				preferences.LastSuccessfulEndpoint = address
@@ -1501,16 +1550,26 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			}
 			window.Invalidate()
 		case <-downloadChanges:
-			renderer.SetDownloads(downloadManager.Snapshot())
+			if navigation.screen == "downloads" && downloadManager != nil {
+				applyDownloadBindings()
+			}
 			window.Invalidate()
-		case result := <-downloadCompletions:
-			label := defaultString(strings.TrimSpace(result.Label), "Artifact")
-			if result.Cancelled {
-				renderer.ShowNotice(label+" download cancelled", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-			} else if result.Err != nil {
-				renderer.ShowNotice(label+" download failed: "+result.Err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-			} else {
-				renderer.ShowNotice("Downloaded "+strings.ToLower(label)+": "+result.FileName, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+		case event := <-downloadEvents:
+			if event.Started != nil {
+				started := *event.Started
+				name := defaultString(strings.TrimSpace(started.FileName), defaultString(strings.TrimSpace(started.Label), "download"))
+				renderer.ShowNotice("Downloading "+name, "View Downloads", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/downloads"}, presentation.TransientNoticeDuration)
+			}
+			if event.Completion != nil {
+				result := *event.Completion
+				label := defaultString(strings.TrimSpace(result.Label), "Artifact")
+				if result.Cancelled {
+					renderer.ShowNotice(label+" download cancelled", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+				} else if result.Err != nil {
+					renderer.ShowNotice(label+" download failed: "+result.Err.Error(), "View Downloads", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/downloads"}, presentation.TransientNoticeDuration)
+				} else {
+					renderer.ShowNotice("Downloaded "+strings.ToLower(label)+": "+result.FileName, "View Downloads", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/downloads"}, presentation.TransientNoticeDuration)
+				}
 			}
 			window.Invalidate()
 		case <-coordinator.Changed():
@@ -1790,8 +1849,11 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					window.Invalidate()
 					continue
 				}
-				if _, _, err := downloadManager.Start("Artifact", command.arguments); err != nil {
+				_, duplicate, err := downloadManager.Start("Artifact", command.arguments)
+				if err != nil {
 					renderer.ShowAlert("Artifact unavailable", err.Error())
+				} else if duplicate {
+					renderer.ShowNotice("That artifact is already downloading", "View Downloads", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/downloads"}, presentation.TransientNoticeDuration)
 				}
 				window.Invalidate()
 				continue
@@ -1817,12 +1879,15 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					"kind":           "log-" + format,
 				}
 				label := strings.ToUpper(format[:1]) + format[1:] + " log"
-				if _, _, err := downloadManager.Start(label, arguments); err != nil {
+				_, duplicate, err := downloadManager.Start(label, arguments)
+				if err != nil {
 					renderer.ShowAlert("Log download unavailable", err.Error())
+				} else if duplicate {
+					renderer.ShowNotice("That log is already downloading", "View Downloads", uidsl.Action{Command: "navigate"}, map[string]string{"route": "/downloads"}, presentation.TransientNoticeDuration)
 				}
 				window.Invalidate()
 				continue
-			case "download-cancel", "download-remove", "download-resume", "download-save", "download-restart":
+			case "download-pause", "download-resume", "download-retry", "download-save", "download-restart", "download-discard", "download-remove", "download-reveal":
 				if downloadManager == nil {
 					renderer.ShowAlert("Download unavailable", "The download manager is unavailable.")
 					continue
@@ -1830,19 +1895,30 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 				id := strings.TrimSpace(command.arguments["id"])
 				var downloadErr error
 				switch command.action.Command {
-				case "download-cancel":
-					downloadErr = downloadManager.Cancel(id)
+				case "download-pause":
+					downloadErr = downloadManager.Pause(id)
 				case "download-remove":
 					downloadErr = downloadManager.Remove(id)
-				case "download-resume":
+				case "download-resume", "download-retry":
 					downloadErr = downloadManager.Resume(id)
 				case "download-save":
 					downloadErr = downloadManager.Save(id)
 				case "download-restart":
 					downloadErr = downloadManager.Restart(id)
+				case "download-discard":
+					downloadErr = downloadManager.Cancel(id)
+				case "download-reveal":
+					var path string
+					path, downloadErr = downloadManager.RevealPath(id)
+					if downloadErr == nil {
+						downloadErr = revealDownloadedFile(path)
+					}
 				}
 				if downloadErr != nil {
 					renderer.ShowAlert("Download action failed", downloadErr.Error())
+				}
+				if navigation.screen == "downloads" {
+					applyDownloadBindings()
 				}
 				window.Invalidate()
 				continue
@@ -1880,7 +1956,7 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					next = navigationState{screen: "settings"}
 				}
 				if client == nil {
-					if next.screen != "front-page" && next.screen != "settings" {
+					if next.screen != "front-page" && next.screen != "settings" && next.screen != "downloads" {
 						renderer.ShowAlert("Server connection required", "This screen needs a server connection.")
 						window.Invalidate()
 						continue
@@ -1891,7 +1967,11 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 						navigationHistory = append(navigationHistory, previous)
 					}
 					stopOutput()
-					if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, themeName, mode, endpoint, sshSettings); err != nil {
+					if navigation.screen == "downloads" {
+						if err := showDownloadsScreen(); err != nil {
+							renderer.ShowAlert("Screen unavailable", err.Error())
+						}
+					} else if err := refreshOfflineScreen(renderer, screens, navigation, options.Version, themeName, mode, endpoint, sshSettings); err != nil {
 						renderer.ShowAlert("Screen unavailable", err.Error())
 					}
 					applyNativeConnectionState(renderer, nativeConnectionState{connecting: !suspended, status: "Server unavailable; reconnecting…"})

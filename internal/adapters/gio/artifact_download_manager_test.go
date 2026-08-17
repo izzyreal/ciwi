@@ -173,7 +173,11 @@ func TestArtifactDownloadManagerStagesThroughDestinationFailureAndSavesLater(t *
 	content := bytes.Repeat([]byte("payload"), 200)
 	client := &resumableDownloadClientStub{content: content, chunkSize: 173}
 	failed := &failDownloadWriter{}
-	saved := &artifactWriter{}
+	savedPath := filepath.Join(t.TempDir(), "saved-artifact.bin")
+	saved, err := os.Create(savedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	picker := &pickerSequence{writers: []io.WriteCloser{failed, saved}}
 	manager, err := newArtifactDownloadManager(t.Context(), filepath.Join(configDir, "native-ui.json"), picker)
 	if err != nil {
@@ -193,8 +197,128 @@ func TestArtifactDownloadManagerStagesThroughDestinationFailureAndSavesLater(t *
 		t.Fatal(err)
 	}
 	waitForDownloadState(t, manager, downloadCompleted)
-	if !bytes.Equal(saved.Bytes(), content) || !saved.closed {
-		t.Fatalf("saved payload = %d bytes, closed = %t", saved.Len(), saved.closed)
+	payload, err := os.ReadFile(savedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(payload, content) {
+		t.Fatalf("saved payload = %d bytes, want %d", len(payload), len(content))
+	}
+	record := manager.recordCopy(id)
+	if record == nil || record.DestinationPath != savedPath {
+		t.Fatalf("saved destination = %+v, want %q", record, savedPath)
+	}
+}
+
+func TestArtifactDownloadManagerManualPauseSurvivesRestoreWithoutAutoResume(t *testing.T) {
+	configDir := t.TempDir()
+	stageDir := filepath.Join(configDir, "downloads")
+	if err := os.MkdirAll(stageDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stagePath := filepath.Join(stageDir, "manual.part")
+	if err := os.WriteFile(stagePath, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := newArtifactDownloadManager(t.Context(), filepath.Join(configDir, "native-ui.json"), &pickerSequence{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerCtx, cancel := context.WithCancel(t.Context())
+	manager.mu.Lock()
+	manager.serverID = "server-1"
+	manager.records["manual"] = &nativeDownloadRecord{
+		ID: "manual", ServerInstallationID: "server-1", JobExecutionID: "job-1", Kind: "file",
+		ContentID: testDownloadContentID([]byte("partial-more")), TotalSize: 12, Offset: 7,
+		FileName: "artifact.bin", Label: "Artifact", StagePath: stagePath, State: downloadDownloading,
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	manager.active["manual"] = cancel
+	manager.mu.Unlock()
+	if err := manager.Pause("manual"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-workerCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("manual pause did not cancel the active worker")
+	}
+	manager.Close()
+
+	restored, err := newArtifactDownloadManager(t.Context(), filepath.Join(configDir, "native-ui.json"), &pickerSequence{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	client := &resumableDownloadClientStub{content: []byte("partial-more"), chunkSize: 5}
+	restored.AttachClient(client, "server-1")
+	time.Sleep(50 * time.Millisecond)
+	client.mu.Lock()
+	calls := client.calls
+	client.mu.Unlock()
+	snapshot := restored.Snapshot()
+	if calls != 0 || len(snapshot) != 1 || snapshot[0].State != string(downloadPaused) || !snapshot[0].PausedByUser {
+		t.Fatalf("restored manual pause = calls %d, snapshot %+v", calls, snapshot)
+	}
+}
+
+func TestArtifactDownloadManagerPersistsCompletedHistoryAndRemoveKeepsFile(t *testing.T) {
+	configDir := t.TempDir()
+	destinationPath := filepath.Join(t.TempDir(), "artifact.bin")
+	if err := os.WriteFile(destinationPath, []byte("complete"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := newArtifactDownloadManager(t.Context(), filepath.Join(configDir, "native-ui.json"), &pickerSequence{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	manager.mu.Lock()
+	manager.records["complete"] = &nativeDownloadRecord{
+		ID: "complete", FileName: "artifact.bin", Label: "Artifact", State: downloadCompleted,
+		TotalSize: 8, Offset: 8, DestinationPath: destinationPath, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := manager.saveLocked(); err != nil {
+		manager.mu.Unlock()
+		t.Fatal(err)
+	}
+	manager.mu.Unlock()
+	manager.Close()
+
+	restored, err := newArtifactDownloadManager(t.Context(), filepath.Join(configDir, "native-ui.json"), &pickerSequence{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	snapshot := restored.Snapshot()
+	if len(snapshot) != 1 || snapshot[0].State != string(downloadCompleted) || !snapshot[0].CanReveal || snapshot[0].DestinationMissing {
+		t.Fatalf("restored completed download = %+v", snapshot)
+	}
+	if err := restored.Remove("complete"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(destinationPath); err != nil {
+		t.Fatalf("removing history affected downloaded file: %v", err)
+	}
+}
+
+func TestArtifactDownloadManagerMarksMissingCompletedDestination(t *testing.T) {
+	manager, err := newArtifactDownloadManager(t.Context(), filepath.Join(t.TempDir(), "native-ui.json"), &pickerSequence{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	manager.mu.Lock()
+	manager.records["missing"] = &nativeDownloadRecord{
+		ID: "missing", State: downloadCompleted, DestinationPath: filepath.Join(t.TempDir(), "missing.bin"), UpdatedAt: time.Now().UTC(),
+	}
+	manager.mu.Unlock()
+	snapshot := manager.Snapshot()
+	if len(snapshot) != 1 || snapshot[0].CanReveal || !snapshot[0].DestinationMissing {
+		t.Fatalf("missing destination snapshot = %+v", snapshot)
+	}
+	if _, err := manager.RevealPath("missing"); err == nil {
+		t.Fatal("missing completed destination was revealable")
 	}
 }
 
@@ -227,6 +351,24 @@ func TestArtifactDownloadManagerPickerCancellationLeavesNoJournal(t *testing.T) 
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
+	}
+}
+
+func TestArtifactDownloadManagerPublishesStartedBeforeCompletion(t *testing.T) {
+	content := []byte("small artifact")
+	manager, err := newArtifactDownloadManager(t.Context(), filepath.Join(t.TempDir(), "native-ui.json"), &pickerSequence{writers: []io.WriteCloser{&artifactWriter{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	manager.AttachClient(&resumableDownloadClientStub{content: content, chunkSize: len(content)}, "server-1")
+	if _, _, err := manager.Start("Artifact", map[string]string{"jobExecutionId": "job-1", "kind": "file", "path": "artifact.bin"}); err != nil {
+		t.Fatal(err)
+	}
+	first := waitForDownloadEvent(t, manager.Events())
+	second := waitForDownloadEvent(t, manager.Events())
+	if first.Started == nil || first.Completion != nil || second.Started != nil || second.Completion == nil || second.Completion.Err != nil {
+		t.Fatalf("download events = first %+v, second %+v", first, second)
 	}
 }
 
@@ -451,6 +593,17 @@ func waitForDownloadCountInState(t *testing.T, manager *artifactDownloadManager,
 		case <-deadline.C:
 			t.Fatalf("timed out waiting for %d downloads in state %s; snapshots = %+v", count, state, manager.Snapshot())
 		}
+	}
+}
+
+func waitForDownloadEvent(t *testing.T, events <-chan nativeDownloadEvent) nativeDownloadEvent {
+	t.Helper()
+	select {
+	case event := <-events:
+		return event
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for download event")
+		return nativeDownloadEvent{}
 	}
 }
 

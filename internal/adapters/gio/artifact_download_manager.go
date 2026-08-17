@@ -47,6 +47,18 @@ const (
 type nativeDownloadSnapshot struct {
 	ID, Label, FileName, State, Error string
 	Downloaded, Total                 int64
+	UpdatedAt                         time.Time
+	PausedByUser                      bool
+	CanReveal, DestinationMissing     bool
+}
+
+type nativeDownloadStarted struct {
+	ID, Label, FileName string
+}
+
+type nativeDownloadEvent struct {
+	Started    *nativeDownloadStarted
+	Completion *nativeDownloadCompletion
 }
 
 type nativeDownloadCompletion struct {
@@ -73,6 +85,7 @@ type nativeDownloadRecord struct {
 	Error                string              `json:"error,omitempty"`
 	CreatedAt            time.Time           `json:"createdAt"`
 	UpdatedAt            time.Time           `json:"updatedAt"`
+	PausedByUser         bool                `json:"pausedByUser,omitempty"`
 
 	progressOffset int64
 }
@@ -94,6 +107,7 @@ type artifactDownloadManager struct {
 	client    artifactChunkClient
 	serverID  string
 	changed   chan struct{}
+	events    chan nativeDownloadEvent
 	completed chan nativeDownloadCompletion
 	lastUI    time.Time
 	uiTimer   *time.Timer
@@ -107,7 +121,7 @@ func newArtifactDownloadManager(ctx context.Context, preferencesPath string, pic
 		ctx: managerCtx, cancel: cancel, picker: picker,
 		path: filepath.Join(base, "native-downloads.json"), stageDir: filepath.Join(base, "downloads"),
 		records: map[string]*nativeDownloadRecord{}, active: map[string]context.CancelFunc{},
-		changed: make(chan struct{}, 1), completed: make(chan nativeDownloadCompletion, 8),
+		changed: make(chan struct{}, 1), events: make(chan nativeDownloadEvent, 16), completed: make(chan nativeDownloadCompletion, 8),
 	}
 	if err := m.restore(); err != nil {
 		cancel()
@@ -137,6 +151,7 @@ func (m *artifactDownloadManager) Close() {
 }
 
 func (m *artifactDownloadManager) Changed() <-chan struct{}                   { return m.changed }
+func (m *artifactDownloadManager) Events() <-chan nativeDownloadEvent         { return m.events }
 func (m *artifactDownloadManager) Completed() <-chan nativeDownloadCompletion { return m.completed }
 
 func (m *artifactDownloadManager) Snapshot() []nativeDownloadSnapshot {
@@ -148,12 +163,28 @@ func (m *artifactDownloadManager) Snapshot() []nativeDownloadSnapshot {
 		if offset < record.Offset {
 			offset = record.Offset
 		}
+		canReveal, destinationMissing := false, false
+		if record.State == downloadCompleted && runtime.GOOS != "ios" && strings.TrimSpace(record.DestinationPath) != "" {
+			info, err := os.Stat(record.DestinationPath)
+			destinationMissing = err != nil || info.IsDir()
+			canReveal = !destinationMissing
+		}
 		snapshot = append(snapshot, nativeDownloadSnapshot{
 			ID: record.ID, Label: record.Label, FileName: record.FileName, State: string(record.State), Error: record.Error,
-			Downloaded: offset, Total: record.TotalSize,
+			Downloaded: offset, Total: record.TotalSize, UpdatedAt: record.UpdatedAt, PausedByUser: record.PausedByUser,
+			CanReveal: canReveal, DestinationMissing: destinationMissing,
 		})
 	}
-	sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].ID < snapshot[j].ID })
+	sort.Slice(snapshot, func(i, j int) bool {
+		iCompleted, jCompleted := snapshot[i].State == string(downloadCompleted), snapshot[j].State == string(downloadCompleted)
+		if iCompleted != jCompleted {
+			return !iCompleted
+		}
+		if !snapshot[i].UpdatedAt.Equal(snapshot[j].UpdatedAt) {
+			return snapshot[i].UpdatedAt.After(snapshot[j].UpdatedAt)
+		}
+		return snapshot[i].ID < snapshot[j].ID
+	})
 	return snapshot
 }
 
@@ -166,7 +197,7 @@ func (m *artifactDownloadManager) AttachClient(client artifactChunkClient, serve
 	resume := make([]string, 0)
 	if client != nil {
 		for id, record := range m.records {
-			if record.ServerInstallationID == m.serverID && record.State == downloadPaused {
+			if record.ServerInstallationID == m.serverID && record.State == downloadPaused && !record.PausedByUser {
 				resume = append(resume, id)
 			}
 		}
@@ -295,6 +326,7 @@ func (m *artifactDownloadManager) prepare(ctx context.Context, client artifactCh
 		m.clearActive(id)
 		return
 	}
+	m.sendStarted(nativeDownloadStarted{ID: id, Label: record.Label, FileName: fileName})
 	m.run(ctx, client, id, writer, chunk)
 }
 
@@ -326,7 +358,7 @@ func (m *artifactDownloadManager) Resume(id string) error {
 		m.mu.Unlock()
 		return fmt.Errorf("download cannot be resumed in state %s", record.State)
 	}
-	record.State, record.Error, record.UpdatedAt = downloadDownloading, "", time.Now().UTC()
+	record.State, record.Error, record.UpdatedAt, record.PausedByUser = downloadDownloading, "", time.Now().UTC(), false
 	client := m.client
 	workerCtx, cancel := context.WithCancel(m.ctx)
 	m.active[id] = cancel
@@ -340,6 +372,46 @@ func (m *artifactDownloadManager) Resume(id string) error {
 	m.markChangedLocked(true)
 	m.mu.Unlock()
 	go m.run(workerCtx, client, id, nil, nil)
+	return nil
+}
+
+func (m *artifactDownloadManager) Pause(id string) error {
+	m.mu.Lock()
+	record := m.records[id]
+	if record == nil {
+		m.mu.Unlock()
+		return fmt.Errorf("download not found")
+	}
+	if record.State == downloadPaused {
+		record.PausedByUser = true
+		record.UpdatedAt = time.Now().UTC()
+		err := m.saveLocked()
+		m.markChangedLocked(true)
+		m.mu.Unlock()
+		if err != nil {
+			return fmt.Errorf("persist paused download: %w", err)
+		}
+		return nil
+	}
+	if record.State != downloadDownloading {
+		m.mu.Unlock()
+		return fmt.Errorf("download cannot be paused in state %s", record.State)
+	}
+	cancel := m.active[id]
+	if cancel == nil {
+		m.mu.Unlock()
+		return fmt.Errorf("download is not active")
+	}
+	record.PausedByUser = true
+	record.UpdatedAt = time.Now().UTC()
+	if err := m.saveLocked(); err != nil {
+		record.PausedByUser = false
+		m.mu.Unlock()
+		return fmt.Errorf("persist paused download: %w", err)
+	}
+	m.markChangedLocked(true)
+	cancel()
+	m.mu.Unlock()
 	return nil
 }
 
@@ -398,6 +470,27 @@ func (m *artifactDownloadManager) Remove(id string) error {
 		_ = os.Remove(stagePath)
 	}
 	return nil
+}
+
+func (m *artifactDownloadManager) RevealPath(id string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	record := m.records[id]
+	if record == nil {
+		return "", fmt.Errorf("download not found")
+	}
+	if record.State != downloadCompleted {
+		return "", fmt.Errorf("download is not complete")
+	}
+	path := strings.TrimSpace(record.DestinationPath)
+	if runtime.GOOS == "ios" || path == "" {
+		return "", fmt.Errorf("the saved file location is unavailable")
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return "", fmt.Errorf("the downloaded file is no longer available")
+	}
+	return path, nil
 }
 
 func (m *artifactDownloadManager) Restart(id string) error {
@@ -571,6 +664,11 @@ func (m *artifactDownloadManager) export(ctx context.Context, record nativeDownl
 		m.finishFailure(record.ID, fmt.Errorf("choose download destination: %w", err), false)
 		return
 	}
+	if err := m.setDestinationPath(record.ID, downloadWriterPath(writer)); err != nil {
+		_ = writer.Close()
+		m.finishFailure(record.ID, fmt.Errorf("record download destination: %w", err), false)
+		return
+	}
 	file, err := os.Open(record.StagePath)
 	if err == nil {
 		err = verifyDownloadContent(file, record.ContentID, record.TotalSize)
@@ -627,7 +725,7 @@ func (m *artifactDownloadManager) pause(id string, stage *os.File, offset int64,
 		current.State, current.Error, current.UpdatedAt = downloadPaused, "", time.Now().UTC()
 		_ = m.saveLocked()
 		delete(m.active, id)
-		resume = resumeIfReattached && m.client != nil && current.ServerInstallationID == m.serverID
+		resume = resumeIfReattached && !current.PausedByUser && m.client != nil && current.ServerInstallationID == m.serverID
 		m.markChangedLocked(true)
 	}
 	m.mu.Unlock()
@@ -655,7 +753,7 @@ func (m *artifactDownloadManager) complete(id string) {
 	}
 	completion := nativeDownloadCompletion{ID: id, Label: record.Label, FileName: record.FileName}
 	stagePath := record.StagePath
-	record.State, record.StagePath, record.Error = downloadCompleted, "", ""
+	record.State, record.StagePath, record.Token, record.Error, record.PausedByUser = downloadCompleted, "", "", "", false
 	record.progressOffset, record.Offset, record.UpdatedAt = record.TotalSize, record.TotalSize, time.Now().UTC()
 	if err := m.saveLocked(); err != nil {
 		record.State, record.StagePath = downloadFailed, stagePath
@@ -719,6 +817,21 @@ func (m *artifactDownloadManager) detachDestination(id string) {
 	m.mu.Unlock()
 }
 
+func (m *artifactDownloadManager) setDestinationPath(id, destinationPath string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if record := m.records[id]; record != nil {
+		record.DestinationPath = destinationPath
+		record.UpdatedAt = time.Now().UTC()
+		if err := m.saveLocked(); err != nil {
+			return err
+		}
+		m.markChangedLocked(true)
+		return nil
+	}
+	return fmt.Errorf("download not found")
+}
+
 func (m *artifactDownloadManager) recordCopy(id string) *nativeDownloadRecord {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -746,7 +859,13 @@ func (m *artifactDownloadManager) restore() error {
 		if record.ID == "" {
 			record.ID = id
 		}
-		if record.State == downloadCompleted || record.StagePath == "" {
+		if record.State == downloadCompleted {
+			record.StagePath = ""
+			record.Offset, record.progressOffset = record.TotalSize, record.TotalSize
+			m.records[record.ID] = &record
+			continue
+		}
+		if record.StagePath == "" {
 			continue
 		}
 		info, statErr := os.Stat(record.StagePath)
@@ -792,7 +911,7 @@ func (m *artifactDownloadManager) restore() error {
 func (m *artifactDownloadManager) saveLocked() error {
 	document := nativeDownloadJournal{Downloads: map[string]nativeDownloadRecord{}}
 	for id, record := range m.records {
-		if record.State == downloadPreparing || record.State == downloadCompleted {
+		if record.State == downloadPreparing {
 			continue
 		}
 		copy := *record
@@ -861,9 +980,20 @@ func (m *artifactDownloadManager) sendCompletion(completion nativeDownloadComple
 	m.mu.Unlock()
 }
 
+func (m *artifactDownloadManager) sendStarted(started nativeDownloadStarted) {
+	select {
+	case m.events <- nativeDownloadEvent{Started: &started}:
+	default:
+	}
+}
+
 func (m *artifactDownloadManager) sendCompletionLocked(completion nativeDownloadCompletion) {
 	select {
 	case m.completed <- completion:
+	default:
+	}
+	select {
+	case m.events <- nativeDownloadEvent{Completion: &completion}:
 	default:
 	}
 }

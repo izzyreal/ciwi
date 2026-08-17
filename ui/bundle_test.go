@@ -847,11 +847,73 @@ func TestPlatformOverridesAreLimitedToPlatformMechanics(t *testing.T) {
 				}
 				allowed := route.Screen == "settings" && node.ID == "native-connection" && platform == "web" && override.Hidden
 				allowed = allowed || route.Screen == "settings" && node.ID == "settings-client-version" && platform == "web" && override.Hidden
+				allowed = allowed || route.Screen == "front-page" && node.ID == "downloads-button" && platform == "web" && override.Hidden
 				if !allowed {
 					t.Errorf("%s node %q role %q has non-mechanical %s override: %#v", route.Screen, node.ID, node.Style.Role, platform, override)
 				}
 			}
 		})
+	}
+}
+
+func TestNativeDownloadsRouteAndMainHeaderButton(t *testing.T) {
+	routes, err := LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	match, ok := routes.Match("/downloads", "gio")
+	if !ok || match.Route.Screen != "downloads" || match.Route.BindingRoot != "downloads" {
+		t.Fatalf("native downloads route = %#v, matched %t", match, ok)
+	}
+	if _, ok := routes.Match("/downloads", "web"); ok {
+		t.Fatal("downloads route unexpectedly matched the web platform")
+	}
+	frontPage, err := LoadScreen("front-page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routesInOrder := []string{}
+	walkNodes(frontPage.Screen.Root, func(node *uidsl.Node) {
+		if node.Component != "button" || len(node.Actions) == 0 || node.Actions[0].Command != "navigate" {
+			return
+		}
+		route := node.Actions[0].Arguments["route"]
+		if route == "/downloads" || route == "/agents" {
+			routesInOrder = append(routesInOrder, route)
+		}
+	})
+	if len(routesInOrder) < 2 || routesInOrder[0] != "/downloads" || routesInOrder[1] != "/agents" {
+		t.Fatalf("main header download/agent routes = %v", routesInOrder)
+	}
+}
+
+func TestDownloadsScreenKeepsDestructiveActionsConfirmed(t *testing.T) {
+	screen, err := LoadScreen("downloads")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := map[string]*uidsl.Action{}
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		for index := range node.Actions {
+			action := &node.Actions[index]
+			actions[action.Command] = action
+		}
+	})
+	for _, command := range []string{
+		"download-pause", "download-resume", "download-retry", "download-save", "download-restart",
+		"download-discard", "download-remove", "download-reveal",
+	} {
+		if actions[command] == nil {
+			t.Errorf("downloads screen is missing %q", command)
+		}
+	}
+	for _, command := range []string{"download-restart", "download-discard"} {
+		if actions[command] != nil && actions[command].Confirm == nil {
+			t.Errorf("%s has no confirmation", command)
+		}
+	}
+	if actions["download-remove"] != nil && actions["download-remove"].Confirm != nil {
+		t.Error("removing completed history unexpectedly requires confirmation")
 	}
 }
 

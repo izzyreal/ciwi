@@ -83,6 +83,22 @@ screen:
               role: compact-toolbar
             children:
               - component: button
+                id: downloads-button
+                text:
+                  literal: Downloads
+                icon: download
+                overrides:
+                  web:
+                    hidden: true
+                  compact:
+                    style:
+                      role: icon-button
+                actions:
+                  - on: activate
+                    command: navigate
+                    arguments:
+                      route: /downloads
+              - component: button
                 text:
                   literal: Agents
                 icon: server

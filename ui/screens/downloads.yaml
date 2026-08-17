@@ -1,0 +1,129 @@
+apiVersion: ciwi.ui/v1
+kind: Screen
+metadata:
+  name: downloads
+  title: Downloads
+  description: Native download progress and history
+screen:
+  dataSources:
+    - name: downloads
+  root:
+    component: page
+    id: downloads
+    layout: {direction: vertical, gap: large, padding: large, maxWidth: page}
+    children:
+      - component: row
+        layout: {direction: horizontal, gap: medium, align: center}
+        overrides:
+          compact:
+            layout: {direction: vertical, align: start}
+        children:
+          - component: column
+            layout: {direction: vertical, gap: small, grow: true}
+            children:
+              - component: text
+                text: {literal: Downloads}
+                style: {role: title, emphasis: strong}
+              - component: text
+                text: {binding: downloads.summary}
+                style: {tone: muted}
+          - component: button
+            text: {literal: Back to Main}
+            icon: arrow-left
+            actions: [{on: activate, command: navigate, arguments: {route: /}}]
+      - component: card
+        id: downloads-empty
+        visible: {binding: downloads.empty}
+        layout: {direction: vertical, gap: small, padding: large}
+        children:
+          - component: text
+            text: {literal: No downloads yet}
+            style: {role: heading, emphasis: strong}
+          - component: text
+            text: {literal: Downloads started from a completed job will appear here.}
+            style: {tone: muted}
+      - component: list
+        id: download-list
+        layout: {direction: vertical, gap: medium}
+        repeat: {source: downloads.items, as: download, key: download.id}
+        children:
+          - component: card
+            progress: {binding: download.progress}
+            layout: {direction: vertical, gap: medium, padding: medium}
+            children:
+              - component: row
+                layout: {direction: horizontal, gap: medium, align: center, wrap: true}
+                children:
+                  - component: column
+                    layout: {direction: vertical, gap: small, grow: true}
+                    children:
+                      - component: text
+                        text: {binding: download.name}
+                        style: {emphasis: strong}
+                      - component: text
+                        text: {binding: download.label}
+                        style: {role: detail-small, tone: muted}
+                  - component: badge
+                    text: {binding: download.status}
+                    style: {toneBinding: download.status_tone, emphasis: strong}
+              - component: text
+                visible: {binding: download.show_detail}
+                text: {binding: download.detail}
+                style: {role: detail, tone: muted}
+              - component: text
+                visible: {binding: download.show_error}
+                text: {binding: download.error}
+                style: {role: detail, tone: danger}
+              - component: row
+                layout: {direction: horizontal, gap: small, wrap: true}
+                style: {role: compact-action-row}
+                children:
+                  - component: button
+                    visible: {binding: download.show_pause}
+                    text: {literal: Pause}
+                    actions: [{on: activate, command: download-pause, arguments: {id: "{{download.id}}"}}]
+                  - component: button
+                    visible: {binding: download.show_resume}
+                    text: {literal: Resume}
+                    icon: player-play
+                    actions: [{on: activate, command: download-resume, arguments: {id: "{{download.id}}"}}]
+                  - component: button
+                    visible: {binding: download.show_retry}
+                    text: {literal: Retry}
+                    icon: refresh
+                    actions: [{on: activate, command: download-retry, arguments: {id: "{{download.id}}"}}]
+                  - component: button
+                    visible: {binding: download.show_save}
+                    text: {literal: Save}
+                    icon: download
+                    actions: [{on: activate, command: download-save, arguments: {id: "{{download.id}}"}}]
+                  - component: button
+                    visible: {binding: download.show_restart}
+                    text: {literal: Restart}
+                    icon: refresh
+                    actions:
+                      - on: activate
+                        command: download-restart
+                        arguments: {id: "{{download.id}}"}
+                        confirm:
+                          title: Restart download?
+                          message: Restarting {{download.name}} deletes its partial data and downloads the current source from the beginning.
+                  - component: button
+                    visible: {binding: download.show_reveal}
+                    text: {binding: download.reveal_label}
+                    actions: [{on: activate, command: download-reveal, arguments: {id: "{{download.id}}"}}]
+                  - component: button
+                    visible: {binding: download.show_remove}
+                    text: {literal: Remove from list}
+                    actions: [{on: activate, command: download-remove, arguments: {id: "{{download.id}}"}}]
+                  - component: button
+                    visible: {binding: download.show_discard}
+                    text: {literal: Discard}
+                    style: {tone: danger}
+                    actions:
+                      - on: activate
+                        command: download-discard
+                        arguments: {id: "{{download.id}}"}
+                        confirm:
+                          title: Discard download?
+                          message: Discard {{download.name}} and delete its staged data? Files already saved outside ciwi are not deleted.

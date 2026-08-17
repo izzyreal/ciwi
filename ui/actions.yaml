@@ -13,6 +13,14 @@ actions:
   - { command: set-report-filter, class: local }
   - { command: download-artifact, class: local }
   - { command: download-job-log, class: local }
+  - { command: download-pause, class: local }
+  - { command: download-resume, class: local }
+  - { command: download-retry, class: local }
+  - { command: download-save, class: local }
+  - { command: download-restart, class: local }
+  - { command: download-discard, class: local }
+  - { command: download-remove, class: local }
+  - { command: download-reveal, class: local }
   - { command: set-disclosures, class: local }
   - { command: set-run-option, class: local }
   - { command: set-agent-script-field, class: local }

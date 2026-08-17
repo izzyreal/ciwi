@@ -247,6 +247,8 @@ func screenLoadingBindingData(navigation navigationState, clientVersion, themeNa
 	switch navigation.screen {
 	case "front-page":
 		return offlineFrontPageBindingData()
+	case "downloads":
+		return downloadsBindingData(nil), nil
 	case "project-details":
 		data, err := projectDetailsBindingData(&cnpv1.ProjectDetailsView{
 			Project: &cnpv1.ProjectSummary{Id: navigation.projectID},
@@ -802,7 +804,8 @@ func setScreenLifecycle(data map[string]any, screen string, loading, ready bool,
 func screenBindingRoot(screen string) string {
 	return map[string]string{
 		"front-page": "frontPage", "project-details": "projectDetails", "job-details": "jobDetails",
-		"settings": "settings", "managed-yaml": "managedYAML", "run-options": "runOptions", "agents": "agents",
+		"downloads": "downloads",
+		"settings":  "settings", "managed-yaml": "managedYAML", "run-options": "runOptions", "agents": "agents",
 		"agent-details": "agentDetails", "agent-script": "agentScript", "vault": "vault", "connection": "connection",
 	}[screen]
 }

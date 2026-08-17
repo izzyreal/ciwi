@@ -11,6 +11,7 @@ import (
 func TestLoadingViewModelsSatisfySharedScreenBindings(t *testing.T) {
 	tests := []navigationState{
 		{screen: "front-page"},
+		{screen: "downloads"},
 		{screen: "project-details", projectID: 1},
 		{screen: "job-details", jobID: "job-1"},
 		{screen: "settings"},
