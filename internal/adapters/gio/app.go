@@ -590,6 +590,17 @@ func Run(options Options) error {
 }
 
 func runController(ctx context.Context, window *app.Window, renderer nativeRenderer, commands <-chan commandRequest, lifecycle *nativeLifecycleMailbox, screens map[string]*uidsl.ScreenDocument, actionCatalog *uidsl.ActionCatalogDocument, options Options, themeName, preferencesPath string, preferences nativePreferences, coordinator *operations.Coordinator, clientBroker *nativeClientBroker, operationJournal *nativeOperationJournal, artifactPicker artifactDestinationPicker) {
+	downloadManager, downloadManagerErr := newArtifactDownloadManager(ctx, preferencesPath, artifactPicker)
+	var downloadChanges <-chan struct{}
+	var downloadCompletions <-chan nativeDownloadCompletion
+	if downloadManagerErr != nil {
+		renderer.ShowAlert("Downloads could not be restored", downloadManagerErr.Error())
+	} else {
+		defer downloadManager.Close()
+		downloadChanges = downloadManager.Changed()
+		downloadCompletions = downloadManager.Completed()
+		renderer.SetDownloads(downloadManager.Snapshot())
+	}
 	screenCache := newNativeScreenCache()
 	pendingCancellations := map[string]bool{}
 	connectionSettings := nativeConnectionSettingsForLaunch(preferences, options.Address)
@@ -742,7 +753,6 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 	}
 	defer cancelJobLogSearch()
 	screenLoads := make(chan screenLoadResult, 8)
-	artifactDownloads := make(chan artifactDownloadResult, 4)
 	var screenLoadCancel context.CancelFunc
 	var screenLoadGeneration uint64
 	var screenRefreshes screenRefreshCoordinator
@@ -1005,6 +1015,9 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 	}
 	clearConnection := func() {
 		cancelReconciliation()
+		if downloadManager != nil {
+			downloadManager.DetachClient()
+		}
 		client = nil
 		clientBroker.Set(nil)
 		changes = nil
@@ -1188,6 +1201,9 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 				continue
 			}
 			client = connected.client
+			if downloadManager != nil {
+				downloadManager.AttachClient(client, client.Welcome().GetServerInstallationId())
+			}
 			changes = connected.changes
 			watchErrors = connected.watchErrors
 			address = connected.address
@@ -1484,20 +1500,17 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 				requestScreenRefresh(navigation, pendingRefresh)
 			}
 			window.Invalidate()
-		case result := <-artifactDownloads:
-			if result.generation != sessionSupervisor.Generation() || (expectedNativeDisconnect(result.err) && !errors.Is(result.err, errArtifactDownloadCancelled)) {
-				continue
-			}
-			label := strings.TrimSpace(result.label)
-			if label == "" {
-				label = "Artifact"
-			}
-			if errors.Is(result.err, errArtifactDownloadCancelled) {
+		case <-downloadChanges:
+			renderer.SetDownloads(downloadManager.Snapshot())
+			window.Invalidate()
+		case result := <-downloadCompletions:
+			label := defaultString(strings.TrimSpace(result.Label), "Artifact")
+			if result.Cancelled {
 				renderer.ShowNotice(label+" download cancelled", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-			} else if result.err != nil {
-				renderer.ShowNotice(label+" download failed: "+result.err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+			} else if result.Err != nil {
+				renderer.ShowNotice(label+" download failed: "+result.Err.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			} else {
-				renderer.ShowNotice("Downloaded "+strings.ToLower(label)+": "+result.path, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
+				renderer.ShowNotice("Downloaded "+strings.ToLower(label)+": "+result.FileName, "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			}
 			window.Invalidate()
 		case <-coordinator.Changed():
@@ -1772,22 +1785,14 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					window.Invalidate()
 					continue
 				}
-				activeClient := client
-				downloadCtx := sessionSupervisor.Context()
-				downloadGeneration := sessionSupervisor.Generation()
-				if activeClient == nil || downloadCtx == nil {
+				if client == nil || downloadManager == nil {
 					renderer.ShowAlert("Artifact unavailable", "The server connection is not ready.")
 					window.Invalidate()
 					continue
 				}
-				arguments := command.arguments
-				go func() {
-					path, downloadErr := downloadArtifact(downloadCtx, activeClient, artifactPicker, arguments)
-					select {
-					case artifactDownloads <- artifactDownloadResult{path: path, label: "Artifact", generation: downloadGeneration, err: downloadErr}:
-					case <-ctx.Done():
-					}
-				}()
+				if _, _, err := downloadManager.Start("Artifact", command.arguments); err != nil {
+					renderer.ShowAlert("Artifact unavailable", err.Error())
+				}
 				window.Invalidate()
 				continue
 			case "download-job-log":
@@ -1796,10 +1801,7 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					window.Invalidate()
 					continue
 				}
-				activeClient := client
-				downloadCtx := sessionSupervisor.Context()
-				downloadGeneration := sessionSupervisor.Generation()
-				if activeClient == nil || downloadCtx == nil {
+				if client == nil || downloadManager == nil {
 					renderer.ShowAlert("Log unavailable", "The server connection is not ready.")
 					window.Invalidate()
 					continue
@@ -1815,13 +1817,33 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					"kind":           "log-" + format,
 				}
 				label := strings.ToUpper(format[:1]) + format[1:] + " log"
-				go func() {
-					path, downloadErr := downloadArtifact(downloadCtx, activeClient, artifactPicker, arguments)
-					select {
-					case artifactDownloads <- artifactDownloadResult{path: path, label: label, generation: downloadGeneration, err: downloadErr}:
-					case <-ctx.Done():
-					}
-				}()
+				if _, _, err := downloadManager.Start(label, arguments); err != nil {
+					renderer.ShowAlert("Log download unavailable", err.Error())
+				}
+				window.Invalidate()
+				continue
+			case "download-cancel", "download-remove", "download-resume", "download-save", "download-restart":
+				if downloadManager == nil {
+					renderer.ShowAlert("Download unavailable", "The download manager is unavailable.")
+					continue
+				}
+				id := strings.TrimSpace(command.arguments["id"])
+				var downloadErr error
+				switch command.action.Command {
+				case "download-cancel":
+					downloadErr = downloadManager.Cancel(id)
+				case "download-remove":
+					downloadErr = downloadManager.Remove(id)
+				case "download-resume":
+					downloadErr = downloadManager.Resume(id)
+				case "download-save":
+					downloadErr = downloadManager.Save(id)
+				case "download-restart":
+					downloadErr = downloadManager.Restart(id)
+				}
+				if downloadErr != nil {
+					renderer.ShowAlert("Download action failed", downloadErr.Error())
+				}
 				window.Invalidate()
 				continue
 			}

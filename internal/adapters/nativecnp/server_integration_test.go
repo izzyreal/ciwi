@@ -66,6 +66,9 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	if !slices.Contains(client.Welcome().Capabilities, "project_icons_batch") {
 		t.Fatalf("welcome capabilities = %v", client.Welcome().Capabilities)
 	}
+	if !slices.Contains(client.Welcome().Capabilities, "artifact_download_resume_v1") {
+		t.Fatalf("welcome capabilities = %v", client.Welcome().Capabilities)
+	}
 	info, err := client.GetServerInfo(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +141,7 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		t.Fatalf("job artifacts/reports = %#v", jobDetails)
 	}
 	download, err := client.DownloadArtifactChunk(ctx, &cnpv1.ArtifactDownloadRequest{JobExecutionId: "job-1", Kind: "file", Path: "dist/app.zip"})
-	if err != nil || string(download.Data) != "artifact-data" || !download.Complete || download.FileName != "app.zip" {
+	if err != nil || string(download.Data) != "artifact-data" || !download.Complete || download.FileName != "app.zip" || download.ContentId != "sha256:test" {
 		t.Fatalf("artifact download = %#v, %v", download, err)
 	}
 	output, outputErrors, err := client.WatchJobOutput(ctx, "job-1", 0)
@@ -730,7 +733,7 @@ type artifactDownloadService struct{}
 func (artifactDownloadService) DownloadArtifact(_ context.Context, request application.ArtifactDownloadRequest) (application.ArtifactDownloadChunk, error) {
 	return application.ArtifactDownloadChunk{
 		Token: "done", FileName: "app.zip", ContentType: "application/zip", Data: []byte("artifact-data"),
-		NextOffset: int64(len("artifact-data")), TotalSize: int64(len("artifact-data")), Complete: true,
+		NextOffset: int64(len("artifact-data")), TotalSize: int64(len("artifact-data")), Complete: true, ContentID: "sha256:test",
 	}, nil
 }
 

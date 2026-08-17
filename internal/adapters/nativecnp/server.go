@@ -132,7 +132,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerInstanceId:     snapshot.InstanceID,
 		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "job_output_stream", "job_log_v1", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "artifact_download_resume_v1", "job_output_stream", "job_log_v1", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -512,17 +512,18 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 	case *cnpv1.Request_DownloadArtifact:
 		var chunk application.ArtifactDownloadChunk
 		chunk, err = s.services.ArtifactDownloads.DownloadArtifact(ctx, application.ArtifactDownloadRequest{
-			JobExecutionID: operation.DownloadArtifact.GetJobExecutionId(),
-			Kind:           operation.DownloadArtifact.GetKind(),
-			Path:           operation.DownloadArtifact.GetPath(),
-			Token:          operation.DownloadArtifact.GetToken(),
-			Offset:         operation.DownloadArtifact.GetOffset(),
-			Cancel:         operation.DownloadArtifact.GetCancel(),
+			JobExecutionID:    operation.DownloadArtifact.GetJobExecutionId(),
+			Kind:              operation.DownloadArtifact.GetKind(),
+			Path:              operation.DownloadArtifact.GetPath(),
+			Token:             operation.DownloadArtifact.GetToken(),
+			Offset:            operation.DownloadArtifact.GetOffset(),
+			Cancel:            operation.DownloadArtifact.GetCancel(),
+			ExpectedContentID: operation.DownloadArtifact.GetExpectedContentId(),
 		})
 		if err == nil {
 			response.Result = &cnpv1.Response_ArtifactDownload{ArtifactDownload: &cnpv1.ArtifactDownloadChunk{
 				Token: chunk.Token, FileName: chunk.FileName, ContentType: chunk.ContentType,
-				Data: chunk.Data, NextOffset: chunk.NextOffset, TotalSize: chunk.TotalSize, Complete: chunk.Complete,
+				Data: chunk.Data, NextOffset: chunk.NextOffset, TotalSize: chunk.TotalSize, Complete: chunk.Complete, ContentId: chunk.ContentID,
 			}}
 		}
 	case *cnpv1.Request_RunPipeline:

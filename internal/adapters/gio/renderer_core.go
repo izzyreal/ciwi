@@ -84,6 +84,7 @@ type Renderer struct {
 	pendingClipboard       *string
 	renderedJobID          string
 	activeOperations       map[string]operations.Operation
+	downloads              []nativeDownloadSnapshot
 	actionCatalog          *uidsl.ActionCatalogDocument
 	notice                 *nativeNotice
 	noticeQueue            []nativeNotice
@@ -242,6 +243,13 @@ func (r *Renderer) SetOperations(snapshot []operations.Operation) {
 	}
 	r.mu.Lock()
 	r.activeOperations = active
+	r.mu.Unlock()
+	r.markDOMDirty()
+}
+
+func (r *Renderer) SetDownloads(snapshot []nativeDownloadSnapshot) {
+	r.mu.Lock()
+	r.downloads = append([]nativeDownloadSnapshot(nil), snapshot...)
 	r.mu.Unlock()
 	r.markDOMDirty()
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ type artifactDownloadSession struct {
 	contentType string
 	temporary   bool
 	totalSize   int64
+	contentID   string
 	lastUsed    time.Time
 }
 
@@ -60,16 +62,15 @@ func (s *artifactDownloadService) DownloadArtifact(_ context.Context, request ap
 		return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorInvalidArgument, "artifact offset must be non-negative", nil)
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pruneLocked()
-
 	token := strings.TrimSpace(request.Token)
-	session, ok := s.sessions[token]
 	if request.Cancel {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.pruneLocked()
 		if token == "" {
 			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorInvalidArgument, "artifact download token is required for cancellation", nil)
 		}
+		session, ok := s.sessions[token]
 		if !ok {
 			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorNotFound, "artifact download expired", nil)
 		}
@@ -77,15 +78,39 @@ func (s *artifactDownloadService) DownloadArtifact(_ context.Context, request ap
 		return application.ArtifactDownloadChunk{Token: token, Complete: true}, nil
 	}
 	if token == "" {
-		if request.Offset != 0 {
-			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorInvalidArgument, "new artifact downloads must start at offset zero", nil)
+		if request.Offset != 0 && strings.TrimSpace(request.ExpectedContentID) == "" {
+			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorInvalidArgument, "resumed artifact downloads require an expected content id", nil)
 		}
 		var err error
-		token, session, err = s.startLocked(request)
+		var session artifactDownloadSession
+		token, session, err = s.prepare(request)
 		if err != nil {
 			return application.ArtifactDownloadChunk{}, err
 		}
-	} else if !ok {
+		if expected := strings.TrimSpace(request.ExpectedContentID); expected != "" && expected != session.contentID {
+			if session.temporary {
+				_ = os.Remove(session.path)
+			}
+			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorFailedPrecondition, "artifact content changed", nil)
+		}
+		if request.Offset > session.totalSize {
+			if session.temporary {
+				_ = os.Remove(session.path)
+			}
+			return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorInvalidArgument, "artifact offset exceeds file size", nil)
+		}
+		s.mu.Lock()
+		s.pruneLocked()
+		s.sessions[token] = session
+		s.scheduleCleanup(token, artifactDownloadTTL)
+		s.mu.Unlock()
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneLocked()
+	session, ok := s.sessions[token]
+	if !ok {
 		return application.ArtifactDownloadChunk{}, application.NewError(application.ErrorNotFound, "artifact download expired", nil)
 	}
 	if request.Offset > session.totalSize {
@@ -120,18 +145,18 @@ func (s *artifactDownloadService) DownloadArtifact(_ context.Context, request ap
 	}
 	return application.ArtifactDownloadChunk{
 		Token: token, FileName: session.fileName, ContentType: session.contentType,
-		Data: data, NextOffset: nextOffset, TotalSize: session.totalSize, Complete: complete,
+		Data: data, NextOffset: nextOffset, TotalSize: session.totalSize, Complete: complete, ContentID: session.contentID,
 	}, nil
 }
 
-func (s *artifactDownloadService) startLocked(request application.ArtifactDownloadRequest) (string, artifactDownloadSession, error) {
+func (s *artifactDownloadService) prepare(request application.ArtifactDownloadRequest) (string, artifactDownloadSession, error) {
 	jobID := strings.TrimSpace(request.JobExecutionID)
 	if jobID == "" {
 		return "", artifactDownloadSession{}, application.NewError(application.ErrorInvalidArgument, "job execution id is required", nil)
 	}
 	kind := strings.ToLower(strings.TrimSpace(request.Kind))
 	if kind == "log-clean" || kind == "log-raw" {
-		return s.startJobLogLocked(jobID, strings.TrimPrefix(kind, "log-"))
+		return s.prepareJobLog(jobID, strings.TrimPrefix(kind, "log-"))
 	}
 	artifacts, err := s.store.ListJobExecutionArtifacts(jobID)
 	if err != nil {
@@ -205,6 +230,13 @@ func (s *artifactDownloadService) startLocked(request application.ArtifactDownlo
 		return "", artifactDownloadSession{}, application.NewError(application.ErrorNotFound, "artifact file unavailable", err)
 	}
 	session.totalSize = info.Size()
+	session.contentID, err = artifactContentID(session.path)
+	if err != nil {
+		if session.temporary {
+			_ = os.Remove(session.path)
+		}
+		return "", artifactDownloadSession{}, application.WrapInternal("hash artifact download", err)
+	}
 	session.lastUsed = s.now()
 	token, err := randomDownloadToken()
 	if err != nil {
@@ -213,12 +245,10 @@ func (s *artifactDownloadService) startLocked(request application.ArtifactDownlo
 		}
 		return "", artifactDownloadSession{}, application.WrapInternal("create artifact download token", err)
 	}
-	s.sessions[token] = session
-	s.scheduleCleanup(token, artifactDownloadTTL)
 	return token, session, nil
 }
 
-func (s *artifactDownloadService) startJobLogLocked(jobID, format string) (string, artifactDownloadSession, error) {
+func (s *artifactDownloadService) prepareJobLog(jobID, format string) (string, artifactDownloadSession, error) {
 	job, err := s.store.GetJobExecution(jobID)
 	if err != nil {
 		return "", artifactDownloadSession{}, application.NewError(application.ErrorNotFound, "job not found", err)
@@ -249,14 +279,30 @@ func (s *artifactDownloadService) startJobLogLocked(jobID, format string) (strin
 		return "", artifactDownloadSession{}, application.WrapInternal("stat job log download", err)
 	}
 	session.totalSize = info.Size()
+	session.contentID, err = artifactContentID(path)
+	if err != nil {
+		_ = os.Remove(path)
+		return "", artifactDownloadSession{}, application.WrapInternal("hash job log download", err)
+	}
 	token, err := randomDownloadToken()
 	if err != nil {
 		_ = os.Remove(path)
 		return "", artifactDownloadSession{}, application.WrapInternal("create job log download token", err)
 	}
-	s.sessions[token] = session
-	s.scheduleCleanup(token, artifactDownloadTTL)
 	return token, session, nil
+}
+
+func artifactContentID(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func (s *artifactDownloadService) scheduleCleanup(token string, after time.Duration) {

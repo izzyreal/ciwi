@@ -24,6 +24,7 @@ type nativeRenderer interface {
 	SetDataBinding(string, any)
 	SetNestedBinding(string, string, string, any)
 	SetOperations([]operations.Operation)
+	SetDownloads([]nativeDownloadSnapshot)
 	SetProjectStructureFilter(string)
 	SetRootBinding(string, string, any)
 	SetScreenAndData(*uidsl.ScreenDocument, any)
@@ -126,6 +127,11 @@ func (u *nativeUI) SetNestedBinding(root, objectKey, key string, value any) {
 func (u *nativeUI) SetOperations(snapshot []operations.Operation) {
 	snapshot = append([]operations.Operation(nil), snapshot...)
 	u.post(func(renderer *Renderer) { renderer.SetOperations(snapshot) })
+}
+
+func (u *nativeUI) SetDownloads(snapshot []nativeDownloadSnapshot) {
+	snapshot = append([]nativeDownloadSnapshot(nil), snapshot...)
+	u.post(func(renderer *Renderer) { renderer.SetDownloads(snapshot) })
 }
 
 func (u *nativeUI) SetProjectStructureFilter(filter string) {

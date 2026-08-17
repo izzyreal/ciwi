@@ -3,12 +3,13 @@ package application
 import "context"
 
 type ArtifactDownloadRequest struct {
-	JobExecutionID string
-	Kind           string
-	Path           string
-	Token          string
-	Offset         int64
-	Cancel         bool
+	JobExecutionID    string
+	Kind              string
+	Path              string
+	Token             string
+	Offset            int64
+	Cancel            bool
+	ExpectedContentID string
 }
 
 type ArtifactDownloadChunk struct {
@@ -19,6 +20,7 @@ type ArtifactDownloadChunk struct {
 	NextOffset  int64
 	TotalSize   int64
 	Complete    bool
+	ContentID   string
 }
 
 type ArtifactDownloadService interface {

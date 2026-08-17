@@ -67,7 +67,9 @@ native preferences with user-only permissions. See [`files.md`](files.md).
 When the iOS app becomes inactive, Ciwi cancels active queries and mutations,
 closes the complete native session, and pauses retry timing. Foregrounding
 always starts a fresh session generation. Screen loads, live watches, output
-streams, receipt checks, and downloads from an older generation are discarded;
+streams, and receipt checks from an older generation are discarded. Downloads
+checkpoint their staged bytes before pausing and resume against the fresh
+session after the server installation identity and payload identity match;
 ordinary cancellation/`EOF` teardown is not shown as an error notice.
 
 Project icons are cached for the app lifetime rather than the transport-session
@@ -148,6 +150,9 @@ Store Connect.
   streams directly and Yamux supplies the same abstraction over TCP
 - Live state: a long-lived `WatchChanges` stream of coalescible invalidations
 - Live output: a cursor-based `WatchJobOutput` stream of bounded event pages
+- Downloads: bounded chunks carry a SHA-256 content identity; a client can
+  reconstruct an expired transfer at a durable byte offset only when the exact
+  payload identity still matches
 - Optional project assets: negotiated `project_icons_batch` requests keep icon
   hydration independent from the main front-page snapshot
 - 0-RTT and QUIC datagrams: disabled in v1
@@ -206,10 +211,18 @@ use the existing HTTP protocol.
 
 Job Details also carries recursive artifact, test, and coverage report trees.
 Native artifact files and directory/all-artifact ZIP archives are transferred
-through a typed, bounded CNP chunk operation. The platform's native save dialog
-asks where each file or archive should be written; dismissing it also cancels
-the server-side transfer. The native client does not fall back to the browser's
-artifact URLs.
+through a typed, bounded CNP chunk operation. Clean and raw job-log files use
+the same path. The platform's native save dialog opens as soon as the server
+supplies the canonical filename; dismissing it also cancels the server-side
+transfer. A global modeless panel shows byte and percentage progress across
+routes. Downloads are written to a durable staged file and checkpointed after
+4 MiB or one second, then automatically resume after a client reconnect or
+restart when the server installation ID and exact SHA-256 payload identity
+still match. Desktop destinations are reattached only when their durable prefix
+matches the stage; otherwise the completed stage becomes ready to save without
+overwriting the changed file. iOS always asks for a destination again after an
+app restart. The native client does not fall back to browser artifact URLs or a
+second legacy download implementation.
 
 Global Settings covers native-client appearance, connection context, project
 management, agent administration, and server update/rollback controls. Agent

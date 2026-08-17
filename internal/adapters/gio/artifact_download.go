@@ -4,26 +4,14 @@ package gio
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"gioui.org/x/explorer"
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
-	"github.com/izzyreal/ciwi/pkg/cnpclient"
 )
-
-var errArtifactDownloadCancelled = errors.New("artifact download cancelled")
-
-type artifactDownloadResult struct {
-	path       string
-	label      string
-	generation uint64
-	err        error
-}
 
 type artifactChunkClient interface {
 	DownloadArtifactChunk(context.Context, *cnpv1.ArtifactDownloadRequest) (*cnpv1.ArtifactDownloadChunk, error)
@@ -31,10 +19,6 @@ type artifactChunkClient interface {
 
 type artifactDestinationPicker interface {
 	CreateFile(string) (io.WriteCloser, error)
-}
-
-func downloadArtifact(ctx context.Context, client *cnpclient.Client, picker artifactDestinationPicker, arguments map[string]string) (string, error) {
-	return downloadArtifactWithPicker(ctx, client, picker, arguments)
 }
 
 func downloadJobLogText(ctx context.Context, client artifactChunkClient, jobID string) (string, error) {
@@ -61,79 +45,6 @@ func downloadJobLogText(ctx context.Context, client artifactChunkClient, jobID s
 		}
 		request.Token, request.Offset = chunk.GetToken(), chunk.GetNextOffset()
 	}
-}
-
-func downloadArtifactWithPicker(ctx context.Context, client artifactChunkClient, picker artifactDestinationPicker, arguments map[string]string) (resultName string, resultErr error) {
-	if client == nil {
-		return "", fmt.Errorf("server is offline")
-	}
-	if picker == nil {
-		return "", fmt.Errorf("native save dialog is unavailable")
-	}
-	request := &cnpv1.ArtifactDownloadRequest{
-		JobExecutionId: strings.TrimSpace(arguments["jobExecutionId"]),
-		Kind:           strings.TrimSpace(arguments["kind"]),
-		Path:           strings.TrimSpace(arguments["path"]),
-	}
-	if request.JobExecutionId == "" {
-		return "", fmt.Errorf("job execution id is required")
-	}
-
-	chunk, err := client.DownloadArtifactChunk(ctx, request)
-	if err != nil {
-		return "", fmt.Errorf("start download: %w", err)
-	}
-	fileName := safeDownloadFileName(chunk.GetFileName())
-	activeToken := chunk.GetToken()
-	writer, err := picker.CreateFile(fileName)
-	if err != nil {
-		if !chunk.GetComplete() {
-			cancelArtifactDownload(ctx, client, chunk.GetToken())
-		}
-		if errors.Is(err, explorer.ErrUserDecline) {
-			return "", errArtifactDownloadCancelled
-		}
-		return "", fmt.Errorf("choose artifact destination: %w", err)
-	}
-	closed := false
-	complete := chunk.GetComplete()
-	defer func() {
-		if !closed {
-			if closeErr := writer.Close(); resultErr == nil && closeErr != nil {
-				resultErr = fmt.Errorf("close artifact destination: %w", closeErr)
-			}
-		}
-		if resultErr != nil && !complete {
-			cancelArtifactDownload(ctx, client, activeToken)
-		}
-	}()
-
-	for {
-		if len(chunk.GetData()) > 0 {
-			if _, err := writer.Write(chunk.GetData()); err != nil {
-				return "", fmt.Errorf("write artifact: %w", err)
-			}
-		}
-		complete = chunk.GetComplete()
-		if complete {
-			break
-		}
-		if chunk.GetToken() == "" || chunk.GetNextOffset() <= request.GetOffset() {
-			return "", fmt.Errorf("server returned invalid artifact download progress")
-		}
-		request.Token = chunk.GetToken()
-		request.Offset = chunk.GetNextOffset()
-		chunk, err = client.DownloadArtifactChunk(ctx, request)
-		if err != nil {
-			return "", fmt.Errorf("continue download: %w", err)
-		}
-		activeToken = chunk.GetToken()
-	}
-	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("close artifact destination: %w", err)
-	}
-	closed = true
-	return fileName, nil
 }
 
 func cancelArtifactDownload(ctx context.Context, client artifactChunkClient, token string) {

@@ -348,6 +348,31 @@ func TestNativeOverlaySpineKeepsPageIdentityStable(t *testing.T) {
 	}
 }
 
+func TestNativeDownloadPanelSurvivesRoutesAndCarriesProgressActions(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.SetDownloads([]nativeDownloadSnapshot{
+		{ID: "active", Label: "Artifact", FileName: "large.zip", State: string(downloadDownloading), Downloaded: 40, Total: 80},
+		{ID: "staged", Label: "Clean log", FileName: "ciwi-job-clean.log", State: string(downloadReadyToSave), Downloaded: 12, Total: 12},
+	})
+
+	for _, route := range []giodom.Key{"page-list:front-page", "page-list:settings"} {
+		body := giodom.Column(route, 0, giodom.Text("content", "Content", 14, color.NRGBA{}))
+		document := renderer.decorateDOMOverlays(body, nil, nil)
+		confirmationBody := assertOverlayShell(t, document, "confirmation-overlay", false)
+		alertBody := assertOverlayShell(t, confirmationBody, "alert-overlay", false)
+		noticeBody := assertOverlayShell(t, alertBody, "notice-overlay", false)
+		page := assertOverlayShell(t, noticeBody, "download-overlay", true)
+		if page.Key != route {
+			t.Fatalf("download overlay page key = %q, want %q", page.Key, route)
+		}
+		if findResponsiveTestElementByKey(&document, "download-progress-active") == nil ||
+			findResponsiveTestElementByKey(&document, "download-cancel-active") == nil ||
+			findResponsiveTestElementByKey(&document, "download-save-staged") == nil {
+			t.Fatalf("download panel omitted progress or state actions: %#v", document)
+		}
+	}
+}
+
 func assertOverlayShell(t *testing.T, element giodom.Element, key giodom.Key, wantModal bool) giodom.Element {
 	t.Helper()
 	if element.Kind != giodom.KindOverlay || element.Key != key {

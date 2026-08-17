@@ -112,6 +112,15 @@ func (r *Renderer) layoutScreenDOMFrame(gtx layout.Context, screen *uidsl.Screen
 }
 
 func (r *Renderer) decorateDOMOverlays(document giodom.Element, notice *nativeNotice, alert *nativeAlert) giodom.Element {
+	r.mu.RLock()
+	downloads := append([]nativeDownloadSnapshot(nil), r.downloads...)
+	r.mu.RUnlock()
+	downloadModal := []giodom.Element{}
+	if len(downloads) > 0 {
+		downloadModal = append(downloadModal, r.domDownloads(downloads))
+		document = giodom.Overlay("download-overlay", giodom.OverlayProps{Alignment: layout.NE, Align: true}, document, downloadModal...)
+	}
+
 	noticeModal := []giodom.Element{}
 	if notice != nil {
 		noticeModal = append(noticeModal, r.domNotice(notice))
@@ -129,6 +138,122 @@ func (r *Renderer) decorateDOMOverlays(document giodom.Element, notice *nativeNo
 		confirmationModal = append(confirmationModal, r.domConfirmation(r.pending))
 	}
 	return giodom.Overlay("confirmation-overlay", giodom.OverlayProps{Scrim: color.NRGBA{A: 0x70}}, document, confirmationModal...)
+}
+
+func (r *Renderer) domDownloads(downloads []nativeDownloadSnapshot) giodom.Element {
+	rows := make([]giodom.Element, 0, len(downloads)+1)
+	rows = append(rows, r.domText("download-panel-title", "Downloads", "heading", true, ""))
+	for _, download := range downloads {
+		download := download
+		name := strings.TrimSpace(download.FileName)
+		if name == "" {
+			name = strings.TrimSpace(download.Label)
+		}
+		if name == "" {
+			name = "Preparing download…"
+		}
+		status := downloadStatusLabel(download)
+		copy := giodom.Column(giodom.Key("download-copy-"+download.ID), r.metrics.spaceSmall,
+			r.domText(giodom.Key("download-name-"+download.ID), name, "body", true, ""),
+			r.domText(giodom.Key("download-status-"+download.ID), status, "badge", false, downloadTone(download.State)),
+		)
+		actions := make([]giodom.Element, 0, 2)
+		button := func(command, label string) giodom.Element {
+			return r.domCallbackButton("download-"+command+"-"+download.ID, label, "", func() {
+				if r.onAction != nil {
+					r.onAction(uidsl.Action{Command: "download-" + command}, map[string]string{"id": download.ID})
+				}
+			})
+		}
+		switch nativeDownloadState(download.State) {
+		case downloadPreparing, downloadDownloading, downloadSaving:
+			actions = append(actions, button("cancel", "Cancel"))
+		case downloadPaused:
+			actions = append(actions, button("resume", "Resume"), button("remove", "Remove"))
+		case downloadFailed:
+			actions = append(actions, button("resume", "Retry"), button("remove", "Remove"))
+		case downloadReadyToSave:
+			actions = append(actions, button("save", "Save"), button("remove", "Remove"))
+		case downloadSourceChanged:
+			actions = append(actions, button("restart", "Restart"), button("remove", "Remove"))
+		case downloadCompleted:
+			actions = append(actions, button("remove", "Remove"))
+		}
+		content := giodom.Column(giodom.Key("download-content-"+download.ID), r.metrics.spaceSmall,
+			copy, giodom.Flow(giodom.Key("download-actions-"+download.ID), r.metrics.spaceSmall, actions...),
+		)
+		row := giodom.Surface(giodom.Key("download-row-"+download.ID), giodom.SurfaceProps{
+			Fill: r.palette.surfaceRaised, Border: r.palette.border, BorderWidth: 1,
+			Radius: r.metrics.controlRadius, Padding: giodom.UniformInsets(r.metrics.spaceMedium),
+		}, content)
+		mode := giodom.ProgressIndeterminate
+		fraction := float32(0)
+		if download.Total > 0 {
+			mode = giodom.ProgressDeterminate
+			fraction = float32(download.Downloaded) / float32(download.Total)
+			if fraction > 1 {
+				fraction = 1
+			}
+		}
+		if download.State == string(downloadCompleted) || download.State == string(downloadReadyToSave) {
+			mode, fraction = giodom.ProgressComplete, 1
+		}
+		fill := r.palette.accent
+		fill.A = 0x55
+		row = giodom.Progress(giodom.Key("download-progress-"+download.ID), giodom.ProgressProps{
+			Mode: mode, Fraction: fraction, Color: fill, Track: r.palette.subtle, Radius: r.metrics.controlRadius,
+		}, row)
+		rows = append(rows, row)
+	}
+	content := giodom.Column("download-panel-content", r.metrics.spaceMedium, rows...)
+	card := giodom.Surface("download-panel-card", giodom.SurfaceProps{
+		Fill: r.palette.surface, Border: r.palette.border, BorderWidth: 1,
+		Radius: r.metrics.surfaceRadius, Padding: giodom.UniformInsets(r.metrics.spaceMedium),
+	}, content)
+	card = giodom.Constrain("download-panel-width", giodom.ConstraintProps{MinWidth: 280, MaxWidth: 420}, card)
+	return giodom.Inset("download-panel-margin", giodom.Insets{Top: 14, Right: 14, Left: 14}, card)
+}
+
+func downloadStatusLabel(download nativeDownloadSnapshot) string {
+	state := strings.ReplaceAll(download.State, "-", " ")
+	if download.Error != "" {
+		return state + ": " + download.Error
+	}
+	if download.Total > 0 {
+		percentage := float64(download.Downloaded) / float64(download.Total) * 100
+		return fmt.Sprintf("%s · %s / %s · %.0f%%", state, formatDownloadBytes(download.Downloaded), formatDownloadBytes(download.Total), percentage)
+	}
+	return state
+}
+
+func formatDownloadBytes(value int64) string {
+	if value < 1024 {
+		return fmt.Sprintf("%d B", value)
+	}
+	units := []string{"KiB", "MiB", "GiB", "TiB"}
+	size := float64(value)
+	unit := "B"
+	for _, candidate := range units {
+		size /= 1024
+		unit = candidate
+		if size < 1024 {
+			break
+		}
+	}
+	return fmt.Sprintf("%.1f %s", size, unit)
+}
+
+func downloadTone(state string) string {
+	switch nativeDownloadState(state) {
+	case downloadCompleted, downloadReadyToSave:
+		return "success"
+	case downloadFailed, downloadSourceChanged:
+		return "danger"
+	case downloadPaused:
+		return "warning"
+	default:
+		return ""
+	}
 }
 
 func (r *Renderer) domNotice(notice *nativeNotice) giodom.Element {

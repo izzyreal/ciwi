@@ -949,6 +949,7 @@ message ArtifactDownloadRequest {
   string token = 4;
   int64 offset = 5;
   bool cancel = 6;
+  string expected_content_id = 7;
 }
 
 message ArtifactDownloadChunk {
@@ -959,6 +960,7 @@ message ArtifactDownloadChunk {
   int64 next_offset = 5;
   int64 total_size = 6;
   bool complete = 7;
+  string content_id = 8;
 }
 
 message JobRunContext {

@@ -97,6 +97,12 @@ directory. It contains the selected theme, disclosure and graph/list state,
 connection mode, explicit endpoint or SSH jump-host settings, the trusted SSH
 host-key fingerprint, and the last successful discovered endpoint.
 
+Resumable native downloads use `ciwi/native-downloads.json` in the same
+directory and staged `.part` files below `ciwi/downloads`. The journal records
+only durable byte offsets and is replaced atomically after the staged file is
+synced. Completed, cancelled, and explicitly removed downloads delete their
+staged file and journal entry; unreferenced staged files are cleaned at launch.
+
 On macOS and iOS, the generated SSH device private key is stored in the system
 Keychain under service `org.izzyreal.ciwi.native`. On Windows and Linux, it is
 stored next to the preferences file as `native-ui.json.ssh-key` with user-only
