@@ -45,7 +45,21 @@ pipelines:
           - dist/browser-dom-junit.xml
         steps:
           - name: Pull Playwright test image
-            run: docker pull mcr.microsoft.com/playwright:v1.62.1-noble
+            run: |
+              attempt=1
+              max_attempts=3
+
+              until docker pull mcr.microsoft.com/playwright:v1.62.1-noble; do
+                if [ "$attempt" -ge "$max_attempts" ]; then
+                  echo "Playwright image pull failed after $max_attempts attempts"
+                  exit 1
+                fi
+
+                delay=$((attempt * 10))
+                echo "Playwright image pull attempt $attempt/$max_attempts failed; retrying in ${delay}s"
+                sleep "$delay"
+                attempt=$((attempt + 1))
+              done
           - name: Run browser DOM integration tests
             test:
               name: browser-dom-integration
