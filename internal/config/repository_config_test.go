@@ -41,8 +41,16 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	if integrationTests.RunsOn["os"] != "linux" || integrationTests.RunsOn["arch"] != "amd64" || integrationTests.Requires.Tools["docker"] != "*" {
 		t.Fatalf("unexpected browser integration runtime: %+v", integrationTests)
 	}
-	if integrationTests.TimeoutSeconds < 1800 || len(integrationTests.Steps) < 2 || !strings.HasPrefix(integrationTests.Steps[0].Run, "docker pull mcr.microsoft.com/playwright:") {
+	if integrationTests.TimeoutSeconds < 1800 || len(integrationTests.Steps) < 2 {
 		t.Fatalf("browser integration job must budget and isolate its cold image pull: %+v", integrationTests)
+	}
+	pullScript := integrationTests.Steps[0].Run
+	if !strings.Contains(pullScript, "until docker pull mcr.microsoft.com/playwright:v1.62.1-noble; do") ||
+		!strings.Contains(pullScript, "max_attempts=3") ||
+		!strings.Contains(pullScript, `if [ "$attempt" -ge "$max_attempts" ]`) ||
+		!strings.Contains(pullScript, "delay=$((attempt * 10))") ||
+		!strings.Contains(pullScript, "exit 1") {
+		t.Fatalf("browser integration image pull must have a bounded three-attempt retry with 10s/20s backoff: %q", pullScript)
 	}
 	integrationCommand := integrationTests.Steps[1].Test.Command
 	if !strings.Contains(integrationCommand, `--user "$(id -u):$(id -g)"`) ||
