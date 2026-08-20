@@ -6,7 +6,28 @@ import (
 	"testing"
 
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
+	sharedui "github.com/izzyreal/ciwi/ui"
 )
+
+func TestJobDetailsBindingsExposePreExecutionFailure(t *testing.T) {
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-failed", Status: "failed", Error: "secret resolution failed before execution",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen, err := sharedui.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateNativeBindings(screen, data); err != nil {
+		t.Fatal(err)
+	}
+	root := data["jobDetails"].(map[string]any)
+	if root["error"] != "secret resolution failed before execution" {
+		t.Fatalf("job error binding = %q", root["error"])
+	}
+}
 
 func TestIndexedJobLogBindingsSuppressLegacyEmptyOutputLabel(t *testing.T) {
 	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{

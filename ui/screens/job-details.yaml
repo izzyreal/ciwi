@@ -146,6 +146,18 @@ screen:
           direction: vertical
           gap: medium
         children:
+          - component: card
+            id: job-execution-error
+            visible: {binding: jobDetails.error, empty: true, not: true}
+            layout: {direction: vertical, gap: small, padding: medium}
+            style: {tone: danger}
+            children:
+              - component: text
+                text: {literal: Failure reason}
+                style: {role: heading, emphasis: strong, tone: danger}
+              - component: text
+                text: {binding: jobDetails.error}
+                style: {tone: danger}
           - component: row
             layout: {direction: horizontal, gap: medium, align: start, wrap: true}
             children:

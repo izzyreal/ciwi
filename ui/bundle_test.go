@@ -563,6 +563,34 @@ func TestJobTimelineUsesFixedSharedCardGeometry(t *testing.T) {
 	}
 }
 
+func TestJobDetailsDeclaresSharedExecutionFailureReason(t *testing.T) {
+	screen, err := LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var executionDetails, failure *uidsl.Node
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		switch node.ID {
+		case "execution-details":
+			executionDetails = node
+		case "job-execution-error":
+			failure = node
+		}
+	})
+	if executionDetails == nil || len(executionDetails.Children) == 0 || executionDetails.Children[0].ID != "job-execution-error" {
+		t.Fatalf("execution details do not lead with the failure reason: %#v", executionDetails)
+	}
+	if failure == nil || failure.Component != "card" || failure.Style.Tone != "danger" || failure.Visible == nil {
+		t.Fatalf("failure card = %#v", failure)
+	}
+	if condition := failure.Visible; condition.Binding != "jobDetails.error" || !condition.Empty || !condition.Not {
+		t.Fatalf("failure visibility = %#v", condition)
+	}
+	if len(failure.Children) != 2 || failure.Children[0].Text == nil || failure.Children[0].Text.Literal != "Failure reason" || failure.Children[1].Text == nil || failure.Children[1].Text.Binding != "jobDetails.error" {
+		t.Fatalf("failure card content = %#v", failure.Children)
+	}
+}
+
 func TestAgentDeletionDeclaresItsSharedSuccessRoute(t *testing.T) {
 	screen, err := LoadScreen("agent-details")
 	if err != nil {

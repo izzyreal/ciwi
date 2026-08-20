@@ -84,6 +84,7 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 	jobDetails := map[string]any{
 		"id": "job-1", "project_id": 1, "title": "example build", "project_icon": "", "progress": progress,
 		"status": "running", "status_label": "Running", "current_step": "Compile", "can_rerun": false, "can_cancel": true,
+		"error":                  "pre-execution failure",
 		"job_properties":         []any{map[string]any{"label": "Created", "value": "now"}},
 		"cache_statistics_empty": "", "cache_statistics": []any{map[string]any{"label": "Cache", "value": "Hit", "tone": "success"}},
 		"scheduling_diagnosis": map[string]any{
