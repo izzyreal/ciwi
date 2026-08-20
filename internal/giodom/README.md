@@ -29,7 +29,10 @@ iOS.
 - A pass-through page viewport observes child gestures before applying its own
   movement, persists pixel-continuous anchors in both directions (including
   positions inside inter-item gaps), and accepts drags that start over
-  interactive children. Nested viewports consume movement while they have room
+  interactive children. A touch that begins during active momentum stops the
+  fling without activating the child underneath it; subsequent movement can
+  start a fresh drag, and the next independent tap remains ordinary. Nested
+  viewports consume movement while they have room
   and yield a new outward touch drag or wheel movement to the page at either
   boundary. Nested scroll recognizers are recorded below their child controls,
   allowing a child to retain an ordinary mouse or touch tap while the viewport

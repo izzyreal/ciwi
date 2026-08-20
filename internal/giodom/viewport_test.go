@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gioui.org/f32"
+	"gioui.org/gesture"
 	"gioui.org/io/input"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
@@ -376,6 +377,119 @@ func TestPassThroughScrollRegionFlingContinuesInViewportCoordinates(t *testing.T
 	if afterFling := viewportAbsoluteOffset(viewportState(t, runtime)); afterFling <= releasedAt {
 		t.Fatalf("fling offset = %d after release offset %d", afterFling, releasedAt)
 	}
+}
+
+func TestViewportMomentumStoppingTouchDoesNotActivateControl(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		passThrough bool
+	}{
+		{name: "ordinary viewport"},
+		{name: "pass-through viewport", passThrough: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runtime := NewRuntime(nil, Options{})
+			router := new(input.Router)
+			clicks := 0
+			root := momentumStopTestPage(test.passThrough, &clicks)
+			started := time.Unix(1_800_000_000, 0)
+			startViewportFling(runtime, router, root, started)
+
+			state := viewportState(t, runtime)
+			if state.scroll.State() != gesture.StateFlinging {
+				t.Fatalf("scroll state = %v, want flinging", state.scroll.State())
+			}
+			layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+				Kind: pointer.Press, Source: pointer.Touch, PointerID: 2,
+				Position: f32.Pt(40, 100), Time: 80 * time.Millisecond,
+			}}, started.Add(80*time.Millisecond))
+			if state.scroll.State() == gesture.StateFlinging {
+				t.Fatal("momentum-stopping press did not stop the fling")
+			}
+			layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+				Kind: pointer.Release, Source: pointer.Touch, PointerID: 2,
+				Position: f32.Pt(40, 100), Time: 96 * time.Millisecond,
+			}}, started.Add(96*time.Millisecond))
+			if clicks != 0 {
+				t.Fatalf("momentum-stopping touch produced %d click(s)", clicks)
+			}
+
+			layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+				Kind: pointer.Press, Source: pointer.Touch, PointerID: 3,
+				Position: f32.Pt(40, 100), Time: 112 * time.Millisecond,
+			}}, started.Add(112*time.Millisecond))
+			layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+				Kind: pointer.Release, Source: pointer.Touch, PointerID: 3,
+				Position: f32.Pt(40, 100), Time: 128 * time.Millisecond,
+			}}, started.Add(128*time.Millisecond))
+			if clicks != 1 {
+				t.Fatalf("independent tap produced %d click(s), want 1", clicks)
+			}
+		})
+	}
+}
+
+func TestViewportMomentumStoppingTouchCanStartFreshDrag(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	clicks := 0
+	root := momentumStopTestPage(true, &clicks)
+	started := time.Unix(1_800_000_000, 0)
+	startViewportFling(runtime, router, root, started)
+
+	state := viewportState(t, runtime)
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 2,
+		Position: f32.Pt(40, 120), Time: 80 * time.Millisecond,
+	}}, started.Add(80*time.Millisecond))
+	stoppedAt := viewportAbsoluteOffset(state)
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 2,
+		Position: f32.Pt(40, 60), Time: 96 * time.Millisecond,
+	}}, started.Add(96*time.Millisecond))
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Release, Source: pointer.Touch, PointerID: 2,
+		Position: f32.Pt(40, 60), Time: 112 * time.Millisecond,
+	}}, started.Add(112*time.Millisecond))
+	if afterDrag := viewportAbsoluteOffset(state); afterDrag <= stoppedAt {
+		t.Fatalf("fresh drag offset = %d after stopped offset %d", afterDrag, stoppedAt)
+	}
+	if clicks != 0 {
+		t.Fatalf("fresh drag after momentum stop produced %d click(s)", clicks)
+	}
+}
+
+func momentumStopTestPage(passThrough bool, clicks *int) Element {
+	rows := make([]Element, 30)
+	for index := range rows {
+		rows[index] = Control(Key(fmt.Sprintf("row-%d", index)), ButtonProps{
+			Enabled: true, OnClick: func() { (*clicks)++ }, MinHeight: 44,
+		}, Spacer("label", 0, 44))
+	}
+	return VirtualList("viewport", ListProps{
+		Axis: layout.Vertical, PassThroughScroll: passThrough, Estimate: 44,
+	}, Static(rows...))
+}
+
+func startViewportFling(runtime *Runtime, router *input.Router, root Element, started time.Time) {
+	layoutInteractiveFrameAt(runtime, router, root, nil, started)
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Touch, PointerID: 1,
+		Position: f32.Pt(40, 160), Time: 0,
+	}}, started)
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1,
+		Position: f32.Pt(40, 90), Time: 16 * time.Millisecond,
+	}}, started.Add(16*time.Millisecond))
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Touch, PointerID: 1,
+		Position: f32.Pt(40, 30), Time: 32 * time.Millisecond,
+	}}, started.Add(32*time.Millisecond))
+	layoutInteractiveFrameAt(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Release, Source: pointer.Touch, PointerID: 1,
+		Position: f32.Pt(40, 20), Time: 48 * time.Millisecond,
+	}}, started.Add(48*time.Millisecond))
+	layoutInteractiveFrameAt(runtime, router, root, nil, started.Add(64*time.Millisecond))
 }
 
 func TestPassThroughScrollRegionTouchTapStillFocusesEditor(t *testing.T) {

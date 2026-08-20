@@ -21,6 +21,7 @@ type measurement struct {
 
 type keyedViewportState struct {
 	scroll           gesture.Scroll
+	momentumStop     momentumStopGate
 	boundaryGate     scrollBoundaryGate
 	anchor           Key
 	anchorIndex      int
@@ -42,6 +43,32 @@ type keyedViewportState struct {
 	resetRevision    uint64
 	reachedStartKey  Key
 	reachedEndKey    Key
+}
+
+// momentumStopGate gives a touch that begins during a fling exclusively to the
+// viewport's scroll recognizer. Grabbing the pointer cancels child handlers, so
+// releasing the touch stops momentum without also activating the component
+// underneath it. The scroll recognizer still owns subsequent movement, allowing
+// the same touch to start a fresh drag.
+type momentumStopGate struct{}
+
+func (gate *momentumStopGate) Add(ops *op.Ops) {
+	event.Op(ops, gate)
+}
+
+func (gate *momentumStopGate) Update(source input.Source, flinging bool, scroll *gesture.Scroll) {
+	filter := pointer.Filter{Target: gate, Kinds: pointer.Press}
+	for {
+		raw, ok := source.Event(filter)
+		if !ok {
+			return
+		}
+		pointerEvent, ok := raw.(pointer.Event)
+		if !ok || pointerEvent.Source != pointer.Touch || !flinging {
+			continue
+		}
+		source.Execute(pointer.GrabCmd{Tag: scroll, ID: pointerEvent.PointerID})
+	}
 }
 
 // scrollBoundaryGate keeps a nested touch scroller from grabbing a gesture
@@ -282,6 +309,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	} else {
 		yRange = scrollRange
 	}
+	state.momentumStop.Update(gtx.Source, state.scroll.State() == gesture.StateFlinging, &state.scroll)
 	scrollDelta := 0
 	if !props.PassThroughScroll {
 		delegateTouch := false
@@ -364,9 +392,13 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	if !props.NestedScroll {
 		if props.PassThroughScroll {
 			pass := pointer.PassOp{}.Push(gtx.Ops)
+			state.momentumStop.Add(gtx.Ops)
 			state.scroll.Add(gtx.Ops)
 			pass.Pop()
 		} else {
+			pass := pointer.PassOp{}.Push(gtx.Ops)
+			state.momentumStop.Add(gtx.Ops)
+			pass.Pop()
 			state.scroll.Add(gtx.Ops)
 		}
 	} else {
@@ -374,6 +406,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		// is pass-through, while the scroll gesture still competes normally once
 		// a tap turns into a drag.
 		pass := pointer.PassOp{}.Push(gtx.Ops)
+		state.momentumStop.Add(gtx.Ops)
 		state.boundaryGate.Add(gtx.Ops)
 		pass.Pop()
 		state.scroll.Add(gtx.Ops)
