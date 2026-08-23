@@ -222,6 +222,45 @@ func TestNestedViewportWinsTouchDragInsideItsBounds(t *testing.T) {
 	}
 }
 
+func TestVirtualListTextSelectionSpansKeyedChildren(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	var started, extended Key
+	startOffset, endOffset := -1, -1
+	root := VirtualList("selectable-log", ListProps{
+		Axis: layout.Vertical, Viewport: 120, Estimate: 40,
+		TextSelection: &ListTextSelectionProps{
+			HitTest: func(_ layout.Context, key Key, point image.Point) (int, bool) {
+				return point.X, strings.HasPrefix(string(key), "block-")
+			},
+			Start: func(key Key, offset int, _ bool) {
+				started, startOffset = key, offset
+			},
+			Extend: func(key Key, offset int) {
+				extended, endOffset = key, offset
+			},
+		},
+	}, Keyed(1,
+		Spacer("block-0", 0, 40), Spacer("block-1", 0, 40), Spacer("block-2", 0, 40),
+	))
+	layoutInteractiveFrame(runtime, router, root, nil)
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: f32.Pt(28, 100),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Move, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: f32.Pt(12, 15),
+	}})
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: f32.Pt(12, 15),
+	}})
+	if started != "block-2" || startOffset != 28 {
+		t.Fatalf("selection start = %q:%d, want block-2:28", started, startOffset)
+	}
+	if extended != "block-0" || endOffset != 12 {
+		t.Fatalf("selection end = %q:%d, want block-0:12", extended, endOffset)
+	}
+}
+
 func TestNestedViewportPassesBoundaryScrollToParent(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	router := new(input.Router)

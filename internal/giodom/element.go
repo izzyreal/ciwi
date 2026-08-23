@@ -211,6 +211,20 @@ type ListProps struct {
 	PinnedOverlay     func(ListViewportItem) *Element
 	PinnedAlignment   layout.Direction
 	PinnedInsets      Insets
+	TextSelection     *ListTextSelectionProps
+}
+
+// ListTextSelectionProps lets a keyed viewport expose several virtualized text
+// leaves as one logical selection. The application owns the semantic range;
+// the viewport owns pointer routing, edge scrolling, focus, and shortcuts.
+// Touch remains reserved for scrolling.
+type ListTextSelectionProps struct {
+	HitTest   func(layout.Context, Key, image.Point) (runeOffset int, ok bool)
+	Start     func(Key, int, bool)
+	Extend    func(Key, int)
+	Finish    func()
+	CopyText  func() string
+	SelectAll func()
 }
 
 // ListViewportItem describes the item currently crossing the leading edge of

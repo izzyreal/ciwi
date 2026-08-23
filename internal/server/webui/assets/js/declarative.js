@@ -1369,6 +1369,65 @@
 	return element.closest('.dsl-interactive-log-body') || element;
   }
 
+  let activeLogSelectionOwner = null;
+  let constrainingLogSelection = false;
+
+  function selectionTouchesLogElement(element) {
+	const selection = window.getSelection && window.getSelection();
+	return !!(selection && !selection.isCollapsed && selection.anchorNode && selection.focusNode
+	  && (element.contains(selection.anchorNode) || element.contains(selection.focusNode)));
+  }
+
+  function logSelectionBoundary(element, atEnd) {
+	const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+	let node = walker.nextNode();
+	if (!node) return null;
+	if (!atEnd) return {node, offset: 0};
+	let last = node;
+	while ((node = walker.nextNode())) last = node;
+	return {node: last, offset: last.data.length};
+  }
+
+  function flushPendingLogViewPaints() {
+	root.querySelectorAll('.dsl-log-view').forEach(element => {
+	  const pending = element.__ciwiPendingLogPaint;
+	  if (!pending || selectionTouchesLogElement(element)) return;
+	  element.__ciwiPendingLogPaint = null;
+	  paintLogViewElement(element, pending.state, pending.preserve);
+	});
+  }
+  if (typeof document === 'object') document.addEventListener('pointerdown', event => {
+	const target = event.target && event.target.closest ? event.target.closest('.dsl-log-view') : null;
+	activeLogSelectionOwner = target && root.contains(target) ? target : null;
+  }, true);
+
+  if (typeof document === 'object') document.addEventListener('selectionchange', () => {
+	if (constrainingLogSelection) return;
+	const selection = window.getSelection && window.getSelection();
+	if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) {
+	  activeLogSelectionOwner = null;
+	  flushPendingLogViewPaints();
+	  return;
+	}
+	if (!activeLogSelectionOwner || !activeLogSelectionOwner.contains(selection.anchorNode)) {
+	  const anchorElement = selection.anchorNode.nodeType === Node.ELEMENT_NODE ? selection.anchorNode : selection.anchorNode.parentElement;
+	  activeLogSelectionOwner = anchorElement && anchorElement.closest ? anchorElement.closest('.dsl-log-view') : null;
+	}
+	const owner = activeLogSelectionOwner;
+	if (!owner || !owner.contains(selection.anchorNode)) return;
+	if (!owner.contains(selection.focusNode) && selection.setBaseAndExtent) {
+	  const relation = owner.compareDocumentPosition(selection.focusNode.nodeType === Node.ELEMENT_NODE ? selection.focusNode : selection.focusNode.parentNode);
+	  const boundary = logSelectionBoundary(owner, !!(relation & Node.DOCUMENT_POSITION_FOLLOWING));
+	  if (boundary) {
+		constrainingLogSelection = true;
+		selection.setBaseAndExtent(selection.anchorNode, selection.anchorOffset, boundary.node, boundary.offset);
+		constrainingLogSelection = false;
+	  }
+	}
+	const state = logViewStates.get(String(owner.dataset.logKey || ''));
+	if (state && state.view && state.view.output_tailing) setOutputTailing(state.view, false);
+  });
+
   function centerLogViewMatch(element, smooth) {
 	const mark = element.querySelector('.ciwi-search-hit-active');
 	if (!mark) return;
@@ -1380,6 +1439,17 @@
   }
 
   function paintLogViewElement(element, state, preserve) {
+	  if (selectionTouchesLogElement(element)) {
+		const previous = element.__ciwiPendingLogPaint;
+		const priority = value => value === 'before' ? 2 : (value === 'tail' ? 1 : 0);
+		element.__ciwiPendingLogPaint = {
+		  state,
+		  preserve: previous && priority(previous.preserve) > priority(preserve) ? previous.preserve : preserve,
+		};
+		if (state.view && state.view.output_tailing) setOutputTailing(state.view, false);
+		return;
+	  }
+	  element.__ciwiPendingLogPaint = null;
 	  const owner = logViewScrollOwner(element);
 	  const oldHeight = owner.scrollHeight;
 	  const oldTop = owner.scrollTop;
@@ -1701,6 +1771,13 @@
   }
 
   function setOutputTailing(view, enabled) {
+	if (enabled) {
+	  const selection = window.getSelection && window.getSelection();
+	  if (selection && !selection.isCollapsed) {
+		const selectedLog = Array.from(root.querySelectorAll('.dsl-log-view')).find(selectionTouchesLogElement);
+		if (selectedLog) selection.removeAllRanges();
+	  }
+	}
 	view.output_tailing = !!enabled;
 	view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
 	view.tailing_tone = view.output_tailing ? 'success' : 'warning';

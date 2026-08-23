@@ -2,10 +2,15 @@ package giodom
 
 import (
 	"image"
+	"io"
+	"sort"
+	"strings"
 
 	"gioui.org/gesture"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
 	"gioui.org/io/input"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
@@ -43,6 +48,158 @@ type keyedViewportState struct {
 	resetRevision    uint64
 	reachedStartKey  Key
 	reachedEndKey    Key
+	textSelection    listTextSelectionState
+}
+
+type listTextSelectionItem struct {
+	key        Key
+	position   image.Point
+	dimensions image.Point
+}
+
+type listTextSelectionState struct {
+	tracking bool
+	pointer  pointer.ID
+	position image.Point
+	items    []listTextSelectionItem
+}
+
+func (state *listTextSelectionState) update(gtx layout.Context, props *ListTextSelectionProps, viewport image.Point) int {
+	if props == nil || props.HitTest == nil || props.Start == nil || props.Extend == nil {
+		state.tracking = false
+		state.items = state.items[:0]
+		return 0
+	}
+	for {
+		raw, ok := gtx.Event(
+			key.FocusFilter{Target: state},
+			key.Filter{Focus: state, Name: "C", Required: key.ModShortcut},
+			key.Filter{Focus: state, Name: "A", Required: key.ModShortcut},
+		)
+		if !ok {
+			break
+		}
+		switch event := raw.(type) {
+		case key.Event:
+			if event.State != key.Press {
+				continue
+			}
+			switch event.Name {
+			case "C":
+				if props.CopyText != nil {
+					if value := props.CopyText(); value != "" {
+						gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(value))})
+					}
+				}
+			case "A":
+				if props.SelectAll != nil {
+					props.SelectAll()
+				}
+			}
+		}
+	}
+	filter := pointer.Filter{Target: state, Kinds: pointer.Press | pointer.Drag | pointer.Release | pointer.Cancel}
+	for {
+		raw, ok := gtx.Event(filter)
+		if !ok {
+			break
+		}
+		event, ok := raw.(pointer.Event)
+		if !ok || event.Source != pointer.Mouse {
+			continue
+		}
+		switch event.Kind {
+		case pointer.Press:
+			if event.Buttons != pointer.ButtonPrimary {
+				continue
+			}
+			keyValue, offset, found := state.hit(gtx, props, event.Position.Round())
+			if !found {
+				continue
+			}
+			state.tracking, state.pointer, state.position = true, event.PointerID, event.Position.Round()
+			gtx.Execute(pointer.GrabCmd{Tag: state, ID: event.PointerID})
+			gtx.Execute(key.FocusCmd{Tag: state})
+			props.Start(keyValue, offset, event.Modifiers.Contain(key.ModShift))
+		case pointer.Drag:
+			if !state.tracking || state.pointer != event.PointerID {
+				continue
+			}
+			state.position = event.Position.Round()
+			if keyValue, offset, found := state.hit(gtx, props, state.position); found {
+				props.Extend(keyValue, offset)
+			}
+		case pointer.Release:
+			if state.tracking && state.pointer == event.PointerID {
+				state.position = event.Position.Round()
+				if keyValue, offset, found := state.hit(gtx, props, state.position); found {
+					props.Extend(keyValue, offset)
+				}
+				state.tracking = false
+				if props.Finish != nil {
+					props.Finish()
+				}
+			}
+		case pointer.Cancel:
+			if state.tracking && state.pointer == event.PointerID {
+				state.tracking = false
+				if props.Finish != nil {
+					props.Finish()
+				}
+			}
+		}
+	}
+	if !state.tracking {
+		return 0
+	}
+	if keyValue, offset, found := state.hit(gtx, props, state.position); found {
+		props.Extend(keyValue, offset)
+	}
+	delta := 0
+	const edge = 28
+	if state.position.Y < edge {
+		delta = -max(2, min(36, (edge-state.position.Y)/2+2))
+	} else if state.position.Y > viewport.Y-edge {
+		delta = max(2, min(36, (state.position.Y-(viewport.Y-edge))/2+2))
+	}
+	if delta != 0 {
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	return delta
+}
+
+func (state *listTextSelectionState) hit(gtx layout.Context, props *ListTextSelectionProps, point image.Point) (Key, int, bool) {
+	type candidate struct {
+		item     listTextSelectionItem
+		distance int
+	}
+	candidates := make([]candidate, 0, len(state.items))
+	for _, item := range state.items {
+		rectangle := image.Rectangle{Min: item.position, Max: item.position.Add(item.dimensions)}
+		distance := 0
+		if point.Y < rectangle.Min.Y {
+			distance = rectangle.Min.Y - point.Y
+		} else if point.Y > rectangle.Max.Y {
+			distance = point.Y - rectangle.Max.Y
+		}
+		if point.In(rectangle) {
+			local := point.Sub(item.position)
+			if offset, ok := props.HitTest(gtx, item.key, local); ok {
+				return item.key, offset, true
+			}
+		}
+		candidates = append(candidates, candidate{item: item, distance: distance})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].distance < candidates[j].distance })
+	for _, candidate := range candidates {
+		local := point.Sub(candidate.item.position)
+		local.X = min(max(0, local.X), max(0, candidate.item.dimensions.X))
+		local.Y = min(max(0, local.Y), max(0, candidate.item.dimensions.Y))
+		if offset, ok := props.HitTest(gtx, candidate.item.key, local); ok {
+			return candidate.item.key, offset, true
+		}
+	}
+	return "", 0, false
 }
 
 // momentumStopGate gives a touch that begins during a fling exclusively to the
@@ -144,6 +301,7 @@ type stockListState struct {
 
 type recordedViewportChild struct {
 	call op.CallOp
+	key  Key
 	pos  image.Point
 	size image.Point
 }
@@ -327,6 +485,13 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 			r.nestedScrollClaimed = true
 		}
 	}
+	if props.TextSelection != nil {
+		selectionDelta := state.textSelection.update(gtx, props.TextSelection, viewport)
+		if selectionDelta != 0 {
+			scrollDelta += selectionDelta
+			offset = min(max(0, offset+selectionDelta), maxOffset)
+		}
+	}
 
 	firstVisible := state.firstVisible(offset)
 	start := max(0, firstVisible-props.Overscan)
@@ -366,7 +531,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		}
 		position = state.prefixAt(index)
 		pos := axisPoint(props.Axis, position-offset, 0)
-		recorded = append(recorded, recordedViewportChild{call: call, pos: pos, size: dimensions.Size})
+		recorded = append(recorded, recordedViewportChild{call: call, key: children.KeyAt(index), pos: pos, size: dimensions.Size})
 		crossExtent = max(crossExtent, axisCross(props.Axis, dimensions.Size))
 	}
 	r.passThroughScroll = previousPassThroughScroll
@@ -411,10 +576,21 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		pass.Pop()
 		state.scroll.Add(gtx.Ops)
 	}
+	if props.TextSelection != nil {
+		event.Op(gtx.Ops, &state.textSelection)
+	}
 	for _, child := range recorded {
 		translation := op.Offset(child.pos).Push(gtx.Ops)
 		child.call.Add(gtx.Ops)
 		translation.Pop()
+	}
+	state.textSelection.items = state.textSelection.items[:0]
+	if props.TextSelection != nil {
+		for _, child := range recorded {
+			state.textSelection.items = append(state.textSelection.items, listTextSelectionItem{
+				key: child.key, position: child.pos, dimensions: child.size,
+			})
+		}
 	}
 	if props.PinnedOverlay != nil && firstVisible >= 0 && firstVisible < children.Len() {
 		position := state.prefixAt(firstVisible)

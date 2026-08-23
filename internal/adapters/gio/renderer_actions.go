@@ -204,6 +204,10 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 }
 
 func (r *Renderer) setOutputTailing(enabled bool) {
+	if enabled && len(r.jobLogSelections) > 0 {
+		r.jobLogSelections = map[string]nativeJobLogTextSelection{}
+		r.markDOMDirty()
+	}
 	if r.outputTailing == enabled {
 		return
 	}

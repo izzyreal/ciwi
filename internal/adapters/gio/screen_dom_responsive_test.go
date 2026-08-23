@@ -875,20 +875,15 @@ func TestNativeLogSearchHighlightsReturnedRuneSpan(t *testing.T) {
 		t.Fatalf("searched log target = %q, want bounded match block %q", log.List.ScrollTo, wantTarget)
 	}
 	chunk := log.Children.At(0)
-	if chunk.Kind != giodom.KindNative || chunk.Native.NewState == nil || chunk.Native.Layout == nil {
+	if chunk.Kind != giodom.KindNative || chunk.Native.NewState != nil || chunk.Native.Layout == nil {
 		t.Fatalf("compiled searched chunk = %#v", chunk)
 	}
-	state := chunk.Native.NewState()
-	chunk.Native.Layout(layout.Context{
+	dimensions := chunk.Native.Layout(layout.Context{
 		Ops: new(op.Ops), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
 		Constraints: layout.Constraints{Max: image.Pt(800, 2000)},
-	}, state)
-	editor := &state.(*domEditorState).editor
-	if editor.Text() != "prefix needle suffix" {
-		t.Fatalf("target display block text = %q", editor.Text())
-	}
-	if start, end := editor.Selection(); start != end {
-		t.Fatalf("search highlight stole editor selection focus state: %d:%d", start, end)
+	}, nil)
+	if dimensions.Size.X == 0 || dimensions.Size.Y == 0 || log.List.TextSelection == nil {
+		t.Fatalf("passive selectable log block dimensions = %v selection = %#v", dimensions.Size, log.List.TextSelection)
 	}
 }
 
@@ -953,6 +948,94 @@ func TestNativeLogSearchTargetsExactBlockInsideMaximumStorageChunk(t *testing.T)
 		if block.Key == target && (block.HighlightStart != 176 || block.HighlightEnd != 176+len("needle")) {
 			t.Fatalf("deep search target block = %#v", block)
 		}
+	}
+}
+
+func TestNativeLogSelectionSpansDisplayAndStorageChunks(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = true
+	firstText := strings.Repeat("first paragraph line\n", 70)
+	secondText := "second paragraph αβγ\nlast line\n"
+	stream := jobLogStreamSnapshot{JobID: "job-1", ItemID: "step:1", PageLoaded: true, Chunks: []jobLogChunkSnapshot{
+		{ID: 4, Text: firstText}, {ID: 9, Text: secondText},
+	}}
+	key := nativeJobLogKey(stream.JobID, stream.ItemID)
+	renderer.jobLogStreams[key] = stream
+	blocks, _ := nativeJobLogDisplayBlocks(stream, "selection")
+	if len(blocks) < 3 {
+		t.Fatalf("display blocks = %d, want multiple virtual blocks", len(blocks))
+	}
+	var earlier, later nativeJobLogDisplayBlock
+	for _, block := range blocks {
+		if block.ChunkID == 4 && earlier.Text == "" {
+			earlier = block
+		}
+		if block.ChunkID == 9 {
+			later = block
+		}
+	}
+	if earlier.Text == "" || later.Text == "" {
+		t.Fatalf("selection blocks = %#v", blocks)
+	}
+	renderer.startNativeJobLogSelection(key, later, 8, false)
+	renderer.extendNativeJobLogSelection(key, earlier, 6)
+	selection := renderer.jobLogSelections[key]
+	start, end, ok := normalizedNativeJobLogSelection(selection)
+	if !ok || start != (nativeJobLogTextPosition{ChunkID: 4, Rune: earlier.StartRune + 6}) || end != (nativeJobLogTextPosition{ChunkID: 9, Rune: 8}) {
+		t.Fatalf("selection = %#v normalized %v:%v ok=%v", selection, start, end, ok)
+	}
+	want := string([]rune(firstText)[earlier.StartRune+6:]) + string([]rune(secondText)[:8])
+	if got := nativeJobLogSelectedText(stream, selection); got != want {
+		t.Fatalf("selected text length = %d, want %d", len([]rune(got)), len([]rune(want)))
+	}
+	if renderer.outputTailing {
+		t.Fatal("starting a log selection did not disable tailing")
+	}
+	selectedBlocks := 0
+	for _, block := range blocks {
+		if from, to := nativeJobLogBlockSelectionRange(selection, block); to > from {
+			selectedBlocks++
+		}
+	}
+	if selectedBlocks < 3 {
+		t.Fatalf("selection painted in %d blocks, want at least 3", selectedBlocks)
+	}
+	renderer.setOutputTailing(true)
+	if _, retained := renderer.jobLogSelections[key]; retained {
+		t.Fatal("explicitly enabling tailing retained the text selection")
+	}
+}
+
+func TestNativeLogSelectionSurvivesPageMergeAndCacheTrim(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	key := nativeJobLogKey("job-1", "step:1")
+	large := strings.Repeat("x", 2*1024*1024)
+	renderer.jobLogStreams[key] = jobLogStreamSnapshot{
+		JobID: "job-1", ItemID: "step:1", PageLoaded: true,
+		Chunks: []jobLogChunkSnapshot{{ID: 2, Text: large}, {ID: 4, Text: "selected\ntext"}, {ID: 6, Text: large}, {ID: 8, Text: large}},
+	}
+	renderer.jobLogSelections[key] = nativeJobLogTextSelection{
+		Anchor: nativeJobLogTextPosition{ChunkID: 4, Rune: 1},
+		Focus:  nativeJobLogTextPosition{ChunkID: 4, Rune: 10}, HasAnchor: true,
+	}
+	renderer.ApplyJobLogPage(jobLogStreamSnapshot{
+		JobID: "job-1", ItemID: "step:1", PageLoaded: true, LoadedMode: "before",
+		Chunks: []jobLogChunkSnapshot{{ID: 1, Text: "prepended\n"}}, HasAfter: true,
+	})
+	selection := renderer.jobLogSelections[key]
+	if selection.Anchor.ChunkID != 4 || selection.Anchor.Rune != 1 || selection.Focus.ChunkID != 4 || selection.Focus.Rune != 10 {
+		t.Fatalf("selection moved after prepend: %#v", selection)
+	}
+	stream := renderer.jobLogStreams[key]
+	foundSelected := false
+	for _, chunk := range stream.Chunks {
+		foundSelected = foundSelected || chunk.ID == 4
+	}
+	if !foundSelected {
+		t.Fatal("cache trimming evicted the selected chunk")
+	}
+	if got := nativeJobLogSelectedText(stream, selection); got != "elected\nt" {
+		t.Fatalf("selected text after merge = %q", got)
 	}
 }
 

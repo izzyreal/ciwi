@@ -81,6 +81,7 @@ type Renderer struct {
 	outputTailRevision     uint64
 	jobLogStreams          map[string]jobLogStreamSnapshot
 	jobLogLoads            map[string]bool
+	jobLogSelections       map[string]nativeJobLogTextSelection
 	pendingClipboard       *string
 	renderedJobID          string
 	activeOperations       map[string]operations.Operation
@@ -229,7 +230,7 @@ func NewRenderer(screen *uidsl.ScreenDocument, theme *uidsl.ThemeDocument, onAct
 		viewModes: map[string]string{}, persistentViews: map[string]bool{},
 		icons: tablerIcons(), images: images, outputEditors: map[string]*widget.Editor{},
 		activeOperations: map[string]operations.Operation{}, outputTailing: true,
-		jobLogStreams: map[string]jobLogStreamSnapshot{}, jobLogLoads: map[string]bool{},
+		jobLogStreams: map[string]jobLogStreamSnapshot{}, jobLogLoads: map[string]bool{}, jobLogSelections: map[string]nativeJobLogTextSelection{},
 	}, nil
 }
 
@@ -725,7 +726,7 @@ func (r *Renderer) layoutFrame(gtx layout.Context) layout.Dimensions {
 		jobID := bindingString(data, "jobDetails.id")
 		if jobID != r.renderedJobID {
 			r.renderedJobID, r.outputTailing, r.outputSearch, r.outputMatch = jobID, jobOutputStartsAtTail(bindingString(data, "jobDetails.status")), "", 0
-			r.jobLogStreams, r.jobLogLoads = map[string]jobLogStreamSnapshot{}, map[string]bool{}
+			r.jobLogStreams, r.jobLogLoads, r.jobLogSelections = map[string]jobLogStreamSnapshot{}, map[string]bool{}, map[string]nativeJobLogTextSelection{}
 			r.outputResetRevision++
 			if r.outputTailing {
 				r.outputTailRevision++

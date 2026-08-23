@@ -228,6 +228,7 @@ function model(overrides = {}) {
 async function installFixture(page, models) {
   let viewIndex = 0;
   const actionRequests = [];
+  const logPageRequests = [];
   await page.route('http://ciwi.test/**', async route => {
     const url = new URL(route.request().url());
     if (url.pathname === '/') {
@@ -239,6 +240,7 @@ async function installFixture(page, models) {
           #probe-nested-graph .dsl-definition-graph-viewport { width: 160px; height: 100px; }
           #probe-output { display: block; width: 220px; height: 40px; overflow: auto; white-space: pre; }
           #probe-log { display: block; width: 220px; height: 40px; overflow: auto; white-space: pre; }
+          #probe-indexed-log { display: block; width: 260px; height: 40px; overflow: auto; }
           @keyframes ciwi-test-spin { to { transform: rotate(360deg); } }
         </style></head><body><div id="declarativeRoot"></div>
         <script>
@@ -300,10 +302,19 @@ async function installFixture(page, models) {
       return;
     }
     if (url.pathname === '/api/v1/views/jobs/job-log/log/page') {
+      const mode = url.searchParams.get('mode') || 'head';
+      logPageRequests.push(mode);
+      const chunks = mode === 'after'
+        ? [{id: 43, item_id: 'step:1', text: 'live appended paragraph\n', byte_count: 24, rune_count: 24}]
+        : [
+          {id: 41, item_id: 'step:1', text: 'indexed output arrived\n' + 'first paragraph line\n'.repeat(18), byte_count: 400, rune_count: 400},
+          {id: 42, item_id: 'step:1', text: 'second paragraph line\n'.repeat(18), byte_count: 396, rune_count: 396},
+        ];
       await route.fulfill({json: {
         job_execution_id: 'job-log', item_id: url.searchParams.get('item_id') || '', terminal: true,
-        chunks: [{id: 41, item_id: 'step:1', text: 'indexed output arrived', byte_count: 22, rune_count: 22}],
-        first_cursor: 41, last_cursor: 41, has_before: false, has_after: false,
+        chunks,
+        first_cursor: Number(chunks[0].id), last_cursor: Number(chunks[chunks.length - 1].id),
+        has_before: false, has_after: mode !== 'after',
       }});
       return;
     }
@@ -320,7 +331,7 @@ async function installFixture(page, models) {
   });
   await page.goto('http://ciwi.test/');
   await expect(page.locator('#probe-version')).toHaveText(models[0].version);
-  return {actionRequests};
+  return {actionRequests, logPageRequests};
 }
 
 async function installSettingsFixture(page) {
@@ -727,6 +738,36 @@ test('indexed log view paints its initial page after DOM attachment', async ({pa
   await expect(page.locator('#probe-indexed-log')).toContainText('indexed output arrived');
   await expect(page.locator('#probe-indexed-log')).toHaveCSS('min-height', '48px');
   await expect(page.locator('#probe-indexed-log')).toHaveCSS('max-height', '420px');
+});
+
+test('indexed log selection spans chunks and survives a live page append', async ({page}) => {
+  const fixture = await installFixture(page, [model({
+    indexed_log_visible: true, log_job_id: 'job-log', log_item_id: 'step:1',
+  })]);
+  const log = page.locator('#probe-indexed-log');
+  await expect(log).toContainText('second paragraph line');
+  const selected = await log.evaluate(element => {
+    const text = element.querySelector('pre').firstChild;
+    const start = text.data.indexOf('first paragraph line') + 6;
+    const end = text.data.indexOf('second paragraph line') + 12;
+    window.getSelection().setBaseAndExtent(text, start, text, end);
+    window.selectedIndexedLogNode = text;
+    return window.getSelection().toString();
+  });
+  expect(selected).toContain('paragraph line');
+  expect(selected).toContain('second parag');
+  await log.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect.poll(() => fixture.logPageRequests.filter(mode => mode === 'after').length).toBe(1);
+  await expect(log).not.toContainText('live appended paragraph');
+  expect(await page.evaluate(() => ({
+    text: window.getSelection().toString(),
+    sameNode: window.getSelection().anchorNode === window.selectedIndexedLogNode,
+  }))).toEqual({text: selected, sameNode: true});
+  await page.evaluate(() => window.getSelection().removeAllRanges());
+  await expect(log).toContainText('live appended paragraph');
 });
 
 test('a selection spanning multiple rendered elements survives refresh', async ({page}) => {

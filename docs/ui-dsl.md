@@ -100,6 +100,14 @@ controls, so their captions follow platform interaction behavior rather than
 document-text selection behavior, while their dimensions, icon placement, and
 typography come from the shared control contract.
 
+An indexed `log-view` is one logical selectable document per system, phase, or
+step stream even though the native adapter paints it as bounded virtual blocks.
+Selection can cross loaded page and block boundaries but does not include the
+disclosure header, metadata preamble, or neighboring streams. Starting a text
+selection turns output tailing off; live page changes retain that selection
+until it is cleared or tailing is explicitly enabled again. Native touch drags
+remain scrolling gestures, while mouse/trackpad drags own text selection.
+
 It intentionally does not contain selectors, arbitrary CSS properties, DOM
 APIs, Gio types, scripts, URLs to executable resources, protobuf messages, or
 transport calls. Renderer adapters own focus, accessibility, text selection,
