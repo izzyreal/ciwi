@@ -383,7 +383,6 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		viewport = unit.Dp(parsed)
 	}
 	isOutputDocument := node.ID == "job-output-document"
-	interactiveOutput := isOutputDocument && nativeInteractiveJobLog(data)
 	if isOutputDocument {
 		viewport = r.domOutputGroupsViewport(viewport)
 	}
@@ -395,7 +394,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		r.pendingOutputScroll = ""
 	}
 	var onLeaveEnd func()
-	if isOutputDocument && !interactiveOutput {
+	if isOutputDocument {
 		onLeaveEnd = func() {
 			if !r.outputTailing {
 				return
@@ -427,7 +426,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		Axis: axis, Gap: r.spacing(node.Layout.Gap), Viewport: viewport,
 		ShrinkMain: axis == layout.Vertical && viewport > 0 && !isOutputDocument, ShrinkCross: axis == layout.Horizontal,
 		NestedScroll: isOutputDocument, Estimate: 100, Overscan: 2, MaxMeasured: 512,
-		ScrollToEnd:      isOutputDocument && !interactiveOutput && r.outputTailing,
+		ScrollToEnd:      isOutputDocument && r.outputTailing,
 		ForceEndRevision: r.outputTailRevision, ResetRevision: r.outputResetRevision,
 		ScrollTo: scrollTarget, ScrollRevision: scrollRevision, OnLeaveEnd: onLeaveEnd,
 		PinnedOverlay: pinnedOverlay, PinnedAlignment: layout.NE,

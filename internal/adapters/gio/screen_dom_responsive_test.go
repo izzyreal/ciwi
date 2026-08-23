@@ -727,7 +727,7 @@ func TestOutputDocumentHasNoDisclosureOverlay(t *testing.T) {
 	}
 }
 
-func TestInteractiveLogOwnsTailingInsteadOfOutputGroupScroller(t *testing.T) {
+func TestOutputDocumentAndInteractiveLogBothFollowTailing(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	renderer.outputTailing = true
 	screen, err := sharedui.LoadScreen("job-details")
@@ -747,8 +747,8 @@ func TestInteractiveLogOwnsTailingInsteadOfOutputGroupScroller(t *testing.T) {
 		}}
 	}
 	interactive := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(true), "interactive-output"), giodom.KindVirtualList)
-	if interactive == nil || interactive.List.ScrollToEnd || interactive.List.OnLeaveEnd != nil {
-		t.Fatalf("interactive output list tail props = %#v, want no outer follow ownership", interactive)
+	if interactive == nil || !interactive.List.ScrollToEnd || interactive.List.OnLeaveEnd == nil {
+		t.Fatalf("interactive output list tail props = %#v, want viewer follow ownership", interactive)
 	}
 	legacy := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(false), "legacy-output"), giodom.KindVirtualList)
 	if legacy == nil || !legacy.List.ScrollToEnd || legacy.List.OnLeaveEnd == nil {
@@ -765,7 +765,7 @@ func TestInteractiveLogOwnsTailingInsteadOfOutputGroupScroller(t *testing.T) {
 		"outputGroup": map[string]any{"id": "step:1"},
 	}, "running-log")
 	if !log.List.ScrollToEnd || log.List.OnLeaveEnd == nil {
-		t.Fatalf("interactive log tail props = %#v, want nested follow ownership", log.List)
+		t.Fatalf("interactive log tail props = %#v, want live-page follow ownership", log.List)
 	}
 }
 

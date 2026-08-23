@@ -258,16 +258,15 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if len(back.Actions) != 1 || back.Actions[0].Command != "navigate" || back.Actions[0].Arguments["section"] != "execution-history" {
 		t.Fatalf("job back action = %#v", back.Actions)
 	}
-	output := screen.Screen.Root.Children[4]
-	toolbar := output.Children[2]
-	if toolbar.Style.Role != "compact-toolbar" || len(toolbar.Children) < 2 || toolbar.Children[0].Actions[0].Command != "download-job-log" || toolbar.Children[0].Actions[0].Arguments["format"] != "clean" || toolbar.Children[1].Actions[0].Arguments["format"] != "raw" {
+	selectors := screen.Screen.Root.Children[5]
+	toolbar := screen.Screen.Root.Children[6]
+	viewer := screen.Screen.Root.Children[7]
+	if toolbar.ID != "job-output-toolbar" || toolbar.Style.Role != "compact-toolbar" || len(toolbar.Children) < 2 || toolbar.Children[0].Actions[0].Command != "download-job-log" || toolbar.Children[0].Actions[0].Arguments["format"] != "clean" || toolbar.Children[1].Actions[0].Arguments["format"] != "raw" {
 		t.Fatalf("job output toolbar = %#v", toolbar)
 	}
 	if toolbar.Children[2].ID != "job-output-tailing-toggle" || toolbar.Children[4].ID != "job-output-search" || toolbar.Children[7].ID != "job-output-search-count" {
 		t.Fatalf("stable job output controls = %#v", toolbar.Children)
 	}
-	selectors := screen.Screen.Root.Children[5]
-	viewer := screen.Screen.Root.Children[6]
 	if selectors.ID != "job-output-selectors" || selectors.Component != "list" || selectors.Children[0].Component != "card" || selectors.Children[0].Style.SelectedBinding != "outputGroup.selected" {
 		t.Fatalf("job output selectors = %#v", selectors)
 	}
@@ -290,7 +289,7 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 		"setOutputTailing(data.jobDetails, false)", "selectJobOutput(data.jobDetails, args.id, false)",
 		"['running', 'in progress'].includes", "revealBrowserOutputViewer",
 		"renderBrowserOutputText", "ciwi-search-hit-active", "style.selectedBinding",
-		"patchJobOutputRegion", "outputIsAtBottom", "element.id === 'job-output-search' ? 'input' : 'change'",
+		"patchJobOutputRegion", "outputIsAtBottom", "element.closest('#job-output-document')", "element.id === 'job-output-search' ? 'input' : 'change'",
 		"/log?format=", "options.section", "scrollIntoView({block: 'start'})",
 	} {
 		if !strings.Contains(script, expected) {
@@ -310,6 +309,9 @@ func TestDeclarativeBrowserProcessesInitialChangeStreamResync(t *testing.T) {
 	}
 	if strings.Contains(script, "if (!initialized)") {
 		t.Fatal("browser still discards the first change event unconditionally")
+	}
+	if strings.Contains(script, "if (topics.includes('job-output')) return") {
+		t.Fatal("browser discards combined status/output invalidations before refreshing job details")
 	}
 }
 

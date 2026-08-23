@@ -904,11 +904,6 @@ func relevantScreenChange(screen *uidsl.ScreenDocument, navigation navigationSta
 	}
 	if navigation.screen == "job-details" {
 		for _, topic := range change.Topics {
-			if topic == cnpv1.ChangeTopic_CHANGE_TOPIC_JOB_OUTPUT {
-				return false
-			}
-		}
-		for _, topic := range change.Topics {
 			if topic == cnpv1.ChangeTopic_CHANGE_TOPIC_QUEUE || topic == cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY {
 				matched := false
 				for _, jobID := range change.GetJobExecutionIds() {

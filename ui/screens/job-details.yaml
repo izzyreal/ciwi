@@ -365,94 +365,6 @@ screen:
                           binding: item.status_label
                         style:
                           toneBinding: item.status
-          - component: row
-            layout:
-              direction: horizontal
-              gap: small
-              align: center
-              wrap: true
-            style:
-              role: compact-toolbar
-            children:
-              - component: button
-                text: {literal: Clean Log}
-                icon: download
-                actions:
-                  - on: activate
-                    command: download-job-log
-                    arguments: {jobExecutionId: "{{jobDetails.id}}", format: clean}
-              - component: button
-                text: {literal: Raw Log}
-                icon: download
-                actions:
-                  - on: activate
-                    command: download-job-log
-                    arguments: {jobExecutionId: "{{jobDetails.id}}", format: raw}
-              - component: button
-                id: job-output-tailing-toggle
-                text:
-                  binding: jobDetails.tailing_label
-                icon: arrow-bar-to-down
-                style:
-                  role: tailing-toggle
-                  toneBinding: jobDetails.tailing_tone
-                actions:
-                  - on: activate
-                    command: toggle-output-tailing
-              - component: button
-                text:
-                  literal: Copy Output
-                icon: copy
-                overrides:
-                  compact:
-                    style:
-                      role: icon-button
-                actions:
-                  - on: activate
-                    command: copy-output
-              - component: input
-                id: job-output-search
-                layout:
-                  grow: true
-                  minWidth: "90"
-                input:
-                  value: jobDetails.output_search
-                  placeholder: Search output
-                actions:
-                  - on: change
-                    command: change-output-search
-                    arguments:
-                      query: "{{input.value}}"
-              - component: button
-                text:
-                  literal: Previous
-                icon: chevron-up
-                style:
-                  role: icon-button
-                actions:
-                  - on: activate
-                    command: find-output
-                    arguments:
-                      query: "{{jobDetails.output_search}}"
-                      direction: previous
-              - component: button
-                text:
-                  literal: Next
-                icon: chevron-down
-                style:
-                  role: icon-button
-                actions:
-                  - on: activate
-                    command: find-output
-                    arguments:
-                      query: "{{jobDetails.output_search}}"
-                      direction: next
-              - component: text
-                id: job-output-search-count
-                text:
-                  binding: jobDetails.output_search_count
-                style:
-                  tone: muted
           - component: card
             visible:
               binding: jobDetails.legacy_log_notice
@@ -538,6 +450,96 @@ screen:
               - component: text
                 text: {binding: outputGroup.title}
                 style: {role: output-summary, emphasis: strong, tone: console-accent}
+      - component: row
+        id: job-output-toolbar
+        visible: {binding: jobDetails.ready}
+        layout:
+          direction: horizontal
+          gap: small
+          align: center
+          wrap: true
+        style:
+          role: compact-toolbar
+        children:
+          - component: button
+            text: {literal: Clean Log}
+            icon: download
+            actions:
+              - on: activate
+                command: download-job-log
+                arguments: {jobExecutionId: "{{jobDetails.id}}", format: clean}
+          - component: button
+            text: {literal: Raw Log}
+            icon: download
+            actions:
+              - on: activate
+                command: download-job-log
+                arguments: {jobExecutionId: "{{jobDetails.id}}", format: raw}
+          - component: button
+            id: job-output-tailing-toggle
+            text:
+              binding: jobDetails.tailing_label
+            icon: arrow-bar-to-down
+            style:
+              role: tailing-toggle
+              toneBinding: jobDetails.tailing_tone
+            actions:
+              - on: activate
+                command: toggle-output-tailing
+          - component: button
+            text:
+              literal: Copy Output
+            icon: copy
+            overrides:
+              compact:
+                style:
+                  role: icon-button
+            actions:
+              - on: activate
+                command: copy-output
+          - component: input
+            id: job-output-search
+            layout:
+              grow: true
+              minWidth: "90"
+            input:
+              value: jobDetails.output_search
+              placeholder: Search output
+            actions:
+              - on: change
+                command: change-output-search
+                arguments:
+                  query: "{{input.value}}"
+          - component: button
+            text:
+              literal: Previous
+            icon: chevron-up
+            style:
+              role: icon-button
+            actions:
+              - on: activate
+                command: find-output
+                arguments:
+                  query: "{{jobDetails.output_search}}"
+                  direction: previous
+          - component: button
+            text:
+              literal: Next
+            icon: chevron-down
+            style:
+              role: icon-button
+            actions:
+              - on: activate
+                command: find-output
+                arguments:
+                  query: "{{jobDetails.output_search}}"
+                  direction: next
+          - component: text
+            id: job-output-search-count
+            text:
+              binding: jobDetails.output_search_count
+            style:
+              tone: muted
       - component: section
         id: job-output-viewer
         visible: {binding: jobDetails.ready}

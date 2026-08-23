@@ -125,6 +125,36 @@ func TestNativeTailingFollowsCurrentOutputAndManualSelectionStopsIt(t *testing.T
 	if !renderer.outputTailing || root["selected_output_group"].(map[string]any)["id"] != "phase-2" {
 		t.Fatalf("resumed output tailing = tailing %v selected %#v", renderer.outputTailing, root["selected_output_group"])
 	}
+	if renderer.outputTailRevision == 0 || renderer.outputResetRevision == 0 {
+		t.Fatalf("resumed output tailing did not force viewer/log ends: tail=%d reset=%d", renderer.outputTailRevision, renderer.outputResetRevision)
+	}
+}
+
+func TestNativeJobRefreshAdvancesTailingSelectionToUpdatedRunningStep(t *testing.T) {
+	previous := map[string]any{"jobDetails": map[string]any{
+		"id": "job-1", "tailing_label": "Tailing: On", "tailing_tone": "success",
+		"selected_timeline_item": map[string]any{"id": "phase-2"},
+	}}
+	next := map[string]any{"jobDetails": map[string]any{
+		"id": "job-1",
+		"timeline": []any{
+			map[string]any{"id": "phase-2", "status": "succeeded"},
+			map[string]any{"id": "step-2", "status": "running"},
+		},
+		"output_groups": []any{
+			map[string]any{"id": "phase-2", "status": "succeeded", "reached": true},
+			map[string]any{"id": "step-2", "status": "running", "reached": true},
+		},
+	}}
+
+	preserveJobUIState(previous, next)
+	root := next["jobDetails"].(map[string]any)
+	if selected := root["selected_output_group"].(map[string]any); selected["id"] != "step-2" || selected["selected"] != true {
+		t.Fatalf("refreshed tailing selection = %#v, want running step-2", selected)
+	}
+	if selected := root["selected_timeline_item"].(map[string]any); selected["id"] != "step-2" || selected["selected"] != true {
+		t.Fatalf("refreshed timeline selection = %#v, want running step-2", selected)
+	}
 }
 
 func TestTransientNoticeExpiresDuringRendererFrame(t *testing.T) {

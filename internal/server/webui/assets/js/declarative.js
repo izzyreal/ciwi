@@ -1378,7 +1378,7 @@
   }
 
   function logViewScrollOwner(element) {
-	return element.closest('.dsl-interactive-log-body') || element;
+	return element.closest('#job-output-document') || element.closest('.dsl-interactive-log-body') || element;
   }
 
   let activeLogSelectionOwner = null;
@@ -2110,7 +2110,6 @@
 		  const jobID = String(view && view.id || currentRouteMatch.params.jobId || '');
 		  const changedIDs = (change.job_execution_ids || []).map(String);
 		  if (changedIDs.length && !changedIDs.includes(jobID)) return;
-		  if (topics.includes('job-output')) return;
 		  if (!changedIDs.length && topics.some(topic => topic === 'queue' || topic === 'history')) return;
 		  if (topics.includes('agent-eligibility') && String(view && view.status || '') !== 'queued') return;
 		}

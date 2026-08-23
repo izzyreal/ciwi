@@ -140,9 +140,14 @@ func TestJobDetailsOnlyRefreshesForScopedNonOutputChanges(t *testing.T) {
 		t.Fatal("current execution history change did not refresh job details")
 	}
 	if relevantScreenChange(screen, navigation, &cnpv1.ChangeEvent{
+		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_JOB_OUTPUT}, JobExecutionIds: []string{"job-1"},
+	}) {
+		t.Fatal("output-only invalidation refreshed job details")
+	}
+	if !relevantScreenChange(screen, navigation, &cnpv1.ChangeEvent{
 		Topics: []cnpv1.ChangeTopic{cnpv1.ChangeTopic_CHANGE_TOPIC_HISTORY, cnpv1.ChangeTopic_CHANGE_TOPIC_JOB_OUTPUT}, JobExecutionIds: []string{"job-1"},
 	}) {
-		t.Fatal("stream-owned output change refreshed job details")
+		t.Fatal("combined history/output invalidation did not refresh job details")
 	}
 }
 
