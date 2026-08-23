@@ -105,16 +105,12 @@ func (r *Renderer) ApplyJobLogSearch(result jobLogSearchSnapshot) {
 		r.setOutputTailing(false)
 	}
 	if result.ItemID != "" {
-		if groups, err := resolveItems(r.data, "jobDetails.output_groups"); err == nil {
-			for _, raw := range groups {
-				group, ok := raw.(map[string]any)
-				if ok && fmt.Sprint(group["id"]) == result.ItemID {
-					r.setDisclosureState(fmt.Sprint(group["state_key"]), true, true)
-					break
-				}
-			}
+		if root, ok := jobDetailsRoot(r.data); ok {
+			selectJobOutputBinding(root, result.ItemID, false)
+			r.pendingScrollSection = "job-output-viewer"
+			r.outputResetRevision++
 		}
-		r.scrollOutputTo(result.ItemID)
+		r.outputScrollRevision++
 	} else {
 		r.outputScrollRevision++
 	}

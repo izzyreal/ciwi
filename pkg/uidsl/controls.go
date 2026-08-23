@@ -35,13 +35,14 @@ type PlatformMetric struct {
 }
 
 type ButtonControl struct {
-	IconPosition  string         `yaml:"iconPosition" json:"iconPosition"`
-	MinimumHeight PlatformMetric `yaml:"minimumHeight" json:"minimumHeight"`
-	PaddingX      PlatformMetric `yaml:"paddingX" json:"paddingX"`
-	PaddingY      PlatformMetric `yaml:"paddingY" json:"paddingY"`
-	IconSize      PlatformMetric `yaml:"iconSize" json:"iconSize"`
-	IconGap       PlatformMetric `yaml:"iconGap" json:"iconGap"`
-	IconOnlySize  PlatformMetric `yaml:"iconOnlySize" json:"iconOnlySize"`
+	IconPosition        string         `yaml:"iconPosition" json:"iconPosition"`
+	MinimumHeight       PlatformMetric `yaml:"minimumHeight" json:"minimumHeight"`
+	PaddingX            PlatformMetric `yaml:"paddingX" json:"paddingX"`
+	PaddingY            PlatformMetric `yaml:"paddingY" json:"paddingY"`
+	IconSize            PlatformMetric `yaml:"iconSize" json:"iconSize"`
+	IconGap             PlatformMetric `yaml:"iconGap" json:"iconGap"`
+	IconOnlySize        PlatformMetric `yaml:"iconOnlySize" json:"iconOnlySize"`
+	SelectedTintOpacity float32        `yaml:"selectedTintOpacity" json:"selectedTintOpacity"`
 }
 
 type BadgeControl struct {
@@ -199,8 +200,9 @@ func (d *ControlsDocument) Validate() error {
 		return fmt.Errorf("progress tintOpacity must be greater than zero and at most one")
 	}
 	for name, opacity := range map[string]float32{
-		"badge tintOpacity":   d.Controls.Badge.TintOpacity,
-		"badge borderOpacity": d.Controls.Badge.BorderOpacity,
+		"button selectedTintOpacity": d.Controls.Button.SelectedTintOpacity,
+		"badge tintOpacity":          d.Controls.Badge.TintOpacity,
+		"badge borderOpacity":        d.Controls.Badge.BorderOpacity,
 	} {
 		if opacity <= 0 || opacity > 1 {
 			return fmt.Errorf("%s must be greater than zero and at most one", name)

@@ -266,18 +266,13 @@ func TestJobDetailsDeclarativeScreenContractRoute(t *testing.T) {
 	if toolbar.Children[2].ID != "job-output-tailing-toggle" || toolbar.Children[4].ID != "job-output-search" || toolbar.Children[7].ID != "job-output-search-count" {
 		t.Fatalf("stable job output controls = %#v", toolbar.Children)
 	}
-	var groups uidsl.Node
-	for _, child := range output.Children {
-		if child.ID == "job-output-groups" {
-			groups = child
-			break
-		}
+	selectors := screen.Screen.Root.Children[5]
+	viewer := screen.Screen.Root.Children[6]
+	if selectors.ID != "job-output-selectors" || selectors.Component != "list" || selectors.Children[0].Component != "card" || selectors.Children[0].Style.SelectedBinding != "outputGroup.selected" {
+		t.Fatalf("job output selectors = %#v", selectors)
 	}
-	if groups.ID != "job-output-groups" || groups.Layout.MaxHeight != "660" || groups.Children[0].Children[0].Style.Role != "floating-collapse" {
-		t.Fatalf("job output groups = %#v", groups)
-	}
-	if len(groups.Children[0].Children) < 2 || groups.Children[0].Children[1].Style.Role != "output-group-body" {
-		t.Fatalf("job output group body = %#v, want explicit shared scroll boundary", groups.Children[0].Children)
+	if viewer.ID != "job-output-viewer" || viewer.Layout.MinHeight != "660" || viewer.Layout.MaxHeight != "660" || viewer.Children[1].ID != "job-output-document" {
+		t.Fatalf("job output viewer = %#v", viewer)
 	}
 }
 
@@ -292,9 +287,9 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 		"sameJob ? !!previousJob.output_tailing : jobOutputStartsAtTail(view)",
 		"decorateJobDetails(view)",
 		"view.project_icon = Number(view.project_id || 0) > 0",
-		"setOutputTailing(data.jobDetails, !data.jobDetails.output_tailing)",
-		"['running', 'in progress', 'failed'].includes",
-		"renderBrowserOutputText", "ciwi-search-hit-active", "updateDeclarativeOutputCollapseButtons",
+		"setOutputTailing(data.jobDetails, false)", "selectJobOutput(data.jobDetails, args.id, false)",
+		"['running', 'in progress'].includes", "revealBrowserOutputViewer",
+		"renderBrowserOutputText", "ciwi-search-hit-active", "style.selectedBinding",
 		"patchJobOutputRegion", "outputIsAtBottom", "element.id === 'job-output-search' ? 'input' : 'change'",
 		"/log?format=", "options.section", "scrollIntoView({block: 'start'})",
 	} {
@@ -680,10 +675,10 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		".dsl-scheduling-awaiting", ".dsl-awaiting", "--awaiting-bg", "--awaiting-ink",
 		"/ui/contracts/controls.json", "controls().select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-button-selected-tint", "--ciwi-select-chevron-gap",
 		"aria-pressed", "updateTailingToggleElement", ".dsl-tailing-toggle.dsl-success",
-		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) var(--ciwi-progress-tint, 18%)",
-		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", "overscroll-behavior-y:auto", ".dsl-output-group:not([open]) > summary",
+		"--dsl-layout-padding", ".dsl-output-selector.dsl-selected", "var(--ciwi-button-selected-tint, 24%)",
+		"#job-output-document > * { flex:0 0 auto; }", "overflow-y:auto", "overscroll-behavior-y:auto", "#job-output-viewer",
 		".dsl-output-group-body.dsl-interactive-log-body", "logViewScrollOwner", "centerLogViewMatch", "bindRenderedLogViews", "clearLogViewSearchMatches", "currentView.interactive_log_available",
-		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-output-group > summary { color:var(--console-accent)",
+		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-card.dsl-output-selector",
 		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",
 		".dsl-project-row > summary > .dsl-disclosure-label",

@@ -8,7 +8,7 @@ Ciwi displays time-based progress on active job executions, pipeline sections, p
 - The header strip of each structured execution unit, including Ciwi phases and YAML-defined job steps.
 - Chain, pipeline, and job headers in **Queued and In Progress Job Executions**.
 
-Individual rows inside an expanded execution group do not have a separate progress background. Their status and prerequisite reason provide the detailed state instead.
+The selected unit repeats its progress strip in the output viewer header. Its metadata and output rows do not have separate progress backgrounds.
 
 ## Historical estimates
 

@@ -593,9 +593,10 @@
 		  anchor.remove();
 		}
         else if (action.command === 'select-timeline-item') {
-          data.jobDetails.selected_timeline_item = data.item;
+		  setOutputTailing(data.jobDetails, false);
+		  selectJobOutput(data.jobDetails, args.id, false);
           renderCurrent();
-          revealBrowserOutputGroup(data.jobDetails, args.id);
+		  revealBrowserOutputViewer();
         }
         else if (action.command === 'change-output-search') {
           data.jobDetails.output_search = args.query || '';
@@ -619,16 +620,20 @@
 		  if (!response.ok) throw new Error(await response.text());
 		  await navigator.clipboard.writeText(await response.text());
         }
-        else if (action.command === 'toggle-output-tailing') {
-		  setOutputTailing(data.jobDetails, !data.jobDetails.output_tailing);
+		else if (action.command === 'toggle-output-tailing') {
+		  const enabled = !data.jobDetails.output_tailing;
+		  setOutputTailing(data.jobDetails, enabled);
 		  if (data.jobDetails.output_tailing) {
+			selectJobOutput(data.jobDetails, '', true);
+			renderCurrent();
+			revealBrowserOutputViewer();
 			if (data.jobDetails.interactive_log_available) {
 			  logViewStates.forEach(state => {
-				if (state.jobID !== String(data.jobDetails.id || '')) return;
+				if (state.jobID !== String(data.jobDetails.id || '') || state.itemID !== String(data.jobDetails.selected_output_group.id || '')) return;
 				const last = state.chunks.length ? Number(state.chunks[state.chunks.length - 1].id) : 0;
 				loadLogViewPage(state, state.hasAfter && last ? 'after' : 'tail', last);
 			  });
-			} else scrollJobOutputToEnd(document.getElementById('job-output-groups'));
+			} else scrollJobOutputToEnd(document.getElementById('job-output-document'));
 		  }
         }
 		else if (action.command === 'set-disclosures') {
@@ -637,7 +642,6 @@
             details.open = expanded;
 			disclosureStates.set(details.dataset.disclosureKey, expanded);
 		  });
-		  requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
         }
 		else if (action.command === 'set-run-option') {
 		  const options = currentData && currentData.runOptions;
@@ -944,7 +948,7 @@
       };
       if (action.on === 'activate') {
         element.tabIndex = element.tabIndex >= 0 ? element.tabIndex : 0;
-        element.setAttribute('role', element.tagName === 'BUTTON' ? 'button' : 'link');
+		element.setAttribute('role', element.tagName === 'BUTTON' || element.classList.contains('dsl-output-selector') ? 'button' : 'link');
       }
 	  bindings.push({action, data, invoke});
     });
@@ -1063,7 +1067,12 @@
 	}
 	if (style.role === 'floating-collapse') element.hidden = true;
     const tone = style.toneBinding ? semanticTone(resolve(data, style.toneBinding)) : style.tone;
+	const selected = style.selectedBinding ? !!resolve(data, style.selectedBinding) : false;
     if (tone) element.classList.add('dsl-' + tone);
+	if (style.selectedBinding) {
+	  element.classList.toggle('dsl-selected', selected);
+	  element.setAttribute('aria-pressed', selected ? 'true' : 'false');
+	}
     if (style.emphasis) element.classList.add('dsl-' + style.emphasis);
     if (style.truncate) element.classList.add('dsl-truncate');
 	applyLayout(element, node.layout);
@@ -1135,7 +1144,6 @@
           element.addEventListener('toggle', () => {
 			disclosureStates.set(stateKey, element.open);
 			requestAnimationFrame(bindRenderedLogViews);
-			requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
           });
         } else {
           element.open = defaultExpanded;
@@ -1271,7 +1279,6 @@
 	if (viewState) window.ciwiRestoreViewState(root, viewState);
 	if (currentData.jobDetails) bindJobOutputScrollIntent(currentData.jobDetails);
 	requestAnimationFrame(bindRenderedLogViews);
-	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
   }
 
   async function navigateBrowser(path, options = {}) {
@@ -1663,22 +1670,64 @@
   }
 
   function revealBrowserOutputGroup(view, itemID) {
-    const group = browserOutputGroup(view, itemID);
-    if (!group) return null;
-    const target = document.querySelector('[data-disclosure-key="' + CSS.escape(String(group.state_key || '')) + '"]');
-    if (!target) return null;
-    target.open = true;
-    disclosureStates.set(String(group.state_key || ''), true);
-    target.scrollIntoView({block: 'nearest'});
-    return target;
+	const group = browserOutputGroup(view, itemID);
+	if (!group) return null;
+	setOutputTailing(view, false);
+	selectJobOutput(view, itemID, false);
+	renderCurrent();
+	revealBrowserOutputViewer();
+	return document.getElementById('job-output-viewer');
+  }
+
+  function revealBrowserOutputViewer() {
+	const viewer = document.getElementById('job-output-viewer');
+	if (!viewer) return null;
+	const bounds = viewer.getBoundingClientRect();
+	if (bounds.bottom <= 0 || bounds.top >= window.innerHeight) viewer.scrollIntoView({block: 'nearest'});
+	return viewer;
+  }
+
+  function emptySelectedOutputGroup() {
+	return {
+	  id: 'no-output', title: 'No execution phases or steps reported', kind: 'empty', status: '', status_label: '',
+	  reached: true, started: '', duration: '', exit_code: '', error: '', details: '', yaml_literal: '', expanded_command: '',
+	  output: '', empty_output_label: 'No phase or step output is available.', available: false,
+	  interactive_log_available: false, selected: false, progress: {state: 'none'},
+	};
+  }
+
+  function selectJobOutput(view, requestedID, followLatest) {
+	const timeline = Array.isArray(view.timeline) ? view.timeline : [];
+	const groups = Array.isArray(view.output_groups) ? view.output_groups : [];
+	const timelineByID = new Map();
+	const groupByID = new Map();
+	timeline.forEach(item => { item.selected = false; timelineByID.set(String(item.id || ''), item); });
+	groups.forEach(group => { group.selected = false; groupByID.set(String(group.id || ''), group); });
+	let id = groupByID.has(String(requestedID || '')) ? String(requestedID || '') : '';
+	if (followLatest) {
+	  const running = groups.find(group => ['running', 'in progress'].includes(String(group.status || '').trim().toLowerCase()));
+	  const reached = groups.slice().reverse().find(group => !!group.reached);
+	  id = String((running || reached || groups[0] || {}).id || '');
+	} else if (!id) {
+	  const failed = groups.find(group => String(group.status || '').trim().toLowerCase() === 'failed');
+	  id = String((failed || groups[0] || {}).id || '');
+	}
+	const selectedGroup = groupByID.get(id) || emptySelectedOutputGroup();
+	selectedGroup.selected = groupByID.has(id);
+	const selectedTimeline = timelineByID.get(id) || selectedGroup;
+	if (timelineByID.has(id)) selectedTimeline.selected = true;
+	view.selected_timeline_item = selectedTimeline;
+	view.selected_output_group = selectedGroup;
+	view.selected_output_groups = [selectedGroup];
+	return groupByID.has(id);
   }
 
   function selectBrowserOutputMatch(view) {
     const matches = groupedOutputMatches(view);
     const match = matches[Number(view.output_match_index || 0)];
     if (!match) return;
-    const disclosure = match.itemID ? revealBrowserOutputGroup(view, match.itemID) : null;
-    const target = disclosure || document.getElementById('job-output-system');
+	const viewer = match.itemID ? revealBrowserOutputGroup(view, match.itemID) : null;
+	const target = viewer || document.getElementById('job-output-system');
     const active = target && target.querySelector('.ciwi-search-hit-active');
     if (active) active.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'});
   }
@@ -1756,16 +1805,6 @@
     if (cursor < text.length) element.appendChild(document.createTextNode(text.slice(cursor)));
   }
 
-  function updateDeclarativeOutputCollapseButtons() {
-    const container = document.getElementById('job-output-groups');
-    if (!container) return;
-    container.querySelectorAll('details.dsl-output-group').forEach(details => {
-      const button = details.querySelector(':scope > .dsl-floating-collapse');
-      if (!button) return;
-      button.hidden = !details.open || details.scrollHeight <= container.clientHeight;
-    });
-  }
-
   function outputIsAtBottom(element) {
 	return !element || element.scrollHeight - element.clientHeight - element.scrollTop <= 3;
   }
@@ -1809,7 +1848,7 @@
   }
 
   function bindJobOutputScrollIntent(view) {
-	const container = document.getElementById('job-output-groups');
+	const container = document.getElementById('job-output-document');
 	if (!container) return;
 	container.__ciwiOutputView = view;
 	if (container.dataset.ciwiScrollIntent === '1') return;
@@ -1835,11 +1874,10 @@
 
   function patchJobOutputRegion(view) {
 	renderCurrent();
-	const currentScroller = document.getElementById('job-output-groups');
+	const currentScroller = document.getElementById('job-output-document');
 	bindJobOutputScrollIntent(view);
 	if (view.output_tailing && !view.interactive_log_available) scrollJobOutputToEnd(currentScroller);
 	updateJobOutputSearchCount(view);
-	requestAnimationFrame(updateDeclarativeOutputCollapseButtons);
   }
 
   function initializeJobOutputView(view, previousView) {
@@ -1855,6 +1893,9 @@
       group.yaml_literal = group.yaml_literal || '(none)';
       group.expanded_command = group.expanded_command || '(none)';
       group.details = group.details || '(none)';
+	  group.available = true;
+	  group.interactive_log_available = !!view.interactive_log_available;
+	  group.selected = false;
     });
     rebuildJobOutputText(view);
   }
@@ -1888,6 +1929,14 @@
       const itemID = String(event.item_id || '');
       if (event.type === 'system-message' || event.type === 'output') {
 		changed = appendBoundedOutput(view, event.type === 'system-message' ? '' : itemID, event.text || '') || changed;
+		if (event.type === 'output') {
+		  const group = browserOutputGroup(view, itemID);
+		  if (group) {
+			group.reached = true;
+			if (!group.status || ['pending', 'not reached'].includes(String(group.status).toLowerCase())) group.status = 'running';
+			if (view.output_tailing) selectJobOutput(view, itemID, false);
+		  }
+		}
       }
       if (event.type === 'finished') {
         const group = browserOutputGroup(view, itemID);
@@ -2210,13 +2259,9 @@
 		view.output_tailing = sameJob ? !!previousJob.output_tailing : jobOutputStartsAtTail(view);
 		view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
 		view.tailing_tone = view.output_tailing ? 'success' : 'accent';
-		const timeline = Array.isArray(view.timeline) ? view.timeline : [];
 		const previousSelectionID = sameJob && previousJob.selected_timeline_item
 		  ? String(previousJob.selected_timeline_item.id || '') : '';
-		view.selected_timeline_item = timeline.find(item => String(item.id || '') === previousSelectionID)
-		  || timeline.find(item => ['running', 'in progress', 'failed'].includes(String(item.status || '').toLowerCase()))
-		  || timeline[0]
-		  || {id:'', title:'No execution steps reported', description:'', status:'', status_label:'', duration:'', exit_code:'', error:''};
+		selectJobOutput(view, previousSelectionID, view.output_tailing);
       }
 	  if (!jobMatch) completedOutputJobID = '';
 	  if (loadGeneration !== routeLoadGeneration) return false;

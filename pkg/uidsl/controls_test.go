@@ -21,6 +21,7 @@ controls:
     iconSize: {web: 19, native: 19}
     iconGap: {web: 8, native: 8}
     iconOnlySize: {web: 34, native: 34}
+    selectedTintOpacity: 0.24
   badge:
     paddingX: 9
     paddingY: 4
@@ -64,6 +65,9 @@ controls:
 	if document.Controls.Button.IconPosition != "leading" || document.Controls.Select.ChevronPosition != "trailing" {
 		t.Fatalf("controls = %#v", document.Controls)
 	}
+	if document.Controls.Button.SelectedTintOpacity != 0.24 {
+		t.Fatalf("button selected tint opacity = %v", document.Controls.Button.SelectedTintOpacity)
+	}
 	if got := document.Controls.LogView; got.MinimumHeight != 48 || got.MaximumHeight != 420 {
 		t.Fatalf("log view controls = %#v", got)
 	}
@@ -95,6 +99,11 @@ func TestControlsValidationRejectsInvalidVisualMetrics(t *testing.T) {
 	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "placeholderColor") {
 		t.Fatalf("invalid placeholder color error = %v", err)
 	}
+	document = validControlsDocument()
+	document.Controls.Button.SelectedTintOpacity = 0
+	if err := document.Validate(); err == nil || !strings.Contains(err.Error(), "selectedTintOpacity") {
+		t.Fatalf("invalid selected tint opacity error = %v", err)
+	}
 }
 
 func validControlsDocument() *ControlsDocument {
@@ -104,13 +113,14 @@ func validControlsDocument() *ControlsDocument {
 		Controls: Controls{
 			Viewport: ViewportControl{CompactMaximumWidth: 760, CondensedDisclosureMaximumWidth: 560},
 			Button: ButtonControl{
-				IconPosition:  "leading",
-				MinimumHeight: PlatformMetric{Web: 44, Native: 44},
-				PaddingX:      PlatformMetric{Web: 12, Native: 12},
-				PaddingY:      PlatformMetric{Web: 8, Native: 8},
-				IconSize:      PlatformMetric{Web: 19, Native: 19},
-				IconGap:       PlatformMetric{Web: 8, Native: 8},
-				IconOnlySize:  PlatformMetric{Web: 34, Native: 34},
+				IconPosition:        "leading",
+				MinimumHeight:       PlatformMetric{Web: 44, Native: 44},
+				PaddingX:            PlatformMetric{Web: 12, Native: 12},
+				PaddingY:            PlatformMetric{Web: 8, Native: 8},
+				IconSize:            PlatformMetric{Web: 19, Native: 19},
+				IconGap:             PlatformMetric{Web: 8, Native: 8},
+				IconOnlySize:        PlatformMetric{Web: 34, Native: 34},
+				SelectedTintOpacity: 0.24,
 			},
 			Badge: BadgeControl{PaddingX: 9, PaddingY: 4, TintOpacity: 0.12, BorderOpacity: 0.55},
 			Input: InputControl{

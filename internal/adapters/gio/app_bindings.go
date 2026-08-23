@@ -633,29 +633,92 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 						entry[field] = "(none)"
 					}
 				}
+				entry["available"] = true
+				entry["interactive_log_available"] = interactiveLogs
+				entry["selected"] = false
 			}
 		}
-		if timeline, ok := root["timeline"].([]any); ok && len(timeline) > 0 {
-			selected := timeline[0]
-			for _, item := range timeline {
-				entry, entryOK := item.(map[string]any)
-				if !entryOK {
-					continue
-				}
-				status := strings.ToLower(fmt.Sprint(entry["status"]))
-				if status == "running" || status == "in progress" || status == "failed" {
-					selected = item
+		selectJobOutputBinding(root, "", protocol.IsActiveJobExecutionStatus(fmt.Sprint(root["status"])))
+	}
+	return data, nil
+}
+
+func selectJobOutputBinding(root map[string]any, requestedID string, followLatest bool) bool {
+	timeline, _ := root["timeline"].([]any)
+	groups, _ := root["output_groups"].([]any)
+	timelineByID := make(map[string]map[string]any, len(timeline))
+	groupByID := make(map[string]map[string]any, len(groups))
+	orderedGroups := make([]map[string]any, 0, len(groups))
+	for _, raw := range timeline {
+		if entry, ok := raw.(map[string]any); ok {
+			entry["selected"] = false
+			timelineByID[fmt.Sprint(entry["id"])] = entry
+		}
+	}
+	for _, raw := range groups {
+		if entry, ok := raw.(map[string]any); ok {
+			entry["selected"] = false
+			id := fmt.Sprint(entry["id"])
+			groupByID[id] = entry
+			orderedGroups = append(orderedGroups, entry)
+		}
+	}
+
+	selectedID := strings.TrimSpace(requestedID)
+	if _, exists := groupByID[selectedID]; !exists {
+		selectedID = ""
+	}
+	if followLatest {
+		selectedID = ""
+		for _, group := range orderedGroups {
+			status := strings.ToLower(strings.TrimSpace(fmt.Sprint(group["status"])))
+			if status == "running" || status == "in progress" {
+				selectedID = fmt.Sprint(group["id"])
+				break
+			}
+		}
+		if selectedID == "" {
+			for index := len(orderedGroups) - 1; index >= 0; index-- {
+				if reached, _ := orderedGroups[index]["reached"].(bool); reached {
+					selectedID = fmt.Sprint(orderedGroups[index]["id"])
 					break
 				}
 			}
-			root["selected_timeline_item"] = selected
-		} else {
-			root["selected_timeline_item"] = map[string]any{
-				"id": "", "title": "No execution steps reported", "description": "", "status": "", "status_label": "", "duration": "", "exit_code": "", "error": "",
+		}
+	}
+	if selectedID == "" && !followLatest {
+		for _, group := range orderedGroups {
+			if strings.EqualFold(strings.TrimSpace(fmt.Sprint(group["status"])), "failed") {
+				selectedID = fmt.Sprint(group["id"])
+				break
 			}
 		}
 	}
-	return data, nil
+	if selectedID == "" && len(orderedGroups) > 0 {
+		selectedID = fmt.Sprint(orderedGroups[0]["id"])
+	}
+	if selected, exists := groupByID[selectedID]; exists {
+		selected["selected"] = true
+		root["selected_output_group"] = selected
+		root["selected_output_groups"] = []any{selected}
+		if item := timelineByID[selectedID]; item != nil {
+			item["selected"] = true
+			root["selected_timeline_item"] = item
+		}
+		return true
+	}
+
+	placeholder := map[string]any{
+		"id": "no-output", "title": "No execution phases or steps reported", "kind": "empty",
+		"status": "", "status_label": "", "reached": true, "started": "", "duration": "",
+		"exit_code": "", "error": "", "details": "", "yaml_literal": "", "expanded_command": "",
+		"output": "", "empty_output_label": "No phase or step output is available.", "available": false,
+		"interactive_log_available": false, "selected": false, "progress": map[string]any{"state": "none"},
+	}
+	root["selected_timeline_item"] = placeholder
+	root["selected_output_group"] = placeholder
+	root["selected_output_groups"] = []any{placeholder}
+	return false
 }
 
 func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument, selectedTheme string) (map[string]any, error) {

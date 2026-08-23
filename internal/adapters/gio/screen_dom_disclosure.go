@@ -382,20 +382,20 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		parsed, _ := strconv.ParseFloat(node.Layout.MaxWidth, 32)
 		viewport = unit.Dp(parsed)
 	}
-	isOutputGroups := node.ID == "job-output-groups"
-	interactiveOutput := isOutputGroups && nativeInteractiveJobLog(data)
-	if isOutputGroups {
+	isOutputDocument := node.ID == "job-output-document"
+	interactiveOutput := isOutputDocument && nativeInteractiveJobLog(data)
+	if isOutputDocument {
 		viewport = r.domOutputGroupsViewport(viewport)
 	}
 	scrollTarget := giodom.Key("")
 	scrollRevision := uint64(0)
-	if node.ID == "job-output-groups" && r.pendingOutputScroll != "" {
+	if isOutputDocument && r.pendingOutputScroll != "" {
 		scrollTarget = giodom.Key(r.pendingOutputScroll)
 		scrollRevision = r.outputScrollRevision
 		r.pendingOutputScroll = ""
 	}
 	var onLeaveEnd func()
-	if isOutputGroups && !interactiveOutput {
+	if isOutputDocument && !interactiveOutput {
 		onLeaveEnd = func() {
 			if !r.outputTailing {
 				return
@@ -405,7 +405,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		}
 	}
 	var pinnedOverlay func(giodom.ListViewportItem) *giodom.Element
-	if disclosureNode, collapseNode, ok := domOutputCollapseDeclaration(node); isOutputGroups && ok {
+	if disclosureNode, collapseNode, ok := domOutputCollapseDeclaration(node); isOutputDocument && ok {
 		pinnedOverlay = func(position giodom.ListViewportItem) *giodom.Element {
 			if position.Index < 0 || position.Index >= len(items) || position.Extent <= position.Viewport {
 				return nil
@@ -425,9 +425,9 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 	}
 	result := giodom.VirtualList(domNodeKey(node, path), giodom.ListProps{
 		Axis: axis, Gap: r.spacing(node.Layout.Gap), Viewport: viewport,
-		ShrinkMain: axis == layout.Vertical && viewport > 0, ShrinkCross: axis == layout.Horizontal,
-		NestedScroll: isOutputGroups, Estimate: 100, Overscan: 2, MaxMeasured: 512,
-		ScrollToEnd:      isOutputGroups && !interactiveOutput && r.outputTailing,
+		ShrinkMain: axis == layout.Vertical && viewport > 0 && !isOutputDocument, ShrinkCross: axis == layout.Horizontal,
+		NestedScroll: isOutputDocument, Estimate: 100, Overscan: 2, MaxMeasured: 512,
+		ScrollToEnd:      isOutputDocument && !interactiveOutput && r.outputTailing,
 		ForceEndRevision: r.outputTailRevision, ResetRevision: r.outputResetRevision,
 		ScrollTo: scrollTarget, ScrollRevision: scrollRevision, OnLeaveEnd: onLeaveEnd,
 		PinnedOverlay: pinnedOverlay, PinnedAlignment: layout.NE,

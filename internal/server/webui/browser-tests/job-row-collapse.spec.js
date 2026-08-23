@@ -90,20 +90,35 @@ const outputScreen = {
       ],
     },
     {
-      component: 'scroller', id: 'job-output-groups', layout: {direction: 'vertical', gap: 'small', maxHeight: '660'},
+      component: 'list', id: 'job-output-timeline-test', layout: {direction: 'horizontal', gap: 'small'},
+      repeat: {source: 'jobDetails.timeline', as: 'item', key: 'item.id'}, children: [{
+        component: 'card', style: {role: 'output-selector', selectedBinding: 'item.selected'},
+        actions: [{on: 'activate', command: 'select-timeline-item', arguments: {id: '{{item.id}}'}}],
+        children: [{component: 'text', text: {binding: 'item.title'}}],
+      }],
+    },
+    {
+      component: 'list', id: 'job-output-selectors', layout: {direction: 'vertical', gap: 'small'},
       repeat: {source: 'jobDetails.output_groups', as: 'outputGroup', key: 'outputGroup.id'},
       children: [{
-        component: 'disclosure', text: {binding: 'outputGroup.title'}, style: {role: 'output-group'}, progress: {binding: 'outputGroup.progress'},
-        layout: {direction: 'vertical', gap: '0', padding: 'section-padding'},
-        disclosure: {defaultExpandedBinding: 'outputGroup.default_expanded', stateKey: '{{outputGroup.state_key}}'},
+        component: 'card', style: {role: 'output-selector', selectedBinding: 'outputGroup.selected'},
+        actions: [{on: 'activate', command: 'select-timeline-item', arguments: {id: '{{outputGroup.id}}'}}],
         children: [
-          {
-            component: 'button', text: {literal: 'Collapse'}, icon: 'arrow-up', style: {role: 'floating-collapse'},
-            actions: [{on: 'activate', command: 'set-disclosures', arguments: {prefix: '{{outputGroup.state_key}}', expanded: 'false'}}],
-          },
-          {component: 'text', id: 'long-output', text: {binding: 'outputGroup.output'}, style: {role: 'output-code'}},
+          {component: 'text', text: {binding: 'outputGroup.title'}},
+          {component: 'text', text: {binding: 'outputGroup.status_label'}},
         ],
       }],
+    },
+    {
+      component: 'section', id: 'job-output-viewer', style: {role: 'output-viewer'},
+      layout: {direction: 'vertical', gap: '0', minHeight: '660', maxHeight: '660'}, children: [
+        {component: 'text', id: 'selected-output-title', text: {binding: 'jobDetails.selected_output_group.title'}, style: {role: 'output-viewer-header'}},
+        {
+          component: 'scroller', id: 'job-output-document', layout: {direction: 'vertical', gap: 'small'},
+          repeat: {source: 'jobDetails.selected_output_groups', as: 'outputGroup', key: 'outputGroup.id'},
+          children: [{component: 'text', id: 'long-output', text: {binding: 'outputGroup.output'}, style: {role: 'output-code'}}],
+        },
+      ],
     },
     {component: 'spacer', layout: {minHeight: '800'}},
   ] }},
@@ -194,6 +209,16 @@ async function installJobRowFixture(page) {
 
 async function installOutputFixture(page) {
   const output = Array.from({length: 180}, (_, index) => `line ${index}: long job output`).join('\n');
+  const groups = [
+    {
+      id: 'step-1', title: 'Compile', status: 'succeeded', status_label: 'Succeeded', reached: true, selected: true,
+      state_key: 'job-output:step-1', output, progress: {state: 'complete', fraction: 1},
+    },
+    {
+      id: 'step-2', title: 'Package', status: 'succeeded', status_label: 'Succeeded', reached: true, selected: false,
+      state_key: 'job-output:step-2', output: `package selected\n${output}`, progress: {state: 'complete', fraction: 1},
+    },
+  ];
   await page.route('http://ciwi-output.test/**', async route => {
     const url = new URL(route.request().url());
     if (await serveAssets(route)) return;
@@ -204,16 +229,17 @@ async function installOutputFixture(page) {
     } else if (url.pathname === '/ui/contracts/screens/output-test.json') {
       await route.fulfill({json: outputScreen});
     } else if (url.pathname === '/api/v1/views/front-page') {
-      await route.fulfill({json: {output_tailing: false, tailing_label: 'Tailing: Off', tailing_tone: 'accent', output_groups: [{
-        id: 'step-1', title: 'Long build step', state_key: 'job-output:step-1', default_expanded: true, output,
-        progress: {state: 'complete', fraction: 1},
-      }]}});
+      await route.fulfill({json: {
+        output_tailing: false, tailing_label: 'Tailing: Off', tailing_tone: 'accent', output_groups: groups,
+        timeline: groups.map(group => ({id: group.id, title: group.title, status: group.status, selected: group.selected})),
+        selected_timeline_item: groups[0], selected_output_group: groups[0], selected_output_groups: [groups[0]],
+      }});
     } else {
       await route.fulfill({status: 404, body: 'not found'});
     }
   });
   await page.goto('http://ciwi-output.test/');
-  await expect(page.locator('.dsl-floating-collapse')).toBeVisible();
+  await expect(page.locator('#job-output-viewer')).toBeVisible();
 }
 
 test('queued and history job rows navigate from passive cells while nested actions retain ownership', async ({page}) => {
@@ -282,24 +308,35 @@ test('constrained job action labels stay centered inside the web button', async 
   expect(Math.abs(iconGeometry.centerDelta)).toBeLessThanOrEqual(0.5);
 });
 
-test('Collapse remains reachable at the end of a long output group', async ({page}) => {
+test('output selectors stay collapsed in page flow and drive the fixed-height viewer', async ({page}) => {
   await page.setViewportSize({width: 390, height: 600});
   await installOutputFixture(page);
-  const container = page.locator('#job-output-groups');
-  await container.evaluate(element => { element.scrollTop = element.scrollHeight; });
-  const geometry = await page.locator('.dsl-floating-collapse').evaluate(button => {
-    const control = button.getBoundingClientRect();
-    const viewport = document.getElementById('job-output-groups').getBoundingClientRect();
-    return {control: control.toJSON(), viewport: viewport.toJSON()};
-  });
-  expect(geometry.control.top).toBeGreaterThanOrEqual(geometry.viewport.top + 7);
-  expect(geometry.control.bottom).toBeLessThanOrEqual(geometry.viewport.bottom + 1);
-  expect(geometry.control.right).toBeLessThanOrEqual(geometry.viewport.right - 7);
+  const timeline = page.locator('#job-output-timeline-test .dsl-output-selector');
+  const selectors = page.locator('#job-output-selectors .dsl-output-selector');
+  await expect(timeline).toHaveCount(2);
+  await expect(selectors).toHaveCount(2);
+  await expect(page.locator('details')).toHaveCount(0);
+  await expect(page.locator('#job-output-groups')).toHaveCount(0);
+  await expect(timeline.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(selectors.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(selectors.nth(1)).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#selected-output-title')).toHaveText('Compile');
+  await expect.poll(() => page.locator('#job-output-viewer').evaluate(element => element.getBoundingClientRect().height)).toBe(420);
 
-  await page.locator('.dsl-floating-collapse').click();
-  await expect(page.locator('details.dsl-output-group')).not.toHaveAttribute('open', '');
-  await expect(page.locator('.dsl-floating-collapse')).toBeHidden();
-  await expect.poll(() => page.locator('details.dsl-output-group').evaluate(element => element.getBoundingClientRect().height)).toBe(50);
+  await timeline.nth(1).click();
+  await expect(timeline.nth(0)).toHaveAttribute('aria-pressed', 'false');
+  await expect(timeline.nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(selectors.nth(0)).toHaveAttribute('aria-pressed', 'false');
+  await expect(selectors.nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#selected-output-title')).toHaveText('Package');
+  await expect(page.locator('#long-output')).toContainText('package selected');
+  await expect(page.locator('#job-output-tailing-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#job-output-viewer')).toBeInViewport();
+
+  await selectors.nth(0).click();
+  await expect(timeline.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(selectors.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#selected-output-title')).toHaveText('Compile');
 });
 
 test('tailing toggle looks ordinary off and clearly selected on', async ({page}) => {
@@ -321,6 +358,8 @@ test('tailing toggle looks ordinary off and clearly selected on', async ({page})
   await page.mouse.move(799, 699);
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(toggle).toHaveAttribute('aria-label', 'Tailing: On');
+  await expect(page.locator('#selected-output-title')).toHaveText('Package');
+  await expect(page.locator('#job-output-selectors .dsl-output-selector').nth(1)).toHaveAttribute('aria-pressed', 'true');
   const on = await appearance(toggle);
   expect(on.background).not.toBe(off.background);
   expect(on.border).not.toBe(off.border);
@@ -334,7 +373,7 @@ test('tailing toggle looks ordinary off and clearly selected on', async ({page})
 test('output scrolling chains to the page in both directions at its boundaries', async ({page}) => {
   await page.setViewportSize({width: 800, height: 500});
   await installOutputFixture(page);
-  const container = page.locator('#job-output-groups');
+  const container = page.locator('#job-output-document');
 
   await container.evaluate(element => {
     element.scrollTop = 0;

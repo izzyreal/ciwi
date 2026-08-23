@@ -421,6 +421,14 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	if props.ScrollTo != "" && props.ScrollRevision != state.scrollRevision {
 		for index := 0; index < children.Len(); index++ {
 			if children.KeyAt(index) == props.ScrollTo {
+				if props.ScrollToNearest && state.anchor != "" {
+					current := state.prefixAt(state.anchorIndex) + max(0, state.anchorOffset)
+					targetStart := state.prefixAt(index)
+					targetEnd := targetStart + state.extents[index]
+					if targetEnd > current && targetStart < current+mainViewport {
+						break
+					}
+				}
 				state.anchor = props.ScrollTo
 				state.anchorIndex = index
 				state.anchorOffset = 0

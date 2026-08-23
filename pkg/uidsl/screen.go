@@ -179,11 +179,12 @@ type Layout struct {
 }
 
 type Style struct {
-	Role        string `yaml:"role,omitempty" json:"role,omitempty"`
-	Emphasis    string `yaml:"emphasis,omitempty" json:"emphasis,omitempty"`
-	Tone        string `yaml:"tone,omitempty" json:"tone,omitempty"`
-	ToneBinding string `yaml:"toneBinding,omitempty" json:"toneBinding,omitempty"`
-	Truncate    bool   `yaml:"truncate,omitempty" json:"truncate,omitempty"`
+	Role            string `yaml:"role,omitempty" json:"role,omitempty"`
+	Emphasis        string `yaml:"emphasis,omitempty" json:"emphasis,omitempty"`
+	Tone            string `yaml:"tone,omitempty" json:"tone,omitempty"`
+	ToneBinding     string `yaml:"toneBinding,omitempty" json:"toneBinding,omitempty"`
+	SelectedBinding string `yaml:"selectedBinding,omitempty" json:"selectedBinding,omitempty"`
+	Truncate        bool   `yaml:"truncate,omitempty" json:"truncate,omitempty"`
 }
 
 type Repeat struct {
@@ -560,6 +561,11 @@ func validateNode(node Node, path string, ids map[string]struct{}, inheritedScop
 	if node.Style.ToneBinding != "" {
 		if err := validateBinding(node.Style.ToneBinding, scope); err != nil {
 			return fmt.Errorf("%s.style.toneBinding: %w", path, err)
+		}
+	}
+	if node.Style.SelectedBinding != "" {
+		if err := validateBinding(node.Style.SelectedBinding, scope); err != nil {
+			return fmt.Errorf("%s.style.selectedBinding: %w", path, err)
 		}
 	}
 	if node.Progress != nil {

@@ -74,14 +74,14 @@ control text share the bundled Geist Sans faces.
 
 Job output uses theme-owned console tokens in both renderers. Its controls,
 execution path, system messages, and grouped phase/step output now live in one
-`Output / Error` section; selecting a path item reveals its corresponding output
-instead of maintaining a second selected-item details card. Timeline cards use
-the same fixed outer geometry in both adapters, and collapsed output rows use
-the shared passive-chevron and border-box contracts. The complete collapsed
-phase/step row expands and collapses by mouse or touch, including while nested
-inside the output scroller. Timeline selection changes selection and disclosure
-state without creating a snackbar; bounded queue notices remain part of running
-jobs, chains, pipelines, and ad-hoc scripts.
+`Output / Error` section. Phase and step cards are non-expandable selectors in
+ordinary page flow; selecting either a horizontal timeline card or its vertical
+counterpart shows that unit in one dedicated, fixed-height output viewer. The
+viewer is 70% of the viewport height, bounded to 240–660 px/dp, and owns the
+only nested phase/step output scroll. Selection is shared across both selector
+representations and does not create a snackbar. Manual selection turns tailing
+off, while enabling tailing follows the running or latest reached unit. Bounded
+queue notices remain part of running jobs, chains, pipelines, and ad-hoc scripts.
 
 Job reports use one recursive `tree-view` declaration and one presentation
 model in both clients. Artifact directories expose ZIP downloads at every
@@ -108,9 +108,8 @@ participate in responsive classification.
 
 Tests enforce the renderer boundary: populated browser binding fixtures cover
 every shared route, every web-visible command must have a browser adapter, and
-platform-specific overrides are restricted to the native connection panel and
-the browser's sticky output-collapse affordance. This prevents cosmetic layout
-or content forks from being added silently.
+platform-specific overrides are restricted to the native connection panel.
+This prevents cosmetic layout or content forks from being added silently.
 
 Renderer-independent labels and semantic states for execution cards and
 project structure are produced by `internal/presentation` and carried by the

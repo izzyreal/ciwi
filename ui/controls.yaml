@@ -12,6 +12,7 @@ controls:
     iconSize: {web: 19, native: 19}
     iconGap: {web: 8, native: 8}
     iconOnlySize: {web: 34, native: 34}
+    selectedTintOpacity: 0.24
   badge:
     paddingX: 9
     paddingY: 4

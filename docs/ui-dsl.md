@@ -78,6 +78,11 @@ scrollers remain intrinsic when their content is shorter. The shared `logView`
 control geometry follows the same rule, growing from its minimum to its maximum
 before enabling nested scrolling.
 
+A node can bind `style.selectedBinding` to boolean view data. Both renderers
+then expose the node's selected semantics and apply the shared selected tint;
+the job-detail timeline and vertical phase/step selectors use this to present
+one synchronized selection without adapter-specific markup.
+
 `graph-view` describes a dependency graph plus its complete list fallback;
 renderers own layout, selection, pan/zoom, and local Graph/List persistence.
 `tree-view` describes recursive report data with stable keys, disclosure state,
@@ -103,7 +108,7 @@ typography come from the shared control contract.
 An indexed `log-view` is one logical selectable document per system, phase, or
 step stream even though the native adapter paints it as bounded virtual blocks.
 Selection can cross loaded page and block boundaries but does not include the
-disclosure header, metadata preamble, or neighboring streams. Starting a text
+viewer header, metadata preamble, or neighboring streams. Starting a text
 selection turns output tailing off; live page changes retain that selection
 until it is cleared or tailing is explicitly enabled again. Native touch drags
 remain scrolling gestures, while mouse/trackpad drags own text selection.

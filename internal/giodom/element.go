@@ -133,6 +133,8 @@ type ButtonProps struct {
 	Label       string
 	Description string
 	Enabled     bool
+	Selectable  bool
+	Selected    bool
 	OnClick     func()
 	Fill        color.NRGBA
 	Border      color.NRGBA
@@ -203,6 +205,7 @@ type ListProps struct {
 	ForceEndRevision  uint64
 	ResetRevision     uint64
 	ScrollTo          Key
+	ScrollToNearest   bool
 	ScrollRevision    uint64
 	SemanticLabel     string
 	OnLeaveEnd        func()

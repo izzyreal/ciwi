@@ -57,15 +57,16 @@ func TestInteractiveSearchResultStopsTailingAndRevealsMatchedGroup(t *testing.T)
 		StartRune: 7, EndRune: 13, SelectedIndex: 0, TotalMatches: 1,
 	})
 	stream := renderer.jobLogStreams[nativeJobLogKey("job-1", "step:1")]
-	if renderer.outputTailing || renderer.pendingOutputScroll != "step:1" ||
-		!renderer.disclosures["job-output:job-1:step:1"] {
-		t.Fatalf("search navigation = tailing %v scroll %q disclosures %#v",
-			renderer.outputTailing, renderer.pendingOutputScroll, renderer.disclosures)
+	if renderer.outputTailing || renderer.pendingScrollSection != "job-output-viewer" {
+		t.Fatalf("search navigation = tailing %v section %q", renderer.outputTailing, renderer.pendingScrollSection)
 	}
 	if stream.SelectedChunkID != 7 || stream.SelectedStartRune != 7 || stream.SelectedEndRune != 13 {
 		t.Fatalf("selected log match = %+v", stream)
 	}
 	root := renderer.data.(map[string]any)["jobDetails"].(map[string]any)
+	if selected := root["selected_output_group"].(map[string]any); selected["id"] != "step:1" {
+		t.Fatalf("selected searched output = %#v", selected)
+	}
 	if root["tailing_label"] != "Tailing: Off" || root["tailing_tone"] != "accent" || root["output_search_count"] != "1/1" {
 		t.Fatalf("search bindings = %#v", root)
 	}
@@ -86,13 +87,43 @@ func TestTimelineSelectionDoesNotCreateTransientNotice(t *testing.T) {
 	if renderer.notice != nil || len(renderer.noticeQueue) != 0 {
 		t.Fatalf("timeline selection created notice state: active=%#v queued=%d", renderer.notice, len(renderer.noticeQueue))
 	}
-	if !renderer.disclosures["job-output:phase-2"] || renderer.pendingOutputScroll != "phase-2" {
-		t.Fatalf("timeline selection did not retain expansion/scroll behavior: disclosures=%#v scroll=%q", renderer.disclosures, renderer.pendingOutputScroll)
+	if renderer.pendingScrollSection != "job-output-viewer" || renderer.outputTailing {
+		t.Fatalf("timeline selection = section %q tailing %v", renderer.pendingScrollSection, renderer.outputTailing)
 	}
 	root := renderer.data.(map[string]any)["jobDetails"].(map[string]any)
 	selected := root["selected_timeline_item"].(map[string]any)
 	if selected["id"] != "phase-2" {
 		t.Fatalf("selected timeline item = %#v", selected)
+	}
+	if output := root["selected_output_group"].(map[string]any); output["id"] != "phase-2" || output["selected"] != true {
+		t.Fatalf("selected output group = %#v", output)
+	}
+}
+
+func TestNativeTailingFollowsCurrentOutputAndManualSelectionStopsIt(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = true
+	data := map[string]any{"jobDetails": map[string]any{
+		"tailing_label": "Tailing: On", "tailing_tone": "success",
+		"timeline": []any{
+			map[string]any{"id": "phase-1", "status": "succeeded"},
+			map[string]any{"id": "phase-2", "status": "running"},
+		},
+		"output_groups": []any{
+			map[string]any{"id": "phase-1", "status": "succeeded", "reached": true},
+			map[string]any{"id": "phase-2", "status": "running", "reached": true},
+		},
+	}}
+	renderer.SetData(data)
+	renderer.dispatchRendererAction(nil, "select-timeline-item", map[string]string{"id": "phase-1"}, data)
+	root := renderer.data.(map[string]any)["jobDetails"].(map[string]any)
+	if renderer.outputTailing || root["selected_output_group"].(map[string]any)["id"] != "phase-1" {
+		t.Fatalf("manual output selection = tailing %v selected %#v", renderer.outputTailing, root["selected_output_group"])
+	}
+	renderer.dispatchRendererAction(nil, "toggle-output-tailing", nil, data)
+	root = renderer.data.(map[string]any)["jobDetails"].(map[string]any)
+	if !renderer.outputTailing || root["selected_output_group"].(map[string]any)["id"] != "phase-2" {
+		t.Fatalf("resumed output tailing = tailing %v selected %#v", renderer.outputTailing, root["selected_output_group"])
 	}
 }
 

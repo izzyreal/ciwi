@@ -59,6 +59,12 @@ func addDOMSelectPressArea(ops *op.Ops, dismiss *domSelectDismiss, bounds image.
 }
 
 func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data any, path string) *giodom.Element {
+	selected := false
+	if node.Style.SelectedBinding != "" {
+		if value, err := uidsl.Resolve(data, node.Style.SelectedBinding); err == nil {
+			selected = boolValue(value)
+		}
+	}
 	constraintInsets := giodom.Insets{}
 	if element.Kind == giodom.KindFlex {
 		constraintInsets = element.Flex.Padding
@@ -77,7 +83,7 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 		progressProps = r.domProgressProps(node, data)
 	}
 
-	isOutputConsole := node.ID == "job-output-groups"
+	isOutputConsole := node.ID == "job-output-viewer"
 	isSurface := node.Component == "card" || node.Component == "section" || node.Component == "disclosure" || node.Component == "graph-view" || node.Style.Role == "hero" || node.Style.Role == "execution-section-header" || isOutputConsole
 	if isSurface && !(node.Component == "disclosure" && node.Style.Role == "tree-branch") {
 		props := giodom.SurfaceProps{
@@ -106,6 +112,14 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 		case node.Component == "disclosure" && node.Style.Role == "output-group":
 			props.Fill, props.Border = r.palette.consoleSurface, r.palette.consoleBorder
 			props.PaintBackground = nil
+		case node.Style.Role == "output-selector":
+			props.Fill, props.Border, props.PaintBackground = r.palette.consoleSurface, r.palette.consoleBorder, nil
+			if selected {
+				props.Fill = mixColorSRGB(r.palette.consoleSurface, r.palette.accent, float64(r.controls.Button.SelectedTintOpacity))
+				props.Border, props.BorderWidth = r.palette.accentStrong, 2
+			}
+		case node.Style.Role == "output-viewer-header":
+			props.Fill, props.Border, props.PaintBackground = r.palette.consoleSurface, r.palette.consoleBorder, nil
 		case node.Component == "disclosure":
 			props.Fill = r.palette.surfaceRaised
 		case node.Component == "card" && node.Style.Role == "output-system":
@@ -157,12 +171,16 @@ func (r *Renderer) decorateDOMNode(element giodom.Element, node uidsl.Node, data
 	if len(node.Actions) > 0 && !componentHandlesOwnActions(node.Component) {
 		action := node.Actions[0]
 		element = giodom.Control(giodom.Key(path+"/activate"), giodom.ButtonProps{
-			Enabled: conditionEnabled(node.Enabled, data), Description: domActionDescription(action),
+			Enabled: conditionEnabled(node.Enabled, data), Selectable: node.Style.SelectedBinding != "", Selected: selected, Description: domActionDescription(action),
 			OnClick: func() { r.dispatch(action, data) },
 		}, element)
 	}
 	if node.Style.Role == "queued-execution-job-row" || node.Style.Role == "history-execution-job-row" {
 		element = giodom.Constrain(giodom.Key(path+"/row-width"), giodom.ConstraintProps{FillWidth: true}, element)
+	}
+	if node.ID == "job-output-viewer" {
+		height := r.domOutputViewerHeight()
+		node.Layout.MinHeight, node.Layout.MaxHeight = fmt.Sprint(float32(height)), fmt.Sprint(float32(height))
 	}
 	if constraint, ok := r.domConstraint(node.Layout, constraintInsets); ok {
 		element = giodom.Constrain(giodom.Key(path+"/constraint"), constraint, element)
@@ -190,7 +208,7 @@ func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressP
 		mode = giodom.ProgressComplete
 	}
 	fill := r.palette.success
-	if node.Style.Role == "output-group" {
+	if node.Style.Role == "output-group" || node.Style.Role == "output-selector" || node.Style.Role == "output-viewer-header" {
 		fill = r.palette.consoleSuccess
 	}
 	track := color.NRGBA{}
@@ -207,6 +225,13 @@ func (r *Renderer) domProgressProps(node uidsl.Node, data any) *giodom.ProgressP
 		}
 	}
 	return props
+}
+
+func (r *Renderer) domOutputViewerHeight() unit.Dp {
+	if r.viewportHeight <= 0 {
+		return 660
+	}
+	return max(unit.Dp(240), min(unit.Dp(660), r.viewportHeight*0.7))
 }
 
 func (r *Renderer) domConstraint(values uidsl.Layout, insets giodom.Insets) (giodom.ConstraintProps, bool) {

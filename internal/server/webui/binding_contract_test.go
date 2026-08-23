@@ -106,12 +106,13 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 		},
 		"output_search": "test", "output_search_count": "1/1", "tailing_label": "Tailing: On", "tailing_tone": "success",
 		"interactive_log_available": true, "interactive_log_version": 1, "legacy_log_notice": "",
-		"timeline":      []any{map[string]any{"id": "step:0", "title": "Compile", "status": "running", "status_label": "Running", "progress": progress}},
+		"timeline":      []any{map[string]any{"id": "step:0", "title": "Compile", "status": "running", "status_label": "Running", "progress": progress, "selected": true}},
 		"system_output": "starting", "output_groups": []any{map[string]any{
 			"id": "step:0", "kind": "step", "title": "Compile", "state_key": "job-output:job-1:step:0", "status": "running", "progress": progress,
 			"default_expanded": false,
 			"reached":          true, "started": "now", "duration": "1s", "exit_code": "", "error": "",
 			"details": "details", "yaml_literal": "run: go test", "expanded_command": "go test ./...", "output": "ok", "empty_output_label": "",
+			"available": true, "interactive_log_available": true, "selected": true,
 		}},
 		"artifacts": map[string]any{
 			"empty_label": "", "summary": "1 artifact", "tone": "success", "additional_label": "", "rows": []any{},
@@ -126,6 +127,11 @@ func TestBrowserRoutedViewFixturesSatisfySharedBindings(t *testing.T) {
 			"nodes": []any{reportNode}, "filters": []any{}, "filter": "", "can_download_all": false,
 		},
 	}
+	selectedTimeline := jobDetails["timeline"].([]any)[0]
+	selectedOutput := jobDetails["output_groups"].([]any)[0]
+	jobDetails["selected_timeline_item"] = selectedTimeline
+	jobDetails["selected_output_group"] = selectedOutput
+	jobDetails["selected_output_groups"] = []any{selectedOutput}
 	fixtures := map[string]map[string]any{
 		"project-details": {"projectDetails": map[string]any{
 			"project": project, "pipelines": []any{pipeline}, "visible_pipelines": []any{pipeline},

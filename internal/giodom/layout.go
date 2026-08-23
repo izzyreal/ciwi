@@ -339,6 +339,9 @@ func (r *Runtime) layoutButton(gtx layout.Context, element Element, identity str
 	if element.Button.Description != "" {
 		semantic.DescriptionOp(element.Button.Description).Add(gtx.Ops)
 	}
+	if element.Button.Selectable {
+		semantic.SelectedOp(element.Button.Selected).Add(gtx.Ops)
+	}
 	if element.Children != nil && element.Children.Len() > 0 {
 		beforeChildren := r.controlClicks
 		dimensions := clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

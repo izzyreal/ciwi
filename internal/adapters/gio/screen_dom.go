@@ -257,6 +257,7 @@ func (r *Renderer) buildScreenDOM(screen *uidsl.ScreenDocument, data any, pendin
 		ScrollTo: scrollTarget,
 	}
 	if scrollTarget != "" {
+		props.ScrollToNearest = pendingScrollSection == "job-output-viewer"
 		props.ScrollRevision = uint64(time.Now().UnixNano())
 		r.mu.Lock()
 		if r.pendingScrollSection == pendingScrollSection {

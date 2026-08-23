@@ -273,6 +273,9 @@ func mergeStyle(base, override uidsl.Style) uidsl.Style {
 	if override.ToneBinding != "" {
 		base.ToneBinding = override.ToneBinding
 	}
+	if override.SelectedBinding != "" {
+		base.SelectedBinding = override.SelectedBinding
+	}
 	if override.Truncate {
 		base.Truncate = true
 	}
@@ -310,19 +313,12 @@ func preserveJobUIState(previous, next any) {
 		}
 	}
 	selected, ok := previousRoot["selected_timeline_item"].(map[string]any)
-	if !ok {
-		return
+	selectedID := ""
+	if ok {
+		selectedID = fmt.Sprint(selected["id"])
 	}
-	selectedID := fmt.Sprint(selected["id"])
-	if timeline, ok := nextRoot["timeline"].([]any); ok {
-		for _, item := range timeline {
-			entry, entryOK := item.(map[string]any)
-			if entryOK && fmt.Sprint(entry["id"]) == selectedID {
-				nextRoot["selected_timeline_item"] = entry
-				return
-			}
-		}
-	}
+	followLatest := strings.EqualFold(fmt.Sprint(previousRoot["tailing_tone"]), "success")
+	selectJobOutputBinding(nextRoot, selectedID, followLatest)
 }
 
 func preserveSettingsUIState(previous, next any) {

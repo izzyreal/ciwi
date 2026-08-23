@@ -194,8 +194,8 @@ The vertical slices support server information, the shared front page, inline
 queued/history execution cards with explicit job-detail navigation, project
 details with nested pipelines/jobs/configured steps, job execution snapshots
 with a horizontally navigable phase/step timeline, searchable and selectable
-incremental output grouped into ciwi phases and YAML job steps, output copying
-and tailing, ordinary and dry-run enqueue
+incremental output selected from non-expandable phase/step cards and displayed
+in a dedicated bounded viewer, output copying and tailing, ordinary and dry-run enqueue
 commands for individual pipelines and named pipeline chains from the front page
 and Project Details, including job-scoped execution controls, native back
 navigation, managed YAML creation/editing, and live invalidations. Output streams use

@@ -3,7 +3,6 @@
 package gio
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -491,117 +490,72 @@ func TestNativeSelectOwnershipAndOutsideDismissal(t *testing.T) {
 	}
 }
 
-func TestNativeOutputDisclosureHeaderTogglesAcrossNestedViewport(t *testing.T) {
+func TestNativeOutputSelectorExposesSelectedControlState(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
-	renderer.outputTailing = false
 	screen, err := sharedui.LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
 	}
-	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	selectors, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-selectors")
 	if !ok {
-		t.Fatal("job output scroller not found")
+		t.Fatal("job output selectors not found")
 	}
-	data := map[string]any{"jobDetails": map[string]any{"output_groups": []any{map[string]any{
-		"id": "step-1", "title": "Ciwi phase 1/4: Prepare workspace", "state_key": "job-output:step-1",
-		"default_expanded": false, "progress": map[string]any{"state": "complete", "fraction": 1},
-		"reached": true, "started": "now", "status_label": "Succeeded", "duration": "1s",
-		"command_label": "", "output": "ok", "error": "", "exit_code": "0", "details": "",
-		"yaml_literal": "", "expanded_command": "",
-	}}}}
-	runtime := giodom.NewRuntime(renderer.theme, giodom.Options{})
-	router := new(input.Router)
-	frame := func(events ...pointer.Event) {
-		for _, event := range events {
-			router.Queue(event)
-		}
-		compiled := renderer.compileDOMNode(scroller, data, "job-output")
-		operations := new(op.Ops)
-		gtx := layout.Context{
-			Ops: operations, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1},
-			Now: time.Unix(1_800_000_000, 0), Constraints: layout.Constraints{Min: image.Pt(320, 0), Max: image.Pt(320, 200)},
-		}
-		runtime.Layout(gtx, *compiled)
-		router.Frame(operations)
-	}
-	frame()
-	frame(pointer.Event{
-		Kind: pointer.Press, Source: pointer.Mouse, PointerID: 1, Buttons: pointer.ButtonPrimary, Position: f32.Pt(40, 30),
-	})
-	frame(pointer.Event{
-		Kind: pointer.Release, Source: pointer.Mouse, PointerID: 1, Position: f32.Pt(40, 30),
-	})
-	if !renderer.disclosures["job-output:step-1"] {
-		t.Fatal("mouse tap on output label did not expand the disclosure")
-	}
-
-	frame()
-	frame(pointer.Event{
-		Kind: pointer.Press, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(280, 30),
-	})
-	frame(pointer.Event{
-		Kind: pointer.Release, Source: pointer.Touch, PointerID: 2, Position: f32.Pt(280, 30),
-	})
-	if renderer.disclosures["job-output:step-1"] {
-		t.Fatal("touch tap on the trailing output row area did not collapse the disclosure")
+	selector := selectors.Children[0]
+	compiled := renderer.compileDOMNode(selector, map[string]any{"outputGroup": map[string]any{
+		"id": "step-1", "title": "Prepare workspace", "selected": true,
+		"status": "succeeded", "progress": map[string]any{"state": "complete", "fraction": 1},
+	}}, "job-output-selector")
+	control := findResponsiveTestElement(compiled, giodom.KindButton)
+	if control == nil || !control.Button.Selected {
+		t.Fatalf("selected output control = %#v", control)
 	}
 }
 
-func TestOutputGroupsViewportTracksWindowHeight(t *testing.T) {
+func TestOutputViewerHeightTracksWindowHeight(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
-	renderer.metrics.spaceSmall = 8
 	for _, test := range []struct {
-		name    string
-		height  unit.Dp
-		minimum unit.Dp
-		maximum unit.Dp
+		name   string
+		height unit.Dp
+		want   unit.Dp
 	}{
-		{name: "portrait phone", height: 667, minimum: 448, maximum: 450},
-		{name: "landscape phone", height: 375, minimum: 244, maximum: 246},
-		{name: "desktop cap", height: 1000, minimum: 642, maximum: 642},
+		{name: "portrait phone", height: 667, want: 466.9},
+		{name: "landscape phone", height: 375, want: 262.5},
+		{name: "desktop cap", height: 1000, want: 660},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			renderer.viewportHeight = test.height
-			got := renderer.domOutputGroupsViewport(660)
-			if got < test.minimum || got > test.maximum {
-				t.Fatalf("viewport = %v, want %v..%v", got, test.minimum, test.maximum)
+			if got := renderer.domOutputViewerHeight(); got != test.want {
+				t.Fatalf("viewer height = %v, want %v", got, test.want)
 			}
 		})
 	}
 }
 
-func TestNativeOutputGroupsMaxHeightRemainsACap(t *testing.T) {
+func TestNativeOutputViewerUsesExactResponsiveHeightForShortOutput(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	screen, err := sharedui.LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
 	}
-	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	viewer, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-viewer")
 	if !ok {
-		t.Fatal("job output scroller not found")
+		t.Fatal("job output viewer not found")
 	}
-	groups := func(count int) []any {
-		result := make([]any, 0, count)
-		for index := 0; index < count; index++ {
-			result = append(result, map[string]any{
-				"id": fmt.Sprintf("phase-%d", index), "title": fmt.Sprintf("Phase %d", index+1),
-				"state_key": fmt.Sprintf("job-output:phase-%d", index), "status": "succeeded",
-				"progress": map[string]any{"state": "complete", "fraction": 1},
-			})
+	selected := map[string]any{
+		"id": "phase-1", "title": "Short phase", "progress": map[string]any{"state": "complete", "fraction": 1},
+		"reached": true, "available": true, "interactive_log_available": false, "output": "short", "empty_output_label": "",
+		"kind": "phase", "details": "details", "started": "", "duration": "", "exit_code": "", "error": "",
+	}
+	for _, test := range []struct{ viewport, want unit.Dp }{{375, 262.5}, {1000, 660}} {
+		renderer.viewportHeight = test.viewport
+		compiled := renderer.compileDOMNode(viewer, map[string]any{"jobDetails": map[string]any{
+			"id": "job-1", "selected_output_group": selected, "selected_output_groups": []any{selected},
+		}}, "output-viewer")
+		dimensions := layoutResponsiveLooseElement(renderer, *compiled, 800, 1000)
+		wantPixels := int(test.want + 0.5)
+		if dimensions.Size.Y != wantPixels {
+			t.Fatalf("viewer height at %vdp = %d, want %d", test.viewport, dimensions.Size.Y, wantPixels)
 		}
-		return result
-	}
-	compile := func(count int) giodom.Element {
-		compiled := renderer.compileDOMNode(scroller, map[string]any{
-			"jobDetails": map[string]any{"output_groups": groups(count)},
-		}, fmt.Sprintf("output-groups-%d", count))
-		return *compiled
-	}
-	if dimensions := layoutResponsiveLooseElement(renderer, compile(1), 800, 1000); dimensions.Size.Y >= 200 {
-		t.Fatalf("one collapsed output group height = %d, want intrinsic content height", dimensions.Size.Y)
-	}
-	if dimensions := layoutResponsiveLooseElement(renderer, compile(20), 800, 1000); dimensions.Size.Y != 660 {
-		t.Fatalf("many output groups height = %d, want declared cap 660", dimensions.Size.Y)
 	}
 }
 
@@ -754,35 +708,22 @@ func TestNativeJobLogPagePreservesNewerDescriptorState(t *testing.T) {
 	}
 }
 
-func TestOutputGroupsUseSharedPinnedCollapseControl(t *testing.T) {
+func TestOutputDocumentHasNoDisclosureOverlay(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	screen, err := sharedui.LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
 	}
-	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-document")
 	if !ok {
-		t.Fatal("job output scroller not found")
+		t.Fatal("job output document not found")
 	}
-	data := map[string]any{"jobDetails": map[string]any{"output_groups": []any{map[string]any{
-		"id": "step-1", "title": "Long step", "state_key": "job-output:step-1", "default_expanded": true,
-	}}}}
+	group := map[string]any{"id": "step-1", "available": true, "interactive_log_available": false, "reached": true}
+	data := map[string]any{"jobDetails": map[string]any{"selected_output_groups": []any{group}}}
 	compiled := renderer.compileDOMNode(scroller, data, "job-output")
 	viewport := findResponsiveTestElement(compiled, giodom.KindVirtualList)
-	if viewport == nil || viewport.List.PinnedOverlay == nil {
-		t.Fatalf("compiled output viewport = %#v, want pinned overlay builder", viewport)
-	}
-	renderer.disclosures["job-output:step-1"] = true
-	long := viewport.List.PinnedOverlay(giodom.ListViewportItem{Key: "step-1", Index: 0, Extent: 500, Viewport: 300})
-	if long == nil {
-		t.Fatal("long expanded group did not produce a pinned Collapse control")
-	}
-	if short := viewport.List.PinnedOverlay(giodom.ListViewportItem{Key: "step-1", Index: 0, Extent: 250, Viewport: 300}); short != nil {
-		t.Fatal("short group unexpectedly produced a pinned Collapse control")
-	}
-	renderer.disclosures["job-output:step-1"] = false
-	if collapsed := viewport.List.PinnedOverlay(giodom.ListViewportItem{Key: "step-1", Index: 0, Extent: 500, Viewport: 300}); collapsed != nil {
-		t.Fatal("collapsed group unexpectedly produced a pinned Collapse control")
+	if viewport == nil || viewport.List.PinnedOverlay != nil {
+		t.Fatalf("compiled output document = %#v, want no disclosure overlay", viewport)
 	}
 }
 
@@ -793,15 +734,15 @@ func TestInteractiveLogOwnsTailingInsteadOfOutputGroupScroller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-document")
 	if !ok {
-		t.Fatal("job output scroller not found")
+		t.Fatal("job output document not found")
 	}
 	data := func(interactive bool) map[string]any {
 		return map[string]any{"jobDetails": map[string]any{
 			"interactive_log_available": interactive,
-			"output_groups": []any{map[string]any{
-				"id": "step:1", "title": "Step", "state_key": "job-output:step:1",
+			"selected_output_groups": []any{map[string]any{
+				"id": "step:1", "title": "Step", "available": true, "interactive_log_available": interactive,
 			}},
 		}}
 	}
@@ -828,7 +769,7 @@ func TestInteractiveLogOwnsTailingInsteadOfOutputGroupScroller(t *testing.T) {
 	}
 }
 
-func TestInteractiveOutputGroupScrollsMetadataAndLogUnderFixedHeader(t *testing.T) {
+func TestInteractiveOutputViewerKeepsHeaderOutsideLogViewport(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	renderer.outputTailing = true
 	renderer.viewportHeight = 400
@@ -840,28 +781,25 @@ func TestInteractiveOutputGroupScrollsMetadataAndLogUnderFixedHeader(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-groups")
+	viewer, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-viewer")
 	if !ok {
-		t.Fatal("job output scroller not found")
+		t.Fatal("job output viewer not found")
 	}
-	compiled := renderer.compileDOMNode(scroller, map[string]any{"jobDetails": map[string]any{
+	selected := map[string]any{
+		"id": "step:1", "title": "Job step 1/1: Build", "reached": true, "started": "now", "duration": "1s",
+		"kind": "step", "yaml_literal": "run: build", "expanded_command": "build", "details": "",
+		"available": true, "interactive_log_available": true, "empty_output_label": "", "progress": map[string]any{"state": "complete"},
+	}
+	compiled := renderer.compileDOMNode(viewer, map[string]any{"jobDetails": map[string]any{
 		"id": "job-1", "interactive_log_available": true,
-		"output_groups": []any{map[string]any{
-			"id": "step:1", "title": "Job step 1/1: Build", "state_key": "job-output:step:1",
-			"default_expanded": true, "reached": true, "started": "now", "duration": "1s",
-			"kind": "step", "yaml_literal": "run: build", "expanded_command": "build",
-		}},
+		"selected_output_group": selected, "selected_output_groups": []any{selected},
 	}}, "interactive-output")
 	body := findResponsiveTestListByLabel(compiled, "Execution output")
-	if body == nil || !body.List.ScrollToEnd || body.List.Viewport != renderer.domJobLogViewport(true) || body.List.Viewport >= unit.Dp(renderer.controls.LogView.MaximumHeight) {
-		t.Fatalf("interactive step body = %#v, want bounded tail-owning viewport", body)
+	if body == nil || !body.List.ScrollToEnd {
+		t.Fatalf("interactive step body = %#v, want tail-owning log viewport", body)
 	}
-	if body.Children == nil || body.Children.Len() < 2 {
-		t.Fatalf("interactive step body children = %#v, want metadata preamble plus log blocks", body.Children)
-	}
-	preamble := body.Children.At(0)
-	if !responsiveTestContainsText(&preamble, "Started: now") || responsiveTestContainsText(&preamble, "Job step 1/1: Build") {
-		t.Fatalf("interactive preamble = %#v, want metadata below a fixed disclosure header", preamble)
+	if !responsiveTestContainsText(compiled, "Job step 1/1: Build") || responsiveTestContainsText(body, "Job step 1/1: Build") {
+		t.Fatalf("viewer/header structure = %#v, want title outside the log viewport", compiled)
 	}
 }
 

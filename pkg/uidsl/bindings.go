@@ -92,7 +92,7 @@ func validateNodeInstanceBindings(node Node, data, locals map[string]any, platfo
 	}
 	for label, binding := range map[string]string{
 		"visible.binding": nodeBinding(node.Visible), "enabled.binding": nodeBinding(node.Enabled),
-		"style.toneBinding": node.Style.ToneBinding,
+		"style.toneBinding": node.Style.ToneBinding, "style.selectedBinding": node.Style.SelectedBinding,
 	} {
 		if err := check(label, binding); err != nil {
 			return err

@@ -107,6 +107,9 @@ func TestEmbeddedUIBundle(t *testing.T) {
 	if got := controls.Controls.Button.MinimumHeight; got.Web != 44 || got.Native != 44 {
 		t.Fatalf("shared button minimum height = %#v", got)
 	}
+	if got := controls.Controls.Button.SelectedTintOpacity; got != 0.24 {
+		t.Fatalf("shared button selected tint opacity = %v", got)
+	}
 	if got := controls.Controls.Viewport; got.CompactMaximumWidth != 760 || got.CondensedDisclosureMaximumWidth != 560 {
 		t.Fatalf("shared viewport controls = %#v", got)
 	}
@@ -493,38 +496,41 @@ func TestThemeDescriptionsMatchAuthoritativeWebCopy(t *testing.T) {
 	}
 }
 
-func TestJobOutputGroupsUseAuthoritativeStepContentTypography(t *testing.T) {
+func TestJobOutputViewerUsesIntrinsicSelectorsAndAuthoritativeContentTypography(t *testing.T) {
 	screen, err := LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var outputGroup *uidsl.Node
+	var selector, viewer, outputBody *uidsl.Node
 	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
-		if node.Component == "disclosure" && node.Style.Role == "output-group" {
-			outputGroup = node
+		switch {
+		case node.Style.Role == "output-selector" && node.Component == "card":
+			copy := *node
+			selector = &copy
+		case node.ID == "job-output-viewer":
+			copy := *node
+			viewer = &copy
+		case node.Style.Role == "output-group-body":
+			copy := *node
+			outputBody = &copy
 		}
 	})
-	if outputGroup == nil {
-		t.Fatal("job details screen has no output-group disclosure")
+	if selector == nil || selector.Style.SelectedBinding != "outputGroup.selected" || len(selector.Actions) != 1 || selector.Actions[0].Command != "select-timeline-item" {
+		t.Fatalf("job output selector = %#v", selector)
 	}
-	if outputGroup.Layout.Gap != "0" || outputGroup.Layout.Padding != "section-padding" {
-		t.Fatalf("output-group layout = gap %q padding %q, want compact shared spacing", outputGroup.Layout.Gap, outputGroup.Layout.Padding)
+	if viewer == nil || viewer.Layout.MinHeight != "660" || viewer.Layout.MaxHeight != "660" || viewer.Style.Role != "output-viewer" {
+		t.Fatalf("job output viewer = %#v", viewer)
 	}
 	rolesByLiteral := map[string]string{}
-	var outputBody *uidsl.Node
-	walkNodes(*outputGroup, func(child *uidsl.Node) {
+	walkNodes(*viewer, func(child *uidsl.Node) {
 		if child.Component == "badge" {
-			t.Error("expanded output group must not duplicate the job-step status pill")
-		}
-		if child.Style.Role == "output-group-body" {
-			copy := *child
-			outputBody = &copy
+			t.Error("selected output document must not duplicate the job-step status pill")
 		}
 		if child.Text == nil {
 			return
 		}
 		if child.Text.Binding == "outputGroup.command_summary" {
-			t.Error("expanded output group must not duplicate the raw command before its YAML section")
+			t.Error("selected output document must not duplicate the raw command before its YAML section")
 		}
 		if child.Text.Literal != "" {
 			rolesByLiteral[child.Text.Literal] = child.Style.Role
@@ -658,25 +664,29 @@ func TestExecutionJobRowsOwnJobNavigation(t *testing.T) {
 	}
 }
 
-func TestJobOutputFloatingCollapseIsShared(t *testing.T) {
+func TestJobOutputSelectorsReplaceDisclosuresAndExposeSelection(t *testing.T) {
 	screen, err := LoadScreen("job-details")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var collapse *uidsl.Node
+	var disclosure, collapse *uidsl.Node
+	selectedBindings := map[string]bool{}
 	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		if node.Style.Role == "output-group" && node.Component == "disclosure" {
+			disclosure = node
+		}
 		if node.Style.Role == "floating-collapse" {
 			collapse = node
 		}
+		if node.Style.Role == "output-selector" {
+			selectedBindings[node.Style.SelectedBinding] = true
+		}
 	})
-	if collapse == nil {
-		t.Fatal("job details screen has no floating Collapse control")
+	if disclosure != nil || collapse != nil {
+		t.Fatalf("job output retained disclosure controls: disclosure=%#v collapse=%#v", disclosure, collapse)
 	}
-	if collapse.Overrides["gio"].Hidden || collapse.Overrides["web"].Hidden {
-		t.Fatalf("floating Collapse platform overrides = %#v, want shared visibility", collapse.Overrides)
-	}
-	if len(collapse.Actions) != 1 || collapse.Actions[0].Command != "set-disclosures" {
-		t.Fatalf("floating Collapse actions = %#v, want shared disclosure action", collapse.Actions)
+	if !selectedBindings["item.selected"] || !selectedBindings["outputGroup.selected"] {
+		t.Fatalf("job output selected bindings = %#v", selectedBindings)
 	}
 }
 

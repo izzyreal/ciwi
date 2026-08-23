@@ -64,33 +64,17 @@ func (r *Renderer) dispatchFromLayout(gtx layout.Context, action uidsl.Action, d
 func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, arguments map[string]string, data any) bool {
 	switch command {
 	case "select-timeline-item":
-		items, resolveErr := resolveItems(data, "jobDetails.timeline")
-		if resolveErr != nil {
-			r.ShowAlert("Timeline unavailable", resolveErr.Error())
+		r.setOutputTailing(false)
+		root, ok := jobDetailsRoot(r.data)
+		if !ok {
+			r.ShowAlert("Timeline unavailable", "Job details are unavailable")
 			return true
 		}
-		for _, item := range items {
-			itemMap, ok := item.(map[string]any)
-			if !ok || fmt.Sprint(itemMap["id"]) != arguments["id"] {
-				continue
-			}
-			r.SetRootBinding("jobDetails", "selected_timeline_item", itemMap)
-			if groups, groupErr := resolveItems(data, "jobDetails.output_groups"); groupErr == nil {
-				for _, rawGroup := range groups {
-					group, groupOK := rawGroup.(map[string]any)
-					if !groupOK || fmt.Sprint(group["id"]) != arguments["id"] {
-						continue
-					}
-					if stateKey := fmt.Sprint(group["state_key"]); stateKey != "" {
-						r.setDisclosureState(stateKey, true, true)
-					}
-					r.scrollOutputTo(fmt.Sprint(group["id"]))
-					break
-				}
-			}
-			r.requestFrame()
-			return true
-		}
+		selectJobOutputBinding(root, arguments["id"], false)
+		r.pendingScrollSection = "job-output-viewer"
+		r.outputResetRevision++
+		r.markDOMDirty()
+		r.requestFrame()
 		return true
 	case "change-output-search":
 		r.outputSearch, r.outputMatch = arguments["query"], 0
@@ -179,7 +163,15 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		r.ShowNotice("Copied", "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 		return true
 	case "toggle-output-tailing":
-		r.setOutputTailing(!r.outputTailing)
+		enabled := !r.outputTailing
+		r.setOutputTailing(enabled)
+		if enabled {
+			if root, ok := jobDetailsRoot(r.data); ok {
+				selectJobOutputBinding(root, "", true)
+				r.pendingScrollSection = "job-output-viewer"
+				r.outputResetRevision++
+			}
+		}
 		r.requestFrame()
 		return true
 	case "set-disclosures":
@@ -220,6 +212,15 @@ func (r *Renderer) setOutputTailing(enabled bool) {
 	}
 	r.SetRootBinding("jobDetails", "tailing_label", label)
 	r.SetRootBinding("jobDetails", "tailing_tone", tone)
+}
+
+func jobDetailsRoot(data any) (map[string]any, bool) {
+	root, ok := data.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	details, ok := root["jobDetails"].(map[string]any)
+	return details, ok
 }
 
 func nativeInteractiveJobLog(data any) bool {
@@ -263,18 +264,11 @@ func (r *Renderer) selectGroupedOutputMatch(data any, query string, direction in
 	}
 	match := matches[r.outputMatch]
 	if match.itemID != "" {
-		if groups, err := resolveItems(data, "jobDetails.output_groups"); err == nil {
-			for _, raw := range groups {
-				group, ok := raw.(map[string]any)
-				if !ok || fmt.Sprint(group["id"]) != match.itemID {
-					continue
-				}
-				if stateKey := fmt.Sprint(group["state_key"]); stateKey != "" {
-					r.setDisclosureState(stateKey, true, true)
-				}
-				r.scrollOutputTo(match.itemID)
-				break
-			}
+		r.setOutputTailing(false)
+		if root, ok := jobDetailsRoot(r.data); ok {
+			selectJobOutputBinding(root, match.itemID, false)
+			r.pendingScrollSection = "job-output-viewer"
+			r.outputResetRevision++
 		}
 	}
 	if editor := r.outputEditors[match.itemID]; editor != nil {
