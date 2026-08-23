@@ -608,7 +608,7 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 		root["output_search"] = ""
 		root["output_search_count"] = "0/0"
 		root["tailing_label"] = "Tailing: Off"
-		root["tailing_tone"] = "warning"
+		root["tailing_tone"] = "accent"
 		if protocol.IsActiveJobExecutionStatus(fmt.Sprint(root["status"])) {
 			root["tailing_label"] = "Tailing: On"
 			root["tailing_tone"] = "success"

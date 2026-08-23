@@ -59,6 +59,9 @@ func TestDeclarativeControlsContract(t *testing.T) {
 	if got := controls.Controls.Button.PaddingY; got.Web != 8 || got.Native != 8 {
 		t.Fatalf("button vertical padding = %#v", got)
 	}
+	if got := controls.Controls.Button.SelectedTintOpacity; got != 0.24 {
+		t.Fatalf("button selected tint opacity = %v", got)
+	}
 	if got := controls.Controls.Input.PlaceholderColor; got != "#757575" {
 		t.Fatalf("input placeholder color = %q, want #757575", got)
 	}
@@ -675,7 +678,8 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"element.textContent = ''", "appendPositionedIcon(element, label, icon, activeControls.button.iconPosition)", ".dsl-disclosure > summary::after", ".dsl-code-inline",
 		"--ciwi-text-control", "--ciwi-card-background", ".dsl-badge.dsl-muted", "cssLength(layout.gap)",
 		".dsl-scheduling-awaiting", ".dsl-awaiting", "--awaiting-bg", "--awaiting-ink",
-		"/ui/contracts/controls.json", "controls().select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-select-chevron-gap",
+		"/ui/contracts/controls.json", "controls().select.chevronPosition", "--ciwi-button-icon-gap", "--ciwi-button-selected-tint", "--ciwi-select-chevron-gap",
+		"aria-pressed", "updateTailingToggleElement", ".dsl-tailing-toggle.dsl-success",
 		"--dsl-layout-padding", ".dsl-output-group > summary.ciwi-progress-surface", "var(--console-green) var(--ciwi-progress-tint, 18%)",
 		"#job-output-groups > * { flex:0 0 auto; }", "overflow-y:auto", "overscroll-behavior-y:auto", ".dsl-output-group:not([open]) > summary",
 		".dsl-output-group-body.dsl-interactive-log-body", "logViewScrollOwner", "centerLogViewMatch", "bindRenderedLogViews", "clearLogViewSearchMatches", "currentView.interactive_log_available",

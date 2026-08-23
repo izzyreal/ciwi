@@ -12,7 +12,7 @@ const controls = {
     button: {
       iconPosition: 'leading', minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12},
       paddingY: {web: 8, native: 8}, iconSize: {web: 19, native: 19}, iconGap: {web: 8, native: 8},
-      iconOnlySize: {web: 34, native: 34},
+      iconOnlySize: {web: 34, native: 34}, selectedTintOpacity: 0.24,
     },
     badge: {paddingX: 9, paddingY: 4, tintOpacity: 0.12, borderOpacity: 0.55},
     input: {minimumHeight: {web: 44, native: 44}, paddingX: {web: 12, native: 12}, paddingY: {web: 9, native: 8}, placeholderColor: '#757575'},
@@ -80,6 +80,16 @@ const outputScreen = {
   screen: {dataSources: [{name: 'jobDetails'}], root: {component: 'page', children: [
     {component: 'spacer', layout: {minHeight: '520'}},
     {
+      component: 'row', layout: {direction: 'horizontal', gap: 'small'}, children: [
+        {component: 'button', id: 'ordinary-output-action', text: {literal: 'Download'}, icon: 'download'},
+        {
+          component: 'button', id: 'job-output-tailing-toggle', text: {binding: 'jobDetails.tailing_label'},
+          icon: 'arrow-bar-to-down', style: {role: 'tailing-toggle', toneBinding: 'jobDetails.tailing_tone'},
+          actions: [{on: 'activate', command: 'toggle-output-tailing'}],
+        },
+      ],
+    },
+    {
       component: 'scroller', id: 'job-output-groups', layout: {direction: 'vertical', gap: 'small', maxHeight: '660'},
       repeat: {source: 'jobDetails.output_groups', as: 'outputGroup', key: 'outputGroup.id'},
       children: [{
@@ -133,7 +143,7 @@ async function serveAssets(route) {
 
 function documentHTML() {
   return `<!doctype html><html><head><link rel="stylesheet" href="/ui/chrome.css"><link rel="stylesheet" href="/ui/declarative.css">
-    <style>:root { --ciwi-section-padding: 14px; --ciwi-space-small: 8px; --line: #334155; }</style></head>
+    <style>:root { --ciwi-section-padding:14px; --ciwi-space-small:8px; --line:#334155; --surface:#10251c; --accent:#a3e635; --ok:#52e2a2; }</style></head>
     <body><div id="declarativeRoot"></div><script>
       window.ciwiUIResourceURL = value => value;
       window.alert = () => {};
@@ -194,7 +204,7 @@ async function installOutputFixture(page) {
     } else if (url.pathname === '/ui/contracts/screens/output-test.json') {
       await route.fulfill({json: outputScreen});
     } else if (url.pathname === '/api/v1/views/front-page') {
-      await route.fulfill({json: {output_groups: [{
+      await route.fulfill({json: {output_tailing: false, tailing_label: 'Tailing: Off', tailing_tone: 'accent', output_groups: [{
         id: 'step-1', title: 'Long build step', state_key: 'job-output:step-1', default_expanded: true, output,
         progress: {state: 'complete', fraction: 1},
       }]}});
@@ -290,6 +300,35 @@ test('Collapse remains reachable at the end of a long output group', async ({pag
   await expect(page.locator('details.dsl-output-group')).not.toHaveAttribute('open', '');
   await expect(page.locator('.dsl-floating-collapse')).toBeHidden();
   await expect.poll(() => page.locator('details.dsl-output-group').evaluate(element => element.getBoundingClientRect().height)).toBe(50);
+});
+
+test('tailing toggle looks ordinary off and clearly selected on', async ({page}) => {
+  await page.setViewportSize({width: 800, height: 700});
+  await installOutputFixture(page);
+  const toggle = page.locator('#job-output-tailing-toggle');
+  const ordinary = page.locator('#ordinary-output-action');
+  const appearance = locator => locator.evaluate(element => {
+    const style = getComputedStyle(element);
+    return {background: style.backgroundColor, border: style.borderColor, color: style.color};
+  });
+
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle).toHaveAttribute('aria-label', 'Tailing: Off');
+  const off = await appearance(toggle);
+  expect(off).toEqual(await appearance(ordinary));
+
+  await toggle.click();
+  await page.mouse.move(799, 699);
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(toggle).toHaveAttribute('aria-label', 'Tailing: On');
+  const on = await appearance(toggle);
+  expect(on.background).not.toBe(off.background);
+  expect(on.border).not.toBe(off.border);
+
+  await toggle.click();
+  await page.mouse.move(799, 699);
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(await appearance(toggle)).toEqual(off);
 });
 
 test('output scrolling chains to the page in both directions at its boundaries', async ({page}) => {

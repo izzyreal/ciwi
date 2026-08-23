@@ -15,7 +15,7 @@ const controls = {
       iconPosition: 'leading', minimumHeight: {web: 44, native: 44},
       paddingX: {web: 12, native: 12}, paddingY: {web: 8, native: 8},
       iconSize: {web: 19, native: 19}, iconGap: {web: 8, native: 8},
-      iconOnlySize: {web: 34, native: 34},
+      iconOnlySize: {web: 34, native: 34}, selectedTintOpacity: 0.24,
     },
     badge: {paddingX: 9, paddingY: 4, tintOpacity: 0.12, borderOpacity: 0.55},
     input: {

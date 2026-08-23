@@ -29,6 +29,25 @@ func TestJobDetailsBindingsExposePreExecutionFailure(t *testing.T) {
 	}
 }
 
+func TestJobDetailsBindingsUseOrdinaryOffAndSelectedOnTailingTones(t *testing.T) {
+	for _, test := range []struct {
+		status, label, tone string
+	}{
+		{status: "failed", label: "Tailing: Off", tone: "accent"},
+		{status: "running", label: "Tailing: On", tone: "success"},
+	} {
+		data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{Id: "job-1", Status: test.status})
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := data["jobDetails"].(map[string]any)
+		if root["tailing_label"] != test.label || root["tailing_tone"] != test.tone {
+			t.Errorf("status %q tailing bindings = %q/%q, want %q/%q", test.status,
+				root["tailing_label"], root["tailing_tone"], test.label, test.tone)
+		}
+	}
+}
+
 func TestIndexedJobLogBindingsSuppressLegacyEmptyOutputLabel(t *testing.T) {
 	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
 		Id: "job-1", InteractiveLogAvailable: true,

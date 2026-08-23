@@ -618,6 +618,20 @@ func TestJobOutputStartsAtTailOnlyForActiveStatuses(t *testing.T) {
 	}
 }
 
+func TestNativeTailingToggleUsesOrdinaryOffAndSelectedOnColors(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	offFill, offBorder, offInk := renderer.tailingToggleColors(false)
+	if offFill != renderer.palette.surface || offBorder != renderer.palette.border || offInk != "accent" {
+		t.Fatalf("off tailing colors = %#v/%#v/%q, want ordinary button colors", offFill, offBorder, offInk)
+	}
+	onFill, onBorder, onInk := renderer.tailingToggleColors(true)
+	wantFill := mixColorSRGB(renderer.palette.surface, renderer.palette.success, float64(renderer.controls.Button.SelectedTintOpacity))
+	if onFill != wantFill || onBorder != renderer.palette.success || onInk != "success" {
+		t.Fatalf("on tailing colors = %#v/%#v/%q, want selected colors %#v/%#v/success",
+			onFill, onBorder, onInk, wantFill, renderer.palette.success)
+	}
+}
+
 func TestNativeJobLogDescriptorStillTriggersInitialPageLoad(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	renderer.outputTailing = false

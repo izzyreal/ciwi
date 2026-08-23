@@ -471,6 +471,7 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 		options.ReservedLabels = []string{label}
 	}
 	semantic.DescriptionOp(label).Add(gtx.Ops)
+	tailingSelected := role == "tailing-toggle" && tone == "success"
 	// Controls size to their own metrics. A surrounding layout's cross-axis
 	// minimum belongs to that layout rather than each control inside it.
 	gtx.Constraints.Min.Y = 0
@@ -481,6 +482,9 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 		gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, gtx.Dp(options.MinimumWidth))
 	}
 	return clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		if role == "tailing-toggle" {
+			semantic.SelectedOp(tailingSelected).Add(gtx.Ops)
+		}
 		minimum := unit.Dp(buttonMetrics.MinimumHeight.Native)
 		if role == "select" {
 			minimum = unit.Dp(r.controls.Select.MinimumHeight)
@@ -501,16 +505,17 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 		}
 		fill, border := r.palette.surface, r.palette.border
 		inkTone := defaultString(tone, "accent")
+		if role == "tailing-toggle" {
+			fill, border, inkTone = r.tailingToggleColors(tailingSelected)
+		}
 		if clickable.Pressed() {
 			fill = r.palette.subtle
+			if tailingSelected {
+				fill = mixColorSRGB(r.palette.surface, r.palette.success, min(1, float64(buttonMetrics.SelectedTintOpacity)+.08))
+			}
 		}
 		if clickable.Hovered() || gtx.Focused(clickable) {
 			border = r.palette.accent
-		}
-		if role == "tailing-toggle" {
-			if toned, ok := r.toneColor(tone); ok {
-				fill, border = mixColorSRGB(r.palette.surface, toned, .12), toned
-			}
 		}
 		if role == "floating-collapse" {
 			fill, border, inkTone = r.palette.consoleSurface, r.palette.consoleBorder, "console-text"
@@ -604,6 +609,14 @@ func (r *Renderer) layoutDOMControlWithOptions(gtx layout.Context, clickable *wi
 			})
 		})
 	})
+}
+
+func (r *Renderer) tailingToggleColors(selected bool) (fill, border color.NRGBA, inkTone string) {
+	if !selected {
+		return r.palette.surface, r.palette.border, "accent"
+	}
+	fill = mixColorSRGB(r.palette.surface, r.palette.success, float64(r.controls.Button.SelectedTintOpacity))
+	return fill, r.palette.success, "success"
 }
 
 func (r *Renderer) domWidestControlLabel(gtx layout.Context, labels []string, strong bool) int {

@@ -213,7 +213,7 @@ func (r *Renderer) setOutputTailing(enabled bool) {
 	}
 	r.outputTailing = enabled
 	r.markDOMDirty()
-	label, tone := "Tailing: Off", "warning"
+	label, tone := "Tailing: Off", "accent"
 	if enabled {
 		label, tone = "Tailing: On", "success"
 		r.outputTailRevision++

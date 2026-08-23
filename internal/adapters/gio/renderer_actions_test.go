@@ -66,7 +66,7 @@ func TestInteractiveSearchResultStopsTailingAndRevealsMatchedGroup(t *testing.T)
 		t.Fatalf("selected log match = %+v", stream)
 	}
 	root := renderer.data.(map[string]any)["jobDetails"].(map[string]any)
-	if root["tailing_label"] != "Tailing: Off" || root["output_search_count"] != "1/1" {
+	if root["tailing_label"] != "Tailing: Off" || root["tailing_tone"] != "accent" || root["output_search_count"] != "1/1" {
 		t.Fatalf("search bindings = %#v", root)
 	}
 }

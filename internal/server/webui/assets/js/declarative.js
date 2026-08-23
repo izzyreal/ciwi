@@ -218,6 +218,8 @@
 	metric('--ciwi-button-icon-size', activeControls.button.iconSize.web);
 	metric('--ciwi-button-icon-gap', activeControls.button.iconGap.web);
 	metric('--ciwi-button-icon-only-size', activeControls.button.iconOnlySize.web);
+	const selectedTintOpacity = Number(activeControls.button.selectedTintOpacity);
+	style.setProperty('--ciwi-button-selected-tint', String((selectedTintOpacity > 0 ? selectedTintOpacity : 0.24) * 100) + '%');
 	metric('--ciwi-badge-padding-x', activeControls.badge.paddingX);
 	metric('--ciwi-badge-padding-y', activeControls.badge.paddingY);
 	style.setProperty('--ciwi-badge-tint', String(activeControls.badge.tintOpacity * 100) + '%');
@@ -1218,6 +1220,9 @@
 	  if (label) appendPositionedIcon(element, label, icon, activeControls.button.iconPosition);
 	  else element.prepend(icon);
     }
+	if (node.component === 'button' && style.role === 'tailing-toggle') {
+	  updateTailingToggleElement(element, tone === 'success');
+	}
     bindActions(element, node.actions, data, context);
 	if (node.component === 'button' && node.actions && node.actions.length && typeof window.ciwiReservePendingLabel === 'function') {
 	  window.ciwiReservePendingLabel(element, node.actions[0].command);
@@ -1780,14 +1785,27 @@
 	}
 	view.output_tailing = !!enabled;
 	view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
-	view.tailing_tone = view.output_tailing ? 'success' : 'warning';
+	view.tailing_tone = view.output_tailing ? 'success' : 'accent';
 	const button = document.getElementById('job-output-tailing-toggle');
-	if (button) {
-	  button.classList.toggle('dsl-success', view.output_tailing);
-	  button.classList.toggle('dsl-warning', !view.output_tailing);
-	  const label = button.querySelector('.dsl-button-label');
-	  if (label) label.textContent = view.tailing_label;
+	if (button) updateTailingToggleElement(button, view.output_tailing);
+  }
+
+  function updateTailingToggleElement(button, enabled) {
+	if (!button) return;
+	const label = enabled ? 'Tailing: On' : 'Tailing: Off';
+	button.classList.toggle('dsl-success', enabled);
+	button.classList.toggle('dsl-accent', !enabled);
+	button.classList.remove('dsl-warning');
+	button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+	button.setAttribute('aria-label', label);
+	button.title = label;
+	const wrapped = button.querySelector('.dsl-button-label-current');
+	if (wrapped) {
+	  wrapped.textContent = label;
+	  return;
 	}
+	const textNode = Array.from(button.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
+	if (textNode) textNode.textContent = label;
   }
 
   function bindJobOutputScrollIntent(view) {
@@ -2191,7 +2209,7 @@
 		updateOutputSearch(view, 0);
 		view.output_tailing = sameJob ? !!previousJob.output_tailing : jobOutputStartsAtTail(view);
 		view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
-		view.tailing_tone = view.output_tailing ? 'success' : 'warning';
+		view.tailing_tone = view.output_tailing ? 'success' : 'accent';
 		const timeline = Array.isArray(view.timeline) ? view.timeline : [];
 		const previousSelectionID = sameJob && previousJob.selected_timeline_item
 		  ? String(previousJob.selected_timeline_item.id || '') : '';
