@@ -594,6 +594,7 @@
 		}
         else if (action.command === 'select-timeline-item') {
 		  setOutputTailing(data.jobDetails, false);
+		  data.jobDetails.output_follow_latest = false;
 		  selectJobOutput(data.jobDetails, args.id, false);
           renderCurrent();
 		  revealBrowserOutputViewer();
@@ -624,7 +625,7 @@
 		  const enabled = !data.jobDetails.output_tailing;
 		  setOutputTailing(data.jobDetails, enabled);
 		  if (data.jobDetails.output_tailing) {
-			selectJobOutput(data.jobDetails, '', true);
+			data.jobDetails.output_follow_latest = false;
 			renderCurrent();
 			revealBrowserOutputViewer();
 			if (data.jobDetails.interactive_log_available) {
@@ -1673,6 +1674,7 @@
 	const group = browserOutputGroup(view, itemID);
 	if (!group) return null;
 	setOutputTailing(view, false);
+	view.output_follow_latest = false;
 	selectJobOutput(view, itemID, false);
 	renderCurrent();
 	revealBrowserOutputViewer();
@@ -1934,7 +1936,7 @@
 		  if (group) {
 			group.reached = true;
 			if (!group.status || ['pending', 'not reached'].includes(String(group.status).toLowerCase())) group.status = 'running';
-			if (view.output_tailing) selectJobOutput(view, itemID, false);
+			if (view.output_tailing && view.output_follow_latest) selectJobOutput(view, itemID, false);
 		  }
 		}
       }
@@ -2246,9 +2248,10 @@
 		  modes: [{value: 'discover', label: 'Automatic discovery'}, {value: 'explicit', label: 'Explicit endpoint'}],
 		};
 	  }
-      if (jobMatch) {
+	  if (jobMatch) {
 		const previousJob = currentData && currentData.jobDetails;
-		const sameJob = previousJob && String(previousJob.id || '') === String(view.id || '');
+		const sameJob = previousJob && !previousJob.loading && previousJob.ready !== false &&
+		  String(previousJob.id || '') === String(view.id || '');
 		if (!sameJob) completedOutputJobID = '';
 		viewBindings.decorateJobDetails(view);
 		view.output_search = sameJob ? String(previousJob.output_search || '') : '';
@@ -2256,11 +2259,12 @@
 		initializeJobOutputView(view, sameJob ? previousJob : null);
 		updateOutputSearch(view, 0);
 		view.output_tailing = sameJob ? !!previousJob.output_tailing : jobOutputStartsAtTail(view);
+		view.output_follow_latest = sameJob ? !!previousJob.output_follow_latest : view.output_tailing;
 		view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
 		view.tailing_tone = view.output_tailing ? 'success' : 'accent';
 		const previousSelectionID = sameJob && previousJob.selected_timeline_item
 		  ? String(previousJob.selected_timeline_item.id || '') : '';
-		selectJobOutput(view, previousSelectionID, view.output_tailing);
+		selectJobOutput(view, previousSelectionID, view.output_tailing && view.output_follow_latest);
       }
 	  if (!jobMatch) completedOutputJobID = '';
 	  if (loadGeneration !== routeLoadGeneration) return false;

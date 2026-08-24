@@ -70,6 +70,7 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 			r.ShowAlert("Timeline unavailable", "Job details are unavailable")
 			return true
 		}
+		root["output_follow_latest"] = false
 		selectJobOutputBinding(root, arguments["id"], false)
 		r.pendingScrollSection = "job-output-viewer"
 		r.outputResetRevision++
@@ -167,7 +168,7 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		r.setOutputTailing(enabled)
 		if enabled {
 			if root, ok := jobDetailsRoot(r.data); ok {
-				selectJobOutputBinding(root, "", true)
+				root["output_follow_latest"] = false
 				r.pendingScrollSection = "job-output-viewer"
 				r.outputResetRevision++
 			}
@@ -266,6 +267,7 @@ func (r *Renderer) selectGroupedOutputMatch(data any, query string, direction in
 	if match.itemID != "" {
 		r.setOutputTailing(false)
 		if root, ok := jobDetailsRoot(r.data); ok {
+			root["output_follow_latest"] = false
 			selectJobOutputBinding(root, match.itemID, false)
 			r.pendingScrollSection = "job-output-viewer"
 			r.outputResetRevision++

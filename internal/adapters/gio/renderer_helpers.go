@@ -307,7 +307,7 @@ func preserveJobUIState(previous, next any) {
 	if !previousOK || !nextOK {
 		return
 	}
-	for _, key := range []string{"output_search", "output_search_count", "tailing_label", "tailing_tone"} {
+	for _, key := range []string{"output_search", "output_search_count", "tailing_label", "tailing_tone", "output_follow_latest"} {
 		if value, exists := previousRoot[key]; exists {
 			nextRoot[key] = value
 		}
@@ -317,7 +317,8 @@ func preserveJobUIState(previous, next any) {
 	if ok {
 		selectedID = fmt.Sprint(selected["id"])
 	}
-	followLatest := strings.EqualFold(fmt.Sprint(previousRoot["tailing_tone"]), "success")
+	followLatest := strings.EqualFold(fmt.Sprint(previousRoot["tailing_tone"]), "success") &&
+		strings.EqualFold(fmt.Sprint(previousRoot["output_follow_latest"]), "true")
 	selectJobOutputBinding(nextRoot, selectedID, followLatest)
 }
 

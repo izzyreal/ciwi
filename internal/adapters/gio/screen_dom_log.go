@@ -106,6 +106,7 @@ func (r *Renderer) ApplyJobLogSearch(result jobLogSearchSnapshot) {
 	}
 	if result.ItemID != "" {
 		if root, ok := jobDetailsRoot(r.data); ok {
+			root["output_follow_latest"] = false
 			selectJobOutputBinding(root, result.ItemID, false)
 			r.pendingScrollSection = "job-output-viewer"
 			r.outputResetRevision++

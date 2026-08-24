@@ -32,9 +32,10 @@ func TestJobDetailsBindingsExposePreExecutionFailure(t *testing.T) {
 func TestJobDetailsBindingsUseOrdinaryOffAndSelectedOnTailingTones(t *testing.T) {
 	for _, test := range []struct {
 		status, label, tone string
+		followLatest        bool
 	}{
-		{status: "failed", label: "Tailing: Off", tone: "accent"},
-		{status: "running", label: "Tailing: On", tone: "success"},
+		{status: "failed", label: "Tailing: Off", tone: "accent", followLatest: false},
+		{status: "running", label: "Tailing: On", tone: "success", followLatest: true},
 	} {
 		data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{Id: "job-1", Status: test.status})
 		if err != nil {
@@ -44,6 +45,9 @@ func TestJobDetailsBindingsUseOrdinaryOffAndSelectedOnTailingTones(t *testing.T)
 		if root["tailing_label"] != test.label || root["tailing_tone"] != test.tone {
 			t.Errorf("status %q tailing bindings = %q/%q, want %q/%q", test.status,
 				root["tailing_label"], root["tailing_tone"], test.label, test.tone)
+		}
+		if root["output_follow_latest"] != test.followLatest {
+			t.Errorf("status %q follow latest = %#v, want %v", test.status, root["output_follow_latest"], test.followLatest)
 		}
 	}
 }

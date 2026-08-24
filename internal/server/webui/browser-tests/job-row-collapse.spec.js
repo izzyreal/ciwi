@@ -249,7 +249,7 @@ async function installOutputFixture(page) {
       await route.fulfill({json: outputScreen});
     } else if (url.pathname === '/api/v1/views/front-page') {
       await route.fulfill({json: {
-        id: 'job-output', ready: true, interactive_log_available: false,
+        id: 'job-output', ready: true, interactive_log_available: false, output_follow_latest: false,
         output_tailing: false, tailing_label: 'Tailing: Off', tailing_tone: 'accent', output_groups: groups,
         timeline: groups.map(group => ({id: group.id, title: group.title, status: group.status, selected: group.selected})),
         selected_timeline_item: groups[0], selected_output_group: groups[0], selected_output_groups: [groups[0]],
@@ -265,6 +265,11 @@ async function installOutputFixture(page) {
 async function installInteractiveOutputFixture(page) {
   const initial = Array.from({length: 180}, (_, index) => `initial line ${index}\n`).join('');
   const logPageRequests = [];
+  const phase = {
+    id: 'phase-1', title: 'Check out source', kind: 'phase', status: 'succeeded', status_label: 'Succeeded', reached: true,
+    selected: false, output: '', available: true, interactive_log_available: true,
+    progress: {state: 'complete', fraction: 1},
+  };
   const group = {
     id: 'step-1', title: 'Build image', kind: 'step', status: 'running', status_label: 'In progress', reached: true,
     selected: true, output: '', available: true, interactive_log_available: true,
@@ -282,11 +287,12 @@ async function installInteractiveOutputFixture(page) {
     } else if (url.pathname === '/api/v1/views/jobs/job-1') {
       await route.fulfill({json: {
         id: 'job-1', status: 'running', interactive_log_available: true,
-        output_groups: [group], timeline: [group],
+        output_groups: [phase, group], timeline: [phase, group],
       }});
     } else if (url.pathname === '/api/v1/views/jobs/job-1/log/page') {
       const mode = url.searchParams.get('mode') || 'head';
-      logPageRequests.push(mode);
+      const itemID = url.searchParams.get('item_id') || '';
+      logPageRequests.push({mode, itemID});
       const chunks = mode === 'after'
         ? [{id: 2, text: 'live appended line\n', byte_count: 19}]
         : [{id: 1, text: initial, byte_count: initial.length}];
@@ -438,8 +444,8 @@ test('tailing toggle looks ordinary off and clearly selected on', async ({page})
   await page.mouse.move(799, 699);
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(toggle).toHaveAttribute('aria-label', 'Tailing: On');
-  await expect(page.locator('#selected-output-title')).toHaveText('Package');
-  await expect(page.locator('#job-output-selectors .dsl-output-selector').nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#selected-output-title')).toHaveText('Compile');
+  await expect(page.locator('#job-output-selectors .dsl-output-selector').nth(0)).toHaveAttribute('aria-pressed', 'true');
   const on = await appearance(toggle);
   expect(on.background).not.toBe(off.background);
   expect(on.border).not.toBe(off.border);
@@ -457,6 +463,9 @@ test('indexed output tailing follows live pages in the dedicated viewer', async 
   const toggle = page.locator('#job-output-tailing-toggle');
   const distanceFromEnd = () => documentScroller.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop);
 
+  await page.locator('#job-output-selectors .dsl-output-selector').nth(1).click();
+  await expect(page.locator('#selected-output-title')).toHaveText('Build image');
+  await toggle.click();
   await expect.poll(() => documentScroller.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
   await expect.poll(distanceFromEnd).toBeLessThanOrEqual(3);
   await documentScroller.evaluate(element => {
@@ -473,8 +482,22 @@ test('indexed output tailing follows live pages in the dedicated viewer', async 
     source.emit('change', {terminal: false, streams: [{item_id: 'step-1', last_chunk_id: 2}]});
   });
   await expect(page.locator('.dsl-log-view')).toContainText('live appended line');
-  await expect.poll(() => fixture.logPageRequests.filter(mode => mode === 'after').length).toBe(1);
+  await expect.poll(() => fixture.logPageRequests.filter(request => request.mode === 'after').length).toBe(1);
   await expect.poll(distanceFromEnd).toBeLessThanOrEqual(3);
+});
+
+test('tailing a selected item preserves it instead of jumping to the global tail', async ({page}) => {
+  const fixture = await installInteractiveOutputFixture(page);
+  const selectors = page.locator('#job-output-selectors .dsl-output-selector');
+  await expect(page.locator('#selected-output-title')).toHaveText('Build image');
+
+  await selectors.nth(0).click();
+  await expect(page.locator('#selected-output-title')).toHaveText('Check out source');
+  await page.locator('#job-output-tailing-toggle').click();
+
+  await expect(page.locator('#selected-output-title')).toHaveText('Check out source');
+  await expect(selectors.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => fixture.logPageRequests.some(request => request.itemID === 'phase-1' && request.mode === 'tail')).toBe(true);
 });
 
 test('output scrolling chains to the page in both directions at its boundaries', async ({page}) => {
