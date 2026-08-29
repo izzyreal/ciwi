@@ -6,6 +6,7 @@
   let outputEventSource = null;
   let completedOutputJobID = '';
   let programmaticOutputScroll = false;
+  let programmaticOutputScrollUntil = 0;
   let routeLoadGeneration = 0;
   const maxOutputCharacters = 1024 * 1024;
   const maxLogViewCacheBytes = 4 * 1024 * 1024;
@@ -646,8 +647,7 @@
 		  const enabled = !data.jobDetails.output_tailing;
 		  setOutputTailing(data.jobDetails, enabled);
 		  if (data.jobDetails.output_tailing) {
-			data.jobDetails.output_follow_latest = true;
-			data.jobDetails.output_follow_anchor_id = latestJobOutputID(data.jobDetails);
+			armOutputTailing(data.jobDetails);
 			renderCurrent();
 			revealBrowserOutputViewer();
 			if (data.jobDetails.interactive_log_available) {
@@ -1406,6 +1406,23 @@
 	return element.closest('#job-output-document') || element.closest('.dsl-interactive-log-body') || element;
   }
 
+  function markProgrammaticLogScroll(element, durationMs) {
+	if (!element) return;
+	const duration = Math.max(0, Number(durationMs || 0));
+	if (duration > 0) {
+	  element.__ciwiProgrammaticLogScrollUntil = Math.max(
+		Number(element.__ciwiProgrammaticLogScrollUntil || 0), Date.now() + duration,
+	  );
+	  return;
+	}
+	element.__ciwiProgrammaticLogScroll = true;
+	requestAnimationFrame(() => { element.__ciwiProgrammaticLogScroll = false; });
+  }
+
+  function programmaticLogScroll(element) {
+	return !!element && (!!element.__ciwiProgrammaticLogScroll || Number(element.__ciwiProgrammaticLogScrollUntil || 0) > Date.now());
+  }
+
   let activeLogSelectionOwner = null;
   let constrainingLogSelection = false;
 
@@ -1472,6 +1489,7 @@
 	const ownerBounds = owner.getBoundingClientRect();
 	const markBounds = mark.getBoundingClientRect();
 	const target = owner.scrollTop + markBounds.top - ownerBounds.top - Math.max(0, (owner.clientHeight - markBounds.height) / 2);
+	markProgrammaticLogScroll(owner, smooth ? 1000 : 0);
 	owner.scrollTo({top: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto'});
   }
 
@@ -1495,8 +1513,13 @@
 	  pre.className = 'dsl-log-view-text';
 	  renderLogText(pre, state);
 	  element.appendChild(pre);
-	  if (preserve === 'before') owner.scrollTop = oldTop + Math.max(0, owner.scrollHeight - oldHeight);
-	  else if (preserve === 'tail') owner.scrollTop = owner.scrollHeight;
+	  if (preserve === 'before') {
+		markProgrammaticLogScroll(owner, 0);
+		owner.scrollTop = oldTop + Math.max(0, owner.scrollHeight - oldHeight);
+	  } else if (preserve === 'tail') {
+		markProgrammaticLogScroll(owner, 0);
+		owner.scrollTop = owner.scrollHeight;
+	  }
 	  if (state.match) requestAnimationFrame(() => centerLogViewMatch(element, false));
 	}
 
@@ -1527,24 +1550,34 @@
 	scrollOwner.__ciwiOutputView = view;
 	if (scrollOwner.dataset.ciwiLogScrollIntent !== '1') {
 	  scrollOwner.dataset.ciwiLogScrollIntent = '1';
+	  scrollOwner.__ciwiLogAtEnd = scrollOwner.scrollHeight - scrollOwner.clientHeight - scrollOwner.scrollTop <= 3;
 	  scrollOwner.addEventListener('scroll', () => {
 		const currentElement = scrollOwner.__ciwiLogElement;
 		const currentState = scrollOwner.__ciwiLogState;
 		const currentView = scrollOwner.__ciwiOutputView;
 		if (!currentElement || !currentState) return;
 		currentState.touched = Date.now();
+		const distanceFromEnd = scrollOwner.scrollHeight - scrollOwner.clientHeight - scrollOwner.scrollTop;
+		const wasAtEnd = !!scrollOwner.__ciwiLogAtEnd;
+		const atEnd = distanceFromEnd <= 3;
+		scrollOwner.__ciwiLogAtEnd = atEnd;
 		if (scrollOwner.scrollTop < 96 && currentState.hasBefore && currentState.chunks.length) {
 		  loadLogViewPage(currentState, 'before', Number(currentState.chunks[0].id));
 		}
-		if (scrollOwner.scrollHeight - scrollOwner.clientHeight - scrollOwner.scrollTop < 96 && currentState.hasAfter && currentState.chunks.length) {
+		if (distanceFromEnd < 96 && currentState.hasAfter && currentState.chunks.length) {
 		  loadLogViewPage(currentState, 'after', Number(currentState.chunks[currentState.chunks.length - 1].id));
 		}
-		if (currentView && currentView.output_tailing && scrollOwner.scrollHeight - scrollOwner.clientHeight - scrollOwner.scrollTop > 3) {
+		if (currentView && currentView.output_tailing && distanceFromEnd > 3) {
 		  setOutputTailing(currentView, false);
+		} else if (currentView && !currentView.output_tailing && !wasAtEnd && atEnd && !currentState.hasAfter && !programmaticLogScroll(scrollOwner)) {
+		  resumeOutputTailingAtEnd(currentView);
 		}
 	  }, {passive: true});
 	}
-	if (view && view.output_tailing) scrollOwner.scrollTop = scrollOwner.scrollHeight;
+	if (view && view.output_tailing) {
+	  markProgrammaticLogScroll(scrollOwner, 0);
+	  scrollOwner.scrollTop = scrollOwner.scrollHeight;
+	}
   }
 
   function bindRenderedLogViews() {
@@ -1781,7 +1814,10 @@
 	const viewer = match.itemID ? revealBrowserOutputGroup(view, match.itemID) : null;
 	const target = viewer || document.getElementById('job-output-system');
     const active = target && target.querySelector('.ciwi-search-hit-active');
-    if (active) active.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'});
+	if (active) {
+	  programmaticOutputScrollUntil = Math.max(programmaticOutputScrollUntil, Date.now() + 1000);
+	  active.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'});
+	}
   }
 
   async function updateFullLogSearch(view, selectedIndex) {
@@ -1885,6 +1921,26 @@
 	if (button) updateTailingToggleElement(button, view.output_tailing);
   }
 
+  function armOutputTailing(view) {
+	if (!view) return;
+	view.output_follow_latest = true;
+	view.output_follow_anchor_id = latestJobOutputID(view);
+  }
+
+  function outputTextSelectionActive() {
+	const selection = window.getSelection && window.getSelection();
+	if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) return false;
+	const output = document.getElementById('job-output-document');
+	return !!(output && (output.contains(selection.anchorNode) || output.contains(selection.focusNode)));
+  }
+
+  function resumeOutputTailingAtEnd(view) {
+	if (!view || view.output_tailing || outputTextSelectionActive()) return false;
+	setOutputTailing(view, true);
+	armOutputTailing(view);
+	return true;
+  }
+
   function updateTailingToggleElement(button, enabled) {
 	if (!button) return;
 	const label = enabled ? 'Tailing: On' : 'Tailing: Off';
@@ -1909,10 +1965,15 @@
 	container.__ciwiOutputView = view;
 	if (container.dataset.ciwiScrollIntent === '1') return;
 	container.dataset.ciwiScrollIntent = '1';
+	container.__ciwiOutputAtEnd = outputIsAtBottom(container);
 	container.addEventListener('scroll', () => {
 	  const currentView = container.__ciwiOutputView;
-	  if (!currentView || currentView.interactive_log_available || programmaticOutputScroll || !currentView.output_tailing || outputIsAtBottom(container)) return;
-	  setOutputTailing(currentView, false);
+	  const wasAtEnd = !!container.__ciwiOutputAtEnd;
+	  const atEnd = outputIsAtBottom(container);
+	  container.__ciwiOutputAtEnd = atEnd;
+	  if (!currentView || currentView.interactive_log_available || programmaticOutputScroll || Date.now() < programmaticOutputScrollUntil) return;
+	  if (currentView.output_tailing && !atEnd) setOutputTailing(currentView, false);
+	  else if (!currentView.output_tailing && !wasAtEnd && atEnd) resumeOutputTailingAtEnd(currentView);
 	}, {passive: true});
   }
 

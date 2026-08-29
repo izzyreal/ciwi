@@ -357,6 +357,8 @@ func (r *Renderer) compileDOMLogViewWithPreamble(node uidsl.Node, data any, path
 			r.setOutputTailing(false)
 			r.requestFrame()
 		}
+	} else if !stream.HasAfter {
+		props.OnUserReachEnd = r.resumeOutputTailingAtEnd
 	}
 	if selectionTarget != "" {
 		props.ScrollTo = selectionTarget

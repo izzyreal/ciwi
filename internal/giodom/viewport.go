@@ -477,6 +477,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	}
 	state.momentumStop.Update(gtx.Source, state.scroll.State() == gesture.StateFlinging, &state.scroll)
 	scrollDelta := 0
+	userScrollDelta := 0
 	if !props.PassThroughScroll {
 		delegateTouch := false
 		if props.NestedScroll {
@@ -486,6 +487,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 			state.scroll = gesture.Scroll{}
 		} else {
 			scrollDelta = state.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xRange, yRange)
+			userScrollDelta = scrollDelta
 		}
 		offset += scrollDelta
 		offset = min(max(0, offset), maxOffset)
@@ -548,6 +550,7 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 		parentDelta := passThroughScroll.delta
 		if !r.nestedScrollClaimed && parentDelta != 0 {
 			scrollDelta = parentDelta
+			userScrollDelta = parentDelta
 			offset = min(max(0, offset+scrollDelta), maxOffset)
 			gtx.Execute(op.InvalidateCmd{})
 		}
@@ -649,6 +652,9 @@ func (r *Runtime) layoutVirtualList(gtx layout.Context, element Element, identit
 	}
 	if scrollDelta != 0 && wasAtEnd && !state.atEnd && props.OnLeaveEnd != nil {
 		props.OnLeaveEnd()
+	}
+	if userScrollDelta != 0 && !wasAtEnd && state.atEnd && props.OnUserReachEnd != nil {
+		props.OnUserReachEnd()
 	}
 	state.initialized = true
 	r.stats.VisibleListItems += len(recorded)

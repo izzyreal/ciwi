@@ -290,6 +290,7 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 		"['running', 'in progress'].includes", "revealBrowserOutputViewer",
 		"renderBrowserOutputText", "ciwi-search-hit-active", "style.selectedBinding",
 		"patchJobOutputRegion", "outputIsAtBottom", "element.closest('#job-output-document')", "element.id === 'job-output-search' ? 'input' : 'change'",
+		"programmaticOutputScrollUntil", "markProgrammaticLogScroll(owner",
 		"/log?format=", "options.section", "scrollIntoView({block: 'start'})",
 	} {
 		if !strings.Contains(script, expected) {

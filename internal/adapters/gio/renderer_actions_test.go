@@ -133,6 +133,44 @@ func TestNativeTailingPreservesExplicitOutputSelection(t *testing.T) {
 	}
 }
 
+func TestNativeReturningToTailArmsFutureTransitionsWithoutChangingSelection(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = false
+	data := map[string]any{"jobDetails": map[string]any{
+		"tailing_label": "Tailing: Off", "tailing_tone": "accent",
+		"output_follow_latest": false, "output_follow_anchor_id": "",
+		"timeline": []any{
+			map[string]any{"id": "phase-1", "status": "succeeded", "selected": true},
+			map[string]any{"id": "phase-2", "status": "running", "selected": false},
+		},
+		"output_groups": []any{
+			map[string]any{"id": "phase-1", "status": "succeeded", "reached": true, "selected": true},
+			map[string]any{"id": "phase-2", "status": "running", "reached": true, "selected": false},
+		},
+		"selected_timeline_item": map[string]any{"id": "phase-1"},
+		"selected_output_group":  map[string]any{"id": "phase-1"},
+	}}
+	renderer.SetData(data)
+	renderer.resumeOutputTailingAtEnd()
+	root := renderer.data.(map[string]any)["jobDetails"].(map[string]any)
+	if !renderer.outputTailing || root["tailing_label"] != "Tailing: On" || root["tailing_tone"] != "success" {
+		t.Fatalf("resumed tailing state = %v/%#v/%#v", renderer.outputTailing, root["tailing_label"], root["tailing_tone"])
+	}
+	if root["output_follow_latest"] != true || root["output_follow_anchor_id"] != "phase-2" {
+		t.Fatalf("resumed follow state = %#v/%#v", root["output_follow_latest"], root["output_follow_anchor_id"])
+	}
+	if selected := root["selected_output_group"].(map[string]any); selected["id"] != "phase-1" {
+		t.Fatalf("returning to tail changed selection: %#v", selected)
+	}
+
+	renderer.setOutputTailing(false)
+	renderer.jobLogSelections["job-1:phase-1"] = nativeJobLogTextSelection{HasAnchor: true}
+	renderer.resumeOutputTailingAtEnd()
+	if renderer.outputTailing {
+		t.Fatal("returning to tail cleared an active native text selection")
+	}
+}
+
 func TestNativeJobRefreshAdvancesTailingSelectionToUpdatedRunningStep(t *testing.T) {
 	previous := map[string]any{"jobDetails": map[string]any{
 		"id": "job-1", "tailing_label": "Tailing: On", "tailing_tone": "success",

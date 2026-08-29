@@ -212,12 +212,15 @@ type ListProps struct {
 	ScrollRevision    uint64
 	SemanticLabel     string
 	OnLeaveEnd        func()
-	OnReachStart      func()
-	OnReachEnd        func()
-	PinnedOverlay     func(ListViewportItem) *Element
-	PinnedAlignment   layout.Direction
-	PinnedInsets      Insets
-	TextSelection     *ListTextSelectionProps
+	// OnUserReachEnd reports a direct scroll gesture that returns the viewport
+	// to its trailing boundary. Initial and programmatic positioning do not fire it.
+	OnUserReachEnd  func()
+	OnReachStart    func()
+	OnReachEnd      func()
+	PinnedOverlay   func(ListViewportItem) *Element
+	PinnedAlignment layout.Direction
+	PinnedInsets    Insets
+	TextSelection   *ListTextSelectionProps
 }
 
 // ListTextSelectionProps lets a keyed viewport expose several virtualized text

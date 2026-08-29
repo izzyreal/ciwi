@@ -769,6 +769,58 @@ func TestOutputDocumentAndInteractiveLogBothFollowTailing(t *testing.T) {
 	}
 }
 
+func TestOutputViewportsResumeOnlyAtTheirTrueUserDrivenTail(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputTailing = false
+	screen, err := sharedui.LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scroller, ok := findResponsiveTestNode(screen.Screen.Root, "job-output-document")
+	if !ok {
+		t.Fatal("job output document not found")
+	}
+	data := func(interactive bool) map[string]any {
+		return map[string]any{"jobDetails": map[string]any{
+			"interactive_log_available": interactive,
+			"selected_output_groups": []any{map[string]any{
+				"id": "step:1", "title": "Step", "available": true, "interactive_log_available": interactive,
+			}},
+		}}
+	}
+	interactive := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(true), "interactive-output"), giodom.KindVirtualList)
+	if interactive == nil || interactive.List.OnUserReachEnd != nil {
+		t.Fatalf("interactive outer output tail callback = %#v, want inner log ownership", interactive)
+	}
+	legacy := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(false), "legacy-output"), giodom.KindVirtualList)
+	if legacy == nil || legacy.List.OnUserReachEnd == nil {
+		t.Fatalf("legacy output tail callback = %#v, want automatic resume", legacy)
+	}
+
+	key := nativeJobLogKey("job-1", "step:1")
+	node := uidsl.Node{Component: "log-view", LogView: &uidsl.LogView{
+		JobExecutionID: "jobDetails.id", ItemID: "outputGroup.id",
+	}}
+	logData := map[string]any{
+		"jobDetails": map[string]any{"id": "job-1"}, "outputGroup": map[string]any{"id": "step:1"},
+	}
+	renderer.jobLogStreams[key] = jobLogStreamSnapshot{
+		JobID: "job-1", ItemID: "step:1", PageLoaded: true,
+		Chunks: []jobLogChunkSnapshot{{ID: 1, Text: "output\n"}},
+	}
+	log := renderer.compileDOMLogView(node, logData, "caught-up-log")
+	if log.List.OnUserReachEnd == nil || log.List.OnReachEnd != nil {
+		t.Fatalf("caught-up log tail callbacks = %#v, want automatic resume only", log.List)
+	}
+	stream := renderer.jobLogStreams[key]
+	stream.HasAfter = true
+	renderer.jobLogStreams[key] = stream
+	log = renderer.compileDOMLogView(node, logData, "paged-log")
+	if log.List.OnUserReachEnd != nil || log.List.OnReachEnd == nil {
+		t.Fatalf("paged log tail callbacks = %#v, want pagination only", log.List)
+	}
+}
+
 func TestInteractiveOutputViewerKeepsHeaderOutsideLogViewport(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	renderer.outputTailing = true

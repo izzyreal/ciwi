@@ -846,6 +846,41 @@ func TestViewportReportsLeavingFollowedEnd(t *testing.T) {
 	}
 }
 
+func TestViewportReportsOnlyUserDrivenReturnToEnd(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	reachedEnd := 0
+	children := orderedRows(1, 20, 0)
+	root := VirtualList("inner", ListProps{
+		Axis: layout.Vertical, Viewport: 100, NestedScroll: true, Estimate: 40,
+		OnUserReachEnd: func() { reachedEnd++ },
+	}, children)
+	layoutInteractiveFrame(runtime, router, root, nil)
+	if reachedEnd != 0 {
+		t.Fatalf("initial layout reported a user return to end %d times", reachedEnd)
+	}
+	layoutInteractiveFrame(runtime, router, root, []pointer.Event{{
+		Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(10, 50), Scroll: f32.Pt(0, 10_000),
+	}})
+	if reachedEnd != 1 {
+		t.Fatalf("user return to end callbacks = %d, want 1", reachedEnd)
+	}
+	layoutInteractiveFrame(runtime, router, root, nil)
+	if reachedEnd != 1 {
+		t.Fatalf("input-free end layout repeated callback: %d", reachedEnd)
+	}
+
+	programmatic := VirtualList("programmatic", ListProps{
+		Axis: layout.Vertical, Viewport: 100, Estimate: 40,
+		ScrollToEnd: true, ForceEndRevision: 1,
+		OnUserReachEnd: func() { reachedEnd++ },
+	}, children)
+	layoutInteractiveFrame(runtime, router, programmatic, nil)
+	if reachedEnd != 1 {
+		t.Fatalf("programmatic end positioning fired callback: %d", reachedEnd)
+	}
+}
+
 func TestKeyedViewportReportsAndSwitchesPinnedItem(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	var positions []ListViewportItem

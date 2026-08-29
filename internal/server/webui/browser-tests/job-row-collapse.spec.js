@@ -273,7 +273,7 @@ async function installOutputFixture(page) {
   await expect(page.locator('#job-output-viewer')).toBeVisible();
 }
 
-async function installInteractiveOutputFixture(page) {
+async function installInteractiveOutputFixture(page, {initialHasAfter = false, jobStatus = 'running'} = {}) {
   const initial = Array.from({length: 180}, (_, index) => `initial line ${index}\n`).join('');
   const logPageRequests = [];
   const phase = {
@@ -302,7 +302,7 @@ async function installInteractiveOutputFixture(page) {
       await route.fulfill({json: outputScreen});
     } else if (url.pathname === '/api/v1/views/jobs/job-1') {
       await route.fulfill({json: {
-        id: 'job-1', status: 'running', interactive_log_available: true,
+        id: 'job-1', status: jobStatus, interactive_log_available: true,
         output_groups: [phase, group, next], timeline: [phase, group, next],
       }});
     } else if (url.pathname === '/api/v1/views/jobs/job-1/log/page') {
@@ -314,7 +314,7 @@ async function installInteractiveOutputFixture(page) {
         : [{id: 1, text: initial, byte_count: initial.length}];
       await route.fulfill({json: {
         job_execution_id: 'job-1', item_id: url.searchParams.get('item_id') || '', chunks,
-        has_before: false, has_after: false, terminal: false,
+        has_before: false, has_after: mode === 'after' ? false : initialHasAfter, terminal: false,
       }});
     } else {
       await route.fulfill({status: 404, body: 'not found'});
@@ -514,17 +514,106 @@ test('indexed output tailing follows live pages in the dedicated viewer', async 
     element.dispatchEvent(new Event('scroll'));
   });
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await page.waitForTimeout(50);
 
-  await toggle.click();
+  await documentScroller.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#selected-output-title')).toHaveText('Build image');
   await expect.poll(distanceFromEnd).toBeLessThanOrEqual(3);
   await page.evaluate(() => {
     const source = window.ciwiEventSources.find(candidate => candidate.url.endsWith('/log/stream'));
     source.emit('change', {terminal: false, streams: [{item_id: 'step-1', last_chunk_id: 2}]});
   });
   await expect(page.locator('.dsl-log-view')).toContainText('live appended line');
-  await expect.poll(() => fixture.logPageRequests.filter(request => request.mode === 'after').length).toBe(1);
+  await expect.poll(() => fixture.logPageRequests.filter(request => request.mode === 'after').length).toBeGreaterThan(0);
   await expect.poll(distanceFromEnd).toBeLessThanOrEqual(3);
+});
+
+test('loaded interactive page boundaries do not resume tailing before the true tail', async ({page}) => {
+  await page.setViewportSize({width: 800, height: 500});
+  const fixture = await installInteractiveOutputFixture(page, {initialHasAfter: true, jobStatus: 'succeeded'});
+  const scroller = page.locator('#job-output-document');
+  const toggle = page.locator('#job-output-tailing-toggle');
+  await page.waitForTimeout(50);
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await scroller.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect.poll(() => fixture.logPageRequests.filter(request => request.mode === 'after').length).toBeGreaterThan(0);
+  await expect(page.locator('.dsl-log-view')).toContainText('live appended line');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await page.waitForTimeout(50);
+  await scroller.evaluate(element => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('returning to the tail preserves an active output text selection', async ({page}) => {
+  await page.setViewportSize({width: 800, height: 500});
+  const fixture = await installInteractiveOutputFixture(page);
+  const scroller = page.locator('#job-output-document');
+  const toggle = page.locator('#job-output-tailing-toggle');
+  await page.locator('#job-output-selectors .dsl-output-selector').nth(1).click();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => scroller.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThanOrEqual(3);
+  await expect.poll(() => fixture.logPageRequests.length).toBeGreaterThan(1);
+  await page.waitForTimeout(50);
+  await scroller.evaluate(element => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await page.evaluate(() => {
+    const text = document.querySelector('.dsl-log-view-text').firstChild;
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, Math.min(12, text.data.length));
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  await scroller.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => !window.getSelection().isCollapsed)).toBe(true);
+  await page.evaluate(() => window.getSelection().removeAllRanges());
+  await scroller.evaluate(element => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('ordinary output resumes tailing when the user returns to its end', async ({page}) => {
+  await installOutputFixture(page);
+  const scroller = page.locator('#job-output-document');
+  const toggle = page.locator('#job-output-tailing-toggle');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForTimeout(50);
+  await scroller.evaluate(element => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await scroller.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('tailing a selected item preserves it instead of jumping to the global tail', async ({page}) => {

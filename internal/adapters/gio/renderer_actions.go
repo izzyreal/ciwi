@@ -167,9 +167,8 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		enabled := !r.outputTailing
 		r.setOutputTailing(enabled)
 		if enabled {
-			if root, ok := jobDetailsRoot(r.data); ok {
-				root["output_follow_latest"] = true
-				root["output_follow_anchor_id"] = latestJobOutputBindingID(root)
+			r.armOutputTailing()
+			if _, ok := jobDetailsRoot(r.data); ok {
 				r.pendingScrollSection = "job-output-viewer"
 				r.outputResetRevision++
 			}
@@ -218,6 +217,22 @@ func (r *Renderer) setOutputTailing(enabled bool) {
 		r.SetRootBinding("jobDetails", "output_follow_latest", false)
 		r.SetRootBinding("jobDetails", "output_follow_anchor_id", "")
 	}
+}
+
+func (r *Renderer) armOutputTailing() {
+	if root, ok := jobDetailsRoot(r.data); ok {
+		root["output_follow_latest"] = true
+		root["output_follow_anchor_id"] = latestJobOutputBindingID(root)
+	}
+}
+
+func (r *Renderer) resumeOutputTailingAtEnd() {
+	if r.outputTailing || len(r.jobLogSelections) > 0 {
+		return
+	}
+	r.setOutputTailing(true)
+	r.armOutputTailing()
+	r.requestFrame()
 }
 
 func jobDetailsRoot(data any) (map[string]any, bool) {

@@ -383,6 +383,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		viewport = unit.Dp(parsed)
 	}
 	isOutputDocument := node.ID == "job-output-document"
+	isInteractiveOutput := isOutputDocument && nativeInteractiveJobLog(data)
 	if isOutputDocument {
 		viewport = r.domOutputGroupsViewport(viewport)
 	}
@@ -394,6 +395,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		r.pendingOutputScroll = ""
 	}
 	var onLeaveEnd func()
+	var onUserReachEnd func()
 	if isOutputDocument {
 		onLeaveEnd = func() {
 			if !r.outputTailing {
@@ -401,6 +403,9 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 			}
 			r.setOutputTailing(false)
 			r.requestFrame()
+		}
+		if !isInteractiveOutput && !r.outputTailing {
+			onUserReachEnd = r.resumeOutputTailingAtEnd
 		}
 	}
 	var pinnedOverlay func(giodom.ListViewportItem) *giodom.Element
@@ -428,7 +433,8 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		NestedScroll: isOutputDocument, Estimate: 100, Overscan: 2, MaxMeasured: 512,
 		ScrollToEnd:      isOutputDocument && r.outputTailing,
 		ForceEndRevision: r.outputTailRevision, ResetRevision: r.outputResetRevision,
-		ScrollTo: scrollTarget, ScrollRevision: scrollRevision, OnLeaveEnd: onLeaveEnd,
+		ScrollTo: scrollTarget, ScrollRevision: scrollRevision,
+		OnLeaveEnd: onLeaveEnd, OnUserReachEnd: onUserReachEnd,
 		PinnedOverlay: pinnedOverlay, PinnedAlignment: layout.NE,
 		PinnedInsets: giodom.Insets{Top: r.metrics.spaceSmall, Right: r.metrics.spaceSmall},
 	}, children)
