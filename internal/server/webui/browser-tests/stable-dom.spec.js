@@ -207,7 +207,7 @@ const settingsScreen = {
               component: 'button', id: 'settings-vacuum-database', text: {literal: 'Vacuum Database'},
               actions: [{
                 on: 'activate', command: 'vacuum-database',
-                confirm: {title: 'Vacuum Database?', message: 'Vacuum rewrites the whole database and temporarily blocks database access. The execution queue must be empty, and this may take several minutes.'},
+                confirm: {title: 'Vacuum Database?', message: 'This first optimizes the job-output search index, then rewrites the whole database. Database access is temporarily blocked, the execution queue must be empty, and this may take several minutes.'},
               }],
             },
             {component: 'text', id: 'settings-maintenance-result', text: {binding: 'settings.maintenance_result'}},
@@ -962,7 +962,7 @@ test('confirmed database vacuum reports the server result', async ({page}) => {
   await installSettingsFixture(page);
   await page.locator('#settings-vacuum-database').click();
   await expect.poll(() => page.evaluate(() => window.confirmations)).toEqual([
-    'Vacuum rewrites the whole database and temporarily blocks database access. The execution queue must be empty, and this may take several minutes.',
+    'This first optimizes the job-output search index, then rewrites the whole database. Database access is temporarily blocked, the execution queue must be empty, and this may take several minutes.',
   ]);
   await expect(page.locator('#settings-maintenance-result')).toHaveText('Database vacuumed: 700 MB → 420 MB in 2m14s');
 });

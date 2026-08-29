@@ -139,6 +139,15 @@ func (s *Store) VacuumDatabase(ctx context.Context) (DatabaseVacuumResult, error
 	if err != nil {
 		return DatabaseVacuumResult{}, err
 	}
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO job_execution_log_chunks_fts(job_execution_log_chunks_fts)
+		VALUES ('optimize')
+	`); err != nil {
+		return DatabaseVacuumResult{}, fmt.Errorf("optimize job output search index: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return DatabaseVacuumResult{}, fmt.Errorf("checkpoint after search index optimization: %w", err)
+	}
 	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
 		return DatabaseVacuumResult{}, fmt.Errorf("vacuum database: %w", err)
 	}

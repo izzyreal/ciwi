@@ -218,7 +218,7 @@ func TestFlushJobExecutionHistoryLeavesFreedPagesReusableWithoutBlockingCompacti
 	}
 }
 
-func TestVacuumDatabaseCompactsFreedPages(t *testing.T) {
+func TestVacuumDatabaseOptimizesDeletedFTSPostingsAndCompactsFreedPages(t *testing.T) {
 	s := openTestStore(t)
 	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo done"})
 	if err != nil {
@@ -228,11 +228,39 @@ func TestVacuumDatabaseCompactsFreedPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
-		Type: protocol.JobExecutionEventTypeSystemMessage, Message: strings.Repeat("vacuum-me", 300000), TimestampUTC: time.Now().UTC(),
+		Type:    protocol.JobExecutionEventTypeSystemMessage,
+		Message: strings.Repeat("vacuumneedle alpha beta gamma 0123456789\n", 75000), TimestampUTC: time.Now().UTC(),
 	}}); err != nil {
 		t.Fatal(err)
 	}
+	ftsQuery := `job_execution_id : "` + job.ID + `" AND indexed_text : "vacuumneedle"`
+	var matches int64
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM job_execution_log_chunks_fts
+		WHERE job_execution_log_chunks_fts MATCH ?
+	`, ftsQuery).Scan(&matches); err != nil {
+		t.Fatal(err)
+	}
+	if matches == 0 {
+		t.Fatal("live output was absent from the FTS index")
+	}
 	if _, err := s.FlushJobExecutionHistoryByIDs([]string{job.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM job_execution_log_chunks_fts
+		WHERE job_execution_log_chunks_fts MATCH ?
+	`, ftsQuery).Scan(&matches); err != nil {
+		t.Fatal(err)
+	}
+	if matches != 0 {
+		t.Fatalf("deleted output retained %d logical FTS match(es)", matches)
+	}
+	var ftsBytesBefore int64
+	if err := s.db.QueryRow(`
+		SELECT COALESCE(SUM(pgsize), 0) FROM dbstat
+		WHERE name = 'job_execution_log_chunks_fts_data'
+	`).Scan(&ftsBytesBefore); err != nil {
 		t.Fatal(err)
 	}
 
@@ -242,6 +270,16 @@ func TestVacuumDatabaseCompactsFreedPages(t *testing.T) {
 	}
 	if result.BeforeBytes <= result.AfterBytes || result.ReclaimedBytes != result.BeforeBytes-result.AfterBytes {
 		t.Fatalf("vacuum result = %+v", result)
+	}
+	var ftsBytesAfter int64
+	if err := s.db.QueryRow(`
+		SELECT COALESCE(SUM(pgsize), 0) FROM dbstat
+		WHERE name = 'job_execution_log_chunks_fts_data'
+	`).Scan(&ftsBytesAfter); err != nil {
+		t.Fatal(err)
+	}
+	if ftsBytesAfter >= ftsBytesBefore {
+		t.Fatalf("FTS optimization did not reclaim obsolete postings, before=%d after=%d", ftsBytesBefore, ftsBytesAfter)
 	}
 	var freePages int64
 	if err := s.db.QueryRow(`PRAGMA freelist_count`).Scan(&freePages); err != nil {

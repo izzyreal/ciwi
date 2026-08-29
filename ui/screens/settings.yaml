@@ -811,7 +811,7 @@ screen:
             children:
               - component: text
                 text:
-                  literal: Reclaim unused disk space by rewriting the SQLite database. No executions may be queued, leased, or running.
+                  literal: Optimize job-output search data and reclaim unused disk space by rewriting the SQLite database. No executions may be queued, leased, or running.
                 style: {tone: muted}
               - component: row
                 layout: {direction: horizontal, gap: small, align: center, wrap: true}
@@ -824,7 +824,7 @@ screen:
                         command: vacuum-database
                         confirm:
                           title: Vacuum Database?
-                          message: Vacuum rewrites the whole database and temporarily blocks database access. The execution queue must be empty, and this may take several minutes.
+                          message: This first optimizes the job-output search index, then rewrites the whole database. Database access is temporarily blocked, the execution queue must be empty, and this may take several minutes.
               - component: text
                 text: {binding: settings.maintenance_result}
                 visible: {binding: settings.maintenance_result, empty: true, not: true}
