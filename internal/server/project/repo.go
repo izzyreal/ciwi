@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/izzyreal/ciwi/internal/config"
 )
 
 type RepoFetchResult struct {
@@ -50,6 +52,19 @@ func FetchConfigAndIconFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, c
 	if err != nil {
 		return RepoFetchResult{}, fmt.Errorf("repo is not a valid ciwi project: missing root file %q", configFile)
 	}
+	expandedConfig, err := config.ExpandIncludes([]byte(configOut), configFile, func(repoPath string) ([]byte, error) {
+		out, readErr := runCmdBytes(ctx, "", "git", "-C", tmpDir, "show", "FETCH_HEAD:"+repoPath)
+		if readErr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			return nil, fmt.Errorf("file does not exist at fetched commit")
+		}
+		return out, nil
+	})
+	if err != nil {
+		return RepoFetchResult{}, fmt.Errorf("repo is not a valid ciwi project: expand %q: %w", configFile, err)
+	}
 	shaOut, err := runCmd(ctx, "", "git", "-C", tmpDir, "rev-parse", "FETCH_HEAD")
 	if err != nil {
 		return RepoFetchResult{}, fmt.Errorf("resolve source commit for fetched config: %v", err)
@@ -61,7 +76,7 @@ func FetchConfigAndIconFromRepo(ctx context.Context, tmpDir, repoURL, repoRef, c
 		resolvedRef = resolveDefaultBranchFromRemoteHead(ctx, tmpDir)
 	}
 	return RepoFetchResult{
-		ConfigContent:    configOut,
+		ConfigContent:    string(expandedConfig),
 		IconContentType:  iconType,
 		IconContentBytes: iconBytes,
 		SourceCommit:     strings.TrimSpace(shaOut),

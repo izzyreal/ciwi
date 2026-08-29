@@ -1,0 +1,43 @@
+- id: ios
+  trigger: manual
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  versioning:
+    file: VERSION
+    tag_prefix: v
+  jobs:
+    - id: ios-archive
+      runs_on:
+        executor: script
+        shell: posix
+        os: darwin
+        arch: arm64
+      go_cache: {}
+      requires:
+        tools:
+          git: "*"
+          go: ">=1.24"
+          xcodebuild: "*"
+          plistbuddy: "*"
+          codesign: "*"
+      timeout_seconds: 2700
+      artifacts:
+        - dist/ios/Ciwi.xcarchive/**
+        - dist/ios/ExportOptions.plist
+      steps:
+        - name: Race-test native lifecycle boundaries
+          run: go test -race ./pkg/cnpclient ./internal/presentation/operations ./internal/adapters/gio
+        - name: Prepare iOS output
+          run: rm -rf dist/ios dist/ios-build dist/ios-check && mkdir -p dist/ios dist/ios-build dist/ios-check
+        - name: Build iOS Gio framework
+          run: sh packaging/build-ios-framework.sh "${CIWI_PIPELINE_VERSION}" dist/ios-build/Ciwi.framework
+        - name: Verify unsigned iPhoneOS application
+          run: sh packaging/build-ios-host.sh check "${CIWI_PIPELINE_VERSION}" dist/ios-build/Ciwi.framework dist/ios-check/Ciwi.app
+        - name: Build signed iOS archive
+          run: sh packaging/build-ios-host.sh archive "${CIWI_PIPELINE_VERSION}" dist/ios-build/Ciwi.framework dist/ios/Ciwi.xcarchive
+          skip_dry_run: true
+        - name: Validate signed iOS archive
+          run: sh packaging/validate-ios-archive.sh "${CIWI_PIPELINE_VERSION}" dist/ios/Ciwi.xcarchive
+          skip_dry_run: true
+        - name: Stage App Store export options
+          run: cp packaging/ios/ExportOptions.plist dist/ios/ExportOptions.plist

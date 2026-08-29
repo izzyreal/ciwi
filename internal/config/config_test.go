@@ -524,6 +524,27 @@ pipelines:
 	}
 }
 
+func TestParseRejectsMultipleYAMLDocuments(t *testing.T) {
+	_, err := Parse([]byte(`version: 1
+project:
+  name: first
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        steps:
+          - run: echo build
+---
+version: 1
+project:
+  name: second
+pipelines: []
+`), "test-multiple-documents")
+	if err == nil || !strings.Contains(err.Error(), "more than one YAML document") {
+		t.Fatalf("expected multiple-document error, got: %v", err)
+	}
+}
+
 func TestParseRejectsRequiresCapabilitiesField(t *testing.T) {
 	_, err := Parse([]byte(`
 version: 1

@@ -1,0 +1,65 @@
+- id: build-desktop
+  trigger: manual
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  versioning:
+    file: VERSION
+    tag_prefix: v
+  jobs:
+    - id: macos-unsigned
+      runs_on:
+        executor: script
+        shell: posix
+        os: darwin
+        arch: arm64
+      go_cache: {}
+      requires:
+        tools:
+          git: "*"
+          go: ">=1.24"
+          xcodebuild: "*"
+          plistbuddy: "*"
+      timeout_seconds: 1200
+      artifacts:
+        - dist/desktop-macos-unsigned/**
+      steps:
+        - name: Prepare macOS desktop output
+          run: rm -rf dist/desktop-macos-unsigned && mkdir -p dist/desktop-macos-unsigned
+        - name: Build universal macOS desktop app
+          run: sh packaging/build-macos-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-macos-unsigned
+    - id: windows-amd64
+      runs_on:
+        executor: script
+        shell: posix
+      go_cache: {}
+      requires:
+        tools:
+          git: "*"
+          go: ">=1.24"
+      timeout_seconds: 1200
+      artifacts:
+        - dist/desktop-windows-amd64/**
+      steps:
+        - name: Prepare Windows desktop output
+          run: rm -rf dist/desktop-windows-amd64 && mkdir -p dist/desktop-windows-amd64
+        - name: Build Windows desktop application
+          run: sh packaging/build-windows-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-windows-amd64/Ciwi.exe
+    - id: linux-amd64
+      runs_on:
+        executor: script
+        shell: posix
+        os: linux
+        arch: amd64
+      go_cache: {}
+      requires:
+        tools:
+          git: "*"
+          docker: "*"
+      timeout_seconds: 1200
+      artifacts:
+        - dist/desktop-linux-amd64/**
+      steps:
+        - name: Prepare Linux desktop output
+          run: rm -rf dist/desktop-linux-amd64 && mkdir -p dist/desktop-linux-amd64
+        - name: Build Linux desktop application
+          run: sh packaging/build-linux-container.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-linux-amd64/ciwi

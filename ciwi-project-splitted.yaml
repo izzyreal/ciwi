@@ -1,0 +1,19 @@
+version: 1
+project:
+  name: ciwi
+
+pipelines:
+  !include .ciwi/ciwi-project-build.yaml
+  !include .ciwi/ciwi-project-build-desktop.yaml
+  !include .ciwi/ciwi-project-ios.yaml
+  !include .ciwi/ciwi-project-release-ios.yaml
+  !include .ciwi/ciwi-project-package-windows.yaml
+  !include .ciwi/ciwi-project-package-linux.yaml
+  !include .ciwi/ciwi-project-release.yaml
+  !include .ciwi/ciwi-project-release-core.yaml
+  !include .ciwi/ciwi-project-codesign-macos-agents.yaml
+  !include .ciwi/ciwi-project-codesign-desktop-macos.yaml
+  !include .ciwi/ciwi-project-package-macos.yaml
+
+pipeline_chains:
+  !include .ciwi/ciwi-project-pipeline-chains.yaml

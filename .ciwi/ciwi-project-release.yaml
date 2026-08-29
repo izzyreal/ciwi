@@ -1,0 +1,173 @@
+- id: release
+  trigger: manual
+  depends_on:
+    - build
+    - codesign-macos-agents
+    - package-macos
+    - package-windows
+    - package-linux
+    - release-ios
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  versioning:
+    file: VERSION
+    tag_prefix: v
+    auto_bump: patch
+    auto_bump_vcs_token: "{{ secret.github-secret }}"
+    auto_bump_vault:
+      connection: home-vault
+      secrets:
+        - name: github-secret
+          mount: kv
+          path: gh
+          key: token
+          kv_version: 2
+  jobs:
+    - id: github-release
+      artifact_sources:
+        - pipeline: build
+          job: build-cross-platform
+          matrix:
+            name: linux-amd64
+        - pipeline: build
+          job: build-cross-platform
+          matrix:
+            name: windows-amd64
+        - pipeline: build
+          job: build-cross-platform
+          matrix:
+            name: windows-arm64
+        - pipeline: package-windows
+          job: windows-installer
+        - pipeline: package-linux
+          job: linux-archive
+        - pipeline: codesign-macos-agents
+          job: macos-agents
+        - pipeline: package-macos
+          job: macos-dmg
+      runs_on:
+        executor: script
+        shell: posix
+      requires:
+        tools:
+          git: "*"
+          gh: "*"
+      timeout_seconds: 1200
+      steps:
+        - name: Check GitHub credentials
+          run: test -n "$GITHUB_TOKEN"
+          skip_dry_run: true
+          vault:
+            connection: home-vault
+            secrets:
+              - name: github-secret
+                mount: kv
+                path: gh
+                key: token
+                kv_version: 2
+          env:
+            GITHUB_TOKEN: "{{ secret.github-secret }}"
+        - name: Configure release remote
+          run: git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/izzyreal/ciwi.git"
+          skip_dry_run: true
+          vault:
+            connection: home-vault
+            secrets:
+              - name: github-secret
+                mount: kv
+                path: gh
+                key: token
+                kv_version: 2
+          env:
+            GITHUB_TOKEN: "{{ secret.github-secret }}"
+        - name: Verify VERSION file
+          run: test -f VERSION
+        - name: Check working tree
+          run: |
+            DIRTY="$(git status --porcelain | grep -vE '^\?\? dist/' || true)"
+            if [ -n "$DIRTY" ]; then
+              echo "working tree is not clean"
+              exit 1
+            fi
+        - name: Check release tag
+          run: |
+            TAG="${CIWI_PIPELINE_TAG}"
+            if git rev-parse "$TAG" >/dev/null 2>&1; then
+              echo "tag exists: $TAG"
+              exit 1
+            fi
+            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+              echo "remote tag exists: $TAG"
+              exit 1
+            fi
+        - name: Verify release artifacts and create checksums
+          run: |
+            VERSION="${CIWI_PIPELINE_VERSION#v}"
+            test -f dist/ciwi-linux-amd64
+            test -f dist/codesigned-macos/ciwi-darwin-amd64.zip
+            test -f dist/codesigned-macos/ciwi-darwin-arm64.zip
+            test -f dist/ciwi-windows-amd64.exe
+            test -f dist/ciwi-windows-arm64.exe
+            test -f "dist/Ciwi-Client-macos-v${VERSION}.dmg"
+            test -f "dist/Ciwi-Client-windows-Setup-x86_64-v${VERSION}.exe"
+            test -f "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip"
+            for f in \
+              dist/ciwi-linux-amd64 \
+              dist/codesigned-macos/ciwi-darwin-amd64.zip \
+              dist/codesigned-macos/ciwi-darwin-arm64.zip \
+              dist/ciwi-windows-amd64.exe \
+              dist/ciwi-windows-arm64.exe \
+              "dist/Ciwi-Client-macos-v${VERSION}.dmg" \
+              "dist/Ciwi-Client-windows-Setup-x86_64-v${VERSION}.exe" \
+              "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip"; do
+              shasum -a 256 "$f" | awk '{ sub(/^.*\//, "", $2); print $1 "  " $2 }'
+            done > dist/ciwi-checksums.txt
+            test -f dist/ciwi-checksums.txt
+          skip_dry_run: true
+        - name: Create release tag
+          run: |
+            TAG="${CIWI_PIPELINE_TAG}"
+            git tag -a "$TAG" -m "ciwi $TAG"
+            git push origin "$TAG"
+          skip_dry_run: true
+        - name: Create release and upload assets
+          run: |
+            TAG="${CIWI_PIPELINE_TAG}"
+            VERSION="${CIWI_PIPELINE_VERSION#v}"
+            gh release create "$TAG" \
+              --repo izzyreal/ciwi \
+              --title "ciwi $TAG" \
+              --notes "Release $TAG"
+
+            set -- \
+              dist/ciwi-linux-amd64 \
+              dist/codesigned-macos/ciwi-darwin-amd64.zip \
+              dist/codesigned-macos/ciwi-darwin-arm64.zip \
+              dist/ciwi-windows-amd64.exe \
+              dist/ciwi-windows-arm64.exe \
+              "dist/Ciwi-Client-macos-v${VERSION}.dmg" \
+              "dist/Ciwi-Client-windows-Setup-x86_64-v${VERSION}.exe" \
+              "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip" \
+              dist/ciwi-checksums.txt
+            TOTAL="$#"
+            IDX=0
+            for FILE in "$@"; do
+              IDX=$((IDX + 1))
+              SIZE="$(wc -c < "$FILE" | tr -d ' ')"
+              START="$(date +%s)"
+              echo "[release] Uploading ${IDX}/${TOTAL}: ${FILE} (${SIZE} bytes)"
+              gh release upload "$TAG" "$FILE" --repo izzyreal/ciwi --clobber
+              END="$(date +%s)"
+              echo "[release] Uploaded ${IDX}/${TOTAL}: ${FILE} in $((END-START))s"
+            done
+          skip_dry_run: true
+          vault:
+            connection: home-vault
+            secrets:
+              - name: github-secret
+                mount: kv
+                path: gh
+                key: token
+                kv_version: 2
+          env:
+            GITHUB_TOKEN: "{{ secret.github-secret }}"

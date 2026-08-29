@@ -4,6 +4,44 @@ The root document uses `version: 1`, a required `project.name`, one or more
 `pipelines`, and an optional `pipeline_chains` list. YAML decoding is strict:
 unknown fields and invalid references are rejected during import or validation.
 
+## Splitting repository YAML
+
+Repository-backed projects can split `ciwi-project.yaml` into committed files
+with standalone `!include` directives:
+
+```yaml
+version: 1
+project:
+  name: example
+pipelines:
+  !include ciwi/pipelines/build.yaml
+  !include ciwi/pipelines/release.yaml
+```
+
+An included fragment is written from column zero and receives the indentation
+of its directive. For the example above, each pipeline file starts with a list
+item:
+
+```yaml
+- id: build
+  trigger: manual
+  jobs:
+    # ...
+```
+
+Paths use `/` and are relative to the file containing the directive. Includes
+may be nested, but must stay inside the repository; missing files and include
+cycles reject the import or reload. Every file is read from the same fetched
+commit, and the fully expanded text is parsed as one strict YAML document. This
+also means YAML anchors can be defined in one fragment and referenced by a
+later fragment.
+
+`!include` is literal physical-line preprocessing, so a standalone directive
+is expanded even inside a YAML block scalar. Inline directives, quoted or
+whitespace-containing paths, globs, parameters, optional includes, remote URLs,
+and merge behavior are not supported. Managed YAML projects remain a single
+self-contained document.
+
 ## Source and execution model
 
 Pipeline-level VCS source (optional):

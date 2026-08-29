@@ -387,6 +387,41 @@ func TestReloadProjectFromRepoBranches(t *testing.T) {
 	}
 }
 
+func TestReloadProjectFromRepoFailureKeepsStoredDefinition(t *testing.T) {
+	ts, s := newTestHTTPServerWithState(t)
+	defer ts.Close()
+
+	cfg, err := config.Parse([]byte(testConfigYAML), "ciwi-project.yaml")
+	if err != nil {
+		t.Fatalf("parse initial config: %v", err)
+	}
+	const repoURL = "https://github.com/izzyreal/ciwi.git"
+	if err := s.db.LoadConfig(cfg, repoURL+"@main:ciwi-project.yaml", repoURL, "main", "ciwi-project.yaml"); err != nil {
+		t.Fatalf("load initial config: %v", err)
+	}
+	projectSummary, err := s.db.GetProjectByName("ciwi")
+	if err != nil {
+		t.Fatalf("get initial project: %v", err)
+	}
+
+	oldFetch := fetchProjectConfigAndIcon
+	t.Cleanup(func() { fetchProjectConfigAndIcon = oldFetch })
+	fetchProjectConfigAndIcon = func(context.Context, string, string, string, string) (project.RepoFetchResult, error) {
+		return project.RepoFetchResult{}, context.DeadlineExceeded
+	}
+	if err := s.reloadProjectFromRepo(context.Background(), projectSummary); err == nil {
+		t.Fatal("expected reload failure")
+	}
+
+	detail, err := s.db.GetProjectDetail(projectSummary.ID)
+	if err != nil {
+		t.Fatalf("get project after failed reload: %v", err)
+	}
+	if detail.Name != "ciwi" || len(detail.Pipelines) != 1 || detail.Pipelines[0].PipelineID != "build" {
+		t.Fatalf("failed reload changed stored definition: %+v", detail)
+	}
+}
+
 func TestProjectInspectHandlerRawYAMLAndExecutorScript(t *testing.T) {
 	ts, s := newTestHTTPServerWithState(t)
 	defer ts.Close()

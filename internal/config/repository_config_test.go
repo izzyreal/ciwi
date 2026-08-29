@@ -1,11 +1,40 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestRepositorySplitCiwiProjectConfigurationMatchesCanonical(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	canonical, err := Load(filepath.Join(repoRoot, "ciwi-project.yaml"))
+	if err != nil {
+		t.Fatalf("load canonical configuration: %v", err)
+	}
+
+	const splitPath = "ciwi-project-splitted.yaml"
+	root, err := os.ReadFile(filepath.Join(repoRoot, splitPath))
+	if err != nil {
+		t.Fatalf("read split configuration: %v", err)
+	}
+	expanded, err := ExpandIncludes(root, splitPath, func(repoPath string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(repoPath)))
+	})
+	if err != nil {
+		t.Fatalf("expand split configuration: %v", err)
+	}
+	split, err := Parse(expanded, splitPath)
+	if err != nil {
+		t.Fatalf("parse split configuration: %v", err)
+	}
+	if !reflect.DeepEqual(split, canonical) {
+		t.Fatal("split configuration does not match ciwi-project.yaml")
+	}
+}
 
 func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	configuration, err := Load(filepath.Join("..", "..", "ciwi-project.yaml"))

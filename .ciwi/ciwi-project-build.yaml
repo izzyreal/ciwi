@@ -1,0 +1,105 @@
+- id: build
+  trigger: manual
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  versioning:
+    file: VERSION
+    tag_prefix: v
+  jobs:
+    - id: unit-tests
+      runs_on:
+        executor: script
+        shell: posix
+      go_cache: {}
+      requires:
+        tools:
+          git: "*"
+          go: ">=1.24"
+      timeout_seconds: 600
+      steps:
+        - name: Run Go unit tests
+          test:
+            name: go-unit
+            command: mkdir -p dist && go test -p 1 -tags nowayland,nox11,novulkan,noopengl -coverpkg=./... -json -coverprofile=dist/go-unit.cover ./... > dist/go-unit.json
+            format: go-test-json
+            report: dist/go-unit.json
+            coverage_format: go-coverprofile
+            coverage_report: dist/go-unit.cover
+    - id: integration-tests
+      runs_on:
+        executor: script
+        shell: posix
+        os: linux
+        arch: amd64
+      requires:
+        tools:
+          git: "*"
+          docker: "*"
+      timeout_seconds: 1800
+      artifacts:
+        - dist/browser-dom-junit.xml
+      steps:
+        - name: Pull Playwright test image
+          run: |
+            attempt=1
+            max_attempts=3
+
+            until docker pull mcr.microsoft.com/playwright:v1.62.1-noble; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "Playwright image pull failed after $max_attempts attempts"
+                exit 1
+              fi
+
+              delay=$((attempt * 10))
+              echo "Playwright image pull attempt $attempt/$max_attempts failed; retrying in ${delay}s"
+              sleep "$delay"
+              attempt=$((attempt + 1))
+            done
+        - name: Run browser DOM integration tests
+          test:
+            name: browser-dom-integration
+            command: mkdir -p dist integration/browser-dom/node_modules && docker run --rm --ipc=host --user "$(id -u):$(id -g)" -e HOME=/tmp -e CI=1 -e CIWI_JUNIT_REPORT=/work/dist/browser-dom-junit.xml -v "$PWD:/work" -w /work/integration/browser-dom mcr.microsoft.com/playwright:v1.62.1-noble bash -lc 'npm ci && npm test'
+            format: junit-xml
+            report: dist/browser-dom-junit.xml
+    - id: build-cross-platform
+      needs:
+        - unit-tests
+        - integration-tests
+      runs_on:
+        executor: script
+        shell: posix
+      go_cache: {}
+      requires:
+        tools:
+          git: "*"
+          go: ">=1.24"
+      timeout_seconds: 600
+      artifacts:
+        - dist/**
+      matrix:
+        include:
+          - name: linux-amd64
+            goos: linux
+            goarch: amd64
+            ext: ""
+          - name: windows-amd64
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+          - name: windows-arm64
+            goos: windows
+            goarch: arm64
+            ext: ".exe"
+          - name: darwin-amd64
+            goos: darwin
+            goarch: amd64
+            ext: ""
+          - name: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            ext: ""
+      steps:
+        - name: Prepare dist
+          run: mkdir -p dist
+        - name: Build ciwi binary
+          run: GOOS={{goos}} GOARCH={{goarch}} CGO_ENABLED=0 go build -v -trimpath -ldflags="-s -w -X github.com/izzyreal/ciwi/internal/version.Version=${CIWI_PIPELINE_VERSION}" -o dist/ciwi-{{name}}{{ext}} ./cmd/ciwi

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/izzyreal/ciwi/internal/config"
 )
 
 func TestFetchConfigAndIconFromRepo(t *testing.T) {
@@ -42,6 +44,51 @@ func TestFetchConfigFileFromRepoMissingConfig(t *testing.T) {
 	_, err := FetchConfigFileFromRepo(context.Background(), t.TempDir(), repoDir, "HEAD", "ciwi-project.yaml")
 	if err == nil || !strings.Contains(err.Error(), "missing root file") {
 		t.Fatalf("expected missing config error, got %v", err)
+	}
+}
+
+func TestFetchConfigAndIconFromRepoExpandsIncludesFromFetchedCommit(t *testing.T) {
+	repoDir := initTestGitRepo(t, map[string]string{
+		"ciwi-project.yaml": `version: 1
+project:
+  name: split
+pipelines:
+  !include ciwi/pipelines.yaml
+`,
+		"ciwi/pipelines.yaml": `- id: build
+  jobs:
+    !include jobs.yaml
+`,
+		"ciwi/jobs.yaml": `- id: compile
+  steps:
+    - run: go build ./...
+`,
+	}, false)
+
+	res, err := FetchConfigAndIconFromRepo(context.Background(), t.TempDir(), repoDir, "HEAD", "ciwi-project.yaml")
+	if err != nil {
+		t.Fatalf("FetchConfigAndIconFromRepo: %v", err)
+	}
+	if strings.Contains(res.ConfigContent, "!include") {
+		t.Fatalf("fetched config still contains include directives:\n%s", res.ConfigContent)
+	}
+	cfg, err := config.Parse([]byte(res.ConfigContent), "fetched config")
+	if err != nil {
+		t.Fatalf("parse fetched config: %v\n%s", err, res.ConfigContent)
+	}
+	if cfg.Project.Name != "split" || len(cfg.Pipelines) != 1 || cfg.Pipelines[0].Jobs[0].ID != "compile" {
+		t.Fatalf("unexpected fetched config: %+v", cfg)
+	}
+}
+
+func TestFetchConfigAndIconFromRepoRejectsMissingInclude(t *testing.T) {
+	repoDir := initTestGitRepo(t, map[string]string{
+		"ciwi-project.yaml": "!include missing.yaml\n",
+	}, false)
+
+	_, err := FetchConfigAndIconFromRepo(context.Background(), t.TempDir(), repoDir, "HEAD", "ciwi-project.yaml")
+	if err == nil || !strings.Contains(err.Error(), "missing.yaml") || !strings.Contains(err.Error(), "ciwi-project.yaml:1") {
+		t.Fatalf("unexpected missing include error: %v", err)
 	}
 }
 

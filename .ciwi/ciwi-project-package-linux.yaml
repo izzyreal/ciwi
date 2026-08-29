@@ -1,0 +1,28 @@
+- id: package-linux
+  trigger: manual
+  depends_on:
+    - build-desktop
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  jobs:
+    - id: linux-archive
+      artifact_sources:
+        - pipeline: build-desktop
+          job: linux-amd64
+      runs_on:
+        executor: script
+        shell: posix
+        os: linux
+        arch: amd64
+      requires:
+        tools:
+          git: "*"
+          zip: "*"
+      timeout_seconds: 600
+      artifacts:
+        - dist/Ciwi-Client-linux-amd64-v*.zip
+      steps:
+        - name: Verify Linux desktop application
+          run: test -f dist/desktop-linux-amd64/ciwi
+        - name: Build Linux desktop archive
+          run: VERSION="${CIWI_PIPELINE_VERSION#v}" && sh packaging/build-linux-zip.sh dist/desktop-linux-amd64/ciwi "$VERSION" "dist/Ciwi-Client-linux-amd64-v${VERSION}.zip"

@@ -1,0 +1,115 @@
+- id: codesign-macos-agents
+  trigger: manual
+  depends_on:
+    - build
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  jobs:
+    - id: macos-agents
+      artifact_sources:
+        - pipeline: build
+          job: build-cross-platform
+          matrix:
+            name: darwin-amd64
+        - pipeline: build
+          job: build-cross-platform
+          matrix:
+            name: darwin-arm64
+      runs_on:
+        executor: script
+        shell: posix
+        os: darwin
+        arch: arm64
+      requires:
+        tools:
+          codesign: "*"
+      timeout_seconds: 1200
+      artifacts:
+        - dist/codesigned-macos/**
+      steps:
+        - name: Check Apple signing credentials
+          run: test -n "$DEV_IDENTITY_APP" && test -n "$NOTARYTOOL_PASSWORD" && test -n "$APPLE_TEAM_ID" && test -n "$APPLE_ID"
+          skip_dry_run: true
+          vault:
+            connection: home-vault
+            secrets:
+              - name: dev-identity-app
+                mount: kv
+                path: apple-id
+                key: dev-identity-app
+              - name: notarytool-password
+                mount: kv
+                path: notarytool
+                key: password
+              - name: apple-team-id
+                mount: kv
+                path: apple-id
+                key: team-id
+              - name: apple-id
+                mount: kv
+                path: apple-id
+                key: email
+          env:
+            DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+            NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
+            APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
+            APPLE_ID: "{{ secret.apple-id }}"
+        - name: Verify macOS agent binaries
+          run: test -f dist/ciwi-darwin-amd64 && test -f dist/ciwi-darwin-arm64
+        - name: Prepare macOS bundle output
+          run: rm -rf dist/codesigned-macos && mkdir -p dist/codesigned-macos/bundles
+          skip_dry_run: true
+        - name: Build, sign, and notarize amd64 agent bundle
+          run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-amd64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-amd64.app dist/codesigned-macos/ciwi-darwin-amd64.zip
+          skip_dry_run: true
+          vault:
+            connection: home-vault
+            secrets:
+              - name: dev-identity-app
+                mount: kv
+                path: apple-id
+                key: dev-identity-app
+              - name: notarytool-password
+                mount: kv
+                path: notarytool
+                key: password
+              - name: apple-team-id
+                mount: kv
+                path: apple-id
+                key: team-id
+              - name: apple-id
+                mount: kv
+                path: apple-id
+                key: email
+          env:
+            DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+            NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
+            APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
+            APPLE_ID: "{{ secret.apple-id }}"
+        - name: Build, sign, and notarize arm64 agent bundle
+          run: sh scripts/build_macos_agent_bundle.sh dist/ciwi-darwin-arm64 "${CIWI_PIPELINE_VERSION}" dist/codesigned-macos/bundles/CiwiAgent-arm64.app dist/codesigned-macos/ciwi-darwin-arm64.zip
+          skip_dry_run: true
+          vault:
+            connection: home-vault
+            secrets:
+              - name: dev-identity-app
+                mount: kv
+                path: apple-id
+                key: dev-identity-app
+              - name: notarytool-password
+                mount: kv
+                path: notarytool
+                key: password
+              - name: apple-team-id
+                mount: kv
+                path: apple-id
+                key: team-id
+              - name: apple-id
+                mount: kv
+                path: apple-id
+                key: email
+          env:
+            DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+            NOTARYTOOL_PASSWORD: "{{ secret.notarytool-password }}"
+            APPLE_TEAM_ID: "{{ secret.apple-team-id }}"
+            APPLE_ID: "{{ secret.apple-id }}"

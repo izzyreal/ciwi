@@ -1,0 +1,28 @@
+- name: Build and release
+  pipelines:
+    - build
+    - build-desktop
+    - ios
+    - codesign-macos-agents
+    - codesign-desktop-macos
+    - package-macos
+    - package-windows
+    - package-linux
+    - release-ios
+    - release
+- name: Build and release without native clients
+  pipelines:
+    - build
+    - codesign-macos-agents
+    - release-core
+- name: Build desktop clients
+  pipelines:
+    - build-desktop
+    - codesign-desktop-macos
+    - package-macos
+    - package-windows
+    - package-linux
+- name: Build and publish iOS client
+  pipelines:
+    - ios
+    - release-ios

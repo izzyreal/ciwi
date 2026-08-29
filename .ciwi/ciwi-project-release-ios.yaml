@@ -1,0 +1,27 @@
+- id: release-ios
+  trigger: manual
+  depends_on:
+    - ios
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  jobs:
+    - id: testflight
+      artifact_sources:
+        - pipeline: ios
+          job: ios-archive
+      runs_on:
+        executor: script
+        shell: posix
+        os: darwin
+        arch: arm64
+      requires:
+        tools:
+          xcodebuild: "*"
+      timeout_seconds: 2700
+      steps:
+        - name: Verify iOS release inputs
+          run: test -d dist/ios/Ciwi.xcarchive && test -f dist/ios/ExportOptions.plist
+          skip_dry_run: true
+        - name: Upload iOS build to TestFlight
+          run: rm -rf dist/ios-upload && mkdir -p dist/ios-upload && xcodebuild -exportArchive -archivePath dist/ios/Ciwi.xcarchive -exportOptionsPlist dist/ios/ExportOptions.plist -exportPath dist/ios-upload -allowProvisioningUpdates
+          skip_dry_run: true

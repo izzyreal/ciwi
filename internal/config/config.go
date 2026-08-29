@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"slices"
@@ -139,6 +140,13 @@ func Parse(data []byte, source string) (File, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
 		return cfg, fmt.Errorf("parse YAML in %q: %w", source, err)
+	}
+	var extra yaml.Node
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return cfg, fmt.Errorf("parse YAML in %q: %w", source, err)
+		}
+		return cfg, fmt.Errorf("parse YAML in %q: configuration contains more than one YAML document", source)
 	}
 
 	if errs := cfg.Validate(); len(errs) > 0 {

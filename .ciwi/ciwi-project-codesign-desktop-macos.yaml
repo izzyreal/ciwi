@@ -1,0 +1,66 @@
+- id: codesign-desktop-macos
+  trigger: manual
+  depends_on:
+    - build-desktop
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  jobs:
+    - id: macos-app
+      artifact_sources:
+        - pipeline: build-desktop
+          job: macos-unsigned
+      runs_on:
+        executor: script
+        shell: posix
+        os: darwin
+        arch: arm64
+      requires:
+        tools:
+          codesign: "*"
+      timeout_seconds: 1200
+      artifacts:
+        - dist/codesigned-macos/Ciwi.app/**
+      steps:
+        - name: Check Apple signing credentials
+          run: test -n "$DEV_IDENTITY_APP"
+          skip_dry_run: true
+          vault:
+            connection: home-vault
+            secrets:
+              - name: dev-identity-app
+                mount: kv
+                path: apple-id
+                key: dev-identity-app
+          env:
+            DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+        - name: Verify unsigned macOS desktop app
+          run: test -d dist/desktop-macos-unsigned/Ciwi.app
+        - name: Restore macOS desktop executable permissions
+          run: chmod +x dist/desktop-macos-unsigned/Ciwi.app/Contents/MacOS/Ciwi && test -x dist/desktop-macos-unsigned/Ciwi.app/Contents/MacOS/Ciwi
+        - name: Prepare signed macOS desktop output
+          run: rm -rf dist/codesigned-macos/Ciwi.app && mkdir -p dist/codesigned-macos
+          skip_dry_run: true
+        - name: Sign macOS desktop app
+          run: codesign --force --deep --strict --options=runtime --runtime-version 11.0 --entitlements packaging/macos-entitlements.plist --timestamp --sign "$DEV_IDENTITY_APP" dist/desktop-macos-unsigned/Ciwi.app
+          skip_dry_run: true
+          vault:
+            connection: home-vault
+            secrets:
+              - name: dev-identity-app
+                mount: kv
+                path: apple-id
+                key: dev-identity-app
+          env:
+            DEV_IDENTITY_APP: "{{ secret.dev-identity-app }}"
+        - name: Verify macOS desktop signature and compatibility
+          run: |
+            codesign --verify --deep --strict -v dist/desktop-macos-unsigned/Ciwi.app
+            RUNTIME_VERSION="$(codesign -dv --verbose=4 dist/desktop-macos-unsigned/Ciwi.app 2>&1 | sed -n 's/^Runtime Version=//p')"
+            if [ "$RUNTIME_VERSION" != "11.0.0" ]; then
+              echo "unexpected hardened runtime version: ${RUNTIME_VERSION:-missing} (expected 11.0.0)" >&2
+              exit 1
+            fi
+          skip_dry_run: true
+        - name: Publish signed macOS desktop app
+          run: cp -R dist/desktop-macos-unsigned/Ciwi.app dist/codesigned-macos/Ciwi.app
+          skip_dry_run: true

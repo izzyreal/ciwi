@@ -1,0 +1,28 @@
+- id: package-windows
+  trigger: manual
+  depends_on:
+    - build-desktop
+  vcs_source:
+    repo: https://github.com/izzyreal/ciwi.git
+  jobs:
+    - id: windows-installer
+      artifact_sources:
+        - pipeline: build-desktop
+          job: windows-amd64
+      runs_on:
+        executor: script
+        shell: powershell
+        os: windows
+        arch: amd64
+      requires:
+        tools:
+          git: "*"
+          wix: ">=6.0.0"
+      timeout_seconds: 1200
+      artifacts:
+        - dist/Ciwi-Client-windows-Setup-x86_64-v*.exe
+      steps:
+        - name: Verify Windows desktop application
+          run: if (-not (Test-Path -LiteralPath "dist\desktop-windows-amd64\Ciwi.exe" -PathType Leaf)) { throw "Windows desktop application artifact is missing" }
+        - name: Build Windows desktop installer
+          run: $version = ((Get-Content VERSION -Raw).Trim() -replace '^[vV]', ''); & powershell -ExecutionPolicy Bypass -File packaging\build-windows-installer.ps1 -InputExe "dist\desktop-windows-amd64\Ciwi.exe" -Version $version -OutputExe "dist\Ciwi-Client-windows-Setup-x86_64-v$version.exe"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
