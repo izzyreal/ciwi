@@ -93,6 +93,9 @@ type Services struct {
 		Cancel(context.Context, application.ExecutionControlRequest) (application.CancelExecutionResult, error)
 		Rerun(context.Context, application.ExecutionControlRequest) (application.RerunExecutionResult, error)
 	}
+	DatabaseMaintenance interface {
+		Vacuum(context.Context, application.DatabaseVacuumRequest) (application.DatabaseVacuumResult, error)
+	}
 	CommandReceipts interface {
 		Get(context.Context, string) (application.CommandReceiptStatus, error)
 	}
@@ -105,7 +108,7 @@ type Handler struct {
 }
 
 func NewHandler(services Services) (*Handler, error) {
-	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.ManagedYAML == nil || services.Vault == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.ArtifactDownloads == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.AgentScripts == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.Changes == nil {
+	if services.Server == nil || services.Projects == nil || services.ProjectCommands == nil || services.ManagedYAML == nil || services.Vault == nil || services.Updates == nil || services.FrontPage == nil || services.ProjectDetails == nil || services.JobDetails == nil || services.ArtifactDownloads == nil || services.Pipelines == nil || services.PipelineChains == nil || services.RunOptions == nil || services.Agents == nil || services.AgentCommands == nil || services.AgentScripts == nil || services.ExecutionCommands == nil || services.ExecutionControls == nil || services.DatabaseMaintenance == nil || services.Changes == nil {
 		return nil, fmt.Errorf("native CNP services are incomplete")
 	}
 	return &Handler{services: services}, nil
@@ -131,7 +134,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerInstanceId:     snapshot.InstanceID,
 		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "artifact_download_resume_v1", "job_log_v1", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
+			"server_info", "server_updates", "database_maintenance", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "artifact_download_resume_v1", "job_log_v1", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -657,6 +660,17 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 		})
 		if err == nil {
 			response.Result = &cnpv1.Response_FlushExecutionHistory{FlushExecutionHistory: &cnpv1.FlushExecutionHistoryResult{Flushed: result.Flushed}}
+		}
+	case *cnpv1.Request_VacuumDatabase:
+		vacuumCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		var result application.DatabaseVacuumResult
+		result, err = s.services.DatabaseMaintenance.Vacuum(vacuumCtx, application.DatabaseVacuumRequest{IdempotencyKey: request.Metadata.IdempotencyKey})
+		if err == nil {
+			response.Result = &cnpv1.Response_VacuumDatabase{VacuumDatabase: &cnpv1.DatabaseVacuumResult{
+				BeforeBytes: result.BeforeBytes, AfterBytes: result.AfterBytes, ReclaimedBytes: result.ReclaimedBytes,
+				ElapsedMs: result.ElapsedMS, Message: result.Message,
+			}}
 		}
 	case *cnpv1.Request_RemoveQueuedExecution:
 		var result application.RemoveQueuedExecutionResult

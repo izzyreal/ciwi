@@ -48,6 +48,7 @@ func TestBrowserSettingsViewModelSatisfiesWebOverrides(t *testing.T) {
 		"update_supported": false, "update_capability_notice": "", "update_status_label": "", "blocked_agent_notice": "",
 		"update_versions": []any{}, "selected_update_version": "", "update_result": "", "update_result_tone": "muted",
 		"rollback_versions": []any{}, "selected_rollback_version": "", "rollback_result": "", "rollback_result_tone": "muted",
+		"maintenance_result": "", "maintenance_result_tone": "muted",
 		"loading": false, "ready": true, "load_error": "",
 	}
 	if err := uidsl.ValidateBindings(screen, map[string]any{"settings": settings, "client": browserClientBindingFixture()}, "web"); err != nil {

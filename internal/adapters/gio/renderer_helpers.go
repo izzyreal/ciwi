@@ -340,6 +340,7 @@ func preserveSettingsUIState(previous, next any) {
 		"import_repo_url", "import_repo_ref", "import_config_file",
 		"update_versions", "selected_update_version", "rollback_versions", "selected_rollback_version",
 		"update_result", "update_result_tone", "rollback_result", "rollback_result_tone",
+		"maintenance_result", "maintenance_result_tone",
 	} {
 		if value, exists := previousRoot[field]; exists {
 			nextRoot[field] = value

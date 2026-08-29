@@ -1060,6 +1060,9 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			}
 			renderer.SetRootBinding("settings", field, effect.Message)
 			renderer.SetRootBinding("settings", field+"_tone", "success")
+		case *cnpv1.DatabaseVacuumResult:
+			renderer.SetRootBinding("settings", "maintenance_result", result.Message)
+			renderer.SetRootBinding("settings", "maintenance_result_tone", "success")
 		}
 		if effect.CancelledJob != "" && navigation.screen == "job-details" && navigation.jobID == effect.CancelledJob {
 			pendingCancellations[effect.CancelledJob] = true

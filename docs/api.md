@@ -94,6 +94,7 @@ transport adapters do not contain application behavior.
   - `GET /api/v1/update/tags`
   - `GET /api/v1/update/status`
   - `POST /api/v1/server/restart`
+  - `POST /api/v1/server/database/vacuum`
 
 ## Consumed by installers/provisioning
 
@@ -126,6 +127,7 @@ transport adapters do not contain application behavior.
 - Deactivation is server-side only (agent protocol is unchanged).
 - New/unknown agents are unauthorized until explicitly authorized.
 - `POST /api/v1/jobs/flush-history` removes non-active job execution records and deletes artifact directories for the flushed job IDs.
+- History deletion does not compact SQLite. `POST /api/v1/server/database/vacuum` explicitly rewrites the database to reclaim disk space, refuses to start while executions are queued, leased, or running, and has a five-minute deadline.
 - `POST /api/v1/agent/lease` requires a known + authorized + non-deactivated agent snapshot.
 - While deactivated, `POST /api/v1/agent/lease` returns `assigned=false` with message `agent is deactivated`.
 - If deactivation occurs while the agent has an active leased/running job, server applies the same terminal mutation as `POST /api/v1/jobs/{id}/cancel`:

@@ -58,3 +58,4 @@ actions:
   - { command: test-vault-connection, class: query, scope: "vault:{{id}}", pending: "Testing connection…" }
   - { command: delete-vault-connection, class: mutation, scope: "vault:{{id}}", pending: "Deleting connection…", persistence: none }
   - { command: server-update-action, class: mutation, scope: "server:update", pending: "Updating server…", persistence: receipt-only }
+  - { command: vacuum-database, class: mutation, scope: "server:database-maintenance", pending: "Vacuuming database…", persistence: receipt-only }

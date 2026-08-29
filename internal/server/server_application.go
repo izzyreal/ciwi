@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,28 +16,30 @@ import (
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/jobexecution"
+	"github.com/izzyreal/ciwi/internal/store"
 )
 
 type serverApplication struct {
-	server            *application.ServerQueries
-	projects          *application.ProjectQueries
-	projectCommands   *application.ProjectCommands
-	updates           *application.ServerUpdateOperations
-	pipelines         *application.PipelineCommands
-	pipelineChains    *application.PipelineChainCommands
-	runOptions        *application.RunOptionsQueries
-	agents            *presentation.AgentsQueries
-	agentCommands     *application.AgentCommands
-	agentScripts      *application.AgentScriptCommands
-	executions        *application.ExecutionQueries
-	executionCommands *application.ExecutionCommands
-	executionControls *application.ExecutionControlCommands
-	commandReceipts   *application.CommandReceiptQueries
-	receipts          application.CommandReceiptRepository
-	frontPage         *presentation.FrontPageQueries
-	projectDetails    *presentation.ProjectDetailsQueries
-	jobDetails        *presentation.JobDetailsQueries
-	changes           *application.ChangeHub
+	server              *application.ServerQueries
+	projects            *application.ProjectQueries
+	projectCommands     *application.ProjectCommands
+	updates             *application.ServerUpdateOperations
+	pipelines           *application.PipelineCommands
+	pipelineChains      *application.PipelineChainCommands
+	runOptions          *application.RunOptionsQueries
+	agents              *presentation.AgentsQueries
+	agentCommands       *application.AgentCommands
+	agentScripts        *application.AgentScriptCommands
+	executions          *application.ExecutionQueries
+	executionCommands   *application.ExecutionCommands
+	executionControls   *application.ExecutionControlCommands
+	commandReceipts     *application.CommandReceiptQueries
+	receipts            application.CommandReceiptRepository
+	frontPage           *presentation.FrontPageQueries
+	projectDetails      *presentation.ProjectDetailsQueries
+	jobDetails          *presentation.JobDetailsQueries
+	changes             *application.ChangeHub
+	databaseMaintenance *application.DatabaseMaintenanceOperations
 }
 
 type localServerInfoSource struct{ installationID string }
@@ -77,20 +80,21 @@ func newServerApplication(s *stateStore) *serverApplication {
 			receipts,
 			changes,
 		),
-		pipelineChains:    application.NewPipelineChainCommands(pipelineChainRunnerAdapter{state: s}, receipts, changes),
-		runOptions:        application.NewRunOptionsQueries(runOptionsAdapter{state: s}),
-		agents:            presentation.NewAgentsQueries(agentQueries),
-		agentCommands:     application.NewAgentCommands(agentMutatorAdapter{state: s}, receipts, changes),
-		agentScripts:      application.NewAgentScriptCommands(agentScriptMutatorAdapter{state: s}, receipts, changes),
-		executions:        executionQueries,
-		executionCommands: application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
-		executionControls: application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),
-		commandReceipts:   application.NewCommandReceiptQueries(receipts),
-		receipts:          receipts,
-		frontPage:         frontPageQueries,
-		projectDetails:    presentation.NewProjectDetailsQueries(projectQueries, executionQueries),
-		jobDetails:        presentation.NewJobDetailsQueries(executionQueries),
-		changes:           changes,
+		pipelineChains:      application.NewPipelineChainCommands(pipelineChainRunnerAdapter{state: s}, receipts, changes),
+		runOptions:          application.NewRunOptionsQueries(runOptionsAdapter{state: s}),
+		agents:              presentation.NewAgentsQueries(agentQueries),
+		agentCommands:       application.NewAgentCommands(agentMutatorAdapter{state: s}, receipts, changes),
+		agentScripts:        application.NewAgentScriptCommands(agentScriptMutatorAdapter{state: s}, receipts, changes),
+		executions:          executionQueries,
+		executionCommands:   application.NewExecutionCommands(executionMutatorAdapter{state: s}, receipts, changes),
+		executionControls:   application.NewExecutionControlCommands(executionControllerAdapter{state: s}, receipts, changes),
+		databaseMaintenance: application.NewDatabaseMaintenanceOperations(databaseMaintenanceAdapter{state: s}, receipts),
+		commandReceipts:     application.NewCommandReceiptQueries(receipts),
+		receipts:            receipts,
+		frontPage:           frontPageQueries,
+		projectDetails:      presentation.NewProjectDetailsQueries(projectQueries, executionQueries),
+		jobDetails:          presentation.NewJobDetailsQueries(executionQueries),
+		changes:             changes,
 	}
 }
 
@@ -183,6 +187,9 @@ func (a pipelineChainRunnerAdapter) RunPipelineChain(ctx context.Context, reques
 	}
 	result, err := a.state.enqueuePersistedPipelineChain(chain, selection)
 	if err != nil {
+		if admissionErr := executionAdmissionApplicationError(err); admissionErr != nil {
+			return application.RunPipelineChainResult{}, admissionErr
+		}
 		return application.RunPipelineChainResult{}, application.NewError(application.ErrorInvalidArgument, err.Error(), err)
 	}
 	return application.RunPipelineChainResult{
@@ -221,6 +228,9 @@ func (a executionControllerAdapter) RerunExecution(ctx context.Context, jobID st
 }
 
 func executionControlError(err error) error {
+	if admissionErr := executionAdmissionApplicationError(err); admissionErr != nil {
+		return admissionErr
+	}
 	message := strings.TrimSpace(err.Error())
 	switch {
 	case strings.Contains(strings.ToLower(message), "not found"):
@@ -272,6 +282,31 @@ func (a executionMutatorAdapter) FlushExecutionHistory(ctx context.Context, all 
 	return deleted, nil
 }
 
+type databaseMaintenanceAdapter struct{ state *stateStore }
+
+func (a databaseMaintenanceAdapter) VacuumDatabase(ctx context.Context) (application.DatabaseVacuumResult, error) {
+	result, err := a.state.db.VacuumDatabase(ctx)
+	if err != nil {
+		var active *store.ActiveJobExecutionsError
+		switch {
+		case errors.Is(err, store.ErrDatabaseMaintenanceInProgress):
+			return application.DatabaseVacuumResult{}, application.NewError(application.ErrorConflict, "database vacuum is already in progress", err)
+		case errors.As(err, &active):
+			return application.DatabaseVacuumResult{}, application.NewError(application.ErrorFailedPrecondition, active.Error(), err)
+		case errors.Is(err, context.DeadlineExceeded):
+			return application.DatabaseVacuumResult{}, application.NewError(application.ErrorUnavailable, "database vacuum exceeded the five-minute deadline", err)
+		case errors.Is(err, context.Canceled):
+			return application.DatabaseVacuumResult{}, application.NewError(application.ErrorUnavailable, "database vacuum was cancelled", err)
+		default:
+			return application.DatabaseVacuumResult{}, application.WrapInternal("vacuum database", err)
+		}
+	}
+	return application.DatabaseVacuumResult{
+		BeforeBytes: result.BeforeBytes, AfterBytes: result.AfterBytes,
+		ReclaimedBytes: result.ReclaimedBytes, ElapsedMS: result.Elapsed.Milliseconds(),
+	}, nil
+}
+
 func (s *stateStore) app() *serverApplication {
 	s.applicationOnce.Do(func() {
 		s.application = newServerApplication(s)
@@ -302,12 +337,22 @@ func (a pipelineRunnerAdapter) RunPipeline(ctx context.Context, request applicat
 	}
 	result, err := a.state.enqueuePersistedPipeline(pipeline, selection)
 	if err != nil {
+		if admissionErr := executionAdmissionApplicationError(err); admissionErr != nil {
+			return application.RunPipelineResult{}, admissionErr
+		}
 		return application.RunPipelineResult{}, application.NewError(application.ErrorInvalidArgument, err.Error(), err)
 	}
 	return application.RunPipelineResult{
 		ProjectName: result.ProjectName, PipelineID: result.PipelineID, Enqueued: result.Enqueued,
 		JobExecutionIDs: append([]string(nil), result.JobExecutionIDs...),
 	}, nil
+}
+
+func executionAdmissionApplicationError(err error) error {
+	if errors.Is(err, store.ErrDatabaseMaintenanceInProgress) {
+		return application.NewError(application.ErrorConflict, "database maintenance is in progress; new executions cannot be queued", err)
+	}
+	return nil
 }
 
 func projectToProtocol(project domain.Project) protocol.ProjectSummary {

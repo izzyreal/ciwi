@@ -106,6 +106,7 @@ func newTestHTTPServerWithState(t *testing.T) (*httptest.Server, *stateStore) {
 	mux.HandleFunc("/api/v1/update/apply", s.updateApplyHandler)
 	mux.HandleFunc("/api/v1/update/rollback", s.updateRollbackHandler)
 	mux.HandleFunc("/api/v1/server/restart", s.serverRestartHandler)
+	mux.HandleFunc("/api/v1/server/database/vacuum", s.vacuumDatabaseHandler)
 	mux.HandleFunc("/api/v1/update/tags", s.updateTagsHandler)
 	mux.HandleFunc("/api/v1/update/status", s.updateStatusHandler)
 	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactsDir))))

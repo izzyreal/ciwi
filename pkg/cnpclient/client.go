@@ -673,6 +673,20 @@ func (c *Client) FlushExecutionHistory(ctx context.Context, request *cnpv1.Flush
 	return nil, unexpectedResult(response)
 }
 
+func (c *Client) VacuumDatabase(ctx context.Context, idempotencyKey string) (*cnpv1.DatabaseVacuumResult, error) {
+	if idempotencyKey == "" {
+		idempotencyKey = uuid.NewString()
+	}
+	response, err := c.call(ctx, &cnpv1.Request{Operation: &cnpv1.Request_VacuumDatabase{VacuumDatabase: &cnpv1.Empty{}}}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if result := response.GetVacuumDatabase(); result != nil {
+		return result, nil
+	}
+	return nil, unexpectedResult(response)
+}
+
 func (c *Client) RemoveQueuedExecution(ctx context.Context, jobExecutionID, idempotencyKey string) (*cnpv1.RemoveQueuedExecutionResult, error) {
 	if idempotencyKey == "" {
 		idempotencyKey = uuid.NewString()

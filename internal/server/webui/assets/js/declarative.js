@@ -920,6 +920,18 @@
 		  settings[field + '_tone'] = 'success';
 		  renderCurrent();
 		}
+		else if (action.command === 'vacuum-database') {
+		  const response = await fetch('/api/v1/server/database/vacuum', {
+		    method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}), body: '{}', signal: runtime.signal,
+		  });
+		  if (!response.ok) throw new Error(await response.text());
+		  const result = await response.json();
+		  const settings = currentData.settings;
+		  settings.maintenance_result = result.message || 'Database vacuum completed';
+		  settings.maintenance_result_tone = 'success';
+		  showResponseMessageNotice(result);
+		  renderCurrent();
+		}
 		else if (action.command === 'clear-queue') {
 		  const response = await fetch('/api/v1/jobs/clear-queue', {method: 'POST', headers: ciwiActionHeaders(runtime, {'Content-Type': 'application/json'}), body: '{}', signal: runtime.signal});
 		  if (!response.ok) throw new Error(await response.text());
@@ -2109,6 +2121,7 @@
 		  rollback_versions: declarativeVersionOptions([], 'Refresh versions'), selected_rollback_version: '',
 		  update_result: persistedUpdate.updateResult, update_result_tone: persistedUpdate.updateResult ? 'success' : 'muted',
 		  rollback_result: '', rollback_result_tone: 'muted',
+		  maintenance_result: '', maintenance_result_tone: 'muted',
 		  connection_mode: 'discover', connection_endpoint: '', connection_explicit: false,
 		  connection_modes: [{value: 'discover', label: 'Automatic discovery'}, {value: 'explicit', label: 'Explicit endpoint'}],
 		};

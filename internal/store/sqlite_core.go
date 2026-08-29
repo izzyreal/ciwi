@@ -1,20 +1,45 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/pipelinechain"
+	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
 type Store struct {
-	db *sql.DB
+	db                 *sql.DB
+	vacuumMu           sync.Mutex
+	executionAdmission sync.RWMutex
+}
+
+var ErrDatabaseMaintenanceInProgress = errors.New("database maintenance is in progress")
+
+type ActiveJobExecutionsError struct {
+	Queued  int64
+	Leased  int64
+	Running int64
+}
+
+func (e *ActiveJobExecutionsError) Error() string {
+	return fmt.Sprintf("database vacuum requires no queued, leased, or running executions (queued=%d, leased=%d, running=%d)", e.Queued, e.Leased, e.Running)
+}
+
+type DatabaseVacuumResult struct {
+	BeforeBytes    int64
+	AfterBytes     int64
+	ReclaimedBytes int64
+	Elapsed        time.Duration
 }
 
 type PersistedPipeline struct {
@@ -75,6 +100,71 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// VacuumDatabase compacts the SQLite database while preventing new execution
+// admission. Existing enqueue/lease operations finish before the active-state
+// check, so an execution cannot race the check and the VACUUM.
+func (s *Store) VacuumDatabase(ctx context.Context) (DatabaseVacuumResult, error) {
+	if !s.vacuumMu.TryLock() {
+		return DatabaseVacuumResult{}, ErrDatabaseMaintenanceInProgress
+	}
+	defer s.vacuumMu.Unlock()
+
+	s.executionAdmission.Lock()
+	defer s.executionAdmission.Unlock()
+	if err := ctx.Err(); err != nil {
+		return DatabaseVacuumResult{}, err
+	}
+
+	var queued, leased, running int64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0)
+		FROM job_executions
+	`, protocol.JobExecutionStatusQueued, protocol.JobExecutionStatusLeased, protocol.JobExecutionStatusRunning).Scan(&queued, &leased, &running); err != nil {
+		return DatabaseVacuumResult{}, fmt.Errorf("check active executions before vacuum: %w", err)
+	}
+	if queued+leased+running > 0 {
+		return DatabaseVacuumResult{}, &ActiveJobExecutionsError{Queued: queued, Leased: leased, Running: running}
+	}
+
+	started := time.Now()
+	if _, err := s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return DatabaseVacuumResult{}, fmt.Errorf("checkpoint before vacuum: %w", err)
+	}
+	before, err := s.databaseAllocatedBytes(ctx)
+	if err != nil {
+		return DatabaseVacuumResult{}, err
+	}
+	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+		return DatabaseVacuumResult{}, fmt.Errorf("vacuum database: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return DatabaseVacuumResult{}, fmt.Errorf("checkpoint after vacuum: %w", err)
+	}
+	after, err := s.databaseAllocatedBytes(ctx)
+	if err != nil {
+		return DatabaseVacuumResult{}, err
+	}
+	reclaimed := before - after
+	if reclaimed < 0 {
+		reclaimed = 0
+	}
+	return DatabaseVacuumResult{BeforeBytes: before, AfterBytes: after, ReclaimedBytes: reclaimed, Elapsed: time.Since(started)}, nil
+}
+
+func (s *Store) databaseAllocatedBytes(ctx context.Context) (int64, error) {
+	var pages, pageSize int64
+	if err := s.db.QueryRowContext(ctx, `PRAGMA page_count`).Scan(&pages); err != nil {
+		return 0, fmt.Errorf("read database page count: %w", err)
+	}
+	if err := s.db.QueryRowContext(ctx, `PRAGMA page_size`).Scan(&pageSize); err != nil {
+		return 0, fmt.Errorf("read database page size: %w", err)
+	}
+	return pages * pageSize, nil
 }
 
 func initializeCurrentSchema(tx *sql.Tx) error {
@@ -228,19 +318,6 @@ func initializeCurrentSchema(tx *sql.Tx) error {
 		if _, err := tx.Exec(stmt); err != nil {
 			return fmt.Errorf("create current schema: %w", err)
 		}
-	}
-	return nil
-}
-
-func (s *Store) compact() error {
-	if _, err := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
-		return fmt.Errorf("checkpoint before vacuum: %w", err)
-	}
-	if _, err := s.db.Exec(`VACUUM`); err != nil {
-		return fmt.Errorf("vacuum: %w", err)
-	}
-	if _, err := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
-		return fmt.Errorf("checkpoint after vacuum: %w", err)
 	}
 	return nil
 }

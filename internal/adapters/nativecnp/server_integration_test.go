@@ -27,29 +27,30 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	executions := &executionCommandService{}
 	icons := &projectIconService{}
 	server := startServer(t, nativequic.Services{
-		Server:            serverService{},
-		Projects:          projectService{},
-		ProjectCommands:   projectService{},
-		ManagedYAML:       managedYAMLService{},
-		Vault:             vaultServiceStub{},
-		Updates:           updateService{},
-		FrontPage:         frontPageService{},
-		ProjectDetails:    projectDetailsService{},
-		ProjectIcons:      icons,
-		JobDetails:        jobDetailsService{},
-		ArtifactDownloads: artifactDownloadService{},
-		JobContexts:       jobContextService{},
-		Pipelines:         pipelines,
-		PipelineChains:    pipelines,
-		RunOptions:        pipelines,
-		Agents:            agentService{},
-		AgentCommands:     agentService{},
-		AgentScripts:      agentService{},
-		ExecutionCommands: executions,
-		ExecutionControls: executions,
-		CommandReceipts:   commandReceiptService{},
-		Changes:           changes,
-		Version:           "v0.2.0",
+		Server:              serverService{},
+		Projects:            projectService{},
+		ProjectCommands:     projectService{},
+		ManagedYAML:         managedYAMLService{},
+		Vault:               vaultServiceStub{},
+		Updates:             updateService{},
+		FrontPage:           frontPageService{},
+		ProjectDetails:      projectDetailsService{},
+		ProjectIcons:        icons,
+		JobDetails:          jobDetailsService{},
+		ArtifactDownloads:   artifactDownloadService{},
+		JobContexts:         jobContextService{},
+		Pipelines:           pipelines,
+		PipelineChains:      pipelines,
+		RunOptions:          pipelines,
+		Agents:              agentService{},
+		AgentCommands:       agentService{},
+		AgentScripts:        agentService{},
+		ExecutionCommands:   executions,
+		ExecutionControls:   executions,
+		DatabaseMaintenance: databaseMaintenanceService{},
+		CommandReceipts:     commandReceiptService{},
+		Changes:             changes,
+		Version:             "v0.2.0",
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -67,6 +68,9 @@ func TestClientServerVerticalSlice(t *testing.T) {
 		t.Fatalf("welcome capabilities = %v", client.Welcome().Capabilities)
 	}
 	if !slices.Contains(client.Welcome().Capabilities, "artifact_download_resume_v1") {
+		t.Fatalf("welcome capabilities = %v", client.Welcome().Capabilities)
+	}
+	if !slices.Contains(client.Welcome().Capabilities, "database_maintenance") {
 		t.Fatalf("welcome capabilities = %v", client.Welcome().Capabilities)
 	}
 	info, err := client.GetServerInfo(ctx)
@@ -235,6 +239,10 @@ func TestClientServerVerticalSlice(t *testing.T) {
 	flushed, err := client.FlushExecutionHistory(ctx, &cnpv1.FlushExecutionHistoryRequest{JobExecutionIds: []string{"job-1", "job-2"}}, "flush-command-key")
 	if err != nil || flushed.Flushed != 2 {
 		t.Fatalf("flush history = %#v, %v", flushed, err)
+	}
+	vacuumed, err := client.VacuumDatabase(ctx, "vacuum-command-key")
+	if err != nil || vacuumed.ReclaimedBytes != 4096 || vacuumed.Message != "Database vacuumed" {
+		t.Fatalf("vacuum database = %#v, %v", vacuumed, err)
 	}
 	removed, err := client.RemoveQueuedExecution(ctx, "job-q", "remove-command-key")
 	if err != nil || !removed.Removed || removed.JobExecutionId != "job-q" {
@@ -405,7 +413,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 	changes := application.NewChangeHub()
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{}, ArtifactDownloads: artifactDownloadService{},
-		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: changes, Version: "v0.2.0",
+		Pipelines: &pipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, DatabaseMaintenance: databaseMaintenanceService{}, Changes: changes, Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -435,7 +443,7 @@ func TestWatchChangesStartsWithResyncAndStreamsInvalidations(t *testing.T) {
 func TestTypedApplicationErrorCrossesProtocol(t *testing.T) {
 	server := startServer(t, nativequic.Services{
 		Server: serverService{}, Projects: projectService{}, ProjectCommands: projectService{}, ManagedYAML: managedYAMLService{}, Vault: vaultServiceStub{}, Updates: updateService{}, FrontPage: frontPageService{}, ProjectDetails: projectDetailsService{}, JobDetails: jobDetailsService{}, ArtifactDownloads: artifactDownloadService{},
-		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
+		Pipelines: failingPipelineService{}, PipelineChains: &pipelineService{}, RunOptions: &pipelineService{}, Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: &executionCommandService{}, ExecutionControls: &executionCommandService{}, DatabaseMaintenance: databaseMaintenanceService{}, Changes: application.NewChangeHub(), Version: "v0.2.0",
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -516,11 +524,18 @@ func completeTestServices(changes *application.ChangeHub) nativecnp.Services {
 		Pipelines: pipelines, PipelineChains: pipelines, RunOptions: pipelines,
 		Agents: agentService{}, AgentCommands: agentService{}, AgentScripts: agentService{}, ExecutionCommands: executions,
 		ExecutionControls: executions, Changes: changes, Version: "v0.2.0",
-		CommandReceipts: commandReceiptService{},
+		DatabaseMaintenance: databaseMaintenanceService{},
+		CommandReceipts:     commandReceiptService{},
 	}
 }
 
 type commandReceiptService struct{}
+
+type databaseMaintenanceService struct{}
+
+func (databaseMaintenanceService) Vacuum(context.Context, application.DatabaseVacuumRequest) (application.DatabaseVacuumResult, error) {
+	return application.DatabaseVacuumResult{BeforeBytes: 8192, AfterBytes: 4096, ReclaimedBytes: 4096, ElapsedMS: 12, Message: "Database vacuumed"}, nil
+}
 
 type vaultServiceStub struct{}
 

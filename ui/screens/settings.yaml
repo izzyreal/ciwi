@@ -798,6 +798,39 @@ screen:
                       tone: muted
       - component: section
         visible: {binding: settings.ready}
+        id: database-maintenance
+        layout:
+          direction: vertical
+          gap: medium
+        children:
+          - component: text
+            text: {literal: Database Maintenance}
+            style: {role: heading, emphasis: strong}
+          - component: card
+            layout: {direction: vertical, gap: small, padding: medium}
+            children:
+              - component: text
+                text:
+                  literal: Reclaim unused disk space by rewriting the SQLite database. No executions may be queued, leased, or running.
+                style: {tone: muted}
+              - component: row
+                layout: {direction: horizontal, gap: small, align: center, wrap: true}
+                children:
+                  - component: button
+                    text: {literal: Vacuum Database}
+                    enabled: {binding: client.connected}
+                    actions:
+                      - on: activate
+                        command: vacuum-database
+                        confirm:
+                          title: Vacuum Database?
+                          message: Vacuum rewrites the whole database and temporarily blocks database access. The execution queue must be empty, and this may take several minutes.
+              - component: text
+                text: {binding: settings.maintenance_result}
+                visible: {binding: settings.maintenance_result, empty: true, not: true}
+                style: {toneBinding: settings.maintenance_result_tone}
+      - component: section
+        visible: {binding: settings.ready}
         id: connection
         layout:
           direction: vertical

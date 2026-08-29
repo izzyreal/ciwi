@@ -810,6 +810,7 @@ func settingsBindingData(server *cnpv1.ServerInfo, themes []*uidsl.ThemeDocument
 		"update_versions": versionOptions(nil, "Check for updates"), "selected_update_version": "",
 		"rollback_versions": versionOptions(nil, "Refresh versions"), "selected_rollback_version": "",
 		"update_result": "", "update_result_tone": "muted", "rollback_result": "", "rollback_result_tone": "muted",
+		"maintenance_result": "", "maintenance_result_tone": "muted",
 		"loading": false, "ready": true, "load_error": "",
 	}}, nil
 }

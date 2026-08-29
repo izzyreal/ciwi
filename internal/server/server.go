@@ -115,8 +115,9 @@ func Run(ctx context.Context) error {
 			AgentCommands:     app.agentCommands,
 			AgentScripts:      app.agentScripts,
 			ExecutionCommands: app.executionCommands, ExecutionControls: app.executionControls,
-			CommandReceipts: app.commandReceipts,
-			Changes:         app.changes, Version: currentVersion(),
+			DatabaseMaintenance: app.databaseMaintenance,
+			CommandReceipts:     app.commandReceipts,
+			Changes:             app.changes, Version: currentVersion(),
 		})
 		if handlerErr != nil {
 			return handlerErr

@@ -203,6 +203,14 @@ const settingsScreen = {
             {component: 'text', id: 'settings-update-result', text: {binding: 'settings.update_result'}},
             {component: 'text', id: 'settings-agent-update-notice', text: {literal: 'Agents update after the server update.'}},
             {component: 'text', id: 'settings-current-version', text: {literal: 'Current: v1.0.0'}},
+            {
+              component: 'button', id: 'settings-vacuum-database', text: {literal: 'Vacuum Database'},
+              actions: [{
+                on: 'activate', command: 'vacuum-database',
+                confirm: {title: 'Vacuum Database?', message: 'Vacuum rewrites the whole database and temporarily blocks database access. The execution queue must be empty, and this may take several minutes.'},
+              }],
+            },
+            {component: 'text', id: 'settings-maintenance-result', text: {binding: 'settings.maintenance_result'}},
           ],
         }],
       }],
@@ -388,6 +396,7 @@ async function installSettingsFixture(page) {
       await route.fulfill({json: {actions: [
         {command: 'server-update-action', class: 'mutation', scope: 'server-update', pending: 'Updating server…', refreshOnSuccess: false},
         {command: 'check-server-updates', class: 'query', scope: 'server-updates', pending: 'Checking for updates…'},
+        {command: 'vacuum-database', class: 'mutation', scope: 'server-database-maintenance', pending: 'Vacuuming database…', persistence: 'receipt-only'},
       ]}});
       return;
     }
@@ -415,6 +424,10 @@ async function installSettingsFixture(page) {
     if (url.pathname === '/api/v1/update/check') {
       await checkGate;
       await route.fulfill({json: {current_version: 'v1.0.0', latest_version: 'v1.1.0', update_available: true, available_versions: ['v1.1.0']}});
+      return;
+    }
+    if (url.pathname === '/api/v1/server/database/vacuum') {
+      await route.fulfill({json: {before_bytes: 734003200, after_bytes: 440401920, reclaimed_bytes: 293601280, elapsed_ms: 134000, message: 'Database vacuumed: 700 MB → 420 MB in 2m14s'}});
       return;
     }
     if (url.pathname === '/ciwi-logo.png' || url.pathname === '/ui/icons.svg') {
@@ -943,4 +956,13 @@ test('confirmed server update interpolates its version and resets controls befor
   await expect.poll(() => fixture.updateBodies).toEqual([{target_version: 'v1.1.0'}]);
   fixture.releaseUpdate();
   await expect(page.locator('#settings-update-result')).toHaveText('Update accepted');
+});
+
+test('confirmed database vacuum reports the server result', async ({page}) => {
+  await installSettingsFixture(page);
+  await page.locator('#settings-vacuum-database').click();
+  await expect.poll(() => page.evaluate(() => window.confirmations)).toEqual([
+    'Vacuum rewrites the whole database and temporarily blocks database access. The execution queue must be empty, and this may take several minutes.',
+  ]);
+  await expect(page.locator('#settings-maintenance-result')).toHaveText('Database vacuumed: 700 MB → 420 MB in 2m14s');
 });

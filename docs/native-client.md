@@ -225,8 +225,10 @@ app restart. The native client does not fall back to browser artifact URLs or a
 second legacy download implementation.
 
 Global Settings covers native-client appearance, connection context, project
-management, agent administration, and server update/rollback controls. Agent
-details can authorize, activate, refresh tools, restart, update, wipe caches,
+management, agent administration, explicit SQLite vacuum maintenance, and
+server update/rollback controls. Database vacuum is available only while no
+executions are queued, leased, or running and has a five-minute server deadline.
+Agent details can authorize, activate, refresh tools, restart, update, wipe caches,
 flush per-agent history, delete snapshots, and queue ad-hoc scripts in any shell
 the agent advertises. Mutations and queries run asynchronously, expose busy
 state, and report short-lived success/error notices without blocking navigation.

@@ -816,6 +816,7 @@ message Request {
     JobLogPageRequest get_job_log_page = 46;
     JobLogSearchRequest search_job_log = 47;
     WatchJobLogRequest watch_job_log = 48;
+    Empty vacuum_database = 49;
   }
 }
 
@@ -860,6 +861,7 @@ message Response {
     JobLogDescriptor job_log_descriptor = 44;
     JobLogPage job_log_page = 45;
     JobLogSearchResult job_log_search = 46;
+    DatabaseVacuumResult vacuum_database = 47;
   }
 }
 
@@ -978,4 +980,12 @@ message JobRunContextExecution {
   string attempt_label = 4;
   bool current = 5;
   bool latest_attempt = 6;
+}
+
+message DatabaseVacuumResult {
+  int64 before_bytes = 1;
+  int64 after_bytes = 2;
+  int64 reclaimed_bytes = 3;
+  int64 elapsed_ms = 4;
+  string message = 5;
 }

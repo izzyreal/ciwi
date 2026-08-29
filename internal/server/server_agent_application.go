@@ -90,6 +90,9 @@ func (a agentScriptMutatorAdapter) RunAgentScript(ctx context.Context, request a
 		},
 	})
 	if err != nil {
+		if admissionErr := executionAdmissionApplicationError(err); admissionErr != nil {
+			return application.RunAgentScriptResult{}, admissionErr
+		}
 		return application.RunAgentScriptResult{}, application.WrapInternal("queue agent script", err)
 	}
 	s.mu.Lock()

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -163,7 +165,7 @@ func TestCreateJobExecutionsValidatesBeforeWriting(t *testing.T) {
 	}
 }
 
-func TestFlushJobExecutionHistoryCompactsDatabase(t *testing.T) {
+func TestFlushJobExecutionHistoryLeavesFreedPagesReusableWithoutBlockingCompaction(t *testing.T) {
 	s := openTestStore(t)
 	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo done"})
 	if err != nil {
@@ -201,11 +203,11 @@ func TestFlushJobExecutionHistoryCompactsDatabase(t *testing.T) {
 	if err := s.db.QueryRow(`PRAGMA freelist_count`).Scan(&freePagesAfter); err != nil {
 		t.Fatalf("freelist count after flush: %v", err)
 	}
-	if pagesAfter >= pagesBefore {
-		t.Fatalf("expected compaction to reduce page count, before=%d after=%d", pagesBefore, pagesAfter)
+	if pagesAfter > pagesBefore {
+		t.Fatalf("history deletion grew database, before=%d after=%d", pagesBefore, pagesAfter)
 	}
-	if freePagesAfter != 0 {
-		t.Fatalf("expected vacuumed freelist, got %d pages", freePagesAfter)
+	if freePagesAfter == 0 {
+		t.Fatal("history deletion did not leave any pages available for reuse")
 	}
 	events, err := s.ListJobExecutionEvents(job.ID)
 	if err != nil {
@@ -213,6 +215,91 @@ func TestFlushJobExecutionHistoryCompactsDatabase(t *testing.T) {
 	}
 	if len(events) != 0 {
 		t.Fatalf("expected cascading event deletion, got %d events", len(events))
+	}
+}
+
+func TestVacuumDatabaseCompactsFreedPages(t *testing.T) {
+	s := openTestStore(t)
+	job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{Status: protocol.JobExecutionStatusSucceeded}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
+		Type: protocol.JobExecutionEventTypeSystemMessage, Message: strings.Repeat("vacuum-me", 300000), TimestampUTC: time.Now().UTC(),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FlushJobExecutionHistoryByIDs([]string{job.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := s.VacuumDatabase(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.BeforeBytes <= result.AfterBytes || result.ReclaimedBytes != result.BeforeBytes-result.AfterBytes {
+		t.Fatalf("vacuum result = %+v", result)
+	}
+	var freePages int64
+	if err := s.db.QueryRow(`PRAGMA freelist_count`).Scan(&freePages); err != nil {
+		t.Fatal(err)
+	}
+	if freePages != 0 {
+		t.Fatalf("freelist after vacuum = %d", freePages)
+	}
+}
+
+func TestVacuumDatabaseRejectsActiveExecutionsAndConcurrentMaintenance(t *testing.T) {
+	statuses := []string{protocol.JobExecutionStatusQueued, protocol.JobExecutionStatusLeased, protocol.JobExecutionStatusRunning}
+	for _, status := range statuses {
+		t.Run(status, func(t *testing.T) {
+			s := openTestStore(t)
+			job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo active"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status != protocol.JobExecutionStatusQueued {
+				if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{AgentID: "agent-1", Status: status}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = s.VacuumDatabase(context.Background())
+			var active *ActiveJobExecutionsError
+			if !errors.As(err, &active) {
+				t.Fatalf("vacuum error = %v", err)
+			}
+		})
+	}
+
+	s := openTestStore(t)
+	s.vacuumMu.Lock()
+	_, err := s.VacuumDatabase(context.Background())
+	s.vacuumMu.Unlock()
+	if !errors.Is(err, ErrDatabaseMaintenanceInProgress) {
+		t.Fatalf("concurrent vacuum error = %v", err)
+	}
+}
+
+func TestDatabaseMaintenanceGuardPreventsEnqueueAndLease(t *testing.T) {
+	s := openTestStore(t)
+	s.executionAdmission.Lock()
+	_, createErr := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo blocked"})
+	leased, leaseErr := s.LeaseJobExecution("agent-1", nil)
+	s.executionAdmission.Unlock()
+	if !errors.Is(createErr, ErrDatabaseMaintenanceInProgress) {
+		t.Fatalf("create error = %v", createErr)
+	}
+	if leaseErr != nil || leased != nil {
+		t.Fatalf("lease during maintenance = %+v, %v", leased, leaseErr)
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.VacuumDatabase(cancelled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled vacuum error = %v", err)
 	}
 }
 

@@ -43,8 +43,11 @@ func (c *recordingNativeActionClient) ClearExecutionQueue(ctx context.Context, k
 func (c *recordingNativeActionClient) RemoveQueuedExecution(_ context.Context, id, key string) (*cnpv1.RemoveQueuedExecutionResult, error) {
 	return &cnpv1.RemoveQueuedExecutionResult{JobExecutionId: id}, c.record("remove-execution", key)
 }
-func (c *recordingNativeActionClient) FlushExecutionHistory(_ context.Context, _ *cnpv1.FlushExecutionHistoryRequest, key string) (*cnpv1.FlushExecutionHistoryResult, error) {
-	return &cnpv1.FlushExecutionHistoryResult{Flushed: 5}, c.record("flush-history", key)
+func (c *recordingNativeActionClient) FlushExecutionHistory(ctx context.Context, _ *cnpv1.FlushExecutionHistoryRequest, key string) (*cnpv1.FlushExecutionHistoryResult, error) {
+	return &cnpv1.FlushExecutionHistoryResult{Flushed: 5}, c.recordContext(ctx, "flush-history", key)
+}
+func (c *recordingNativeActionClient) VacuumDatabase(ctx context.Context, key string) (*cnpv1.DatabaseVacuumResult, error) {
+	return &cnpv1.DatabaseVacuumResult{Message: "Database vacuumed"}, c.recordContext(ctx, "vacuum-database", key)
 }
 func (c *recordingNativeActionClient) CancelExecution(_ context.Context, id, key string) (*cnpv1.CancelExecutionResult, error) {
 	return &cnpv1.CancelExecutionResult{JobExecutionId: id}, c.record("cancel-execution", key)
@@ -113,7 +116,7 @@ func TestNativeMutationFailureDistinguishesKnownAndAmbiguousOutcomes(t *testing.
 	}
 }
 
-func TestNativeQueueingOperationsAllowThirtySeconds(t *testing.T) {
+func TestNativeLongRunningOperationsUsePurposeSpecificDeadlines(t *testing.T) {
 	tests := []struct {
 		name      string
 		operation operations.Operation
@@ -137,6 +140,18 @@ func TestNativeQueueingOperationsAllowThirtySeconds(t *testing.T) {
 			name:      "other action unchanged",
 			operation: operations.Operation{Command: "clear-queue"},
 			want:      15 * time.Second,
+		},
+		{
+			name: "history housekeeping",
+			operation: operations.Operation{
+				Command: "delete-execution", Arguments: map[string]string{"jobExecutionIds": "job-1"},
+			},
+			want: nativeHistoryHousekeepingTimeout,
+		},
+		{
+			name:      "database vacuum",
+			operation: operations.Operation{Command: "vacuum-database"},
+			want:      nativeDatabaseVacuumTimeout,
 		},
 	}
 	for _, test := range tests {
@@ -206,6 +221,7 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 		{command: "clear-queue", wantCall: "clear-queue"},
 		{command: "remove-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "remove-execution"},
 		{command: "flush-history", wantCall: "flush-history"},
+		{command: "vacuum-database", wantCall: "vacuum-database", wantNoticeEnabled: true},
 		{command: "delete-execution", arguments: map[string]string{"jobExecutionIds": "job-1, job-2"}, wantCall: "flush-history"},
 		{command: "cancel-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "cancel-execution", wantCancel: "job-1"},
 		{command: "rerun-execution", arguments: map[string]string{"jobExecutionId": "job-1"}, wantCall: "rerun-execution", wantNotice: "/jobs/job-1-rerun", wantNoticeEnabled: true},

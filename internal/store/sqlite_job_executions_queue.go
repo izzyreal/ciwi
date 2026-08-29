@@ -32,6 +32,10 @@ func (s *Store) CreateJobExecutions(requests []protocol.CreateJobExecutionReques
 	if len(requests) == 0 {
 		return nil, nil
 	}
+	if !s.executionAdmission.TryRLock() {
+		return nil, ErrDatabaseMaintenanceInProgress
+	}
+	defer s.executionAdmission.RUnlock()
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -153,6 +157,10 @@ func (s *Store) GetJobExecution(id string) (protocol.JobExecution, error) {
 }
 
 func (s *Store) LeaseJobExecution(agentID string, agentCaps map[string]string) (*protocol.JobExecution, error) {
+	if !s.executionAdmission.TryRLock() {
+		return nil, nil
+	}
+	defer s.executionAdmission.RUnlock()
 	jobs, err := s.ListQueuedJobExecutions()
 	if err != nil {
 		return nil, err

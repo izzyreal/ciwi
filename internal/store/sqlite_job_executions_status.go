@@ -416,11 +416,6 @@ func (s *Store) flushJobExecutionHistoryIDs(candidates []string) ([]string, erro
 	}); err != nil {
 		return nil, fmt.Errorf("flush job history: %w", err)
 	}
-	if len(deleted) > 0 {
-		if err := retrySQLiteBusy(s.compact); err != nil {
-			return deleted, fmt.Errorf("history deleted but database compaction failed: %w", err)
-		}
-	}
 	return deleted, nil
 }
 

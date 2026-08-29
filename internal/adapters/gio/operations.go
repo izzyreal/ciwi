@@ -102,6 +102,7 @@ type nativeActionClient interface {
 	ClearExecutionQueue(context.Context, string) (*cnpv1.ClearExecutionQueueResult, error)
 	RemoveQueuedExecution(context.Context, string, string) (*cnpv1.RemoveQueuedExecutionResult, error)
 	FlushExecutionHistory(context.Context, *cnpv1.FlushExecutionHistoryRequest, string) (*cnpv1.FlushExecutionHistoryResult, error)
+	VacuumDatabase(context.Context, string) (*cnpv1.DatabaseVacuumResult, error)
 	CancelExecution(context.Context, string, string) (*cnpv1.CancelExecutionResult, error)
 	RerunExecution(context.Context, string, string) (*cnpv1.RerunExecutionResult, error)
 	AgentAction(context.Context, *cnpv1.AgentActionRequest, string) (*cnpv1.AgentActionResult, error)
@@ -120,7 +121,11 @@ type nativeActionClient interface {
 
 type nativeOperationExecutor struct{ clients *nativeClientBroker }
 
-const nativeQueueActionTimeout = 30 * time.Second
+const (
+	nativeQueueActionTimeout         = 30 * time.Second
+	nativeHistoryHousekeepingTimeout = time.Minute
+	nativeDatabaseVacuumTimeout      = 5*time.Minute + 10*time.Second
+)
 
 func (e nativeOperationExecutor) Execute(ctx context.Context, operation operations.Operation) operations.Result {
 	if err := validateNativeOperation(operation); err != nil {
@@ -213,7 +218,7 @@ func validateNativeOperation(operation operations.Operation) error {
 		if (action == "apply" || action == "rollback") && strings.TrimSpace(arguments["targetVersion"]) == "" {
 			return fmt.Errorf("target version is required")
 		}
-	case "clear-queue", "flush-history", "check-server-updates", "refresh-rollback-versions", "refresh":
+	case "clear-queue", "flush-history", "vacuum-database", "check-server-updates", "refresh-rollback-versions", "refresh":
 		return nil
 	default:
 		return fmt.Errorf("unsupported coordinated native action %q", operation.Command)
@@ -295,13 +300,21 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 				return nativeOperationEffect{}, fmt.Errorf("no execution identifiers were supplied")
 			}
 		}
-		commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		commandCtx, cancel := context.WithTimeout(ctx, nativeHistoryHousekeepingTimeout)
 		defer cancel()
 		result, err := client.FlushExecutionHistory(commandCtx, request, key)
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("flush history: %w", err)
 		}
 		return nativeOperationEffect{Message: fmt.Sprintf("Removed %d execution(s) from history", result.Flushed), Refresh: true}, nil
+	case "vacuum-database":
+		commandCtx, cancel := context.WithTimeout(ctx, nativeDatabaseVacuumTimeout)
+		defer cancel()
+		result, err := client.VacuumDatabase(commandCtx, key)
+		if err != nil {
+			return nativeOperationEffect{}, fmt.Errorf("vacuum database: %w", err)
+		}
+		return nativeOperationEffect{Message: result.Message, Value: result, Notice: true}, nil
 	case "cancel-execution":
 		jobID := strings.TrimSpace(arguments["jobExecutionId"])
 		if jobID == "" {

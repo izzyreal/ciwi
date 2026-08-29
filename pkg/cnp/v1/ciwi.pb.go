@@ -7228,6 +7228,7 @@ type Request struct {
 	//	*Request_GetJobLogPage
 	//	*Request_SearchJobLog
 	//	*Request_WatchJobLog
+	//	*Request_VacuumDatabase
 	Operation     isRequest_Operation `protobuf_oneof:"operation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -7619,6 +7620,15 @@ func (x *Request) GetWatchJobLog() *WatchJobLogRequest {
 	return nil
 }
 
+func (x *Request) GetVacuumDatabase() *Empty {
+	if x != nil {
+		if x, ok := x.Operation.(*Request_VacuumDatabase); ok {
+			return x.VacuumDatabase
+		}
+	}
+	return nil
+}
+
 type isRequest_Operation interface {
 	isRequest_Operation()
 }
@@ -7775,6 +7785,10 @@ type Request_WatchJobLog struct {
 	WatchJobLog *WatchJobLogRequest `protobuf:"bytes,48,opt,name=watch_job_log,json=watchJobLog,proto3,oneof"`
 }
 
+type Request_VacuumDatabase struct {
+	VacuumDatabase *Empty `protobuf:"bytes,49,opt,name=vacuum_database,json=vacuumDatabase,proto3,oneof"`
+}
+
 func (*Request_GetServerInfo) isRequest_Operation() {}
 
 func (*Request_ListProjects) isRequest_Operation() {}
@@ -7851,6 +7865,8 @@ func (*Request_SearchJobLog) isRequest_Operation() {}
 
 func (*Request_WatchJobLog) isRequest_Operation() {}
 
+func (*Request_VacuumDatabase) isRequest_Operation() {}
+
 type Response struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -7892,6 +7908,7 @@ type Response struct {
 	//	*Response_JobLogDescriptor
 	//	*Response_JobLogPage
 	//	*Response_JobLogSearch
+	//	*Response_VacuumDatabase
 	Result        isResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -8265,6 +8282,15 @@ func (x *Response) GetJobLogSearch() *JobLogSearchResult {
 	return nil
 }
 
+func (x *Response) GetVacuumDatabase() *DatabaseVacuumResult {
+	if x != nil {
+		if x, ok := x.Result.(*Response_VacuumDatabase); ok {
+			return x.VacuumDatabase
+		}
+	}
+	return nil
+}
+
 type isResponse_Result interface {
 	isResponse_Result()
 }
@@ -8413,6 +8439,10 @@ type Response_JobLogSearch struct {
 	JobLogSearch *JobLogSearchResult `protobuf:"bytes,46,opt,name=job_log_search,json=jobLogSearch,proto3,oneof"`
 }
 
+type Response_VacuumDatabase struct {
+	VacuumDatabase *DatabaseVacuumResult `protobuf:"bytes,47,opt,name=vacuum_database,json=vacuumDatabase,proto3,oneof"`
+}
+
 func (*Response_ServerInfo) isResponse_Result() {}
 
 func (*Response_ProjectList) isResponse_Result() {}
@@ -8484,6 +8514,8 @@ func (*Response_JobLogDescriptor) isResponse_Result() {}
 func (*Response_JobLogPage) isResponse_Result() {}
 
 func (*Response_JobLogSearch) isResponse_Result() {}
+
+func (*Response_VacuumDatabase) isResponse_Result() {}
 
 type ClientMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -9597,6 +9629,82 @@ func (x *JobRunContextExecution) GetLatestAttempt() bool {
 	return false
 }
 
+type DatabaseVacuumResult struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	BeforeBytes    int64                  `protobuf:"varint,1,opt,name=before_bytes,json=beforeBytes,proto3" json:"before_bytes,omitempty"`
+	AfterBytes     int64                  `protobuf:"varint,2,opt,name=after_bytes,json=afterBytes,proto3" json:"after_bytes,omitempty"`
+	ReclaimedBytes int64                  `protobuf:"varint,3,opt,name=reclaimed_bytes,json=reclaimedBytes,proto3" json:"reclaimed_bytes,omitempty"`
+	ElapsedMs      int64                  `protobuf:"varint,4,opt,name=elapsed_ms,json=elapsedMs,proto3" json:"elapsed_ms,omitempty"`
+	Message        string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DatabaseVacuumResult) Reset() {
+	*x = DatabaseVacuumResult{}
+	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[106]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatabaseVacuumResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatabaseVacuumResult) ProtoMessage() {}
+
+func (x *DatabaseVacuumResult) ProtoReflect() protoreflect.Message {
+	mi := &file_ciwi_native_v1_ciwi_proto_msgTypes[106]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatabaseVacuumResult.ProtoReflect.Descriptor instead.
+func (*DatabaseVacuumResult) Descriptor() ([]byte, []int) {
+	return file_ciwi_native_v1_ciwi_proto_rawDescGZIP(), []int{106}
+}
+
+func (x *DatabaseVacuumResult) GetBeforeBytes() int64 {
+	if x != nil {
+		return x.BeforeBytes
+	}
+	return 0
+}
+
+func (x *DatabaseVacuumResult) GetAfterBytes() int64 {
+	if x != nil {
+		return x.AfterBytes
+	}
+	return 0
+}
+
+func (x *DatabaseVacuumResult) GetReclaimedBytes() int64 {
+	if x != nil {
+		return x.ReclaimedBytes
+	}
+	return 0
+}
+
+func (x *DatabaseVacuumResult) GetElapsedMs() int64 {
+	if x != nil {
+		return x.ElapsedMs
+	}
+	return 0
+}
+
+func (x *DatabaseVacuumResult) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_ciwi_native_v1_ciwi_proto protoreflect.FileDescriptor
 
 const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
@@ -10245,7 +10353,7 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x06topics\x18\x03 \x03(\x0e2\x1b.ciwi.native.v1.ChangeTopicR\x06topics\x12(\n" +
 	"\x10occurred_unix_ms\x18\x04 \x01(\x03R\x0eoccurredUnixMs\x12'\n" +
 	"\x0fresync_required\x18\x05 \x01(\bR\x0eresyncRequired\x12*\n" +
-	"\x11job_execution_ids\x18\x06 \x03(\tR\x0fjobExecutionIds\"\x85\x1a\n" +
+	"\x11job_execution_ids\x18\x06 \x03(\tR\x0fjobExecutionIds\"\xc7\x1a\n" +
 	"\aRequest\x12;\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1f.ciwi.native.v1.RequestMetadataR\bmetadata\x12?\n" +
 	"\x0fget_server_info\x18\n" +
@@ -10286,8 +10394,9 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x16get_job_log_descriptor\x18- \x01(\v2'.ciwi.native.v1.JobLogDescriptorRequestH\x00R\x13getJobLogDescriptor\x12L\n" +
 	"\x10get_job_log_page\x18. \x01(\v2!.ciwi.native.v1.JobLogPageRequestH\x00R\rgetJobLogPage\x12K\n" +
 	"\x0esearch_job_log\x18/ \x01(\v2#.ciwi.native.v1.JobLogSearchRequestH\x00R\fsearchJobLog\x12H\n" +
-	"\rwatch_job_log\x180 \x01(\v2\".ciwi.native.v1.WatchJobLogRequestH\x00R\vwatchJobLogB\v\n" +
-	"\toperationJ\x04\b\x11\x10\x12R\x10watch_job_output\"\x88\x17\n" +
+	"\rwatch_job_log\x180 \x01(\v2\".ciwi.native.v1.WatchJobLogRequestH\x00R\vwatchJobLog\x12@\n" +
+	"\x0fvacuum_database\x181 \x01(\v2\x15.ciwi.native.v1.EmptyH\x00R\x0evacuumDatabaseB\v\n" +
+	"\toperationJ\x04\b\x11\x10\x12R\x10watch_job_output\"\xd9\x17\n" +
 	"\bResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12=\n" +
@@ -10332,7 +10441,8 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x12job_log_descriptor\x18, \x01(\v2 .ciwi.native.v1.JobLogDescriptorH\x00R\x10jobLogDescriptor\x12>\n" +
 	"\fjob_log_page\x18- \x01(\v2\x1a.ciwi.native.v1.JobLogPageH\x00R\n" +
 	"jobLogPage\x12J\n" +
-	"\x0ejob_log_search\x18. \x01(\v2\".ciwi.native.v1.JobLogSearchResultH\x00R\fjobLogSearchB\b\n" +
+	"\x0ejob_log_search\x18. \x01(\v2\".ciwi.native.v1.JobLogSearchResultH\x00R\fjobLogSearch\x12O\n" +
+	"\x0fvacuum_database\x18/ \x01(\v2$.ciwi.native.v1.DatabaseVacuumResultH\x00R\x0evacuumDatabaseB\b\n" +
 	"\x06resultJ\x04\b\x12\x10\x13R\n" +
 	"job_output\"{\n" +
 	"\rClientMessage\x12-\n" +
@@ -10435,7 +10545,15 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\fmatrix_label\x18\x03 \x01(\tR\vmatrixLabel\x12#\n" +
 	"\rattempt_label\x18\x04 \x01(\tR\fattemptLabel\x12\x18\n" +
 	"\acurrent\x18\x05 \x01(\bR\acurrent\x12%\n" +
-	"\x0elatest_attempt\x18\x06 \x01(\bR\rlatestAttempt*\xf9\x01\n" +
+	"\x0elatest_attempt\x18\x06 \x01(\bR\rlatestAttempt\"\xbc\x01\n" +
+	"\x14DatabaseVacuumResult\x12!\n" +
+	"\fbefore_bytes\x18\x01 \x01(\x03R\vbeforeBytes\x12\x1f\n" +
+	"\vafter_bytes\x18\x02 \x01(\x03R\n" +
+	"afterBytes\x12'\n" +
+	"\x0freclaimed_bytes\x18\x03 \x01(\x03R\x0ereclaimedBytes\x12\x1d\n" +
+	"\n" +
+	"elapsed_ms\x18\x04 \x01(\x03R\telapsedMs\x12\x18\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage*\xf9\x01\n" +
 	"\n" +
 	"StatusCode\x12\x1b\n" +
 	"\x17STATUS_CODE_UNSPECIFIED\x10\x00\x12 \n" +
@@ -10478,7 +10596,7 @@ func file_ciwi_native_v1_ciwi_proto_rawDescGZIP() []byte {
 }
 
 var file_ciwi_native_v1_ciwi_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_ciwi_native_v1_ciwi_proto_msgTypes = make([]protoimpl.MessageInfo, 106)
+var file_ciwi_native_v1_ciwi_proto_msgTypes = make([]protoimpl.MessageInfo, 107)
 var file_ciwi_native_v1_ciwi_proto_goTypes = []any{
 	(StatusCode)(0),                      // 0: ciwi.native.v1.StatusCode
 	(JobLogPageMode)(0),                  // 1: ciwi.native.v1.JobLogPageMode
@@ -10589,6 +10707,7 @@ var file_ciwi_native_v1_ciwi_proto_goTypes = []any{
 	(*JobRunContextPipeline)(nil),        // 106: ciwi.native.v1.JobRunContextPipeline
 	(*JobRunContextJob)(nil),             // 107: ciwi.native.v1.JobRunContextJob
 	(*JobRunContextExecution)(nil),       // 108: ciwi.native.v1.JobRunContextExecution
+	(*DatabaseVacuumResult)(nil),         // 109: ciwi.native.v1.DatabaseVacuumResult
 }
 var file_ciwi_native_v1_ciwi_proto_depIdxs = []int32{
 	0,   // 0: ciwi.native.v1.ErrorStatus.code:type_name -> ciwi.native.v1.StatusCode
@@ -10683,58 +10802,60 @@ var file_ciwi_native_v1_ciwi_proto_depIdxs = []int32{
 	35,  // 89: ciwi.native.v1.Request.get_job_log_page:type_name -> ciwi.native.v1.JobLogPageRequest
 	36,  // 90: ciwi.native.v1.Request.search_job_log:type_name -> ciwi.native.v1.JobLogSearchRequest
 	37,  // 91: ciwi.native.v1.Request.watch_job_log:type_name -> ciwi.native.v1.WatchJobLogRequest
-	8,   // 92: ciwi.native.v1.Response.server_info:type_name -> ciwi.native.v1.ServerInfo
-	12,  // 93: ciwi.native.v1.Response.project_list:type_name -> ciwi.native.v1.ProjectList
-	13,  // 94: ciwi.native.v1.Response.front_page_view:type_name -> ciwi.native.v1.FrontPageView
-	51,  // 95: ciwi.native.v1.Response.run_pipeline:type_name -> ciwi.native.v1.RunPipelineResult
-	93,  // 96: ciwi.native.v1.Response.change:type_name -> ciwi.native.v1.ChangeEvent
-	7,   // 97: ciwi.native.v1.Response.error:type_name -> ciwi.native.v1.ErrorStatus
-	18,  // 98: ciwi.native.v1.Response.project_details:type_name -> ciwi.native.v1.ProjectDetailsView
-	26,  // 99: ciwi.native.v1.Response.job_details:type_name -> ciwi.native.v1.JobDetailsView
-	86,  // 100: ciwi.native.v1.Response.clear_execution_queue:type_name -> ciwi.native.v1.ClearExecutionQueueResult
-	88,  // 101: ciwi.native.v1.Response.flush_execution_history:type_name -> ciwi.native.v1.FlushExecutionHistoryResult
-	30,  // 102: ciwi.native.v1.Response.cancel_execution:type_name -> ciwi.native.v1.CancelExecutionResult
-	31,  // 103: ciwi.native.v1.Response.rerun_execution:type_name -> ciwi.native.v1.RerunExecutionResult
-	53,  // 104: ciwi.native.v1.Response.run_pipeline_chain:type_name -> ciwi.native.v1.RunPipelineChainResult
-	56,  // 105: ciwi.native.v1.Response.run_options:type_name -> ciwi.native.v1.RunOptionsView
-	59,  // 106: ciwi.native.v1.Response.agents_view:type_name -> ciwi.native.v1.AgentsView
-	63,  // 107: ciwi.native.v1.Response.agent_action:type_name -> ciwi.native.v1.AgentActionResult
-	67,  // 108: ciwi.native.v1.Response.project_action:type_name -> ciwi.native.v1.ProjectActionResult
-	69,  // 109: ciwi.native.v1.Response.import_project:type_name -> ciwi.native.v1.ImportProjectResult
-	80,  // 110: ciwi.native.v1.Response.server_update_status:type_name -> ciwi.native.v1.ServerUpdateStatus
-	81,  // 111: ciwi.native.v1.Response.server_update_check:type_name -> ciwi.native.v1.ServerUpdateCheckResult
-	82,  // 112: ciwi.native.v1.Response.server_update_versions:type_name -> ciwi.native.v1.ServerUpdateVersions
-	84,  // 113: ciwi.native.v1.Response.server_update_action:type_name -> ciwi.native.v1.ServerUpdateActionResult
-	89,  // 114: ciwi.native.v1.Response.remove_queued_execution:type_name -> ciwi.native.v1.RemoveQueuedExecutionResult
-	61,  // 115: ciwi.native.v1.Response.agent_details:type_name -> ciwi.native.v1.AgentDetailsView
-	91,  // 116: ciwi.native.v1.Response.command_receipt_status:type_name -> ciwi.native.v1.CommandReceiptStatus
-	65,  // 117: ciwi.native.v1.Response.run_agent_script:type_name -> ciwi.native.v1.RunAgentScriptResult
-	72,  // 118: ciwi.native.v1.Response.managed_yaml:type_name -> ciwi.native.v1.ManagedYAMLDefinition
-	74,  // 119: ciwi.native.v1.Response.vault_connection_list:type_name -> ciwi.native.v1.VaultConnectionList
-	73,  // 120: ciwi.native.v1.Response.vault_connection:type_name -> ciwi.native.v1.VaultConnection
-	78,  // 121: ciwi.native.v1.Response.test_vault_connection:type_name -> ciwi.native.v1.TestVaultConnectionResult
-	79,  // 122: ciwi.native.v1.Response.delete_vault_connection:type_name -> ciwi.native.v1.DeleteVaultConnectionResult
-	104, // 123: ciwi.native.v1.Response.artifact_download:type_name -> ciwi.native.v1.ArtifactDownloadChunk
-	17,  // 124: ciwi.native.v1.Response.project_icons:type_name -> ciwi.native.v1.ProjectIconList
-	38,  // 125: ciwi.native.v1.Response.job_log_descriptor:type_name -> ciwi.native.v1.JobLogDescriptor
-	40,  // 126: ciwi.native.v1.Response.job_log_page:type_name -> ciwi.native.v1.JobLogPage
-	42,  // 127: ciwi.native.v1.Response.job_log_search:type_name -> ciwi.native.v1.JobLogSearchResult
-	4,   // 128: ciwi.native.v1.ClientMessage.hello:type_name -> ciwi.native.v1.Hello
-	94,  // 129: ciwi.native.v1.ClientMessage.request:type_name -> ciwi.native.v1.Request
-	5,   // 130: ciwi.native.v1.ServerMessage.welcome:type_name -> ciwi.native.v1.Welcome
-	95,  // 131: ciwi.native.v1.ServerMessage.response:type_name -> ciwi.native.v1.Response
-	98,  // 132: ciwi.native.v1.ReportDetails.rows:type_name -> ciwi.native.v1.JobDetailRow
-	102, // 133: ciwi.native.v1.ReportDetails.nodes:type_name -> ciwi.native.v1.TreeNode
-	101, // 134: ciwi.native.v1.ReportDetails.filters:type_name -> ciwi.native.v1.ReportFilter
-	102, // 135: ciwi.native.v1.TreeNode.children:type_name -> ciwi.native.v1.TreeNode
-	106, // 136: ciwi.native.v1.JobRunContext.pipelines:type_name -> ciwi.native.v1.JobRunContextPipeline
-	107, // 137: ciwi.native.v1.JobRunContextPipeline.jobs:type_name -> ciwi.native.v1.JobRunContextJob
-	108, // 138: ciwi.native.v1.JobRunContextJob.executions:type_name -> ciwi.native.v1.JobRunContextExecution
-	139, // [139:139] is the sub-list for method output_type
-	139, // [139:139] is the sub-list for method input_type
-	139, // [139:139] is the sub-list for extension type_name
-	139, // [139:139] is the sub-list for extension extendee
-	0,   // [0:139] is the sub-list for field type_name
+	3,   // 92: ciwi.native.v1.Request.vacuum_database:type_name -> ciwi.native.v1.Empty
+	8,   // 93: ciwi.native.v1.Response.server_info:type_name -> ciwi.native.v1.ServerInfo
+	12,  // 94: ciwi.native.v1.Response.project_list:type_name -> ciwi.native.v1.ProjectList
+	13,  // 95: ciwi.native.v1.Response.front_page_view:type_name -> ciwi.native.v1.FrontPageView
+	51,  // 96: ciwi.native.v1.Response.run_pipeline:type_name -> ciwi.native.v1.RunPipelineResult
+	93,  // 97: ciwi.native.v1.Response.change:type_name -> ciwi.native.v1.ChangeEvent
+	7,   // 98: ciwi.native.v1.Response.error:type_name -> ciwi.native.v1.ErrorStatus
+	18,  // 99: ciwi.native.v1.Response.project_details:type_name -> ciwi.native.v1.ProjectDetailsView
+	26,  // 100: ciwi.native.v1.Response.job_details:type_name -> ciwi.native.v1.JobDetailsView
+	86,  // 101: ciwi.native.v1.Response.clear_execution_queue:type_name -> ciwi.native.v1.ClearExecutionQueueResult
+	88,  // 102: ciwi.native.v1.Response.flush_execution_history:type_name -> ciwi.native.v1.FlushExecutionHistoryResult
+	30,  // 103: ciwi.native.v1.Response.cancel_execution:type_name -> ciwi.native.v1.CancelExecutionResult
+	31,  // 104: ciwi.native.v1.Response.rerun_execution:type_name -> ciwi.native.v1.RerunExecutionResult
+	53,  // 105: ciwi.native.v1.Response.run_pipeline_chain:type_name -> ciwi.native.v1.RunPipelineChainResult
+	56,  // 106: ciwi.native.v1.Response.run_options:type_name -> ciwi.native.v1.RunOptionsView
+	59,  // 107: ciwi.native.v1.Response.agents_view:type_name -> ciwi.native.v1.AgentsView
+	63,  // 108: ciwi.native.v1.Response.agent_action:type_name -> ciwi.native.v1.AgentActionResult
+	67,  // 109: ciwi.native.v1.Response.project_action:type_name -> ciwi.native.v1.ProjectActionResult
+	69,  // 110: ciwi.native.v1.Response.import_project:type_name -> ciwi.native.v1.ImportProjectResult
+	80,  // 111: ciwi.native.v1.Response.server_update_status:type_name -> ciwi.native.v1.ServerUpdateStatus
+	81,  // 112: ciwi.native.v1.Response.server_update_check:type_name -> ciwi.native.v1.ServerUpdateCheckResult
+	82,  // 113: ciwi.native.v1.Response.server_update_versions:type_name -> ciwi.native.v1.ServerUpdateVersions
+	84,  // 114: ciwi.native.v1.Response.server_update_action:type_name -> ciwi.native.v1.ServerUpdateActionResult
+	89,  // 115: ciwi.native.v1.Response.remove_queued_execution:type_name -> ciwi.native.v1.RemoveQueuedExecutionResult
+	61,  // 116: ciwi.native.v1.Response.agent_details:type_name -> ciwi.native.v1.AgentDetailsView
+	91,  // 117: ciwi.native.v1.Response.command_receipt_status:type_name -> ciwi.native.v1.CommandReceiptStatus
+	65,  // 118: ciwi.native.v1.Response.run_agent_script:type_name -> ciwi.native.v1.RunAgentScriptResult
+	72,  // 119: ciwi.native.v1.Response.managed_yaml:type_name -> ciwi.native.v1.ManagedYAMLDefinition
+	74,  // 120: ciwi.native.v1.Response.vault_connection_list:type_name -> ciwi.native.v1.VaultConnectionList
+	73,  // 121: ciwi.native.v1.Response.vault_connection:type_name -> ciwi.native.v1.VaultConnection
+	78,  // 122: ciwi.native.v1.Response.test_vault_connection:type_name -> ciwi.native.v1.TestVaultConnectionResult
+	79,  // 123: ciwi.native.v1.Response.delete_vault_connection:type_name -> ciwi.native.v1.DeleteVaultConnectionResult
+	104, // 124: ciwi.native.v1.Response.artifact_download:type_name -> ciwi.native.v1.ArtifactDownloadChunk
+	17,  // 125: ciwi.native.v1.Response.project_icons:type_name -> ciwi.native.v1.ProjectIconList
+	38,  // 126: ciwi.native.v1.Response.job_log_descriptor:type_name -> ciwi.native.v1.JobLogDescriptor
+	40,  // 127: ciwi.native.v1.Response.job_log_page:type_name -> ciwi.native.v1.JobLogPage
+	42,  // 128: ciwi.native.v1.Response.job_log_search:type_name -> ciwi.native.v1.JobLogSearchResult
+	109, // 129: ciwi.native.v1.Response.vacuum_database:type_name -> ciwi.native.v1.DatabaseVacuumResult
+	4,   // 130: ciwi.native.v1.ClientMessage.hello:type_name -> ciwi.native.v1.Hello
+	94,  // 131: ciwi.native.v1.ClientMessage.request:type_name -> ciwi.native.v1.Request
+	5,   // 132: ciwi.native.v1.ServerMessage.welcome:type_name -> ciwi.native.v1.Welcome
+	95,  // 133: ciwi.native.v1.ServerMessage.response:type_name -> ciwi.native.v1.Response
+	98,  // 134: ciwi.native.v1.ReportDetails.rows:type_name -> ciwi.native.v1.JobDetailRow
+	102, // 135: ciwi.native.v1.ReportDetails.nodes:type_name -> ciwi.native.v1.TreeNode
+	101, // 136: ciwi.native.v1.ReportDetails.filters:type_name -> ciwi.native.v1.ReportFilter
+	102, // 137: ciwi.native.v1.TreeNode.children:type_name -> ciwi.native.v1.TreeNode
+	106, // 138: ciwi.native.v1.JobRunContext.pipelines:type_name -> ciwi.native.v1.JobRunContextPipeline
+	107, // 139: ciwi.native.v1.JobRunContextPipeline.jobs:type_name -> ciwi.native.v1.JobRunContextJob
+	108, // 140: ciwi.native.v1.JobRunContextJob.executions:type_name -> ciwi.native.v1.JobRunContextExecution
+	141, // [141:141] is the sub-list for method output_type
+	141, // [141:141] is the sub-list for method input_type
+	141, // [141:141] is the sub-list for extension type_name
+	141, // [141:141] is the sub-list for extension extendee
+	0,   // [0:141] is the sub-list for field type_name
 }
 
 func init() { file_ciwi_native_v1_ciwi_proto_init() }
@@ -10782,6 +10903,7 @@ func file_ciwi_native_v1_ciwi_proto_init() {
 		(*Request_GetJobLogPage)(nil),
 		(*Request_SearchJobLog)(nil),
 		(*Request_WatchJobLog)(nil),
+		(*Request_VacuumDatabase)(nil),
 	}
 	file_ciwi_native_v1_ciwi_proto_msgTypes[92].OneofWrappers = []any{
 		(*Response_ServerInfo)(nil),
@@ -10820,6 +10942,7 @@ func file_ciwi_native_v1_ciwi_proto_init() {
 		(*Response_JobLogDescriptor)(nil),
 		(*Response_JobLogPage)(nil),
 		(*Response_JobLogSearch)(nil),
+		(*Response_VacuumDatabase)(nil),
 	}
 	file_ciwi_native_v1_ciwi_proto_msgTypes[93].OneofWrappers = []any{
 		(*ClientMessage_Hello)(nil),
@@ -10835,7 +10958,7 @@ func file_ciwi_native_v1_ciwi_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ciwi_native_v1_ciwi_proto_rawDesc), len(file_ciwi_native_v1_ciwi_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   106,
+			NumMessages:   107,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
