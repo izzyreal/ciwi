@@ -78,7 +78,7 @@ const detailsScreen = {
 
 const outputScreen = {
   apiVersion: 'ciwi.ui/v1', kind: 'Screen', metadata: {name: 'output-test'},
-  screen: {dataSources: [{name: 'jobDetails'}], root: {component: 'page', children: [
+  screen: {dataSources: [{name: 'jobDetails', watchTopics: ['history', 'job-output']}], root: {component: 'page', children: [
     {component: 'spacer', layout: {minHeight: '520'}},
     {
       component: 'row', layout: {direction: 'horizontal', gap: 'small'}, children: [
@@ -275,6 +275,11 @@ async function installInteractiveOutputFixture(page) {
     selected: true, output: '', available: true, interactive_log_available: true,
     progress: {state: 'active', fraction: 0.5},
   };
+  const next = {
+    id: 'step-2', title: 'Publish image', kind: 'step', status: 'pending', status_label: 'Pending', reached: false,
+    selected: false, output: '', available: true, interactive_log_available: true,
+    progress: {state: 'none', fraction: 0},
+  };
   await page.route('http://ciwi-live-output.test/**', async route => {
     const url = new URL(route.request().url());
     if (await serveAssets(route)) return;
@@ -287,7 +292,7 @@ async function installInteractiveOutputFixture(page) {
     } else if (url.pathname === '/api/v1/views/jobs/job-1') {
       await route.fulfill({json: {
         id: 'job-1', status: 'running', interactive_log_available: true,
-        output_groups: [phase, group], timeline: [phase, group],
+        output_groups: [phase, group, next], timeline: [phase, group, next],
       }});
     } else if (url.pathname === '/api/v1/views/jobs/job-1/log/page') {
       const mode = url.searchParams.get('mode') || 'head';
@@ -306,7 +311,7 @@ async function installInteractiveOutputFixture(page) {
   });
   await page.goto('http://ciwi-live-output.test/jobs/job-1');
   await expect(page.locator('.dsl-log-view')).toContainText('initial line 179');
-  return {logPageRequests};
+  return {logPageRequests, group, next};
 }
 
 test('queued and history job rows navigate from passive cells while nested actions retain ownership', async ({page}) => {
@@ -498,6 +503,19 @@ test('tailing a selected item preserves it instead of jumping to the global tail
   await expect(page.locator('#selected-output-title')).toHaveText('Check out source');
   await expect(selectors.nth(0)).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => fixture.logPageRequests.some(request => request.itemID === 'phase-1' && request.mode === 'tail')).toBe(true);
+
+  fixture.group.status = 'succeeded';
+  fixture.group.status_label = 'Succeeded';
+  fixture.next.status = 'running';
+  fixture.next.status_label = 'In progress';
+  fixture.next.reached = true;
+  await page.evaluate(() => {
+    const source = window.ciwiEventSources.find(candidate => candidate.url.endsWith('/ui/changes'));
+    source.onmessage({data: JSON.stringify({topics: ['job-output'], job_execution_ids: ['job-1']})});
+  });
+
+  await expect(page.locator('#selected-output-title')).toHaveText('Publish image');
+  await expect(page.locator('#job-output-tailing-toggle')).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('output scrolling chains to the page in both directions at its boundaries', async ({page}) => {

@@ -125,8 +125,8 @@ func TestNativeTailingPreservesExplicitOutputSelection(t *testing.T) {
 	if !renderer.outputTailing || root["selected_output_group"].(map[string]any)["id"] != "phase-1" {
 		t.Fatalf("selected output tailing = tailing %v selected %#v", renderer.outputTailing, root["selected_output_group"])
 	}
-	if root["output_follow_latest"] != false {
-		t.Fatalf("selected output tailing follow latest = %#v, want false", root["output_follow_latest"])
+	if root["output_follow_latest"] != true || root["output_follow_anchor_id"] != "phase-2" {
+		t.Fatalf("selected output tailing follow state = %#v/%#v, want true/phase-2", root["output_follow_latest"], root["output_follow_anchor_id"])
 	}
 	if renderer.outputTailRevision == 0 || renderer.outputResetRevision == 0 {
 		t.Fatalf("resumed output tailing did not force viewer/log ends: tail=%d reset=%d", renderer.outputTailRevision, renderer.outputResetRevision)
@@ -136,7 +136,7 @@ func TestNativeTailingPreservesExplicitOutputSelection(t *testing.T) {
 func TestNativeJobRefreshAdvancesTailingSelectionToUpdatedRunningStep(t *testing.T) {
 	previous := map[string]any{"jobDetails": map[string]any{
 		"id": "job-1", "tailing_label": "Tailing: On", "tailing_tone": "success",
-		"output_follow_latest":   true,
+		"output_follow_latest": true, "output_follow_anchor_id": "phase-2",
 		"selected_timeline_item": map[string]any{"id": "phase-2"},
 	}}
 	next := map[string]any{"jobDetails": map[string]any{
@@ -161,28 +161,61 @@ func TestNativeJobRefreshAdvancesTailingSelectionToUpdatedRunningStep(t *testing
 	}
 }
 
-func TestNativeJobRefreshKeepsExplicitlyTailedSelection(t *testing.T) {
+func TestNativeJobRefreshKeepsArmedSelectionUntilNextTransition(t *testing.T) {
 	previous := map[string]any{"jobDetails": map[string]any{
 		"id": "job-1", "tailing_label": "Tailing: On", "tailing_tone": "success",
-		"output_follow_latest":   false,
-		"selected_timeline_item": map[string]any{"id": "phase-2"},
+		"output_follow_latest": true, "output_follow_anchor_id": "phase-2",
+		"selected_timeline_item": map[string]any{"id": "phase-1"},
 	}}
 	next := map[string]any{"jobDetails": map[string]any{
 		"id": "job-1",
 		"timeline": []any{
-			map[string]any{"id": "phase-2", "status": "succeeded"},
-			map[string]any{"id": "step-2", "status": "running"},
+			map[string]any{"id": "phase-1", "status": "succeeded"},
+			map[string]any{"id": "phase-2", "status": "running"},
 		},
 		"output_groups": []any{
-			map[string]any{"id": "phase-2", "status": "succeeded", "reached": true},
-			map[string]any{"id": "step-2", "status": "running", "reached": true},
+			map[string]any{"id": "phase-1", "status": "succeeded", "reached": true},
+			map[string]any{"id": "phase-2", "status": "running", "reached": true},
 		},
 	}}
 
 	preserveJobUIState(previous, next)
 	root := next["jobDetails"].(map[string]any)
-	if selected := root["selected_output_group"].(map[string]any); selected["id"] != "phase-2" || selected["selected"] != true {
-		t.Fatalf("explicitly tailed selection after refresh = %#v, want phase-2", selected)
+	if selected := root["selected_output_group"].(map[string]any); selected["id"] != "phase-1" || selected["selected"] != true {
+		t.Fatalf("armed tailing selection after same-step refresh = %#v, want phase-1", selected)
+	}
+	if root["output_follow_anchor_id"] != "phase-2" {
+		t.Fatalf("armed tailing anchor = %#v, want phase-2", root["output_follow_anchor_id"])
+	}
+}
+
+func TestNativeJobRefreshAdvancesArmedSelectionOnNextTransition(t *testing.T) {
+	previous := map[string]any{"jobDetails": map[string]any{
+		"id": "job-1", "tailing_label": "Tailing: On", "tailing_tone": "success",
+		"output_follow_latest": true, "output_follow_anchor_id": "phase-2",
+		"selected_timeline_item": map[string]any{"id": "phase-1"},
+	}}
+	next := map[string]any{"jobDetails": map[string]any{
+		"id": "job-1",
+		"timeline": []any{
+			map[string]any{"id": "phase-1", "status": "succeeded"},
+			map[string]any{"id": "phase-2", "status": "succeeded"},
+			map[string]any{"id": "step-3", "status": "running"},
+		},
+		"output_groups": []any{
+			map[string]any{"id": "phase-1", "status": "succeeded", "reached": true},
+			map[string]any{"id": "phase-2", "status": "succeeded", "reached": true},
+			map[string]any{"id": "step-3", "status": "running", "reached": true},
+		},
+	}}
+
+	preserveJobUIState(previous, next)
+	root := next["jobDetails"].(map[string]any)
+	if selected := root["selected_output_group"].(map[string]any); selected["id"] != "step-3" || selected["selected"] != true {
+		t.Fatalf("armed tailing selection after transition = %#v, want step-3", selected)
+	}
+	if root["output_follow_anchor_id"] != "step-3" {
+		t.Fatalf("advanced tailing anchor = %#v, want step-3", root["output_follow_anchor_id"])
 	}
 }
 

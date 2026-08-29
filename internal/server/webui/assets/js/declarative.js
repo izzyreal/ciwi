@@ -625,7 +625,8 @@
 		  const enabled = !data.jobDetails.output_tailing;
 		  setOutputTailing(data.jobDetails, enabled);
 		  if (data.jobDetails.output_tailing) {
-			data.jobDetails.output_follow_latest = false;
+			data.jobDetails.output_follow_latest = true;
+			data.jobDetails.output_follow_anchor_id = latestJobOutputID(data.jobDetails);
 			renderCurrent();
 			revealBrowserOutputViewer();
 			if (data.jobDetails.interactive_log_available) {
@@ -1724,6 +1725,32 @@
 	return groupByID.has(id);
   }
 
+  function latestJobOutputID(view) {
+	const groups = Array.isArray(view && view.output_groups) ? view.output_groups : [];
+	const running = groups.find(group => ['running', 'in progress'].includes(String(group.status || '').trim().toLowerCase()));
+	const reached = groups.slice().reverse().find(group => !!group.reached);
+	return String((running || reached || {}).id || '');
+  }
+
+  function followJobOutputTransition(view, requestedID) {
+	if (!view || !view.output_tailing || !view.output_follow_latest) return false;
+	const groups = Array.isArray(view.output_groups) ? view.output_groups : [];
+	const candidateID = String(requestedID || '');
+	const candidateIndex = groups.findIndex(group => String(group.id || '') === candidateID);
+	if (candidateIndex < 0) return false;
+	const hasAnchor = Object.prototype.hasOwnProperty.call(view, 'output_follow_anchor_id');
+	const anchorID = String(view.output_follow_anchor_id || '');
+	const anchorIndex = groups.findIndex(group => String(group.id || '') === anchorID);
+	if (!hasAnchor || (anchorID && anchorIndex < 0)) {
+	  view.output_follow_anchor_id = candidateID;
+	  return false;
+	}
+	if (anchorID && candidateIndex <= anchorIndex) return false;
+	view.output_follow_anchor_id = candidateID;
+	selectJobOutput(view, candidateID, false);
+	return true;
+  }
+
   function selectBrowserOutputMatch(view) {
     const matches = groupedOutputMatches(view);
     const match = matches[Number(view.output_match_index || 0)];
@@ -1825,6 +1852,10 @@
 	  }
 	}
 	view.output_tailing = !!enabled;
+	if (!view.output_tailing) {
+	  view.output_follow_latest = false;
+	  view.output_follow_anchor_id = '';
+	}
 	view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
 	view.tailing_tone = view.output_tailing ? 'success' : 'accent';
 	const button = document.getElementById('job-output-tailing-toggle');
@@ -1936,7 +1967,7 @@
 		  if (group) {
 			group.reached = true;
 			if (!group.status || ['pending', 'not reached'].includes(String(group.status).toLowerCase())) group.status = 'running';
-			if (view.output_tailing && view.output_follow_latest) selectJobOutput(view, itemID, false);
+			if (view.output_tailing && view.output_follow_latest) followJobOutputTransition(view, itemID);
 		  }
 		}
       }
@@ -2260,11 +2291,20 @@
 		updateOutputSearch(view, 0);
 		view.output_tailing = sameJob ? !!previousJob.output_tailing : jobOutputStartsAtTail(view);
 		view.output_follow_latest = sameJob ? !!previousJob.output_follow_latest : view.output_tailing;
+		if (sameJob && Object.prototype.hasOwnProperty.call(previousJob, 'output_follow_anchor_id')) {
+		  view.output_follow_anchor_id = String(previousJob.output_follow_anchor_id || '');
+		}
 		view.tailing_label = view.output_tailing ? 'Tailing: On' : 'Tailing: Off';
 		view.tailing_tone = view.output_tailing ? 'success' : 'accent';
 		const previousSelectionID = sameJob && previousJob.selected_timeline_item
 		  ? String(previousJob.selected_timeline_item.id || '') : '';
-		selectJobOutput(view, previousSelectionID, view.output_tailing && view.output_follow_latest);
+		if (sameJob) {
+		  selectJobOutput(view, previousSelectionID, false);
+		  if (view.output_tailing && view.output_follow_latest) followJobOutputTransition(view, latestJobOutputID(view));
+		} else {
+		  selectJobOutput(view, previousSelectionID, view.output_tailing && view.output_follow_latest);
+		  if (view.output_follow_latest) view.output_follow_anchor_id = latestJobOutputID(view);
+		}
       }
 	  if (!jobMatch) completedOutputJobID = '';
 	  if (loadGeneration !== routeLoadGeneration) return false;

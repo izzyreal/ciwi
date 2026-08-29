@@ -641,8 +641,66 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 			}
 		}
 		selectJobOutputBinding(root, "", followLatest)
+		if followLatest {
+			root["output_follow_anchor_id"] = latestJobOutputBindingID(root)
+		}
 	}
 	return data, nil
+}
+
+func latestJobOutputBindingID(root map[string]any) string {
+	groups, _ := root["output_groups"].([]any)
+	for _, raw := range groups {
+		group, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		status := strings.ToLower(strings.TrimSpace(fmt.Sprint(group["status"])))
+		if status == "running" || status == "in progress" {
+			return fmt.Sprint(group["id"])
+		}
+	}
+	for index := len(groups) - 1; index >= 0; index-- {
+		if group, ok := groups[index].(map[string]any); ok {
+			if reached, _ := group["reached"].(bool); reached {
+				return fmt.Sprint(group["id"])
+			}
+		}
+	}
+	return ""
+}
+
+func followJobOutputBindingTransition(root map[string]any, requestedID string) bool {
+	groups, _ := root["output_groups"].([]any)
+	candidateID := strings.TrimSpace(requestedID)
+	candidateIndex := -1
+	for index, raw := range groups {
+		if group, ok := raw.(map[string]any); ok && fmt.Sprint(group["id"]) == candidateID {
+			candidateIndex = index
+			break
+		}
+	}
+	if candidateIndex < 0 {
+		return false
+	}
+	anchorValue, hasAnchor := root["output_follow_anchor_id"]
+	anchorID := strings.TrimSpace(fmt.Sprint(anchorValue))
+	anchorIndex := -1
+	for index, raw := range groups {
+		if group, ok := raw.(map[string]any); ok && fmt.Sprint(group["id"]) == anchorID {
+			anchorIndex = index
+			break
+		}
+	}
+	if !hasAnchor || anchorID != "" && anchorIndex < 0 {
+		root["output_follow_anchor_id"] = candidateID
+		return false
+	}
+	if anchorID != "" && candidateIndex <= anchorIndex {
+		return false
+	}
+	root["output_follow_anchor_id"] = candidateID
+	return selectJobOutputBinding(root, candidateID, false)
 }
 
 func selectJobOutputBinding(root map[string]any, requestedID string, followLatest bool) bool {
