@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 )
 
@@ -178,12 +177,12 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 			return fmt.Errorf("begin tx: %w", err)
 		}
 		defer func() { _ = tx.Rollback() }()
-		var interactiveLogVersion int
-		if err := tx.QueryRow(`SELECT interactive_log_version FROM job_executions WHERE id = ?`, jobID).Scan(&interactiveLogVersion); err != nil {
+		var foundJobID string
+		if err := tx.QueryRow(`SELECT id FROM job_executions WHERE id = ?`, jobID).Scan(&foundJobID); err != nil {
 			if err == sql.ErrNoRows {
 				return fmt.Errorf("job not found")
 			}
-			return fmt.Errorf("read interactive log version: %w", err)
+			return fmt.Errorf("read job execution: %w", err)
 		}
 
 		now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -235,7 +234,7 @@ func (s *Store) AppendJobExecutionEvents(jobID string, events []protocol.JobExec
 			if err != nil {
 				return fmt.Errorf("event rows affected: %w", err)
 			}
-			if inserted == 1 && interactiveLogVersion == domain.InteractiveJobLogVersion {
+			if inserted == 1 {
 				eventID, err := result.LastInsertId()
 				if err != nil {
 					return fmt.Errorf("event id: %w", err)

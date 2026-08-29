@@ -366,47 +366,6 @@ screen:
                         style:
                           toneBinding: item.status
           - component: card
-            visible:
-              binding: jobDetails.legacy_log_notice
-              empty: true
-              not: true
-            style:
-              tone: warning
-            layout:
-              padding: small
-            children:
-              - component: text
-                text:
-                  binding: jobDetails.legacy_log_notice
-                style:
-                  tone: warning
-          - component: card
-            id: job-output-system
-            style:
-              role: output-system
-            layout:
-              direction: vertical
-              gap: small
-              padding: small
-            visible:
-              binding: jobDetails.system_output
-              empty: true
-              not: true
-            children:
-              - component: text
-                text:
-                  literal: System messages
-                style:
-                  emphasis: strong
-                  tone: console-accent
-              - component: text
-                id: job-output-system-text
-                text:
-                  binding: jobDetails.system_output
-                style:
-                  role: output-code
-                  tone: console-text
-          - component: card
             id: job-log-system
             style:
               role: output-system
@@ -414,8 +373,6 @@ screen:
               direction: vertical
               gap: small
               padding: small
-            visible:
-              binding: jobDetails.interactive_log_available
             children:
               - component: text
                 text:
@@ -620,13 +577,7 @@ screen:
                     text: {literal: Output}
                     visible: {binding: outputGroup.available}
                     style: {role: output-label, tone: console-accent}
-                  - component: text
-                    id: job-output-group-text
-                    text: {binding: outputGroup.output}
-                    visible: {binding: outputGroup.output, empty: true, not: true}
-                    style: {role: output-code, tone: console-text}
                   - component: log-view
-                    visible: {binding: outputGroup.interactive_log_available}
                     logView:
                       jobExecutionId: jobDetails.id
                       itemId: outputGroup.id

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net"
 	"strconv"
 	"strings"
@@ -22,7 +21,6 @@ import (
 	"github.com/izzyreal/ciwi/pkg/cnpclient"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 	sharedUI "github.com/izzyreal/ciwi/ui"
-	"google.golang.org/protobuf/proto"
 )
 
 type Options struct {
@@ -60,18 +58,8 @@ type screenLoadResult struct {
 	err                 error
 }
 
-type jobOutputBuffer struct {
-	jobID    string
-	events   []*cnpv1.JobOutputEvent
-	omitted  map[string]bool
-	bytes    int
-	snapshot jobOutputSnapshot
-	dirty    bool
-}
-
 const (
-	maxNativeOutputBytes = 1024 * 1024
-	nativeReconnectMax   = 8 * time.Second
+	nativeReconnectMax = 8 * time.Second
 )
 
 type nativeSession struct {
@@ -287,80 +275,6 @@ func expectedNativeDisconnect(err error) bool {
 	}
 	message := strings.ToLower(strings.TrimSpace(err.Error()))
 	return message == "eof" || strings.Contains(message, "closed network connection") || strings.Contains(message, "use of closed connection")
-}
-
-func (b *jobOutputBuffer) reset(jobID string) {
-	b.jobID = jobID
-	b.events = nil
-	b.omitted = map[string]bool{}
-	b.bytes = 0
-	b.snapshot = jobOutputSnapshot{Outputs: map[string]string{}, Errors: map[string]string{}, ExitCodes: map[string]string{}}
-	b.dirty = true
-}
-
-func (b *jobOutputBuffer) append(batch *cnpv1.JobOutputBatch) {
-	if batch == nil || (b.jobID != "" && batch.JobExecutionId != b.jobID) {
-		return
-	}
-	for _, event := range batch.Events {
-		if event == nil {
-			continue
-		}
-		eventCopy := proto.Clone(event).(*cnpv1.JobOutputEvent)
-		if len(eventCopy.Text) > maxNativeOutputBytes {
-			eventCopy.Text = strings.ToValidUTF8(eventCopy.Text[len(eventCopy.Text)-maxNativeOutputBytes:], "")
-			b.omitted[eventCopy.ItemId] = true
-		}
-		switch eventCopy.Type {
-		case "system-message":
-			b.snapshot.System += eventCopy.Text
-		case "output":
-			b.snapshot.Outputs[eventCopy.ItemId] += eventCopy.Text
-		case "finished":
-			if eventCopy.Error != "" {
-				b.snapshot.Errors[eventCopy.ItemId] = eventCopy.Error
-			}
-			if eventCopy.ExitCode != "" {
-				b.snapshot.ExitCodes[eventCopy.ItemId] = eventCopy.ExitCode
-			}
-		}
-		if eventCopy.Text != "" {
-			b.events = append(b.events, eventCopy)
-			b.bytes += len(eventCopy.Text)
-		}
-		b.dirty = true
-	}
-	for b.bytes > maxNativeOutputBytes && len(b.events) > 0 {
-		removed := b.events[0]
-		b.events = b.events[1:]
-		b.bytes -= len(removed.Text)
-		b.omitted[removed.ItemId] = true
-		if removed.Type == "system-message" {
-			b.snapshot.System = strings.TrimPrefix(b.snapshot.System, removed.Text)
-		} else if removed.Type == "output" {
-			b.snapshot.Outputs[removed.ItemId] = strings.TrimPrefix(b.snapshot.Outputs[removed.ItemId], removed.Text)
-		}
-	}
-}
-
-func (b *jobOutputBuffer) apply(renderer nativeRenderer) {
-	if !b.dirty {
-		return
-	}
-	snapshot := jobOutputSnapshot{
-		System:  b.snapshot.System,
-		Outputs: maps.Clone(b.snapshot.Outputs), Errors: maps.Clone(b.snapshot.Errors), ExitCodes: maps.Clone(b.snapshot.ExitCodes),
-	}
-	const omitted = "[ciwi native: earlier output omitted]\n"
-	for itemID := range b.omitted {
-		if itemID == "" {
-			snapshot.System = omitted + snapshot.System
-		} else {
-			snapshot.Outputs[itemID] = omitted + snapshot.Outputs[itemID]
-		}
-	}
-	renderer.ApplyJobOutput(snapshot)
-	b.dirty = false
 }
 
 func jobLogDescriptorFromProto(descriptor *cnpv1.JobLogDescriptor) jobLogDescriptorSnapshot {
@@ -646,40 +560,26 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 	address := ""
 	suspended := false
 	var handledInactiveEpoch uint64
-	var outputBatches <-chan *cnpv1.JobOutputBatch
-	var outputErrors <-chan error
 	var logDescriptors <-chan *cnpv1.JobLogDescriptor
 	var logErrors <-chan error
 	var outputCancel context.CancelFunc
-	outputBuffer := &jobOutputBuffer{}
-	var outputApplyTimer *time.Timer
-	var outputApply <-chan time.Time
+	outputJobID := ""
 	terminalOutputRefreshedJobID := ""
-	stopOutputApplyTimer := func() {
-		if outputApplyTimer != nil {
-			outputApplyTimer.Stop()
-		}
-		outputApplyTimer = nil
-		outputApply = nil
-	}
 	stopOutput := func() {
 		if outputCancel != nil {
 			outputCancel()
 		}
 		outputCancel = nil
-		outputBatches = nil
-		outputErrors = nil
+		outputJobID = ""
 		logDescriptors = nil
 		logErrors = nil
-		stopOutputApplyTimer()
 	}
 	startOutput := func(jobID string) {
+		previousOutputJobID := outputJobID
 		stopOutput()
-		if outputBuffer.jobID != jobID {
+		if previousOutputJobID != jobID {
 			terminalOutputRefreshedJobID = ""
 		}
-		outputBuffer.reset(jobID)
-		outputBuffer.apply(renderer)
 		if client == nil {
 			return
 		}
@@ -689,27 +589,21 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 		}
 		streamCtx, cancelStream := context.WithCancel(sessionCtx)
 		descriptor, descriptorErr := client.GetJobLogDescriptor(streamCtx, jobID)
-		if descriptorErr == nil && descriptor.GetAvailable() {
-			descriptors, errorsOut, streamErr := client.WatchJobLog(streamCtx, jobID, descriptor.GetLatestChunkId())
-			if streamErr != nil {
-				cancelStream()
-				renderer.ShowNotice("Output stream unavailable: "+streamErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-				return
-			}
-			outputCancel = cancelStream
-			logDescriptors, logErrors = descriptors, errorsOut
-			renderer.ApplyJobLogDescriptor(jobLogDescriptorFromProto(descriptor))
+		if descriptorErr != nil {
+			cancelStream()
+			renderer.ShowNotice("Output unavailable: "+descriptorErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			return
 		}
-		batches, errorsOut, streamErr := client.WatchJobOutput(streamCtx, jobID, 0)
+		descriptors, errorsOut, streamErr := client.WatchJobLog(streamCtx, jobID, descriptor.GetLatestChunkId())
 		if streamErr != nil {
 			cancelStream()
 			renderer.ShowNotice("Output stream unavailable: "+streamErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
 			return
 		}
 		outputCancel = cancelStream
-		outputBatches = batches
-		outputErrors = errorsOut
+		outputJobID = jobID
+		logDescriptors, logErrors = descriptors, errorsOut
+		renderer.ApplyJobLogDescriptor(jobLogDescriptorFromProto(descriptor))
 	}
 	defer stopOutput()
 	jobLogSearchResults := make(chan nativeJobLogSearchResult, 8)
@@ -1372,39 +1266,6 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 			if watchErr != nil {
 				scheduleReconnect(watchErr.Error())
 			}
-		case batch, ok := <-outputBatches:
-			if !ok {
-				outputBatches = nil
-				continue
-			}
-			outputBuffer.append(batch)
-			if batch.GetTerminal() && !batch.GetHasMore() {
-				stopOutputApplyTimer()
-				outputBuffer.apply(renderer)
-				if navigation.screen == "job-details" && navigation.jobID == batch.GetJobExecutionId() && terminalOutputRefreshedJobID != navigation.jobID {
-					terminalOutputRefreshedJobID = navigation.jobID
-					requestPassiveScreenLoad(navigation)
-				}
-				window.Invalidate()
-			} else if outputApplyTimer == nil {
-				outputApplyTimer = time.NewTimer(33 * time.Millisecond)
-				outputApply = outputApplyTimer.C
-			}
-		case <-outputApply:
-			outputApplyTimer = nil
-			outputApply = nil
-			outputBuffer.apply(renderer)
-			window.Invalidate()
-		case outputErr, ok := <-outputErrors:
-			if !ok {
-				outputErrors = nil
-				continue
-			}
-			if outputErr != nil && !expectedNativeDisconnect(outputErr) {
-				renderer.ShowNotice("Output stream stopped: "+outputErr.Error(), "", uidsl.Action{}, nil, presentation.TransientNoticeDuration)
-				window.Invalidate()
-			}
-			outputErrors = nil
 		case descriptor, ok := <-logDescriptors:
 			if !ok {
 				logDescriptors = nil
@@ -1524,7 +1385,7 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 					}
 				}
 				preserveOutput := navigation.screen == "job-details" && result.navigation.screen == "job-details" &&
-					navigation.jobID == result.navigation.jobID && outputBuffer.jobID == result.navigation.jobID
+					navigation.jobID == result.navigation.jobID && outputJobID == result.navigation.jobID
 				navigation = result.navigation
 				pendingNavigation = nil
 				screenCache.Put(navigation, result.data)
@@ -1539,10 +1400,6 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 				if navigation.screen == "settings" {
 					applyConnectionBindings(renderer, "settings", mode, endpoint, sshSettings)
 					renderer.SetRootBinding("settings", "client_version", options.Version)
-				}
-				if navigation.screen == "job-details" {
-					outputBuffer.dirty = true
-					outputBuffer.apply(renderer)
 				}
 			}
 			if hasPendingRefresh && client != nil {
@@ -1629,7 +1486,8 @@ func runController(ctx context.Context, window *app.Window, renderer nativeRende
 				}
 				debounce, _ := strconv.ParseBool(command.arguments["debounce"])
 				scheduleJobLogSearch(nativeJobLogSearchRequest{
-					jobID: command.arguments["jobExecutionId"], query: command.arguments["query"], selectedIndex: selected,
+					jobID: command.arguments["jobExecutionId"], itemID: command.arguments["itemId"],
+					query: command.arguments["query"], selectedIndex: selected,
 				}, debounce)
 				continue
 			case "copy-full-job-log":

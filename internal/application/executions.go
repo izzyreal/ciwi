@@ -11,13 +11,12 @@ import (
 type ExecutionCardRepository interface {
 	ListFrontPageExecutionCards(context.Context) ([]domain.ExecutionCard, []domain.ExecutionCard, error)
 	GetJobExecutionDetails(context.Context, string) (domain.JobExecutionDetails, error)
-	ListJobOutputAfter(context.Context, string, int64) (domain.JobOutputBatch, error)
 }
 
 type executionJobLogRepository interface {
 	GetJobLogDescriptor(context.Context, string) (domain.JobLogDescriptor, error)
 	GetJobLogPage(context.Context, string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
-	SearchJobLog(context.Context, string, string, int64) (domain.JobLogSearchResult, error)
+	SearchJobLog(context.Context, string, string, string, int64) (domain.JobLogSearchResult, error)
 }
 
 func (q *ExecutionQueries) GetJobLogDescriptor(ctx context.Context, jobID string) (domain.JobLogDescriptor, error) {
@@ -68,7 +67,7 @@ func (q *ExecutionQueries) GetJobLogPage(ctx context.Context, jobID, itemID stri
 	return page, nil
 }
 
-func (q *ExecutionQueries) SearchJobLog(ctx context.Context, jobID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+func (q *ExecutionQueries) SearchJobLog(ctx context.Context, jobID, itemID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
 	if q == nil || q.repository == nil {
 		return domain.JobLogSearchResult{}, NewError(ErrorUnavailable, "execution repository unavailable", nil)
 	}
@@ -76,39 +75,22 @@ func (q *ExecutionQueries) SearchJobLog(ctx context.Context, jobID, query string
 	if !ok {
 		return domain.JobLogSearchResult{}, NewError(ErrorUnavailable, "job log repository unavailable", nil)
 	}
-	result, err := repository.SearchJobLog(ctx, strings.TrimSpace(jobID), query, selectedIndex)
+	jobID, itemID = strings.TrimSpace(jobID), strings.TrimSpace(itemID)
+	if jobID == "" || itemID == "" {
+		return domain.JobLogSearchResult{}, NewError(ErrorInvalidArgument, "job execution id and item id are required", nil)
+	}
+	result, err := repository.SearchJobLog(ctx, jobID, itemID, query, selectedIndex)
 	if err != nil {
 		message := strings.ToLower(err.Error())
 		if strings.Contains(message, "not found") {
 			return domain.JobLogSearchResult{}, NewError(ErrorNotFound, "job execution not found", err)
 		}
-		if strings.Contains(message, "query") || strings.Contains(message, "index") || strings.Contains(message, "legacy") {
+		if strings.Contains(message, "query") || strings.Contains(message, "index") || strings.Contains(message, "required") {
 			return domain.JobLogSearchResult{}, NewError(ErrorInvalidArgument, err.Error(), err)
 		}
 		return domain.JobLogSearchResult{}, WrapInternal("search job log", err)
 	}
 	return result, nil
-}
-
-func (q *ExecutionQueries) GetJobOutput(ctx context.Context, jobID string, afterEventID int64) (domain.JobOutputBatch, error) {
-	if q == nil || q.repository == nil {
-		return domain.JobOutputBatch{}, NewError(ErrorUnavailable, "execution repository unavailable", nil)
-	}
-	jobID = strings.TrimSpace(jobID)
-	if jobID == "" {
-		return domain.JobOutputBatch{}, NewError(ErrorInvalidArgument, "job execution id is required", nil)
-	}
-	if afterEventID < 0 {
-		return domain.JobOutputBatch{}, NewError(ErrorInvalidArgument, "after event id must be non-negative", nil)
-	}
-	batch, err := q.repository.ListJobOutputAfter(ctx, jobID, afterEventID)
-	if errors.Is(err, domain.ErrJobExecutionNotFound) {
-		return domain.JobOutputBatch{}, NewError(ErrorNotFound, "job execution not found", err)
-	}
-	if err != nil {
-		return domain.JobOutputBatch{}, WrapInternal("get job output", err)
-	}
-	return batch, nil
 }
 
 func (q *ExecutionQueries) GetJobExecutionDetails(ctx context.Context, jobID string) (domain.JobExecutionDetails, error) {

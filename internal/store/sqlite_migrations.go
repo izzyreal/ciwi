@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const currentSchemaVersion = 3
+const currentSchemaVersion = 4
 
 type schemaMigration struct {
 	version int
@@ -30,6 +30,16 @@ var schemaMigrations = []schemaMigration{
 		name:    "add indexed interactive job logs",
 		apply:   migrateInteractiveJobLogs,
 	},
+	{
+		version: 4,
+		name:    "make indexed job logs unconditional",
+		apply:   migrateUnconditionalJobLogs,
+	},
+}
+
+func migrateUnconditionalJobLogs(tx *sql.Tx) error {
+	_, err := tx.Exec(`ALTER TABLE job_executions DROP COLUMN interactive_log_version`)
+	return err
 }
 
 func migrateInteractiveJobLogs(tx *sql.Tx) error {

@@ -145,14 +145,14 @@ func (s executionDetailsStore) GetJobLogPage(jobID, itemID string, mode domain.J
 	return store.GetJobLogPage(jobID, itemID, mode, cursor)
 }
 
-func (s executionDetailsStore) SearchJobLog(jobID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+func (s executionDetailsStore) SearchJobLog(jobID, itemID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
 	store, ok := s.Store.(interface {
-		SearchJobLog(string, string, int64) (domain.JobLogSearchResult, error)
+		SearchJobLog(string, string, string, int64) (domain.JobLogSearchResult, error)
 	})
 	if !ok {
 		return domain.JobLogSearchResult{}, domain.ErrJobExecutionNotFound
 	}
-	return store.SearchJobLog(jobID, query, selectedIndex)
+	return store.SearchJobLog(jobID, itemID, query, selectedIndex)
 }
 
 func (s executionDetailsStore) ListJobExecutionArtifacts(jobID string) ([]protocol.JobExecutionArtifact, error) {

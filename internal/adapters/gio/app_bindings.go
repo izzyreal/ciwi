@@ -604,8 +604,6 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 				"current_pipeline_job_id": "", "pipelines": []any{},
 			}
 		}
-		root["output"] = ""
-		root["system_output"] = ""
 		root["output_search"] = ""
 		root["output_search_count"] = "0/0"
 		root["tailing_label"] = "Tailing: Off"
@@ -617,27 +615,18 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 			root["tailing_tone"] = "success"
 		}
 		if groups, ok := root["output_groups"].([]any); ok {
-			interactiveLogs := strings.EqualFold(fmt.Sprint(root["interactive_log_available"]), "true")
 			for _, raw := range groups {
 				entry, entryOK := raw.(map[string]any)
 				if !entryOK {
 					continue
 				}
-				entry["output"] = ""
 				entry["empty_output_label"] = ""
-				if !interactiveLogs {
-					entry["empty_output_label"] = "(no output)"
-					if reached, _ := entry["reached"].(bool); !reached {
-						entry["empty_output_label"] = "(step was not reached)"
-					}
-				}
 				for _, field := range []string{"details", "yaml_literal", "expanded_command"} {
 					if strings.TrimSpace(fmt.Sprint(entry[field])) == "" {
 						entry[field] = "(none)"
 					}
 				}
 				entry["available"] = true
-				entry["interactive_log_available"] = interactiveLogs
 				entry["selected"] = false
 			}
 		}
@@ -773,8 +762,8 @@ func selectJobOutputBinding(root map[string]any, requestedID string, followLates
 		"id": "no-output", "title": "No execution phases or steps reported", "kind": "empty",
 		"status": "", "status_label": "", "reached": true, "started": "", "duration": "",
 		"exit_code": "", "error": "", "details": "", "yaml_literal": "", "expanded_command": "",
-		"output": "", "empty_output_label": "No phase or step output is available.", "available": false,
-		"interactive_log_available": false, "selected": false, "progress": map[string]any{"state": "none"},
+		"empty_output_label": "No phase or step output is available.", "available": false,
+		"selected": false, "progress": map[string]any{"state": "none"},
 	}
 	root["selected_timeline_item"] = placeholder
 	root["selected_output_group"] = placeholder

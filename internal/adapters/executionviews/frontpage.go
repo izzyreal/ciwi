@@ -20,7 +20,6 @@ type Store interface {
 	ListJobExecutionTestSummaries(context.Context, []string) (map[string]protocol.JobExecutionTestSummary, error)
 	GetJobExecution(string) (protocol.JobExecution, error)
 	ListJobExecutionTimelineEvents(string) ([]protocol.JobExecutionEvent, error)
-	ListJobExecutionEventsPageAfter(string, int64, int) ([]protocol.JobExecutionEvent, error)
 	ListJobExecutionArtifacts(string) ([]protocol.JobExecutionArtifact, error)
 	GetJobExecutionTestReport(string) (protocol.JobExecutionTestReport, bool, error)
 }
@@ -28,7 +27,7 @@ type Store interface {
 type jobLogStore interface {
 	GetJobLogDescriptor(string) (domain.JobLogDescriptor, error)
 	GetJobLogPage(string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
-	SearchJobLog(string, string, int64) (domain.JobLogSearchResult, error)
+	SearchJobLog(string, string, string, int64) (domain.JobLogSearchResult, error)
 }
 
 type SchedulingAgentSource interface {
@@ -39,11 +38,6 @@ type ProgressEstimator interface {
 	AttachJobEstimates([]protocol.JobExecution)
 	AttachDetailEstimate(*protocol.JobExecution) error
 }
-
-const (
-	outputPageSize  = 128
-	outputPageBytes = 512 * 1024
-)
 
 func (r *Repository) GetJobLogDescriptor(ctx context.Context, jobID string) (domain.JobLogDescriptor, error) {
 	if err := ctx.Err(); err != nil {
@@ -67,7 +61,7 @@ func (r *Repository) GetJobLogPage(ctx context.Context, jobID, itemID string, mo
 	return store.GetJobLogPage(jobID, itemID, mode, cursor)
 }
 
-func (r *Repository) SearchJobLog(ctx context.Context, jobID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+func (r *Repository) SearchJobLog(ctx context.Context, jobID, itemID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.JobLogSearchResult{}, err
 	}
@@ -75,74 +69,7 @@ func (r *Repository) SearchJobLog(ctx context.Context, jobID, query string, sele
 	if !ok {
 		return domain.JobLogSearchResult{}, fmt.Errorf("job log store unavailable")
 	}
-	return store.SearchJobLog(jobID, query, selectedIndex)
-}
-
-func (r *Repository) ListJobOutputAfter(ctx context.Context, jobID string, afterEventID int64) (domain.JobOutputBatch, error) {
-	if err := ctx.Err(); err != nil {
-		return domain.JobOutputBatch{}, err
-	}
-	job, err := r.store.GetJobExecution(jobID)
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "not found") {
-			return domain.JobOutputBatch{}, domain.ErrJobExecutionNotFound
-		}
-		return domain.JobOutputBatch{}, err
-	}
-	events, err := r.store.ListJobExecutionEventsPageAfter(jobID, afterEventID, outputPageSize)
-	if err != nil {
-		return domain.JobOutputBatch{}, err
-	}
-	batch := domain.JobOutputBatch{
-		JobExecutionID: jobID, NextEventID: afterEventID,
-		Terminal: protocol.IsTerminalJobExecutionStatus(protocol.NormalizeJobExecutionStatus(job.Status)),
-		Events:   make([]domain.JobOutputEvent, 0, len(events)),
-	}
-	pageBytes := 0
-	for eventIndex, event := range events {
-		eventBytes := len(event.Output) + len(event.Message) + len(event.Error)
-		if len(batch.Events) > 0 && pageBytes+eventBytes > outputPageBytes {
-			batch.HasMore = true
-			break
-		}
-		itemKind, itemName, itemIndex, itemTotal := "", "", 0, 0
-		itemID := ""
-		if event.Phase != nil {
-			itemKind, itemName, itemIndex, itemTotal = "phase", event.Phase.Name, event.Phase.Index, event.Phase.Total
-			itemID = strings.TrimSpace(event.Phase.ID)
-		} else if event.Step != nil {
-			itemKind, itemName, itemIndex, itemTotal = "step", event.Step.Name, event.Step.Index, event.Step.Total
-			if event.Step.Index > 0 {
-				itemID = fmt.Sprintf("step:%d", event.Step.Index)
-			}
-		}
-		batch.Events = append(batch.Events, domain.JobOutputEvent{
-			ID: event.ID, Type: outputEventType(event.Type), Message: event.Message, Output: event.Output,
-			Error: event.Error, ExitCode: copyInt(event.ExitCode), ItemID: itemID, ItemKind: itemKind,
-			ItemName: itemName, ItemIndex: itemIndex, ItemTotal: itemTotal,
-		})
-		if event.ID > batch.NextEventID {
-			batch.NextEventID = event.ID
-		}
-		pageBytes += eventBytes
-		if eventIndex == len(events)-1 && len(events) == outputPageSize {
-			batch.HasMore = true
-		}
-	}
-	return batch, nil
-}
-
-func outputEventType(eventType string) string {
-	switch eventType {
-	case protocol.JobExecutionEventTypeSystemMessage:
-		return domain.JobOutputEventSystemMessage
-	case protocol.JobExecutionEventTypeStepOutput, protocol.JobExecutionEventTypePhaseOutput:
-		return domain.JobOutputEventOutput
-	case protocol.JobExecutionEventTypeStepFinished, protocol.JobExecutionEventTypePhaseFinished:
-		return domain.JobOutputEventFinished
-	default:
-		return ""
-	}
+	return store.SearchJobLog(jobID, itemID, query, selectedIndex)
 }
 
 func (r *Repository) GetJobExecutionDetails(ctx context.Context, jobID string) (domain.JobExecutionDetails, error) {

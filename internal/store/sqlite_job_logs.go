@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -92,21 +91,16 @@ func (s *Store) GetJobLogDescriptor(jobID string) (domain.JobLogDescriptor, erro
 	if jobID == "" {
 		return domain.JobLogDescriptor{}, fmt.Errorf("job id is required")
 	}
-	var version int
 	var status string
-	if err := s.db.QueryRow(`SELECT interactive_log_version, status FROM job_executions WHERE id = ?`, jobID).Scan(&version, &status); err != nil {
+	if err := s.db.QueryRow(`SELECT status FROM job_executions WHERE id = ?`, jobID).Scan(&status); err != nil {
 		if err == sql.ErrNoRows {
 			return domain.JobLogDescriptor{}, fmt.Errorf("job not found")
 		}
 		return domain.JobLogDescriptor{}, fmt.Errorf("read job log descriptor: %w", err)
 	}
 	descriptor := domain.JobLogDescriptor{
-		JobExecutionID: jobID, Version: version,
-		Available: version == domain.InteractiveJobLogVersion,
-		Terminal:  protocol.IsTerminalJobExecutionStatus(protocol.NormalizeJobExecutionStatus(status)),
-	}
-	if !descriptor.Available {
-		return descriptor, nil
+		JobExecutionID: jobID,
+		Terminal:       protocol.IsTerminalJobExecutionStatus(protocol.NormalizeJobExecutionStatus(status)),
 	}
 	rows, err := s.db.Query(`
 		SELECT item_id, first_chunk_id, last_chunk_id, chunk_count, byte_count
@@ -136,9 +130,6 @@ func (s *Store) GetJobLogPage(jobID, itemID string, mode domain.JobLogPageMode, 
 	descriptor, err := s.GetJobLogDescriptor(jobID)
 	if err != nil {
 		return domain.JobLogPage{}, err
-	}
-	if !descriptor.Available {
-		return domain.JobLogPage{}, fmt.Errorf("interactive log unavailable for legacy job")
 	}
 	if cursor < 0 {
 		return domain.JobLogPage{}, fmt.Errorf("log cursor must be non-negative")
@@ -263,7 +254,12 @@ func (s *Store) jobLogChunkExists(jobID, itemID string, cursor int64, after bool
 	return err == nil, err
 }
 
-func (s *Store) SearchJobLog(jobID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+func (s *Store) SearchJobLog(jobID, itemID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+	jobID = strings.TrimSpace(jobID)
+	itemID = strings.TrimSpace(itemID)
+	if jobID == "" || itemID == "" {
+		return domain.JobLogSearchResult{}, fmt.Errorf("job id and item id are required")
+	}
 	query = logtext.Clean(query)
 	queryRunes := utf8.RuneCountInString(query)
 	if queryRunes < logtext.SearchMinRunes || queryRunes > logtext.SearchMaxRunes {
@@ -272,40 +268,14 @@ func (s *Store) SearchJobLog(jobID, query string, selectedIndex int64) (domain.J
 	if selectedIndex < 0 {
 		return domain.JobLogSearchResult{}, fmt.Errorf("selected search index must be non-negative")
 	}
-	descriptor, err := s.GetJobLogDescriptor(jobID)
-	if err != nil {
+	if _, err := s.GetJobLogDescriptor(jobID); err != nil {
 		return domain.JobLogSearchResult{}, err
-	}
-	if !descriptor.Available {
-		return domain.JobLogSearchResult{}, fmt.Errorf("interactive log search unavailable for legacy job")
-	}
-	job, err := s.GetJobExecution(jobID)
-	if err != nil {
-		return domain.JobLogSearchResult{}, err
-	}
-	order := []string{""}
-	seen := map[string]bool{"": true}
-	for _, item := range protocol.BuildJobExecutionTimeline(job) {
-		order = append(order, item.ID)
-		seen[item.ID] = true
-	}
-	for _, stream := range descriptor.Streams {
-		if !seen[stream.ItemID] {
-			order = append(order, stream.ItemID)
-			seen[stream.ItemID] = true
-		}
 	}
 
 	result := domain.JobLogSearchResult{JobExecutionID: jobID, Query: query, SelectedIndex: selectedIndex}
 	lowerQuery := []rune(strings.ToLower(query))
 	ftsQuery := `job_execution_id : "` + escapeFTSPhrase(jobID) + `" AND indexed_text : "` + escapeFTSPhrase(strings.ToLower(query)) + `"`
-	candidateQuery := jobLogSearchCandidateQuery(order)
-	queryArguments := make([]any, 0, len(order)+2)
-	queryArguments = append(queryArguments, ftsQuery, jobID)
-	for _, itemID := range order {
-		queryArguments = append(queryArguments, itemID)
-	}
-	rows, err := s.db.Query(candidateQuery, queryArguments...)
+	rows, err := s.db.Query(jobLogSearchCandidateQuery(), ftsQuery, jobID, itemID)
 	if err != nil {
 		return domain.JobLogSearchResult{}, fmt.Errorf("search job log: %w", err)
 	}
@@ -347,26 +317,17 @@ func (s *Store) SearchJobLog(jobID, query string, selectedIndex int64) (domain.J
 // jobLogSearchCandidateQuery forces FTS to produce the selective candidate
 // rowids before the ordinary table is consulted. CROSS JOIN is intentional:
 // without it SQLite prefers idx_job_log_chunks_stream and probes FTS once for
-// every chunk, which defeats the trigram index. The CASE expression preserves
-// the user-visible system/timeline stream order without issuing one FTS query
-// per stream.
-func jobLogSearchCandidateQuery(itemOrder []string) string {
-	var query strings.Builder
-	query.WriteString(`
+// every chunk, which defeats the trigram index. The item filter keeps match
+// counts and navigation scoped to the selected phase or step.
+func jobLogSearchCandidateQuery() string {
+	return `
 		SELECT c.id, c.item_id, c.indexed_text, c.overlap_runes
 		FROM job_execution_log_chunks_fts AS f
 		CROSS JOIN job_execution_log_chunks AS c ON c.id = f.rowid
 		WHERE job_execution_log_chunks_fts MATCH ?
 		  AND c.job_execution_id = ?
-		ORDER BY CASE c.item_id`)
-	for index := range itemOrder {
-		query.WriteString(" WHEN ? THEN ")
-		query.WriteString(strconv.Itoa(index))
-	}
-	query.WriteString(" ELSE ")
-	query.WriteString(strconv.Itoa(len(itemOrder)))
-	query.WriteString(" END, c.id ASC")
-	return query.String()
+		  AND c.item_id = ?
+		ORDER BY c.id ASC`
 }
 
 func escapeFTSPhrase(value string) string {

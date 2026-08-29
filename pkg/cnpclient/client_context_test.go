@@ -102,8 +102,8 @@ func TestWatchCancellationInterruptsInitialWrite(t *testing.T) {
 			_, _, err := client.WatchChanges(ctx)
 			return err
 		}},
-		{name: "job output", open: func(client *Client, ctx context.Context) error {
-			_, _, err := client.WatchJobOutput(ctx, "job-1", 0)
+		{name: "job log", open: func(client *Client, ctx context.Context) error {
+			_, _, err := client.WatchJobLog(ctx, "job-1", 0)
 			return err
 		}},
 	} {

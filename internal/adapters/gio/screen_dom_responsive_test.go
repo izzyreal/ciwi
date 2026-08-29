@@ -543,7 +543,7 @@ func TestNativeOutputViewerUsesExactResponsiveHeightForShortOutput(t *testing.T)
 	}
 	selected := map[string]any{
 		"id": "phase-1", "title": "Short phase", "progress": map[string]any{"state": "complete", "fraction": 1},
-		"reached": true, "available": true, "interactive_log_available": false, "output": "short", "empty_output_label": "",
+		"reached": true, "available": true, "empty_output_label": "",
 		"kind": "phase", "details": "details", "started": "", "duration": "", "exit_code": "", "error": "",
 	}
 	for _, test := range []struct{ viewport, want unit.Dp }{{375, 262.5}, {1000, 660}} {
@@ -718,7 +718,7 @@ func TestOutputDocumentHasNoDisclosureOverlay(t *testing.T) {
 	if !ok {
 		t.Fatal("job output document not found")
 	}
-	group := map[string]any{"id": "step-1", "available": true, "interactive_log_available": false, "reached": true}
+	group := map[string]any{"id": "step-1", "available": true, "reached": true}
 	data := map[string]any{"jobDetails": map[string]any{"selected_output_groups": []any{group}}}
 	compiled := renderer.compileDOMNode(scroller, data, "job-output")
 	viewport := findResponsiveTestElement(compiled, giodom.KindVirtualList)
@@ -738,21 +738,14 @@ func TestOutputDocumentAndInteractiveLogBothFollowTailing(t *testing.T) {
 	if !ok {
 		t.Fatal("job output document not found")
 	}
-	data := func(interactive bool) map[string]any {
-		return map[string]any{"jobDetails": map[string]any{
-			"interactive_log_available": interactive,
-			"selected_output_groups": []any{map[string]any{
-				"id": "step:1", "title": "Step", "available": true, "interactive_log_available": interactive,
-			}},
-		}}
-	}
-	interactive := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(true), "interactive-output"), giodom.KindVirtualList)
+	data := map[string]any{"jobDetails": map[string]any{
+		"selected_output_groups": []any{map[string]any{
+			"id": "step:1", "title": "Step", "available": true,
+		}},
+	}}
+	interactive := findResponsiveTestElement(renderer.compileDOMNode(scroller, data, "interactive-output"), giodom.KindVirtualList)
 	if interactive == nil || !interactive.List.ScrollToEnd || interactive.List.OnLeaveEnd == nil {
 		t.Fatalf("interactive output list tail props = %#v, want viewer follow ownership", interactive)
-	}
-	legacy := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(false), "legacy-output"), giodom.KindVirtualList)
-	if legacy == nil || !legacy.List.ScrollToEnd || legacy.List.OnLeaveEnd == nil {
-		t.Fatalf("legacy output list tail props = %#v, want retained outer follow behavior", legacy)
 	}
 
 	renderer.ApplyJobLogPage(jobLogStreamSnapshot{
@@ -780,21 +773,14 @@ func TestOutputViewportsResumeOnlyAtTheirTrueUserDrivenTail(t *testing.T) {
 	if !ok {
 		t.Fatal("job output document not found")
 	}
-	data := func(interactive bool) map[string]any {
-		return map[string]any{"jobDetails": map[string]any{
-			"interactive_log_available": interactive,
-			"selected_output_groups": []any{map[string]any{
-				"id": "step:1", "title": "Step", "available": true, "interactive_log_available": interactive,
-			}},
-		}}
-	}
-	interactive := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(true), "interactive-output"), giodom.KindVirtualList)
+	data := map[string]any{"jobDetails": map[string]any{
+		"selected_output_groups": []any{map[string]any{
+			"id": "step:1", "title": "Step", "available": true,
+		}},
+	}}
+	interactive := findResponsiveTestElement(renderer.compileDOMNode(scroller, data, "interactive-output"), giodom.KindVirtualList)
 	if interactive == nil || interactive.List.OnUserReachEnd != nil {
 		t.Fatalf("interactive outer output tail callback = %#v, want inner log ownership", interactive)
-	}
-	legacy := findResponsiveTestElement(renderer.compileDOMNode(scroller, data(false), "legacy-output"), giodom.KindVirtualList)
-	if legacy == nil || legacy.List.OnUserReachEnd == nil {
-		t.Fatalf("legacy output tail callback = %#v, want automatic resume", legacy)
 	}
 
 	key := nativeJobLogKey("job-1", "step:1")
@@ -840,10 +826,10 @@ func TestInteractiveOutputViewerKeepsHeaderOutsideLogViewport(t *testing.T) {
 	selected := map[string]any{
 		"id": "step:1", "title": "Job step 1/1: Build", "reached": true, "started": "now", "duration": "1s",
 		"kind": "step", "yaml_literal": "run: build", "expanded_command": "build", "details": "",
-		"available": true, "interactive_log_available": true, "empty_output_label": "", "progress": map[string]any{"state": "complete"},
+		"available": true, "empty_output_label": "", "progress": map[string]any{"state": "complete"},
 	}
 	compiled := renderer.compileDOMNode(viewer, map[string]any{"jobDetails": map[string]any{
-		"id": "job-1", "interactive_log_available": true,
+		"id":                    "job-1",
 		"selected_output_group": selected, "selected_output_groups": []any{selected},
 	}}, "interactive-output")
 	body := findResponsiveTestListByLabel(compiled, "Execution output")

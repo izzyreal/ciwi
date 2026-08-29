@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"gioui.org/io/clipboard"
 	"gioui.org/io/input"
@@ -105,13 +106,6 @@ type outputSelection struct {
 	end    int
 }
 
-type jobOutputSnapshot struct {
-	System    string
-	Outputs   map[string]string
-	Errors    map[string]string
-	ExitCodes map[string]string
-}
-
 type jobLogChunkSnapshot struct {
 	ID   int64
 	Text string
@@ -131,10 +125,10 @@ type jobLogStreamSnapshot struct {
 }
 
 type jobLogSearchSnapshot struct {
-	JobID, ItemID, Query        string
-	SelectedIndex, TotalMatches int
-	ChunkID                     int64
-	StartRune, EndRune          int
+	JobID, ScopeItemID, ItemID, Query string
+	SelectedIndex, TotalMatches       int
+	ChunkID                           int64
+	StartRune, EndRune                int
 }
 
 type jobLogDescriptorSnapshot struct {
@@ -264,6 +258,7 @@ func (r *Renderer) SetData(data any) {
 func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 	r.mu.Lock()
 	screenChanged := r.screen == nil || screen == nil || r.screen.Metadata.Name != screen.Metadata.Name
+	previousOutputID := bindingString(r.data, "jobDetails.selected_output_group.id")
 	preserveTopLevelBinding(r.data, data, "client")
 	if screen != nil && screen.Metadata.Name == "job-details" {
 		preserveJobUIState(r.data, data)
@@ -272,6 +267,9 @@ func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 		preserveSettingsUIState(r.data, data)
 	}
 	r.screen, r.data = screen, data
+	selectedOutputID := bindingString(data, "jobDetails.selected_output_group.id")
+	jobID := bindingString(data, "jobDetails.id")
+	query := bindingString(data, "jobDetails.output_search")
 	if screenChanged {
 		// Screen identity is the lifecycle boundary for its keyed widget and
 		// viewport state. Recreating the runtime also guarantees a top scroll.
@@ -288,6 +286,16 @@ func (r *Renderer) SetScreenAndData(screen *uidsl.ScreenDocument, data any) {
 	}
 	r.mu.Unlock()
 	r.markDOMDirty()
+	if !screenChanged && previousOutputID != "" && selectedOutputID != previousOutputID &&
+		selectedOutputID != "no-output" && utf8.RuneCountInString(query) >= 3 && r.onAction != nil {
+		r.outputSearch, r.outputMatch, r.outputTotalMatches = query, 0, 0
+		r.clearJobLogSearchSelection(jobID)
+		r.SetRootBinding("jobDetails", "output_search_count", "0/0")
+		r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
+			"jobExecutionId": jobID, "itemId": selectedOutputID, "query": query,
+			"selectedIndex": "0", "debounce": "false",
+		})
+	}
 }
 
 func preserveTopLevelBinding(previous, next any, key string) {
@@ -341,101 +349,6 @@ func (r *Renderer) SetRepeatedItemBinding(root, collection, keyField, keyValue, 
 	r.data = nextData
 	r.markDOMDirty()
 	return true
-}
-
-func (r *Renderer) ApplyJobOutput(snapshot jobOutputSnapshot) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	data, ok := r.data.(map[string]any)
-	if !ok {
-		return false
-	}
-	root, ok := data["jobDetails"].(map[string]any)
-	if !ok {
-		return false
-	}
-	groups, ok := root["output_groups"].([]any)
-	if !ok {
-		return false
-	}
-	nextGroups := make([]any, 0, len(groups))
-	for _, raw := range groups {
-		group, groupOK := raw.(map[string]any)
-		if !groupOK {
-			nextGroups = append(nextGroups, raw)
-			continue
-		}
-		next := cloneAnyMap(group)
-		itemID := fmt.Sprint(group["id"])
-		next["output"] = snapshot.Outputs[itemID]
-		if value := snapshot.Errors[itemID]; value != "" {
-			next["error"], next["status"], next["status_label"] = value, "failed", "Failed"
-		}
-		if value := snapshot.ExitCodes[itemID]; value != "" {
-			next["exit_code"] = value
-		}
-		nextGroups = append(nextGroups, next)
-	}
-	nextRoot := cloneAnyMap(root)
-	nextRoot["system_output"], nextRoot["output_groups"] = snapshot.System, nextGroups
-	nextRoot["output"] = structuredOutputPlainText(nextRoot, nextGroups, snapshot.System)
-	nextData := cloneAnyMap(data)
-	nextData["jobDetails"] = nextRoot
-	if r.outputSearch != "" {
-		matches := groupedOutputMatches(nextData, r.outputSearch)
-		if len(matches) == 0 {
-			r.outputMatch, nextRoot["output_search_count"] = 0, "0/0"
-		} else {
-			if r.outputMatch >= len(matches) {
-				r.outputMatch = 0
-			}
-			nextRoot["output_search_count"] = fmt.Sprintf("%d/%d", r.outputMatch+1, len(matches))
-		}
-	}
-	r.data = nextData
-	r.markDOMDirty()
-	return true
-}
-
-func structuredOutputPlainText(root map[string]any, groups []any, systemOutput string) string {
-	var out strings.Builder
-	out.WriteString("ciwi job log\n")
-	out.WriteString("Job execution ID: " + fmt.Sprint(root["id"]) + "\n")
-	out.WriteString("Status: " + fmt.Sprint(root["status"]) + "\n\n")
-	if strings.TrimSpace(systemOutput) != "" {
-		out.WriteString(strings.TrimRight(systemOutput, "\n") + "\n\n")
-	}
-	for _, raw := range groups {
-		group, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		out.WriteString("--------------------------------------------------------------------------------\n")
-		out.WriteString(fmt.Sprint(group["title"]) + "\n")
-		out.WriteString("--------------------------------------------------------------------------------\n")
-		if fmt.Sprint(group["reached"]) != "true" {
-			out.WriteString("Status: Not reached\n")
-		}
-		for _, field := range []struct{ key, label string }{{"started", "Started"}, {"duration", "Duration"}, {"exit_code", "Exit code"}, {"error", "Error"}} {
-			if value := strings.TrimSpace(fmt.Sprint(group[field.key])); value != "" {
-				out.WriteString(field.label + ": " + value + "\n")
-			}
-		}
-		out.WriteString("\n")
-		if fmt.Sprint(group["kind"]) == "phase" {
-			out.WriteString("Details:\n" + fmt.Sprint(group["details"]) + "\n")
-		} else {
-			out.WriteString("YAML literal:\n'''\n" + fmt.Sprint(group["yaml_literal"]) + "\n'''\n\n")
-			out.WriteString("Expanded command:\n'''\n" + fmt.Sprint(group["expanded_command"]) + "\n'''\n")
-		}
-		out.WriteString("\nOutput:\n'''\n")
-		output := fmt.Sprint(group["output"])
-		if output == "" && fmt.Sprint(group["reached"]) != "true" {
-			output = "(step was not reached)"
-		}
-		out.WriteString(output + "\n'''\n\n")
-	}
-	return out.String()
 }
 
 func (r *Renderer) ShowNotice(message, actionLabel string, action uidsl.Action, arguments map[string]string, duration time.Duration) {

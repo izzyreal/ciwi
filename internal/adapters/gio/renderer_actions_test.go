@@ -16,7 +16,7 @@ import (
 func TestInteractiveOutputSearchDebouncesTypingAndCancelsShortQuery(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	data := map[string]any{"jobDetails": map[string]any{
-		"id": "job-1", "interactive_log_available": true,
+		"id": "job-1", "selected_output_group": map[string]any{"id": "step:1"},
 	}}
 	renderer.SetData(data)
 	type dispatched struct {
@@ -28,7 +28,7 @@ func TestInteractiveOutputSearchDebouncesTypingAndCancelsShortQuery(t *testing.T
 		actions = append(actions, dispatched{command: action.Command, arguments: cloneStringMap(arguments)})
 	}
 	renderer.dispatchRendererAction(nil, "change-output-search", map[string]string{"query": "needle"}, data)
-	if len(actions) != 1 || actions[0].command != "search-job-log" || actions[0].arguments["debounce"] != "true" {
+	if len(actions) != 1 || actions[0].command != "search-job-log" || actions[0].arguments["debounce"] != "true" || actions[0].arguments["itemId"] != "step:1" {
 		t.Fatalf("typed search actions = %#v, want one debounced search", actions)
 	}
 	renderer.dispatchRendererAction(nil, "change-output-search", map[string]string{"query": "ne"}, data)
@@ -37,15 +37,17 @@ func TestInteractiveOutputSearchDebouncesTypingAndCancelsShortQuery(t *testing.T
 	}
 }
 
-func TestInteractiveSearchResultStopsTailingAndRevealsMatchedGroup(t *testing.T) {
+func TestInteractiveSearchResultStopsTailingWithoutChangingSelectedGroup(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	renderer.outputTailing = true
 	data := map[string]any{"jobDetails": map[string]any{
 		"id": "job-1", "tailing_label": "Tailing: On", "tailing_tone": "success",
 		"output_search_count": "0/0",
-		"output_groups": []any{map[string]any{
-			"id": "step:1", "state_key": "job-output:job-1:step:1",
-		}},
+		"output_groups": []any{
+			map[string]any{"id": "step:1", "state_key": "job-output:job-1:step:1"},
+			map[string]any{"id": "step:2", "state_key": "job-output:job-1:step:2"},
+		},
+		"selected_output_group": map[string]any{"id": "step:1"},
 	}}
 	renderer.SetData(data)
 	renderer.jobLogStreams[nativeJobLogKey("job-1", "step:1")] = jobLogStreamSnapshot{
@@ -53,7 +55,7 @@ func TestInteractiveSearchResultStopsTailingAndRevealsMatchedGroup(t *testing.T)
 		Chunks: []jobLogChunkSnapshot{{ID: 7, Text: "prefix needle suffix"}},
 	}
 	renderer.ApplyJobLogSearch(jobLogSearchSnapshot{
-		JobID: "job-1", ItemID: "step:1", Query: "needle", ChunkID: 7,
+		JobID: "job-1", ScopeItemID: "step:1", ItemID: "step:1", Query: "needle", ChunkID: 7,
 		StartRune: 7, EndRune: 13, SelectedIndex: 0, TotalMatches: 1,
 	})
 	stream := renderer.jobLogStreams[nativeJobLogKey("job-1", "step:1")]
@@ -97,6 +99,70 @@ func TestTimelineSelectionDoesNotCreateTransientNotice(t *testing.T) {
 	}
 	if output := root["selected_output_group"].(map[string]any); output["id"] != "phase-2" || output["selected"] != true {
 		t.Fatalf("selected output group = %#v", output)
+	}
+}
+
+func TestTimelineSelectionKeepsQueryAndRestartsSearchInSelectedItem(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputSearch = "needle"
+	data := map[string]any{"jobDetails": map[string]any{
+		"id": "job-1", "output_search": "needle", "output_search_count": "2/4",
+		"timeline": []any{
+			map[string]any{"id": "step:1", "selected": true},
+			map[string]any{"id": "step:2", "selected": false},
+		},
+		"output_groups": []any{
+			map[string]any{"id": "step:1", "selected": true},
+			map[string]any{"id": "step:2", "selected": false},
+		},
+		"selected_timeline_item": map[string]any{"id": "step:1"},
+		"selected_output_group":  map[string]any{"id": "step:1"},
+	}}
+	renderer.SetData(data)
+	var command string
+	var arguments map[string]string
+	renderer.onAction = func(action uidsl.Action, received map[string]string) {
+		command = action.Command
+		arguments = cloneStringMap(received)
+	}
+
+	renderer.dispatchRendererAction(nil, "select-timeline-item", map[string]string{"id": "step:2"}, data)
+	root := renderer.data.(map[string]any)["jobDetails"].(map[string]any)
+	if root["output_search"] != "needle" || renderer.outputSearch != "needle" {
+		t.Fatalf("selection discarded search query: root=%#v renderer=%q", root["output_search"], renderer.outputSearch)
+	}
+	if root["output_search_count"] != "0/0" {
+		t.Fatalf("selection retained stale search count: %#v", root["output_search_count"])
+	}
+	if selected := root["selected_output_group"].(map[string]any); selected["id"] != "step:2" {
+		t.Fatalf("selected output = %#v", selected)
+	}
+	if command != "search-job-log" || arguments["jobExecutionId"] != "job-1" || arguments["itemId"] != "step:2" || arguments["query"] != "needle" || arguments["selectedIndex"] != "0" || arguments["debounce"] != "false" {
+		t.Fatalf("selection search = %q %#v", command, arguments)
+	}
+}
+
+func TestStaleJobLogSearchResultForPreviouslySelectedItemIsIgnored(t *testing.T) {
+	renderer := responsiveTestRenderer(t)
+	renderer.outputSearch = "needle"
+	renderer.outputMatch = 2
+	renderer.outputTotalMatches = 4
+	renderer.outputTailing = true
+	data := map[string]any{"jobDetails": map[string]any{
+		"id": "job-1", "output_search_count": "3/4",
+		"selected_output_group": map[string]any{"id": "step:2"},
+	}}
+	renderer.SetData(data)
+	renderer.jobLogStreams[nativeJobLogKey("job-1", "step:1")] = jobLogStreamSnapshot{JobID: "job-1", ItemID: "step:1"}
+
+	renderer.ApplyJobLogSearch(jobLogSearchSnapshot{
+		JobID: "job-1", ScopeItemID: "step:1", ItemID: "step:1", Query: "old query",
+		ChunkID: 8, StartRune: 1, EndRune: 4, SelectedIndex: 0, TotalMatches: 1,
+	})
+	stream := renderer.jobLogStreams[nativeJobLogKey("job-1", "step:1")]
+	root := renderer.data.(map[string]any)["jobDetails"].(map[string]any)
+	if stream.SelectedChunkID != 0 || renderer.outputSearch != "needle" || renderer.outputMatch != 2 || renderer.outputTotalMatches != 4 || !renderer.outputTailing || root["output_search_count"] != "3/4" {
+		t.Fatalf("stale search mutated state: stream=%+v search=%q match=%d/%d tailing=%v root=%#v", stream, renderer.outputSearch, renderer.outputMatch, renderer.outputTotalMatches, renderer.outputTailing, root)
 	}
 }
 

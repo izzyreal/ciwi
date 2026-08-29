@@ -14,7 +14,7 @@ func TestBrowserSettingsRestoresPersistedUpdateCheck(t *testing.T) {
 	}
 	script := string(payload)
 	start := strings.Index(script, "  function declarativeVersionOptions")
-	end := strings.Index(script, "\n  function outputMatchRanges")
+	end := strings.Index(script, "\n  function browserOutputGroup")
 	if start < 0 || end < 0 || start >= end {
 		t.Fatal("browser update binding implementation is unavailable")
 	}

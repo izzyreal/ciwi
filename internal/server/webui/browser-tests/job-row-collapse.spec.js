@@ -88,6 +88,11 @@ const outputScreen = {
           icon: 'arrow-bar-to-down', style: {role: 'tailing-toggle', toneBinding: 'jobDetails.tailing_tone'},
           actions: [{on: 'activate', command: 'toggle-output-tailing'}],
         },
+        {
+          component: 'input', id: 'job-output-search', input: {value: 'jobDetails.output_search', placeholder: 'Search output'},
+          actions: [{on: 'change', command: 'change-output-search', arguments: {query: '{{input.value}}'}}],
+        },
+        {component: 'text', id: 'job-output-search-count', text: {binding: 'jobDetails.output_search_count'}},
       ],
     },
     {
@@ -117,13 +122,12 @@ const outputScreen = {
         {
           component: 'scroller', id: 'job-output-document', layout: {direction: 'vertical', gap: 'small'},
           repeat: {source: 'jobDetails.selected_output_groups', as: 'outputGroup', key: 'outputGroup.id'},
-          children: [
-            {component: 'text', id: 'long-output', text: {binding: 'outputGroup.output'}, style: {role: 'output-code'}},
-            {
-              component: 'log-view', visible: {binding: 'outputGroup.interactive_log_available'},
+          children: [{
+            component: 'column', style: {role: 'output-group-body'}, children: [{
+              component: 'log-view',
               logView: {jobExecutionId: 'jobDetails.id', itemId: 'outputGroup.id'}, style: {role: 'output-code'},
-            },
-          ],
+            }],
+          }],
         },
       ],
     },
@@ -237,40 +241,56 @@ async function installJobRowFixture(page) {
 
 async function installOutputFixture(page) {
   const output = Array.from({length: 180}, (_, index) => `line ${index}: long job output`).join('\n');
+  const searchRequests = [];
   const groups = [
     {
       id: 'step-1', title: 'Compile', status: 'succeeded', status_label: 'Succeeded', reached: true, selected: true,
-      state_key: 'job-output:step-1', output, available: true, interactive_log_available: false,
+      available: true,
       progress: {state: 'complete', fraction: 1},
     },
     {
       id: 'step-2', title: 'Package', status: 'succeeded', status_label: 'Succeeded', reached: true, selected: false,
-      state_key: 'job-output:step-2', output: `package selected\n${output}`, available: true,
-      interactive_log_available: false, progress: {state: 'complete', fraction: 1},
+      available: true, progress: {state: 'complete', fraction: 1},
     },
   ];
   await page.route('http://ciwi-output.test/**', async route => {
     const url = new URL(route.request().url());
     if (await serveAssets(route)) return;
-    if (url.pathname === '/') {
+    if (url.pathname === '/jobs/job-output') {
       await route.fulfill({contentType: 'text/html', body: documentHTML()});
     } else if (url.pathname === '/ui/contracts/routes.json') {
-      await route.fulfill({json: {routes: [{name: 'output-test', pattern: '/', screen: 'output-test', bindingRoot: 'jobDetails', platforms: ['web']}]}});
+      await route.fulfill({json: {routes: [{name: 'job-details', pattern: '/jobs/{jobId}', screen: 'output-test', bindingRoot: 'jobDetails', platforms: ['web']}]}});
     } else if (url.pathname === '/ui/contracts/screens/output-test.json') {
       await route.fulfill({json: outputScreen});
-    } else if (url.pathname === '/api/v1/views/front-page') {
+    } else if (url.pathname === '/api/v1/views/jobs/job-output') {
       await route.fulfill({json: {
-        id: 'job-output', ready: true, interactive_log_available: false, output_follow_latest: false,
+        id: 'job-output', ready: true, status: 'succeeded', output_follow_latest: false,
         output_tailing: false, tailing_label: 'Tailing: Off', tailing_tone: 'accent', output_groups: groups,
         timeline: groups.map(group => ({id: group.id, title: group.title, status: group.status, selected: group.selected})),
-        selected_timeline_item: groups[0], selected_output_group: groups[0], selected_output_groups: [groups[0]],
+      }});
+    } else if (url.pathname === '/api/v1/views/jobs/job-output/log/page') {
+      const itemID = url.searchParams.get('item_id') || '';
+      const text = itemID === 'step-2' ? `package selected\n${output}` : output;
+      await route.fulfill({json: {
+        job_execution_id: 'job-output', item_id: itemID,
+        chunks: [{id: 1, text, byte_count: text.length}], has_before: false, has_after: false, terminal: true,
+      }});
+    } else if (url.pathname === '/api/v1/views/jobs/job-output/log/search') {
+      const request = JSON.parse(route.request().postData() || '{}');
+      searchRequests.push(request);
+      const totalMatches = request.item_id === 'step-2' ? 2 : 1;
+      await route.fulfill({json: {
+        query: request.query, selected_index: request.selected_index, total_matches: totalMatches,
+        match: {item_id: request.item_id, chunk_id: 1, byte_start: 0, byte_end: 4},
       }});
     } else {
       await route.fulfill({status: 404, body: 'not found'});
     }
   });
-  await page.goto('http://ciwi-output.test/');
+  await page.goto('http://ciwi-output.test/jobs/job-output');
   await expect(page.locator('#job-output-viewer')).toBeVisible();
+  await expect(page.locator('.dsl-log-view')).toContainText('line 179');
+  return {searchRequests};
 }
 
 async function installInteractiveOutputFixture(page, {initialHasAfter = false, jobStatus = 'running'} = {}) {
@@ -278,17 +298,17 @@ async function installInteractiveOutputFixture(page, {initialHasAfter = false, j
   const logPageRequests = [];
   const phase = {
     id: 'phase-1', title: 'Check out source', kind: 'phase', status: 'succeeded', status_label: 'Succeeded', reached: true,
-    selected: false, output: '', available: true, interactive_log_available: true,
+    selected: false, available: true,
     progress: {state: 'complete', fraction: 1},
   };
   const group = {
     id: 'step-1', title: 'Build image', kind: 'step', status: 'running', status_label: 'In progress', reached: true,
-    selected: true, output: '', available: true, interactive_log_available: true,
+    selected: true, available: true,
     progress: {state: 'active', fraction: 0.5},
   };
   const next = {
     id: 'step-2', title: 'Publish image', kind: 'step', status: 'pending', status_label: 'Pending', reached: false,
-    selected: false, output: '', available: true, interactive_log_available: true,
+    selected: false, available: true,
     progress: {state: 'none', fraction: 0},
   };
   await page.route('http://ciwi-live-output.test/**', async route => {
@@ -302,7 +322,7 @@ async function installInteractiveOutputFixture(page, {initialHasAfter = false, j
       await route.fulfill({json: outputScreen});
     } else if (url.pathname === '/api/v1/views/jobs/job-1') {
       await route.fulfill({json: {
-        id: 'job-1', status: jobStatus, interactive_log_available: true,
+        id: 'job-1', status: jobStatus,
         output_groups: [phase, group, next], timeline: [phase, group, next],
       }});
     } else if (url.pathname === '/api/v1/views/jobs/job-1/log/page') {
@@ -456,7 +476,7 @@ test('output selectors stay collapsed in page flow and drive the fixed-height vi
   await expect(selectors.nth(0)).toHaveAttribute('aria-pressed', 'false');
   await expect(selectors.nth(1)).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#selected-output-title')).toHaveText('Package');
-  await expect(page.locator('#long-output')).toContainText('package selected');
+  await expect(page.locator('.dsl-log-view')).toContainText('package selected');
   await expect(page.locator('#job-output-tailing-toggle')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#job-output-viewer')).toBeInViewport();
 
@@ -597,25 +617,6 @@ test('returning to the tail preserves an active output text selection', async ({
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('ordinary output resumes tailing when the user returns to its end', async ({page}) => {
-  await installOutputFixture(page);
-  const scroller = page.locator('#job-output-document');
-  const toggle = page.locator('#job-output-tailing-toggle');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  await page.waitForTimeout(50);
-  await scroller.evaluate(element => {
-    element.scrollTop = 0;
-    element.dispatchEvent(new Event('scroll'));
-  });
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  await scroller.evaluate(element => {
-    element.scrollTop = element.scrollHeight;
-    element.dispatchEvent(new Event('scroll'));
-  });
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-});
-
 test('tailing a selected item preserves it instead of jumping to the global tail', async ({page}) => {
   const fixture = await installInteractiveOutputFixture(page);
   const selectors = page.locator('#job-output-selectors .dsl-output-selector');
@@ -641,6 +642,21 @@ test('tailing a selected item preserves it instead of jumping to the global tail
 
   await expect(page.locator('#selected-output-title')).toHaveText('Publish image');
   await expect(page.locator('#job-output-tailing-toggle')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('output search is scoped to the selected item and restarts after selection changes', async ({page}) => {
+  const fixture = await installOutputFixture(page);
+  const search = page.locator('#job-output-search');
+  await search.fill('line');
+  await expect.poll(() => fixture.searchRequests.length).toBe(1);
+  expect(fixture.searchRequests[0]).toMatchObject({item_id: 'step-1', query: 'line', selected_index: 0});
+  await expect(page.locator('#job-output-search-count')).toHaveText('1/1');
+
+  await page.locator('#job-output-timeline-test .dsl-output-selector').nth(1).click();
+  await expect.poll(() => fixture.searchRequests.length).toBe(2);
+  expect(fixture.searchRequests[1]).toMatchObject({item_id: 'step-2', query: 'line', selected_index: 0});
+  await expect(search).toHaveValue('line');
+  await expect(page.locator('#job-output-search-count')).toHaveText('1/2');
 });
 
 test('running job duration advances on the existing client pulse', async ({page}) => {

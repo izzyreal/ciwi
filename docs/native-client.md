@@ -149,7 +149,7 @@ Store Connect.
 - Requests: one independent bidirectional stream per request; QUIC supplies
   streams directly and Yamux supplies the same abstraction over TCP
 - Live state: a long-lived `WatchChanges` stream of coalescible invalidations
-- Live output: a cursor-based `WatchJobOutput` stream of bounded event pages
+- Live output: `WatchJobLog` invalidations plus paged indexed log reads
 - Downloads: bounded chunks carry a SHA-256 content identity; a client can
   reconstruct an expired transfer at a durable byte offset only when the exact
   payload identity still matches

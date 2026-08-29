@@ -94,7 +94,7 @@ func WriteJobLog(w io.Writer, store interface {
 	if format == "clean" {
 		if indexed, ok := store.(indexedJobLogStore); ok {
 			descriptor, err := indexed.GetJobLogDescriptor(job.ID)
-			if err == nil && descriptor.Available {
+			if err == nil {
 				return fileName, writeIndexedCleanJobLog(w, indexed, job, descriptor)
 			}
 		}

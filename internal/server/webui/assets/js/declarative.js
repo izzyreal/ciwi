@@ -5,10 +5,7 @@
   let outputWatchGeneration = 0;
   let outputEventSource = null;
   let completedOutputJobID = '';
-  let programmaticOutputScroll = false;
-  let programmaticOutputScrollUntil = 0;
   let routeLoadGeneration = 0;
-  const maxOutputCharacters = 1024 * 1024;
   const maxLogViewCacheBytes = 4 * 1024 * 1024;
   const logViewStates = new Map();
   let fullLogSearchGeneration = 0;
@@ -618,25 +615,21 @@
 		  setOutputTailing(data.jobDetails, false);
 		  data.jobDetails.output_follow_latest = false;
 		  selectJobOutput(data.jobDetails, args.id, false);
+		  data.jobDetails.output_match_index = 0;
+		  data.jobDetails.output_total_matches = 0;
+		  data.jobDetails.output_search_count = '0/0';
           renderCurrent();
 		  revealBrowserOutputViewer();
+		  if (Array.from(String(data.jobDetails.output_search || '')).length >= 3) {
+			await updateFullLogSearch(data.jobDetails, 0);
+		  }
         }
         else if (action.command === 'change-output-search') {
           data.jobDetails.output_search = args.query || '';
-		  if (data.jobDetails.interactive_log_available) scheduleFullLogSearch(data.jobDetails);
-		  else {
-			updateOutputSearch(data.jobDetails, 0);
-			patchJobOutputRegion(data.jobDetails);
-		  }
+		  scheduleFullLogSearch(data.jobDetails);
         }
         else if (action.command === 'find-output') {
-		  if (data.jobDetails.interactive_log_available) {
-			await findFullLogMatch(data.jobDetails, args.direction === 'previous' ? -1 : 1);
-		  } else {
-			updateOutputSearch(data.jobDetails, args.direction === 'previous' ? -1 : 1);
-			patchJobOutputRegion(data.jobDetails);
-			selectBrowserOutputMatch(data.jobDetails);
-		  }
+		  await findFullLogMatch(data.jobDetails, args.direction === 'previous' ? -1 : 1);
         }
         else if (action.command === 'copy-output') {
 		  const response = await fetch('/api/v1/jobs/' + encodeURIComponent(data.jobDetails.id || '') + '/log?format=clean');
@@ -650,13 +643,11 @@
 			armOutputTailing(data.jobDetails);
 			renderCurrent();
 			revealBrowserOutputViewer();
-			if (data.jobDetails.interactive_log_available) {
-			  logViewStates.forEach(state => {
-				if (state.jobID !== String(data.jobDetails.id || '') || state.itemID !== String(data.jobDetails.selected_output_group.id || '')) return;
-				const last = state.chunks.length ? Number(state.chunks[state.chunks.length - 1].id) : 0;
-				loadLogViewPage(state, state.hasAfter && last ? 'after' : 'tail', last);
-			  });
-			} else scrollJobOutputToEnd(document.getElementById('job-output-document'));
+			logViewStates.forEach(state => {
+			  if (state.jobID !== String(data.jobDetails.id || '') || state.itemID !== String(data.jobDetails.selected_output_group.id || '')) return;
+			  const last = state.chunks.length ? Number(state.chunks[state.chunks.length - 1].id) : 0;
+			  loadLogViewPage(state, state.hasAfter && last ? 'after' : 'tail', last);
+			});
 		  }
         }
 		else if (action.command === 'set-disclosures') {
@@ -1085,7 +1076,7 @@
     if (node.id) element.id = node.id;
     const style = node.style || {};
     if (style.role) element.classList.add('dsl-' + style.role);
-	if (style.role === 'output-group-body' && data.jobDetails && data.jobDetails.interactive_log_available) {
+	if (style.role === 'output-group-body' && data.jobDetails) {
 	  element.classList.add('dsl-interactive-log-body');
 	}
 	if (style.role === 'floating-collapse') element.hidden = true;
@@ -1223,9 +1214,6 @@
 	  if (node.text.binding) element.dataset.ciwiBinding = node.text.binding;
 	  if (bindLiveJobDuration(element, node, data)) {
 		// The shared client timer owns this text while the job is running.
-      } else if ((node.id === 'job-output-system-text' || node.id === 'job-output-group-text') && data.jobDetails) {
-		const itemID = node.id === 'job-output-group-text' && data.outputGroup ? String(data.outputGroup.id || '') : '';
-		renderBrowserOutputText(element, text, itemID, data.jobDetails);
 	  } else {
 		element.textContent = text;
 	  }
@@ -1302,7 +1290,6 @@
 	committedActionBindings = session.actionBindings;
 	committedRenderSignature = nextSignature;
 	if (viewState) window.ciwiRestoreViewState(root, viewState);
-	if (currentData.jobDetails) bindJobOutputScrollIntent(currentData.jobDetails);
 	requestAnimationFrame(bindRenderedLogViews);
   }
 
@@ -1677,65 +1664,8 @@
 	};
   }
 
-  function outputMatchRanges(output, query) {
-    if (!query) return [];
-    const source = String(output || '').toLocaleLowerCase();
-    const needle = String(query).toLocaleLowerCase();
-    const matches = [];
-    for (let offset = 0; offset <= source.length - needle.length;) {
-      const index = source.indexOf(needle, offset);
-      if (index < 0) break;
-      matches.push([index, index + needle.length]);
-      offset = index + needle.length;
-    }
-    return matches;
-  }
-
-  function jobOutputSources(view) {
-    const sources = [{itemID: '', text: String(view.system_output || '')}];
-    (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
-      sources.push({itemID: String(group.id || ''), text: String(group.output || '')});
-    });
-    return sources;
-  }
-
-  function groupedOutputMatches(view) {
-    const matches = [];
-    jobOutputSources(view).forEach(source => {
-      outputMatchRanges(source.text, view.output_search).forEach(range => {
-        matches.push({itemID: source.itemID, start: range[0], end: range[1]});
-      });
-    });
-    return matches;
-  }
-
-  function updateOutputSearch(view, direction) {
-    const matches = groupedOutputMatches(view);
-    if (!matches.length) {
-      view.output_match_index = 0;
-      view.output_search_count = '0/0';
-      return;
-    }
-    const current = Number(view.output_match_index || 0);
-    view.output_match_index = direction > 0
-      ? (current + 1) % matches.length
-      : (direction < 0 ? (current - 1 + matches.length) % matches.length : Math.min(current, matches.length - 1));
-    view.output_search_count = String(view.output_match_index + 1) + '/' + String(matches.length);
-  }
-
   function browserOutputGroup(view, itemID) {
     return (Array.isArray(view.output_groups) ? view.output_groups : []).find(group => String(group.id || '') === String(itemID || ''));
-  }
-
-  function revealBrowserOutputGroup(view, itemID) {
-	const group = browserOutputGroup(view, itemID);
-	if (!group) return null;
-	setOutputTailing(view, false);
-	view.output_follow_latest = false;
-	selectJobOutput(view, itemID, false);
-	renderCurrent();
-	revealBrowserOutputViewer();
-	return document.getElementById('job-output-viewer');
   }
 
   function revealBrowserOutputViewer() {
@@ -1750,8 +1680,8 @@
 	return {
 	  id: 'no-output', title: 'No execution phases or steps reported', kind: 'empty', status: '', status_label: '',
 	  reached: true, started: '', duration: '', exit_code: '', error: '', details: '', yaml_literal: '', expanded_command: '',
-	  output: '', empty_output_label: 'No phase or step output is available.', available: false,
-	  interactive_log_available: false, selected: false, progress: {state: 'none'},
+	  empty_output_label: 'No phase or step output is available.', available: false,
+	  selected: false, progress: {state: 'none'},
 	};
   }
 
@@ -1807,21 +1737,9 @@
 	return true;
   }
 
-  function selectBrowserOutputMatch(view) {
-    const matches = groupedOutputMatches(view);
-    const match = matches[Number(view.output_match_index || 0)];
-    if (!match) return;
-	const viewer = match.itemID ? revealBrowserOutputGroup(view, match.itemID) : null;
-	const target = viewer || document.getElementById('job-output-system');
-    const active = target && target.querySelector('.ciwi-search-hit-active');
-	if (active) {
-	  programmaticOutputScrollUntil = Math.max(programmaticOutputScrollUntil, Date.now() + 1000);
-	  active.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'smooth'});
-	}
-  }
-
   async function updateFullLogSearch(view, selectedIndex) {
 	const query = String(view.output_search || '');
+	const itemID = String(view.selected_output_group && view.selected_output_group.id || '');
 	const generation = ++fullLogSearchGeneration;
 	if (Array.from(query).length < 3) {
 	  clearLogViewSearchMatches(view.id);
@@ -1831,13 +1749,22 @@
 	  updateJobOutputSearchCount(view);
 	  return;
 	}
+	if (!itemID || itemID === 'no-output') {
+	  clearLogViewSearchMatches(view.id);
+	  view.output_match_index = 0;
+	  view.output_total_matches = 0;
+	  view.output_search_count = '0/0';
+	  updateJobOutputSearchCount(view);
+	  return;
+	}
 	const response = await fetch('/api/v1/views/jobs/' + encodeURIComponent(view.id) + '/log/search', {
 	  method: 'POST', headers: {'Content-Type': 'application/json'},
-	  body: JSON.stringify({query, selected_index: Math.max(0, Number(selectedIndex || 0))}),
+	  body: JSON.stringify({item_id: itemID, query, selected_index: Math.max(0, Number(selectedIndex || 0))}),
 	});
 	if (!response.ok) throw new Error(await response.text());
 	const result = await response.json();
-	if (generation !== fullLogSearchGeneration || query !== String(view.output_search || '')) return;
+	const currentItemID = String(view.selected_output_group && view.selected_output_group.id || '');
+	if (generation !== fullLogSearchGeneration || query !== String(view.output_search || '') || itemID !== currentItemID) return;
 	view.output_match_index = Number(result.selected_index || 0);
 	view.output_total_matches = Number(result.total_matches || 0);
 	view.output_search_count = view.output_total_matches
@@ -1846,8 +1773,8 @@
 	updateJobOutputSearchCount(view);
 	clearLogViewSearchMatches(view.id);
 	if (!result.match) return;
-	if (result.match.item_id) revealBrowserOutputGroup(view, result.match.item_id);
-	const state = logViewState(view.id, result.match.item_id || '', view);
+	if (String(result.match.item_id || '') !== itemID) throw new Error('Search result belongs to a different output item');
+	const state = logViewState(view.id, itemID, view);
 	state.match = result.match;
 	setOutputTailing(view, false);
 	await loadLogViewPage(state, 'around', Number(result.match.chunk_id));
@@ -1873,28 +1800,6 @@
 	let target = Number(view.output_match_index || 0);
 	if (total > 0) target = (target + (direction < 0 ? -1 : 1) + total) % total;
 	return updateFullLogSearch(view, target);
-  }
-
-  function renderBrowserOutputText(element, text, itemID, view) {
-    const ranges = outputMatchRanges(text, view.output_search);
-    const active = groupedOutputMatches(view)[Number(view.output_match_index || 0)];
-    let cursor = 0;
-    ranges.forEach(range => {
-      if (range[0] > cursor) element.appendChild(document.createTextNode(text.slice(cursor, range[0])));
-      const mark = document.createElement('mark');
-      mark.className = 'ciwi-search-hit';
-      if (active && String(active.itemID) === String(itemID) && active.start === range[0] && active.end === range[1]) {
-        mark.classList.add('ciwi-search-hit-active');
-      }
-      mark.textContent = text.slice(range[0], range[1]);
-      element.appendChild(mark);
-      cursor = range[1];
-    });
-    if (cursor < text.length) element.appendChild(document.createTextNode(text.slice(cursor)));
-  }
-
-  function outputIsAtBottom(element) {
-	return !element || element.scrollHeight - element.clientHeight - element.scrollTop <= 3;
   }
 
   function jobOutputStartsAtTail(view) {
@@ -1959,119 +1864,20 @@
 	if (textNode) textNode.textContent = label;
   }
 
-  function bindJobOutputScrollIntent(view) {
-	const container = document.getElementById('job-output-document');
-	if (!container) return;
-	container.__ciwiOutputView = view;
-	if (container.dataset.ciwiScrollIntent === '1') return;
-	container.dataset.ciwiScrollIntent = '1';
-	container.__ciwiOutputAtEnd = outputIsAtBottom(container);
-	container.addEventListener('scroll', () => {
-	  const currentView = container.__ciwiOutputView;
-	  const wasAtEnd = !!container.__ciwiOutputAtEnd;
-	  const atEnd = outputIsAtBottom(container);
-	  container.__ciwiOutputAtEnd = atEnd;
-	  if (!currentView || currentView.interactive_log_available || programmaticOutputScroll || Date.now() < programmaticOutputScrollUntil) return;
-	  if (currentView.output_tailing && !atEnd) setOutputTailing(currentView, false);
-	  else if (!currentView.output_tailing && !wasAtEnd && atEnd) resumeOutputTailingAtEnd(currentView);
-	}, {passive: true});
-  }
-
-  function scrollJobOutputToEnd(element) {
-	if (!element) return;
-	programmaticOutputScroll = true;
-	element.scrollTop = element.scrollHeight;
-	requestAnimationFrame(() => { programmaticOutputScroll = false; });
-  }
-
   function updateJobOutputSearchCount(view) {
 	const count = document.getElementById('job-output-search-count');
 	if (count) count.textContent = String(view.output_search_count || '0/0');
   }
 
-  function patchJobOutputRegion(view) {
-	renderCurrent();
-	const currentScroller = document.getElementById('job-output-document');
-	bindJobOutputScrollIntent(view);
-	if (view.output_tailing && !view.interactive_log_available) scrollJobOutputToEnd(currentScroller);
-	updateJobOutputSearchCount(view);
-  }
-
-  function initializeJobOutputView(view, previousView) {
-	const previousGroups = new Map((Array.isArray(previousView && previousView.output_groups) ? previousView.output_groups : [])
-	  .map(group => [String(group.id || ''), group]));
-	const previousCursor = Number(previousView && previousView.output_after_event_id || 0);
-	view.system_output = previousView ? String(previousView.system_output || '') : '';
-	view.output_after_event_id = Number.isFinite(previousCursor) && previousCursor >= 0 ? previousCursor : 0;
+  function initializeJobOutputView(view) {
     (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
-      const previousGroup = previousGroups.get(String(group.id || ''));
-      group.output = previousGroup ? String(previousGroup.output || '') : '';
-      group.empty_output_label = view.interactive_log_available ? '' : (group.output ? '' : (group.reached ? '(no output)' : '(step was not reached)'));
+	  group.empty_output_label = '';
       group.yaml_literal = group.yaml_literal || '(none)';
       group.expanded_command = group.expanded_command || '(none)';
       group.details = group.details || '(none)';
 	  group.available = true;
-	  group.interactive_log_available = !!view.interactive_log_available;
 	  group.selected = false;
     });
-    rebuildJobOutputText(view);
-  }
-
-  function appendBoundedOutput(view, itemID, text) {
-	if (!text) return false;
-    const group = itemID ? browserOutputGroup(view, itemID) : null;
-    const fieldOwner = group || view;
-    const field = group ? 'output' : 'system_output';
-    let output = String(fieldOwner[field] || '') + String(text);
-    if (output.length > maxOutputCharacters) {
-      output = '[ciwi: earlier output omitted]\n' + output.slice(output.length - maxOutputCharacters);
-    }
-    fieldOwner[field] = output;
-	return true;
-  }
-
-  function rebuildJobOutputText(view) {
-    const sections = [];
-    if (view.system_output) sections.push('System messages\n' + view.system_output);
-    (Array.isArray(view.output_groups) ? view.output_groups : []).forEach(group => {
-      const body = String(group.output || '') || String(group.empty_output_label || '');
-      sections.push(String(group.title || 'Execution item') + '\n' + body);
-    });
-    view.output = sections.join('\n\n');
-  }
-
-  function mergeJobOutputBatch(view, batch) {
-	let changed = false;
-    (Array.isArray(batch.events) ? batch.events : []).forEach(event => {
-      const itemID = String(event.item_id || '');
-      if (event.type === 'system-message' || event.type === 'output') {
-		changed = appendBoundedOutput(view, event.type === 'system-message' ? '' : itemID, event.text || '') || changed;
-		if (event.type === 'output') {
-		  const group = browserOutputGroup(view, itemID);
-		  if (group) {
-			group.reached = true;
-			if (!group.status || ['pending', 'not reached'].includes(String(group.status).toLowerCase())) group.status = 'running';
-			if (view.output_tailing && view.output_follow_latest) followJobOutputTransition(view, itemID);
-		  }
-		}
-      }
-      if (event.type === 'finished') {
-        const group = browserOutputGroup(view, itemID);
-        if (group) {
-		  changed = true;
-          group.reached = true;
-          group.status = event.error ? 'failed' : 'succeeded';
-          group.status_label = event.error ? 'Failed' : 'Succeeded';
-          group.error = event.error || '';
-          group.exit_code = event.exit_code || '';
-          group.empty_output_label = group.output ? '' : '(no output)';
-        }
-      }
-    });
-	if (!changed) return false;
-    rebuildJobOutputText(view);
-    updateOutputSearch(view, 0);
-	return true;
   }
 
   function stopJobOutputWatch() {
@@ -2082,56 +1888,6 @@
   function setOutputWatchGeneration(generation) {
 	stopJobOutputWatch();
 	outputWatchGeneration = generation;
-  }
-
-  function watchJobOutput(jobID, generation) {
-	const activeJob = currentData && currentData.jobDetails;
-	let afterEventID = activeJob && String(activeJob.id || '') === String(jobID)
-	  ? Number(activeJob.output_after_event_id || 0) : 0;
-	if (!Number.isFinite(afterEventID) || afterEventID < 0) afterEventID = 0;
-	if (typeof window.EventSource !== 'function') throw new Error('Live output requires EventSource support');
-	stopJobOutputWatch();
-	const source = new EventSource('/api/v1/views/jobs/' + encodeURIComponent(jobID) + '/output/stream?after_event_id=' + String(afterEventID));
-	outputEventSource = source;
-	const currentJob = () => {
-	  if (generation !== outputWatchGeneration) return null;
-	  const view = currentData && currentData.jobDetails;
-	  return view && String(view.id || '') === String(jobID) ? view : null;
-	};
-	source.addEventListener('output', event => {
-	  const view = currentJob();
-	  if (!view) { source.close(); return; }
-	  try {
-		const batch = JSON.parse(event.data || '{}');
-		const nextEventID = Number(batch.next_event_id || event.lastEventId || afterEventID);
-		if (Number.isFinite(nextEventID) && nextEventID >= afterEventID) {
-		  afterEventID = nextEventID;
-		  view.output_after_event_id = nextEventID;
-		}
-		if (mergeJobOutputBatch(view, batch)) patchJobOutputRegion(view);
-	  } catch (error) {
-		console.error('Invalid job output event', error);
-	  }
-	});
-	source.addEventListener('complete', () => {
-	  if (currentJob()) {
-		completedOutputJobID = String(jobID);
-		scheduleChangeRefresh();
-	  }
-	  source.close();
-	  if (outputEventSource === source) outputEventSource = null;
-	});
-	source.addEventListener('stream-error', event => {
-	  const view = currentJob();
-	  if (!view) return;
-	  let message = 'Output stream failed';
-	  try { message = JSON.parse(event.data || '{}').message || message; } catch (_) {}
-	  appendBoundedOutput(view, '', message + '\n');
-	  rebuildJobOutputText(view);
-	  patchJobOutputRegion(view);
-	  source.close();
-	  if (outputEventSource === source) outputEventSource = null;
-	});
   }
 
   function watchFullJobLog(jobID, generation) {
@@ -2303,6 +2059,7 @@
       applyContractTheme(themes);
 	  applyControlsContract(controls);
       let view = responseView;
+	  let jobSearchNeedsRescope = false;
 	  if (managedYAMLMatch) view = viewBindings.managedYAMLBinding(responseView);
 	  if (agentScriptMatch) view = viewBindings.agentScriptBinding(responseView, nextRouteMatch.params.agentId);
 	  if (vaultMatch) view = viewBindings.vaultBinding(responseView);
@@ -2372,8 +2129,9 @@
 		view.duration_client_snapshot_unix_ms = Date.now();
 		view.output_search = sameJob ? String(previousJob.output_search || '') : '';
 		view.output_match_index = sameJob ? Number(previousJob.output_match_index || 0) : 0;
-		initializeJobOutputView(view, sameJob ? previousJob : null);
-		updateOutputSearch(view, 0);
+		view.output_total_matches = sameJob ? Number(previousJob.output_total_matches || 0) : 0;
+		view.output_search_count = sameJob ? String(previousJob.output_search_count || '0/0') : '0/0';
+		initializeJobOutputView(view);
 		view.output_tailing = sameJob ? !!previousJob.output_tailing : jobOutputStartsAtTail(view);
 		view.output_follow_latest = sameJob ? !!previousJob.output_follow_latest : view.output_tailing;
 		if (sameJob && Object.prototype.hasOwnProperty.call(previousJob, 'output_follow_anchor_id')) {
@@ -2390,6 +2148,13 @@
 		  selectJobOutput(view, previousSelectionID, view.output_tailing && view.output_follow_latest);
 		  if (view.output_follow_latest) view.output_follow_anchor_id = latestJobOutputID(view);
 		}
+		jobSearchNeedsRescope = sameJob && previousSelectionID !== String(view.selected_output_group && view.selected_output_group.id || '') &&
+		  Array.from(view.output_search).length >= 3;
+		if (jobSearchNeedsRescope) {
+		  view.output_match_index = 0;
+		  view.output_total_matches = 0;
+		  view.output_search_count = '0/0';
+		}
       }
 	  if (!jobMatch) completedOutputJobID = '';
 	  if (loadGeneration !== routeLoadGeneration) return false;
@@ -2404,21 +2169,15 @@
       if (jobMatch) {
 		const jobID = nextRouteMatch.params.jobId;
 		if (completedOutputJobID !== String(jobID)) try {
-		  if (view.interactive_log_available) watchFullJobLog(jobID, generation);
-		  else watchJobOutput(jobID, generation);
+		  watchFullJobLog(jobID, generation);
 		} catch (error) {
           if (generation !== outputWatchGeneration) return;
           if (currentData && currentData.jobDetails) {
-			if (currentData.jobDetails.interactive_log_available) {
-			  currentData.jobDetails.output_search_count = 'Output stream failed: ' + (error.message || String(error));
-			  updateJobOutputSearchCount(currentData.jobDetails);
-			} else {
-			  appendBoundedOutput(currentData.jobDetails, '', 'Output stream failed: ' + (error.message || String(error)) + '\n');
-			  rebuildJobOutputText(currentData.jobDetails);
-			  patchJobOutputRegion(currentData.jobDetails);
-			}
+			currentData.jobDetails.output_search_count = 'Output stream failed: ' + (error.message || String(error));
+			updateJobOutputSearchCount(currentData.jobDetails);
           }
 		}
+		if (jobSearchNeedsRescope) await updateFullLogSearch(view, 0);
       }
     } catch (error) {
 	  if (loadingCommitted && loadGeneration === routeLoadGeneration && currentData) {

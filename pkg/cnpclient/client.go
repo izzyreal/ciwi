@@ -106,7 +106,7 @@ func (c *Client) hello(ctx context.Context, clientName, clientVersion string) er
 	defer stopCancellation()
 	message := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Hello{Hello: &cnpv1.Hello{
 		ClientName: clientName, ClientVersion: clientVersion,
-		Capabilities: []string{"protobuf", "invalidation_stream", "job_output_stream", "job_log_v1"},
+		Capabilities: []string{"protobuf", "invalidation_stream", "job_log_v1"},
 	}}}
 	if err := cnp.Write(stream, message); err != nil {
 		stream.CancelRead()
@@ -779,68 +779,6 @@ func (c *Client) WatchChanges(ctx context.Context) (<-chan *cnpv1.ChangeEvent, <
 		}
 	}()
 	return events, errorsOut, nil
-}
-
-func (c *Client) WatchJobOutput(ctx context.Context, jobExecutionID string, afterEventID int64) (<-chan *cnpv1.JobOutputBatch, <-chan error, error) {
-	stream, err := c.session.OpenStream(ctx)
-	if err != nil {
-		return nil, nil, contextualIOError(ctx, "open job output stream", err)
-	}
-	stopCancellation := interruptStreamOnCancel(ctx, stream)
-	requestID := uuid.NewString()
-	request := &cnpv1.ClientMessage{Body: &cnpv1.ClientMessage_Request{Request: &cnpv1.Request{
-		Metadata: &cnpv1.RequestMetadata{RequestId: requestID},
-		Operation: &cnpv1.Request_WatchJobOutput{WatchJobOutput: &cnpv1.WatchJobOutputRequest{
-			JobExecutionId: jobExecutionID, AfterEventId: afterEventID,
-		}},
-	}}}
-	if err := cnp.Write(stream, request); err != nil {
-		stopCancellation()
-		_ = stream.Close()
-		stream.CancelRead()
-		stream.CancelWrite()
-		return nil, nil, contextualIOError(ctx, "write job output request", err)
-	}
-	batches := make(chan *cnpv1.JobOutputBatch, 1)
-	errorsOut := make(chan error, 1)
-	go func() {
-		defer close(batches)
-		defer close(errorsOut)
-		defer stream.Close()
-		defer stopCancellation()
-		reader := cnp.NewReader(stream)
-		for {
-			var message cnpv1.ServerMessage
-			if err := reader.Read(&message); err != nil {
-				if ctx.Err() == nil && !errors.Is(err, io.EOF) {
-					errorsOut <- err
-				}
-				return
-			}
-			response := message.GetResponse()
-			if response == nil || response.RequestId != requestID {
-				errorsOut <- fmt.Errorf("invalid job output response")
-				return
-			}
-			if status := response.GetError(); status != nil {
-				errorsOut <- &Error{Code: status.Code, Message: status.Message}
-				return
-			}
-			batch := response.GetJobOutput()
-			if batch == nil {
-				errorsOut <- unexpectedResult(response)
-				return
-			}
-			select {
-			case batches <- batch:
-			case <-ctx.Done():
-				_ = stream.Close()
-				stream.CancelRead()
-				return
-			}
-		}
-	}()
-	return batches, errorsOut, nil
 }
 
 func (c *Client) WatchJobLog(ctx context.Context, jobExecutionID string, afterChunkID int64) (<-chan *cnpv1.JobLogDescriptor, <-chan error, error) {

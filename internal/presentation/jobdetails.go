@@ -3,11 +3,9 @@ package presentation
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/requirements"
@@ -47,9 +45,6 @@ type JobDetailsView struct {
 	TestReport                ReportDetailsView
 	CoverageReport            ReportDetailsView
 	Progress                  domain.Progress
-	InteractiveLogAvailable   bool
-	InteractiveLogVersion     int
-	LegacyLogNotice           string
 	Timeline                  []JobTimelineView
 	OutputGroups              []JobOutputGroupView
 }
@@ -141,39 +136,20 @@ type JobOutputGroupView struct {
 	Progress        domain.Progress
 }
 
-type JobOutputView struct {
-	JobExecutionID string
-	Events         []JobOutputEventView
-	NextEventID    int64
-	HasMore        bool
-	Terminal       bool
-}
-
-type JobOutputEventView struct {
-	EventID  int64
-	Type     string
-	ItemID   string
-	Text     string
-	Error    string
-	ExitCode string
-}
-
 type JobDetailsQueries struct {
 	executions interface {
 		GetJobExecutionDetails(context.Context, string) (domain.JobExecutionDetails, error)
-		GetJobOutput(context.Context, string, int64) (domain.JobOutputBatch, error)
 	}
 }
 
 type jobLogSource interface {
 	GetJobLogDescriptor(context.Context, string) (domain.JobLogDescriptor, error)
 	GetJobLogPage(context.Context, string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
-	SearchJobLog(context.Context, string, string, int64) (domain.JobLogSearchResult, error)
+	SearchJobLog(context.Context, string, string, string, int64) (domain.JobLogSearchResult, error)
 }
 
 func NewJobDetailsQueries(executions interface {
 	GetJobExecutionDetails(context.Context, string) (domain.JobExecutionDetails, error)
-	GetJobOutput(context.Context, string, int64) (domain.JobOutputBatch, error)
 }) *JobDetailsQueries {
 	return &JobDetailsQueries{executions: executions}
 }
@@ -194,34 +170,12 @@ func (q *JobDetailsQueries) GetJobLogPage(ctx context.Context, jobID, itemID str
 	return source.GetJobLogPage(ctx, jobID, itemID, mode, cursor)
 }
 
-func (q *JobDetailsQueries) SearchJobLog(ctx context.Context, jobID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
+func (q *JobDetailsQueries) SearchJobLog(ctx context.Context, jobID, itemID, query string, selectedIndex int64) (domain.JobLogSearchResult, error) {
 	source, ok := q.executions.(jobLogSource)
 	if !ok {
 		return domain.JobLogSearchResult{}, fmt.Errorf("job log source unavailable")
 	}
-	return source.SearchJobLog(ctx, jobID, query, selectedIndex)
-}
-
-func (q *JobDetailsQueries) GetJobOutputView(ctx context.Context, jobID string, afterEventID int64) (JobOutputView, error) {
-	batch, err := q.executions.GetJobOutput(ctx, jobID, afterEventID)
-	if err != nil {
-		return JobOutputView{}, err
-	}
-	view := JobOutputView{
-		JobExecutionID: batch.JobExecutionID, NextEventID: batch.NextEventID,
-		HasMore: batch.HasMore, Terminal: batch.Terminal,
-		Events: make([]JobOutputEventView, 0, len(batch.Events)),
-	}
-	for _, event := range batch.Events {
-		text := outputEventText(event)
-		if event.Type != "" {
-			view.Events = append(view.Events, JobOutputEventView{
-				EventID: event.ID, Type: event.Type, ItemID: event.ItemID, Text: text,
-				Error: strings.TrimSpace(event.Error), ExitCode: formatExitCode(event.ExitCode),
-			})
-		}
-	}
-	return view, nil
+	return source.SearchJobLog(ctx, jobID, itemID, query, selectedIndex)
 }
 
 func (q *JobDetailsQueries) GetJobDetailsView(ctx context.Context, jobID string) (JobDetailsView, error) {
@@ -229,18 +183,7 @@ func (q *JobDetailsQueries) GetJobDetailsView(ctx context.Context, jobID string)
 	if err != nil {
 		return JobDetailsView{}, err
 	}
-	view := presentJobDetails(details)
-	if source, ok := q.executions.(jobLogSource); ok {
-		descriptor, descriptorErr := source.GetJobLogDescriptor(ctx, jobID)
-		if descriptorErr == nil {
-			view.InteractiveLogAvailable = descriptor.Available
-			view.InteractiveLogVersion = descriptor.Version
-			if !descriptor.Available {
-				view.LegacyLogNotice = "Interactive output is partial for this pre-upgrade execution. Copy Output and Clean/Raw downloads include the complete log."
-			}
-		}
-	}
-	return view, nil
+	return presentJobDetails(details), nil
 }
 
 func presentJobDetails(details domain.JobExecutionDetails) JobDetailsView {
@@ -730,40 +673,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return "execution"
-}
-
-func outputEventText(event domain.JobOutputEvent) string {
-	text := ""
-	switch event.Type {
-	case domain.JobOutputEventSystemMessage:
-		text = event.Message
-	case domain.JobOutputEventOutput:
-		text = event.Output
-	case domain.JobOutputEventFinished:
-		return ""
-	}
-	text = cleanOutputText(text)
-	if text != "" && !strings.HasSuffix(text, "\n") {
-		text += "\n"
-	}
-	return text
-}
-
-var outputANSIEscapeRE = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]`)
-
-func cleanOutputText(text string) string {
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
-	text = outputANSIEscapeRE.ReplaceAllString(text, "")
-	var clean strings.Builder
-	for len(text) > 0 {
-		r, size := utf8.DecodeRuneInString(text)
-		text = text[size:]
-		if r == utf8.RuneError && size == 1 {
-			continue
-		}
-		if r == '\n' || r == '\t' || r >= 0x20 {
-			clean.WriteRune(r)
-		}
-	}
-	return clean.String()
 }

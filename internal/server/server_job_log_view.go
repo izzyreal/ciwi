@@ -13,8 +13,6 @@ import (
 
 type jobLogDescriptorResponse struct {
 	JobExecutionID string                 `json:"job_execution_id"`
-	Version        int                    `json:"version"`
-	Available      bool                   `json:"available"`
 	Terminal       bool                   `json:"terminal"`
 	LatestChunkID  int64                  `json:"latest_chunk_id"`
 	Streams        []jobLogStreamResponse `json:"streams"`
@@ -48,6 +46,7 @@ type jobLogChunkResponse struct {
 }
 
 type jobLogSearchRequest struct {
+	ItemID        string `json:"item_id"`
 	Query         string `json:"query"`
 	SelectedIndex int64  `json:"selected_index"`
 }
@@ -116,7 +115,7 @@ func (s *stateStore) jobLogViewHandler(w http.ResponseWriter, r *http.Request, j
 			http.Error(w, "invalid search request", http.StatusBadRequest)
 			return
 		}
-		result, err := s.app().jobDetails.SearchJobLog(r.Context(), jobID, request.Query, request.SelectedIndex)
+		result, err := s.app().jobDetails.SearchJobLog(r.Context(), jobID, request.ItemID, request.Query, request.SelectedIndex)
 		if err != nil {
 			http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
 			return
@@ -131,8 +130,7 @@ func (s *stateStore) jobLogViewHandler(w http.ResponseWriter, r *http.Request, j
 
 func jobLogDescriptorToResponse(descriptor domain.JobLogDescriptor) jobLogDescriptorResponse {
 	response := jobLogDescriptorResponse{
-		JobExecutionID: descriptor.JobExecutionID, Version: descriptor.Version, Available: descriptor.Available,
-		Terminal: descriptor.Terminal, LatestChunkID: descriptor.LatestChunkID,
+		JobExecutionID: descriptor.JobExecutionID, Terminal: descriptor.Terminal, LatestChunkID: descriptor.LatestChunkID,
 		Streams: make([]jobLogStreamResponse, 0, len(descriptor.Streams)),
 	}
 	for _, stream := range descriptor.Streams {
@@ -195,7 +193,7 @@ func (s *stateStore) jobLogChangeStreamHandler(w http.ResponseWriter, r *http.Re
 	}
 	flusher.Flush()
 	changes := s.app().changes.Watch(r.Context())
-	heartbeat := time.NewTicker(jobOutputHeartbeatInterval)
+	heartbeat := time.NewTicker(jobLogHeartbeatInterval)
 	defer heartbeat.Stop()
 
 	emit := func() (bool, error) {
@@ -214,7 +212,7 @@ func (s *stateStore) jobLogChangeStreamHandler(w http.ResponseWriter, r *http.Re
 	}
 	terminal, err := emit()
 	if err != nil {
-		writeJobOutputSSEError(w, flusher, err)
+		writeJobLogSSEError(w, flusher, err)
 		return
 	}
 	if terminal {
@@ -227,12 +225,12 @@ func (s *stateStore) jobLogChangeStreamHandler(w http.ResponseWriter, r *http.Re
 			if !ok {
 				return
 			}
-			if !jobOutputChangeAffects(change, jobID) {
+			if !jobLogChangeAffects(change, jobID) {
 				continue
 			}
 			terminal, err := emit()
 			if err != nil {
-				writeJobOutputSSEError(w, flusher, err)
+				writeJobLogSSEError(w, flusher, err)
 				return
 			}
 			if terminal {

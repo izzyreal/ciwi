@@ -231,40 +231,8 @@ const (
 	ProgressOverrun       = "overrun"
 )
 
-type JobOutputBatch struct {
-	JobExecutionID string
-	Events         []JobOutputEvent
-	NextEventID    int64
-	HasMore        bool
-	Terminal       bool
-}
-
-const (
-	JobOutputEventSystemMessage = "system-message"
-	JobOutputEventOutput        = "output"
-	JobOutputEventFinished      = "finished"
-)
-
-type JobOutputEvent struct {
-	ID        int64
-	Type      string
-	ItemID    string
-	Message   string
-	Output    string
-	Error     string
-	ExitCode  *int
-	ItemKind  string
-	ItemName  string
-	ItemIndex int
-	ItemTotal int
-}
-
-const InteractiveJobLogVersion = 1
-
 type JobLogDescriptor struct {
 	JobExecutionID string
-	Version        int
-	Available      bool
 	Terminal       bool
 	LatestChunkID  int64
 	Streams        []JobLogStream

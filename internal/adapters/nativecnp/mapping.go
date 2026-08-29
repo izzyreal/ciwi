@@ -107,9 +107,7 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, Timeline: timeline, CanCancel: view.CanCancel, CanRerun: view.CanRerun,
-		InteractiveLogAvailable: view.InteractiveLogAvailable, InteractiveLogVersion: int32(max(view.InteractiveLogVersion, 0)),
-		LegacyLogNotice: view.LegacyLogNotice,
-		OutputGroups:    outputGroups, SchedulingDiagnosis: presentedSchedulingDiagnosisToProto(view),
+		OutputGroups: outputGroups, SchedulingDiagnosis: presentedSchedulingDiagnosisToProto(view),
 		Progress: progressToProto(view.Progress), JobProperties: jobDetailRowsToProto(view.JobProperties),
 		CacheStatistics: jobDetailRowsToProto(view.CacheStatistics), CacheStatisticsEmpty: view.CacheStatisticsEmpty,
 		HostToolRequirements:      toolRequirementsToProto(view.HostToolRequirements),
@@ -206,20 +204,6 @@ func jobRunContextToProto(view protocol.JobExecutionGraphContext) *cnpv1.JobRunC
 	}
 }
 
-func jobOutputToProto(view presentation.JobOutputView) *cnpv1.JobOutputBatch {
-	events := make([]*cnpv1.JobOutputEvent, 0, len(view.Events))
-	for _, event := range view.Events {
-		events = append(events, &cnpv1.JobOutputEvent{
-			EventId: event.EventID, Type: event.Type, ItemId: event.ItemID, Text: event.Text,
-			Error: event.Error, ExitCode: event.ExitCode,
-		})
-	}
-	return &cnpv1.JobOutputBatch{
-		JobExecutionId: view.JobExecutionID, NextEventId: view.NextEventID,
-		Events: events, HasMore: view.HasMore, Terminal: view.Terminal,
-	}
-}
-
 func jobLogDescriptorToProto(descriptor domain.JobLogDescriptor) *cnpv1.JobLogDescriptor {
 	streams := make([]*cnpv1.JobLogStream, 0, len(descriptor.Streams))
 	for _, stream := range descriptor.Streams {
@@ -229,8 +213,8 @@ func jobLogDescriptorToProto(descriptor domain.JobLogDescriptor) *cnpv1.JobLogDe
 		})
 	}
 	return &cnpv1.JobLogDescriptor{
-		JobExecutionId: descriptor.JobExecutionID, Version: int32(descriptor.Version), Available: descriptor.Available,
-		Terminal: descriptor.Terminal, LatestChunkId: descriptor.LatestChunkID, Streams: streams,
+		JobExecutionId: descriptor.JobExecutionID, Terminal: descriptor.Terminal,
+		LatestChunkId: descriptor.LatestChunkID, Streams: streams,
 	}
 }
 

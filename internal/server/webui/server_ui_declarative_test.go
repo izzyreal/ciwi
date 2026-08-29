@@ -288,9 +288,9 @@ func TestDeclarativeBrowserPreservesJobInteractionState(t *testing.T) {
 		"view.project_icon = Number(view.project_id || 0) > 0",
 		"setOutputTailing(data.jobDetails, false)", "selectJobOutput(data.jobDetails, args.id, false)",
 		"['running', 'in progress'].includes", "revealBrowserOutputViewer",
-		"renderBrowserOutputText", "ciwi-search-hit-active", "style.selectedBinding",
-		"patchJobOutputRegion", "outputIsAtBottom", "element.closest('#job-output-document')", "element.id === 'job-output-search' ? 'input' : 'change'",
-		"programmaticOutputScrollUntil", "markProgrammaticLogScroll(owner",
+		"updateFullLogSearch", "ciwi-search-hit-active", "style.selectedBinding",
+		"element.closest('#job-output-document')", "element.id === 'job-output-search' ? 'input' : 'change'",
+		"markProgrammaticLogScroll(owner",
 		"/log?format=", "options.section", "scrollIntoView({block: 'start'})",
 	} {
 		if !strings.Contains(script, expected) {
@@ -472,13 +472,13 @@ func TestPublicSettingsRouteUsesSharedRenderer(t *testing.T) {
 	}
 }
 
-func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
+func TestDeclarativeJobPreviewUsesIndexedLogStream(t *testing.T) {
 	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
 	script := string(payload)
-	for _, expected := range []string{"/api/v1/views/jobs/", "/output/stream?after_event_id=", "maxOutputCharacters", "new EventSource"} {
+	for _, expected := range []string{"/api/v1/views/jobs/", "/log/stream", "/log/page?", "item_id", "new EventSource"} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("declarative renderer does not contain %q", expected)
 		}
@@ -488,23 +488,20 @@ func TestDeclarativeJobPreviewUsesIncrementalOutputView(t *testing.T) {
 	}
 }
 
-func TestDeclarativeJobOutputRefreshPreservesStreamState(t *testing.T) {
+func TestDeclarativeJobOutputRefreshPreservesSearchAndIndexedStreamState(t *testing.T) {
 	payload, err := browserRendererSource()
 	if err != nil {
 		t.Fatal(err)
 	}
 	script := string(payload)
 	for _, expected := range []string{
-		"initializeJobOutputView(view, sameJob ? previousJob : null)",
-		"previousView.system_output",
-		"previousView.output_after_event_id",
-		"previousGroups.get(String(group.id || ''))",
-		"view.output_after_event_id = nextEventID",
+		"initializeJobOutputView(view)",
+		"sameJob ? String(previousJob.output_search || '') : ''",
+		"previousSelectionID !== String(view.selected_output_group",
+		"if (jobSearchNeedsRescope) await updateFullLogSearch(view, 0)",
 		"if (generation !== outputWatchGeneration) return null",
-		"if (mergeJobOutputBatch(view, batch)) patchJobOutputRegion(view)",
-		"if (!changed) return false",
-		"window.ciwiCaptureViewState(root)",
-		"window.ciwiRestoreViewState(root, viewState)",
+		"loadLogViewPage(state, last ? 'after'",
+		"body: JSON.stringify({item_id: itemID, query, selected_index:",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("browser output refresh does not contain %q", expected)
@@ -680,7 +677,7 @@ func TestDeclarativeRendererUsesSharedVisualMetricsAndDisclosureSummaries(t *tes
 		"aria-pressed", "updateTailingToggleElement", ".dsl-tailing-toggle.dsl-success",
 		"--dsl-layout-padding", ".dsl-output-selector.dsl-selected", "var(--ciwi-button-selected-tint, 24%)",
 		"#job-output-document > * { flex:0 0 auto; }", "overflow-y:auto", "overscroll-behavior-y:auto", "#job-output-viewer",
-		".dsl-output-group-body.dsl-interactive-log-body", "logViewScrollOwner", "centerLogViewMatch", "bindRenderedLogViews", "clearLogViewSearchMatches", "currentView.interactive_log_available",
+		".dsl-output-group-body.dsl-interactive-log-body", "logViewScrollOwner", "centerLogViewMatch", "bindRenderedLogViews", "clearLogViewSearchMatches", "selected_output_group",
 		"'section-padding': 'var(--ciwi-section-padding)'", ".dsl-card.dsl-output-selector",
 		"element.style.flexBasis = '0'", ".dsl-cache-statistics { white-space:pre-line",
 		"if (imageSource)", "if (!imageSource) return document.createDocumentFragment()",

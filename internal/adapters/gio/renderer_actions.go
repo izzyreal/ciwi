@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"gioui.org/io/clipboard"
-	"gioui.org/io/key"
 	"gioui.org/layout"
 	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
@@ -72,6 +71,16 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		}
 		root["output_follow_latest"] = false
 		selectJobOutputBinding(root, arguments["id"], false)
+		r.outputMatch, r.outputTotalMatches = 0, 0
+		root["output_search_count"] = "0/0"
+		r.clearJobLogSearchSelection(bindingString(r.data, "jobDetails.id"))
+		if utf8.RuneCountInString(r.outputSearch) >= 3 && r.onAction != nil {
+			r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
+				"jobExecutionId": bindingString(r.data, "jobDetails.id"),
+				"itemId":         bindingString(r.data, "jobDetails.selected_output_group.id"),
+				"query":          r.outputSearch, "selectedIndex": "0", "debounce": "false",
+			})
+		}
 		r.pendingScrollSection = "job-output-viewer"
 		r.outputResetRevision++
 		r.markDOMDirty()
@@ -80,28 +89,24 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 	case "change-output-search":
 		r.outputSearch, r.outputMatch = arguments["query"], 0
 		r.SetRootBinding("jobDetails", "output_search", r.outputSearch)
-		if nativeInteractiveJobLog(data) {
-			if utf8.RuneCountInString(r.outputSearch) < 3 {
-				r.outputTotalMatches = 0
-				r.clearJobLogSearchSelection(bindingString(data, "jobDetails.id"))
-				count := "0/0"
-				if r.outputSearch != "" {
-					count = "Enter 3+ characters"
-				}
-				r.SetRootBinding("jobDetails", "output_search_count", count)
-				if r.onAction != nil {
-					r.onAction(uidsl.Action{On: "activate", Command: "cancel-job-log-search"}, nil)
-				}
-			} else if r.onAction != nil {
-				r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
-					"jobExecutionId": bindingString(data, "jobDetails.id"), "query": r.outputSearch,
-					"selectedIndex": "0", "debounce": "true",
-				})
+		if utf8.RuneCountInString(r.outputSearch) < 3 {
+			r.outputTotalMatches = 0
+			r.clearJobLogSearchSelection(bindingString(data, "jobDetails.id"))
+			count := "0/0"
+			if r.outputSearch != "" {
+				count = "Enter 3+ characters"
 			}
-			r.requestFrame()
-			return true
+			r.SetRootBinding("jobDetails", "output_search_count", count)
+			if r.onAction != nil {
+				r.onAction(uidsl.Action{On: "activate", Command: "cancel-job-log-search"}, nil)
+			}
+		} else if r.onAction != nil {
+			r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
+				"jobExecutionId": bindingString(data, "jobDetails.id"),
+				"itemId":         bindingString(data, "jobDetails.selected_output_group.id"),
+				"query":          r.outputSearch, "selectedIndex": "0", "debounce": "true",
+			})
 		}
-		r.selectGroupedOutputMatch(data, r.outputSearch, 0, true)
 		r.requestFrame()
 		return true
 	case "find-output":
@@ -113,28 +118,17 @@ func (r *Renderer) dispatchRendererAction(gtx *layout.Context, command string, a
 		if query == "" {
 			query = r.outputSearch
 		}
-		if nativeInteractiveJobLog(data) {
-			if utf8.RuneCountInString(query) >= 3 && r.onAction != nil {
-				target := r.outputMatch
-				if r.outputTotalMatches > 0 {
-					target = (target + direction + r.outputTotalMatches) % r.outputTotalMatches
-				}
-				r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
-					"jobExecutionId": bindingString(data, "jobDetails.id"), "query": query,
-					"selectedIndex": strconv.Itoa(target), "debounce": "false",
-				})
+		if utf8.RuneCountInString(query) >= 3 && r.onAction != nil {
+			target := r.outputMatch
+			if r.outputTotalMatches > 0 {
+				target = (target + direction + r.outputTotalMatches) % r.outputTotalMatches
 			}
-			return true
+			r.onAction(uidsl.Action{On: "activate", Command: "search-job-log"}, map[string]string{
+				"jobExecutionId": bindingString(data, "jobDetails.id"),
+				"itemId":         bindingString(data, "jobDetails.selected_output_group.id"),
+				"query":          query, "selectedIndex": strconv.Itoa(target), "debounce": "false",
+			})
 		}
-		r.selectGroupedOutputMatch(data, query, direction, true)
-		if gtx != nil && r.pendingOutputSelection == nil {
-			if matches := groupedOutputMatches(data, query); len(matches) > 0 {
-				if editor := r.outputEditors[matches[r.outputMatch].itemID]; editor != nil {
-					gtx.Execute(key.FocusCmd{Tag: editor})
-				}
-			}
-		}
-		r.requestFrame()
 		return true
 	case "copy-output":
 		if r.onAction != nil {
@@ -244,11 +238,6 @@ func jobDetailsRoot(data any) (map[string]any, bool) {
 	return details, ok
 }
 
-func nativeInteractiveJobLog(data any) bool {
-	value, err := uidsl.Resolve(data, "jobDetails.interactive_log_available")
-	return err == nil && strings.EqualFold(fmt.Sprint(value), "true")
-}
-
 func (r *Renderer) scrollOutputTo(itemID string) {
 	if strings.TrimSpace(itemID) == "" {
 		return
@@ -256,91 +245,6 @@ func (r *Renderer) scrollOutputTo(itemID string) {
 	r.pendingOutputScroll = itemID
 	r.outputScrollRevision++
 	r.markDOMDirty()
-}
-
-type groupedOutputMatch struct {
-	itemID string
-	index  int
-	start  int
-	end    int
-}
-
-func (r *Renderer) selectGroupedOutputMatch(data any, query string, direction int, selectMatch bool) {
-	matches := groupedOutputMatches(data, query)
-	if len(matches) == 0 {
-		r.outputMatch = 0
-		r.SetRootBinding("jobDetails", "output_search_count", "0/0")
-		return
-	}
-	if direction > 0 {
-		r.outputMatch = (r.outputMatch + 1) % len(matches)
-	} else if direction < 0 {
-		r.outputMatch = (r.outputMatch - 1 + len(matches)) % len(matches)
-	} else if r.outputMatch >= len(matches) {
-		r.outputMatch = 0
-	}
-	r.SetRootBinding("jobDetails", "output_search_count", fmt.Sprintf("%d/%d", r.outputMatch+1, len(matches)))
-	if !selectMatch {
-		return
-	}
-	match := matches[r.outputMatch]
-	if match.itemID != "" {
-		r.setOutputTailing(false)
-		if root, ok := jobDetailsRoot(r.data); ok {
-			root["output_follow_latest"] = false
-			selectJobOutputBinding(root, match.itemID, false)
-			r.pendingScrollSection = "job-output-viewer"
-			r.outputResetRevision++
-		}
-	}
-	if editor := r.outputEditors[match.itemID]; editor != nil {
-		editor.SetCaret(match.start, match.end)
-		r.pendingOutputSelection = nil
-	} else {
-		r.pendingOutputSelection = &outputSelection{itemID: match.itemID, start: match.start, end: match.end}
-	}
-}
-
-func groupedOutputMatches(data any, query string) []groupedOutputMatch {
-	if query == "" {
-		return nil
-	}
-	sources := []struct{ itemID, text string }{}
-	if system, err := uidsl.Resolve(data, "jobDetails.system_output"); err == nil && fmt.Sprint(system) != "" {
-		sources = append(sources, struct{ itemID, text string }{"", fmt.Sprint(system)})
-	}
-	if groups, err := resolveItems(data, "jobDetails.output_groups"); err == nil {
-		for _, raw := range groups {
-			if group, ok := raw.(map[string]any); ok {
-				sources = append(sources, struct{ itemID, text string }{fmt.Sprint(group["id"]), fmt.Sprint(group["output"])})
-			}
-		}
-	}
-	var matches []groupedOutputMatch
-	for sourceIndex, source := range sources {
-		for _, match := range outputMatches(source.text, query) {
-			matches = append(matches, groupedOutputMatch{itemID: source.itemID, index: sourceIndex, start: match[0], end: match[1]})
-		}
-	}
-	return matches
-}
-
-func outputMatches(output, query string) [][2]int {
-	if query == "" {
-		return nil
-	}
-	lowerOutput, lowerQuery := strings.ToLower(output), strings.ToLower(query)
-	var matches [][2]int
-	for offset := 0; offset <= len(lowerOutput)-len(lowerQuery); {
-		index := strings.Index(lowerOutput[offset:], lowerQuery)
-		if index < 0 {
-			break
-		}
-		startByte, endByte := offset+index, offset+index+len(lowerQuery)
-		matches = append(matches, [2]int{utf8.RuneCountInString(output[:startByte]), utf8.RuneCountInString(output[:endByte])})
-		offset = endByte
-	}
-	return matches
 }
 
 func (r *Renderer) dispatch(action uidsl.Action, data any) {

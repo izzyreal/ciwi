@@ -14,7 +14,6 @@ import (
 // nativeRenderer is the controller-facing one-way rendering sink. Calls report
 // no synchronous renderer result; nativeUI queues them for the Gio event owner.
 type nativeRenderer interface {
-	ApplyJobOutput(jobOutputSnapshot)
 	ApplyJobLogPage(jobLogStreamSnapshot)
 	ApplyJobLogDescriptor(jobLogDescriptorSnapshot)
 	FailJobLogPage(string, string, string)
@@ -67,13 +66,6 @@ func (u *nativeUI) drain(renderer *Renderer) {
 	for _, update := range pending {
 		update(renderer)
 	}
-}
-
-func (u *nativeUI) ApplyJobOutput(snapshot jobOutputSnapshot) {
-	snapshot.Outputs = cloneStringMap(snapshot.Outputs)
-	snapshot.Errors = cloneStringMap(snapshot.Errors)
-	snapshot.ExitCodes = cloneStringMap(snapshot.ExitCodes)
-	u.post(func(renderer *Renderer) { renderer.ApplyJobOutput(snapshot) })
 }
 
 func (u *nativeUI) ApplyJobLogPage(snapshot jobLogStreamSnapshot) {

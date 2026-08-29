@@ -55,12 +55,11 @@ type Services struct {
 	}
 	JobDetails interface {
 		GetJobDetailsView(context.Context, string) (presentation.JobDetailsView, error)
-		GetJobOutputView(context.Context, string, int64) (presentation.JobOutputView, error)
 	}
 	JobLogs interface {
 		GetJobLogDescriptor(context.Context, string) (domain.JobLogDescriptor, error)
 		GetJobLogPage(context.Context, string, string, domain.JobLogPageMode, int64) (domain.JobLogPage, error)
-		SearchJobLog(context.Context, string, string, int64) (domain.JobLogSearchResult, error)
+		SearchJobLog(context.Context, string, string, string, int64) (domain.JobLogSearchResult, error)
 	}
 	ArtifactDownloads application.ArtifactDownloadService
 	JobContexts       interface {
@@ -132,7 +131,7 @@ func (s *Handler) ServeSession(ctx context.Context, session cnp.Session) {
 		ServerInstanceId:     snapshot.InstanceID,
 		ServerInstallationId: serverInfo.InstallationID,
 		Capabilities: []string{
-			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "artifact_download_resume_v1", "job_output_stream", "job_log_v1", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
+			"server_info", "server_updates", "projects", "project_actions", "project_import", "managed_yaml", "vault", "front_page", "project_icons_batch", "project_details", "job_details", "artifact_downloads", "artifact_download_resume_v1", "job_log_v1", "run_pipeline", "run_pipeline_chain", "run_options", "agents", "agent_details", "agent_actions", "agent_scripts", "execution_housekeeping", "execution_controls", "command_receipts", "watch_changes",
 		},
 	}}}
 	if err := writeFrame(stream, welcome); err != nil {
@@ -172,10 +171,6 @@ func (s *Handler) handleRequestStream(parent context.Context, stream cnp.Stream)
 
 	if _, watch := request.Operation.(*cnpv1.Request_WatchChanges); watch {
 		s.writeChanges(ctx, stream, request.Metadata.RequestId, monitorPeerClose(stream))
-		return
-	}
-	if operation, watch := request.Operation.(*cnpv1.Request_WatchJobOutput); watch {
-		s.writeJobOutput(ctx, stream, request.Metadata.RequestId, operation.WatchJobOutput, monitorPeerClose(stream))
 		return
 	}
 	if operation, watch := request.Operation.(*cnpv1.Request_WatchJobLog); watch {
@@ -236,55 +231,6 @@ func monitorPeerClose(stream cnp.Stream) <-chan struct{} {
 		close(done)
 	}()
 	return done
-}
-
-func (s *Handler) writeJobOutput(ctx context.Context, stream cnp.Stream, requestID string, request *cnpv1.WatchJobOutputRequest, peerDone <-chan struct{}) {
-	if request == nil {
-		response := &cnpv1.Response{RequestId: requestID, Result: &cnpv1.Response_Error{
-			Error: errorToProto(application.NewError(application.ErrorInvalidArgument, "job output request is required", nil)),
-		}}
-		_ = writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}})
-		return
-	}
-	afterEventID := request.GetAfterEventId()
-	watchCtx, cancelWatch := context.WithCancel(ctx)
-	defer cancelWatch()
-	changes := s.services.Changes.Watch(watchCtx)
-	select {
-	case _, ok := <-changes:
-		if !ok {
-			return
-		}
-	case <-ctx.Done():
-		return
-	case <-peerDone:
-		return
-	}
-	for {
-		view, err := s.services.JobDetails.GetJobOutputView(ctx, request.GetJobExecutionId(), afterEventID)
-		response := &cnpv1.Response{RequestId: requestID}
-		if err != nil {
-			response.Result = &cnpv1.Response_Error{Error: errorToProto(err)}
-		} else {
-			response.Result = &cnpv1.Response_JobOutput{JobOutput: jobOutputToProto(view)}
-		}
-		if writeErr := writeFrame(stream, &cnpv1.ServerMessage{Body: &cnpv1.ServerMessage_Response{Response: response}}); writeErr != nil {
-			return
-		}
-		if err != nil {
-			return
-		}
-		afterEventID = view.NextEventID
-		if view.Terminal && !view.HasMore {
-			return
-		}
-		if view.HasMore {
-			continue
-		}
-		if !waitForExecutionChange(ctx, peerDone, changes, request.GetJobExecutionId()) {
-			return
-		}
-	}
 }
 
 func (s *Handler) writeJobLog(ctx context.Context, stream cnp.Stream, requestID string, request *cnpv1.WatchJobLogRequest, peerDone <-chan struct{}) {
@@ -503,7 +449,7 @@ func (s *Handler) execute(ctx context.Context, request *cnpv1.Request) *cnpv1.Re
 			err = application.NewError(application.ErrorUnavailable, "job log service unavailable", nil)
 		} else {
 			result, err = s.services.JobLogs.SearchJobLog(
-				ctx, operation.SearchJobLog.GetJobExecutionId(), operation.SearchJobLog.GetQuery(), operation.SearchJobLog.GetSelectedIndex(),
+				ctx, operation.SearchJobLog.GetJobExecutionId(), operation.SearchJobLog.GetItemId(), operation.SearchJobLog.GetQuery(), operation.SearchJobLog.GetSelectedIndex(),
 			)
 		}
 		if err == nil {

@@ -18,17 +18,6 @@ func (s jobDetailsSourceStub) GetJobExecutionDetails(context.Context, string) (d
 	return s.details, nil
 }
 
-func (s jobDetailsSourceStub) GetJobOutput(context.Context, string, int64) (domain.JobOutputBatch, error) {
-	exitCode := 2
-	return domain.JobOutputBatch{
-		JobExecutionID: "job-1", NextEventID: 3, Terminal: true,
-		Events: []domain.JobOutputEvent{
-			{ID: 1, Type: domain.JobOutputEventOutput, ItemID: "step:1", Output: "\x1b[31mcompile output\x1b[0m"},
-			{ID: 2, Type: domain.JobOutputEventFinished, ItemID: "step:1", ItemKind: "step", ItemName: "Compile", ItemIndex: 1, ItemTotal: 1, ExitCode: &exitCode, Error: "exit=2"},
-		},
-	}, nil
-}
-
 func TestJobDetailsViewFormatsExecutionSnapshot(t *testing.T) {
 	started := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
 	exitCode := 0
@@ -271,18 +260,5 @@ func TestJobDetailsViewLimitsClosestSchedulingAgents(t *testing.T) {
 	}
 	if view.SchedulingAgents[0].Tone != "warning" || view.SchedulingAgents[1].Tone != "danger" {
 		t.Fatalf("scheduling tones = %+v", view.SchedulingAgents)
-	}
-}
-
-func TestJobOutputViewRendersSanitizedIncrementalLines(t *testing.T) {
-	view, err := NewJobDetailsQueries(jobDetailsSourceStub{}).GetJobOutputView(t.Context(), "job-1", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.NextEventID != 3 || !view.Terminal || len(view.Events) != 2 {
-		t.Fatalf("view = %+v", view)
-	}
-	if view.Events[0].ItemID != "step:1" || view.Events[0].Text != "compile output\n" || view.Events[1].Type != domain.JobOutputEventFinished || view.Events[1].Error != "exit=2" || view.Events[1].ExitCode != "2" {
-		t.Fatalf("events = %+v", view.Events)
 	}
 }

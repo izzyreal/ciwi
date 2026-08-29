@@ -203,6 +203,8 @@ message GetJobDetailsRequest {
 }
 
 message JobDetailsView {
+  reserved 35 to 37;
+  reserved "interactive_log_available", "interactive_log_version", "legacy_log_notice";
   string id = 1;
   string title = 2;
   string context = 3;
@@ -237,9 +239,6 @@ message JobDetailsView {
   ReportDetails artifacts = 32;
   ReportDetails test_report = 33;
   ReportDetails coverage_report = 34;
-  bool interactive_log_available = 35;
-  int32 interactive_log_version = 36;
-  string legacy_log_notice = 37;
 }
 
 message SchedulingDiagnosis {
@@ -308,28 +307,6 @@ message JobOutputGroup {
   bool default_expanded = 17;
 }
 
-message WatchJobOutputRequest {
-  string job_execution_id = 1;
-  int64 after_event_id = 2;
-}
-
-message JobOutputBatch {
-  string job_execution_id = 1;
-  int64 next_event_id = 2;
-  repeated JobOutputEvent events = 3;
-  bool has_more = 4;
-  bool terminal = 5;
-}
-
-message JobOutputEvent {
-  int64 event_id = 1;
-  string type = 2;
-  string item_id = 3;
-  string text = 4;
-  string error = 5;
-  string exit_code = 6;
-}
-
 message JobLogDescriptorRequest {
   string job_execution_id = 1;
 }
@@ -354,6 +331,7 @@ message JobLogSearchRequest {
   string job_execution_id = 1;
   string query = 2;
   int64 selected_index = 3;
+  string item_id = 4;
 }
 
 message WatchJobLogRequest {
@@ -362,9 +340,9 @@ message WatchJobLogRequest {
 }
 
 message JobLogDescriptor {
+  reserved 2, 3;
+  reserved "version", "available";
   string job_execution_id = 1;
-  int32 version = 2;
-  bool available = 3;
   bool terminal = 4;
   int64 latest_chunk_id = 5;
   repeated JobLogStream streams = 6;
@@ -796,6 +774,8 @@ message ChangeEvent {
 }
 
 message Request {
+  reserved 17;
+  reserved "watch_job_output";
   RequestMetadata metadata = 1;
   oneof operation {
     Empty get_server_info = 10;
@@ -805,7 +785,6 @@ message Request {
     WatchChangesRequest watch_changes = 14;
     GetProjectDetailsRequest get_project_details = 15;
     GetJobDetailsRequest get_job_details = 16;
-    WatchJobOutputRequest watch_job_output = 17;
     ClearExecutionQueueRequest clear_execution_queue = 18;
     FlushExecutionHistoryRequest flush_execution_history = 19;
     ControlExecutionRequest cancel_execution = 20;
@@ -841,6 +820,8 @@ message Request {
 }
 
 message Response {
+  reserved 18;
+  reserved "job_output";
   string request_id = 1;
   oneof result {
     ServerInfo server_info = 10;
@@ -851,7 +832,6 @@ message Response {
     ErrorStatus error = 15;
     ProjectDetailsView project_details = 16;
     JobDetailsView job_details = 17;
-    JobOutputBatch job_output = 18;
     ClearExecutionQueueResult clear_execution_queue = 19;
     FlushExecutionHistoryResult flush_execution_history = 20;
     CancelExecutionResult cancel_execution = 21;

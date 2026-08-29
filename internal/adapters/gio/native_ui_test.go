@@ -55,7 +55,6 @@ func TestNativeUIQueuesEveryControllerMutation(t *testing.T) {
 	ui.SetRootBinding("root", "value", "queued")
 	ui.SetNestedBinding("root", "nested", "value", "queued")
 	ui.SetOperations([]operations.Operation{{Fingerprint: "active", State: operations.StateRunning}})
-	ui.ApplyJobOutput(jobOutputSnapshot{})
 	ui.ScrollToSection("target")
 	ui.SetProjectStructureFilter("jobs")
 	ui.SetTheme(themes[0])
@@ -64,8 +63,8 @@ func TestNativeUIQueuesEveryControllerMutation(t *testing.T) {
 	if renderer.screen == screen || renderer.pendingScrollSection != "" || renderer.alert != nil || renderer.notice != nil {
 		t.Fatal("controller mutation escaped the UI mailbox before drain")
 	}
-	if invalidations != 11 {
-		t.Fatalf("invalidations = %d, want 11", invalidations)
+	if invalidations != 10 {
+		t.Fatalf("invalidations = %d, want 10", invalidations)
 	}
 
 	ui.drain(renderer)

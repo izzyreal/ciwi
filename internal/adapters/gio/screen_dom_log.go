@@ -79,6 +79,9 @@ func (r *Renderer) ApplyJobLogPage(page jobLogStreamSnapshot) {
 }
 
 func (r *Renderer) ApplyJobLogSearch(result jobLogSearchSnapshot) {
+	if bindingString(r.data, "jobDetails.selected_output_group.id") != result.ScopeItemID {
+		return
+	}
 	r.outputSearch = result.Query
 	r.outputMatch, r.outputTotalMatches = result.SelectedIndex, result.TotalMatches
 	count := "0/0"
@@ -104,17 +107,8 @@ func (r *Renderer) ApplyJobLogSearch(result jobLogSearchSnapshot) {
 	if result.ChunkID > 0 {
 		r.setOutputTailing(false)
 	}
-	if result.ItemID != "" {
-		if root, ok := jobDetailsRoot(r.data); ok {
-			root["output_follow_latest"] = false
-			selectJobOutputBinding(root, result.ItemID, false)
-			r.pendingScrollSection = "job-output-viewer"
-			r.outputResetRevision++
-		}
-		r.outputScrollRevision++
-	} else {
-		r.outputScrollRevision++
-	}
+	r.pendingScrollSection = "job-output-viewer"
+	r.outputScrollRevision++
 	r.markDOMDirty()
 	r.requestFrame()
 }

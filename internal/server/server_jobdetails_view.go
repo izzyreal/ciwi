@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/domain"
@@ -29,10 +28,6 @@ type jobDetailsViewResponse struct {
 	Error                     string                         `json:"error"`
 	CanCancel                 bool                           `json:"can_cancel"`
 	CanRerun                  bool                           `json:"can_rerun"`
-	InteractiveLogAvailable   bool                           `json:"interactive_log_available"`
-	InteractiveLogVersion     int                            `json:"interactive_log_version"`
-	LegacyLogNotice           string                         `json:"legacy_log_notice"`
-	Output                    string                         `json:"output"`
 	Timeline                  []jobTimelineViewResponse      `json:"timeline"`
 	OutputGroups              []jobOutputGroupViewResponse   `json:"output_groups"`
 	SchedulingDiagnosis       jobSchedulingDiagnosisResponse `json:"scheduling_diagnosis"`
@@ -177,23 +172,6 @@ type jobOutputGroupViewResponse struct {
 	Progress        domain.Progress `json:"progress"`
 }
 
-type jobOutputViewResponse struct {
-	JobExecutionID string                       `json:"job_execution_id"`
-	Events         []jobOutputEventViewResponse `json:"events"`
-	NextEventID    int64                        `json:"next_event_id"`
-	HasMore        bool                         `json:"has_more"`
-	Terminal       bool                         `json:"terminal"`
-}
-
-type jobOutputEventViewResponse struct {
-	EventID  int64  `json:"event_id"`
-	Type     string `json:"type"`
-	ItemID   string `json:"item_id"`
-	Text     string `json:"text"`
-	Error    string `json:"error"`
-	ExitCode string `json:"exit_code"`
-}
-
 func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Request) {
 	relative := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/views/jobs/"), "/")
 	parts := strings.Split(relative, "/")
@@ -203,10 +181,6 @@ func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Reques
 	}
 	jobID := strings.TrimSpace(parts[0])
 	if len(parts) == 3 {
-		if parts[1] == "output" && parts[2] == "stream" {
-			s.jobOutputStreamHandler(w, r, jobID)
-			return
-		}
 		if parts[1] == "log" {
 			s.jobLogViewHandler(w, r, jobID, parts[2])
 			return
@@ -215,11 +189,7 @@ func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if len(parts) == 2 {
-		if parts[1] != "output" {
-			http.NotFound(w, r)
-			return
-		}
-		s.jobOutputViewHandler(w, r, jobID)
+		http.NotFound(w, r)
 		return
 	}
 	view, err := s.app().jobDetails.GetJobDetailsView(r.Context(), jobID)
@@ -233,38 +203,6 @@ func (s *stateStore) jobDetailsViewHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, jobDetailsToResponse(view, runContext))
-}
-
-func (s *stateStore) jobOutputViewHandler(w http.ResponseWriter, r *http.Request, jobID string) {
-	afterEventID := int64(0)
-	if raw := strings.TrimSpace(r.URL.Query().Get("after_event_id")); raw != "" {
-		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || parsed < 0 {
-			http.Error(w, "after_event_id must be a non-negative integer", http.StatusBadRequest)
-			return
-		}
-		afterEventID = parsed
-	}
-	view, err := s.app().jobDetails.GetJobOutputView(r.Context(), jobID, afterEventID)
-	if err != nil {
-		http.Error(w, err.Error(), applicationErrorHTTPStatus(err))
-		return
-	}
-	writeJSON(w, http.StatusOK, jobOutputToResponse(view))
-}
-
-func jobOutputToResponse(view presentation.JobOutputView) jobOutputViewResponse {
-	events := make([]jobOutputEventViewResponse, 0, len(view.Events))
-	for _, event := range view.Events {
-		events = append(events, jobOutputEventViewResponse{
-			EventID: event.EventID, Type: event.Type, ItemID: event.ItemID, Text: event.Text,
-			Error: event.Error, ExitCode: event.ExitCode,
-		})
-	}
-	return jobOutputViewResponse{
-		JobExecutionID: view.JobExecutionID, Events: events, NextEventID: view.NextEventID,
-		HasMore: view.HasMore, Terminal: view.Terminal,
-	}
 }
 
 func jobDetailsToResponse(view presentation.JobDetailsView, runContext protocol.JobExecutionGraphContext) jobDetailsViewResponse {
@@ -292,8 +230,7 @@ func jobDetailsToResponse(view presentation.JobDetailsView, runContext protocol.
 		CurrentStep: view.CurrentStep, Agent: view.Agent, Mode: view.Mode, Created: view.Created,
 		Started: view.Started, Finished: view.Finished, Duration: view.Duration, ExitCode: view.ExitCode,
 		Error: view.Error, CanCancel: view.CanCancel, CanRerun: view.CanRerun,
-		InteractiveLogAvailable: view.InteractiveLogAvailable, InteractiveLogVersion: view.InteractiveLogVersion,
-		LegacyLogNotice: view.LegacyLogNotice, Timeline: timeline, OutputGroups: outputGroups,
+		Timeline: timeline, OutputGroups: outputGroups,
 		JobProperties:   jobDetailRowsToResponse(view.JobProperties),
 		CacheStatistics: jobDetailRowsToResponse(view.CacheStatistics), CacheStatisticsEmpty: view.CacheStatisticsEmpty,
 		HostToolRequirements:      jobToolRequirementsToResponse(view.HostToolRequirements),

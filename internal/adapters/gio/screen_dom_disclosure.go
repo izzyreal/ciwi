@@ -124,12 +124,8 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 	bodyChildren := []giodom.Element{}
 	if expanded {
 		if node.Style.Role == "output-group" {
-			if nativeInteractiveJobLog(data) {
-				if body, ok := r.compileDOMInteractiveOutputGroupBody(node.Children, data, path+"/body", childStyle); ok {
-					bodyChildren = []giodom.Element{body}
-				} else {
-					bodyChildren = r.compileDOMChildrenOmittingRole(node.Children, data, path+"/body", childStyle, "floating-collapse")
-				}
+			if body, ok := r.compileDOMInteractiveOutputGroupBody(node.Children, data, path+"/body", childStyle); ok {
+				bodyChildren = []giodom.Element{body}
 			} else {
 				bodyChildren = r.compileDOMChildrenOmittingRole(node.Children, data, path+"/body", childStyle, "floating-collapse")
 			}
@@ -383,7 +379,7 @@ func (r *Renderer) compileDOMScroller(node uidsl.Node, data any, path string, in
 		viewport = unit.Dp(parsed)
 	}
 	isOutputDocument := node.ID == "job-output-document"
-	isInteractiveOutput := isOutputDocument && nativeInteractiveJobLog(data)
+	isInteractiveOutput := isOutputDocument
 	if isOutputDocument {
 		viewport = r.domOutputGroupsViewport(viewport)
 	}

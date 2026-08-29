@@ -4,6 +4,7 @@ package gio
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	cnpv1 "github.com/izzyreal/ciwi/pkg/cnp/v1"
@@ -19,6 +20,7 @@ type nativeJobLogSearchClient interface {
 type nativeJobLogSearchRequest struct {
 	generation    uint64
 	jobID         string
+	itemID        string
 	query         string
 	selectedIndex int64
 }
@@ -34,14 +36,15 @@ type nativeJobLogSearchResult struct {
 func executeNativeJobLogSearch(ctx context.Context, client nativeJobLogSearchClient, request nativeJobLogSearchRequest) nativeJobLogSearchResult {
 	outcome := nativeJobLogSearchResult{request: request}
 	result, err := client.SearchJobLog(ctx, &cnpv1.JobLogSearchRequest{
-		JobExecutionId: request.jobID, Query: request.query, SelectedIndex: request.selectedIndex,
+		JobExecutionId: request.jobID, ItemId: request.itemID,
+		Query: request.query, SelectedIndex: request.selectedIndex,
 	})
 	if err != nil {
 		outcome.failure, outcome.err = "Output search failed", err
 		return outcome
 	}
 	outcome.search = jobLogSearchSnapshot{
-		JobID: result.GetJobExecutionId(), Query: result.GetQuery(),
+		JobID: result.GetJobExecutionId(), ScopeItemID: request.itemID, Query: result.GetQuery(),
 		SelectedIndex: int(result.GetSelectedIndex()), TotalMatches: int(result.GetTotalMatches()),
 	}
 	if outcome.search.Query == "" {
@@ -49,6 +52,10 @@ func executeNativeJobLogSearch(ctx context.Context, client nativeJobLogSearchCli
 	}
 	match := result.GetMatch()
 	if match == nil {
+		return outcome
+	}
+	if match.GetItemId() != request.itemID {
+		outcome.failure, outcome.err = "Output search failed", fmt.Errorf("search result belongs to a different output item")
 		return outcome
 	}
 	outcome.search.ItemID = match.GetItemId()
