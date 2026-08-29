@@ -80,9 +80,15 @@ func TestProgressMappingsPreserveSharedSemanticSnapshot(t *testing.T) {
 		Progress:     progress,
 		Timeline:     []presentation.JobTimelineView{{Progress: progress}},
 		OutputGroups: []presentation.JobOutputGroupView{{Progress: progress}},
+		JobProperties: []presentation.JobDetailRowView{{
+			Label: "Duration", LiveDurationStartedUnixMS: 1_800_000_000_125,
+		}},
 	})
 	if job.Progress == nil || job.Timeline[0].Progress == nil || job.OutputGroups[0].Progress == nil {
 		t.Fatalf("job progress was not mapped: %+v", job)
+	}
+	if got := job.JobProperties[0].LiveDurationStartedUnixMs; got != 1_800_000_000_125 {
+		t.Fatalf("live duration start = %d", got)
 	}
 }
 

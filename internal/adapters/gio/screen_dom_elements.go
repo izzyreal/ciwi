@@ -25,6 +25,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/izzyreal/ciwi/internal/giodom"
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/pkg/uidsl"
 )
 
@@ -281,6 +282,15 @@ func (r *Renderer) compileDOMText(node uidsl.Node, data any, path string) giodom
 		return r.compileDOMCodeText(node, data, path, value, role, strong)
 	}
 	text := r.domText(domNodeKey(node, path), value, role, strong, node.Style.Tone)
+	if node.Text != nil && node.Text.Binding == "detailRow.value" {
+		start, serverSnapshot, clientSnapshot, ok := liveJobDurationClock(data)
+		if ok {
+			text.Text.ValueAt = func(now time.Time) string {
+				return presentation.FormatLiveJobDuration(start, serverSnapshot, clientSnapshot, now.UnixMilli())
+			}
+			text.Text.Animate = true
+		}
+	}
 	if node.Style.Truncate || role == "badge" || role == "table-header" || node.Style.Role == "execution-row" {
 		text.Text.MaxLines = 1
 	}
@@ -288,6 +298,26 @@ func (r *Renderer) compileDOMText(node uidsl.Node, data any, path string) giodom
 		return text
 	}
 	return r.domTextAction(node, data, path, value, role, strong)
+}
+
+func liveJobDurationClock(data any) (start, serverSnapshot, clientSnapshot int64, ok bool) {
+	bindings := []string{
+		"detailRow.live_duration_started_unix_ms",
+		"jobDetails.progress.snapshot_unix_ms",
+		"jobDetails.duration_client_snapshot_unix_ms",
+	}
+	values := make([]int64, len(bindings))
+	for index, binding := range bindings {
+		value, err := uidsl.Resolve(data, binding)
+		if err != nil {
+			return 0, 0, 0, false
+		}
+		values[index] = heartbeatUnixMillis(value)
+		if values[index] <= 0 {
+			return 0, 0, 0, false
+		}
+	}
+	return values[0], values[1], values[2], true
 }
 
 func (r *Renderer) compileDOMCodeText(node uidsl.Node, data any, path, value, role string, strong bool) giodom.Element {

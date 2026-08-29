@@ -165,11 +165,32 @@
     updateTimestampPulse(element, Date.now());
   }
 
+  function updateLiveJobDuration(element, nowMs) {
+	const clock = element && element.__ciwiLiveJobDuration;
+	if (!clock || !viewBindings) return;
+	element.textContent = viewBindings.liveJobDuration(
+	  clock.startUnixMS, clock.serverSnapshotUnixMS, clock.clientSnapshotUnixMS, nowMs,
+	);
+  }
+
+  function bindLiveJobDuration(element, node, data) {
+	if (!node || !node.text || node.text.binding !== 'detailRow.value') return false;
+	const startUnixMS = Number(data && data.detailRow && data.detailRow.live_duration_started_unix_ms || 0);
+	const serverSnapshotUnixMS = Number(data && data.jobDetails && data.jobDetails.progress && data.jobDetails.progress.snapshot_unix_ms || 0);
+	const clientSnapshotUnixMS = Number(data && data.jobDetails && data.jobDetails.duration_client_snapshot_unix_ms || 0);
+	if (startUnixMS <= 0 || serverSnapshotUnixMS <= 0 || clientSnapshotUnixMS <= 0) return false;
+	element.classList.add('dsl-live-job-duration');
+	element.__ciwiLiveJobDuration = {startUnixMS, serverSnapshotUnixMS, clientSnapshotUnixMS};
+	updateLiveJobDuration(element, Date.now());
+	return true;
+  }
+
   window.setInterval(() => {
     document.querySelectorAll('.ciwi-progress-surface').forEach(element => {
       if (element.__ciwiSemanticProgress) updateSemanticProgress(element, Date.now());
     });
     document.querySelectorAll('.dsl-pulse').forEach(element => updateTimestampPulse(element, Date.now()));
+	document.querySelectorAll('.dsl-live-job-duration').forEach(element => updateLiveJobDuration(element, Date.now()));
   }, 250);
 
   function loadViewStates() {
@@ -1200,7 +1221,9 @@
     } else if (node.text) {
       const text = renderText(node.text, data);
 	  if (node.text.binding) element.dataset.ciwiBinding = node.text.binding;
-      if ((node.id === 'job-output-system-text' || node.id === 'job-output-group-text') && data.jobDetails) {
+	  if (bindLiveJobDuration(element, node, data)) {
+		// The shared client timer owns this text while the job is running.
+      } else if ((node.id === 'job-output-system-text' || node.id === 'job-output-group-text') && data.jobDetails) {
 		const itemID = node.id === 'job-output-group-text' && data.outputGroup ? String(data.outputGroup.id || '') : '';
 		renderBrowserOutputText(element, text, itemID, data.jobDetails);
 	  } else {
@@ -2285,6 +2308,7 @@
 		  String(previousJob.id || '') === String(view.id || '');
 		if (!sameJob) completedOutputJobID = '';
 		viewBindings.decorateJobDetails(view);
+		view.duration_client_snapshot_unix_ms = Date.now();
 		view.output_search = sameJob ? String(previousJob.output_search || '') : '';
 		view.output_match_index = sameJob ? Number(previousJob.output_match_index || 0) : 0;
 		initializeJobOutputView(view, sameJob ? previousJob : null);

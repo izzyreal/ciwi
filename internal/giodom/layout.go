@@ -293,12 +293,19 @@ func clampRadius(radius int, size image.Point) int {
 }
 
 func (r *Runtime) layoutText(gtx layout.Context, element Element, identity string) layout.Dimensions {
+	value := element.Text.Value
+	if element.Text.ValueAt != nil {
+		value = element.Text.ValueAt(gtx.Now)
+	}
+	if element.Text.Animate {
+		r.requestAnimationFrame(gtx)
+	}
 	size := element.Text.Size
 	if size <= 0 {
 		size = unit.Sp(16)
 	}
-	semantic.LabelOp(element.Text.Value).Add(gtx.Ops)
-	label := material.Label(r.theme, size, element.Text.Value)
+	semantic.LabelOp(value).Add(gtx.Ops)
+	label := material.Label(r.theme, size, value)
 	if element.Text.Selectable {
 		selectable := r.useState(identity, "selectable", KindText, func() any { return new(widget.Selectable) }).(*widget.Selectable)
 		label.State = selectable

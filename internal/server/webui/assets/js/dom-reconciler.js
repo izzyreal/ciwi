@@ -62,6 +62,9 @@
 	if (Object.prototype.hasOwnProperty.call(next, '__ciwiPulseTimestamp')) {
 	  current.__ciwiPulseTimestamp = next.__ciwiPulseTimestamp;
 	}
+	if (Object.prototype.hasOwnProperty.call(next, '__ciwiLiveJobDuration')) {
+	  current.__ciwiLiveJobDuration = {...next.__ciwiLiveJobDuration};
+	}
 	if (Object.prototype.hasOwnProperty.call(next, '__ciwiSelectState')) {
 	  current.__ciwiSelectState = {
 		options: next.__ciwiSelectState.options.map(option => ({...option})),

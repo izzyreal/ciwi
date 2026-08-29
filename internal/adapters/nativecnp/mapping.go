@@ -122,7 +122,10 @@ func jobDetailsToProto(view presentation.JobDetailsView) *cnpv1.JobDetailsView {
 func jobDetailRowsToProto(rows []presentation.JobDetailRowView) []*cnpv1.JobDetailRow {
 	result := make([]*cnpv1.JobDetailRow, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, &cnpv1.JobDetailRow{Label: row.Label, Value: row.Value, Tone: row.Tone})
+		result = append(result, &cnpv1.JobDetailRow{
+			Label: row.Label, Value: row.Value, Tone: row.Tone,
+			LiveDurationStartedUnixMs: row.LiveDurationStartedUnixMS,
+		})
 	}
 	return result
 }

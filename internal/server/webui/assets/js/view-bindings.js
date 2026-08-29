@@ -12,6 +12,22 @@
 	  [parts.hour, parts.minute, parts.second].filter(Boolean).join(':');
     }
 
+    function liveJobDuration(startUnixMS, serverSnapshotUnixMS, clientSnapshotUnixMS, clientNowUnixMS) {
+	const start = Number(startUnixMS || 0);
+	const serverSnapshot = Number(serverSnapshotUnixMS || 0);
+	const clientSnapshot = Number(clientSnapshotUnixMS || 0);
+	const clientNow = Number(clientNowUnixMS || 0);
+	if (![start, serverSnapshot, clientSnapshot, clientNow].every(value => Number.isFinite(value) && value > 0)) return '';
+	const elapsedMilliseconds = Math.max(0, serverSnapshot - start) + Math.max(0, clientNow - clientSnapshot);
+	const totalSeconds = Math.floor(elapsedMilliseconds / 1000);
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+	if (hours > 0) return String(hours) + 'h' + String(minutes) + 'm' + String(seconds) + 's';
+	if (minutes > 0) return String(minutes) + 'm' + String(seconds) + 's';
+	return String(seconds) + 's';
+    }
+
     function decorateFrontPageProjects(projects) {
 	(Array.isArray(projects) ? projects : []).forEach(project => {
 	  project.project_icon = Number(project.id || 0) > 0 && String(project.source_kind || '') !== 'managed_yaml'
@@ -193,6 +209,7 @@
       agentScriptBinding,
       vaultBinding,
       declarativeExecutionTimestamp,
+	  liveJobDuration,
     };
   };
 })();

@@ -131,6 +131,17 @@ const outputScreen = {
   ] }},
 };
 
+const durationScreen = {
+  apiVersion: 'ciwi.ui/v1', kind: 'Screen', metadata: {name: 'duration-test'},
+  screen: {dataSources: [{name: 'jobDetails'}], root: {component: 'page', children: [{
+    component: 'list', id: 'job-properties', repeat: {source: 'jobDetails.job_properties', as: 'detailRow', key: 'detailRow.label'},
+    children: [{component: 'row', children: [
+      {component: 'text', id: 'job-property-label', text: {binding: 'detailRow.label'}},
+      {component: 'text', id: 'job-property-value', text: {binding: 'detailRow.value'}},
+    ]}],
+  }]}},
+};
+
 async function serveAssets(route) {
   const url = new URL(route.request().url());
   if (url.pathname.startsWith('/ui/') && url.pathname.endsWith('.js')) {
@@ -312,6 +323,31 @@ async function installInteractiveOutputFixture(page) {
   await page.goto('http://ciwi-live-output.test/jobs/job-1');
   await expect(page.locator('.dsl-log-view')).toContainText('initial line 179');
   return {logPageRequests, group, next};
+}
+
+async function installDurationFixture(page) {
+  const snapshotUnixMS = Date.now();
+  await page.route('http://ciwi-duration.test/**', async route => {
+    const url = new URL(route.request().url());
+    if (await serveAssets(route)) return;
+    if (url.pathname === '/jobs/job-1') {
+      await route.fulfill({contentType: 'text/html', body: documentHTML()});
+    } else if (url.pathname === '/ui/contracts/routes.json') {
+      await route.fulfill({json: {routes: [{name: 'job-details', pattern: '/jobs/{jobId}', screen: 'duration-test', bindingRoot: 'jobDetails', platforms: ['web']}]}});
+    } else if (url.pathname === '/ui/contracts/screens/duration-test.json') {
+      await route.fulfill({json: durationScreen});
+    } else if (url.pathname === '/api/v1/views/jobs/job-1') {
+      await route.fulfill({json: {
+        id: 'job-1', status: 'running', progress: {state: 'indeterminate', snapshot_unix_ms: snapshotUnixMS},
+        job_properties: [{label: 'Duration', value: '', live_duration_started_unix_ms: snapshotUnixMS - 5000}],
+        output_groups: [], timeline: [],
+      }});
+    } else {
+      await route.fulfill({status: 404, body: 'not found'});
+    }
+  });
+  await page.goto('http://ciwi-duration.test/jobs/job-1');
+  await expect(page.locator('#job-property-value')).toBeVisible();
 }
 
 test('queued and history job rows navigate from passive cells while nested actions retain ownership', async ({page}) => {
@@ -516,6 +552,17 @@ test('tailing a selected item preserves it instead of jumping to the global tail
 
   await expect(page.locator('#selected-output-title')).toHaveText('Publish image');
   await expect(page.locator('#job-output-tailing-toggle')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('running job duration advances on the existing client pulse', async ({page}) => {
+  await installDurationFixture(page);
+  const duration = page.locator('#job-property-value');
+  await expect(duration).toHaveText(/^\d+s$/);
+  const initial = Number.parseInt(await duration.textContent(), 10);
+  await expect.poll(
+    async () => Number.parseInt(await duration.textContent(), 10),
+    {timeout: 2500, intervals: [100, 200]},
+  ).toBeGreaterThan(initial);
 });
 
 test('output scrolling chains to the page in both directions at its boundaries', async ({page}) => {

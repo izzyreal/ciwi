@@ -119,7 +119,10 @@ type SurfaceProps struct {
 // TextProps configures presentation text. Selectability is an explicit opt-in
 // because passive text must not compete with a containing touch scroller.
 type TextProps struct {
-	Value           string
+	Value string
+	// ValueAt overrides Value for text derived from the current frame time.
+	ValueAt         func(time.Time) string
+	Animate         bool
 	Size            unit.Sp
 	Color           color.NRGBA
 	Font            font.Font

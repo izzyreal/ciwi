@@ -58,6 +58,51 @@ func TestJobDetailsViewFormatsExecutionSnapshot(t *testing.T) {
 	}
 }
 
+func TestJobPropertiesExposeClientDurationClockOnlyWhileRunning(t *testing.T) {
+	started := time.UnixMilli(1_800_000_000_125).UTC()
+	durationRow := func(view JobDetailsView) JobDetailRowView {
+		t.Helper()
+		for _, row := range view.JobProperties {
+			if row.Label == "Duration" {
+				return row
+			}
+		}
+		t.Fatal("duration job property is missing")
+		return JobDetailRowView{}
+	}
+
+	running := presentJobDetails(domain.JobExecutionDetails{Status: "running", StartedUTC: started})
+	if row := durationRow(running); row.Value != "" || row.LiveDurationStartedUnixMS != started.UnixMilli() {
+		t.Fatalf("running duration row = %+v", row)
+	}
+	completed := presentJobDetails(domain.JobExecutionDetails{
+		Status: "succeeded", StartedUTC: started, FinishedUTC: started.Add(1500 * time.Millisecond),
+	})
+	if row := durationRow(completed); row.Value != "1.5s" || row.LiveDurationStartedUnixMS != 0 {
+		t.Fatalf("completed duration row = %+v", row)
+	}
+}
+
+func TestFormatLiveJobDurationUsesServerAndClientClockDomains(t *testing.T) {
+	for _, test := range []struct {
+		name                                       string
+		start, serverSnapshot, clientSnapshot, now int64
+		want                                       string
+	}{
+		{name: "invalid", start: 0, serverSnapshot: 1, clientSnapshot: 1, now: 1, want: ""},
+		{name: "clock clamp", start: 2_000, serverSnapshot: 1_000, clientSnapshot: 5_000, now: 4_000, want: "0s"},
+		{name: "whole seconds", start: 1_000, serverSnapshot: 6_900, clientSnapshot: 20_000, now: 20_999, want: "6s"},
+		{name: "minute", start: 1_000, serverSnapshot: 61_000, clientSnapshot: 20_000, now: 25_000, want: "1m5s"},
+		{name: "hour", start: 1_000, serverSnapshot: 3_662_000, clientSnapshot: 20_000, now: 20_000, want: "1h1m1s"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := FormatLiveJobDuration(test.start, test.serverSnapshot, test.clientSnapshot, test.now); got != test.want {
+				t.Fatalf("duration = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestJobDetailsViewExposesEligibleControls(t *testing.T) {
 	queued := presentJobDetails(domain.JobExecutionDetails{ID: "queued", Status: "queued"})
 	if !queued.CanCancel || queued.CanRerun {

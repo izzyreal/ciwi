@@ -581,6 +581,7 @@ func jobDetailsBindingData(view *cnpv1.JobDetailsView) (map[string]any, error) {
 		return nil, err
 	}
 	if root, ok := data["jobDetails"].(map[string]any); ok {
+		root["duration_client_snapshot_unix_ms"] = time.Now().UnixMilli()
 		ensureSchedulingDiagnosisBinding(root)
 		for _, key := range []string{"host_tool_requirements", "container_tool_requirements"} {
 			if root[key] == nil {

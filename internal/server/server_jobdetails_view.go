@@ -51,9 +51,10 @@ type jobDetailsViewResponse struct {
 }
 
 type jobDetailRowResponse struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
-	Tone  string `json:"tone"`
+	Label                     string `json:"label"`
+	Value                     string `json:"value"`
+	Tone                      string `json:"tone"`
+	LiveDurationStartedUnixMS int64  `json:"live_duration_started_unix_ms,omitempty"`
 }
 
 type jobToolRequirementsResponse struct {
@@ -319,7 +320,10 @@ func jobDetailsToResponse(view presentation.JobDetailsView, runContext protocol.
 func jobDetailRowsToResponse(rows []presentation.JobDetailRowView) []jobDetailRowResponse {
 	result := make([]jobDetailRowResponse, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, jobDetailRowResponse{Label: row.Label, Value: row.Value, Tone: row.Tone})
+		result = append(result, jobDetailRowResponse{
+			Label: row.Label, Value: row.Value, Tone: row.Tone,
+			LiveDurationStartedUnixMS: row.LiveDurationStartedUnixMS,
+		})
 	}
 	return result
 }

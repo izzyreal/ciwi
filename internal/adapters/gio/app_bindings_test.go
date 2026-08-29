@@ -52,6 +52,27 @@ func TestJobDetailsBindingsUseOrdinaryOffAndSelectedOnTailingTones(t *testing.T)
 	}
 }
 
+func TestJobDetailsBindingsCarryLiveDurationClock(t *testing.T) {
+	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
+		Id: "job-1", Status: "running",
+		Progress: &cnpv1.Progress{SnapshotUnixMs: 1_800_000_005_000},
+		JobProperties: []*cnpv1.JobDetailRow{{
+			Label: "Duration", LiveDurationStartedUnixMs: 1_800_000_000_000,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := data["jobDetails"].(map[string]any)
+	row := root["job_properties"].([]any)[0].(map[string]any)
+	if heartbeatUnixMillis(row["live_duration_started_unix_ms"]) != 1_800_000_000_000 {
+		t.Fatalf("live duration row = %#v", row)
+	}
+	if heartbeatUnixMillis(root["duration_client_snapshot_unix_ms"]) <= 0 {
+		t.Fatalf("client duration snapshot = %#v", root["duration_client_snapshot_unix_ms"])
+	}
+}
+
 func TestIndexedJobLogBindingsSuppressLegacyEmptyOutputLabel(t *testing.T) {
 	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
 		Id: "job-1", InteractiveLogAvailable: true,

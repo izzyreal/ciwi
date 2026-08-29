@@ -901,6 +901,7 @@ message JobDetailRow {
   string label = 1;
   string value = 2;
   string tone = 3;
+  int64 live_duration_started_unix_ms = 4;
 }
 
 message ToolRequirements {

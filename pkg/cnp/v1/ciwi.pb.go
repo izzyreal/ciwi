@@ -8926,12 +8926,13 @@ func (*ServerMessage_Welcome) isServerMessage_Body() {}
 func (*ServerMessage_Response) isServerMessage_Body() {}
 
 type JobDetailRow struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-	Tone          string                 `protobuf:"bytes,3,opt,name=tone,proto3" json:"tone,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	Label                     string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	Value                     string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Tone                      string                 `protobuf:"bytes,3,opt,name=tone,proto3" json:"tone,omitempty"`
+	LiveDurationStartedUnixMs int64                  `protobuf:"varint,4,opt,name=live_duration_started_unix_ms,json=liveDurationStartedUnixMs,proto3" json:"live_duration_started_unix_ms,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *JobDetailRow) Reset() {
@@ -8983,6 +8984,13 @@ func (x *JobDetailRow) GetTone() string {
 		return x.Tone
 	}
 	return ""
+}
+
+func (x *JobDetailRow) GetLiveDurationStartedUnixMs() int64 {
+	if x != nil {
+		return x.LiveDurationStartedUnixMs
+	}
+	return 0
 }
 
 type ToolRequirements struct {
@@ -10632,11 +10640,12 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\rServerMessage\x123\n" +
 	"\awelcome\x18\x01 \x01(\v2\x17.ciwi.native.v1.WelcomeH\x00R\awelcome\x126\n" +
 	"\bresponse\x18\x02 \x01(\v2\x18.ciwi.native.v1.ResponseH\x00R\bresponseB\x06\n" +
-	"\x04body\"N\n" +
+	"\x04body\"\x90\x01\n" +
 	"\fJobDetailRow\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12\x12\n" +
-	"\x04tone\x18\x03 \x01(\tR\x04tone\"y\n" +
+	"\x04tone\x18\x03 \x01(\tR\x04tone\x12@\n" +
+	"\x1dlive_duration_started_unix_ms\x18\x04 \x01(\x03R\x19liveDurationStartedUnixMs\"y\n" +
 	"\x10ToolRequirements\x12\x1f\n" +
 	"\vempty_label\x18\x01 \x01(\tR\n" +
 	"emptyLabel\x12\x18\n" +

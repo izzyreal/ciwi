@@ -55,9 +55,10 @@ type JobDetailsView struct {
 }
 
 type JobDetailRowView struct {
-	Label string
-	Value string
-	Tone  string
+	Label                     string
+	Value                     string
+	Tone                      string
+	LiveDurationStartedUnixMS int64
 }
 
 type ToolRequirementsView struct {
@@ -434,6 +435,10 @@ func presentJobProperties(details domain.JobExecutionDetails, view JobDetailsVie
 	if target := details.Metadata.Value(domain.ExecutionMetadataBuildTarget); build != "" && target != "" {
 		build += " (" + target + ")"
 	}
+	duration := JobDetailRowView{Label: "Duration", Value: view.Duration}
+	if strings.EqualFold(strings.TrimSpace(details.Status), "running") && !details.StartedUTC.IsZero() {
+		duration.LiveDurationStartedUnixMS = details.StartedUTC.UnixMilli()
+	}
 	rows := []JobDetailRowView{
 		{Label: "Job Execution ID", Value: details.ID},
 		{Label: "Project", Value: details.ProjectName},
@@ -444,7 +449,7 @@ func presentJobProperties(details domain.JobExecutionDetails, view JobDetailsVie
 		{Label: "Agent", Value: details.AgentID},
 		{Label: "Created", Value: view.Created},
 		{Label: "Started", Value: view.Started},
-		{Label: "Duration", Value: view.Duration},
+		duration,
 		{Label: "Exit Code", Value: view.ExitCode},
 	}
 	return rows
@@ -674,6 +679,19 @@ func formatDuration(value time.Duration) string {
 	}
 	value = value.Round(time.Millisecond)
 	return value.String()
+}
+
+// FormatLiveJobDuration advances a server-clock duration snapshot with a
+// client clock. Using two clock domains avoids assuming their wall clocks are
+// synchronized while still allowing clients to update without polling.
+func FormatLiveJobDuration(startUnixMS, serverSnapshotUnixMS, clientSnapshotUnixMS, clientNowUnixMS int64) string {
+	if startUnixMS <= 0 || serverSnapshotUnixMS <= 0 || clientSnapshotUnixMS <= 0 || clientNowUnixMS <= 0 {
+		return ""
+	}
+	serverElapsedMS := max(int64(0), serverSnapshotUnixMS-startUnixMS)
+	clientElapsedMS := max(int64(0), clientNowUnixMS-clientSnapshotUnixMS)
+	seconds := (serverElapsedMS + clientElapsedMS) / int64(time.Second/time.Millisecond)
+	return (time.Duration(seconds) * time.Second).String()
 }
 
 func formatDurationMS(value int64) string {

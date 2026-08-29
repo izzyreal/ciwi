@@ -184,6 +184,33 @@ func TestAnimatedProgressUsesLayoutTimeAndRequestsImmediateFrame(t *testing.T) {
 	}
 }
 
+func TestAnimatedTextUsesLayoutTimeAndRequestsImmediateFrame(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	router := new(input.Router)
+	operations := new(op.Ops)
+	now := time.Unix(1_800_000_000, 0)
+	resolvedAt := time.Time{}
+	animated := Text("duration", "", unit.Sp(14), color.NRGBA{A: 0xff})
+	animated.Text.ValueAt = func(at time.Time) string {
+		resolvedAt = at
+		return "5s"
+	}
+	animated.Text.Animate = true
+	gtx := layout.Context{
+		Ops: operations, Source: router.Source(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Now: now,
+		Constraints: layout.Exact(image.Pt(100, 20)),
+	}
+	runtime.Layout(gtx, animated)
+	if resolvedAt != now {
+		t.Fatalf("text value resolved at %v, want %v", resolvedAt, now)
+	}
+	router.Frame(operations)
+	at, wake := router.WakeupTime()
+	if !wake || !at.IsZero() {
+		t.Fatalf("text wakeup = (%v, %v), want immediate", at, wake)
+	}
+}
+
 func BenchmarkKeyedRuntimeReorder(b *testing.B) {
 	runtime := NewRuntime(nil, Options{})
 	for iteration := 0; iteration < b.N; iteration++ {

@@ -8,9 +8,19 @@ import (
 	"testing"
 
 	"github.com/izzyreal/ciwi/internal/domain"
+	"github.com/izzyreal/ciwi/internal/presentation"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 )
+
+func TestJobDetailRowResponseCarriesLiveDurationClock(t *testing.T) {
+	rows := jobDetailRowsToResponse([]presentation.JobDetailRowView{{
+		Label: "Duration", LiveDurationStartedUnixMS: 1_800_000_000_125,
+	}})
+	if len(rows) != 1 || rows[0].LiveDurationStartedUnixMS != 1_800_000_000_125 {
+		t.Fatalf("duration rows = %+v", rows)
+	}
+}
 
 func TestJobDetailsViewUsesApplicationPresentationShape(t *testing.T) {
 	server, state := newTestHTTPServerWithState(t)
