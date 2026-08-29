@@ -597,6 +597,27 @@ func TestJobDetailsDeclaresSharedExecutionFailureReason(t *testing.T) {
 	}
 }
 
+func TestJobDetailsRerunConfirmationExplainsWaitingContinuation(t *testing.T) {
+	screen, err := LoadScreen("job-details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rerun *uidsl.Action
+	walkNodes(screen.Screen.Root, func(node *uidsl.Node) {
+		for index := range node.Actions {
+			if node.Actions[index].Command == "rerun-execution" {
+				rerun = &node.Actions[index]
+			}
+		}
+	})
+	if rerun == nil || rerun.Confirm == nil {
+		t.Fatal("job rerun action is missing its confirmation")
+	}
+	if message := rerun.Confirm.Message; !strings.Contains(message, "jobs waiting on this job or pipeline may continue") {
+		t.Fatalf("job rerun confirmation does not describe healing: %q", message)
+	}
+}
+
 func TestAgentDeletionDeclaresItsSharedSuccessRoute(t *testing.T) {
 	screen, err := LoadScreen("agent-details")
 	if err != nil {

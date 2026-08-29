@@ -65,9 +65,9 @@ pipelines:
 		t.Fatalf("expected smoke job to lease first, got %+v", leased)
 	}
 	updated, err := db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusSucceeded,
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark upstream succeeded: %v", err)
@@ -83,7 +83,7 @@ pipelines:
 	}
 }
 
-func TestPipelineJobNeedsCancelsDependentJobsOnUpstreamFailure(t *testing.T) {
+func TestPipelineJobNeedsKeepsDependentJobsWaitingOnUpstreamFailure(t *testing.T) {
 	db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -137,10 +137,10 @@ pipelines:
 		t.Fatalf("expected smoke job to lease first, got %+v", leased)
 	}
 	updated, err := db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusFailed,
-		Error:             "boom",
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusFailed,
+		Error:        "boom",
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark upstream failed: %v", err)
@@ -155,11 +155,14 @@ pipelines:
 		if strings.TrimSpace(j.Metadata["pipeline_job_id"]) != "package" {
 			continue
 		}
-		if protocol.NormalizeJobExecutionStatus(j.Status) != protocol.JobExecutionStatusFailed {
-			t.Fatalf("expected dependent job to fail, got status=%q", j.Status)
+		if protocol.NormalizeJobExecutionStatus(j.Status) != protocol.JobExecutionStatusQueued {
+			t.Fatalf("expected dependent job to remain queued, got status=%q", j.Status)
 		}
-		if !strings.Contains(j.Error, "required job smoke failed") {
-			t.Fatalf("unexpected dependent job error: %q", j.Error)
+		if strings.TrimSpace(j.Metadata["needs_blocked"]) != "1" || j.Error != "" {
+			t.Fatalf("expected non-failed needs-blocked job, error=%q metadata=%v", j.Error, j.Metadata)
+		}
+		if next, err := db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || next != nil {
+			t.Fatalf("needs-blocked job must not be leaseable: job=%+v err=%v", next, err)
 		}
 		return
 	}

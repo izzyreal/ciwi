@@ -9,6 +9,7 @@ import (
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
 	"github.com/izzyreal/ciwi/internal/requirements"
+	"github.com/izzyreal/ciwi/internal/server/jobhistory"
 )
 
 type schedulingSourceStub struct{ agents []requirements.AgentSnapshot }
@@ -217,6 +218,87 @@ func TestRepositoryUsesEstablishedExecutionGrouping(t *testing.T) {
 	}
 	if got := history[0].Sections[0].Jobs[0].TestSummary; got == nil || got.Total != 20 || got.Passed != 20 {
 		t.Fatalf("history test summary = %+v", got)
+	}
+}
+
+func TestExecutionReasonUsesLatestChainDependencyAttempts(t *testing.T) {
+	base := time.Now().UTC()
+	failed := []protocol.JobExecution{
+		{ID: "build-original", Status: protocol.JobExecutionStatusFailed, CreatedUTC: base, Metadata: map[string]string{
+			"chain_run_id": "chain-1", "pipeline_id": "build",
+		}},
+		{ID: "sign-original", Status: protocol.JobExecutionStatusFailed, CreatedUTC: base, Metadata: map[string]string{
+			"chain_run_id": "chain-1", "pipeline_id": "sign",
+		}},
+	}
+	waiting := &jobhistory.JobView{Status: protocol.JobExecutionStatusQueued, Metadata: map[string]string{
+		"chain_run_id": "chain-1", "chain_blocked": "1", "chain_depends_on_pipelines": "build,sign",
+	}}
+	if got := executionReason(waiting, newDependencyFailureIndex(failed)); got != "Blocked by failed pipelines build, sign" {
+		t.Fatalf("failed chain reason = %q", got)
+	}
+
+	withBuildRerun := append(append([]protocol.JobExecution(nil), failed...), protocol.JobExecution{
+		ID: "build-rerun", Status: protocol.JobExecutionStatusQueued, CreatedUTC: base.Add(time.Second), Metadata: map[string]string{
+			"chain_run_id": "chain-1", "pipeline_id": "build", protocol.JobMetadataAttemptRootJobID: "build-original",
+		},
+	})
+	if got := executionReason(waiting, newDependencyFailureIndex(withBuildRerun)); got != "Blocked by failed pipeline sign" {
+		t.Fatalf("partially rerun chain reason = %q", got)
+	}
+
+	withAllReruns := append(withBuildRerun, protocol.JobExecution{
+		ID: "sign-rerun", Status: protocol.JobExecutionStatusRunning, CreatedUTC: base.Add(time.Second), Metadata: map[string]string{
+			"chain_run_id": "chain-1", "pipeline_id": "sign", protocol.JobMetadataAttemptRootJobID: "sign-original",
+		},
+	})
+	if got := executionReason(waiting, newDependencyFailureIndex(withAllReruns)); got != "Waiting for pipelines build, sign" {
+		t.Fatalf("rerunning chain reason = %q", got)
+	}
+}
+
+func TestExecutionReasonUsesNeedsBlockerAndLatestMatrixAttempts(t *testing.T) {
+	base := time.Now().UTC()
+	common := map[string]string{
+		"project_id": "41", "pipeline_id": "build", "pipeline_run_id": "run-1", "pipeline_job_id": "smoke",
+	}
+	failedVariant := protocol.JobExecution{
+		ID: "smoke-a", Status: protocol.JobExecutionStatusFailed, CreatedUTC: base, Metadata: common,
+	}
+	succeededVariant := protocol.JobExecution{
+		ID: "smoke-b", Status: protocol.JobExecutionStatusSucceeded, CreatedUTC: base, Metadata: common,
+	}
+	waiting := &jobhistory.JobView{Status: protocol.JobExecutionStatusQueued, Metadata: map[string]string{
+		"project_id": "41", "pipeline_id": "build", "pipeline_run_id": "run-1",
+		"needs_blocked": "1", "needs_job_ids": "smoke",
+	}}
+	if got := executionReason(waiting, newDependencyFailureIndex([]protocol.JobExecution{failedVariant, succeededVariant})); got != "Blocked by failed job smoke" {
+		t.Fatalf("failed matrix need reason = %q", got)
+	}
+	failedLint := protocol.JobExecution{
+		ID: "lint", Status: protocol.JobExecutionStatusFailed, CreatedUTC: base, Metadata: map[string]string{
+			"project_id": "41", "pipeline_id": "build", "pipeline_run_id": "run-1", "pipeline_job_id": "lint",
+		},
+	}
+	waiting.Metadata[domain.ExecutionMetadataNeedsJobIDs] = "smoke,lint"
+	if got := executionReason(waiting, newDependencyFailureIndex([]protocol.JobExecution{failedVariant, succeededVariant, failedLint})); got != "Blocked by failed jobs smoke, lint" {
+		t.Fatalf("multiple failed needs reason = %q", got)
+	}
+	waiting.Metadata[domain.ExecutionMetadataNeedsJobIDs] = "smoke"
+
+	rerun := protocol.JobExecution{
+		ID: "smoke-a-rerun", Status: protocol.JobExecutionStatusQueued, CreatedUTC: base.Add(time.Second), Metadata: map[string]string{
+			"project_id": "41", "pipeline_id": "build", "pipeline_run_id": "run-1", "pipeline_job_id": "smoke",
+			protocol.JobMetadataAttemptRootJobID: "smoke-a",
+		},
+	}
+	if got := executionReason(waiting, newDependencyFailureIndex([]protocol.JobExecution{failedVariant, succeededVariant, rerun})); got != "Waiting for job smoke" {
+		t.Fatalf("rerunning matrix need reason = %q", got)
+	}
+
+	waiting.Metadata[domain.ExecutionMetadataNeedsBlocked] = ""
+	if got := executionReason(waiting, newDependencyFailureIndex([]protocol.JobExecution{failedVariant, succeededVariant, rerun})); got != "" {
+		t.Fatalf("healed queued need reason = %q, want empty", got)
 	}
 }
 

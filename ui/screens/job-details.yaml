@@ -76,7 +76,7 @@ screen:
                   jobExecutionId: "{{jobDetails.id}}"
                 confirm:
                   title: Run this job again?
-                  message: Creates an independent queued attempt from this stored execution. It does not interrupt, replace, or otherwise affect jobs that are already queued or running.
+                  message: Creates a new queued attempt from this stored execution. If it succeeds, jobs waiting on this job or pipeline may continue.
           - component: button
             text:
               literal: Cancel

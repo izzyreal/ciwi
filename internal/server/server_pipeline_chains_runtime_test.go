@@ -8,6 +8,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
@@ -262,7 +263,7 @@ pipeline_chains:
 	}
 }
 
-func TestBlockedJobReconciliationCascadesNeedsFailureIntoChainAfterRestart(t *testing.T) {
+func TestBlockedJobReconciliationKeepsNeedsAndChainWaitingAfterRestart(t *testing.T) {
 	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
 	enqueueSingleChain(t, s, `
 version: 1
@@ -334,17 +335,30 @@ pipeline_chains:
 		if jobID != "build-cross-platform" && jobID != "github-release" {
 			continue
 		}
-		if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusFailed {
-			t.Fatalf("expected %s to fail during cascade, got status=%q metadata=%v", jobID, job.Status, job.Metadata)
+		if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusQueued {
+			t.Fatalf("expected %s to remain queued, got status=%q metadata=%v", jobID, job.Status, job.Metadata)
+		}
+		switch jobID {
+		case "build-cross-platform":
+			if strings.TrimSpace(job.Metadata["needs_blocked"]) != "1" {
+				t.Fatalf("expected needs-blocked build job, metadata=%v", job.Metadata)
+			}
+		case "github-release":
+			if strings.TrimSpace(job.Metadata["chain_blocked"]) != "1" {
+				t.Fatalf("expected chain-blocked release job, metadata=%v", job.Metadata)
+			}
 		}
 	}
 	release := findPipelineJobExecution(t, s, "release")
-	if !strings.Contains(release.Error, "upstream pipeline build failed") {
-		t.Fatalf("unexpected release failure: %q", release.Error)
+	if release.Error != "" {
+		t.Fatalf("waiting release should not have a failure reason, got %q", release.Error)
+	}
+	if leased, err := restarted.db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || leased != nil {
+		t.Fatalf("blocked jobs must not be leaseable: job=%+v err=%v", leased, err)
 	}
 }
 
-func TestPipelineChainCancelsNextPipelineOnFailure(t *testing.T) {
+func TestPipelineChainWaitsForFailedPipelineAndResumesAfterSuccessfulRerun(t *testing.T) {
 	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
 	enqueueSingleChain(t, s, `
 version: 1
@@ -358,14 +372,21 @@ pipelines:
       - id: compile
         runs_on:
           os: linux
+        artifacts:
+          - dist/**
         timeout_seconds: 30
         steps:
           - run: echo build
   - id: package
+    depends_on:
+      - build
     vcs_source:
       repo: https://github.com/izzyreal/ciwi.git
     jobs:
       - id: pkg
+        artifact_sources:
+          - pipeline: build
+            job: compile
         runs_on:
           os: linux
         timeout_seconds: 30
@@ -396,16 +417,49 @@ pipeline_chains:
 
 	secondAfter, err := s.db.GetJobExecution(second.ID)
 	if err != nil {
-		t.Fatalf("get second job after cancellation: %v", err)
+		t.Fatalf("get second job after upstream failure: %v", err)
 	}
-	if protocol.NormalizeJobExecutionStatus(secondAfter.Status) != protocol.JobExecutionStatusFailed {
-		t.Fatalf("expected second job to fail after upstream failure, got %q", secondAfter.Status)
+	if protocol.NormalizeJobExecutionStatus(secondAfter.Status) != protocol.JobExecutionStatusQueued {
+		t.Fatalf("expected second job to remain queued after upstream failure, got %q", secondAfter.Status)
 	}
-	if strings.TrimSpace(secondAfter.Metadata["chain_cancelled"]) != "1" {
-		t.Fatalf("expected chain_cancelled metadata on second job, metadata=%v", secondAfter.Metadata)
+	if strings.TrimSpace(secondAfter.Metadata["chain_blocked"]) != "1" {
+		t.Fatalf("expected chain_blocked metadata on waiting job, metadata=%v", secondAfter.Metadata)
 	}
-	if !strings.Contains(secondAfter.Error, "upstream pipeline build failed") {
-		t.Fatalf("unexpected cancellation reason: %q", secondAfter.Error)
+	if secondAfter.Error != "" {
+		t.Fatalf("waiting job should not have a failure reason, got %q", secondAfter.Error)
+	}
+	if next, err := s.db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || next != nil {
+		t.Fatalf("chain-blocked job must not be leaseable: job=%+v err=%v", next, err)
+	}
+
+	rerun, err := jobexecution.RerunJobExecution(s.db, updated.ID, s.prepareJobExecutionRerun)
+	if err != nil {
+		t.Fatalf("rerun failed build job: %v", err)
+	}
+	rerun, err = s.db.UpdateJobExecutionStatus(rerun.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("mark build rerun succeeded: %v", err)
+	}
+	s.onJobExecutionUpdated(rerun)
+
+	secondAfterHealing, err := s.db.GetJobExecution(second.ID)
+	if err != nil {
+		t.Fatalf("get second job after healing: %v", err)
+	}
+	if protocol.NormalizeJobExecutionStatus(secondAfterHealing.Status) != protocol.JobExecutionStatusQueued ||
+		strings.TrimSpace(secondAfterHealing.Metadata["chain_blocked"]) != "" {
+		t.Fatalf("expected healed downstream job to be runnable, status=%q metadata=%v", secondAfterHealing.Status, secondAfterHealing.Metadata)
+	}
+	if got := secondAfterHealing.DependencyArtifactJobIDs; len(got) != 1 || got[0] != rerun.ID {
+		t.Fatalf("expected downstream artifacts from rerun %q, got %v", rerun.ID, got)
+	}
+	leasedPackage, err := s.db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"})
+	if err != nil || leasedPackage == nil || leasedPackage.ID != second.ID {
+		t.Fatalf("expected healed package job to be leaseable: job=%+v err=%v", leasedPackage, err)
 	}
 }
 

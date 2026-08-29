@@ -8,6 +8,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/config"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/server/jobexecution"
 	"github.com/izzyreal/ciwi/internal/store"
 )
 
@@ -98,9 +99,9 @@ func TestNeedsMatrixUnblocksOnlyAfterAllUpstreamVariantsSucceed(t *testing.T) {
 		t.Fatalf("expected smoke first, got %+v", first.Metadata)
 	}
 	firstDone, err := s.db.UpdateJobExecutionStatus(first.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusSucceeded,
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark first smoke success: %v", err)
@@ -120,9 +121,9 @@ func TestNeedsMatrixUnblocksOnlyAfterAllUpstreamVariantsSucceed(t *testing.T) {
 		t.Fatalf("lease second smoke: job=%+v err=%v", second, err)
 	}
 	secondDone, err := s.db.UpdateJobExecutionStatus(second.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusSucceeded,
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark second smoke success: %v", err)
@@ -138,7 +139,7 @@ func TestNeedsMatrixUnblocksOnlyAfterAllUpstreamVariantsSucceed(t *testing.T) {
 	}
 }
 
-func TestNeedsMatrixCancelsOnlyAfterAllUpstreamVariantsTerminal(t *testing.T) {
+func TestNeedsMatrixWaitsForFailedVariantAndHealsAfterSuccessfulRerun(t *testing.T) {
 	s := &stateStore{db: openNeedsMatrixStore(t)}
 	enqueueNeedsMatrixPipeline(t, s)
 
@@ -149,10 +150,10 @@ func TestNeedsMatrixCancelsOnlyAfterAllUpstreamVariantsTerminal(t *testing.T) {
 		t.Fatalf("lease first smoke: job=%+v err=%v", first, err)
 	}
 	firstDone, err := s.db.UpdateJobExecutionStatus(first.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusFailed,
-		Error:             "boom",
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusFailed,
+		Error:        "boom",
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark first smoke failure: %v", err)
@@ -172,9 +173,9 @@ func TestNeedsMatrixCancelsOnlyAfterAllUpstreamVariantsTerminal(t *testing.T) {
 		t.Fatalf("lease second smoke: job=%+v err=%v", second, err)
 	}
 	secondDone, err := s.db.UpdateJobExecutionStatus(second.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:           "agent-1",
-		Status:            protocol.JobExecutionStatusSucceeded,
-		TimestampUTC:      time.Now().UTC(),
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("mark second smoke success: %v", err)
@@ -185,10 +186,36 @@ func TestNeedsMatrixCancelsOnlyAfterAllUpstreamVariantsTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get package after mixed terminal states: %v", err)
 	}
-	if protocol.NormalizeJobExecutionStatus(pkgAfterSecond.Status) != protocol.JobExecutionStatusFailed {
-		t.Fatalf("expected package cancellation after all smoke variants terminal with one failure, got %q", pkgAfterSecond.Status)
+	if protocol.NormalizeJobExecutionStatus(pkgAfterSecond.Status) != protocol.JobExecutionStatusQueued {
+		t.Fatalf("expected package to keep waiting after a smoke variant failed, got %q", pkgAfterSecond.Status)
 	}
-	if !strings.Contains(pkgAfterSecond.Error, "required job smoke failed") {
-		t.Fatalf("unexpected package cancellation reason: %q", pkgAfterSecond.Error)
+	if strings.TrimSpace(pkgAfterSecond.Metadata["needs_blocked"]) != "1" || pkgAfterSecond.Error != "" {
+		t.Fatalf("expected a non-failed needs-blocked package, error=%q metadata=%v", pkgAfterSecond.Error, pkgAfterSecond.Metadata)
+	}
+	if next, err := s.db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || next != nil {
+		t.Fatalf("needs-blocked package must not be leaseable: job=%+v err=%v", next, err)
+	}
+
+	rerun, err := jobexecution.RerunJobExecution(s.db, firstDone.ID, s.prepareJobExecutionRerun)
+	if err != nil {
+		t.Fatalf("rerun failed smoke variant: %v", err)
+	}
+	rerun, err = s.db.UpdateJobExecutionStatus(rerun.ID, protocol.JobExecutionStatusUpdateRequest{
+		AgentID:      "agent-1",
+		Status:       protocol.JobExecutionStatusSucceeded,
+		TimestampUTC: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("mark smoke rerun success: %v", err)
+	}
+	s.onJobExecutionUpdated(rerun)
+
+	pkgAfterHealing, err := s.db.GetJobExecution(pkg.ID)
+	if err != nil {
+		t.Fatalf("get package after healing: %v", err)
+	}
+	if protocol.NormalizeJobExecutionStatus(pkgAfterHealing.Status) != protocol.JobExecutionStatusQueued ||
+		strings.TrimSpace(pkgAfterHealing.Metadata["needs_blocked"]) != "" {
+		t.Fatalf("expected package to unblock after successful rerun, status=%q metadata=%v", pkgAfterHealing.Status, pkgAfterHealing.Metadata)
 	}
 }

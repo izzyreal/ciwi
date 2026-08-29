@@ -93,11 +93,9 @@ func (s *stateStore) reconcileChainBlockedJob(candidate protocol.JobExecution, a
 			return false, true, nil
 		}
 		if !succeeded {
-			reason := "cancelled: upstream pipeline " + depID + " failed"
-			return true, false, s.failBlockedJob(candidate, "server-chain", "chain", reason, map[string]string{
-				domain.ExecutionMetadataChainCancelled: "1",
-				domain.ExecutionMetadataChainBlocked:   "",
-			})
+			// A failed attempt may be rerun in place. Keep downstream work
+			// queued so a later successful attempt can heal and advance the chain.
+			return false, true, nil
 		}
 	}
 	if err := s.bindQueuedChainJobDependencyArtifacts(candidate, all); err != nil {
@@ -204,8 +202,9 @@ func (s *stateStore) reconcileNeedsBlockedJob(candidate protocol.JobExecution, a
 			return false, nil
 		}
 		if !allSucceeded {
-			reason := "cancelled: required job " + need + " failed"
-			return true, s.failBlockedJob(candidate, "server-needs", "needs", reason, map[string]string{domain.ExecutionMetadataNeedsBlocked: ""})
+			// Preserve the blocked execution so rerunning the failed prerequisite
+			// can satisfy the need without recreating the rest of the pipeline.
+			return false, nil
 		}
 	}
 	_, err := s.pipelineStore().MergeJobExecutionMetadata(candidate.ID, map[string]string{domain.ExecutionMetadataNeedsBlocked: ""})

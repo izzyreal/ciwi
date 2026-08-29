@@ -393,8 +393,9 @@ func (r *Repository) ListFrontPageExecutionCards(ctx context.Context) ([]domain.
 	if err := r.attachSelectedSchedulingDiagnoses(ctx, jobs, queuedSelection.VisibleJobIDs(jobs)); err != nil {
 		return nil, nil, err
 	}
-	queued := mapCards(queuedSelection.Views(jobs))
-	history := mapCards(historySelection.Views(jobs))
+	dependencyFailures := newDependencyFailureIndex(jobs)
+	queued := mapCards(queuedSelection.Views(jobs), dependencyFailures)
+	history := mapCards(historySelection.Views(jobs), dependencyFailures)
 	return queued, history, nil
 }
 
@@ -437,7 +438,78 @@ func (r *Repository) attachSelectedSchedulingDiagnoses(ctx context.Context, jobs
 	return nil
 }
 
-func mapCards(cards []jobhistory.CardView) []domain.ExecutionCard {
+type chainPipelineDependencyKey struct {
+	chainRunID string
+	pipelineID string
+}
+
+type needsJobDependencyKey struct {
+	pipelineRunID string
+	projectID     string
+	pipelineID    string
+	jobID         string
+}
+
+type dependencyFailureIndex struct {
+	chainPipelines map[chainPipelineDependencyKey]struct{}
+	needsJobs      map[needsJobDependencyKey]struct{}
+}
+
+func newDependencyFailureIndex(jobs []protocol.JobExecution) dependencyFailureIndex {
+	index := dependencyFailureIndex{
+		chainPipelines: map[chainPipelineDependencyKey]struct{}{},
+		needsJobs:      map[needsJobDependencyKey]struct{}{},
+	}
+	for _, job := range protocol.LatestJobExecutionAttempts(jobs) {
+		if protocol.NormalizeJobExecutionStatus(job.Status) != protocol.JobExecutionStatusFailed {
+			continue
+		}
+		metadata := domain.ExecutionMetadata(job.Metadata)
+		pipelineID := metadata.Value(domain.ExecutionMetadataPipelineID)
+		if chainRunID := metadata.Value(domain.ExecutionMetadataChainRunID); chainRunID != "" && pipelineID != "" {
+			index.chainPipelines[chainPipelineDependencyKey{chainRunID: chainRunID, pipelineID: pipelineID}] = struct{}{}
+		}
+		pipelineRunID := metadata.Value(domain.ExecutionMetadataPipelineRunID)
+		jobID := metadata.Value(domain.ExecutionMetadataPipelineJobID)
+		if pipelineRunID != "" && pipelineID != "" && jobID != "" {
+			index.needsJobs[needsJobDependencyKey{
+				pipelineRunID: pipelineRunID,
+				projectID:     metadata.Value(domain.ExecutionMetadataProjectID),
+				pipelineID:    pipelineID,
+				jobID:         jobID,
+			}] = struct{}{}
+		}
+	}
+	return index
+}
+
+func (i dependencyFailureIndex) failedChainPipelines(metadata domain.ExecutionMetadata, pipelineIDs []string) []string {
+	chainRunID := metadata.Value(domain.ExecutionMetadataChainRunID)
+	failed := make([]string, 0, len(pipelineIDs))
+	for _, pipelineID := range pipelineIDs {
+		if _, ok := i.chainPipelines[chainPipelineDependencyKey{chainRunID: chainRunID, pipelineID: pipelineID}]; ok {
+			failed = append(failed, pipelineID)
+		}
+	}
+	return failed
+}
+
+func (i dependencyFailureIndex) failedNeedsJobs(metadata domain.ExecutionMetadata, jobIDs []string) []string {
+	failed := make([]string, 0, len(jobIDs))
+	for _, jobID := range jobIDs {
+		if _, ok := i.needsJobs[needsJobDependencyKey{
+			pipelineRunID: metadata.Value(domain.ExecutionMetadataPipelineRunID),
+			projectID:     metadata.Value(domain.ExecutionMetadataProjectID),
+			pipelineID:    metadata.Value(domain.ExecutionMetadataPipelineID),
+			jobID:         jobID,
+		}]; ok {
+			failed = append(failed, jobID)
+		}
+	}
+	return failed
+}
+
+func mapCards(cards []jobhistory.CardView, dependencyFailures dependencyFailureIndex) []domain.ExecutionCard {
 	out := make([]domain.ExecutionCard, 0, len(cards))
 	for _, card := range cards {
 		out = append(out, domain.ExecutionCard{
@@ -447,13 +519,13 @@ func mapCards(cards []jobhistory.CardView) []domain.ExecutionCard {
 				TotalJobs: card.Summary.TotalJobs, Succeeded: card.Summary.Succeeded,
 				Failed: card.Summary.Failed, InProgress: card.Summary.InProgress, Waiting: card.Summary.Waiting,
 			},
-			Sections: mapCardSections(card.Sections), ProgressJobs: mapProgressJobs(card.ProgressJobs),
+			Sections: mapCardSections(card.Sections, dependencyFailures), ProgressJobs: mapProgressJobs(card.ProgressJobs),
 		})
 	}
 	return out
 }
 
-func mapCardSections(sections []jobhistory.SectionView) []domain.ExecutionCardSection {
+func mapCardSections(sections []jobhistory.SectionView, dependencyFailures dependencyFailureIndex) []domain.ExecutionCardSection {
 	out := make([]domain.ExecutionCardSection, 0, len(sections))
 	for _, section := range sections {
 		label := strings.TrimSpace(section.Label)
@@ -462,7 +534,7 @@ func mapCardSections(sections []jobhistory.SectionView) []domain.ExecutionCardSe
 		}
 		mapped := domain.ExecutionCardSection{Key: section.Key, Label: label, ProgressJobs: mapProgressJobs(section.ProgressJobs)}
 		for _, item := range section.Items {
-			mapped.Jobs = append(mapped.Jobs, mapCardItemJobs(item)...)
+			mapped.Jobs = append(mapped.Jobs, mapCardItemJobs(item, dependencyFailures)...)
 		}
 		out = append(out, mapped)
 	}
@@ -487,7 +559,7 @@ func mapProgressJobs(jobs []jobhistory.ProgressJobView) []domain.ExecutionCardJo
 	return out
 }
 
-func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
+func mapCardItemJobs(item jobhistory.ItemView, dependencyFailures dependencyFailureIndex) []domain.ExecutionCardJob {
 	if item.Job != nil {
 		label := strings.TrimSpace(item.MatrixLabel)
 		if label == "" {
@@ -502,7 +574,7 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 			PipelineID: domain.ExecutionMetadata(item.Job.Metadata).Value(domain.ExecutionMetadataPipelineID),
 			BuildLabel: executionBuildLabel(item.Job.Metadata), AgentID: strings.TrimSpace(item.Job.LeasedByAgentID),
 			CreatedUTC: item.Job.CreatedUTC, StartedUTC: timeValue(item.Job.StartedUTC), FinishedUTC: timeValue(item.Job.FinishedUTC),
-			Reason: executionReason(item.Job), Action: executionAction(status),
+			Reason: executionReason(item.Job, dependencyFailures), Action: executionAction(status),
 			CurrentStep: strings.TrimSpace(item.Job.CurrentStep), TestSummary: mapJobTestSummary(item.Job.TestSummary), SchedulingDiagnosis: item.Job.SchedulingDiagnosis,
 			ExpectedDurationMS: item.Job.ExpectedDurationMS,
 			Waiting: status == protocol.JobExecutionStatusQueued &&
@@ -511,7 +583,7 @@ func mapCardItemJobs(item jobhistory.ItemView) []domain.ExecutionCardJob {
 	}
 	out := make([]domain.ExecutionCardJob, 0, len(item.Items))
 	for _, child := range item.Items {
-		out = append(out, mapCardItemJobs(child)...)
+		out = append(out, mapCardItemJobs(child, dependencyFailures)...)
 	}
 	return out
 }
@@ -541,22 +613,22 @@ func executionBuildLabel(metadata domain.ExecutionMetadata) string {
 	return version
 }
 
-func executionReason(job *jobhistory.JobView) string {
+func executionReason(job *jobhistory.JobView, dependencyFailures dependencyFailureIndex) string {
 	parts := make([]string, 0, 2)
 	if status := protocol.NormalizeJobExecutionStatus(job.Status); status == protocol.JobExecutionStatusQueued {
 		metadata := domain.ExecutionMetadata(job.Metadata)
 		if pipelines := metadata.CSV(domain.ExecutionMetadataChainDependsOnPipelines); metadata.Flag(domain.ExecutionMetadataChainBlocked) && len(pipelines) > 0 {
-			label := "pipelines "
-			if len(pipelines) == 1 {
-				label = "pipeline "
+			if failed := dependencyFailures.failedChainPipelines(metadata, pipelines); len(failed) > 0 {
+				parts = append(parts, dependencyReason("Blocked by failed", "pipeline", failed))
+			} else {
+				parts = append(parts, dependencyReason("Waiting for", "pipeline", pipelines))
 			}
-			parts = append(parts, "Waiting for "+label+strings.Join(pipelines, ", "))
-		} else if jobs := metadata.CSV(domain.ExecutionMetadataNeedsJobIDs); len(jobs) > 0 {
-			label := "jobs "
-			if len(jobs) == 1 {
-				label = "job "
+		} else if jobs := metadata.CSV(domain.ExecutionMetadataNeedsJobIDs); metadata.Flag(domain.ExecutionMetadataNeedsBlocked) && len(jobs) > 0 {
+			if failed := dependencyFailures.failedNeedsJobs(metadata, jobs); len(failed) > 0 {
+				parts = append(parts, dependencyReason("Blocked by failed", "job", failed))
+			} else {
+				parts = append(parts, dependencyReason("Waiting for", "job", jobs))
 			}
-			parts = append(parts, "Waiting for "+label+strings.Join(jobs, ", "))
 		} else if metadata.Flag(domain.ExecutionMetadataChainBlocked) || metadata.Flag(domain.ExecutionMetadataNeedsBlocked) {
 			parts = append(parts, "Waiting for prerequisites")
 		}
@@ -567,6 +639,14 @@ func executionReason(job *jobhistory.JobView) string {
 		}
 	}
 	return strings.Join(parts, "; ")
+}
+
+func dependencyReason(prefix, singular string, identifiers []string) string {
+	label := singular
+	if len(identifiers) != 1 {
+		label += "s"
+	}
+	return prefix + " " + label + " " + strings.Join(identifiers, ", ")
 }
 
 func splitMetadataList(value string) []string {

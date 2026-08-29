@@ -113,7 +113,7 @@ func TestServerMaintenanceRequeuesStaleLeasedJobOnStartup(t *testing.T) {
 	}
 }
 
-func TestServerMaintenancePropagatesTimeoutToBlockedDependents(t *testing.T) {
+func TestServerMaintenanceKeepsDependentsWaitingAfterUpstreamTimeout(t *testing.T) {
 	db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -162,12 +162,22 @@ func TestServerMaintenancePropagatesTimeoutToBlockedDependents(t *testing.T) {
 	if err := s.runJobExecutionMaintenancePass(running.StartedUTC.Add(30 * time.Second)); err != nil {
 		t.Fatalf("maintenance pass: %v", err)
 	}
+	failedUpstream, err := db.GetJobExecution(upstream.ID)
+	if err != nil {
+		t.Fatalf("get timed-out upstream: %v", err)
+	}
+	if failedUpstream.Status != protocol.JobExecutionStatusFailed || !strings.Contains(failedUpstream.Error, "timed out") {
+		t.Fatalf("expected upstream timeout failure, got status=%q error=%q", failedUpstream.Status, failedUpstream.Error)
+	}
 
 	got, err := db.GetJobExecution(dependent.ID)
 	if err != nil {
 		t.Fatalf("get dependent: %v", err)
 	}
-	if got.Status != protocol.JobExecutionStatusFailed || !strings.Contains(got.Error, "required job unit-tests failed") {
-		t.Fatalf("expected timeout failure to propagate, got status=%q error=%q", got.Status, got.Error)
+	if got.Status != protocol.JobExecutionStatusQueued || got.Metadata["needs_blocked"] != "1" || got.Error != "" {
+		t.Fatalf("expected dependent to keep waiting, got status=%q error=%q metadata=%v", got.Status, got.Error, got.Metadata)
+	}
+	if next, err := db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || next != nil {
+		t.Fatalf("timed-out prerequisite must leave dependent unleaseable: job=%+v err=%v", next, err)
 	}
 }
