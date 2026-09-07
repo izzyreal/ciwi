@@ -48,18 +48,28 @@
       runs_on:
         executor: script
         shell: posix
-        os: linux
-        arch: amd64
+        container_runtime: auto
+        container_build_context: packaging/linux
+        container_platform: linux/amd64
+        container_cpus: "4"
+        container_memory: 4G
       go_cache: {}
       requires:
         tools:
           git: "*"
-          docker: "*"
-      timeout_seconds: 1200
+        container:
+          tools:
+            go: ">=1.24"
+            gcc: "*"
+            pkg-config: "*"
+      timeout_seconds: 3600
       artifacts:
         - dist/desktop-linux-amd64/**
       steps:
         - name: Prepare Linux desktop output
           run: rm -rf dist/desktop-linux-amd64 && mkdir -p dist/desktop-linux-amd64
         - name: Build Linux desktop application
-          run: sh packaging/build-linux-container.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-linux-amd64/ciwi
+          env:
+            HOME: /tmp/ciwi-home
+            GOTELEMETRY: "off"
+          run: mkdir -p "$HOME" && sh packaging/build-linux-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-linux-amd64/ciwi

@@ -29,36 +29,30 @@
       runs_on:
         executor: script
         shell: posix
-        os: linux
-        arch: amd64
+        container_runtime: auto
+        container_image: mcr.microsoft.com/playwright:v1.62.1-noble
+        container_cpus: "4"
+        container_memory: 4G
+        container_shm_size: 1G
       requires:
         tools:
           git: "*"
-          docker: "*"
+        container:
+          tools:
+            node: "*"
+            npm: "*"
       timeout_seconds: 1800
       artifacts:
         - dist/browser-dom-junit.xml
       steps:
-        - name: Pull Playwright test image
-          run: |
-            attempt=1
-            max_attempts=3
-
-            until docker pull mcr.microsoft.com/playwright:v1.62.1-noble; do
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                echo "Playwright image pull failed after $max_attempts attempts"
-                exit 1
-              fi
-
-              delay=$((attempt * 10))
-              echo "Playwright image pull attempt $attempt/$max_attempts failed; retrying in ${delay}s"
-              sleep "$delay"
-              attempt=$((attempt + 1))
-            done
         - name: Run browser DOM integration tests
+          env:
+            HOME: /tmp
+            CI: "1"
+            CIWI_JUNIT_REPORT: /workspace/dist/browser-dom-junit.xml
           test:
             name: browser-dom-integration
-            command: mkdir -p dist integration/browser-dom/node_modules && docker run --rm --ipc=host --user "$(id -u):$(id -g)" -e HOME=/tmp -e CI=1 -e CIWI_JUNIT_REPORT=/work/dist/browser-dom-junit.xml -v "$PWD:/work" -w /work/integration/browser-dom mcr.microsoft.com/playwright:v1.62.1-noble bash -lc 'npm ci && npm test'
+            command: mkdir -p dist integration/browser-dom/node_modules && cd integration/browser-dom && npm ci && npm test
             format: junit-xml
             report: dist/browser-dom-junit.xml
     - id: build-cross-platform

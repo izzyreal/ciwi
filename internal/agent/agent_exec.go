@@ -13,6 +13,7 @@ import (
 
 	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/protocol"
+	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
 const (
@@ -121,6 +122,9 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 		return nil
 	}
 	reportTerminalUpdate := func(status string, exitCode *int, failMsg string, cacheStats []protocol.JobCacheStats, runtimeCaps map[string]string) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		deltaRaw, totalLen, _ := progress.unsentFrom(&output)
 		delta := redactSensitive(deltaRaw, job.SensitiveValues)
 		req := protocol.JobExecutionStatusUpdateRequest{
@@ -225,6 +229,14 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 	}
 	probeContainer := runtimeProbeContainerName(job.ID, job.Metadata)
 	probeContainerImage := runtimeProbeContainerImageFromMetadata(job.Metadata)
+	buildContext := strings.TrimSpace(job.Metadata[domain.ExecutionMetadataRuntimeContainerBuildContext])
+	if buildContext != "" {
+		probeContainerImage = "ciwi-execution-" + shortStableID(job.ID) + ":latest"
+	}
+	var selectedBackend containerRuntime = cliContainerRuntime("docker")
+	selectedPlatform := ""
+	selectedVersion := ""
+	selectedImageID := ""
 	probeContainerWorkdir := runtimeExecContainerWorkdirFromMetadata(job.Metadata)
 	if strings.TrimSpace(probeContainerWorkdir) == "" {
 		probeContainerWorkdir = "/workspace"
@@ -248,6 +260,31 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 	}
 	containerExec := strings.TrimSpace(probeContainerImage) != ""
 	if containerExec {
+		// Old queued jobs have no runtime requirement and retain their Docker behavior.
+		if _, managed := job.RequiredCapabilities["requires.container.runtime"]; managed {
+			freshCaps := cloneMap(agentCapabilities)
+			if freshCaps == nil {
+				freshCaps = map[string]string{}
+			}
+			freshCaps["os"], freshCaps["arch"] = runtime.GOOS, runtime.GOARCH
+			refreshContainerCapabilities(runCtx, freshCaps)
+			backendName, platform, err := requirements.SelectContainerRuntime(job.RequiredCapabilities, freshCaps)
+			if err != nil {
+				fmt.Fprintf(&output, "[runtime] %v\n", err)
+				_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, err)}, nil)
+				return reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, err.Error(), cacheStats, nil)
+			}
+			selectedBackend, selectedPlatform = cliContainerRuntime(backendName), platform
+			selectedVersion = freshCaps["container.runtime."+backendName]
+			fmt.Fprintf(&output, "[runtime] selected %s %s platform=%s\n", backendName, selectedVersion, platform)
+		}
+		// Cleanup also covers partial startup and cancellation during preparation.
+		defer func() {
+			cleanupRuntimeProbeContainer(context.Background(), probeContainer, selectedBackend)
+			if buildContext != "" {
+				cleanupContainerImage(selectedBackend, probeContainerImage)
+			}
+		}()
 		mounts := []runtimeContainerMount{
 			{hostPath: execDir, containerPath: probeContainerWorkdir},
 		}
@@ -266,7 +303,11 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 				containerPath: hostPath,
 			})
 		}
-		startErr := startRuntimeContainer(runCtx, runtimeContainerConfig{
+		containerConfig := runtimeContainerConfig{
+			backend: selectedBackend, platform: selectedPlatform,
+			cpus:    job.Metadata[domain.ExecutionMetadataRuntimeContainerCPUs],
+			memory:  job.Metadata[domain.ExecutionMetadataRuntimeContainerMemory],
+			shmSize: job.Metadata[domain.ExecutionMetadataRuntimeContainerShmSize],
 			name:    probeContainer,
 			image:   probeContainerImage,
 			workdir: probeContainerWorkdir,
@@ -274,7 +315,19 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 			mounts:  mounts,
 			devices: probeContainerDevices,
 			groups:  probeContainerGroups,
-		})
+		}
+		var startErr error
+		if selectedPlatform != "" {
+			stopPreparationStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output, progress, job.SensitiveValues, executionPhaseTitle(environmentPhase), nil)
+			startErr = prepareContainerImage(runCtx, selectedBackend, containerConfig, execDir, buildContext, job.Metadata[domain.ExecutionMetadataRuntimeContainerBuildFile], &output)
+			stopPreparationStreaming()
+			if startErr == nil {
+				selectedImageID, startErr = inspectContainerImage(runCtx, selectedBackend, probeContainerImage, selectedPlatform)
+			}
+		}
+		if startErr == nil {
+			startErr = startRuntimeContainer(runCtx, containerConfig)
+		}
 		if startErr != nil {
 			fmt.Fprintf(&output, "[runtime] %v\n", startErr)
 			_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, startErr)}, nil)
@@ -310,13 +363,13 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 			groupSummary = strings.Join(probeContainerGroups, ", ")
 		}
 		fmt.Fprintf(&output, "[runtime] started execution container %s from %s (workdir=%s user=%s mounts=%s devices=%s groups=%s)\n", probeContainer, probeContainerImage, probeContainerWorkdir, userSummary, mountSummary, deviceSummary, groupSummary)
-		defer cleanupRuntimeProbeContainer(context.Background(), probeContainer)
 		execContainer = &executionContainerContext{
+			backend: selectedBackend,
 			name:    probeContainer,
 			workdir: probeContainerWorkdir,
 		}
 	}
-	if ensureErr := validateProbeContainerReady(runCtx, probeContainer, probeContainerImage); ensureErr != nil {
+	if ensureErr := validateProbeContainerReady(runCtx, probeContainer, probeContainerImage, selectedBackend); ensureErr != nil {
 		fmt.Fprintf(&output, "[runtime] %v\n", ensureErr)
 		_ = reportPhaseUpdate(environmentPhase, []protocol.JobExecutionEvent{phaseFinishedEvent(environmentPhase, environmentStarted, ensureErr)}, nil)
 		if reportErr := reportTerminalUpdate(protocol.JobExecutionStatusFailed, nil, ensureErr.Error(), cacheStats, nil); reportErr != nil {
@@ -331,7 +384,28 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 		return reportFailure(ctx, client, serverURL, agentID, job, nil, nil, nil, fmt.Sprintf("resolve job shell: %v", err))
 	}
 
-	runtimeCaps := collectRuntimeCapabilities(agentCapabilities, probeContainer)
+	runtimeCaps := collectRuntimeCapabilitiesWithContext(runCtx, agentCapabilities, probeContainer, selectedBackend)
+	if containerExec {
+		runtimeCaps["container.runtime"] = selectedBackend.name()
+		runtimeCaps["container.runtime_version"] = selectedVersion
+		runtimeCaps["container.platform"] = selectedPlatform
+		runtimeCaps["container.image"] = probeContainerImage
+		runtimeCaps["container.image_id"] = selectedImageID
+		if selectedBackend.name() == "apple" && selectedPlatform == "linux/amd64" {
+			runtimeCaps["container.translation"] = "Rosetta"
+		}
+		for tool := range containerToolRequirements(job.RequiredCapabilities) {
+			if runtimeCaps["container.tool."+tool] != "" {
+				continue
+			}
+			for _, args := range [][]string{{"--version"}, {"version"}, {"-version"}, {"-v"}} {
+				if v := detectToolVersionUsingContainerContext(runCtx, selectedBackend, probeContainer, tool, args...); v != "" {
+					runtimeCaps["container.tool."+tool] = v
+					break
+				}
+			}
+		}
+	}
 	enrichRuntimeHostToolCapabilities(runtimeCaps, job.RequiredCapabilities, shell)
 	if summary := runtimeProbeSummary(runtimeCaps); summary != "" {
 		fmt.Fprintf(&output, "%s\n", summary)
@@ -505,6 +579,9 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 			})
 			_ = reportRunningUpdate(currentStep, stepEvents, nil)
 		}
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	duration := time.Since(runStart).Round(time.Millisecond)
 	fmt.Fprintf(&output, "\n[run] duration=%s\n", duration)

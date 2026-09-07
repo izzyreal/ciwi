@@ -340,10 +340,40 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 		metadata.Set(domain.ExecutionMetadataRuntimeContainerGroups, containerGroups)
 	}
 
+	for key, metadataKey := range map[string]string{
+		"container_runtime":       domain.ExecutionMetadataRuntimeContainerRuntime,
+		"container_platform":      domain.ExecutionMetadataRuntimeContainerPlatform,
+		"container_build_context": domain.ExecutionMetadataRuntimeContainerBuildContext,
+		"container_build_file":    domain.ExecutionMetadataRuntimeContainerBuildFile,
+		"container_cpus":          domain.ExecutionMetadataRuntimeContainerCPUs,
+		"container_memory":        domain.ExecutionMetadataRuntimeContainerMemory,
+		"container_shm_size":      domain.ExecutionMetadataRuntimeContainerShmSize,
+	} {
+		if value := strings.TrimSpace(runsOn[key]); value != "" {
+			metadata.Set(metadataKey, value)
+		}
+	}
 	requiredCaps := cloneMap(runsOn)
 	for k := range requiredCaps {
 		if strings.HasPrefix(k, "container_") {
 			delete(requiredCaps, k)
+		}
+	}
+	if strings.TrimSpace(runsOn["container_image"]) != "" || strings.TrimSpace(runsOn["container_build_context"]) != "" {
+		if requiredCaps == nil {
+			requiredCaps = map[string]string{}
+		}
+		runtime := strings.TrimSpace(runsOn["container_runtime"])
+		if runtime == "" {
+			runtime = "auto"
+		}
+		requiredCaps["container.execution"] = "1"
+		requiredCaps["requires.container.runtime"] = runtime
+		if platform := strings.TrimSpace(runsOn["container_platform"]); platform != "" {
+			requiredCaps["requires.container.platform"] = platform
+		}
+		if strings.TrimSpace(runsOn["container_devices"])+strings.TrimSpace(runsOn["container_groups"]) != "" {
+			requiredCaps["requires.container.docker_options"] = "1"
 		}
 	}
 	for tool, constraint := range requiresTools {

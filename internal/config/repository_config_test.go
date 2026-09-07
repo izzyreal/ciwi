@@ -67,25 +67,18 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	build := pipelineByID("build")
 	integrationTests := jobByID(build, "integration-tests")
 	buildCrossPlatform := jobByID(build, "build-cross-platform")
-	if integrationTests.RunsOn["os"] != "linux" || integrationTests.RunsOn["arch"] != "amd64" || integrationTests.Requires.Tools["docker"] != "*" {
-		t.Fatalf("unexpected browser integration runtime: %+v", integrationTests)
+	if integrationTests.RunsOn["os"] != "" || integrationTests.RunsOn["arch"] != "" || integrationTests.Requires.Tools["docker"] != "" || integrationTests.RunsOn["container_runtime"] != "auto" {
+		t.Fatalf("browser tests must be portable managed jobs: %+v", integrationTests)
 	}
-	if integrationTests.TimeoutSeconds < 1800 || len(integrationTests.Steps) < 2 {
-		t.Fatalf("browser integration job must budget and isolate its cold image pull: %+v", integrationTests)
+	if integrationTests.RunsOn["container_image"] != "mcr.microsoft.com/playwright:v1.62.1-noble" || integrationTests.RunsOn["container_shm_size"] != "1G" || integrationTests.TimeoutSeconds < 1800 {
+		t.Fatalf("browser container configuration: %+v", integrationTests)
 	}
-	pullScript := integrationTests.Steps[0].Run
-	if !strings.Contains(pullScript, "until docker pull mcr.microsoft.com/playwright:v1.62.1-noble; do") ||
-		!strings.Contains(pullScript, "max_attempts=3") ||
-		!strings.Contains(pullScript, `if [ "$attempt" -ge "$max_attempts" ]`) ||
-		!strings.Contains(pullScript, "delay=$((attempt * 10))") ||
-		!strings.Contains(pullScript, "exit 1") {
-		t.Fatalf("browser integration image pull must have a bounded three-attempt retry with 10s/20s backoff: %q", pullScript)
+	if len(integrationTests.Steps) != 1 || integrationTests.Steps[0].Env["HOME"] != "/tmp" || strings.Contains(integrationTests.Steps[0].Test.Command, "docker") {
+		t.Fatal("browser tests must execute directly inside the managed container")
 	}
-	integrationCommand := integrationTests.Steps[1].Test.Command
-	if !strings.Contains(integrationCommand, `--user "$(id -u):$(id -g)"`) ||
-		!strings.Contains(integrationCommand, `-e HOME=/tmp`) ||
-		strings.Contains(integrationCommand, `-v /work/integration/browser-dom/node_modules`) {
-		t.Fatalf("browser integration container must not create root-owned workspace files: %q", integrationCommand)
+	desktopLinux := jobByID(pipelineByID("build-desktop"), "linux-amd64")
+	if desktopLinux.RunsOn["container_build_context"] != "packaging/linux" || desktopLinux.RunsOn["container_platform"] != "linux/amd64" || desktopLinux.RunsOn["os"] != "" || desktopLinux.Requires.Tools["docker"] != "" {
+		t.Fatalf("Linux desktop managed build: %+v", desktopLinux)
 	}
 	if !slices.Contains(buildCrossPlatform.Needs, "unit-tests") || !slices.Contains(buildCrossPlatform.Needs, "integration-tests") {
 		t.Fatalf("cross-platform build dependencies = %+v, want both test jobs", buildCrossPlatform.Needs)

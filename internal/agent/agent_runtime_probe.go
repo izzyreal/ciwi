@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izzyreal/ciwi/internal/domain"
 	"github.com/izzyreal/ciwi/internal/requirements"
 )
 
@@ -21,7 +22,11 @@ const hostToolRequirementPrefix = "requires.tool."
 
 var runtimeContainerStartTimeout = 60 * time.Second
 
-func collectRuntimeCapabilities(agentCapabilities map[string]string, probeContainer string) map[string]string {
+func collectRuntimeCapabilities(agentCapabilities map[string]string, probeContainer string, backends ...containerRuntime) map[string]string {
+	return collectRuntimeCapabilitiesWithContext(context.Background(), agentCapabilities, probeContainer, runtimeOrDocker(backends))
+}
+
+func collectRuntimeCapabilitiesWithContext(ctx context.Context, agentCapabilities map[string]string, probeContainer string, backend containerRuntime) map[string]string {
 	out := map[string]string{}
 	for k, v := range agentCapabilities {
 		k = strings.TrimSpace(k)
@@ -37,8 +42,8 @@ func collectRuntimeCapabilities(agentCapabilities map[string]string, probeContai
 		return out
 	}
 	out["container.name"] = container
-	if _, err := exec.LookPath("docker"); err != nil {
-		out["container.probe_error"] = "docker not found on agent"
+	if _, err := exec.LookPath(backend.command()); err != nil {
+		out["container.probe_error"] = backend.command() + " not found on agent"
 		return out
 	}
 	tools := []struct {
@@ -64,7 +69,10 @@ func collectRuntimeCapabilities(agentCapabilities map[string]string, probeContai
 		{name: "signtool", cmd: "signtool", args: []string{"/?"}},
 	}
 	for _, t := range tools {
-		if v := detectToolVersionInContainer(container, t.cmd, t.args...); v != "" {
+		if ctx.Err() != nil {
+			break
+		}
+		if v := detectToolVersionUsingContainerContext(ctx, backend, container, t.cmd, t.args...); v != "" {
 			out["container.tool."+t.name] = v
 		}
 	}
@@ -75,6 +83,14 @@ func collectRuntimeCapabilities(agentCapabilities map[string]string, probeContai
 }
 
 func detectToolVersionInContainer(container, cmd string, args ...string) string {
+	return detectToolVersionUsingContainer(cliContainerRuntime("docker"), container, cmd, args...)
+}
+
+func detectToolVersionUsingContainer(backend containerRuntime, container, cmd string, args ...string) string {
+	return detectToolVersionUsingContainerContext(context.Background(), backend, container, cmd, args...)
+}
+
+func detectToolVersionUsingContainerContext(parent context.Context, backend containerRuntime, container, cmd string, args ...string) string {
 	container = strings.TrimSpace(container)
 	cmd = strings.TrimSpace(cmd)
 	if container == "" || cmd == "" {
@@ -85,9 +101,9 @@ func detectToolVersionInContainer(container, cmd string, args ...string) string 
 		quoted += " " + shellQuote(arg)
 	}
 	script := quoted
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 	defer cancel()
-	out, err := runCommandCapture(ctx, "", "docker", "exec", container, "sh", "-lc", script)
+	out, err := runCommandCapture(ctx, "", backend.command(), "exec", container, "sh", "-c", script)
 	if err != nil && strings.TrimSpace(out) == "" {
 		return ""
 	}
@@ -197,7 +213,7 @@ func runtimeExecContainerGroupsFromMetadata(meta map[string]string) []string {
 }
 
 func runtimeProbeContainerName(jobID string, meta map[string]string) string {
-	if runtimeProbeContainerImageFromMetadata(meta) == "" {
+	if runtimeProbeContainerImageFromMetadata(meta) == "" && strings.TrimSpace(meta[domain.ExecutionMetadataRuntimeContainerBuildContext]) == "" {
 		return ""
 	}
 	return "ciwi-probe-" + shortStableID(jobID)
@@ -219,13 +235,18 @@ type runtimeContainerMount struct {
 }
 
 type runtimeContainerConfig struct {
-	name    string
-	image   string
-	workdir string
-	user    string
-	mounts  []runtimeContainerMount
-	devices []string
-	groups  []string
+	backend  containerRuntime
+	platform string
+	cpus     string
+	memory   string
+	shmSize  string
+	name     string
+	image    string
+	workdir  string
+	user     string
+	mounts   []runtimeContainerMount
+	devices  []string
+	groups   []string
 }
 
 func defaultContainerUserSpec() string {
@@ -258,23 +279,32 @@ func ensureHostMountPaths(mounts []runtimeContainerMount) error {
 }
 
 func startRuntimeContainer(ctx context.Context, cfg runtimeContainerConfig) error {
+	backend := runtimeOrDocker([]containerRuntime{cfg.backend})
 	name := strings.TrimSpace(cfg.name)
 	image := strings.TrimSpace(cfg.image)
 	if name == "" || image == "" {
 		return nil
 	}
 	name = strings.TrimSpace(name)
-	if _, err := exec.LookPath("docker"); err != nil {
-		return fmt.Errorf("docker not found on agent")
+	if _, err := exec.LookPath(backend.command()); err != nil {
+		return fmt.Errorf("%s not found on agent", backend.command())
 	}
 	if err := ensureHostMountPaths(cfg.mounts); err != nil {
 		return err
 	}
 	cleanupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	_, _ = runCommandCapture(cleanupCtx, "", "docker", "rm", "-f", name)
+	_, _ = runCommandCapture(cleanupCtx, "", backend.command(), "rm", "-f", name)
 
 	args := []string{"run", "-d", "--name", name}
+	for _, option := range [][2]string{{"--platform", cfg.platform}, {"--cpus", cfg.cpus}, {"--memory", cfg.memory}, {"--shm-size", cfg.shmSize}} {
+		if option[1] != "" {
+			args = append(args, option[0], option[1])
+		}
+	}
+	if backend.name() == "apple" && (len(cfg.devices) > 0 || len(cfg.groups) > 0) {
+		return fmt.Errorf("Apple Container does not support device or supplementary-group options")
+	}
 	if workdir := strings.TrimSpace(cfg.workdir); workdir != "" {
 		args = append(args, "-w", workdir)
 	}
@@ -307,8 +337,8 @@ func startRuntimeContainer(ctx context.Context, cfg runtimeContainerConfig) erro
 
 	startCtx, startCancel := context.WithTimeout(ctx, runtimeContainerStartTimeout)
 	defer startCancel()
-	if out, err := runCommandCapture(startCtx, "", "docker", args...); err != nil {
-		cmdLine := "docker " + shellJoin(args)
+	if out, err := runCommandCapture(startCtx, "", backend.command(), args...); err != nil {
+		cmdLine := backend.command() + " " + shellJoin(args)
 		out = strings.TrimSpace(out)
 		if errors.Is(startCtx.Err(), context.DeadlineExceeded) {
 			if out != "" {
@@ -324,38 +354,29 @@ func startRuntimeContainer(ctx context.Context, cfg runtimeContainerConfig) erro
 	return nil
 }
 
-func cleanupRuntimeProbeContainer(ctx context.Context, name string) {
+func cleanupRuntimeProbeContainer(ctx context.Context, name string, backends ...containerRuntime) {
+	backend := runtimeOrDocker(backends)
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return
 	}
-	if _, err := exec.LookPath("docker"); err != nil {
+	if _, err := exec.LookPath(backend.command()); err != nil {
 		return
 	}
 	cleanupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	_, _ = runCommandCapture(cleanupCtx, "", "docker", "rm", "-f", name)
+	out, err := runCommandCapture(cleanupCtx, "", backend.command(), "rm", "-f", name)
+	logContainerCleanupFailure(backend.name(), name, out, err)
 }
 
-func validateProbeContainerReady(ctx context.Context, name, image string) error {
-	name = strings.TrimSpace(name)
-	image = strings.TrimSpace(image)
-	if name == "" || image == "" {
+func validateProbeContainerReady(ctx context.Context, name, image string, backends ...containerRuntime) error {
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(image) == "" {
 		return nil
 	}
-	if _, err := exec.LookPath("docker"); err != nil {
-		return fmt.Errorf("docker not found on agent")
-	}
+	backend := runtimeOrDocker(backends)
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := runCommandCapture(checkCtx, "", "docker", "inspect", "-f", "{{.State.Running}}", name)
-	if err != nil {
-		return fmt.Errorf("runtime container %q is not inspectable: %w", name, err)
-	}
-	if !strings.EqualFold(strings.TrimSpace(out), "true") {
-		return fmt.Errorf("runtime container %q is not running", name)
-	}
-	return nil
+	return backend.running(checkCtx, name)
 }
 
 func runtimeProbeSummary(runtimeCaps map[string]string) string {

@@ -79,30 +79,122 @@ Constraint syntax:
 - presence: `*` or empty
 - comparison: `>=`, `>`, `<=`, `<`, `=`, `==`
 
-## Container runtime probe
+## Managed containers
 
-When `runs_on.container_image` is set:
-- agent starts/manages runtime container
-- steps execute through `docker exec`
-- source and cache paths are bind-mounted
-- tool probes run in container and are persisted as structured runtime capabilities
-
-Optional:
-- `runs_on.container_devices`
-- `runs_on.container_groups`
-- `runs_on.container_workdir`
-- `runs_on.container_user`
-
-Container-only requirements can be declared separately from host requirements:
+Jobs with `runs_on.container_image` or `runs_on.container_build_context` execute
+inside a managed Linux container. Ciwi selects an available Docker or Apple
+Container runtime, prepares the image, mounts source and caches, probes tools,
+executes steps, and removes the job container when execution ends. Container
+commands use a non-login POSIX shell so the image's PATH and the step's HOME are
+preserved.
 
 ```yaml
+runs_on:
+  executor: script
+  shell: posix
+  container_runtime: auto
+  container_image: mcr.microsoft.com/playwright:v1.62.1-noble
+  container_cpus: "4"
+  container_memory: 4G
+  container_shm_size: 1G
 requires:
   tools:
-    docker: "*"
+    git: "*"
   container:
     tools:
-      cmake: ">=3.20"
+      node: "*"
+      npm: "*"
 ```
+
+`container_runtime` accepts `auto` (the default), `docker`, or `apple`. Automatic
+selection prefers Apple Container on Apple silicon Macs and Docker elsewhere.
+The scheduler requires one available backend to satisfy all container settings.
+It rechecks readiness before execution and does not switch backends after image
+preparation starts. Runtime readiness refreshes every 30 seconds.
+
+`runs_on.os` and `runs_on.arch` always constrain the **host**. Omit them for a job
+that can run on either a Linux Docker agent or an Apple silicon Mac. Use
+`container_platform: linux/amd64` or `linux/arm64` to select the **container**
+platform; omission uses the runtime's native Linux platform. Docker currently
+advertises its native Linux platform. Apple advertises arm64, plus amd64 when
+Rosetta is installed. Image availability is checked during environment preparation.
+
+Use `requires.tools` for host tools and `requires.container.tools` for tools inside
+the image. A Docker tool requirement still restricts scheduling to hosts with
+Docker installed; remove it when making a job portable.
+
+### Images built from the repository
+
+```yaml
+runs_on:
+  executor: script
+  shell: posix
+  container_build_context: packaging/linux
+  container_build_file: Dockerfile
+  container_platform: linux/amd64
+  container_memory: 4G
+```
+
+The context is relative to the checkout; the Dockerfile is relative to that
+context and defaults to `Dockerfile`. Paths must remain inside their respective
+roots, including after resolving symlinks. `container_build_context` and
+`container_image` are mutually exclusive. Ciwi builds a private execution image
+using the selected runtime, then runs all job steps inside it. Engine build caches
+are retained; the execution image tag is removed after use. Builder resource
+limits come from engine configuration; job resource settings apply to the job
+container itself.
+
+Local images are reused only when the requested platform is available. Missing
+images are pulled with at most three attempts and 10/20-second backoff. Pulls and
+builds stream logs and consume the job timeout. Container startup has a separate
+60-second timeout after image preparation.
+
+Additional settings:
+
+- `container_workdir`: workspace mount and working directory, default `/workspace`.
+- `container_user`: user or `uid:gid`; default is the agent's UID/GID on POSIX hosts.
+- `container_cpus`: positive integer.
+- `container_memory`, `container_shm_size`: positive bytes or integer with K/M/G/T suffix.
+- `container_devices`, `container_groups`: Docker-only device and supplementary-group settings. Automatic jobs using them select Docker; Apple-pinned jobs reject them.
+
+Give tools a writable home, for example with step environment `HOME: /tmp`.
+Browser jobs use `container_shm_size` instead of Docker's `--ipc=host`.
+Job details report the selected runtime/version, platform, immutable image
+identity, and Rosetta translation when used. Reports and artifacts remain paths
+relative to the host checkout, while commands and their environment use container
+paths.
+
+### Installation and upgrade
+
+Apple Container support targets CLI 1.2.2 or newer on macOS 26 with Apple silicon.
+Install the CLI on the agent's PATH and start `container system start` as the same
+user that runs the Ciwi agent. Install Rosetta for `linux/amd64` execution. Ciwi
+checks service readiness but does not start services or install system components.
+A missing CLI, stopped service, or inaccessible service is shown as an unavailable
+runtime in scheduling diagnostics. Configure sufficient engine builder resources
+for Dockerfile builds.
+
+Upgrade agents before activating these jobs. Newly enqueued managed jobs require
+the managed-execution capability, so older agents cannot lease them. Omitted
+runtime settings now mean `auto`; use `container_runtime: docker` to pin existing
+jobs. Jobs already queued by an older server retain their legacy Docker execution.
+No database migration is needed.
+
+Real-runtime acceptance tests use an isolated server, agent, database, repository
+snapshot, and work directory. Start the runtime first, then run:
+
+```sh
+CIWI_TEST_CONTAINER_RUNTIME=apple go test ./internal/server -run '^TestContainerLiveRepositoryJobs$' -count=1 -timeout=130m -v
+# On a Linux amd64 Docker host:
+CIWI_TEST_CONTAINER_RUNTIME=docker go test ./internal/server -run '^TestContainerLiveRepositoryJobs$' -count=1 -timeout=130m -v
+```
+
+These run Ciwi's browser job and two desktop builds, checking reports, artifacts,
+and cache reuse. Set `CIWI_TEST_CONTAINER_JOB=integration-tests` or `linux-amd64`
+to select one job. Run `CIWI_TEST_CONTAINER_RUNTIME=apple go test ./internal/agent -run
+'^TestContainerLive.*Cancellation$' -count=1 -timeout=5m` to verify cancellation cleanup
+for real commands and image builds (use `docker` for Docker). Normal test runs skip live
+container tests.
 
 ## Work directory layout
 

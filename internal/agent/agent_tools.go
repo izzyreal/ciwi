@@ -35,6 +35,7 @@ func detectAgentCapabilities() map[string]string {
 		}
 		caps["tool."+tool] = version
 	}
+	refreshContainerCapabilities(context.Background(), caps)
 	return caps
 }
 
@@ -73,6 +74,7 @@ func detectToolVersions() map[string]string {
 		{name: "ccache", cmd: "ccache", args: []string{"--version"}},
 		{name: "ninja", cmd: "ninja", args: []string{"--version"}},
 		{name: "docker", cmd: "docker", args: []string{"--version"}},
+		{name: "container", cmd: "container", args: []string{"--version"}},
 		{name: "gcc", cmd: "gcc", args: []string{"--version"}},
 		{name: "clang", cmd: "clang", args: []string{"--version"}},
 		{name: "rinoh", cmd: "rinoh", args: []string{"--version"}},

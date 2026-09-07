@@ -395,6 +395,12 @@ func presentJobProperties(details domain.JobExecutionDetails, view JobDetailsVie
 		duration,
 		{Label: "Exit Code", Value: view.ExitCode},
 	}
+	for _, field := range [][2]string{{"container.runtime", "Container runtime"}, {"container.runtime_version", "Runtime version"}, {"container.platform", "Container platform"}, {"container.image", "Container image"}, {"container.image_id", "Image identity"}, {"container.translation", "Translation"}} {
+		if value := details.RuntimeCapabilities[field[0]]; value != "" {
+			rows = append(rows, JobDetailRowView{Label: field[1], Value: value})
+		}
+	}
+
 	return rows
 }
 

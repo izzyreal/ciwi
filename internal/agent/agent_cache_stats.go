@@ -98,7 +98,7 @@ func readCCacheMetrics(cacheDir string, container *executionContainerContext) ma
 		out, err = runCommandCapture(
 			ctx,
 			"",
-			"docker",
+			runtimeOrDocker([]containerRuntime{container.backend}).command(),
 			"exec",
 			strings.TrimSpace(container.name),
 			"ccache",

@@ -63,6 +63,16 @@ const (
 	ExecutionMetadataSchedulingRetryUTC        = "scheduling_retry_utc"
 )
 
+const (
+	ExecutionMetadataRuntimeContainerRuntime      = "runtime_exec.container_runtime"
+	ExecutionMetadataRuntimeContainerPlatform     = "runtime_exec.container_platform"
+	ExecutionMetadataRuntimeContainerBuildContext = "runtime_exec.container_build_context"
+	ExecutionMetadataRuntimeContainerBuildFile    = "runtime_exec.container_build_file"
+	ExecutionMetadataRuntimeContainerCPUs         = "runtime_exec.container_cpus"
+	ExecutionMetadataRuntimeContainerMemory       = "runtime_exec.container_memory"
+	ExecutionMetadataRuntimeContainerShmSize      = "runtime_exec.container_shm_size"
+)
+
 func (m ExecutionMetadata) Value(key string) string {
 	return strings.TrimSpace(m[key])
 }

@@ -263,6 +263,12 @@ func (cfg File) Validate() []string {
 			executor := strings.ToLower(strings.TrimSpace(job.RunsOn["executor"]))
 			shell := strings.ToLower(strings.TrimSpace(job.RunsOn["shell"]))
 			containerImage := strings.TrimSpace(job.RunsOn["container_image"])
+			for _, problem := range validateContainerConfig(job.RunsOn) {
+				errs = append(errs, fmt.Sprintf("pipelines[%d].jobs[%d].%s", i, j, problem))
+			}
+			if strings.TrimSpace(job.RunsOn["container_build_context"]) != "" {
+				containerImage = "built-image"
+			}
 			containerDevices := strings.TrimSpace(job.RunsOn["container_devices"])
 			containerGroups := strings.TrimSpace(job.RunsOn["container_groups"])
 			if executor != "" && executor != "script" {

@@ -46,14 +46,23 @@ func runJobScript(
 			args = append(args, "-w", w)
 		}
 		for _, e := range env {
-			e = strings.TrimSpace(e)
 			if e == "" || !strings.Contains(e, "=") {
 				continue
 			}
 			args = append(args, "--env", e)
 		}
-		args = append(args, containerName, "sh", "-lc", tracedScript)
-		cmd = exec.Command("docker", args...)
+		args = append(args, containerName, "sh", "-c", tracedScript)
+		cmd = exec.Command(runtimeOrDocker([]containerRuntime{container.backend}).command(), args...)
+		cleanupDone := make(chan struct{})
+		stopCleanup := context.AfterFunc(runCtx, func() {
+			defer close(cleanupDone)
+			cleanupRuntimeProbeContainer(context.Background(), containerName, runtimeOrDocker([]containerRuntime{container.backend}))
+		})
+		defer func() {
+			if !stopCleanup() {
+				<-cleanupDone
+			}
+		}()
 	} else {
 		bin, args, err := commandForScript(shell, tracedScript)
 		if err == nil && runtime.GOOS == "windows" && shell == shellCmd {
@@ -80,6 +89,9 @@ func runJobScript(
 }
 
 func runCancelableCommand(ctx context.Context, cmd *exec.Cmd) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -239,6 +251,7 @@ type outputReportState struct {
 }
 
 type executionContainerContext struct {
+	backend containerRuntime
 	name    string
 	workdir string
 }

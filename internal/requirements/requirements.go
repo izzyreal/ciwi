@@ -46,12 +46,18 @@ func MatchAgent(required map[string]string, agent AgentSnapshot) MatchResult {
 func MatchCapabilities(required, observed map[string]string) MatchResult {
 	issues := make([]MatchIssue, 0)
 	keys := make([]string, 0, len(required))
+	_, managed := required["requires.container.runtime"]
 	for key := range required {
-		if !strings.HasPrefix(key, "requires.container.tool.") {
+		if !strings.HasPrefix(key, "requires.container.tool.") && !(managed && IsContainerRuntimeRequirement(key)) {
 			keys = append(keys, key)
 		}
 	}
 	sort.Strings(keys)
+	if managed {
+		if _, _, err := SelectContainerRuntime(required, observed); err != nil {
+			issues = append(issues, MatchIssue{Code: "container_runtime_mismatch", Key: "requires.container.runtime", Expected: required["requires.container.runtime"], Message: err.Error()})
+		}
+	}
 	for _, key := range keys {
 		expected := strings.TrimSpace(required[key])
 		actualKey := key
@@ -159,6 +165,14 @@ func RequirementLabels(required map[string]string) []string {
 			} else {
 				labels = append(labels, tool+" "+value)
 			}
+		case key == "requires.container.runtime":
+			labels = append(labels, "container runtime "+value)
+		case key == "requires.container.platform":
+			labels = append(labels, "container platform "+value)
+		case key == "requires.container.docker_options":
+			labels = append(labels, "Docker device/group support")
+		case key == ContainerExecutionCapability:
+			continue
 		case key == "shell":
 			labels = append(labels, value+" shell")
 		case key == "agent_id":

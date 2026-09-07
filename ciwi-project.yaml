@@ -34,36 +34,30 @@ pipelines:
         runs_on:
           executor: script
           shell: posix
-          os: linux
-          arch: amd64
+          container_runtime: auto
+          container_image: mcr.microsoft.com/playwright:v1.62.1-noble
+          container_cpus: "4"
+          container_memory: 4G
+          container_shm_size: 1G
         requires:
           tools:
             git: "*"
-            docker: "*"
+          container:
+            tools:
+              node: "*"
+              npm: "*"
         timeout_seconds: 1800
         artifacts:
           - dist/browser-dom-junit.xml
         steps:
-          - name: Pull Playwright test image
-            run: |
-              attempt=1
-              max_attempts=3
-
-              until docker pull mcr.microsoft.com/playwright:v1.62.1-noble; do
-                if [ "$attempt" -ge "$max_attempts" ]; then
-                  echo "Playwright image pull failed after $max_attempts attempts"
-                  exit 1
-                fi
-
-                delay=$((attempt * 10))
-                echo "Playwright image pull attempt $attempt/$max_attempts failed; retrying in ${delay}s"
-                sleep "$delay"
-                attempt=$((attempt + 1))
-              done
           - name: Run browser DOM integration tests
+            env:
+              HOME: /tmp
+              CI: "1"
+              CIWI_JUNIT_REPORT: /workspace/dist/browser-dom-junit.xml
             test:
               name: browser-dom-integration
-              command: mkdir -p dist integration/browser-dom/node_modules && docker run --rm --ipc=host --user "$(id -u):$(id -g)" -e HOME=/tmp -e CI=1 -e CIWI_JUNIT_REPORT=/work/dist/browser-dom-junit.xml -v "$PWD:/work" -w /work/integration/browser-dom mcr.microsoft.com/playwright:v1.62.1-noble bash -lc 'npm ci && npm test'
+              command: mkdir -p dist integration/browser-dom/node_modules && cd integration/browser-dom && npm ci && npm test
               format: junit-xml
               report: dist/browser-dom-junit.xml
       - id: build-cross-platform
@@ -158,21 +152,31 @@ pipelines:
         runs_on:
           executor: script
           shell: posix
-          os: linux
-          arch: amd64
+          container_runtime: auto
+          container_build_context: packaging/linux
+          container_platform: linux/amd64
+          container_cpus: "4"
+          container_memory: 4G
         go_cache: {}
         requires:
           tools:
             git: "*"
-            docker: "*"
-        timeout_seconds: 1200
+          container:
+            tools:
+              go: ">=1.24"
+              gcc: "*"
+              pkg-config: "*"
+        timeout_seconds: 3600
         artifacts:
           - dist/desktop-linux-amd64/**
         steps:
           - name: Prepare Linux desktop output
             run: rm -rf dist/desktop-linux-amd64 && mkdir -p dist/desktop-linux-amd64
           - name: Build Linux desktop application
-            run: sh packaging/build-linux-container.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-linux-amd64/ciwi
+            env:
+              HOME: /tmp/ciwi-home
+              GOTELEMETRY: "off"
+            run: mkdir -p "$HOME" && sh packaging/build-linux-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-linux-amd64/ciwi
   - id: ios
     trigger: manual
     vcs_source:

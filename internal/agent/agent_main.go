@@ -381,6 +381,30 @@ func runLoop(ctx context.Context) error {
 		capabilitiesMu.Unlock()
 	}
 
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				refreshed := map[string]string{}
+				refreshContainerCapabilities(ctx, refreshed)
+				capabilitiesMu.Lock()
+				for key := range capabilities {
+					if strings.HasPrefix(key, "container.") {
+						delete(capabilities, key)
+					}
+				}
+				for key, value := range refreshed {
+					capabilities[key] = value
+				}
+				capabilitiesMu.Unlock()
+			}
+		}
+	}()
+
 	heartbeatState := &agentHeartbeatState{pendingRestartStatus: startupHeartbeatGreeting()}
 	control := &deferredControl{}
 	jobDoneCh := make(chan jobResult, 1)
@@ -463,6 +487,17 @@ func runLoop(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// The execution goroutine owns container/image cleanup. Let it
+			// finish before main exits, including after a terminal report.
+			if control.jobInProgress {
+				timer := time.NewTimer(60 * time.Second)
+				select {
+				case <-jobDoneCh:
+					timer.Stop()
+				case <-timer.C:
+					return fmt.Errorf("agent shutdown timed out waiting for job cleanup")
+				}
+			}
 			return nil
 		case done := <-jobDoneCh:
 			if done.err != nil {

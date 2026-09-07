@@ -940,3 +940,42 @@ func loadPipelineForEnqueueBuilderTest(t *testing.T, yaml []byte, source string)
 	}
 	return s, p
 }
+
+func TestManagedContainerEnqueuePreservesRuntimeMetadata(t *testing.T) {
+	s, p := loadPipelineForEnqueueBuilderTest(t, []byte(`
+version: 1
+project: {name: ciwi}
+pipelines:
+  - id: build
+    jobs:
+      - id: compile
+        runs_on:
+          executor: script
+          shell: posix
+          container_build_context: packaging/linux
+          container_platform: linux/amd64
+          container_memory: 4G
+        requires:
+          container:
+            tools: {go: ">=1.24"}
+        steps:
+          - run: go version
+`), "managed-container")
+	response, err := s.enqueuePersistedPipeline(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := s.db.GetJobExecution(response.JobExecutionIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.RequiredCapabilities["requires.container.runtime"] != "auto" || job.RequiredCapabilities["container.execution"] != "1" || job.RequiredCapabilities["requires.container.platform"] != "linux/amd64" {
+		t.Fatalf("requirements: %v", job.RequiredCapabilities)
+	}
+	if job.Metadata["runtime_exec.container_build_context"] != "packaging/linux" || job.Metadata["runtime_exec.container_memory"] != "4G" {
+		t.Fatalf("metadata: %v", job.Metadata)
+	}
+	if job.RequiredCapabilities["container_memory"] != "" || job.RequiredCapabilities["os"] != "" || job.RequiredCapabilities["arch"] != "" {
+		t.Fatalf("container settings leaked into host requirements: %v", job.RequiredCapabilities)
+	}
+}
