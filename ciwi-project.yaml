@@ -60,10 +60,55 @@ pipelines:
               command: mkdir -p dist integration/browser-dom/node_modules && cd integration/browser-dom && npm ci && npm test
               format: junit-xml
               report: dist/browser-dom-junit.xml
+      - id: container-cancellation-apple
+        runs_on:
+          executor: script
+          shell: posix
+          os: darwin
+          arch: arm64
+        go_cache: {}
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
+            container: ">=1.2.2"
+        timeout_seconds: 600
+        steps:
+          - name: Verify apple container cancellation
+            env:
+              CIWI_TEST_CONTAINER_RUNTIME: apple
+            test:
+              name: container-cancellation-apple
+              command: mkdir -p dist && go test -tags integration -run '^TestContainerLiveCancellation$' -count=1 -timeout=5m -json ./internal/agent > dist/container-cancellation-apple.json
+              format: go-test-json
+              report: dist/container-cancellation-apple.json
+      - id: container-cancellation-docker
+        runs_on:
+          executor: script
+          shell: posix
+          os: linux
+        go_cache: {}
+        requires:
+          tools:
+            git: "*"
+            go: ">=1.24"
+            docker: "*"
+        timeout_seconds: 600
+        steps:
+          - name: Verify docker container cancellation
+            env:
+              CIWI_TEST_CONTAINER_RUNTIME: docker
+            test:
+              name: container-cancellation-docker
+              command: mkdir -p dist && go test -tags integration -run '^TestContainerLiveCancellation$' -count=1 -timeout=5m -json ./internal/agent > dist/container-cancellation-docker.json
+              format: go-test-json
+              report: dist/container-cancellation-docker.json
       - id: build-cross-platform
         needs:
           - unit-tests
           - integration-tests
+          - container-cancellation-apple
+          - container-cancellation-docker
         runs_on:
           executor: script
           shell: posix
@@ -129,6 +174,12 @@ pipelines:
         steps:
           - name: Prepare macOS desktop output
             run: rm -rf dist/desktop-macos-unsigned && mkdir -p dist/desktop-macos-unsigned
+          - name: Verify Apple debug-info guard
+            test:
+              name: apple-debug-info
+              command: mkdir -p dist && go test -tags integration -run '^TestAppleDebugInfoVerifierAcceptsRelWithDebInfoAndRejectsStrippedBinary$' -count=1 -timeout=5m -json ./packaging > dist/apple-debug-info.json
+              format: go-test-json
+              report: dist/apple-debug-info.json
           - name: Build universal macOS desktop app
             run: sh packaging/build-macos-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-macos-unsigned
       - id: windows-amd64

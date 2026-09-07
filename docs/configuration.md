@@ -180,21 +180,29 @@ runtime settings now mean `auto`; use `container_runtime: docker` to pin existin
 jobs. Jobs already queued by an older server retain their legacy Docker execution.
 No database migration is needed.
 
-Real-runtime acceptance tests use an isolated server, agent, database, repository
-snapshot, and work directory. Start the runtime first, then run:
+Integration checks are excluded from ordinary Go unit runs by the `integration`
+build tag. Run the targeted check for the environment you are testing:
 
 ```sh
-CIWI_TEST_CONTAINER_RUNTIME=apple go test ./internal/server -run '^TestContainerLiveRepositoryJobs$' -count=1 -timeout=130m -v
-# On a Linux amd64 Docker host:
-CIWI_TEST_CONTAINER_RUNTIME=docker go test ./internal/server -run '^TestContainerLiveRepositoryJobs$' -count=1 -timeout=130m -v
+# Apple Container on macOS arm64 (runtime service must already be running):
+CIWI_TEST_CONTAINER_RUNTIME=apple go test -tags integration ./internal/agent -run '^TestContainerLiveCancellation$' -count=1 -timeout=5m -v
+# Docker on Linux (runtime service must already be running):
+CIWI_TEST_CONTAINER_RUNTIME=docker go test -tags integration ./internal/agent -run '^TestContainerLiveCancellation$' -count=1 -timeout=5m -v
+# Debug-info verifier on macOS with Go and Xcode command-line tools:
+go test -tags integration ./packaging -run '^TestAppleDebugInfoVerifierAcceptsRelWithDebInfoAndRejectsStrippedBinary$' -count=1 -timeout=5m -v
 ```
 
-These run Ciwi's browser job and two desktop builds, checking reports, artifacts,
-and cache reuse. Set `CIWI_TEST_CONTAINER_JOB=integration-tests` or `linux-amd64`
-to select one job. Run `CIWI_TEST_CONTAINER_RUNTIME=apple go test ./internal/agent -run
-'^TestContainerLive.*Cancellation$' -count=1 -timeout=5m` to verify cancellation cleanup
-for real commands and image builds (use `docker` for Docker). Normal test runs skip live
-container tests.
+Explicit integration runs fail when the selected runtime or required tools are
+unavailable. Container cancellation requires `CIWI_TEST_CONTAINER_RUNTIME` to be
+`apple` or `docker`; automatic selection is not supported by this check.
+
+The `build` pipeline runs separate host jobs, `container-cancellation-apple` and
+`container-cancellation-docker`, and requires both to pass before cross-platform
+compilation. A complete run needs a macOS arm64 agent with Apple Container 1.2.2+
+and a Linux agent with Docker. Operators must start the runtime services; the jobs
+do not install or start them. The `build-desktop/macos-unsigned` job verifies the
+debug-info guard before building the application. Each check has its own Go test
+report; coverage remains with the unit job.
 
 ## Work directory layout
 

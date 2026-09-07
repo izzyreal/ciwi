@@ -1,3 +1,5 @@
+//go:build integration
+
 package packaging_test
 
 import (
@@ -10,7 +12,13 @@ import (
 
 func TestAppleDebugInfoVerifierAcceptsRelWithDebInfoAndRejectsStrippedBinary(t *testing.T) {
 	if runtime.GOOS != "darwin" {
-		t.Skip("Apple debug-info verification requires the Xcode command-line tools")
+		t.Fatal("Apple debug-info integration requires macOS and the Xcode command-line tools")
+	}
+
+	for _, tool := range []string{"go", "xcrun", "lipo", "sh", "cp"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Fatalf("Apple debug-info integration requires %s: %v", tool, err)
+		}
 	}
 
 	architecture := runtime.GOARCH

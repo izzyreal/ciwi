@@ -67,6 +67,35 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 	build := pipelineByID("build")
 	integrationTests := jobByID(build, "integration-tests")
 	buildCrossPlatform := jobByID(build, "build-cross-platform")
+	for _, backend := range []string{"apple", "docker"} {
+		id := "container-cancellation-" + backend
+		job := jobByID(build, id)
+		wantOS, cli := "linux", "docker"
+		if backend == "apple" {
+			wantOS, cli = "darwin", "container"
+			if job.RunsOn["arch"] != "arm64" || job.Requires.Tools[cli] != ">=1.2.2" {
+				t.Fatalf("Apple cancellation requires a supported Apple Container host: %+v", job)
+			}
+		}
+		if job.RunsOn["os"] != wantOS || job.Requires.Tools[cli] == "" || job.RunsOn["executor"] != "script" {
+			t.Fatalf("incorrect cancellation host requirements: %+v", job)
+		}
+		for key := range job.RunsOn {
+			if strings.HasPrefix(key, "container_") {
+				t.Fatalf("%s must create its own container from the host, found %s", id, key)
+			}
+		}
+		if !slices.Contains(buildCrossPlatform.Needs, id) {
+			t.Fatalf("cross-platform compilation must wait for %s", id)
+		}
+		if len(job.Steps) != 1 || job.Steps[0].Env["CIWI_TEST_CONTAINER_RUNTIME"] != backend {
+			t.Fatalf("%s must explicitly select its backend", id)
+		}
+		check := job.Steps[0].Test
+		if check == nil || check.Format != "go-test-json" || check.Report != "dist/"+id+".json" || !strings.Contains(check.Command, "-tags integration") || !strings.Contains(check.Command, "'^TestContainerLiveCancellation$'") || !strings.Contains(check.Command, "> "+check.Report) {
+			t.Fatalf("%s must run and report its targeted integration check: %+v", id, check)
+		}
+	}
 	if integrationTests.RunsOn["os"] != "" || integrationTests.RunsOn["arch"] != "" || integrationTests.Requires.Tools["docker"] != "" || integrationTests.RunsOn["container_runtime"] != "auto" {
 		t.Fatalf("browser tests must be portable managed jobs: %+v", integrationTests)
 	}
@@ -101,6 +130,13 @@ func TestRepositoryCiwiProjectConfigurationIsValid(t *testing.T) {
 
 	desktopBuild := pipelineByID("build-desktop")
 	macOSUnsigned := jobByID(desktopBuild, "macos-unsigned")
+	if len(macOSUnsigned.Steps) < 3 || macOSUnsigned.Steps[1].Test == nil {
+		t.Fatal("macOS desktop must test its debug-info guard before building")
+	}
+	debugCheck := macOSUnsigned.Steps[1].Test
+	if debugCheck.Format != "go-test-json" || debugCheck.Report != "dist/apple-debug-info.json" || !strings.Contains(debugCheck.Command, "-tags integration") || !strings.Contains(debugCheck.Command, "'^TestAppleDebugInfoVerifierAcceptsRelWithDebInfoAndRejectsStrippedBinary$'") || !strings.Contains(debugCheck.Command, "> "+debugCheck.Report) {
+		t.Fatalf("macOS debug-info integration report: %+v", debugCheck)
+	}
 	if !slices.Contains(macOSUnsigned.Artifacts, "dist/desktop-macos-unsigned/**") {
 		t.Fatalf("macOS desktop build must publish its app bundle: %+v", macOSUnsigned.Artifacts)
 	}

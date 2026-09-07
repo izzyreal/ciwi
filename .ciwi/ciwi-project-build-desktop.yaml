@@ -25,6 +25,12 @@
       steps:
         - name: Prepare macOS desktop output
           run: rm -rf dist/desktop-macos-unsigned && mkdir -p dist/desktop-macos-unsigned
+        - name: Verify Apple debug-info guard
+          test:
+            name: apple-debug-info
+            command: mkdir -p dist && go test -tags integration -run '^TestAppleDebugInfoVerifierAcceptsRelWithDebInfoAndRejectsStrippedBinary$' -count=1 -timeout=5m -json ./packaging > dist/apple-debug-info.json
+            format: go-test-json
+            report: dist/apple-debug-info.json
         - name: Build universal macOS desktop app
           run: sh packaging/build-macos-app.sh "${CIWI_PIPELINE_VERSION}" dist/desktop-macos-unsigned
     - id: windows-amd64
