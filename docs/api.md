@@ -131,7 +131,7 @@ transport adapters do not contain application behavior.
 - `POST /api/v1/agent/lease` requires a known + authorized + non-deactivated agent snapshot.
 - While deactivated, `POST /api/v1/agent/lease` returns `assigned=false` with message `agent is deactivated`.
 - If deactivation occurs while the agent has an active leased/running job, server applies the same terminal mutation as `POST /api/v1/jobs/{id}/cancel`:
-  - `status=failed`
+  - `status=cancelled`
   - `error="cancelled by user"`
   - append `[control] job cancelled by user` to output
 - `POST /api/v1/pipelines/{id}/run-selection` and `POST /api/v1/projects/{projectId}/pipeline-chains/{chainId}/run` accept optional `execution_mode`:
@@ -145,3 +145,22 @@ transport adapters do not contain application behavior.
   corresponding command supports retries. The command-receipt endpoint reports
   `pending`, `completed`, `failed`, or `outcome_unknown` for a found receipt;
   an unknown key returns `found=false`.
+
+### Job cancellation
+
+Job execution statuses are `queued`, `leased`, `running`, `succeeded`, `failed`,
+and `cancelled`. The last three are terminal. Explicit cancellation (including
+agent deactivation) records `cancelled`; execution errors and timeouts remain
+`failed`. The first recorded terminal result wins, including when cancellation
+races with completion. Final execution logs can still arrive afterward.
+
+Execution summaries expose a separate `cancelled` count, included in `total_jobs`
+and excluded from `failed` and `succeeded`. Downstream jobs remain blocked until
+their prerequisites' latest attempts succeed; cancelled jobs can be rerun.
+Existing historical failures are not reclassified.
+
+Upgrade agents before upgrading the server to this cancellation behavior. Older
+agents do not recognize `cancelled` as terminal and may keep executing after the
+server records cancellation. Updated agents still recognize older servers'
+terminal `failed` cancellation results. Native clients should also be upgraded
+to show the new summary count and neutral cancellation styling.

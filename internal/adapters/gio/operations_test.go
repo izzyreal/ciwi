@@ -50,7 +50,7 @@ func (c *recordingNativeActionClient) VacuumDatabase(ctx context.Context, key st
 	return &cnpv1.DatabaseVacuumResult{Message: "Database vacuumed"}, c.recordContext(ctx, "vacuum-database", key)
 }
 func (c *recordingNativeActionClient) CancelExecution(_ context.Context, id, key string) (*cnpv1.CancelExecutionResult, error) {
-	return &cnpv1.CancelExecutionResult{JobExecutionId: id}, c.record("cancel-execution", key)
+	return &cnpv1.CancelExecutionResult{JobExecutionId: id, Status: "cancelled"}, c.record("cancel-execution", key)
 }
 func (c *recordingNativeActionClient) RerunExecution(_ context.Context, id, key string) (*cnpv1.RerunExecutionResult, error) {
 	return &cnpv1.RerunExecutionResult{JobExecutionId: id + "-rerun"}, c.record("rerun-execution", key)
@@ -246,6 +246,9 @@ func TestExecuteNativeOperationMapsEveryCommandFamily(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if test.command == "cancel-execution" && effect.Message != "Execution job-1 marked cancelled" {
+				t.Fatalf("cancellation message = %q", effect.Message)
+			}
 			if client.called != test.wantCall {
 				t.Fatalf("called = %q, want %q", client.called, test.wantCall)
 			}
@@ -370,5 +373,16 @@ func TestValidateNativeOperationCoversRequiredArguments(t *testing.T) {
 		if err := validateNativeOperation(operation); err == nil {
 			t.Fatalf("operation %#v unexpectedly validated", operation)
 		}
+	}
+}
+
+func TestCancellationToneIsNeutral(t *testing.T) {
+	for _, status := range []string{"cancelled", "canceled", " Cancelled "} {
+		if got := semanticTone(status); got != "muted" {
+			t.Fatalf("tone(%q)=%q", status, got)
+		}
+	}
+	if semanticTone("failed") != "danger" {
+		t.Fatal("failure must retain danger tone")
 	}
 }

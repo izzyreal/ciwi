@@ -32,6 +32,8 @@ func PresentExecutionCard(card domain.ExecutionCard, queued bool) ExecutionCardD
 		status, tone = "running", "warning"
 	} else if queued {
 		status, tone = "waiting", "muted"
+	} else if card.Summary.Cancelled > 0 {
+		status, tone = "cancelled", "muted"
 	}
 	return ExecutionCardDisplay{
 		Status: status, SummaryTone: tone,
@@ -44,6 +46,9 @@ func ExecutionSummaryLabel(summary domain.ExecutionSummary) string {
 	parts := []string{fmt.Sprintf("%d/%d successful", max(0, summary.Succeeded), max(0, summary.TotalJobs))}
 	if summary.Failed > 0 {
 		parts = append(parts, fmt.Sprintf("%d failed", summary.Failed))
+	}
+	if summary.Cancelled > 0 {
+		parts = append(parts, fmt.Sprintf("%d cancelled", summary.Cancelled))
 	}
 	if summary.InProgress > 0 {
 		parts = append(parts, fmt.Sprintf("%d in progress", summary.InProgress))

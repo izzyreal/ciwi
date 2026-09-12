@@ -611,7 +611,7 @@ func TestExecuteLeasedJobCancelsWhenServerCancels(t *testing.T) {
 				status := "running"
 				errText := ""
 				if check >= 2 {
-					status = "failed"
+					status = "cancelled"
 					errText = "cancelled by user"
 				}
 				body := `{"job_execution":{"id":"job-cancel","status":"` + status + `","error":"` + errText + `"}}`
@@ -645,7 +645,7 @@ func TestExecuteLeasedJobCancelsWhenServerCancels(t *testing.T) {
 
 	job := protocol.JobExecution{
 		ID:             "job-cancel",
-		Script:         "sleep 4",
+		Script:         "sleep 30",
 		TimeoutSeconds: 120,
 		RequiredCapabilities: map[string]string{
 			"shell": shellPosix,
@@ -656,6 +656,9 @@ func TestExecuteLeasedJobCancelsWhenServerCancels(t *testing.T) {
 	defer execCancel()
 	if err := executeLeasedJob(execCtx, client, "http://example.local", "agent-1", t.TempDir(), nil, job); err != nil {
 		t.Fatalf("executeLeasedJob: %v", err)
+	}
+	if execCtx.Err() != nil {
+		t.Fatal("job did not stop before execution deadline")
 	}
 	if atomic.LoadInt32(&stateChecks) < 2 {
 		t.Fatalf("expected job state polling checks, got %d", atomic.LoadInt32(&stateChecks))
@@ -671,7 +674,7 @@ func TestExecuteLeasedJobCancelsWhenServerCancels(t *testing.T) {
 		t.Fatalf("expected final status failed, got %q", last.Status)
 	}
 	output := reconstructedStatusOutput(t, statuses)
-	if !strings.Contains(output, "[control] job marked failed on server: cancelled by user") {
+	if !strings.Contains(output, "[control] job marked cancelled on server: cancelled by user") {
 		t.Fatalf("expected control cancel marker in output, got:\n%s", output)
 	}
 }

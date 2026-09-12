@@ -90,3 +90,15 @@ func TestExecutionCardResponseIncludesTestAwareStatusLabel(t *testing.T) {
 		t.Fatalf("execution card job = %+v", job)
 	}
 }
+
+func TestExecutionCardResponseCarriesCancellation(t *testing.T) {
+	cards := executionCardsToResponse([]domain.ExecutionCard{{Summary: domain.ExecutionSummary{TotalJobs: 2, Succeeded: 1, Cancelled: 1}}}, false)
+	got := cards[0]
+	if got.Summary.Cancelled != 1 || got.Summary.Failed != 0 || got.Summary.TotalJobs != 2 || got.Status != "cancelled" || got.SummaryTone != "muted" {
+		t.Fatalf("card=%+v", got)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil || !bytes.Contains(raw, []byte(`"cancelled":1`)) {
+		t.Fatalf("JSON=%s err=%v", raw, err)
+	}
+}

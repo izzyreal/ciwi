@@ -37,7 +37,7 @@ const frontScreen = {
           actions: [{on: 'activate', command: 'navigate', arguments: {route: '/jobs/{{job.id}}'}}],
           children: [
             {component: 'text', text: {binding: 'job.label'}, style: {role: 'link'}},
-            {component: 'text', id: 'queued-status', text: {binding: 'job.status'}},
+            {component: 'badge', id: 'queued-status', text: {binding: 'job.status'}, style: {toneBinding: 'job.status'}},
             {component: 'text', text: {binding: 'job.pipeline'}},
             {component: 'text', text: {binding: 'job.build'}},
             {component: 'text', text: {binding: 'job.agent'}},
@@ -229,6 +229,7 @@ async function installJobRowFixture(page) {
       await route.fulfill({json: {id, status: requestsForJob === 1 ? 'running' : 'succeeded', output_groups: [], timeline: []}});
     } else if (url.pathname === '/api/v1/jobs/queued-1/cancel') {
       cancelled.push('queued-1');
+      frontView.queued[0].status = 'cancelled';
       await route.fulfill({json: {}});
     } else {
       await route.fulfill({status: 404, body: 'not found'});
@@ -374,6 +375,9 @@ test('queued and history job rows navigate from passive cells while nested actio
   const fixture = await installJobRowFixture(page);
   await page.locator('#queued-cancel').click();
   await expect.poll(() => fixture.cancelled).toEqual(['queued-1']);
+  await expect(page.locator('#queued-status')).toHaveText('cancelled');
+  await expect(page.locator('#queued-status')).toHaveClass(/dsl-muted/);
+  await expect(page.locator('#queued-status')).not.toHaveClass(/dsl-danger/);
   await expect(page).toHaveURL('http://ciwi-rows.test/');
 
   await page.locator('#queued-status').click();

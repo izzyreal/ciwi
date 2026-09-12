@@ -185,3 +185,73 @@ func TestFailTimedOutRunningJobExecutionsDefaults(t *testing.T) {
 		t.Fatalf("expected timeout control event, got %+v", events)
 	}
 }
+
+func TestCancellationTerminalResultIsSticky(t *testing.T) {
+	for _, initial := range []string{"queued", "leased", "running"} {
+		for _, first := range []string{"cancelled", "succeeded", "failed"} {
+			t.Run(initial+"/"+first, func(t *testing.T) {
+				s := openTestStore(t)
+				job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo test", TimeoutSeconds: 30})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if initial == "leased" {
+					if _, err := s.LeaseJobExecution("agent", nil); err != nil {
+						t.Fatal(err)
+					}
+				} else if initial == "running" {
+					if _, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{AgentID: "agent", Status: initial}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				winner, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{AgentID: "agent", Status: first, Error: "original reason"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if winner.FinishedUTC.IsZero() || winner.CurrentStep != "" {
+					t.Fatalf("invalid terminal lifecycle: %+v", winner)
+				}
+				for _, late := range []string{"running", "failed", "succeeded", "cancelled"} {
+					got, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{AgentID: "agent", Status: late, Error: "late reason", CurrentStep: "late step"})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got.Status != winner.Status || got.Error != winner.Error || !got.FinishedUTC.Equal(winner.FinishedUTC) || !got.StartedUTC.Equal(winner.StartedUTC) || got.CurrentStep != "" {
+						t.Fatalf("late %s changed terminal result: %+v", late, got)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestCancellationRacesWithCompletion(t *testing.T) {
+	s := openTestStore(t)
+	for attempt := 0; attempt < 20; attempt++ {
+		job, err := s.CreateJobExecution(protocol.CreateJobExecutionRequest{Script: "echo test", TimeoutSeconds: 30})
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := make(chan struct{})
+		results := make(chan protocol.JobExecution, 2)
+		errs := make(chan error, 2)
+		for _, status := range []string{"cancelled", "succeeded"} {
+			go func(status string) {
+				<-start
+				result, err := s.UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{AgentID: "agent", Status: status})
+				results <- result
+				errs <- err
+			}(status)
+		}
+		close(start)
+		a, b := <-results, <-results
+		for range 2 {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if a.Status != b.Status || !a.FinishedUTC.Equal(b.FinishedUTC) {
+			t.Fatalf("conflicting terminal results: %s / %s", a.Status, b.Status)
+		}
+	}
+}

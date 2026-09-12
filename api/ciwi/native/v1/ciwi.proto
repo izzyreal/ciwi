@@ -396,6 +396,7 @@ message ExecutionSummary {
   uint32 failed = 3;
   uint32 in_progress = 4;
   uint32 waiting = 5;
+  uint32 cancelled = 6;
 }
 
 message ExecutionCardSummary {

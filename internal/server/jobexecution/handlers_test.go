@@ -145,36 +145,41 @@ func (s *stubStore) FlushJobExecutionHistoryByIDs(jobIDs []string) ([]string, er
 }
 
 func TestHandleByIDCancelActiveJob(t *testing.T) {
-	store := &stubStore{}
-	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
-		return protocol.JobExecution{
-			ID:              id,
-			Status:          protocol.JobExecutionStatusRunning,
-			LeasedByAgentID: "agent-1",
-		}, nil
-	}
-	store.updateJobExecutionStatusFn = func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error) {
-		if req.AgentID != "agent-1" || req.Status != protocol.JobExecutionStatusFailed {
-			t.Fatalf("unexpected update request: %+v", req)
-		}
-		return protocol.JobExecution{
-			ID:     id,
-			Status: protocol.JobExecutionStatusFailed,
-			Error:  req.Error,
-		}, nil
-	}
-	store.appendJobExecutionEventsFn = func(id string, events []protocol.JobExecutionEvent) error {
-		if len(events) != 1 || events[0].Type != protocol.JobExecutionEventTypeSystemMessage || !strings.Contains(events[0].Message, "job cancelled by user") {
-			t.Fatalf("unexpected cancellation events: %+v", events)
-		}
-		return nil
-	}
+	for _, initialStatus := range []string{"queued", "leased", "running"} {
+		t.Run(initialStatus, func(t *testing.T) {
+			store := &stubStore{}
+			store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
+				return protocol.JobExecution{
+					ID:              id,
+					Status:          initialStatus,
+					LeasedByAgentID: "agent-1",
+				}, nil
+			}
+			store.updateJobExecutionStatusFn = func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error) {
+				if req.AgentID != "agent-1" || req.Status != protocol.JobExecutionStatusCancelled {
+					t.Fatalf("unexpected update request: %+v", req)
+				}
+				return protocol.JobExecution{
+					ID:     id,
+					Status: protocol.JobExecutionStatusCancelled,
+					Error:  req.Error,
+				}, nil
+			}
+			store.appendJobExecutionEventsFn = func(id string, events []protocol.JobExecutionEvent) error {
+				if len(events) != 1 || events[0].Type != protocol.JobExecutionEventTypeSystemMessage || !strings.Contains(events[0].Message, "job cancelled by user") {
+					t.Fatalf("unexpected cancellation events: %+v", events)
+				}
+				return nil
+			}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/cancel", nil)
-	HandleByID(rec, req, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/cancel", nil)
+			HandleByID(rec, req, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+
+		})
 	}
 }
 
@@ -495,5 +500,23 @@ func TestHandleByIDTestsGetAndPost(t *testing.T) {
 	}
 	if !historyChanged {
 		t.Fatal("test report upload did not publish a history change")
+	}
+}
+
+func TestCancelJobExecutionPreservesConcurrentCompletion(t *testing.T) {
+	store := &stubStore{}
+	store.getJobExecutionFn = func(id string) (protocol.JobExecution, error) {
+		return protocol.JobExecution{ID: id, Status: "running"}, nil
+	}
+	store.updateJobExecutionStatusFn = func(id string, req protocol.JobExecutionStatusUpdateRequest) (protocol.JobExecution, error) {
+		return protocol.JobExecution{ID: id, Status: "succeeded"}, nil
+	}
+	store.appendJobExecutionEventsFn = func(string, []protocol.JobExecutionEvent) error {
+		t.Fatal("must not announce a cancellation that lost to completion")
+		return nil
+	}
+	result, err := CancelJobExecution(store, "job", time.Now())
+	if err != nil || result.Status != "succeeded" {
+		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }

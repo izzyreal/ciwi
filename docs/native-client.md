@@ -204,10 +204,11 @@ do not reload large logs. The front page can clear queued executions, flush all
 terminal history, or delete one execution card through idempotent application
 commands exposed by CNP; deleting history also removes its server-side
 artifacts, but never clears agent caches or workspaces. Eligible Job Details
-views can also queue an independent rerun or mark an active execution failed
-through idempotent CNP commands. Cancellation updates server state but does not
-forcibly terminate an agent process that is already running. Agents continue to
-use the existing HTTP protocol.
+views can also queue an independent rerun or cancel an active execution
+through idempotent CNP commands. Cancellation records the terminal `cancelled`
+status immediately; the agent observes it through the existing HTTP protocol
+and stops its local process using the normal cancellation cleanup path. Upgrade
+agents before the server so they recognize this terminal status.
 
 Job Details also carries recursive artifact, test, and coverage report trees.
 Native artifact files and directory/all-artifact ZIP archives are transferred

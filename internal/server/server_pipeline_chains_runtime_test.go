@@ -359,8 +359,10 @@ pipeline_chains:
 }
 
 func TestPipelineChainWaitsForFailedPipelineAndResumesAfterSuccessfulRerun(t *testing.T) {
-	s := &stateStore{db: openPipelineChainRuntimeStore(t)}
-	enqueueSingleChain(t, s, `
+	for _, terminalStatus := range []string{protocol.JobExecutionStatusFailed, protocol.JobExecutionStatusCancelled} {
+		t.Run(terminalStatus, func(t *testing.T) {
+			s := &stateStore{db: openPipelineChainRuntimeStore(t)}
+			enqueueSingleChain(t, s, `
 version: 1
 project:
   name: ciwi
@@ -399,67 +401,70 @@ pipeline_chains:
       - package
 `)
 
-	second := findPipelineJobExecution(t, s, "package")
-	leased, err := s.db.LeaseJobExecution("agent-1", map[string]string{"os": "linux"})
-	if err != nil {
-		t.Fatalf("lease first job: %v", err)
-	}
-	updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusFailed,
-		Error:        "boom",
-		TimestampUTC: time.Now().UTC(),
-	})
-	if err != nil {
-		t.Fatalf("mark build job failed: %v", err)
-	}
-	s.onJobExecutionUpdated(updated)
+			second := findPipelineJobExecution(t, s, "package")
+			leased, err := s.db.LeaseJobExecution("agent-1", map[string]string{"os": "linux"})
+			if err != nil {
+				t.Fatalf("lease first job: %v", err)
+			}
+			updated, err := s.db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
+				AgentID:      "agent-1",
+				Status:       terminalStatus,
+				Error:        "boom",
+				TimestampUTC: time.Now().UTC(),
+			})
+			if err != nil {
+				t.Fatalf("mark build job failed: %v", err)
+			}
+			s.onJobExecutionUpdated(updated)
 
-	secondAfter, err := s.db.GetJobExecution(second.ID)
-	if err != nil {
-		t.Fatalf("get second job after upstream failure: %v", err)
-	}
-	if protocol.NormalizeJobExecutionStatus(secondAfter.Status) != protocol.JobExecutionStatusQueued {
-		t.Fatalf("expected second job to remain queued after upstream failure, got %q", secondAfter.Status)
-	}
-	if strings.TrimSpace(secondAfter.Metadata["chain_blocked"]) != "1" {
-		t.Fatalf("expected chain_blocked metadata on waiting job, metadata=%v", secondAfter.Metadata)
-	}
-	if secondAfter.Error != "" {
-		t.Fatalf("waiting job should not have a failure reason, got %q", secondAfter.Error)
-	}
-	if next, err := s.db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || next != nil {
-		t.Fatalf("chain-blocked job must not be leaseable: job=%+v err=%v", next, err)
-	}
+			secondAfter, err := s.db.GetJobExecution(second.ID)
+			if err != nil {
+				t.Fatalf("get second job after upstream failure: %v", err)
+			}
+			if protocol.NormalizeJobExecutionStatus(secondAfter.Status) != protocol.JobExecutionStatusQueued {
+				t.Fatalf("expected second job to remain queued after upstream failure, got %q", secondAfter.Status)
+			}
+			if strings.TrimSpace(secondAfter.Metadata["chain_blocked"]) != "1" {
+				t.Fatalf("expected chain_blocked metadata on waiting job, metadata=%v", secondAfter.Metadata)
+			}
+			if secondAfter.Error != "" {
+				t.Fatalf("waiting job should not have a failure reason, got %q", secondAfter.Error)
+			}
+			if next, err := s.db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || next != nil {
+				t.Fatalf("chain-blocked job must not be leaseable: job=%+v err=%v", next, err)
+			}
 
-	rerun, err := jobexecution.RerunJobExecution(s.db, updated.ID, s.prepareJobExecutionRerun)
-	if err != nil {
-		t.Fatalf("rerun failed build job: %v", err)
-	}
-	rerun, err = s.db.UpdateJobExecutionStatus(rerun.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusSucceeded,
-		TimestampUTC: time.Now().UTC(),
-	})
-	if err != nil {
-		t.Fatalf("mark build rerun succeeded: %v", err)
-	}
-	s.onJobExecutionUpdated(rerun)
+			rerun, err := jobexecution.RerunJobExecution(s.db, updated.ID, s.prepareJobExecutionRerun)
+			if err != nil {
+				t.Fatalf("rerun failed build job: %v", err)
+			}
+			rerun, err = s.db.UpdateJobExecutionStatus(rerun.ID, protocol.JobExecutionStatusUpdateRequest{
+				AgentID:      "agent-1",
+				Status:       protocol.JobExecutionStatusSucceeded,
+				TimestampUTC: time.Now().UTC(),
+			})
+			if err != nil {
+				t.Fatalf("mark build rerun succeeded: %v", err)
+			}
+			s.onJobExecutionUpdated(rerun)
 
-	secondAfterHealing, err := s.db.GetJobExecution(second.ID)
-	if err != nil {
-		t.Fatalf("get second job after healing: %v", err)
-	}
-	if protocol.NormalizeJobExecutionStatus(secondAfterHealing.Status) != protocol.JobExecutionStatusQueued ||
-		strings.TrimSpace(secondAfterHealing.Metadata["chain_blocked"]) != "" {
-		t.Fatalf("expected healed downstream job to be runnable, status=%q metadata=%v", secondAfterHealing.Status, secondAfterHealing.Metadata)
-	}
-	if got := secondAfterHealing.DependencyArtifactJobIDs; len(got) != 1 || got[0] != rerun.ID {
-		t.Fatalf("expected downstream artifacts from rerun %q, got %v", rerun.ID, got)
-	}
-	leasedPackage, err := s.db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"})
-	if err != nil || leasedPackage == nil || leasedPackage.ID != second.ID {
-		t.Fatalf("expected healed package job to be leaseable: job=%+v err=%v", leasedPackage, err)
+			secondAfterHealing, err := s.db.GetJobExecution(second.ID)
+			if err != nil {
+				t.Fatalf("get second job after healing: %v", err)
+			}
+			if protocol.NormalizeJobExecutionStatus(secondAfterHealing.Status) != protocol.JobExecutionStatusQueued ||
+				strings.TrimSpace(secondAfterHealing.Metadata["chain_blocked"]) != "" {
+				t.Fatalf("expected healed downstream job to be runnable, status=%q metadata=%v", secondAfterHealing.Status, secondAfterHealing.Metadata)
+			}
+			if got := secondAfterHealing.DependencyArtifactJobIDs; len(got) != 1 || got[0] != rerun.ID {
+				t.Fatalf("expected downstream artifacts from rerun %q, got %v", rerun.ID, got)
+			}
+			leasedPackage, err := s.db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"})
+			if err != nil || leasedPackage == nil || leasedPackage.ID != second.ID {
+				t.Fatalf("expected healed package job to be leaseable: job=%+v err=%v", leasedPackage, err)
+			}
+
+		})
 	}
 }
 

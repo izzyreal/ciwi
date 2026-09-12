@@ -921,7 +921,7 @@ screen:
                 children:
                   - component: text
                     text:
-                      template: "{{execution.summary.succeeded}} succeeded · {{execution.summary.failed}} failed · {{execution.summary.total_jobs}} total"
+                      template: "{{execution.summary.succeeded}} succeeded · {{execution.summary.failed}} failed · {{execution.summary.cancelled}} cancelled · {{execution.summary.total_jobs}} total"
                     style:
                       tone: muted
                   - component: list

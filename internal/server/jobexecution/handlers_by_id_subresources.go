@@ -125,11 +125,14 @@ func CancelJobExecution(store Store, jobID string, now time.Time) (protocol.JobE
 		agentID = "server-control"
 	}
 	updated, err := store.UpdateJobExecutionStatus(jobID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID: agentID, Status: protocol.JobExecutionStatusFailed,
+		AgentID: agentID, Status: protocol.JobExecutionStatusCancelled,
 		Error: "cancelled by user", TimestampUTC: now,
 	})
 	if err != nil {
 		return protocol.JobExecution{}, err
+	}
+	if updated.Status != protocol.JobExecutionStatusCancelled {
+		return updated, nil
 	}
 	if err := store.AppendJobExecutionEvents(jobID, []protocol.JobExecutionEvent{{
 		Type: protocol.JobExecutionEventTypeSystemMessage, TimestampUTC: now,
@@ -187,7 +190,7 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 		return
 	}
 	if !protocol.IsValidJobExecutionUpdateStatus(req.Status) {
-		http.Error(w, "status must be running, succeeded or failed", http.StatusBadRequest)
+		http.Error(w, "status must be running, succeeded, failed or cancelled", http.StatusBadRequest)
 		return
 	}
 	previousJob, _ := deps.Store.GetJobExecution(jobID)

@@ -100,3 +100,21 @@ func TestAggregateJobGraphStatusesPrioritizesActiveThenFailure(t *testing.T) {
 		t.Fatalf("failure should win over waiting, got %q", got)
 	}
 }
+
+func TestAggregateJobGraphCancelled(t *testing.T) {
+	for _, tt := range []struct {
+		statuses []string
+		want     string
+	}{
+		{[]string{"cancelled"}, "cancelled"},
+		{[]string{"cancelled", "succeeded"}, "cancelled"},
+		{[]string{"cancelled", "waiting"}, "cancelled"},
+		{[]string{"cancelled", "failed"}, "failed"},
+		{[]string{"cancelled", "running"}, "running"},
+		{[]string{"cancelled", "queued"}, "queued"},
+	} {
+		if got := aggregateJobGraphStatuses(tt.statuses); got != tt.want {
+			t.Fatalf("%v: got %s want %s", tt.statuses, got, tt.want)
+		}
+	}
+}

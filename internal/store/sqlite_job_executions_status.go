@@ -20,7 +20,7 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	reqStatus := protocol.NormalizeJobExecutionStatus(req.Status)
 
 	// Terminal status is sticky. Ignore late running updates (for example
-	// periodic log-stream updates racing with final succeeded/failed update).
+	// periodic log-stream updates racing with a final status update).
 	if protocol.IsTerminalJobExecutionStatus(job.Status) {
 		if reqStatus == protocol.JobExecutionStatusRunning {
 			return job, nil
@@ -93,12 +93,12 @@ func (s *Store) UpdateJobExecutionStatus(jobID string, req protocol.JobExecution
 	args := []any{status, nullStringValue(started), nullStringValue(finished), nullIntValue(exitCode), errorText, cacheStatsJSON, runtimeCapsJSON, currentStep}
 	if status == protocol.JobExecutionStatusRunning {
 		// Never allow a running heartbeat/log-stream update to overwrite a terminal state.
-		where = "id = ? AND status NOT IN (?, ?)"
-		args = append(args, jobID, protocol.JobExecutionStatusSucceeded, protocol.JobExecutionStatusFailed)
+		where = "id = ? AND status NOT IN (?, ?, ?)"
+		args = append(args, jobID, protocol.JobExecutionStatusSucceeded, protocol.JobExecutionStatusFailed, protocol.JobExecutionStatusCancelled)
 	} else if protocol.IsTerminalJobExecutionStatus(status) {
 		// First terminal status wins under races; later terminal writes become no-ops.
-		where = "id = ? AND status NOT IN (?, ?)"
-		args = append(args, jobID, protocol.JobExecutionStatusSucceeded, protocol.JobExecutionStatusFailed)
+		where = "id = ? AND status NOT IN (?, ?, ?)"
+		args = append(args, jobID, protocol.JobExecutionStatusSucceeded, protocol.JobExecutionStatusFailed, protocol.JobExecutionStatusCancelled)
 	} else {
 		args = append(args, jobID)
 	}

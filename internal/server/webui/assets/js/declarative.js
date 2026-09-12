@@ -322,7 +322,7 @@
   function semanticTone(value) {
     switch (String(value || '').trim().toLowerCase()) {
       case 'succeeded': case 'success': case 'passed': case 'complete': case 'completed': case 'online': return 'success';
-      case 'failed': case 'failure': case 'error': case 'cancelled': case 'canceled': case 'offline': return 'danger';
+      case 'failed': case 'failure': case 'error': case 'offline': return 'danger';
       case 'warning': case 'queued': case 'waiting': case 'pending': case 'not reached': case 'stale': case 'deactivated': return 'warning';
       case 'accent': case 'running': case 'leased': case 'in progress': case 'active': return 'accent';
       case 'muted': return 'muted';

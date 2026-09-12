@@ -58,6 +58,7 @@ type JobTestSummary struct {
 }
 
 type ExecutionSummary struct {
+	Cancelled  int
 	TotalJobs  int
 	Succeeded  int
 	Failed     int

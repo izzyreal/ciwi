@@ -98,6 +98,7 @@ type executionSummaryResponse struct {
 	TotalJobs  int `json:"total_jobs"`
 	Succeeded  int `json:"succeeded"`
 	Failed     int `json:"failed"`
+	Cancelled  int `json:"cancelled"`
 	InProgress int `json:"in_progress"`
 	Waiting    int `json:"waiting"`
 }
@@ -167,7 +168,7 @@ func executionCardsToResponse(cards []domain.ExecutionCard, queued bool) []execu
 			JobExecutionIDs: append([]string(nil), card.JobExecutionIDs...),
 			Summary: executionSummaryResponse{
 				TotalJobs: card.Summary.TotalJobs, Succeeded: card.Summary.Succeeded,
-				Failed: card.Summary.Failed, InProgress: card.Summary.InProgress, Waiting: card.Summary.Waiting,
+				Failed: card.Summary.Failed, Cancelled: card.Summary.Cancelled, InProgress: card.Summary.InProgress, Waiting: card.Summary.Waiting,
 			},
 			Sections: executionCardSectionsToResponse(card.Sections), Progress: card.Progress,
 			Status: display.Status, SummaryTone: display.SummaryTone, SummaryLabel: display.SummaryLabel,

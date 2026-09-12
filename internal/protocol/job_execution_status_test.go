@@ -35,3 +35,9 @@ func TestIsValidJobExecutionUpdateStatus(t *testing.T) {
 		t.Fatal("valid update status predicate should reject queued/leased")
 	}
 }
+
+func TestCancelledJobExecutionStatus(t *testing.T) {
+	if !IsTerminalJobExecutionStatus(" Cancelled ") || !IsValidJobExecutionUpdateStatus("cancelled") || IsActiveJobExecutionStatus("cancelled") || IsPendingJobExecutionStatus("cancelled") {
+		t.Fatal("cancelled must be terminal, updateable, and inactive")
+	}
+}

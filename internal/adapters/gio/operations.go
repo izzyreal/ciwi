@@ -326,7 +326,7 @@ func executeNativeOperation(ctx context.Context, client nativeActionClient, oper
 		if err != nil {
 			return nativeOperationEffect{}, fmt.Errorf("cancel execution: %w", err)
 		}
-		return nativeOperationEffect{Message: "Execution " + result.JobExecutionId + " marked failed", Refresh: true, CancelledJob: result.JobExecutionId}, nil
+		return nativeOperationEffect{Message: "Execution " + result.JobExecutionId + " marked " + result.Status, Refresh: true, CancelledJob: result.JobExecutionId}, nil
 	case "rerun-execution":
 		jobID := strings.TrimSpace(arguments["jobExecutionId"])
 		if jobID == "" {

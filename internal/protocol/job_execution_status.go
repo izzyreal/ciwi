@@ -12,6 +12,7 @@ const (
 	JobExecutionStatusRunning   = "running"
 	JobExecutionStatusSucceeded = "succeeded"
 	JobExecutionStatusFailed    = "failed"
+	JobExecutionStatusCancelled = "cancelled"
 
 	JobSchedulingBlockedMetadataKey       = domain.ExecutionMetadataSchedulingBlocked
 	JobSchedulingBlockedReasonMetadataKey = domain.ExecutionMetadataSchedulingBlockedReason
@@ -53,7 +54,7 @@ func IsActiveJobExecutionStatus(status string) bool {
 
 func IsTerminalJobExecutionStatus(status string) bool {
 	switch NormalizeJobExecutionStatus(status) {
-	case JobExecutionStatusSucceeded, JobExecutionStatusFailed:
+	case JobExecutionStatusSucceeded, JobExecutionStatusFailed, JobExecutionStatusCancelled:
 		return true
 	default:
 		return false
@@ -62,7 +63,7 @@ func IsTerminalJobExecutionStatus(status string) bool {
 
 func IsValidJobExecutionUpdateStatus(status string) bool {
 	switch NormalizeJobExecutionStatus(status) {
-	case JobExecutionStatusRunning, JobExecutionStatusSucceeded, JobExecutionStatusFailed:
+	case JobExecutionStatusRunning, JobExecutionStatusSucceeded, JobExecutionStatusFailed, JobExecutionStatusCancelled:
 		return true
 	default:
 		return false

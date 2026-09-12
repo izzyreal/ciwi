@@ -403,7 +403,7 @@ func semanticTone(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "succeeded", "success", "passed", "complete", "completed", "online":
 		return "success"
-	case "failed", "failure", "error", "cancelled", "canceled", "offline":
+	case "failed", "failure", "error", "offline":
 		return "danger"
 	case "warning", "queued", "waiting", "pending", "not reached", "stale", "deactivated":
 		return "warning"

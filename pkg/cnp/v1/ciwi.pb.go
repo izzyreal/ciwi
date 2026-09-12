@@ -3616,6 +3616,7 @@ type ExecutionSummary struct {
 	Failed        uint32                 `protobuf:"varint,3,opt,name=failed,proto3" json:"failed,omitempty"`
 	InProgress    uint32                 `protobuf:"varint,4,opt,name=in_progress,json=inProgress,proto3" json:"in_progress,omitempty"`
 	Waiting       uint32                 `protobuf:"varint,5,opt,name=waiting,proto3" json:"waiting,omitempty"`
+	Cancelled     uint32                 `protobuf:"varint,6,opt,name=cancelled,proto3" json:"cancelled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3681,6 +3682,13 @@ func (x *ExecutionSummary) GetInProgress() uint32 {
 func (x *ExecutionSummary) GetWaiting() uint32 {
 	if x != nil {
 		return x.Waiting
+	}
+	return 0
+}
+
+func (x *ExecutionSummary) GetCancelled() uint32 {
+	if x != nil {
+		return x.Cancelled
 	}
 	return 0
 }
@@ -10034,7 +10042,7 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\bchunk_id\x18\x02 \x01(\x03R\achunkId\x12\x1d\n" +
 	"\n" +
 	"start_rune\x18\x03 \x01(\x05R\tstartRune\x12\x19\n" +
-	"\bend_rune\x18\x04 \x01(\x05R\aendRune\"\xa2\x01\n" +
+	"\bend_rune\x18\x04 \x01(\x05R\aendRune\"\xc0\x01\n" +
 	"\x10ExecutionSummary\x12\x1d\n" +
 	"\n" +
 	"total_jobs\x18\x01 \x01(\rR\ttotalJobs\x12\x1c\n" +
@@ -10042,7 +10050,8 @@ const file_ciwi_native_v1_ciwi_proto_rawDesc = "" +
 	"\x06failed\x18\x03 \x01(\rR\x06failed\x12\x1f\n" +
 	"\vin_progress\x18\x04 \x01(\rR\n" +
 	"inProgress\x12\x18\n" +
-	"\awaiting\x18\x05 \x01(\rR\awaiting\"\xc5\x03\n" +
+	"\awaiting\x18\x05 \x01(\rR\awaiting\x12\x1c\n" +
+	"\tcancelled\x18\x06 \x01(\rR\tcancelled\"\xc5\x03\n" +
 	"\x14ExecutionCardSummary\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +

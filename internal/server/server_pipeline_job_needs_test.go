@@ -84,14 +84,16 @@ pipelines:
 }
 
 func TestPipelineJobNeedsKeepsDependentJobsWaitingOnUpstreamFailure(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	s := &stateStore{db: db}
+	for _, terminalStatus := range []string{protocol.JobExecutionStatusFailed, protocol.JobExecutionStatusCancelled} {
+		t.Run(terminalStatus, func(t *testing.T) {
+			db, err := store.Open(filepath.Join(t.TempDir(), "ciwi.db"))
+			if err != nil {
+				t.Fatalf("open store: %v", err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			s := &stateStore{db: db}
 
-	cfg, err := config.Parse([]byte(`
+			cfg, err := config.Parse([]byte(`
 version: 1
 project:
   name: ciwi
@@ -115,56 +117,59 @@ pipelines:
         steps:
           - run: echo package
 `), "needs-cancel")
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
-	}
-	if err := db.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	p, err := db.GetPipelineByProjectAndID("ciwi", "build")
-	if err != nil {
-		t.Fatalf("get pipeline: %v", err)
-	}
-	if _, err := s.enqueuePersistedPipeline(p, nil); err != nil {
-		t.Fatalf("enqueue pipeline: %v", err)
-	}
+			if err != nil {
+				t.Fatalf("parse config: %v", err)
+			}
+			if err := db.LoadConfig(cfg, "ciwi-project.yaml", "https://github.com/izzyreal/ciwi.git", "main", "ciwi-project.yaml"); err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			p, err := db.GetPipelineByProjectAndID("ciwi", "build")
+			if err != nil {
+				t.Fatalf("get pipeline: %v", err)
+			}
+			if _, err := s.enqueuePersistedPipeline(p, nil); err != nil {
+				t.Fatalf("enqueue pipeline: %v", err)
+			}
 
-	leased, err := db.LeaseJobExecution("agent-1", map[string]string{"os": "linux"})
-	if err != nil {
-		t.Fatalf("lease upstream job: %v", err)
-	}
-	if leased == nil || strings.TrimSpace(leased.Metadata["pipeline_job_id"]) != "smoke" {
-		t.Fatalf("expected smoke job to lease first, got %+v", leased)
-	}
-	updated, err := db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
-		AgentID:      "agent-1",
-		Status:       protocol.JobExecutionStatusFailed,
-		Error:        "boom",
-		TimestampUTC: time.Now().UTC(),
-	})
-	if err != nil {
-		t.Fatalf("mark upstream failed: %v", err)
-	}
-	s.onJobExecutionUpdated(updated)
+			leased, err := db.LeaseJobExecution("agent-1", map[string]string{"os": "linux"})
+			if err != nil {
+				t.Fatalf("lease upstream job: %v", err)
+			}
+			if leased == nil || strings.TrimSpace(leased.Metadata["pipeline_job_id"]) != "smoke" {
+				t.Fatalf("expected smoke job to lease first, got %+v", leased)
+			}
+			updated, err := db.UpdateJobExecutionStatus(leased.ID, protocol.JobExecutionStatusUpdateRequest{
+				AgentID:      "agent-1",
+				Status:       terminalStatus,
+				Error:        "boom",
+				TimestampUTC: time.Now().UTC(),
+			})
+			if err != nil {
+				t.Fatalf("mark upstream failed: %v", err)
+			}
+			s.onJobExecutionUpdated(updated)
 
-	jobs, err := db.ListJobExecutions()
-	if err != nil {
-		t.Fatalf("list jobs: %v", err)
+			jobs, err := db.ListJobExecutions()
+			if err != nil {
+				t.Fatalf("list jobs: %v", err)
+			}
+			for _, j := range jobs {
+				if strings.TrimSpace(j.Metadata["pipeline_job_id"]) != "package" {
+					continue
+				}
+				if protocol.NormalizeJobExecutionStatus(j.Status) != protocol.JobExecutionStatusQueued {
+					t.Fatalf("expected dependent job to remain queued, got status=%q", j.Status)
+				}
+				if strings.TrimSpace(j.Metadata["needs_blocked"]) != "1" || j.Error != "" {
+					t.Fatalf("expected non-failed needs-blocked job, error=%q metadata=%v", j.Error, j.Metadata)
+				}
+				if next, err := db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || next != nil {
+					t.Fatalf("needs-blocked job must not be leaseable: job=%+v err=%v", next, err)
+				}
+				return
+			}
+			t.Fatalf("missing dependent package job")
+
+		})
 	}
-	for _, j := range jobs {
-		if strings.TrimSpace(j.Metadata["pipeline_job_id"]) != "package" {
-			continue
-		}
-		if protocol.NormalizeJobExecutionStatus(j.Status) != protocol.JobExecutionStatusQueued {
-			t.Fatalf("expected dependent job to remain queued, got status=%q", j.Status)
-		}
-		if strings.TrimSpace(j.Metadata["needs_blocked"]) != "1" || j.Error != "" {
-			t.Fatalf("expected non-failed needs-blocked job, error=%q metadata=%v", j.Error, j.Metadata)
-		}
-		if next, err := db.LeaseJobExecution("agent-2", map[string]string{"os": "linux"}); err != nil || next != nil {
-			t.Fatalf("needs-blocked job must not be leaseable: job=%+v err=%v", next, err)
-		}
-		return
-	}
-	t.Fatalf("missing dependent package job")
 }

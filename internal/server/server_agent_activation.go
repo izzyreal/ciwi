@@ -24,13 +24,17 @@ func (s *stateStore) cancelActiveJobsForAgent(agentID string) (int, error) {
 		if !protocol.IsActiveJobExecutionStatus(job.Status) {
 			continue
 		}
-		if _, err := s.agentJobExecutionStore().UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
+		updated, err := s.agentJobExecutionStore().UpdateJobExecutionStatus(job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:      agentID,
-			Status:       protocol.JobExecutionStatusFailed,
+			Status:       protocol.JobExecutionStatusCancelled,
 			Error:        "cancelled by user",
 			TimestampUTC: time.Now().UTC(),
-		}); err != nil {
+		})
+		if err != nil {
 			return cancelled, err
+		}
+		if updated.Status != protocol.JobExecutionStatusCancelled {
+			continue
 		}
 		if err := s.jobExecutionStore().AppendJobExecutionEvents(job.ID, []protocol.JobExecutionEvent{{
 			Type:         protocol.JobExecutionEventTypeSystemMessage,

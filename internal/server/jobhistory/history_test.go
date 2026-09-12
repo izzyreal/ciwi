@@ -352,3 +352,11 @@ func mustDecode(t *testing.T, rec *httptest.ResponseRecorder, out any) {
 		t.Fatalf("decode json: %v body=%s", err, rec.Body.String())
 	}
 }
+
+func TestSummaryCountsCancellationSeparately(t *testing.T) {
+	jobs := []protocol.JobExecution{{ID: "a", Status: "cancelled"}, {ID: "b", Status: "failed"}, {ID: "c", Status: "succeeded"}}
+	got := summarizeCard(jobs, executionCard{Indices: []int{0, 1, 2}})
+	if got.TotalJobs != 3 || got.Cancelled != 1 || got.Failed != 1 || got.Succeeded != 1 || got.InProgress != 0 {
+		t.Fatalf("summary=%+v", got)
+	}
+}

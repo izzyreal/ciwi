@@ -52,3 +52,24 @@ func TestDeclarativeProjectLabelsAreStable(t *testing.T) {
 		t.Fatalf("environment label = %q", got)
 	}
 }
+
+func TestCancelledExecutionCardSummary(t *testing.T) {
+	card := domain.ExecutionCard{Summary: domain.ExecutionSummary{TotalJobs: 3, Succeeded: 2, Cancelled: 1}}
+	got := PresentExecutionCard(card, false)
+	if got.Status != "cancelled" || got.SummaryTone != "muted" || got.SummaryLabel != "2/3 successful, 1 cancelled" {
+		t.Fatalf("display=%+v", got)
+	}
+	card.Summary.Failed = 1
+	if got := PresentExecutionCard(card, false); got.Status != "failed" {
+		t.Fatalf("failure should take precedence: %+v", got)
+	}
+	card.Summary.Failed = 0
+	card.Summary.InProgress = 1
+	if got := PresentExecutionCard(card, true); got.Status != "running" {
+		t.Fatalf("active card should stay running: %+v", got)
+	}
+	card.Summary.InProgress = 0
+	if got := PresentExecutionCard(card, true); got.Status != "waiting" {
+		t.Fatalf("blocked card should stay waiting: %+v", got)
+	}
+}

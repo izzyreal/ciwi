@@ -12,7 +12,7 @@ type executionControllerStub struct {
 
 func (s *executionControllerStub) CancelExecution(_ context.Context, jobID string) (CancelExecutionResult, error) {
 	s.cancelCalls++
-	return CancelExecutionResult{JobExecutionID: jobID, Status: "failed"}, nil
+	return CancelExecutionResult{JobExecutionID: jobID, Status: "cancelled"}, nil
 }
 
 func (s *executionControllerStub) RerunExecution(_ context.Context, jobID string) (RerunExecutionResult, error) {

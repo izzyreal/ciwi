@@ -61,6 +61,7 @@ type SummaryView struct {
 	TotalJobs  int `json:"total_jobs"`
 	Succeeded  int `json:"succeeded"`
 	Failed     int `json:"failed"`
+	Cancelled  int `json:"cancelled"`
 	InProgress int `json:"in_progress"`
 	Waiting    int `json:"waiting"`
 }
@@ -509,6 +510,8 @@ func summarizeCard(jobs []protocol.JobExecution, card executionCard) SummaryView
 			out.Succeeded++
 		case status == protocol.JobExecutionStatusFailed:
 			out.Failed++
+		case status == protocol.JobExecutionStatusCancelled:
+			out.Cancelled++
 		case isWaitingJobExecution(job):
 			out.Waiting++
 		case protocol.IsActiveJobExecutionStatus(status):

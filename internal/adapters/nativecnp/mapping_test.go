@@ -116,3 +116,11 @@ func TestAgentMappingCarriesHeartbeatTimestamp(t *testing.T) {
 		t.Fatalf("heartbeat timestamp = %d, want %d", agent.LastSeenUnixMs, heartbeatUnixMS)
 	}
 }
+
+func TestExecutionCardMappingCarriesCancellation(t *testing.T) {
+	cards := executionCardsToProto([]domain.ExecutionCard{{Summary: domain.ExecutionSummary{TotalJobs: 2, Succeeded: 1, Cancelled: 1}}}, false)
+	got := cards[0]
+	if got.Summary.Cancelled != 1 || got.Summary.Failed != 0 || got.Summary.TotalJobs != 2 || got.Status != "cancelled" || got.SummaryTone != "muted" {
+		t.Fatalf("card=%+v", got)
+	}
+}

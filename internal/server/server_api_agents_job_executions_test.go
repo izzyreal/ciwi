@@ -500,8 +500,8 @@ func TestAgentDeactivationCancelsActiveJob(t *testing.T) {
 		} `json:"job_execution"`
 	}
 	decodeJSONBody(t, jobResp, &jobPayload)
-	if jobPayload.Job.Status != "failed" {
-		t.Fatalf("expected failed status, got %q", jobPayload.Job.Status)
+	if jobPayload.Job.Status != "cancelled" {
+		t.Fatalf("expected cancelled status, got %q", jobPayload.Job.Status)
 	}
 	if jobPayload.Job.Error != "cancelled by user" {
 		t.Fatalf("expected cancelled by user error, got %q", jobPayload.Job.Error)

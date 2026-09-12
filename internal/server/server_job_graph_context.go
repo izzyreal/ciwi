@@ -252,6 +252,9 @@ func aggregateJobGraphStatuses(statuses []string) string {
 	if seen[protocol.JobExecutionStatusFailed] {
 		return protocol.JobExecutionStatusFailed
 	}
+	if seen[protocol.JobExecutionStatusCancelled] {
+		return protocol.JobExecutionStatusCancelled
+	}
 	if seen["waiting"] {
 		return "waiting"
 	}

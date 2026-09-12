@@ -296,7 +296,7 @@ func executionCardsToProto(cards []domain.ExecutionCard, queued bool) []*cnpv1.E
 			JobExecutionIds: append([]string(nil), card.JobExecutionIDs...),
 			Summary: &cnpv1.ExecutionSummary{
 				TotalJobs: uint32(card.Summary.TotalJobs), Succeeded: uint32(card.Summary.Succeeded),
-				Failed: uint32(card.Summary.Failed), InProgress: uint32(card.Summary.InProgress),
+				Failed: uint32(card.Summary.Failed), Cancelled: uint32(card.Summary.Cancelled), InProgress: uint32(card.Summary.InProgress),
 				Waiting: uint32(card.Summary.Waiting),
 			},
 			Sections: executionCardSectionsToProto(card.Sections, now), Progress: progressToProto(card.Progress),
