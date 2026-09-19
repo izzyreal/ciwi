@@ -56,8 +56,9 @@ func (shellScriptRunner) Run(ctx context.Context, request scriptRunRequest) erro
 }
 
 type executionDependencies struct {
-	sources sourceCheckout
-	scripts scriptRunner
+	sources     sourceCheckout
+	scripts     scriptRunner
+	statusRetry statusRetryPolicy
 }
 
 func defaultExecutionDependencies() executionDependencies {
@@ -71,6 +72,9 @@ func (d executionDependencies) withDefaults() executionDependencies {
 	}
 	if d.scripts == nil {
 		d.scripts = defaults.scripts
+	}
+	if d.statusRetry.budget == 0 {
+		d.statusRetry = defaultStatusRetryPolicy()
 	}
 	return d
 }

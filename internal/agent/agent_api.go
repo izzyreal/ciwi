@@ -162,7 +162,7 @@ func reportTerminalJobStatusWithRetry(client *http.Client, serverURL, jobID stri
 			time.Sleep(wait)
 		}
 	}
-	return fmt.Errorf("terminal status report failed after %d attempts: %w", terminalStatusMaxAttempts, lastErr)
+	return &terminalStatusReportError{fmt.Errorf("terminal status report failed after %d attempts: %w", terminalStatusMaxAttempts, lastErr)}
 }
 
 func reportJobStatus(ctx context.Context, client *http.Client, serverURL, jobID string, reqBody protocol.JobExecutionStatusUpdateRequest) error {
@@ -171,6 +171,10 @@ func reportJobStatus(ctx context.Context, client *http.Client, serverURL, jobID 
 		return fmt.Errorf("marshal job status: %w", err)
 	}
 
+	return sendJobStatus(ctx, client, serverURL, jobID, body, reqBody.Status)
+}
+
+func sendJobStatus(ctx context.Context, client *http.Client, serverURL, jobID string, body []byte, status string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/v1/jobs/"+jobID+"/status", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create job status request: %w", err)
@@ -179,13 +183,25 @@ func reportJobStatus(ctx context.Context, client *http.Client, serverURL, jobID 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("send job status request: %w", err)
+		return &retryableStatusError{fmt.Errorf("send job status request: %w", err)}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
-		return fmt.Errorf("status rejected: status=%d body=%s", resp.StatusCode, bytes.TrimSpace(respBody))
+		return &statusHTTPError{code: resp.StatusCode, body: string(bytes.TrimSpace(respBody)), retryAfter: resp.Header.Get("Retry-After")}
+	}
+
+	var response struct {
+		JobExecution struct {
+			Status string `json:"status"`
+		} `json:"job_execution"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return &retryableStatusError{fmt.Errorf("decode job status response: %w", err)}
+	}
+	if status == protocol.JobExecutionStatusRunning && protocol.IsTerminalJobExecutionStatus(response.JobExecution.Status) {
+		return &serverTerminalStatusError{status: response.JobExecution.Status}
 	}
 
 	return nil

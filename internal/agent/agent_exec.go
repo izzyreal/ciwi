@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -27,7 +28,7 @@ func executeLeasedJob(ctx context.Context, client *http.Client, serverURL, agent
 	return executeLeasedJobWithDependencies(ctx, client, serverURL, agentID, workDir, agentCapabilities, job, defaultExecutionDependencies())
 }
 
-func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.JobExecution, dependencies executionDependencies) error {
+func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, serverURL, agentID, workDir string, agentCapabilities map[string]string, job protocol.JobExecution, dependencies executionDependencies) (resultErr error) {
 	dependencies = dependencies.withDefaults()
 	slog.Info("job execution started",
 		"job_execution_id", job.ID,
@@ -40,6 +41,37 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 	workspaceStarted := time.Now().UTC()
 	var output syncBuffer
 	progress := &outputReportState{}
+	runCtx := ctx
+	var pendingEvents []protocol.JobExecutionEvent
+	var pendingOutputLen int
+	terminalEvents := func() []protocol.JobExecutionEvent {
+		delta, _, _ := progress.unsentFrom(&output)
+		if pendingEvents != nil {
+			delta, _ = output.SliceFrom(pendingOutputLen)
+		}
+		events := append([]protocol.JobExecutionEvent(nil), pendingEvents...)
+		return append(events, outputDeltaEvent(redactSensitive(delta, job.SensitiveValues), nil)...)
+	}
+	defer func() {
+		var terminal *serverTerminalStatusError
+		var reportErr *terminalStatusReportError
+		if resultErr == nil || ctx.Err() != nil || errors.As(resultErr, &terminal) || errors.As(resultErr, &reportErr) {
+			return
+		}
+		message := redactSensitive(resultErr.Error(), job.SensitiveValues)
+		if runCtx.Err() == context.DeadlineExceeded {
+			message = fmt.Sprintf("job timed out after %d seconds", job.TimeoutSeconds)
+		}
+		slog.Error("job execution aborted", "job_execution_id", job.ID, "error", message)
+		if err := reportTerminalJobStatusWithRetry(client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+			AgentID: agentID, Status: protocol.JobExecutionStatusFailed, Error: message,
+			Events: terminalEvents(), TimestampUTC: time.Now().UTC(),
+		}); err != nil {
+			resultErr = errors.Join(resultErr, err)
+		} else {
+			resultErr = nil
+		}
+	}()
 	fmt.Fprintf(&output, "[meta] agent=%s os=%s arch=%s\n", agentID, runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&output, "[meta] job_execution_id=%s timeout_seconds=%d\n", job.ID, job.TimeoutSeconds)
 	if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
@@ -70,7 +102,6 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 		return nil
 	}
 
-	runCtx := ctx
 	cancel := func() {}
 	if job.TimeoutSeconds > 0 {
 		runCtx, cancel = context.WithTimeout(ctx, time.Duration(job.TimeoutSeconds)*time.Second)
@@ -87,16 +118,18 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 		if delta != "" {
 			events = append(outputDeltaEvent(delta, nil), events...)
 		}
-		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+		pendingEvents, pendingOutputLen = events, totalLen
+		if err := reportJobStatusWithRetry(runCtx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID:             agentID,
 			Status:              protocol.JobExecutionStatusRunning,
 			CurrentStep:         currentStep,
 			Events:              events,
 			RuntimeCapabilities: runtimeCaps,
 			TimestampUTC:        time.Now().UTC(),
-		}); err != nil {
+		}, job.SensitiveValues, dependencies.statusRetry); err != nil {
 			return err
 		}
+		pendingEvents = nil
 		progress.markSent(totalLen, currentStep)
 		return nil
 	}
@@ -112,12 +145,14 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 			}
 		}
 		currentStep := executionPhaseTitle(phase)
-		if err := reportJobStatus(ctx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
+		pendingEvents, pendingOutputLen = events, totalLen
+		if err := reportJobStatusWithRetry(runCtx, client, serverURL, job.ID, protocol.JobExecutionStatusUpdateRequest{
 			AgentID: agentID, Status: protocol.JobExecutionStatusRunning, CurrentStep: currentStep,
 			Events: events, RuntimeCapabilities: runtimeCaps, TimestampUTC: time.Now().UTC(),
-		}); err != nil {
+		}, job.SensitiveValues, dependencies.statusRetry); err != nil {
 			return err
 		}
+		pendingEvents = nil
 		progress.markSent(totalLen, currentStep)
 		return nil
 	}
@@ -125,14 +160,13 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		deltaRaw, totalLen, _ := progress.unsentFrom(&output)
-		delta := redactSensitive(deltaRaw, job.SensitiveValues)
+		_, totalLen, _ := progress.unsentFrom(&output)
 		req := protocol.JobExecutionStatusUpdateRequest{
 			AgentID:             agentID,
 			Status:              status,
 			ExitCode:            exitCode,
-			Error:               failMsg,
-			Events:              outputDeltaEvent(delta, nil),
+			Error:               redactSensitive(failMsg, job.SensitiveValues),
+			Events:              terminalEvents(),
 			CacheStats:          cacheStats,
 			RuntimeCapabilities: runtimeCaps,
 			CurrentStep:         "",
@@ -486,7 +520,7 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 			}
 			if step.meta.kind == "dryrun_skip" {
 				skippedMessage := fmt.Sprintf("skipped step: %s", strings.TrimSpace(step.meta.name))
-				_ = reportRunningUpdate(currentStep, []protocol.JobExecutionEvent{
+				if err := reportRunningUpdate(currentStep, []protocol.JobExecutionEvent{
 					{
 						Type:         protocol.JobExecutionEventTypeStepOutput,
 						Step:         jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript),
@@ -500,7 +534,9 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 						DurationMS:   time.Since(stepStart).Milliseconds(),
 						TimestampUTC: time.Now().UTC(),
 					},
-				}, nil)
+				}, nil); err != nil {
+					return fmt.Errorf("report skipped step completion: %w", err)
+				}
 				continue
 			}
 			stepRunEnv := runEnv
@@ -567,7 +603,9 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 					fmt.Fprintf(&output, "[run] step failed: %s (%v)\n", currentStep, stepErr)
 				}
 				stepEvents = append(stepEvents, finishedEvent)
-				_ = reportRunningUpdate(currentStep, stepEvents, nil)
+				if reportErr := reportRunningUpdate(currentStep, stepEvents, nil); reportErr != nil {
+					return errors.Join(stepErr, fmt.Errorf("report failed step completion: %w", reportErr))
+				}
 				err = fmt.Errorf("%s: %w", currentStep, stepErr)
 				break
 			}
@@ -577,7 +615,9 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 				DurationMS:   time.Since(stepStart).Milliseconds(),
 				TimestampUTC: time.Now().UTC(),
 			})
-			_ = reportRunningUpdate(currentStep, stepEvents, nil)
+			if reportErr := reportRunningUpdate(currentStep, stepEvents, nil); reportErr != nil {
+				return fmt.Errorf("report step completion: %w", reportErr)
+			}
 		}
 	}
 	if ctx.Err() != nil {
@@ -679,6 +719,7 @@ func monitorServerTerminalJobState(
 	output *syncBuffer,
 	cancel context.CancelFunc,
 ) func() {
+	ctx, stopRequests := context.WithCancel(ctx)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	done := make(chan struct{})
 	stopCh := make(chan struct{})
@@ -686,7 +727,9 @@ func monitorServerTerminalJobState(
 	go func() {
 		defer close(done)
 		check := func() bool {
-			state, err := getJobExecutionState(ctx, client, serverURL, jobID)
+			requestCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+			state, err := getJobExecutionState(requestCtx, client, serverURL, jobID)
+			stop()
 			if err != nil {
 				return false
 			}
@@ -724,6 +767,7 @@ func monitorServerTerminalJobState(
 
 	return func() {
 		ticker.Stop()
+		stopRequests()
 		close(stopCh)
 		<-done
 	}

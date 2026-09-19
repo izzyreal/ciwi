@@ -19,6 +19,26 @@
 - Agents not running as a service report self-update disabled failures.
 - UI surfaces feedback and links to installer docs.
 
+## Recovering from status-reporting failures
+
+After a job is marked running, agents retry temporary step/phase status-reporting
+failures for up to five minutes per update, bounded by the remaining job timeout.
+Each request has a 15-second timeout; retries back off from one second to
+15 seconds with jitter and honor `Retry-After` within the recovery budget.
+Transport failures, HTTP 408/429, and HTTP 5xx are retryable; other HTTP 4xx
+responses stop the transition immediately.
+
+The next command waits for acknowledgment. Only the status request is retried,
+never the command, and identical event payloads are deduplicated by the server.
+Cancellation interrupts retries. If recovery fails, the agent attempts to report
+the communication error as a job failure using its terminal-report retries.
+If the server remains unreachable, server timeout cleanup is still the fallback.
+Agent diagnostics record retry attempts, delays, recovery, and exhaustion.
+
+Deploy the updated server before agents: older servers can classify internal
+status-persistence failures as HTTP 400, which agents correctly do not retry.
+The change requires no configuration or database migration.
+
 ## Job history and cleanup
 
 - **Flush History** removes non-active execution records from sqlite.

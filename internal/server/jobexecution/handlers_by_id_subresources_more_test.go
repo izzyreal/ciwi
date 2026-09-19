@@ -89,8 +89,8 @@ func TestHandleByIDSubresourcesAdditionalBranches(t *testing.T) {
 		rec = httptest.NewRecorder()
 		req = httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/status", strings.NewReader(`{"agent_id":"a1","status":"running","timestamp_utc":"`+time.Now().UTC().Format(time.RFC3339Nano)+`"}`))
 		HandleByID(rec, req, HandlerDeps{Store: store, ArtifactsDir: t.TempDir()})
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 for generic update error, got %d", rec.Code)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500 for generic update error, got %d", rec.Code)
 		}
 	})
 

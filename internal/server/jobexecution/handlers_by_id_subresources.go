@@ -200,7 +200,11 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request, deps HandlerDeps, j
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		if strings.Contains(err.Error(), "job not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 	if len(req.Events) > 0 {
