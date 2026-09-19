@@ -181,6 +181,18 @@ Default paths:
 - Data dir: `%ProgramData%\ciwi-agent`
 - Workdir: `%ProgramData%\ciwi-agent\work`
 - Logs dir: `%ProgramData%\ciwi-agent\logs`
+- Log file: `%ProgramData%\ciwi-agent\logs\agent.log` (10 MiB rotation,
+  three backups)
+
+Follow the Windows agent's diagnostics:
+
+```powershell
+Get-Content -LiteralPath "$env:ProgramData\ciwi-agent\logs\agent.log" -Tail 100 -Wait
+```
+
+Set `CIWI_AGENT_LOG_FILE` in `agent.env` to override the path, then restart
+the service. The log includes agent lifecycle, connection errors, and job/step
+status messages; command output remains available in each job's server log.
 
 ## Notes
 

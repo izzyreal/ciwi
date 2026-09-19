@@ -743,6 +743,7 @@ function Write-AgentEnvFile {
     [Parameter(Mandatory = $true)][string]$ServerUrl,
     [Parameter(Mandatory = $true)][string]$AgentId,
     [Parameter(Mandatory = $true)][string]$WorkDir,
+    [Parameter(Mandatory = $true)][string]$LogFile,
     [string]$GitHubToken
   )
 
@@ -750,6 +751,7 @@ function Write-AgentEnvFile {
     "CIWI_SERVER_URL=$ServerUrl"
     "CIWI_AGENT_ID=$AgentId"
     "CIWI_AGENT_WORKDIR=$WorkDir"
+    "CIWI_AGENT_LOG_FILE=$LogFile"
     'CIWI_LOG_LEVEL=info'
     'CIWI_AGENT_TRACE_SHELL=true'
     'CIWI_WINDOWS_SERVICE_NAME=ciwi-agent'
@@ -846,6 +848,13 @@ $dataRoot = Join-Path $env:ProgramData 'ciwi-agent'
 $workDir = Join-Path $dataRoot 'work'
 $logsDir = Join-Path $dataRoot 'logs'
 $envFile = Join-Path $dataRoot 'agent.env'
+$logFile = Trim-OneLine $env:CIWI_AGENT_LOG_FILE
+if ([string]::IsNullOrWhiteSpace($logFile)) {
+  $logFile = Trim-OneLine (Read-EnvFileValue -Path $envFile -Key 'CIWI_AGENT_LOG_FILE')
+}
+if ([string]::IsNullOrWhiteSpace($logFile)) {
+  $logFile = Join-Path $logsDir 'agent.log'
+}
 
 $serverUrl = Trim-OneLine $env:CIWI_SERVER_URL
 $serverUrlSource = 'CIWI_SERVER_URL environment variable'
@@ -935,7 +944,7 @@ try {
   New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
   New-Item -ItemType Directory -Force -Path $workDir | Out-Null
   New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
-  Write-AgentEnvFile -Path $envFile -ServerUrl $serverUrl -AgentId $agentId -WorkDir $workDir -GitHubToken $token
+  Write-AgentEnvFile -Path $envFile -ServerUrl $serverUrl -AgentId $agentId -WorkDir $workDir -LogFile $logFile -GitHubToken $token
 
   Write-Host '[5/7] Stopping existing service if present...'
   $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -958,12 +967,13 @@ try {
   Write-Host "Config:       $envFile"
   Write-Host "Server URL:   $serverUrl ($serverUrlSource)"
   Write-Host "Workdir:      $workDir"
-  Write-Host "Logs dir:     $logsDir"
+  Write-Host "Agent log:    $logFile"
   Write-Host ''
   Write-Host 'Useful commands:'
   Write-Host "  Get-Service $serviceName"
   Write-Host "  sc.exe qc $serviceName"
   Write-Host "  sc.exe query $serviceName"
+  Write-Host "  Get-Content -LiteralPath '$logFile' -Tail 100 -Wait"
   Write-Host ''
   Write-Host 'To change target server/token:'
   Write-Host "  notepad $envFile"

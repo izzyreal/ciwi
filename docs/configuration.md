@@ -17,8 +17,10 @@ Common variables:
 - `CIWI_AGENT_ENV_FILE`: service env file override (macOS default
   `$HOME/Library/Application Support/ciwi/agent.env`; Windows default
   `%ProgramData%\\ciwi-agent\\agent.env`)
-- `CIWI_AGENT_LOG_FILE`: macOS agent log override (default
-  `$HOME/Library/Logs/ciwi/agent.log`)
+- `CIWI_AGENT_LOG_FILE`: agent log override (macOS default
+  `$HOME/Library/Logs/ciwi/agent.log`; Windows default
+  `%ProgramData%\ciwi-agent\logs\agent.log`). Windows rotates at 10 MiB
+  with three backups and honors `CIWI_LOG_LEVEL` from `agent.env`.
 - `CIWI_AGENT_TRACE_SHELL`: shell tracing (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
 - `CIWI_ARTIFACT_LOG_LEVEL`: artifact collection log verbosity: `none|summary|verbose` (default `summary`)

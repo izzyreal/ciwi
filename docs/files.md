@@ -73,10 +73,17 @@ Default paths:
 - Env file: `%ProgramData%\ciwi-agent\agent.env`
 - Workdir: `%ProgramData%\ciwi-agent\work`
 - Logs dir: `%ProgramData%\ciwi-agent\logs`
+- Log file: `%ProgramData%\ciwi-agent\logs\agent.log`
 - Service name: `ciwi-agent`
 
 Notes:
-- The Windows installer creates a logs directory, but this repo does not currently document a single installer-defined agent log filename there.
+- The agent appends diagnostics to `agent.log` and rotates at 10 MiB, retaining
+  three backups (`agent.log.1` through `agent.log.3`, newest first). Individual
+  log records are kept intact, so a file can exceed the limit by one record.
+- `CIWI_AGENT_LOG_FILE` overrides the log path. The installer records it in
+  `agent.env` and preserves an existing override on reinstall.
+- Existing installations use the default log path after updating the agent,
+  even if their `agent.env` does not contain `CIWI_AGENT_LOG_FILE`.
 - If `CIWI_AGENT_ENV_FILE` is unset at runtime, the agent defaults to `%ProgramData%\ciwi-agent\agent.env`.
 
 ## Non-installer defaults
