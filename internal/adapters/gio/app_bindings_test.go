@@ -9,6 +9,33 @@ import (
 	sharedui "github.com/izzyreal/ciwi/ui"
 )
 
+func TestRunOptionsRoutesSelectExactlyOneRequestTarget(t *testing.T) {
+	for _, test := range []struct {
+		route             string
+		pipeline, project int64
+		chain             string
+	}{
+		{"/run-options/projects/2/pipelines/7", 7, 0, ""},
+		{"/run-options/pipelines/7", 7, 0, ""},
+		{"/run-options/projects/2/chains/release", 0, 2, "release"},
+	} {
+		t.Run(test.route, func(t *testing.T) {
+			navigation, err := navigationForRoute(test.route)
+			if err != nil {
+				t.Fatal(err)
+			}
+			navigation.sourceRef, navigation.agentID = "main", "windows-agent"
+			request := nativeRunOptionsRequest(navigation)
+			if request.PipelineDbId != test.pipeline || request.ProjectId != test.project || request.ChainId != test.chain {
+				t.Fatalf("unexpected target: %v", request)
+			}
+			if request.Selection.SourceRef != "main" || request.Selection.AgentId != "windows-agent" {
+				t.Fatalf("lost selection: %v", request.Selection)
+			}
+		})
+	}
+}
+
 func TestJobDetailsBindingsExposePreExecutionFailure(t *testing.T) {
 	data, err := jobDetailsBindingData(&cnpv1.JobDetailsView{
 		Id: "job-failed", Status: "failed", Error: "secret resolution failed before execution",

@@ -174,6 +174,20 @@ func TestKeyedViewportMeasuresVariableHeightTailBeforeFollowingEnd(t *testing.T)
 	}
 }
 
+func TestKeyedViewportFollowsEndAfterOverscanMeasurement(t *testing.T) {
+	runtime := NewRuntime(nil, Options{})
+	root := VirtualList("viewport", ListProps{
+		Axis: layout.Vertical, Viewport: 100, Estimate: 40, ScrollToEnd: true, Overscan: 2,
+	}, Static(Spacer("first", 0, 200), Spacer("middle", 0, 200), Spacer("tail", 0, 400)))
+	for frame := 0; frame < 2; frame++ {
+		runtime.Layout(testContext(320, 100), root)
+		state := viewportState(t, runtime)
+		if state.anchor != "tail" || state.anchorOffset != 300 || !state.atEnd {
+			t.Fatalf("frame %d: anchor %q offset %d atEnd %v, want tail/300/true", frame, state.anchor, state.anchorOffset, state.atEnd)
+		}
+	}
+}
+
 func TestNestedViewportConsumesAvailableScrollBeforeParent(t *testing.T) {
 	runtime := NewRuntime(nil, Options{})
 	router := new(input.Router)

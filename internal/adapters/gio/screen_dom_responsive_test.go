@@ -686,6 +686,33 @@ func TestNativeLongJobLogStopsAtSharedViewportCap(t *testing.T) {
 	}
 }
 
+func TestNativeJobLogFollowsTailWithVariableHeightChunks(t *testing.T) {
+	for _, width := range []int{375, 800, 1200} {
+		renderer := responsiveTestRenderer(t)
+		renderer.outputTailing = true
+		renderer.ApplyJobLogPage(jobLogStreamSnapshot{
+			JobID: "job-install", ItemID: "step:1", Terminal: true,
+			Chunks: []jobLogChunkSnapshot{
+				{ID: 1, Text: strings.Repeat("Downloading package from source\n", 30)},
+				{ID: 2, Text: strings.Repeat("Package installed successfully\n", 40)},
+				{ID: 3, Text: strings.Repeat("Installed package\n", 20) + "Please reboot at your earliest convenience.\n"},
+			},
+		})
+		node := uidsl.Node{Component: "log-view", LogView: &uidsl.LogView{
+			JobExecutionID: "jobDetails.id", ItemID: "group.id",
+		}}
+		log := renderer.compileDOMLogView(node, map[string]any{
+			"jobDetails": map[string]any{"id": "job-install"}, "group": map[string]any{"id": "step:1"},
+		}, "log")
+		reached := false
+		log.List.OnReachEnd = func() { reached = true }
+		layoutResponsiveLooseElement(renderer, log, width, 800)
+		if !reached {
+			t.Errorf("width %d failed to reach the final log line", width)
+		}
+	}
+}
+
 func TestNativeJobLogPagePreservesNewerDescriptorState(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	renderer.ApplyJobLogDescriptor(jobLogDescriptorSnapshot{

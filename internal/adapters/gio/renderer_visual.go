@@ -654,6 +654,19 @@ func loadCiwiFontCollection() ([]font.FontFace, error) {
 		}
 		face := faces[0]
 		face.Font.Typeface, face.Font.Weight = source.typeface, source.weight
+		if source.typeface == "Ciwi Mono" {
+			// Gio does not expose per-layout OpenType feature settings. Disable
+			// optional substitutions before publishing the shared code font:
+			// Geist Mono's -- ligature occupies one cell and overlaps the space
+			// before a shell flag. Keep required script shaping features intact.
+			features := face.Face.Face().GSUB.Features
+			for index := range features {
+				switch features[index].Tag.String() {
+				case "liga", "clig", "calt":
+					features[index].LookupListIndices = nil
+				}
+			}
+		}
 		collection = append(collection, face)
 	}
 	return collection, nil

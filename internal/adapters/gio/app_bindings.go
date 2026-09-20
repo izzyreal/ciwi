@@ -210,10 +210,7 @@ func vaultBindingData(connections *cnpv1.VaultConnectionList) (map[string]any, e
 func loadRunOptions(ctx context.Context, client *cnpclient.Client, navigation navigationState) (map[string]any, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, 70*time.Second)
 	defer cancel()
-	view, err := client.GetRunOptions(requestCtx, &cnpv1.GetRunOptionsRequest{
-		PipelineDbId: navigation.pipelineDBID, ProjectId: navigation.projectID, ChainId: navigation.chainID,
-		Selection: &cnpv1.RunPipelineSelection{SourceRef: navigation.sourceRef, AgentId: navigation.agentID},
-	})
+	view, err := client.GetRunOptions(requestCtx, nativeRunOptionsRequest(navigation))
 	if err != nil {
 		return nil, err
 	}
@@ -222,6 +219,18 @@ func loadRunOptions(ctx context.Context, client *cnpclient.Client, navigation na
 		return nil, err
 	}
 	return data, nil
+}
+
+func nativeRunOptionsRequest(navigation navigationState) *cnpv1.GetRunOptionsRequest {
+	request := &cnpv1.GetRunOptionsRequest{
+		PipelineDbId: navigation.pipelineDBID,
+		Selection:    &cnpv1.RunPipelineSelection{SourceRef: navigation.sourceRef, AgentId: navigation.agentID},
+	}
+	// The project in a pipeline route is navigation context, not a chain target.
+	if navigation.pipelineDBID == 0 {
+		request.ProjectId, request.ChainId = navigation.projectID, navigation.chainID
+	}
+	return request
 }
 
 func runOptionsLoadingData(navigation navigationState) map[string]any {

@@ -677,7 +677,14 @@ func (r *Runtime) measureListTail(
 	gap int,
 ) {
 	remaining := axisMain(props.Axis, viewport)
-	for index := children.Len() - 1; index >= 0 && remaining > 0; index-- {
+	// Visible layout also measures the rows preceding the viewport. Resolve
+	// those overscan rows now: their height changes would otherwise shift the
+	// tail after we have calculated its offset and break end following.
+	overscan := props.Overscan
+	for index := children.Len() - 1; index >= 0 && (remaining > 0 || overscan > 0); index-- {
+		if remaining <= 0 {
+			overscan--
+		}
 		childIdentity, valid := r.childIdentity(identity, children, index)
 		if !valid {
 			continue
