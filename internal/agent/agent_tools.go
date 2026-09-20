@@ -214,7 +214,7 @@ func detectToolVersionInShell(shell, cmd string, args ...string) string {
 	if err != nil {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, bin, shellArgs...)
 	raw, err := c.CombinedOutput()
@@ -289,7 +289,7 @@ func detectToolVersionByPath(cmd string, args ...string) string {
 	if strings.TrimSpace(cmd) == "" {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, cmd, args...)
 	raw, err := c.CombinedOutput()
