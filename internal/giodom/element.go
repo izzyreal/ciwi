@@ -189,6 +189,9 @@ type ProgressProps struct {
 	Color      color.NRGBA
 	Track      color.NRGBA
 	Radius     unit.Dp
+	// CompositeBackground opts into browser-style sRGB compositing against an
+	// opaque backing surface. Nil preserves ordinary Gio alpha blending.
+	CompositeBackground *color.NRGBA
 }
 
 // ListProps configures stock and keyed scrolling lists.

@@ -3,6 +3,7 @@ package giodom
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"math"
 	"time"
 
@@ -430,6 +431,26 @@ func (r *Runtime) layoutResponsive(gtx layout.Context, element Element, identity
 	return r.layoutElement(gtx, *child, childIdentity)
 }
 
+// progressFillColor applies animation opacity before compositing so pulsing
+// fills use the same sRGB blend as browser CSS, rather than Gio's linear blend.
+func progressFillColor(props ProgressProps, opacity float64) color.NRGBA {
+	foreground := props.Color
+	opacity = max(0, min(1, opacity))
+	if props.CompositeBackground == nil {
+		foreground.A = uint8(math.Round(float64(foreground.A) * opacity))
+		return foreground
+	}
+	background := *props.CompositeBackground
+	weight := float64(foreground.A) / 255 * opacity
+	mix := func(back, front uint8) uint8 {
+		return uint8(math.Round(float64(back)*(1-weight) + float64(front)*weight))
+	}
+	return color.NRGBA{
+		R: mix(background.R, foreground.R), G: mix(background.G, foreground.G),
+		B: mix(background.B, foreground.B), A: 255,
+	}
+}
+
 func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity string) layout.Dimensions {
 	return layout.Background{}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		size := gtx.Constraints.Min
@@ -446,7 +467,7 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 			fraction = props.FractionAt(gtx.Now)
 		}
 		fraction = max(float32(0), min(float32(1), fraction))
-		progressColor := props.Color
+		progressColor := progressFillColor(props, 1)
 		switch props.Mode {
 		case ProgressIndeterminate:
 			const cycle = 4 * time.Second
@@ -462,7 +483,7 @@ func (r *Runtime) layoutProgress(gtx layout.Context, element Element, identity s
 			elapsed := gtx.Now.UnixNano()
 			phase := float64(elapsed%int64(cycle)) / float64(cycle)
 			opacity := .58 + .42*(.5-.5*math.Cos(2*math.Pi*phase))
-			progressColor.A = uint8(math.Round(float64(progressColor.A) * opacity))
+			progressColor = progressFillColor(props, opacity)
 			paint.FillShape(gtx.Ops, progressColor, clip.UniformRRect(image.Rectangle{Max: size}, clampRadius(gtx.Dp(props.Radius), size)).Op(gtx.Ops))
 			r.requestAnimationFrame(gtx)
 		case ProgressComplete:

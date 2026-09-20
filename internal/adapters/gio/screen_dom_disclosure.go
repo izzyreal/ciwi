@@ -141,6 +141,10 @@ func (r *Renderer) compileDOMDisclosure(node uidsl.Node, data any, path string, 
 		headerContent := giodom.Inset(giodom.Key(path+"/progress-header-inset"), giodom.UniformInsets(padding), headerRow)
 		headerProgress := *progress
 		headerProgress.Track = color.NRGBA{}
+		if node.Style.Role == "execution-row" {
+			background := r.palette.surfaceRaised
+			headerProgress.CompositeBackground = &background
+		}
 		header := giodom.Progress(giodom.Key(path+"/progress-header"), headerProgress, headerContent)
 		header = activateHeader(header)
 		content := []giodom.Element{header}

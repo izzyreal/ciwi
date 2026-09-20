@@ -607,6 +607,7 @@ screen:
                       text:
                         binding: execution.summary_label
                       style:
+                        role: control
                         toneBinding: execution.summary_tone
                         emphasis: strong
                 layout:
@@ -863,6 +864,7 @@ screen:
                       text:
                         template: "{{execution.summary.succeeded}}/{{execution.summary.total_jobs}} successful"
                       style:
+                        role: control
                         toneBinding: execution.status
                         emphasis: strong
                     - component: button
