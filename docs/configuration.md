@@ -62,6 +62,7 @@ Agent reports tool versions in heartbeat.
 Supported tool keys include:
 - `git`, `go`, `gh`, `lftp`, `lcov`, `cmake`, `ninja`, `docker`, `gcc`, `clang`, `zip`
 - `sphinx-build`, `rinoh`
+- `python`, `python3` (detected independently on hosts and in managed containers)
 - `ccache`, `sccache`
 - macOS signing/packaging tools such as `xcodebuild`, `dmgbuild`, `codesign`, `productsign`, `notarytool`, `stapler`, `packagesbuild`, `packagesutil`, `plistbuddy`
 - Windows `msvc`, `iscc`, `wix`, `signtool`
@@ -75,6 +76,20 @@ requires:
     go: ">=1.24"
     git: ">=2.30"
     gh: "*"
+    python3: ">=3.10"
+```
+
+Python tool keys match the command name: `python3` does not satisfy a `python`
+requirement, or vice versa. Each reports its own detected version, including
+Python 2 if that is what `python` runs. Use a version constraint to require Python 3.
+Ciwi detects installed interpreters; it does not install Python or create aliases.
+For Python inside a managed container, use:
+
+```yaml
+requires:
+  container:
+    tools:
+      python3: ">=3.10"
 ```
 
 Constraint syntax:

@@ -53,6 +53,8 @@ func collectRuntimeCapabilitiesWithContext(ctx context.Context, agentCapabilitie
 	}{
 		{name: "git", cmd: "git", args: []string{"--version"}},
 		{name: "go", cmd: "go", args: []string{"version"}},
+		{name: "python", cmd: "python", args: []string{"--version"}},
+		{name: "python3", cmd: "python3", args: []string{"--version"}},
 		{name: "gh", cmd: "gh", args: []string{"--version"}},
 		{name: "lftp", cmd: "lftp", args: []string{"--version"}},
 		{name: "lcov", cmd: "lcov", args: []string{"--version"}},
