@@ -23,6 +23,13 @@ Common variables:
   with three backups and honors `CIWI_LOG_LEVEL` from `agent.env`.
 - `CIWI_AGENT_TRACE_SHELL`: shell tracing (default `true`)
 - `CIWI_AGENT_GO_BUILD_VERBOSE`: sets `GOFLAGS=-v` when unset (default `true`)
+- `CIWI_ARTIFACT_MAX_FILE_BYTES`: agent per-file artifact size limit in bytes (default
+  `536870912`, or 512 MiB). Set this in the agent service environment or `agent.env`,
+  then restart the agent. Unset or blank uses the default; other values must be a
+  positive decimal integer within the signed 64-bit range. Invalid values fail
+  artifact collection. A matched file exceeding the limit fails artifact publication
+  and the producing job before any artifacts are uploaded, reporting its relative
+  path, actual size, and limit. Files exactly at the limit are allowed.
 - `CIWI_ARTIFACT_LOG_LEVEL`: artifact collection log verbosity: `none|summary|verbose` (default `summary`)
 - `CIWI_ARTIFACT_LOG_MAX_INCLUDE_LINES`: max per-file `[artifacts] include=...` lines when level is `verbose` (default `25`)
 - `CIWI_DEP_ARTIFACT_LOG_LEVEL`: dependency artifact restore log verbosity: `none|summary|verbose` (default `summary`)

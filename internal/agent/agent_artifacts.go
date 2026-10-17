@@ -123,6 +123,10 @@ func collectArtifactsWithProgress(execDir string, globs []string, progress func(
 
 	var summary strings.Builder
 	fmt.Fprintf(&summary, "[artifacts] globs=%s\n", strings.Join(globs, ", "))
+	maxFileBytes, err := artifactMaxFileBytesFromEnv()
+	if err != nil {
+		return nil, summary.String(), err
+	}
 	logLevel, includeLineLimit := artifactLogConfigFromEnv()
 
 	seen := map[string]struct{}{}
@@ -175,10 +179,8 @@ func collectArtifactsWithProgress(execDir string, globs []string, progress func(
 			continue
 		}
 		scanned++
-		if info.Size() > maxArtifactFileBytes {
-			skipped++
-			fmt.Fprintf(&summary, "[artifacts] skip=%s reason=size(%d>%d)\n", rel, info.Size(), maxArtifactFileBytes)
-			continue
+		if info.Size() > maxFileBytes {
+			return nil, summary.String(), fmt.Errorf("artifact %q size %d bytes exceeds CIWI_ARTIFACT_MAX_FILE_BYTES limit of %d bytes", rel, info.Size(), maxFileBytes)
 		}
 
 		content, err := os.ReadFile(full)
@@ -213,6 +215,18 @@ func collectArtifactsWithProgress(execDir string, globs []string, progress func(
 		fmt.Fprintf(&summary, "[artifacts] included=%d bytes=%d skipped=%d\n", len(uploads), totalBytes, skipped)
 	}
 	return uploads, summary.String(), nil
+}
+
+func artifactMaxFileBytesFromEnv() (int64, error) {
+	raw := strings.TrimSpace(os.Getenv("CIWI_ARTIFACT_MAX_FILE_BYTES"))
+	if raw == "" {
+		return defaultMaxArtifactFileBytes, nil
+	}
+	limit, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || limit <= 0 {
+		return 0, fmt.Errorf("CIWI_ARTIFACT_MAX_FILE_BYTES must be a positive decimal byte count, got %q", raw)
+	}
+	return limit, nil
 }
 
 func portableArtifactMode(mode os.FileMode) os.FileMode {
