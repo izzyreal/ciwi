@@ -59,6 +59,16 @@ func downloadBindingItem(download nativeDownloadSnapshot) map[string]any {
 	if download.DestinationMissing {
 		detail = "Downloaded file is no longer available"
 	}
+	metadata := make([]string, 0, 3)
+	if label := strings.TrimSpace(download.Label); label != "" && label != name {
+		metadata = append(metadata, label)
+	}
+	if detail != "" {
+		metadata = append(metadata, detail)
+	}
+	if !download.CreatedAt.IsZero() {
+		metadata = append(metadata, "Started "+download.CreatedAt.Local().Format("2 Jan 2006, 15:04"))
+	}
 	progressState, fraction := "none", float64(0)
 	if state == downloadCompleted || state == downloadReadyToSave {
 		progressState, fraction = "complete", 1
@@ -71,6 +81,7 @@ func downloadBindingItem(download nativeDownloadSnapshot) map[string]any {
 	return map[string]any{
 		"id": download.ID, "name": name, "label": download.Label, "state": download.State,
 		"status": status, "status_tone": downloadTone(download.State), "detail": detail, "show_detail": detail != "",
+		"metadata": strings.Join(metadata, " · "), "show_metadata": len(metadata) > 0,
 		"error": download.Error, "show_error": strings.TrimSpace(download.Error) != "",
 		"progress":     map[string]any{"state": progressState, "fraction": fraction},
 		"show_pause":   state == downloadDownloading,

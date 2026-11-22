@@ -163,6 +163,10 @@ func (m *artifactDownloadManager) Snapshot() []nativeDownloadSnapshot {
 		if offset < record.Offset {
 			offset = record.Offset
 		}
+		fileName := record.FileName
+		if destinationPath := strings.TrimSpace(record.DestinationPath); destinationPath != "" {
+			fileName = filepath.Base(destinationPath)
+		}
 		canReveal, destinationMissing := false, false
 		if record.State == downloadCompleted && runtime.GOOS != "ios" && strings.TrimSpace(record.DestinationPath) != "" {
 			info, err := os.Stat(record.DestinationPath)
@@ -170,7 +174,7 @@ func (m *artifactDownloadManager) Snapshot() []nativeDownloadSnapshot {
 			canReveal = !destinationMissing
 		}
 		snapshot = append(snapshot, nativeDownloadSnapshot{
-			ID: record.ID, Label: record.Label, FileName: record.FileName, State: string(record.State), Error: record.Error,
+			ID: record.ID, Label: record.Label, FileName: fileName, State: string(record.State), Error: record.Error,
 			Downloaded: offset, Total: record.TotalSize, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, PausedByUser: record.PausedByUser,
 			CanReveal: canReveal, DestinationMissing: destinationMissing,
 		})

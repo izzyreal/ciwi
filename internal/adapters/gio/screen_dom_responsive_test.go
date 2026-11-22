@@ -65,6 +65,40 @@ func TestCompactLayoutUsesSharedWidthBoundary(t *testing.T) {
 	}
 }
 
+func TestNativeDownloadCardFitsCompactDesktopRow(t *testing.T) {
+	screen, err := sharedui.LoadScreen("downloads")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, ok := findResponsiveTestNode(screen.Screen.Root, "download-list")
+	if !ok || len(list.Children) != 1 {
+		t.Fatal("download card is missing")
+	}
+	download := nativeDownloadSnapshot{
+		ID: "download", Label: "Artifact", FileName: "VMPC2000XL-Installer-Intel-M1-v0.9.22.pkg",
+		State: string(downloadCompleted), Total: 105801318, CreatedAt: time.Date(2026, time.November, 22, 14, 38, 0, 0, time.UTC), CanReveal: true,
+	}
+	renderer := responsiveTestRenderer(t)
+	for _, state := range []nativeDownloadState{downloadCompleted, downloadDownloading} {
+		t.Run(string(state), func(t *testing.T) {
+			download.State = string(state)
+			download.Downloaded = 52800659
+			data := map[string]any{"download": downloadBindingItem(download)}
+			renderer.compact = false
+			desktop := layoutResponsiveElement(renderer, *renderer.compileDOMNode(list.Children[0], data, "download-card"), 1100, 400)
+			if desktop.Size.Y > 100 {
+				t.Fatalf("desktop download card height = %d, want at most 100", desktop.Size.Y)
+			}
+			renderer.compact = true
+			compact := layoutResponsiveElement(renderer, *renderer.compileDOMNode(list.Children[0], data, "download-card"), 375, 400)
+			if compact.Size.Y == 0 || compact.Size.Y > 200 {
+				t.Fatalf("compact download card height = %d, want 1–200", compact.Size.Y)
+			}
+			t.Logf("card heights: desktop %d, compact %d", desktop.Size.Y, compact.Size.Y)
+		})
+	}
+}
+
 func TestNativeProjectDisclosureUsesTrailingPassiveChevronAndInlineExpansion(t *testing.T) {
 	renderer := responsiveTestRenderer(t)
 	node := uidsl.Node{

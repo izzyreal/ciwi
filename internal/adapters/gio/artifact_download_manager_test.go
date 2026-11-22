@@ -92,7 +92,7 @@ func (w *failDownloadWriter) Close() error { w.closed = true; return nil }
 func TestArtifactDownloadManagerRecoversAfterClientAndServerRestart(t *testing.T) {
 	configDir := t.TempDir()
 	preferencesPath := filepath.Join(configDir, "native-ui.json")
-	destinationPath := filepath.Join(t.TempDir(), "artifact.bin")
+	destinationPath := filepath.Join(t.TempDir(), "foo.zip")
 	destination, err := os.Create(destinationPath)
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +108,9 @@ func TestArtifactDownloadManagerRecoversAfterClientAndServerRestart(t *testing.T
 		t.Fatal(err)
 	}
 	waitForDownloadState(t, manager, downloadPaused)
+	if snapshot := manager.Snapshot(); len(snapshot) != 1 || snapshot[0].FileName != "foo.zip" {
+		t.Fatalf("paused download name = %+v, want foo.zip", snapshot)
+	}
 	manager.Close()
 
 	restartedClient := &resumableDownloadClientStub{content: content, chunkSize: 211}
@@ -118,6 +121,9 @@ func TestArtifactDownloadManagerRecoversAfterClientAndServerRestart(t *testing.T
 	defer restored.Close()
 	restored.AttachClient(restartedClient, "server-1")
 	waitForDownloadState(t, restored, downloadCompleted)
+	if snapshot := restored.Snapshot(); len(snapshot) != 1 || snapshot[0].FileName != "foo.zip" {
+		t.Fatalf("restored download name = %+v, want foo.zip", snapshot)
+	}
 	payload, err := os.ReadFile(destinationPath)
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +271,7 @@ func TestArtifactDownloadManagerManualPauseSurvivesRestoreWithoutAutoResume(t *t
 
 func TestArtifactDownloadManagerPersistsCompletedHistoryAndRemoveKeepsFile(t *testing.T) {
 	configDir := t.TempDir()
-	destinationPath := filepath.Join(t.TempDir(), "artifact.bin")
+	destinationPath := filepath.Join(t.TempDir(), "foo.zip")
 	if err := os.WriteFile(destinationPath, []byte("complete"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +282,7 @@ func TestArtifactDownloadManagerPersistsCompletedHistoryAndRemoveKeepsFile(t *te
 	now := time.Now().UTC()
 	manager.mu.Lock()
 	manager.records["complete"] = &nativeDownloadRecord{
-		ID: "complete", FileName: "artifact.bin", Label: "Artifact", State: downloadCompleted,
+		ID: "complete", FileName: "job-11234-artifacts.zip", Label: "Artifact", State: downloadCompleted,
 		TotalSize: 8, Offset: 8, DestinationPath: destinationPath, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := manager.saveLocked(); err != nil {
@@ -284,6 +290,9 @@ func TestArtifactDownloadManagerPersistsCompletedHistoryAndRemoveKeepsFile(t *te
 		t.Fatal(err)
 	}
 	manager.mu.Unlock()
+	if snapshot := manager.Snapshot(); len(snapshot) != 1 || snapshot[0].FileName != "foo.zip" {
+		t.Fatalf("saved download name = %+v, want foo.zip", snapshot)
+	}
 	manager.Close()
 
 	restored, err := newArtifactDownloadManager(t.Context(), filepath.Join(configDir, "native-ui.json"), &pickerSequence{})
@@ -292,7 +301,7 @@ func TestArtifactDownloadManagerPersistsCompletedHistoryAndRemoveKeepsFile(t *te
 	}
 	defer restored.Close()
 	snapshot := restored.Snapshot()
-	if len(snapshot) != 1 || snapshot[0].State != string(downloadCompleted) || !snapshot[0].CanReveal || snapshot[0].DestinationMissing {
+	if len(snapshot) != 1 || snapshot[0].FileName != "foo.zip" || snapshot[0].State != string(downloadCompleted) || !snapshot[0].CanReveal || snapshot[0].DestinationMissing {
 		t.Fatalf("restored completed download = %+v", snapshot)
 	}
 	if err := restored.Remove("complete"); err != nil {
