@@ -47,7 +47,7 @@ const (
 type nativeDownloadSnapshot struct {
 	ID, Label, FileName, State, Error string
 	Downloaded, Total                 int64
-	UpdatedAt                         time.Time
+	CreatedAt, UpdatedAt              time.Time
 	PausedByUser                      bool
 	CanReveal, DestinationMissing     bool
 }
@@ -171,17 +171,13 @@ func (m *artifactDownloadManager) Snapshot() []nativeDownloadSnapshot {
 		}
 		snapshot = append(snapshot, nativeDownloadSnapshot{
 			ID: record.ID, Label: record.Label, FileName: record.FileName, State: string(record.State), Error: record.Error,
-			Downloaded: offset, Total: record.TotalSize, UpdatedAt: record.UpdatedAt, PausedByUser: record.PausedByUser,
+			Downloaded: offset, Total: record.TotalSize, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, PausedByUser: record.PausedByUser,
 			CanReveal: canReveal, DestinationMissing: destinationMissing,
 		})
 	}
 	sort.Slice(snapshot, func(i, j int) bool {
-		iCompleted, jCompleted := snapshot[i].State == string(downloadCompleted), snapshot[j].State == string(downloadCompleted)
-		if iCompleted != jCompleted {
-			return !iCompleted
-		}
-		if !snapshot[i].UpdatedAt.Equal(snapshot[j].UpdatedAt) {
-			return snapshot[i].UpdatedAt.After(snapshot[j].UpdatedAt)
+		if !snapshot[i].CreatedAt.Equal(snapshot[j].CreatedAt) {
+			return snapshot[i].CreatedAt.After(snapshot[j].CreatedAt)
 		}
 		return snapshot[i].ID < snapshot[j].ID
 	})

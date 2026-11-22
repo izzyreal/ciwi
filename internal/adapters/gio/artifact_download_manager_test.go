@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -300,6 +301,67 @@ func TestArtifactDownloadManagerPersistsCompletedHistoryAndRemoveKeepsFile(t *te
 	if _, err := os.Stat(destinationPath); err != nil {
 		t.Fatalf("removing history affected downloaded file: %v", err)
 	}
+}
+
+func TestArtifactDownloadManagerSnapshotKeepsCreationOrder(t *testing.T) {
+	preferencesPath := filepath.Join(t.TempDir(), "native-ui.json")
+	manager, err := newArtifactDownloadManager(t.Context(), preferencesPath, &pickerSequence{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := time.Unix(100, 0).UTC()
+	manager.mu.Lock()
+	manager.records["older"] = &nativeDownloadRecord{
+		ID: "older", State: downloadDownloading, CreatedAt: created, UpdatedAt: created.Add(10 * time.Minute),
+	}
+	manager.records["newer-b"] = &nativeDownloadRecord{
+		ID: "newer-b", State: downloadDownloading, CreatedAt: created.Add(time.Minute), UpdatedAt: created.Add(5 * time.Minute),
+	}
+	manager.records["newer-a"] = &nativeDownloadRecord{
+		ID: "newer-a", State: downloadCompleted, CreatedAt: created.Add(time.Minute), UpdatedAt: created.Add(time.Minute),
+	}
+	manager.mu.Unlock()
+
+	assertOrder := func(m *artifactDownloadManager) {
+		t.Helper()
+		snapshot := m.Snapshot()
+		ids := make([]string, 0, len(snapshot))
+		for _, download := range snapshot {
+			ids = append(ids, download.ID)
+		}
+		if got := strings.Join(ids, ","); got != "newer-a,newer-b,older" {
+			t.Fatalf("download order = %s, want newer-a,newer-b,older", got)
+		}
+	}
+	assertOrder(manager)
+
+	manager.mu.Lock()
+	manager.records["older"].progressOffset = 50
+	manager.records["older"].UpdatedAt = created.Add(15 * time.Minute)
+	manager.records["newer-b"].State = downloadPaused
+	manager.mu.Unlock()
+	assertOrder(manager)
+
+	manager.mu.Lock()
+	manager.records["older"].State = downloadCompleted
+	manager.records["newer-b"].State = downloadCompleted
+	manager.records["newer-a"].State = downloadCompleted
+	manager.records["newer-a"].UpdatedAt = created.Add(20 * time.Minute)
+	manager.records["newer-b"].UpdatedAt = created.Add(30 * time.Minute)
+	if err := manager.saveLocked(); err != nil {
+		manager.mu.Unlock()
+		t.Fatal(err)
+	}
+	manager.mu.Unlock()
+	assertOrder(manager)
+	manager.Close()
+
+	restored, err := newArtifactDownloadManager(t.Context(), preferencesPath, &pickerSequence{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	assertOrder(restored)
 }
 
 func TestArtifactDownloadManagerMarksMissingCompletedDestination(t *testing.T) {
