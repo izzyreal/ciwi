@@ -179,9 +179,6 @@ pipelines:
 	if got := strings.TrimSpace(job.Metadata["dry_run"]); got != "1" {
 		t.Fatalf("expected dry_run metadata=1, got %q", got)
 	}
-	if got := strings.TrimSpace(job.Env["CIWI_DRY_RUN"]); got != "1" {
-		t.Fatalf("expected CIWI_DRY_RUN=1, got %q", got)
-	}
 	if strings.Contains(job.Script, "echo publish") {
 		t.Fatalf("skip_dry_run step must not be present in rendered script: %q", job.Script)
 	}

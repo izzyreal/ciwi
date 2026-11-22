@@ -145,12 +145,10 @@ step.
 Injected env vars:
 - `CIWI_PIPELINE_VERSION_RAW`
 - `CIWI_PIPELINE_VERSION` / `CIWI_PIPELINE_TAG`
-- `CIWI_PIPELINE_TAG_PREFIX`
 - `CIWI_PIPELINE_SOURCE_REF`
 - `CIWI_PIPELINE_SOURCE_REF_RAW`
 - `CIWI_PIPELINE_SOURCE_REPO`
 - `CIWI_PIPELINE_VERSION_FILE`
-- `CIWI_DRY_RUN` (`1` for dry-run executions)
 
 Matrix and version values can also be used in YAML templates, including
 `{{ciwi.version_raw}}`, `{{ciwi.version}}`, and `{{ciwi.tag_prefix}}`.

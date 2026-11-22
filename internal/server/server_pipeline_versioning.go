@@ -174,10 +174,7 @@ func readVersionFromRepo(repoURL, sourceRef, versionFile string, report resolveS
 }
 
 func buildAutoBumpStepScript(mode string) string {
-	return fmt.Sprintf(`if [ "${CIWI_DRY_RUN:-0}" = "1" ]; then
-  echo "[dry-run] skipping automatic version bump"
-else
-  case "%s" in
+	return fmt.Sprintf(`  case "%s" in
     patch|minor|major) ;;
     *) echo "unsupported auto bump mode: %s"; exit 1 ;;
   esac
@@ -257,6 +254,5 @@ EOF
   if ! git push "$PUSH_REMOTE" "HEAD:refs/heads/${BRANCH}"; then
     echo "auto bump push failed; branch $BRANCH advanced during release"
     exit 1
-  fi
-fi`, mode, mode, mode)
+  fi`, mode, mode, mode)
 }

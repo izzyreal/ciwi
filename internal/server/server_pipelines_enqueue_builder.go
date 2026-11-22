@@ -293,18 +293,12 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	if len(missingNeeds) > 0 {
 		metadata.Set(domain.ExecutionMetadataMissingNeedsJobIDs, strings.Join(missingNeeds, ","))
 	}
-	if selection != nil && selection.DryRun {
-		env["CIWI_DRY_RUN"] = "1"
-	}
 	if runCtx.VersionRaw != "" {
 		env["CIWI_PIPELINE_VERSION_RAW"] = runCtx.VersionRaw
 	}
 	if runCtx.Version != "" {
 		env["CIWI_PIPELINE_VERSION"] = runCtx.Version
 		env["CIWI_PIPELINE_TAG"] = runCtx.Version
-	}
-	if runCtx.TagPrefix != "" {
-		env["CIWI_PIPELINE_TAG_PREFIX"] = runCtx.TagPrefix
 	}
 	if runCtx.VersionFile != "" {
 		env["CIWI_PIPELINE_VERSION_FILE"] = runCtx.VersionFile
