@@ -86,6 +86,7 @@ func TestCloneJobStepPlan(t *testing.T) {
 		YAMLLiteral:     "run: cmake --build .",
 		Script:          "cmake --build .",
 		Kind:            "run",
+		AutoBump:        &protocol.AutoBumpStepSpec{Mode: "patch", VersionRaw: "1.2.3"},
 		Env:             map[string]string{"GITHUB_TOKEN": "{{ secret.github-secret }}"},
 		VaultConnection: "home-vault",
 		VaultSecrets:    []protocol.ProjectSecretSpec{{Name: "github-secret", Mount: "kv", Path: "gh", Key: "token"}},
@@ -108,6 +109,10 @@ func TestCloneJobStepPlan(t *testing.T) {
 	got[0].VaultSecrets[0].Key = "mutated"
 	if in[0].VaultSecrets[0].Key == "mutated" {
 		t.Fatalf("cloneJobStepPlan should deep-copy vault secrets")
+	}
+	got[0].AutoBump.VersionRaw = "mutated"
+	if in[0].AutoBump.VersionRaw == "mutated" {
+		t.Fatalf("cloneJobStepPlan should deep-copy auto bump details")
 	}
 }
 

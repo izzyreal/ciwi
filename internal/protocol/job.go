@@ -346,6 +346,7 @@ type JobStepPlanItem struct {
 	YAMLLiteral     string              `json:"yaml_literal,omitempty"`
 	Script          string              `json:"script,omitempty"`
 	Kind            string              `json:"kind,omitempty"`
+	AutoBump        *AutoBumpStepSpec   `json:"auto_bump,omitempty"`
 	Env             map[string]string   `json:"env,omitempty"`
 	VaultConnection string              `json:"vault_connection,omitempty"`
 	VaultSecrets    []ProjectSecretSpec `json:"vault_secrets,omitempty"`
@@ -354,6 +355,19 @@ type JobStepPlanItem struct {
 	TestReport      string              `json:"test_report,omitempty"`
 	CoverageFormat  string              `json:"coverage_format,omitempty"`
 	CoverageReport  string              `json:"coverage_report,omitempty"`
+}
+
+const (
+	JobStepKindAutoBump    = "auto_bump"
+	AutoBumpStepCapability = "autobump.step"
+)
+
+type AutoBumpStepSpec struct {
+	Mode         string `json:"mode"`
+	VersionRaw   string `json:"version_raw"`
+	VersionFile  string `json:"version_file"`
+	SourceRefRaw string `json:"source_ref_raw,omitempty"`
+	SourceRepo   string `json:"source_repo"`
 }
 
 type JobExecutionEvent struct {

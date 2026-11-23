@@ -338,9 +338,26 @@ pipelines:
 	if len(pending[0].stepPlan) != 2 {
 		t.Fatalf("expected run step + auto bump step, got %d", len(pending[0].stepPlan))
 	}
+	if pending[0].stepPlan[0].Total != 2 || pending[0].stepPlan[1].Total != 2 {
+		t.Fatalf("expected both steps to report the full job length: %+v", pending[0].stepPlan)
+	}
 	auto := pending[0].stepPlan[1]
 	if got := strings.TrimSpace(auto.Name); got != "auto bump" {
 		t.Fatalf("expected auto bump step name, got %q", got)
+	}
+	if auto.Kind != protocol.JobStepKindAutoBump || auto.Script != "" || auto.AutoBump == nil {
+		t.Fatalf("expected a typed auto-bump step, got %+v", auto)
+	}
+	if auto.AutoBump.Mode != "patch" || auto.AutoBump.VersionRaw != "1.2.3" || auto.AutoBump.VersionFile != "VERSION" || auto.AutoBump.SourceRefRaw != "refs/heads/main" || auto.AutoBump.SourceRepo != "https://github.com/acme/repo.git" {
+		t.Fatalf("unexpected auto-bump details: %+v", auto.AutoBump)
+	}
+	if pending[0].requiredCaps[protocol.AutoBumpStepCapability] != "1" {
+		t.Fatalf("auto-bump job must require an updated agent: %+v", pending[0].requiredCaps)
+	}
+	for _, key := range []string{"CIWI_PIPELINE_VERSION_RAW", "CIWI_PIPELINE_VERSION_FILE", "CIWI_PIPELINE_SOURCE_REF_RAW", "CIWI_PIPELINE_SOURCE_REPO"} {
+		if _, ok := pending[0].env[key]; ok {
+			t.Fatalf("auto-bump input %s must not enter the job environment", key)
+		}
 	}
 	if got := strings.TrimSpace(auto.Env["GITHUB_TOKEN"]); got != "{{ secret.github-secret }}" {
 		t.Fatalf("expected explicit auto bump token env, got %q", got)
@@ -681,9 +698,6 @@ pipelines:
 	}
 	if got := strings.TrimSpace(job.Metadata["pipeline_source_ref_resolved"]); got != featureSHA {
 		t.Fatalf("expected pipeline_source_ref_resolved %q, got %q", featureSHA, got)
-	}
-	if got := strings.TrimSpace(job.Env["CIWI_PIPELINE_SOURCE_REF_RAW"]); got != featureRef {
-		t.Fatalf("expected CIWI_PIPELINE_SOURCE_REF_RAW %q, got %q", featureRef, got)
 	}
 	if got := strings.TrimSpace(job.Env["CIWI_PIPELINE_SOURCE_REF"]); got != featureSHA {
 		t.Fatalf("expected CIWI_PIPELINE_SOURCE_REF %q, got %q", featureSHA, got)

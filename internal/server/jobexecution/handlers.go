@@ -567,6 +567,11 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 	}
 	out := make([]protocol.JobStepPlanItem, 0, len(in))
 	for _, step := range in {
+		var autoBump *protocol.AutoBumpStepSpec
+		if step.AutoBump != nil {
+			copy := *step.AutoBump
+			autoBump = &copy
+		}
 		var secrets []protocol.ProjectSecretSpec
 		if len(step.VaultSecrets) > 0 {
 			secrets = append([]protocol.ProjectSecretSpec(nil), step.VaultSecrets...)
@@ -578,6 +583,7 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 			YAMLLiteral:     step.YAMLLiteral,
 			Script:          step.Script,
 			Kind:            step.Kind,
+			AutoBump:        autoBump,
 			Env:             cloneStringMap(step.Env),
 			VaultConnection: step.VaultConnection,
 			VaultSecrets:    secrets,

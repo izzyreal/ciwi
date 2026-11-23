@@ -112,7 +112,7 @@ func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selec
 		return pipelineRunContext{}, nil, err
 	}
 	if runCtx.AutoBump != "" && selection != nil && selection.DryRun {
-		// Explicitly skip auto bump script in dry-run mode.
+		// Explicitly skip auto bump in dry-run mode.
 		runCtx.AutoBump = ""
 	}
 	if runCtx.AutoBump != "" {
@@ -122,19 +122,31 @@ func (s *stateStore) preparePendingPipelineJobs(p store.PersistedPipeline, selec
 		if strings.TrimSpace(runCtx.AutoBumpVCSToken) == "" {
 			return pipelineRunContext{}, nil, fmt.Errorf("versioning.auto_bump_vcs_token is required when auto_bump is set")
 		}
-		autoBumpScript := buildAutoBumpStepScript(runCtx.AutoBump)
 		autoBumpEnv := map[string]string{"GITHUB_TOKEN": strings.TrimSpace(runCtx.AutoBumpVCSToken)}
 		autoBumpSecrets := append([]protocol.ProjectSecretSpec(nil), runCtx.AutoBumpSecrets...)
-		pending[0].script = pending[0].script + "\n" + autoBumpScript
 		pending[0].stepPlan = append(pending[0].stepPlan, protocol.JobStepPlanItem{
-			Index:           len(pending[0].stepPlan) + 1,
-			Total:           len(pending[0].stepPlan) + 1,
-			Name:            "auto bump",
-			Script:          autoBumpScript,
+			Index: len(pending[0].stepPlan) + 1,
+			Total: len(pending[0].stepPlan) + 1,
+			Name:  "auto bump",
+			Kind:  protocol.JobStepKindAutoBump,
+			AutoBump: &protocol.AutoBumpStepSpec{
+				Mode:         runCtx.AutoBump,
+				VersionRaw:   runCtx.VersionRaw,
+				VersionFile:  runCtx.VersionFile,
+				SourceRefRaw: runCtx.SourceRefRaw,
+				SourceRepo:   p.SourceRepo,
+			},
 			Env:             autoBumpEnv,
 			VaultConnection: strings.TrimSpace(runCtx.AutoBumpVaultConn),
 			VaultSecrets:    autoBumpSecrets,
 		})
+		for i := range pending[0].stepPlan {
+			pending[0].stepPlan[i].Total = len(pending[0].stepPlan)
+		}
+		if pending[0].requiredCaps == nil {
+			pending[0].requiredCaps = map[string]string{}
+		}
+		pending[0].requiredCaps[protocol.AutoBumpStepCapability] = "1"
 		if next := buildAutoBumpNextVersion(runCtx.VersionRaw, runCtx.AutoBump); next != "" {
 			pending[0].metadata.Set(domain.ExecutionMetadataNextVersion, next)
 		}

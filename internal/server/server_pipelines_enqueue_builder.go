@@ -293,23 +293,13 @@ func (s *stateStore) buildPendingPipelineJobMatrixEntry(
 	if len(missingNeeds) > 0 {
 		metadata.Set(domain.ExecutionMetadataMissingNeedsJobIDs, strings.Join(missingNeeds, ","))
 	}
-	if runCtx.VersionRaw != "" {
-		env["CIWI_PIPELINE_VERSION_RAW"] = runCtx.VersionRaw
-	}
 	if runCtx.Version != "" {
 		env["CIWI_PIPELINE_VERSION"] = runCtx.Version
 		env["CIWI_PIPELINE_TAG"] = runCtx.Version
 	}
-	if runCtx.VersionFile != "" {
-		env["CIWI_PIPELINE_VERSION_FILE"] = runCtx.VersionFile
-	}
 	if runCtx.SourceRefResolved != "" {
 		env["CIWI_PIPELINE_SOURCE_REF"] = runCtx.SourceRefResolved
 	}
-	if strings.TrimSpace(runCtx.SourceRefRaw) != "" {
-		env["CIWI_PIPELINE_SOURCE_REF_RAW"] = strings.TrimSpace(runCtx.SourceRefRaw)
-	}
-	env["CIWI_PIPELINE_SOURCE_REPO"] = p.SourceRepo
 	var dependencyArtifactJobIDs []string
 	if !opts.dependencyBlocked && !opts.blocked {
 		depJobIDs, resolveErr := resolveDependencyArtifactJobIDs(artifactSources, depCtx)

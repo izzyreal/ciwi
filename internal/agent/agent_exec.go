@@ -544,12 +544,19 @@ func executeLeasedJobWithDependencies(ctx context.Context, client *http.Client, 
 				stepRunEnv = mergeEnv(runEnv, step.env)
 			}
 			stepEvent := jobExecutionEventStep(step.meta, eventYAMLLiteral, eventScript)
-			stepErr := dependencies.scripts.Run(runCtx, scriptRunRequest{
-				Client: client, ServerURL: serverURL, AgentID: agentID, JobID: job.ID,
-				Shell: shell, ExecDir: execDir, Script: step.script, Container: execContainer,
-				Environment: stepRunEnv, Output: &output, StepEvent: stepEvent, Progress: progress,
-				DefaultCurrentStep: currentStep, SensitiveValues: job.SensitiveValues, TraceShell: traceShell,
-			})
+			var stepErr error
+			if step.meta.kind == protocol.JobStepKindAutoBump {
+				stopStreaming := streamRunningUpdates(runCtx, client, serverURL, agentID, job.ID, &output, progress, job.SensitiveValues, currentStep, stepEvent)
+				stepErr = runAutoBumpStep(runCtx, execDir, step.autoBump, stepRunEnv, &output)
+				stopStreaming()
+			} else {
+				stepErr = dependencies.scripts.Run(runCtx, scriptRunRequest{
+					Client: client, ServerURL: serverURL, AgentID: agentID, JobID: job.ID,
+					Shell: shell, ExecDir: execDir, Script: step.script, Container: execContainer,
+					Environment: stepRunEnv, Output: &output, StepEvent: stepEvent, Progress: progress,
+					DefaultCurrentStep: currentStep, SensitiveValues: job.SensitiveValues, TraceShell: traceShell,
+				})
+			}
 			stepEvents := []protocol.JobExecutionEvent(nil)
 			if step.meta.kind == "test" && strings.TrimSpace(step.meta.testReport) != "" {
 				suite, parseErr := parseStepTestSuiteFromFile(execDir, step.meta)
@@ -815,9 +822,10 @@ func parseStepTestSuiteFromFile(execDir string, meta stepMarkerMeta) (protocol.T
 }
 
 type jobScriptStep struct {
-	meta   stepMarkerMeta
-	script string
-	env    map[string]string
+	meta     stepMarkerMeta
+	script   string
+	env      map[string]string
+	autoBump *protocol.AutoBumpStepSpec
 }
 
 func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
@@ -829,7 +837,7 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 	for i, step := range plan {
 		script := step.Script
 		kind := strings.TrimSpace(step.Kind)
-		if strings.TrimSpace(script) == "" && kind != "dryrun_skip" {
+		if strings.TrimSpace(script) == "" && kind != "dryrun_skip" && kind != protocol.JobStepKindAutoBump {
 			continue
 		}
 		index := step.Index
@@ -844,6 +852,11 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 		if name == "" {
 			name = fmt.Sprintf("step_%d", index)
 		}
+		var autoBump *protocol.AutoBumpStepSpec
+		if step.AutoBump != nil {
+			copy := *step.AutoBump
+			autoBump = &copy
+		}
 		steps = append(steps, jobScriptStep{
 			meta: stepMarkerMeta{
 				index:          index,
@@ -857,8 +870,9 @@ func stepPlanToScriptSteps(plan []protocol.JobStepPlanItem) []jobScriptStep {
 				coverageFormat: strings.TrimSpace(step.CoverageFormat),
 				coverageReport: strings.TrimSpace(step.CoverageReport),
 			},
-			script: script,
-			env:    cloneMap(step.Env),
+			script:   script,
+			env:      cloneMap(step.Env),
+			autoBump: autoBump,
 		})
 	}
 	if len(steps) == 0 {

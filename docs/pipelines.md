@@ -136,19 +136,16 @@ Optional `pipelines[].versioning`:
   token or a `{{ secret.<name> }}` placeholder declared by `auto_bump_vault`
 - `auto_bump_vault`: Vault connection and secret mappings for the auto-bump token
 
-Auto-bump appends a final step to a non-dry pipeline run, commits the next
-semantic version, and pushes it to the source branch. It requires the selection
-to materialize exactly one job execution and fails safely if the branch or
-version file advanced after resolution. Dry runs do not append the auto-bump
-step.
+Auto-bump appends a final agent step to a non-dry pipeline run, commits the next
+semantic version, and pushes it to the source branch. Its version and source
+details travel in the job step plan. The step requires an agent that supports
+`autobump.step`. Auto-bump requires the selection to materialize exactly one job
+execution and fails safely if the branch or version file advanced after
+resolution. Dry runs do not append the auto-bump step.
 
 Injected env vars:
-- `CIWI_PIPELINE_VERSION_RAW`
 - `CIWI_PIPELINE_VERSION` / `CIWI_PIPELINE_TAG`
 - `CIWI_PIPELINE_SOURCE_REF`
-- `CIWI_PIPELINE_SOURCE_REF_RAW`
-- `CIWI_PIPELINE_SOURCE_REPO`
-- `CIWI_PIPELINE_VERSION_FILE`
 
 Matrix and version values can also be used in YAML templates, including
 `{{ciwi.version_raw}}`, `{{ciwi.version}}`, and `{{ciwi.tag_prefix}}`.

@@ -371,6 +371,7 @@ type executableStep struct {
 	Index           int                          `json:"index"`
 	Script          string                       `json:"script"`
 	Kind            string                       `json:"kind"`
+	AutoBump        *protocol.AutoBumpStepSpec   `json:"auto_bump,omitempty"`
 	Env             map[string]string            `json:"env,omitempty"`
 	TestName        string                       `json:"test_name,omitempty"`
 	TestFormat      string                       `json:"test_format,omitempty"`
@@ -420,7 +421,7 @@ func (e *Estimator) jobPlanFingerprint(job protocol.JobExecution) string {
 
 func executableStepFromPlan(step protocol.JobStepPlanItem) executableStep {
 	return executableStep{
-		Index: step.Index, Script: step.Script, Kind: step.Kind, Env: step.Env,
+		Index: step.Index, Script: step.Script, Kind: step.Kind, AutoBump: step.AutoBump, Env: step.Env,
 		TestName: step.TestName, TestFormat: step.TestFormat, TestReport: step.TestReport,
 		CoverageFormat: step.CoverageFormat, CoverageReport: step.CoverageReport,
 		VaultConnection: step.VaultConnection, VaultSecrets: step.VaultSecrets,
@@ -443,6 +444,7 @@ func stepEventFingerprint(step protocol.JobStepPlanItem) string {
 	// Step events omit environment and Vault configuration to avoid carrying
 	// sensitive data. Candidate and target plans are compared separately.
 	executable.Env = nil
+	executable.AutoBump = nil
 	executable.VaultConnection = ""
 	executable.VaultSecrets = nil
 	encoded, _ := json.Marshal(executable)

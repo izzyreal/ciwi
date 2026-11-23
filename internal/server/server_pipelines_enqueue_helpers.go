@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/izzyreal/ciwi/internal/config"
@@ -118,6 +117,11 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 	}
 	out := make([]protocol.JobStepPlanItem, 0, len(in))
 	for _, step := range in {
+		var autoBump *protocol.AutoBumpStepSpec
+		if step.AutoBump != nil {
+			copy := *step.AutoBump
+			autoBump = &copy
+		}
 		var secrets []protocol.ProjectSecretSpec
 		if len(step.VaultSecrets) > 0 {
 			secrets = append([]protocol.ProjectSecretSpec(nil), step.VaultSecrets...)
@@ -129,6 +133,7 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 			YAMLLiteral:     step.YAMLLiteral,
 			Script:          step.Script,
 			Kind:            step.Kind,
+			AutoBump:        autoBump,
 			Env:             cloneMap(step.Env),
 			VaultConnection: step.VaultConnection,
 			VaultSecrets:    secrets,
@@ -143,30 +148,11 @@ func cloneJobStepPlan(in []protocol.JobStepPlanItem) []protocol.JobStepPlanItem 
 }
 
 func buildAutoBumpNextVersion(versionRaw, mode string) string {
-	parts := strings.Split(strings.TrimSpace(versionRaw), ".")
-	if len(parts) != 3 {
+	next, err := domain.NextAutoBumpVersion(versionRaw, strings.TrimSpace(mode))
+	if err != nil {
 		return ""
 	}
-	major, err1 := strconv.Atoi(parts[0])
-	minor, err2 := strconv.Atoi(parts[1])
-	patch, err3 := strconv.Atoi(parts[2])
-	if err1 != nil || err2 != nil || err3 != nil {
-		return ""
-	}
-	switch strings.TrimSpace(mode) {
-	case "patch":
-		patch++
-	case "minor":
-		minor++
-		patch = 0
-	case "major":
-		major++
-		minor = 0
-		patch = 0
-	default:
-		return ""
-	}
-	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
+	return next
 }
 
 func deriveAutoBumpBranch(sourceRef string) string {
